@@ -1,0 +1,599 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model rpa_users {
+  id                   Int                      @id @default(autoincrement())
+  username             String                   @unique @db.VarChar(100)
+  password_hash        String
+  role                 String?                  @default("recruiter") @db.VarChar(50)
+  is_active            Boolean?                 @default(true)
+  created_at           DateTime?                @default(now()) @db.Timestamp(6)
+  first_name           String?                  @db.VarChar(100)
+  last_name            String?                  @db.VarChar(100)
+  email                String?                  @unique(map: "idx_rpa_users_email") @db.VarChar(255)
+  is_approved          Boolean?                 @default(false)
+  department           String?                  @default("HR") @db.VarChar(100)
+  rpa_email_messages   rpa_email_messages[]
+  rpa_email_templates  rpa_email_templates[]
+  module_permissions   rpa_module_permissions[]
+  rpa_outlook_accounts rpa_outlook_accounts[]
+  sessions             rpa_sessions[]
+
+  @@map("rpa_users")
+}
+
+model rpa_sessions {
+  id         Int        @id @default(autoincrement())
+  token      String     @unique
+  user_id    Int?
+  role       String?    @db.VarChar(50)
+  created_at DateTime?  @default(now()) @db.Timestamp(6)
+  expires_at DateTime   @db.Timestamp(6)
+  user       rpa_users? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("rpa_sessions")
+}
+
+model rpa_module_permissions {
+  user_id    Int
+  module_key String    @db.VarChar(50)
+  is_enabled Boolean   @default(false)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  user       rpa_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, module_key])
+  @@map("rpa_module_permissions")
+}
+
+model rpa_cv {
+  id                           BigInt                       @id @default(autoincrement())
+  Name                         String?
+  NoticePeriod                 String?
+  ContactNumber                String?
+  EmailID                      String?
+  HighestQualification         String?
+  TotalExperienceYears         String?
+  LastCompanyExperienceYears   String?
+  CurrentLocation              String?
+  CTC_LPA                      String?
+  ExpectedCTC_LPA              String?
+  JobSource                    String?
+  RecruiterInfoAAPNA           String?
+  PositionApplied              String?
+  Top5KeySkills                String?
+  CurrentCompany               String?
+  Gender                       String?
+  EnglishCommunicationRating   String?
+  PreferredShift               String?
+  ReasonForJobChange           String?
+  WillingToTakeOnlineTest      String?
+  HasLaptopForInitialDays      String?
+  EducationalScoresPercentage  String?
+  LinkedInProfile              String?
+  MetaData                     String?                      @default("")
+  statusActive                 String?
+  missingData                  String?
+  cvMissingToken               String?
+  cvMissingTokenStatus         String?
+  createdAt                    DateTime?                    @db.Timestamp(6)
+  modifiedAt                   DateTime?                    @db.Timestamp(6)
+  vendorName                   String?
+  lockForNinetyDays            String?
+  VendorEmail                  String?
+  a10th                        String?                      @db.VarChar
+  a12th                        String?                      @db.VarChar
+  graduation                   String?                      @db.VarChar
+  postGraduation               String?                      @db.VarChar
+  Heat                         String?
+  HRQuickcomments              String?
+  IQScore                      String?
+  TechScore                    String?
+  FinalStatus                  String?
+  TechRoundOne                 String?
+  TechRoundTwo                 String?
+  ManagerialOrCEOFeedback      String?
+  HRInterview                  String?
+  ZekoInterviewScore           Decimal?                     @db.Decimal
+  ZekoCodingScore              Decimal?                     @db.Decimal
+  ZekoCommunicationScore       Decimal?                     @db.Decimal
+  TechRoundThree               String?
+  graduationdegree             String?
+  graduationspecialization     String?
+  postgraduationdegree         String?
+  postgraduationspecialization String?
+  employment_history           Json?
+  cvVectorLock                 String?
+  cvFileUrl                    String?
+  resume_full_text             String?
+  resume_text_quality          String?                      @default("unknown") @db.VarChar(20)
+  resume_technical_terms       Json?                        @default("[]")
+  resume_term_updated_at       DateTime?                    @db.Timestamptz(6)
+  resume_tsvector              Unsupported("tsvector")?
+  TotalExperienceYearsNumeric  Decimal?                     @db.Decimal(5, 2)
+  ExpectedCTCNumeric           Decimal?                     @db.Decimal(10, 2)
+  NoticePeriodDays             Int?
+  ai_profile_insights          Json?
+  emails                       rpa_email_messages[]
+  shortlisted                  rpa_shortlisted_candidates[]
+
+  @@index([resume_tsvector], map: "idx_rpa_cv_resume_tsvector", type: Gin)
+  @@index([TotalExperienceYearsNumeric], map: "idx_rpa_cv_total_exp_num")
+  @@index([ExpectedCTCNumeric], map: "idx_rpa_cv_expected_ctc_num")
+  @@index([NoticePeriodDays], map: "idx_rpa_cv_notice_days")
+  @@map("rpa_cv")
+}
+
+model rpa_mrf {
+  id                            BigInt                       @id @default(autoincrement())
+  submitter_email               String?
+  hiring_manager_name           String?
+  hiring_manager_designation    String?
+  date_of_request               DateTime?                    @db.Date
+  required_in                   String?
+  position_hiring_for           String?
+  number_of_positions           Int?
+  position_reports_to           String?
+  requirement_for_team          String?
+  desired_qualification         String?
+  pg_information                String?
+  graduate_other_information    String?
+  replacement_or_new_role       String?
+  replacement_comments          String?
+  total_years_of_experience     Int?
+  relevant_years_of_experience  Int?
+  project_name                  String?
+  project_duration              String?
+  employment_type               String?
+  existing_resource_allocation  Boolean?
+  existing_resource_information String?
+  roles_responsibilities        String?
+  mandatory_skills              String?
+  good_to_have_skills           String?
+  first_technical_round         String?
+  second_technical_round        String?
+  ceo_management_round          String?
+  hr_round                      String?
+  client_round                  String?
+  client_round_coordinator      String?
+  job_timing                    String?
+  first_round_interview_slot    String?
+  second_round_interview_slot   String?
+  weekly_meeting_slot           String?
+  client_details                String?
+  additional_information        String?
+  competencies_required         String?
+  question_paper                String?
+  approved_by_abhijit           String?
+  jd_attachment                 String?
+  online_test_paper_attachment  String?
+  created_at                    DateTime?                    @default(now()) @db.Timestamp(6)
+  approval_status               String                       @default("pending")
+  emailbody                     String?
+  requirement_for_team_other    String?
+  other_qualification_more_info String?
+  roles_responsibilities_other  String?
+  ceo_panel_details             String?
+  question_paper_new_owner      String?
+  jd_document_link              String?
+  parsed_jd_json                Json?
+  mandatory_skills_other        String?
+  good_to_have_skills_other     String?
+  emails                        rpa_email_messages[]
+  shortlisted                   rpa_shortlisted_candidates[]
+
+  @@map("rpa_mrf")
+}
+
+model rpa_shortlisted_candidates {
+  id                          Int                           @id @default(autoincrement())
+  cv_id                       BigInt?
+  mrf_id                      BigInt?
+  candidate_name              String                        @db.VarChar(255)
+  candidate_email             String                        @db.VarChar(255)
+  position_applied            String?                       @db.VarChar(255)
+  shortlisted_by              String?                       @db.VarChar(255)
+  shortlisted_at              DateTime?                     @default(now()) @db.Timestamp(6)
+  recruiter_notes             String?
+  email_sent                  Boolean?                      @default(false)
+  email_sent_at               DateTime?                     @db.Timestamp(6)
+  email_subject               String?                       @db.VarChar(500)
+  email_body_snapshot         String?
+  pipeline_status             String?                       @default("shortlisted") @db.VarChar(50)
+  interview_r1_at             DateTime?                     @db.Timestamp(6)
+  interview_r2_at             DateTime?                     @db.Timestamp(6)
+  offer_sent_at               DateTime?                     @db.Timestamp(6)
+  offer_accepted_at           DateTime?                     @db.Timestamp(6)
+  joined_at                   DateTime?                     @db.Timestamp(6)
+  stage_notes                 String?
+  created_at                  DateTime?                     @default(now()) @db.Timestamp(6)
+  modified_at                 DateTime?                     @default(now()) @db.Timestamp(6)
+  candidate_email_all         String?
+  emails                      rpa_email_messages[]
+  cv                          rpa_cv?                       @relation(fields: [cv_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  mrf                         rpa_mrf?                      @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
+  rpa_zeko_candidate_pipeline rpa_zeko_candidate_pipeline[]
+
+  @@map("rpa_shortlisted_candidates")
+}
+
+model rpa_upload_log {
+  id           Int       @id @default(autoincrement())
+  execution_id String
+  file_name    String
+  status       String
+  source       String?
+  processed_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([execution_id, file_name])
+  @@unique([execution_id, file_name], map: "uq_exec_file")
+  @@index([execution_id], map: "idx_upload_log_exec")
+  @@map("rpa_upload_log")
+}
+
+model rpa_upload_batch_summary {
+  id              Int       @id @default(autoincrement())
+  execution_id    String    @unique @db.VarChar(100)
+  uploaded_by     String    @db.VarChar(100)
+  uploaded_at     DateTime? @default(now()) @db.Timestamptz(6)
+  total_count     Int       @default(0)
+  success_count   Int       @default(0)
+  update_count    Int       @default(0)
+  duplicate_count Int       @default(0)
+  failed_count    Int       @default(0)
+  details         Json?
+
+  @@map("rpa_upload_batch_summary")
+}
+
+model rpa_email_messages {
+  id                   Int                         @id @default(autoincrement())
+  graph_message_id     String?                     @unique
+  conversation_id      String
+  internet_msg_id      String?
+  in_reply_to          String?
+  from_email           String
+  from_name            String?
+  to_emails            String[]
+  cc_emails            String[]
+  bcc_emails           String[]
+  subject              String?
+  body_preview         String?
+  body_html            String?
+  has_attachments      Boolean?                    @default(false)
+  attachments_json     Json?
+  direction            String
+  folder               String?                     @default("inbox")
+  candidate_id         BigInt?
+  mrf_id               BigInt?
+  shortlist_id         Int?
+  account_id           Int?
+  sent_by_user_id      Int?
+  sent_at              DateTime?                   @db.Timestamp(6)
+  received_at          DateTime?                   @db.Timestamp(6)
+  created_at           DateTime?                   @default(now()) @db.Timestamp(6)
+  template_id          Int?
+  rpa_outlook_accounts rpa_outlook_accounts?       @relation(fields: [account_id], references: [id], onUpdate: NoAction)
+  candidate            rpa_cv?                     @relation(fields: [candidate_id], references: [id], onUpdate: NoAction)
+  mrf                  rpa_mrf?                    @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
+  rpa_users            rpa_users?                  @relation(fields: [sent_by_user_id], references: [id], onUpdate: NoAction)
+  shortlist            rpa_shortlisted_candidates? @relation(fields: [shortlist_id], references: [id], onUpdate: NoAction)
+  rpa_email_templates  rpa_email_templates?        @relation(fields: [template_id], references: [id], onUpdate: NoAction)
+  rpa_email_tracking   rpa_email_tracking[]
+
+  @@index([account_id], map: "idx_email_messages_account")
+  @@index([candidate_id], map: "idx_email_messages_candidate")
+  @@index([conversation_id], map: "idx_email_messages_conversation")
+  @@index([direction], map: "idx_email_messages_direction")
+  @@index([from_email], map: "idx_email_messages_from")
+  @@index([mrf_id], map: "idx_email_messages_mrf")
+  @@index([sent_at(sort: Desc)], map: "idx_email_messages_sent_at")
+  @@index([shortlist_id], map: "idx_email_messages_shortlist")
+  @@map("rpa_email_messages")
+}
+
+model rpa_email_notifications {
+  id              Int       @id @default(autoincrement())
+  candidate_name  String?
+  candidate_email String?
+  position        String?
+  preview         String?
+  message_id      Int?      @unique
+  is_read         Boolean?  @default(false)
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  @@map("rpa_email_notifications")
+}
+
+model rpa_settings {
+  key   String @id
+  value String
+
+  @@map("rpa_settings")
+}
+
+model chat_histories {
+  id         Int    @id @default(autoincrement())
+  session_id String @db.VarChar(255)
+  message    Json
+}
+
+model rpa_cv_tmp {
+  id                           BigInt    @id @default(autoincrement())
+  Name                         String?
+  NoticePeriod                 String?
+  ContactNumber                String?
+  EmailID                      String?
+  HighestQualification         String?
+  TotalExperienceYears         String?
+  LastCompanyExperienceYears   String?
+  CurrentLocation              String?
+  CTC_LPA                      String?
+  ExpectedCTC_LPA              String?
+  JobSource                    String?
+  RecruiterInfoAAPNA           String?
+  PositionApplied              String?
+  Top5KeySkills                String?
+  CurrentCompany               String?
+  Gender                       String?
+  EnglishCommunicationRating   String?
+  PreferredShift               String?
+  ReasonForJobChange           String?
+  WillingToTakeOnlineTest      String?
+  HasLaptopForInitialDays      String?
+  EducationalScoresPercentage  String?
+  LinkedInProfile              String?
+  MetaData                     String?   @default("")
+  statusActive                 String?
+  missingData                  String?
+  cvMissingToken               String?
+  cvMissingTokenStatus         String?
+  createdAt                    DateTime? @db.Timestamp(6)
+  modifiedAt                   DateTime? @db.Timestamp(6)
+  vendorName                   String?
+  lockForNinetyDays            String?
+  VendorEmail                  String?
+  a10th                        String?   @db.VarChar
+  a12th                        String?   @db.VarChar
+  graduation                   String?   @db.VarChar
+  postGraduation               String?   @db.VarChar
+  Heat                         String?
+  HRQuickcomments              String?
+  IQScore                      String?
+  TechScore                    String?
+  FinalStatus                  String?
+  TechRoundOne                 String?
+  TechRoundTwo                 String?
+  ManagerialOrCEOFeedback      String?
+  HRInterview                  String?
+  ZekoInterviewScore           Decimal?  @db.Decimal
+  ZekoCodingScore              Decimal?  @db.Decimal
+  ZekoCommunicationScore       Decimal?  @db.Decimal
+  TechRoundThree               String?
+  graduationdegree             String?
+  graduationspecialization     String?
+  postgraduationdegree         String?
+  postgraduationspecialization String?
+  employment_history           Json?
+  cvVectorLock                 String?
+  cvFileUrl                    String?
+  uploadedByHRName             String?
+  uploadedAt                   DateTime? @default(now()) @db.Timestamp(6)
+  uploadSource                 String?
+}
+
+model rpa_email_log {
+  id               Int       @id @default(autoincrement())
+  email_type       String
+  recipient_email  String
+  recipient_name   String?
+  subject          String?
+  body_html        String?
+  reference_id     Int?
+  sent_at          DateTime? @default(now()) @db.Timestamp(6)
+  responded_at     DateTime? @db.Timestamp(6)
+  reminder_count   Int?      @default(0)
+  last_reminder_at DateTime? @db.Timestamp(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_email_templates {
+  id                 Int                  @id @default(autoincrement())
+  name               String
+  category           String?              @default("general")
+  subject            String
+  body_html          String
+  placeholders       String[]
+  created_by         Int?
+  is_active          Boolean?             @default(true)
+  created_at         DateTime?            @default(now()) @db.Timestamp(6)
+  modified_at        DateTime?            @default(now()) @db.Timestamp(6)
+  rpa_email_messages rpa_email_messages[]
+  rpa_users          rpa_users?           @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_email_tracking {
+  id                 Int                @id @default(autoincrement())
+  message_id         Int
+  tracking_token     String?            @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  delivered          Boolean?           @default(false)
+  delivered_at       DateTime?          @db.Timestamp(6)
+  opened             Boolean?           @default(false)
+  first_opened_at    DateTime?          @db.Timestamp(6)
+  open_count         Int?               @default(0)
+  last_opened_at     DateTime?          @db.Timestamp(6)
+  replied            Boolean?           @default(false)
+  replied_at         DateTime?          @db.Timestamp(6)
+  bounced            Boolean?           @default(false)
+  bounce_reason      String?
+  created_at         DateTime?          @default(now()) @db.Timestamp(6)
+  rpa_email_messages rpa_email_messages @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([message_id], map: "idx_email_tracking_message")
+  @@index([tracking_token], map: "idx_email_tracking_token")
+}
+
+model rpa_mrf_jd_send {
+  id                 BigInt    @id @default(autoincrement())
+  first_name         String
+  last_name          String
+  email              String
+  cc_email           String?
+  email_body_content String?
+  role               String
+  jd_doc_link        String
+  mrfstatus          String?
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  budget_min         Decimal?  @db.Decimal(12, 2)
+  budget_max         Decimal?  @db.Decimal(12, 2)
+  mrf_id             Int?
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_outlook_accounts {
+  id                 Int                  @id @default(autoincrement())
+  user_id            Int
+  outlook_email      String
+  display_name       String?
+  is_active          Boolean?             @default(true)
+  connected_at       DateTime?            @default(now()) @db.Timestamp(6)
+  last_sync_at       DateTime?            @db.Timestamp(6)
+  rpa_email_messages rpa_email_messages[]
+  rpa_users          rpa_users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, outlook_email])
+}
+
+model rpa_processing_log {
+  id         Int       @id @default(autoincrement())
+  fileName   String?
+  source     String?
+  status     String?
+  logMessage String?
+  createdAt  DateTime? @default(now()) @db.Timestamptz(6)
+}
+
+model rpa_zeko_auth_cookie {
+  id           Int       @id @default(autoincrement())
+  cookie_value String
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime  @db.Timestamptz(6)
+  is_active    Boolean?  @default(true)
+  created_by   String?   @default("pkmondal@aapnainfotech.com")
+}
+
+model rpa_zeko_auth_token {
+  id           Int       @id @default(autoincrement())
+  access_token String
+  token_type   String?   @default("bearer")
+  expires_in   Int?      @default(3600)
+  expires_at   DateTime  @db.Timestamptz(6)
+  is_active    Boolean?  @default(true)
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  created_by   String?   @default("api_key_workflow")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_zeko_candidate_pipeline {
+  id                         Int                        @id @default(autoincrement())
+  candidate_id               Int
+  zeko_job_id                String
+  pipeline_id                String
+  stage                      String                     @default("hr")
+  status                     String                     @default("pending")
+  link_sent_at               DateTime?                  @db.Timestamptz(6)
+  completed_at               DateTime?                  @db.Timestamptz(6)
+  created_at                 DateTime                   @default(now()) @db.Timestamptz(6)
+  candidate_email            String?
+  interview_start_at         DateTime?                  @db.Timestamptz(6)
+  interview_end_at           DateTime?                  @db.Timestamptz(6)
+  cancelled_at               DateTime?                  @db.Timestamptz(6)
+  cancel_reason              String?
+  rpa_shortlisted_candidates rpa_shortlisted_candidates @relation(fields: [candidate_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([candidate_id, zeko_job_id, stage])
+  @@index([candidate_id], map: "idx_zeko_pipeline_candidate")
+  @@index([zeko_job_id], map: "idx_zeko_pipeline_job")
+  @@index([status], map: "idx_zeko_pipeline_status")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_zeko_interview_results {
+  id                        Int       @id @default(autoincrement())
+  candidate_name            String?
+  candidate_email           String?
+  scores_overallscore       Int?
+  scores_technicalscore     Int?
+  scores_communicationscore Int?
+  reportlink                String?
+  created_at                DateTime? @db.Timestamptz(6)
+  zeko_job_id               String
+  pipeline_id               String
+}
+
+model rpa_zeko_jobs {
+  id                   Int       @id @default(autoincrement())
+  zeko_id              String    @unique
+  job_ref_id           String?
+  title                String?
+  hiring_name          String?
+  role_name            String?
+  status               String?   @default("draft")
+  interview_type       String?
+  is_published         Boolean?  @default(false)
+  is_workflow_pub      Boolean?  @default(false)
+  is_archived          Boolean?  @default(false)
+  is_hr_screening      Boolean?  @default(false)
+  is_coding            Boolean?  @default(false)
+  slug                 String?
+  email                String?
+  company_name         String?   @default("Aapna Infotech")
+  total_applicants     Int?      @default(0)
+  resume_count         Int?      @default(0)
+  screening_count      Int?      @default(0)
+  functional_count     Int?      @default(0)
+  created_at_zeko      DateTime? @db.Timestamptz(6)
+  updated_at_zeko      DateTime? @db.Timestamptz(6)
+  raw_steps            String?
+  synced_at            DateTime? @default(now()) @db.Timestamptz(6)
+  interview_ids        Json?     @default("[]")
+  primary_interview_id String?   @default(dbgenerated("\nCASE\n    WHEN (jsonb_array_length(interview_ids) > 0) THEN ((interview_ids -> 0) ->> '_id'::text)\n    ELSE NULL::text\nEND"))
+
+  @@index([status], map: "idx_rpa_zeko_jobs_status")
+  @@index([synced_at(sort: Desc)], map: "idx_rpa_zeko_jobs_synced")
+  @@index([interview_type], map: "idx_rpa_zeko_jobs_type")
+}
+
+model rpa_zeko_sync_log {
+  id            Int       @id @default(autoincrement())
+  execution_id  String?
+  total_fetched Int?      @default(0)
+  synced_at     DateTime? @default(now()) @db.Timestamptz(6)
+  status        String?   @default("success")
+}
+
+model rpa_cv_vectors {
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  text         String?
+  metadata     Json?
+  embedding    Unsupported("vector")?
+  unique_key   String?
+  candidate_id BigInt?
+
+  @@index([candidate_id], map: "idx_rpa_cv_vectors_candidate_id")
+  @@map("rpa_cv_vectors")
+}
+
+enum approval_status {
+  pending
+  approved
+  rejected
+}
