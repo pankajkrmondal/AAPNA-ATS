@@ -601,3 +601,58 @@ code, pre {
   stroke: #5a9c6e !important;
 }
 
+/* --- Secondary toggle buttons styling (Approve Instead / Reject Instead) --- */
+.btn-reject-secondary {
+  background-color: #fff1f0 !important;
+  border: 1px solid #ffa39e !important;
+  color: #cf1322 !important;
+  transition: all 0.2s var(--ease-out-quint) !important;
+}
+
+.btn-reject-secondary:hover,
+.btn-reject-secondary:focus {
+  background-color: #ffccc7 !important;
+  border-color: #ff4d4f !important;
+  color: #cf1322 !important;
+}
+
+[data-theme='dark'] .btn-reject-secondary {
+  background-color: rgba(231, 76, 60, 0.15) !important;
+  border: 1px solid rgba(231, 76, 60, 0.35) !important;
+  color: #e74c3c !important;
+}
+
+[data-theme='dark'] .btn-reject-secondary:hover,
+[data-theme='dark'] .btn-reject-secondary:focus {
+  background-color: rgba(231, 76, 60, 0.25) !important;
+  border-color: #e74c3c !important;
+  color: #e74c3c !important;
+}
+
+.btn-approve-secondary {
+  background-color: #f0f4e4 !important;
+  border: 1px solid #d9dcc8 !important;
+  color: #7a922e !important;
+  transition: all 0.2s var(--ease-out-quint) !important;
+}
+
+.btn-approve-secondary:hover,
+.btn-approve-secondary:focus {
+  background-color: #e5ebd3 !important;
+  border-color: #8fa840 !important;
+  color: #7a922e !important;
+}
+
+[data-theme='dark'] .btn-approve-secondary {
+  background-color: rgba(143, 168, 64, 0.15) !important;
+  border: 1px solid rgba(143, 168, 64, 0.35) !important;
+  color: #8fa840 !important;
+}
+
+[data-theme='dark'] .btn-approve-secondary:hover,
+[data-theme='dark'] .btn-approve-secondary:focus {
+  background-color: rgba(143, 168, 64, 0.25) !important;
+  border-color: #8fa840 !important;
+  color: #8fa840 !important;
+}
+

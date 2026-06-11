@@ -74,13 +74,16 @@ export default function MRF() {
     let approvalLabel = 'PENDING';
     let approvalColor = 'gold';
     if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
-      approvalLabel = 'COMPLETED';
+      approvalLabel = 'APPROVED';
       approvalColor = 'success';
     } else if (approvalStatusStr === 'rejected') {
       approvalLabel = 'REJECTED';
       approvalColor = 'error';
+    } else if (approvalStatusStr === 'waiting') {
+      approvalLabel = 'WAITING';
+      approvalColor = 'gold';
     } else {
-      approvalLabel = approvalStatusStr.toUpperCase();
+      approvalLabel = approvalStatusStr ? approvalStatusStr.toUpperCase() : 'PENDING';
       approvalColor = approvalLabel.includes('COMPLETE') || approvalLabel.includes('APPROV') ? 'success' : 'gold';
     }
 

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Card, Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Space, Upload } from 'antd';
 import { SolutionOutlined, CheckCircleOutlined, ContactsOutlined, UploadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
+import screeningService from '../services/screeningService';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -15,6 +16,8 @@ export default function MissingJdUpload() {
   const [candidateInfo, setCandidateInfo] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [roles, setRoles] = useState([]);
+  const [showCustomPosition, setShowCustomPosition] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -23,6 +26,7 @@ export default function MissingJdUpload() {
       return;
     }
     fetchMissingFields();
+    fetchRoles();
   }, [token]);
 
   const fetchMissingFields = async () => {
@@ -39,23 +43,45 @@ export default function MissingJdUpload() {
     }
   };
 
+  const fetchRoles = async () => {
+    try {
+      const res = await screeningService.getRoles();
+      setRoles(res.data?.data || res.data || []);
+    } catch (err) {
+      console.warn('Failed to load open roles list:', err);
+    }
+  };
+
   const onFinish = async (values) => {
     setSubmitting(true);
     setError('');
     try {
-      const file = values.uploadResume?.[0]?.originFileObj || values.uploadResume?.[0];
+      const finalValues = { ...values };
+      if (finalValues.PositionApplied === 'Other' && finalValues.customPositionApplied) {
+        finalValues.PositionApplied = finalValues.customPositionApplied;
+      }
+      delete finalValues.customPositionApplied;
+
+      const file = finalValues.uploadResume?.[0]?.originFileObj || finalValues.uploadResume?.[0];
       
       let payload;
       if (file) {
         payload = new FormData();
         payload.append('uploadResume', file);
-        Object.keys(values).forEach(key => {
+        Object.keys(finalValues).forEach(key => {
           if (key !== 'uploadResume') {
-            payload.append(key, values[key]);
+            if (key === 'CurrentCompany' && finalValues[key]) {
+              payload.append(key, JSON.stringify({ Name: finalValues[key], Website: '' }));
+            } else {
+              payload.append(key, finalValues[key]);
+            }
           }
         });
       } else {
-        payload = values;
+        payload = { ...finalValues };
+        if (payload.CurrentCompany) {
+          payload.CurrentCompany = { Name: payload.CurrentCompany, Website: '' };
+        }
       }
 
       await candidateService.submitPublicMissingData(token, payload);
@@ -81,6 +107,40 @@ export default function MissingJdUpload() {
           </Button>
         </Upload>
       );
+    }
+
+    if (key === 'PositionApplied') {
+      if (roles.length > 0) {
+        return (
+          <Space direction="vertical" style={{ width: '100%' }} size={10}>
+            <Select
+              placeholder="Select Position Applied For"
+              style={{ width: '100%' }}
+              onChange={(val) => {
+                setShowCustomPosition(val === 'Other');
+              }}
+            >
+              {roles.map((r) => (
+                <Select.Option key={r.id} value={r.role}>
+                  {r.role}
+                </Select.Option>
+              ))}
+              <Select.Option value="Other">Other (Please Specify)</Select.Option>
+            </Select>
+            {showCustomPosition && (
+              <Form.Item
+                name="customPositionApplied"
+                noStyle
+                rules={[{ required: true, message: 'Please specify the position.' }]}
+              >
+                <Input placeholder="Specify custom position" style={{ borderRadius: 8 }} />
+              </Form.Item>
+            )}
+          </Space>
+        );
+      } else {
+        return <Input placeholder="e.g. Software Engineer, QA Analyst" style={{ borderRadius: 8 }} />;
+      }
     }
 
     // Dropdown mappings

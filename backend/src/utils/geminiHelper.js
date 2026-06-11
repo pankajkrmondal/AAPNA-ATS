@@ -20,14 +20,59 @@ const FALLBACK_MODELS = [
 const uniqueModels = [...new Set(FALLBACK_MODELS.filter(Boolean))];
 
 /**
- * Call Gemini with robust fallback and retry on 429/503/Quota issues.
+ * Call Gemini (with OpenRouter try first) with robust fallback and retry on 429/503/Quota issues.
  * @param {string} prompt - The prompt to send
  * @param {Object} options - Generation options (e.g. responseMimeType)
  * @returns {Promise<string>} The response text
  */
 export async function generateContentWithFallback(prompt, options = {}) {
+  // 1) Try OpenRouter if configured
+  if (config.openrouter?.apiKey) {
+    try {
+      const modelName = config.openrouter.model || 'openai/gpt-4.1-nano';
+      logger.info(`[Gemini Helper] Attempting content generation with OpenRouter model: ${modelName}`);
+
+      const headers = {
+        'Authorization': `Bearer ${config.openrouter.apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/google/antigravity',
+        'X-Title': 'ATS Migration'
+      };
+
+      const body = {
+        model: modelName,
+        messages: [{ role: 'user', content: prompt }]
+      };
+
+      if (options.generationConfig?.responseMimeType === 'application/json') {
+        body.response_format = { type: 'json_object' };
+      }
+
+      const baseUrl = config.openrouter.baseUrl || 'https://openrouter.ai/api/v1';
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error (Status ${response.status}): ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
+        return responseData.choices[0].message.content;
+      }
+      throw new Error('Invalid response structure from OpenRouter API.');
+    } catch (err) {
+      logger.warn(`[Gemini Helper] OpenRouter content generation failed: ${err.message}. falling back to Gemini...`);
+    }
+  }
+
+  // 2) Fallback to Gemini
   if (!genAI) {
-    throw new Error('Gemini API key is not configured.');
+    throw new Error('Neither OpenRouter nor Gemini API keys are configured.');
   }
 
   let lastError = null;
@@ -65,5 +110,5 @@ export async function generateContentWithFallback(prompt, options = {}) {
     }
   }
 
-  throw lastError || new Error('All Gemini models failed to generate content.');
+  throw lastError || new Error('All Gemini and OpenRouter models failed to generate content.');
 }

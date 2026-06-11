@@ -1011,6 +1011,13 @@ export default function CandidateScreening() {
                 <Badge color="#d4a017" text={`3★: ${summary.threeStar || 0}`} />
               </Space>
             )}
+            {activeTab === 'keyword' && (
+              <Space size={12}>
+                <Badge color="#4a7c59" text={`Strong: ${summary.high || 0}`} />
+                <Badge color="#7a922e" text={`Moderate: ${summary.medium || 0}`} />
+                <Badge color="#d4a017" text={`Weak: ${summary.low || 0}`} />
+              </Space>
+            )}
           </div>
         )}
 

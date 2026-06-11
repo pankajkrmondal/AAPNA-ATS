@@ -98,6 +98,9 @@ export function mapCandidate(c) {
     vendorEmail: c.VendorEmail || '',
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
+    resumeTextQuality: c.resume_text_quality || 'unknown',
+    resumeTechnicalTerms: c.resume_technical_terms || [],
+    resumeTermUpdatedAt: c.resume_term_updated_at || null,
 
     // Mapped fields for high fidelity modals
     lastCompanyExperience: c.LastCompanyExperienceYears || '',
@@ -160,6 +163,9 @@ export function unmapCandidate(data) {
   if (data.gender !== undefined) c.Gender = data.gender;
   if (data.reasonForJobChange !== undefined) c.ReasonForJobChange = data.reasonForJobChange;
   if (data.cvFileUrl !== undefined) c.cvFileUrl = data.cvFileUrl;
+  if (data.resumeTextQuality !== undefined) c.resume_text_quality = data.resumeTextQuality;
+  if (data.resumeTechnicalTerms !== undefined) c.resume_technical_terms = data.resumeTechnicalTerms;
+  if (data.resumeTermUpdatedAt !== undefined) c.resume_term_updated_at = data.resumeTermUpdatedAt;
 
   // Expose CurrentCompany serialization
   if (data.currentCompany !== undefined) {

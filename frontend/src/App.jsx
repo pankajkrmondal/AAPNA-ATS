@@ -32,6 +32,8 @@ import Analytics from './pages/Analytics';
 import EmailManagement from './pages/EmailManagement';
 import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
+import MrfSubmit from './pages/MrfSubmit';
+import MrfApprovalAction from './pages/MrfApprovalAction';
 
 /* ---- Route Guards ---- */
 
@@ -172,6 +174,10 @@ function AppShell() {
 
             {/* Public candidate missing data route */}
             <Route path="/missing-jd-upload" element={<MissingJdUpload />} />
+
+            {/* Public MRF submission & approval routes */}
+            <Route path="/mrf-submit" element={<MrfSubmit />} />
+            <Route path="/mrf/:id/approve" element={<MrfApprovalAction />} />
 
             {/* Protected (app) routes */}
             <Route

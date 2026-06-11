@@ -23,10 +23,10 @@ export async function getStats() {
       // Total candidates in rpa_cv
       prisma.rpa_cv.count(),
 
-      // Active MRFs (approval_status is 'pending' or 'approved')
+      // Active MRFs (approval_status is 'pending', 'waiting', or 'approved')
       prisma.rpa_mrf.count({
         where: {
-          approval_status: { in: ['pending', 'approved'] },
+          approval_status: { in: ['pending', 'waiting', 'approved'] },
         },
       }),
 
