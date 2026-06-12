@@ -112,7 +112,7 @@ export default function Settings() {
         style={{
           borderRadius: 12,
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #7a922e',
+          borderTop: '4px solid #005f56',
         }}
       >
         <div style={{ marginBottom: 24 }}>
@@ -193,8 +193,8 @@ export default function Settings() {
               icon={<SaveOutlined />}
               loading={saving}
               style={{
-                background: '#7a922e',
-                borderColor: '#7a922e',
+                background: '#005f56',
+                borderColor: '#005f56',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,

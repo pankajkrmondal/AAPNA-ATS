@@ -96,7 +96,7 @@ export default function MrfApprovalAction() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#005f56', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close Window
               </Button>
@@ -167,14 +167,14 @@ export default function MrfApprovalAction() {
 
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
-          <Descriptions title={<span style={{ color: '#7a922e', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>} bordered column={{ xs: 1, sm: 2 }} size="small">
+          <Descriptions title={<span style={{ color: '#005f56', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>} bordered column={{ xs: 1, sm: 2 }} size="small">
             <Descriptions.Item label="Position Hiring For" span={2}>
               <Text strong style={{ fontSize: 15 }}>{mrfDetails?.position_hiring_for}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="Hiring Manager">{mrfDetails?.hiring_manager_name} ({mrfDetails?.hiring_manager_designation})</Descriptions.Item>
             <Descriptions.Item label="Submitter Email">{mrfDetails?.submitter_email}</Descriptions.Item>
             <Descriptions.Item label="Number of Positions">
-              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: '#7a922e' }} />
+              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: '#005f56' }} />
             </Descriptions.Item>
             <Descriptions.Item label="Required Timeline">{mrfDetails?.required_in}</Descriptions.Item>
             <Descriptions.Item label="Reports To">{mrfDetails?.position_reports_to || 'Not Specified'}</Descriptions.Item>
@@ -187,7 +187,7 @@ export default function MrfApprovalAction() {
             )}
             <Descriptions.Item label="Job Description (JD)" span={2}>
               {mrfDetails?.jd_document_link ? (
-                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: '#7a922e' }}>
+                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: '#005f56' }}>
                   View Uploaded Job Description File →
                 </Button>
               ) : (
@@ -202,7 +202,7 @@ export default function MrfApprovalAction() {
         
         <div style={{ marginTop: 12 }}>
           <Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageOutlined style={{ color: '#7a922e' }} /> Add Review Comments (Optional)
+            <MessageOutlined style={{ color: '#005f56' }} /> Add Review Comments (Optional)
           </Title>
           <TextArea
             value={comments}
@@ -228,8 +228,8 @@ export default function MrfApprovalAction() {
                     borderRadius: 10,
                     fontWeight: 700,
                     fontSize: 15,
-                    background: '#7a922e',
-                    borderColor: '#7a922e',
+                    background: '#005f56',
+                    borderColor: '#005f56',
                   }}
                 >
                   Confirm Requisition Approval

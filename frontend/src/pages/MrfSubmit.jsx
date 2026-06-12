@@ -160,7 +160,7 @@ export default function MrfSubmit() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#005f56', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close Window
               </Button>
@@ -219,7 +219,7 @@ export default function MrfSubmit() {
           requiredMark={true}
         >
           {/* Section 1: Request Details */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>1. Request Details</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>1. Request Details</span></Divider>
           <Row gutter={24}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -260,7 +260,7 @@ export default function MrfSubmit() {
           </Row>
 
           {/* Section 2: Role Requirements */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>2. Role Requirements</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>2. Role Requirements</span></Divider>
           <Row gutter={24}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -366,7 +366,7 @@ export default function MrfSubmit() {
           </Row>
 
           {/* Section 3: Qualifications & Experience */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>3. Qualifications & Experience</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>3. Qualifications & Experience</span></Divider>
           <Row gutter={24}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -429,7 +429,7 @@ export default function MrfSubmit() {
           </Row>
 
           {/* Section 4: Skills, JD File & Responsibilities */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>4. Skills, JD File & Responsibilities</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>4. Skills, JD File & Responsibilities</span></Divider>
           <Row gutter={24}>
             <Col xs={24}>
               <Form.Item
@@ -486,7 +486,7 @@ export default function MrfSubmit() {
           </Row>
 
           {/* Section 5: Interview Process & Test Paper */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>5. Interview Process & Online Test</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>5. Interview Process & Online Test</span></Divider>
           <Row gutter={24}>
             <Col xs={24}>
               <Form.Item
@@ -580,7 +580,7 @@ export default function MrfSubmit() {
           </Row>
 
           {/* Section 6: Project, Schedule & Allocation */}
-          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#7a922e', fontWeight: 700 }}>6. Project, Schedule & Allocation</span></Divider>
+          <Divider orientation="left" style={{ borderColor: '#e8ede0' }}><span style={{ color: '#005f56', fontWeight: 700 }}>6. Project, Schedule & Allocation</span></Divider>
           <Row gutter={24}>
             <Col xs={24} sm={12}>
               <Form.Item
@@ -702,8 +702,8 @@ export default function MrfSubmit() {
                 borderRadius: 12,
                 fontWeight: 700,
                 fontSize: 16,
-                background: '#7a922e',
-                borderColor: '#7a922e',
+                background: '#005f56',
+                borderColor: '#005f56',
               }}
             >
               Submit Requisition Form (MRF)

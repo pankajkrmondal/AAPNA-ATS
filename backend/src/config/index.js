@@ -88,6 +88,8 @@ const config = {
   /** Cohere Reranking */
   cohere: {
     apiKey: env('COHERE_API_KEY', ''),
+    baseUrl: env('COHERE_BASE_URL', 'https://api.cohere.com/v2/rerank'),
+    model: env('COHERE_MODEL', 'rerank-v3.5'),
   },
 
   /** Zeko AI video interview platform */

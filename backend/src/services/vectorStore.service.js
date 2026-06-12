@@ -161,7 +161,7 @@ export async function rerankCandidates(query, candidates, topN = 50) {
       });
     });
 
-    const response = await fetch('https://api.cohere.com/v2/rerank', {
+    const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
       method: 'POST',
       headers: {
         'accept': 'application/json',
@@ -169,7 +169,7 @@ export async function rerankCandidates(query, candidates, topN = 50) {
         'Authorization': `Bearer ${config.cohere.apiKey}`
       },
       body: JSON.stringify({
-        model: 'rerank-v3.5',
+        model: config.cohere.model || 'rerank-v3.5',
         query,
         documents,
         top_n: topN

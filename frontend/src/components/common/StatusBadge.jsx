@@ -8,8 +8,8 @@ import { Tag } from 'antd';
 /** Map status keys to display labels and colors. */
 const STATUS_MAP = {
   new:          { label: 'New',          color: '#2980b9' },
-  screening:    { label: 'Screening',    color: '#8fa840' },
-  shortlisted:  { label: 'Shortlisted',  color: '#7a922e' },
+  screening:    { label: 'Screening',    color: '#007a6f' },
+  shortlisted:  { label: 'Shortlisted',  color: '#005f56' },
   interview:    { label: 'Interview',    color: '#d4a017' },
   offered:      { label: 'Offered',      color: '#4a7c59' },
   hired:        { label: 'Hired',        color: '#27ae60' },

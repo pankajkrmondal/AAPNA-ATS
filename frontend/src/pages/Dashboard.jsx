@@ -76,7 +76,7 @@ export default function Dashboard() {
       description: 'Search existing candidates, update their profiles, and manage candidate information efficiently.',
       url: '/candidates',
       styleClass: 'card-gold',
-      bgGradient: 'linear-gradient(135deg, #7a922e 0%, #5a7a1e 100%)',
+      bgGradient: 'linear-gradient(135deg, #005f56 0%, #5a7a1e 100%)',
       moduleKey: 'search_candidates',
       icon: <SearchOutlined style={{ fontSize: 18, color: '#fff' }} />,
     },
@@ -141,7 +141,7 @@ export default function Dashboard() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
+        okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
       });
       return;
     }
@@ -205,8 +205,8 @@ export default function Dashboard() {
             style={{
               borderRadius: 6,
               background: isResumeOk ? '#eef3da' : '#f5f5f0',
-              color: isResumeOk ? '#7a922e' : '#a0aa84',
-              borderColor: isResumeOk ? '#b8cc6e' : '#d9dcc8',
+              color: isResumeOk ? '#005f56' : '#a0aa84',
+              borderColor: isResumeOk ? '#b8cc6e' : '#dde1df',
             }}
             title="Download Resume"
           />
@@ -282,7 +282,7 @@ export default function Dashboard() {
         {/* Hero title */}
         <div style={{ marginBottom: 36, textAlign: 'center' }}>
           <h1 style={{ fontSize: 'clamp(26px, 4vw, 42px)', fontWeight: 700, letterSpacing: '-0.02em', margin: 0 }}>
-            Recruitment Process <span style={{ color: '#7a922e' }}>Dashboard</span>
+            Recruitment Process <span style={{ color: '#005f56' }}>Dashboard</span>
           </h1>
           <Text style={{ marginTop: 10, display: 'block', fontSize: 13, color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
             Manage candidates, and track hiring in one place.
@@ -302,7 +302,7 @@ export default function Dashboard() {
           }}
           styles={{ body: { padding: 0 } }}
         >
-          <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #8fa840)', margin: '-24px -24px 24px' }} />
+          <div style={{ height: 3, background: 'linear-gradient(90deg, #005f56, #007a6f)', margin: '-24px -24px 24px' }} />
           <Text style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 16 }}>
             Recruitment Automation Modules
           </Text>
@@ -331,7 +331,7 @@ export default function Dashboard() {
                     >
                       {enabled ? mod.icon : <LockOutlined style={{ fontSize: 16, color: '#8a9270' }} />}
                     </div>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: enabled ? '#fff' : '#4a5232' }}>{mod.title}</h3>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: enabled ? '#fff' : '#5f6664' }}>{mod.title}</h3>
                     <p style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0, opacity: enabled ? 0.88 : 0.7 }}>
                       {mod.description}
                     </p>
@@ -374,7 +374,7 @@ export default function Dashboard() {
                     >
                       {enabled ? mod.icon : <LockOutlined style={{ fontSize: 16, color: '#8a9270' }} />}
                     </div>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: enabled ? '#fff' : '#4a5232' }}>{mod.title}</h3>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: enabled ? '#fff' : '#5f6664' }}>{mod.title}</h3>
                     <p style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0, opacity: enabled ? 0.88 : 0.7 }}>
                       {mod.description}
                     </p>
@@ -406,7 +406,7 @@ export default function Dashboard() {
           }}
           styles={{ body: { padding: 0 } }}
         >
-          <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #8fa840)', margin: '-24px -24px 24px' }} />
+          <div style={{ height: 3, background: 'linear-gradient(90deg, #005f56, #007a6f)', margin: '-24px -24px 24px' }} />
           <Text style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 16 }}>
             Recent Candidates
           </Text>

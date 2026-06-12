@@ -637,7 +637,7 @@ export default function Analytics() {
                 style={{
                   background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
                   borderColor: 'var(--gold)',
-                  boxShadow: '0 4px 10px rgba(122, 146, 46, 0.2)',
+                  boxShadow: '0 4px 10px rgba(0, 95, 86, 0.2)',
                   borderRadius: '6px',
                   fontWeight: '600'
                 }}
@@ -707,7 +707,7 @@ export default function Analytics() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 2px 6px rgba(122, 146, 46, 0.15)',
+                  boxShadow: '0 2px 6px rgba(0, 95, 86, 0.15)',
                   width: '32px',
                   height: '32px'
                 }}
@@ -793,7 +793,7 @@ export default function Analytics() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 2px 6px rgba(122, 146, 46, 0.15)',
+                boxShadow: '0 2px 6px rgba(0, 95, 86, 0.15)',
                 width: '32px',
                 height: '32px'
               }}
@@ -806,7 +806,7 @@ export default function Analytics() {
 
   // Tile items
   const tilesData = [
-    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, color: 'var(--gold)', bg: 'rgba(122, 146, 46, 0.08)' },
+    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, color: 'var(--gold)', bg: 'rgba(0, 95, 86, 0.08)' },
     { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, color: 'var(--red)', bg: 'rgba(192, 57, 43, 0.08)' },
     { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, color: '#95a5a6', bg: 'rgba(149, 165, 166, 0.08)' },
     { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, color: 'var(--text)', bg: 'var(--gold-subtle)' },

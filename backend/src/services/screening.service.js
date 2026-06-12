@@ -720,11 +720,11 @@ export async function searchRoleCandidates(mrfId) {
     const p4 = scoreEducation(
       eduScores,
       { graduationdegree: c.graduationdegree, postgraduationdegree: c.postgraduationdegree },
-      requiredQual
+      mrf.required_qualification || 'ANY'
     );
     const p5 = scoreCommunication(cComm);
     const p6 = scoreJDMatch(c.Top5KeySkills, mandatorySkills);
-    const p7 = scoreCTCAlignment(cCTC, budgetMin > 1000 ? budgetMin / 100000 : budgetMin, roleBudgetMaxLPA);
+    const p7 = scoreCTCAlignment(cCTC, budgetMin, budgetMax);
     const p8 = scoreAvailability(cNotice);
 
     const finalScore = parseFloat(((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8).toFixed(2));

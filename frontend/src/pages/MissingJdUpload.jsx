@@ -293,7 +293,7 @@ export default function MissingJdUpload() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#005f56', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close Window
               </Button>
@@ -362,7 +362,7 @@ export default function MissingJdUpload() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#005f56', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close
               </Button>
@@ -447,8 +447,8 @@ export default function MissingJdUpload() {
                 borderRadius: 10,
                 fontWeight: 600,
                 fontSize: 15,
-                background: '#7a922e',
-                borderColor: '#7a922e'
+                background: '#005f56',
+                borderColor: '#005f56'
               }}
             >
               Submit Profile Details
