@@ -695,7 +695,8 @@ export default function CandidateScreening() {
                         </Text>
                         <Select
                           showSearch
-                          placeholder="— Select an Open Role —"
+                          placeholder={(loadingRoles || preloadingProgress.show) ? "Waiting for Pre-loading MRF matching profiles..." : "— Select an Open Role —"}
+                          disabled={loadingRoles || preloadingProgress.show}
                           style={{ width: '100%', height: 44 }}
                           loading={loadingRoles}
                           value={selectedRoleId}
@@ -1007,8 +1008,15 @@ export default function CandidateScreening() {
             {activeTab === 'jd' && (
               <Space size={12}>
                 <Badge color="#4a7c59" text={`5★: ${summary.fiveStar || 0}`} />
-                <Badge color="#7a922e" text={`4★: ${summary.fourStar || 0}`} />
+                <Badge color="#005f56" text={`4★: ${summary.fourStar || 0}`} />
                 <Badge color="#d4a017" text={`3★: ${summary.threeStar || 0}`} />
+              </Space>
+            )}
+            {activeTab === 'keyword' && (
+              <Space size={12}>
+                <Badge color="#4a7c59" text={`Strong: ${summary.high || 0}`} />
+                <Badge color="#005f56" text={`Moderate: ${summary.medium || 0}`} />
+                <Badge color="#d4a017" text={`Weak: ${summary.low || 0}`} />
               </Space>
             )}
           </div>
@@ -1036,7 +1044,7 @@ export default function CandidateScreening() {
                 padding: '16px 32px',
                 borderRadius: '16px',
                 boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-                border: '1px solid rgba(122, 146, 46, 0.15)',
+                border: '1px solid rgba(0, 95, 86, 0.15)',
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -1087,12 +1095,12 @@ export default function CandidateScreening() {
                       borderLeft: isSelected 
                         ? '4px solid var(--gold)' 
                         : '1px solid var(--border-light)',
-                      border: isSelected ? '1px solid rgba(122, 146, 46, 0.4)' : '1px solid var(--border-light)',
+                      border: isSelected ? '1px solid rgba(0, 95, 86, 0.4)' : '1px solid var(--border-light)',
                       background: isSelected 
-                        ? 'linear-gradient(145deg, rgba(122, 146, 46, 0.04) 0%, rgba(255, 255, 255, 0.98) 100%)' 
+                        ? 'linear-gradient(145deg, rgba(0, 95, 86, 0.04) 0%, rgba(255, 255, 255, 0.98) 100%)' 
                         : 'var(--gradient-card)',
                       boxShadow: isSelected 
-                        ? '0 8px 25px -4px rgba(122, 146, 46, 0.12), 0 4px 10px -2px rgba(122, 146, 46, 0.08)' 
+                        ? '0 8px 25px -4px rgba(0, 95, 86, 0.12), 0 4px 10px -2px rgba(0, 95, 86, 0.08)' 
                         : 'var(--shadow-sm)',
                       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                       borderRadius: '12px',
@@ -1147,8 +1155,8 @@ export default function CandidateScreening() {
                                   fontWeight: 800,
                                   fontSize: '9px',
                                   padding: '1px 6px',
-                                  border: '1px solid rgba(122, 146, 46, 0.25)',
-                                  background: 'rgba(122, 146, 46, 0.06)',
+                                  border: '1px solid rgba(0, 95, 86, 0.25)',
+                                  background: 'rgba(0, 95, 86, 0.06)',
                                   color: 'var(--gold)',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1234,8 +1242,8 @@ export default function CandidateScreening() {
                               <Tag 
                                 icon={<SolutionOutlined style={{ color: 'var(--gold)', fontSize: '12px' }} />} 
                                 style={{ 
-                                  background: 'rgba(122, 146, 46, 0.05)', 
-                                  border: '1px solid rgba(122, 146, 46, 0.2)', 
+                                  background: 'rgba(0, 95, 86, 0.05)', 
+                                  border: '1px solid rgba(0, 95, 86, 0.2)', 
                                   color: 'var(--text-2)',
                                   borderRadius: '6px', 
                                   fontSize: '11px',
@@ -1264,7 +1272,7 @@ export default function CandidateScreening() {
                                 alignItems: 'center',
                                 gap: '8px',
                                 background: 'rgba(255, 255, 255, 0.9)',
-                                border: '1px solid rgba(122, 146, 46, 0.15)',
+                                border: '1px solid rgba(0, 95, 86, 0.15)',
                                 padding: '4px 10px',
                                 borderRadius: '20px',
                                 boxShadow: '0 2px 6px rgba(0,0,0,0.02)'

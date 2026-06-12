@@ -425,7 +425,7 @@ export default function AdminDashboard() {
                   disabled={!isAuthorized}
                   icon={<EditOutlined />}
                   onClick={() => openUserModal(record)}
-                  style={{ color: !isAuthorized ? '#d9d9d9' : '#7a922e' }}
+                  style={{ color: !isAuthorized ? '#d9d9d9' : '#005f56' }}
                 />
               </span>
             </Tooltip>
@@ -482,7 +482,7 @@ export default function AdminDashboard() {
             style={{
               height: 52,
               borderRadius: 0,
-              borderBottom: activeTab === 'users' ? '2px solid #7a922e' : '2px solid transparent',
+              borderBottom: activeTab === 'users' ? '2px solid #005f56' : '2px solid transparent',
               color: activeTab === 'users' ? '#5c6f1f' : '#6b7561',
               fontWeight: 600,
               fontSize: 13,
@@ -502,7 +502,7 @@ export default function AdminDashboard() {
             style={{
               height: 52,
               borderRadius: 0,
-              borderBottom: activeTab === 'modules' ? '2px solid #7a922e' : '2px solid transparent',
+              borderBottom: activeTab === 'modules' ? '2px solid #005f56' : '2px solid transparent',
               color: activeTab === 'modules' ? '#5c6f1f' : '#6b7561',
               fontWeight: 600,
               fontSize: 13,
@@ -513,7 +513,7 @@ export default function AdminDashboard() {
           </Button>
         </div>
         <div>
-          <ReloadOutlined style={{ color: '#7a922e', cursor: 'pointer' }} onClick={loadUsers} spin={loading} />
+          <ReloadOutlined style={{ color: '#005f56', cursor: 'pointer' }} onClick={loadUsers} spin={loading} />
         </div>
       </div>
 
@@ -643,7 +643,7 @@ export default function AdminDashboard() {
                     icon={<PlusOutlined />}
                     disabled={!isAuthorized}
                     onClick={() => openUserModal()}
-                    style={{ background: !isAuthorized ? '#d9d9d9' : '#7a922e', borderColor: !isAuthorized ? '#d9d9d9' : '#7a922e', borderRadius: 6, fontWeight: 600 }}
+                    style={{ background: !isAuthorized ? '#d9d9d9' : '#005f56', borderColor: !isAuthorized ? '#d9d9d9' : '#005f56', borderRadius: 6, fontWeight: 600 }}
                   >
                     Add User
                   </Button>
@@ -696,7 +696,7 @@ export default function AdminDashboard() {
                           cursor: 'pointer',
                           borderBottom: '1px solid #f0f2eb',
                           background: selected ? '#eef3da' : 'transparent',
-                          borderLeft: selected ? '3px solid #7a922e' : '3px solid transparent',
+                          borderLeft: selected ? '3px solid #005f56' : '3px solid transparent',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 12,
@@ -809,7 +809,7 @@ export default function AdminDashboard() {
                             checked={enabled}
                             loading={permsLoading}
                             onChange={(checked) => handlePermissionToggle(mod.key, checked)}
-                            style={{ background: enabled ? '#7a922e' : '#d9d9d9' }}
+                            style={{ background: enabled ? '#005f56' : '#d9d9d9' }}
                           />
                         </div>
                       );
@@ -844,7 +844,7 @@ export default function AdminDashboard() {
                         checked={!!userPermissions['hr_admin']}
                         loading={permsLoading}
                         onChange={(checked) => handlePermissionToggle('hr_admin', checked)}
-                        style={{ background: userPermissions['hr_admin'] ? '#7a922e' : '#d9d9d9' }}
+                        style={{ background: userPermissions['hr_admin'] ? '#005f56' : '#d9d9d9' }}
                       />
                     </div>
                   </div>
@@ -866,7 +866,7 @@ export default function AdminDashboard() {
         onOk={handleSaveUser}
         onCancel={() => setUserModalOpen(false)}
         okText={editingUser ? 'Save Changes' : 'Create User & Send Email'}
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
+        okButtonProps={{ style: { background: '#005f56', borderColor: '#005f56' } }}
         width={540}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
@@ -1015,7 +1015,7 @@ export default function AdminDashboard() {
         onOk={confirmToggleStatus}
         onCancel={() => setToggleModalOpen(false)}
         okText="Confirm"
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
+        okButtonProps={{ style: { background: '#005f56', borderColor: '#005f56' } }}
         width={400}
       >
         <div style={{ padding: '10px 0' }}>

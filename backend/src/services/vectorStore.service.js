@@ -49,6 +49,7 @@ export async function generateEmbedding(text) {
  * @returns {Promise<Object>} The metadata stored
  */
 export async function saveCandidateVector(candidateId, parsedData) {
+  const numericId = Number(candidateId);
   try {
     const email = parsedData.EmailID || parsedData.unique_key || '';
     if (!email) {
@@ -56,7 +57,15 @@ export async function saveCandidateVector(candidateId, parsedData) {
       return null;
     }
 
-    const numericId = Number(candidateId);
+    // Acquire lock
+    try {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(numericId) },
+        data: { cvVectorLock: 'resume' }
+      });
+    } catch (lockErr) {
+      logger.warn(`Failed to set cvVectorLock for candidate ${numericId}: ${lockErr.message}`);
+    }
     
     // Build enriched data object exactly as n8n does
     const enrichedData = {
@@ -101,7 +110,97 @@ export async function saveCandidateVector(candidateId, parsedData) {
     logger.error(`Error saving candidate vector to store for candidate ${candidateId}:`, {
       error: err.message
     });
-    // Do not throw to block main transaction if vector storage fails (best-effort parity)
     return null;
+  } finally {
+    // Release lock
+    try {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(numericId) },
+        data: { cvVectorLock: null }
+      });
+      logger.debug(`Cleared cvVectorLock for candidate ${numericId}`);
+    } catch (unlockErr) {
+      logger.error(`Failed to clear cvVectorLock for candidate ${numericId}: ${unlockErr.message}`);
+    }
   }
 }
+
+/**
+ * Rerank candidate search results using Cohere Rerank API
+ * @param {string} query - The search query/keyword
+ * @param {Array} candidates - The list of pre-filtered candidates from database
+ * @param {number} [topN=50] - Number of ranked candidates to return
+ * @returns {Promise<Array>} Reranked candidates
+ */
+export async function rerankCandidates(query, candidates, topN = 50) {
+  if (!config.cohere?.apiKey) {
+    logger.warn('Cohere API key is not configured. Skipping Cohere reranking.');
+    return candidates;
+  }
+
+  if (!candidates || candidates.length === 0) {
+    return [];
+  }
+
+  try {
+    logger.info(`Sending ${candidates.length} candidates to Cohere Rerank for query "${query}"`);
+
+    const documents = candidates.map(c => {
+      // Use stored vector text or construct a descriptive JSON string
+      return c.text || JSON.stringify({
+        id: Number(c.id),
+        Name: c.Name,
+        TotalExperienceYears: c.TotalExperienceYears,
+        CurrentCompany: c.CurrentCompany,
+        Top5KeySkills: c.Top5KeySkills,
+        HighestQualification: c.HighestQualification,
+        CurrentLocation: c.CurrentLocation,
+        ExpectedCTC_LPA: c.ExpectedCTC_LPA,
+        NoticePeriod: c.NoticePeriod,
+        resume_technical_terms: c.resume_technical_terms
+      });
+    });
+
+    const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'Authorization': `Bearer ${config.cohere.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.cohere.model || 'rerank-v3.5',
+        query,
+        documents,
+        top_n: topN
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Cohere Rerank API error (Status ${response.status}): ${errText}`);
+    }
+
+    const result = await response.json();
+    if (result && Array.isArray(result.results)) {
+      // Map results back to candidate objects with scores
+      const scored = result.results.map(r => {
+        const candidate = candidates[r.index];
+        return {
+          ...candidate,
+          cohereScore: r.relevance_score
+        };
+      });
+
+      // Sort by cohereScore DESC
+      scored.sort((a, b) => b.cohereScore - a.cohereScore);
+      return scored;
+    }
+
+    throw new Error('Invalid response format from Cohere Rerank API.');
+  } catch (err) {
+    logger.error('Failed to rerank candidates with Cohere, returning candidates in original order:', { error: err.message });
+    return candidates;
+  }
+}
+

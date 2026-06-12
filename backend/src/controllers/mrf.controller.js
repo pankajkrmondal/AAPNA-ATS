@@ -2,6 +2,15 @@ import prisma from '../config/database.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import jwt from 'jsonwebtoken';
+import fs from 'fs';
+import path from 'path';
+import config from '../config/index.js';
+import logger from '../config/logger.js';
+import { uploadFileToOneDrive } from '../services/onedrive.service.js';
+import { extractTextFromBuffer } from '../utils/fileExtractor.js';
+import { parseJobDescription } from '../services/geminiParser.service.js';
+import { sendMrfRequestEmail, sendMrfApprovalEmail } from '../services/emailNotification.service.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -43,6 +52,23 @@ export const createMrfRequest = catchAsync(async (req, res) => {
     },
   });
 
+  // Send MRF notification email to hiring manager (and CC recipients) in the background
+  sendMrfRequestEmail({
+    first_name: newMrf.first_name,
+    last_name: newMrf.last_name,
+    email: newMrf.email,
+    cc_email: newMrf.cc_email,
+    role: newMrf.role,
+    jd_doc_link: newMrf.jd_doc_link,
+    email_body_content: newMrf.email_body_content,
+    budget_min: newMrf.budget_min,
+    budget_max: newMrf.budget_max,
+    reference_id: newMrf.id,
+    frontendUrl: req.headers.origin || config.cors.frontendUrl
+  }).catch((err) => {
+    console.error(`Error sending MRF email in background: ${err.message}`);
+  });
+
   // Safe serialization (BigInt to string)
   const responseData = {
     ...newMrf,
@@ -72,24 +98,15 @@ export const listMrfRequests = catchAsync(async (req, res) => {
     const statusLower = status.trim().toLowerCase();
     if (statusLower === 'pending') {
       andConditions.push({
-        OR: [
-          { mrfstatus: { equals: 'pending', mode: 'insensitive' } },
-          { mrfstatus: { equals: 'pendingfromleader', mode: 'insensitive' } },
-        ],
+        mrfstatus: { in: ['pending', 'pendingfromleader'] },
       });
     } else if (statusLower === 'manager submitted' || statusLower === 'managersubmitted') {
       andConditions.push({
-        OR: [
-          { mrfstatus: { equals: 'managersubmitted', mode: 'insensitive' } },
-          { mrfstatus: { equals: 'manager submitted', mode: 'insensitive' } },
-        ],
+        mrfstatus: { in: ['managersubmitted', 'manager submitted'] },
       });
     } else {
       andConditions.push({
-        mrfstatus: {
-          equals: status.trim(),
-          mode: 'insensitive',
-        },
+        mrfstatus: status.trim(),
       });
     }
   }
@@ -249,3 +266,488 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
 
   return success(res, responseData, 'MRF Request updated successfully');
 });
+
+/**
+ * Helper to generate the legacy HTML table representation of the MRF data.
+ */
+const generateMrfEmailTable = (j, jdLink, testPaperLink) => {
+  const v = (val) => {
+    if (val === null || val === undefined || val === '') return '';
+    return String(val);
+  };
+  
+  return `
+<table style="border: 1px solid black; border-collapse: collapse; width: 100%; font-family: Calibri, sans-serif; font-size: 14px;">
+<thead>
+  <tr style="background-color: #f2f2f2;">
+    <th style="border: 1px solid black; padding: 8px; text-align: left;"><b>Field Name</b></th>
+    <th style="border: 1px solid black; padding: 8px; text-align: left;"><b>User Submitted Data</b></th>
+  </tr>
+</thead>
+<tbody>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Submitter Email:</td><td style="border: 1px solid black; padding: 8px;">${v(j.submitter_email)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Name of the Hiring Manager:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hiring_manager_name)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Designation of the Hiring Manager:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hiring_manager_designation)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Date of Request:</td><td style="border: 1px solid black; padding: 8px;">${v(j.date_of_request)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Required in:</td><td style="border: 1px solid black; padding: 8px;">${v(j.required_in)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Position hiring for:</td><td style="border: 1px solid black; padding: 8px;">${v(j.position_hiring_for)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Number of Positions:</td><td style="border: 1px solid black; padding: 8px;">${v(j.number_of_positions)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Position reports to:</td><td style="border: 1px solid black; padding: 8px;">${v(j.position_reports_to)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Requirement for the team:</td><td style="border: 1px solid black; padding: 8px;">${v(j.requirement_for_team)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Requirement for team (Other):</td><td style="border: 1px solid black; padding: 8px;">${v(j.requirement_for_team_other)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Desired Qualification:</td><td style="border: 1px solid black; padding: 8px;">${v(j.desired_qualification)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">PG Qualification Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.pg_information)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Graduate / Other Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.graduate_other_information)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Other Qualification Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.other_qualification_more_info)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Replacement or New Role:</td><td style="border: 1px solid black; padding: 8px;">${v(j.replacement_or_new_role)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Replacement Comments:</td><td style="border: 1px solid black; padding: 8px;">${v(j.replacement_comments)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Total Years of Experience:</td><td style="border: 1px solid black; padding: 8px;">${v(j.total_years_of_experience)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Relevant Years of Experience:</td><td style="border: 1px solid black; padding: 8px;">${v(j.relevant_years_of_experience)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Project Name:</td><td style="border: 1px solid black; padding: 8px;">${v(j.project_name)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Project Duration:</td><td style="border: 1px solid black; padding: 8px;">${v(j.project_duration)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Employment Type:</td><td style="border: 1px solid black; padding: 8px;">${v(j.employment_type)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Allocation Possible:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_allocation ? 'Yes' : 'No')}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_information)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities:</td><td style="border: 1px solid black; padding: 8px;">${v(j.roles_responsibilities)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities (Other):</td><td style="border: 1px solid black; padding: 8px;">${v(j.roles_responsibilities_other)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Mandatory Skills:</td><td style="border: 1px solid black; padding: 8px;">${v(j.mandatory_skills)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Good to Have Skills:</td><td style="border: 1px solid black; padding: 8px;">${v(j.good_to_have_skills)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">1st Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.first_technical_round)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">2nd Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.second_technical_round)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">CEO / Management Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.ceo_management_round)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">CEO Panel Details:</td><td style="border: 1px solid black; padding: 8px;">${v(j.ceo_panel_details)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">HR Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hr_round)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_round)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Round Coordinator:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_round_coordinator)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Job Timing:</td><td style="border: 1px solid black; padding: 8px;">${v(j.job_timing)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Daily Interview Slot (Round 1):</td><td style="border: 1px solid black; padding: 8px;">${v(j.first_round_interview_slot)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Daily Interview Slot (Round 2):</td><td style="border: 1px solid black; padding: 8px;">${v(j.second_round_interview_slot)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Weekly Meeting Slot:</td><td style="border: 1px solid black; padding: 8px;">${v(j.weekly_meeting_slot)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Details:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_details)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Additional Information:</td><td style="border: 1px solid black; padding: 8px;">${v(j.additional_information)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Competencies Required:</td><td style="border: 1px solid black; padding: 8px;">${v(j.competencies_required)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper Link:</td><td style="border: 1px solid black; padding: 8px;">${testPaperLink ? `<a href="${testPaperLink}">Click here to view Test Paper</a>` : 'Not Uploaded'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper New Owner:</td><td style="border: 1px solid black; padding: 8px;">${v(j.question_paper_new_owner)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">JD Document Link:</td><td style="border: 1px solid black; padding: 8px;">${jdLink ? `<a href="${jdLink}">Click here to view JD</a>` : 'Not Uploaded'}</td></tr>
+</tbody>
+</table>
+  `;
+};
+
+/**
+ * @desc    Get pre-fill options based on a manager's email
+ * @route   GET /api/mrf/prefill-options
+ * @access  Public
+ */
+export const getPrefillOptions = catchAsync(async (req, res) => {
+  const { email } = req.query;
+  if (!email) {
+    throw new AppError('Email query parameter is required.', 400);
+  }
+
+  const record = await prisma.rpa_mrf.findFirst({
+    where: { submitter_email: { equals: email.trim(), mode: 'insensitive' } },
+    orderBy: { created_at: 'desc' }
+  });
+
+  if (!record) {
+    return success(res, null, 'No previous requisition found for this email');
+  }
+
+  // Safe serialization (BigInt to string)
+  const responseData = {
+    ...record,
+    id: record.id.toString(),
+  };
+
+  return success(res, responseData, 'Prefill options retrieved successfully');
+});
+
+/**
+ * @desc    Submit form by Hiring Manager, parse files, run Gemini, save and send approval mail
+ * @route   POST /api/mrf/submit
+ * @access  Public
+ */
+export const submitHiringManagerMrf = catchAsync(async (req, res) => {
+  const {
+    submitter_email,
+    hiring_manager_name,
+    hiring_manager_designation,
+    date_of_request,
+    required_in,
+    position_hiring_for,
+    number_of_positions,
+    position_reports_to,
+    requirement_for_team,
+    requirement_for_team_other,
+    desired_qualification,
+    pg_information,
+    graduate_other_information,
+    other_qualification_more_info,
+    replacement_or_new_role,
+    replacement_comments,
+    total_years_of_experience,
+    relevant_years_of_experience,
+    project_name,
+    project_duration,
+    employment_type,
+    existing_resource_allocation,
+    existing_resource_information,
+    roles_responsibilities,
+    roles_responsibilities_other,
+    mandatory_skills,
+    good_to_have_skills,
+    first_technical_round,
+    second_technical_round,
+    ceo_management_round,
+    ceo_panel_details,
+    hr_round,
+    client_round,
+    client_round_coordinator,
+    job_timing,
+    first_round_interview_slot,
+    second_round_interview_slot,
+    weekly_meeting_slot,
+    client_details,
+    additional_information,
+    competencies_required,
+    question_paper_new_owner,
+    parent_id
+  } = req.body;
+
+  // 1) Handle File Uploads to OneDrive & JD Text Extraction
+  const jdFile = req.files && req.files['attach_jd'] ? req.files['attach_jd'][0] : null;
+  const testPaperFile = req.files && req.files['attach_online_test_paper'] ? req.files['attach_online_test_paper'][0] : null;
+
+  let jdUrl = null;
+  let testPaperUrl = null;
+  let jdText = '';
+  let parsedJdJson = null;
+
+  // Process JD File
+  if (jdFile) {
+    try {
+      jdUrl = await uploadFileToOneDrive(jdFile.path, jdFile.originalname);
+      const fileBuffer = fs.readFileSync(jdFile.path);
+      jdText = await extractTextFromBuffer(fileBuffer, jdFile.mimetype);
+    } catch (err) {
+      logger.warn(`Failed to process JD file upload/extraction: ${err.message}`);
+    } finally {
+      // Clean up temp file
+      if (fs.existsSync(jdFile.path)) {
+        fs.unlink(jdFile.path, (e) => e && logger.warn(`Temp clean fail: ${e.message}`));
+      }
+    }
+  }
+
+  // Process Online Test Paper File
+  if (testPaperFile) {
+    try {
+      testPaperUrl = await uploadFileToOneDrive(testPaperFile.path, testPaperFile.originalname);
+    } catch (err) {
+      logger.warn(`Failed to upload online test paper: ${err.message}`);
+    } finally {
+      // Clean up temp file
+      if (fs.existsSync(testPaperFile.path)) {
+        fs.unlink(testPaperFile.path, (e) => e && logger.warn(`Temp clean fail: ${e.message}`));
+      }
+    }
+  }
+
+  // Run Gemini AI parsing on the extracted JD text
+  if (jdText) {
+    try {
+      parsedJdJson = await parseJobDescription(jdText);
+    } catch (err) {
+      logger.warn(`Failed to parse extracted text with Gemini: ${err.message}`);
+    }
+  }
+
+  // Format data types
+  const parsedNumPositions = number_of_positions ? parseInt(number_of_positions, 10) : null;
+  const parsedTotalExp = total_years_of_experience ? parseInt(total_years_of_experience, 10) : null;
+  const parsedRelExp = relevant_years_of_experience ? parseInt(relevant_years_of_experience, 10) : null;
+  const parsedDate = date_of_request ? new Date(date_of_request) : new Date();
+  const parsedExistingResourceAlloc = existing_resource_allocation === 'true' || existing_resource_allocation === true;
+
+  // Gather fields to store and compile HTML email body representation
+  const inputData = {
+    submitter_email,
+    hiring_manager_name,
+    hiring_manager_designation,
+    date_of_request: parsedDate.toLocaleDateString(),
+    required_in,
+    position_hiring_for,
+    number_of_positions: parsedNumPositions,
+    position_reports_to,
+    requirement_for_team,
+    requirement_for_team_other,
+    desired_qualification,
+    pg_information,
+    graduate_other_information,
+    other_qualification_more_info,
+    replacement_or_new_role,
+    replacement_comments,
+    total_years_of_experience: parsedTotalExp,
+    relevant_years_of_experience: parsedRelExp,
+    project_name,
+    project_duration,
+    employment_type,
+    existing_resource_allocation: parsedExistingResourceAlloc,
+    existing_resource_information,
+    roles_responsibilities,
+    roles_responsibilities_other,
+    mandatory_skills,
+    good_to_have_skills,
+    first_technical_round,
+    second_technical_round,
+    ceo_management_round,
+    ceo_panel_details,
+    hr_round,
+    client_round,
+    client_round_coordinator,
+    job_timing,
+    first_round_interview_slot,
+    second_round_interview_slot,
+    weekly_meeting_slot,
+    client_details,
+    additional_information,
+    competencies_required,
+    question_paper_new_owner,
+  };
+
+  const compiledHtmlTable = generateMrfEmailTable(inputData, jdUrl, testPaperUrl);
+
+  // 2) Insert record into rpa_mrf
+  const newMrf = await prisma.rpa_mrf.create({
+    data: {
+      submitter_email: submitter_email ? submitter_email.trim() : null,
+      hiring_manager_name: hiring_manager_name ? hiring_manager_name.trim() : null,
+      hiring_manager_designation: hiring_manager_designation ? hiring_manager_designation.trim() : null,
+      date_of_request: parsedDate,
+      required_in: required_in || null,
+      position_hiring_for: position_hiring_for ? position_hiring_for.trim() : null,
+      number_of_positions: parsedNumPositions,
+      position_reports_to: position_reports_to || null,
+      requirement_for_team: requirement_for_team || null,
+      requirement_for_team_other: requirement_for_team_other || null,
+      desired_qualification: desired_qualification || null,
+      pg_information: pg_information || null,
+      graduate_other_information: graduate_other_information || null,
+      other_qualification_more_info: other_qualification_more_info || null,
+      replacement_or_new_role: replacement_or_new_role || null,
+      replacement_comments: replacement_comments || null,
+      total_years_of_experience: parsedTotalExp,
+      relevant_years_of_experience: parsedRelExp,
+      project_name: project_name || null,
+      project_duration: project_duration || null,
+      employment_type: employment_type || null,
+      existing_resource_allocation: parsedExistingResourceAlloc,
+      existing_resource_information: existing_resource_information || null,
+      roles_responsibilities: roles_responsibilities || null,
+      roles_responsibilities_other: roles_responsibilities_other || null,
+      mandatory_skills: mandatory_skills || null,
+      good_to_have_skills: good_to_have_skills || null,
+      first_technical_round: first_technical_round || null,
+      second_technical_round: second_technical_round || null,
+      ceo_management_round: ceo_management_round || null,
+      ceo_panel_details: ceo_panel_details || null,
+      hr_round: hr_round || null,
+      client_round: client_round || null,
+      client_round_coordinator: client_round_coordinator || null,
+      job_timing: job_timing || null,
+      first_round_interview_slot: first_round_interview_slot || null,
+      second_round_interview_slot: second_round_interview_slot || null,
+      weekly_meeting_slot: weekly_meeting_slot || null,
+      client_details: client_details || null,
+      additional_information: additional_information || null,
+      competencies_required: competencies_required || null,
+      question_paper: testPaperUrl || null,
+      question_paper_new_owner: question_paper_new_owner || null,
+      approved_by_abhijit: 'No',
+      jd_attachment: jdFile ? jdFile.originalname : null,
+      online_test_paper_attachment: testPaperFile ? testPaperFile.originalname : null,
+      jd_document_link: jdUrl || null,
+      parsed_jd_json: parsedJdJson ? JSON.parse(JSON.stringify(parsedJdJson)) : null,
+      emailbody: compiledHtmlTable,
+      approval_status: 'pending',
+    },
+  });
+
+  // 3) Update Parent rpa_mrf_jd_send record status
+  let parentRecord = null;
+  if (parent_id) {
+    parentRecord = await prisma.rpa_mrf_jd_send.findUnique({
+      where: { id: BigInt(parent_id) }
+    });
+  }
+
+  // Fallback to match by email and role if parent_id is missing or record not found by ID
+  if (!parentRecord && submitter_email && position_hiring_for) {
+    parentRecord = await prisma.rpa_mrf_jd_send.findFirst({
+      where: {
+        email: { equals: submitter_email.trim(), mode: 'insensitive' },
+        role: { equals: position_hiring_for.trim(), mode: 'insensitive' },
+        mrfstatus: 'pending'
+      },
+      orderBy: { created_at: 'desc' }
+    });
+  }
+
+  if (parentRecord) {
+    await prisma.rpa_mrf_jd_send.update({
+      where: { id: parentRecord.id },
+      data: {
+        mrfstatus: 'managersubmitted',
+        mrf_id: Number(newMrf.id)
+      }
+    });
+  }
+
+  // 4) Generate secure approval token
+  const token = jwt.sign(
+    { mrfId: newMrf.id.toString(), email: submitter_email },
+    config.jwt.secret,
+    { expiresIn: '30d' }
+  );
+
+  // 5) Send interactive email notification to Abhijit Roy / Leaders (runs async)
+  sendMrfApprovalEmail({
+    mrfRecord: newMrf,
+    token,
+    frontendUrl: req.headers.origin || config.cors.frontendUrl
+  }).catch((err) => {
+    logger.error(`Failed to send MRF Approval Email in background: ${err.message}`);
+  });
+
+  const responseData = {
+    id: newMrf.id.toString(),
+    approval_status: newMrf.approval_status
+  };
+
+  return success(res, responseData, 'MRF successfully submitted and routed for approval', 201);
+});
+
+/**
+ * @desc    Fetch MRF details for public approval review (validates token first)
+ * @route   GET /api/mrf/public-details/:id
+ * @access  Public
+ */
+export const getPublicMrfDetails = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { token } = req.query;
+
+  if (!token) {
+    throw new AppError('Approval token is required to view requisition details.', 400);
+  }
+
+  // Verify token
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    throw new AppError('Invalid or expired approval token.', 401);
+  }
+
+  if (decoded.mrfId !== id) {
+    throw new AppError('Token verification failed: Resource ID mismatch.', 403);
+  }
+
+  const mrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(id) }
+  });
+
+  if (!mrf) {
+    throw new AppError('Requisition request not found.', 404);
+  }
+
+  // Safe serialization (BigInt to string)
+  const responseData = {
+    ...mrf,
+    id: mrf.id.toString(),
+  };
+
+  return success(res, responseData, 'MRF details retrieved successfully');
+});
+
+/**
+ * @desc    Confirm approval or rejection of an MRF
+ * @route   POST /api/mrf/:id/approve
+ * @access  Public
+ */
+export const handleMrfApproval = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { token, action, comments } = req.body;
+
+  if (!token || !action) {
+    throw new AppError('Token and action parameters are required.', 400);
+  }
+
+  // Verify token
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    throw new AppError('Invalid or expired approval token.', 401);
+  }
+
+  if (decoded.mrfId !== id) {
+    throw new AppError('Token verification failed: Resource ID mismatch.', 403);
+  }
+
+  const mrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(id) }
+  });
+
+  if (!mrf) {
+    throw new AppError('Requisition request not found.', 404);
+  }
+
+  const currentStatus = (mrf.approval_status || '').toLowerCase();
+  if (currentStatus !== 'pending' && currentStatus !== 'waiting') {
+    throw new AppError('This requisition request has already been processed.', 400);
+  }
+
+  const isApproved = action.toLowerCase() === 'approve';
+
+  // Update DB status
+  const updatedMrf = await prisma.rpa_mrf.update({
+    where: { id: BigInt(id) },
+    data: {
+      approval_status: isApproved ? 'approved' : 'rejected'
+    }
+  });
+
+  // Update parent rpa_mrf_jd_send status to approved/rejected
+  const parentSend = await prisma.rpa_mrf_jd_send.findFirst({
+    where: { mrf_id: Number(id) }
+  });
+
+  if (parentSend) {
+    await prisma.rpa_mrf_jd_send.update({
+      where: { id: parentSend.id },
+      data: {
+        mrfstatus: isApproved ? 'approved' : 'rejected'
+      }
+    });
+  }
+
+  // Import and send the outcome email notification
+  import('../services/emailNotification.service.js')
+    .then((module) => {
+      module.sendMrfOutcomeEmail({
+        mrfRecord: updatedMrf,
+        approved: isApproved,
+        comments: comments || '',
+        approverName: decoded.email
+      }).catch((err) => {
+        logger.error(`Error sending MRF outcome email: ${err.message}`);
+      });
+    })
+    .catch((err) => {
+      logger.error(`Failed to import email module for outcome notifications: ${err.message}`);
+    });
+
+  return success(res, { approval_status: updatedMrf.approval_status }, `Requisition request successfully ${updatedMrf.approval_status}`);
+});
+

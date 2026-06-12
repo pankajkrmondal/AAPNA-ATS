@@ -90,7 +90,7 @@ export default function AdminLogin() {
               borderRadius: 8,
               fontWeight: 600,
               fontSize: 14,
-              background: '#7a922e',
+              background: '#005f56',
               border: 'none',
               display: 'flex',
               alignItems: 'center',

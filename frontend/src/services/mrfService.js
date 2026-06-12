@@ -1,4 +1,5 @@
 import api from './api';
+import axios from 'axios';
 
 const mrfService = {
   /**
@@ -37,6 +38,47 @@ const mrfService = {
   update(id, payload) {
     return api.patch(`/mrf/${id}`, payload);
   },
+
+  // ── Public Endpoints (Use direct axios to prevent redirect on 401) ───
+
+  /**
+   * Get pre-fill options for the hiring manager form.
+   * @param {string} email
+   */
+  getPrefillOptions(email) {
+    return axios.get('/api/mrf/prefill-options', { params: { email } }).then((res) => res.data);
+  },
+
+  /**
+   * Submit the completed MRF form.
+   * @param {FormData} formData
+   */
+  submitHiringManagerMrf(formData) {
+    return axios.post('/api/mrf/submit', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }).then((res) => res.data);
+  },
+
+  /**
+   * Get public details of an MRF request (verifies token).
+   * @param {string} id
+   * @param {string} token
+   */
+  getPublicMrfDetails(id, token) {
+    return axios.get(`/api/mrf/public-details/${id}`, { params: { token } }).then((res) => res.data);
+  },
+
+  /**
+   * Submit the approval/rejection outcome.
+   * @param {string} id
+   * @param {object} payload — { token, action, comments }
+   */
+  handleMrfApproval(id, payload) {
+    return axios.post(`/api/mrf/${id}/approve`, payload).then((res) => res.data);
+  },
 };
 
 export default mrfService;
+

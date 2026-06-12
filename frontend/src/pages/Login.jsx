@@ -86,7 +86,7 @@ export default function Login() {
               borderRadius: 8,
               fontWeight: 600,
               fontSize: 15,
-              background: '#7a922e',
+              background: '#005f56',
               border: 'none',
             }}
           >

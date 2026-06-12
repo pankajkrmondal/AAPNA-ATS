@@ -74,13 +74,16 @@ export default function MRF() {
     let approvalLabel = 'PENDING';
     let approvalColor = 'gold';
     if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
-      approvalLabel = 'COMPLETED';
+      approvalLabel = 'APPROVED';
       approvalColor = 'success';
     } else if (approvalStatusStr === 'rejected') {
       approvalLabel = 'REJECTED';
       approvalColor = 'error';
+    } else if (approvalStatusStr === 'waiting') {
+      approvalLabel = 'WAITING';
+      approvalColor = 'gold';
     } else {
-      approvalLabel = approvalStatusStr.toUpperCase();
+      approvalLabel = approvalStatusStr ? approvalStatusStr.toUpperCase() : 'PENDING';
       approvalColor = approvalLabel.includes('COMPLETE') || approvalLabel.includes('APPROV') ? 'success' : 'gold';
     }
 
@@ -354,7 +357,7 @@ export default function MRF() {
         style={{
           borderRadius: 12,
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #7a922e',
+          borderTop: '4px solid #005f56',
           marginBottom: 28,
         }}
       >
@@ -362,7 +365,7 @@ export default function MRF() {
           <Title level={3} style={{ fontFamily: "'Lora', serif", fontWeight: 700, margin: '0 0 4px 0' }}>
             New MRF Request
           </Title>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e' }}>
+          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56' }}>
             Hiring Manager Details
           </Text>
         </div>
@@ -477,8 +480,8 @@ export default function MRF() {
               icon={<SendOutlined />}
               loading={submitting}
               style={{
-                background: '#7a922e',
-                borderColor: '#7a922e',
+                background: '#005f56',
+                borderColor: '#005f56',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,
@@ -550,8 +553,8 @@ export default function MRF() {
             onClick={handleExportCSV}
             style={{
               borderRadius: 6,
-              color: '#7a922e',
-              borderColor: '#7a922e',
+              color: '#005f56',
+              borderColor: '#005f56',
               fontWeight: 600,
             }}
           >
@@ -603,13 +606,13 @@ export default function MRF() {
               <Button onClick={() => setIsEditing(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
                 Cancel
               </Button>
-              <Button type="primary" onClick={handleSaveChanges} loading={updating} style={{ background: '#7a922e', borderColor: '#7a922e', borderRadius: 6, fontWeight: 600 }}>
+              <Button type="primary" onClick={handleSaveChanges} loading={updating} style={{ background: '#005f56', borderColor: '#005f56', borderRadius: 6, fontWeight: 600 }}>
                 Save Changes
               </Button>
             </Space>
           ) : (
             <Space key="footer-view">
-              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#7a922e', borderColor: '#7a922e', fontWeight: 600 }}>
+              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#005f56', borderColor: '#005f56', fontWeight: 600 }}>
                 Edit Request
               </Button>
               <Button onClick={() => setDetailsOpen(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
@@ -648,7 +651,7 @@ export default function MRF() {
             </div>
 
             {/* Section 2: New MRF Request Info */}
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56', marginBottom: 16 }}>
               New MRF Request Info
             </div>
 

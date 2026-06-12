@@ -78,6 +78,20 @@ const config = {
     model: env('GEMINI_MODEL', 'gemini-2.5-flash'),
   },
 
+  /** OpenRouter AI */
+  openrouter: {
+    apiKey: env('OPENROUTER_API_KEY', ''),
+    baseUrl: env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
+    model: env('OPENROUTER_MODEL', 'openai/gpt-4.1-nano'),
+  },
+
+  /** Cohere Reranking */
+  cohere: {
+    apiKey: env('COHERE_API_KEY', ''),
+    baseUrl: env('COHERE_BASE_URL', 'https://api.cohere.com/v2/rerank'),
+    model: env('COHERE_MODEL', 'rerank-v3.5'),
+  },
+
   /** Zeko AI video interview platform */
   zeko: {
     apiUrl: env('ZEKO_API_URL', ''),

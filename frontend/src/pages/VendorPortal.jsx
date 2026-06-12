@@ -216,7 +216,7 @@ export default function VendorPortal() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
+        okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
       });
       return;
     }
@@ -293,8 +293,8 @@ export default function VendorPortal() {
               fontFamily: 'monospace',
               fontSize: 11,
               background: 'transparent',
-              color: '#7a922e',
-              borderColor: '#7a922e',
+              color: '#005f56',
+              borderColor: '#005f56',
             }}
           >
             CV
@@ -372,7 +372,7 @@ export default function VendorPortal() {
         }}
         styles={{ body: { padding: 0 } }}
       >
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #8fa840)' }} />
+        <div style={{ height: 3, background: 'linear-gradient(90deg, #005f56, #007a6f)' }} />
         <div style={{ padding: '28px 28px 32px' }}>
           <Text
             style={{
@@ -404,9 +404,9 @@ export default function VendorPortal() {
             }}
           >
             <p className="ant-upload-drag-icon">
-              <InboxOutlined style={{ color: '#7a922e', fontSize: 40 }} />
+              <InboxOutlined style={{ color: '#005f56', fontSize: 40 }} />
             </p>
-            <p className="ant-upload-text" style={{ fontWeight: 600, color: '#1a1e10' }}>
+            <p className="ant-upload-text" style={{ fontWeight: 600, color: '#2b2b2b' }}>
               Click or drag files to upload
             </p>
             <p className="ant-upload-hint" style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>
@@ -427,8 +427,8 @@ export default function VendorPortal() {
               fontWeight: 600,
               fontSize: 14,
               borderRadius: 10,
-              background: fileList.length === 0 ? '#8a9270' : '#7a922e',
-              borderColor: fileList.length === 0 ? '#8a9270' : '#7a922e',
+              background: fileList.length === 0 ? '#8a9270' : '#005f56',
+              borderColor: fileList.length === 0 ? '#8a9270' : '#005f56',
             }}
           >
             Upload Resumes
@@ -464,7 +464,7 @@ export default function VendorPortal() {
           <div
             style={{
               height: 3,
-              background: 'linear-gradient(90deg, #7a922e, #4a7c59)',
+              background: 'linear-gradient(90deg, #005f56, #4a7c59)',
             }}
           />
           <div style={{ padding: '28px 28px 32px' }}>
@@ -545,15 +545,15 @@ export default function VendorPortal() {
                   style={{
                     textAlign: 'center',
                     borderRadius: 10,
-                    background: 'rgba(122,146,46,0.1)',
-                    border: '1px solid #7a922e',
+                    background: 'rgba(0,95,86,0.1)',
+                    border: '1px solid #005f56',
                   }}
                   styles={{ body: { padding: 16 } }}
                 >
                   <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7a922e' }}>Duplicates Found</span>}
+                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#005f56' }}>Duplicates Found</span>}
                     value={batchSummary.duplicate_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#7a922e' }}
+                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#005f56' }}
                   />
                 </Card>
               </Col>
@@ -660,7 +660,7 @@ export default function VendorPortal() {
             <Button
               icon={<ReloadOutlined />}
               onClick={() => loadCandidates(1)}
-              style={{ borderRadius: 10, height: 42, color: '#7a922e', borderColor: '#7a922e' }}
+              style={{ borderRadius: 10, height: 42, color: '#005f56', borderColor: '#005f56' }}
             >
               Refresh
             </Button>
