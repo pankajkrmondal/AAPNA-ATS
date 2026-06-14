@@ -197,11 +197,13 @@ export async function sendPendingReminders() {
           finalBody = reminderBanner + (log.body_html || '');
         }
 
-        // Send email via Outlook Graph API
+        // Send email via Outlook Graph API.
+        // Reminders re-send to the original logged recipient in production; in
+        // non-production all mail is redirected to the internal test inbox.
         let toEmail = log.recipient_email;
-        if (config.env !== 'production') {
-          toEmail = config.microsoft.stagingRecipients;
-          logger.info(`[Reminder Scheduler] Staging Mode: Redirected reminder for log ${log.id} to staging: "${toEmail}"`);
+        if (config.email.redirectInNonProd) {
+          toEmail = config.email.testRecipients;
+          logger.info(`[Reminder Scheduler] Non-prod: Redirected reminder for log ${log.id} to test inbox: "${toEmail}"`);
         }
 
         const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`;

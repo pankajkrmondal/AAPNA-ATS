@@ -45,6 +45,9 @@ router.use(authenticate);
 
 router.post('/', mrfController.createMrfRequest);
 router.get('/', mrfController.listMrfRequests);
+// View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
+router.get('/main/:id', mrfController.getMainMrf);
+router.patch('/main/:id', mrfController.updateMainMrf);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

@@ -10,7 +10,7 @@ import logger from '../config/logger.js';
 import { uploadFileToOneDrive } from '../services/onedrive.service.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
-import { sendMrfRequestEmail, sendMrfApprovalEmail } from '../services/emailNotification.service.js';
+import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -265,6 +265,121 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
   };
 
   return success(res, responseData, 'MRF Request updated successfully');
+});
+
+/**
+ * Columns of rpa_mrf that may be edited via the main-MRF patch endpoint.
+ * Mirrors the n8n 1.1.A "update-recruiter-main-mrf-details" updatable set.
+ * Read-only columns (id, approval_status, submitter_email, date_of_request,
+ * approved_by_abhijit, created_at) are intentionally excluded.
+ */
+const MAIN_MRF_EDITABLE_FIELDS = [
+  'hiring_manager_name', 'hiring_manager_designation', 'required_in',
+  'position_hiring_for', 'number_of_positions', 'position_reports_to',
+  'requirement_for_team', 'requirement_for_team_other', 'desired_qualification',
+  'pg_information', 'graduate_other_information', 'other_qualification_more_info',
+  'replacement_or_new_role', 'replacement_comments', 'total_years_of_experience',
+  'relevant_years_of_experience', 'project_name', 'project_duration', 'employment_type',
+  'existing_resource_allocation', 'existing_resource_information', 'roles_responsibilities',
+  'roles_responsibilities_other', 'mandatory_skills', 'mandatory_skills_other',
+  'good_to_have_skills', 'good_to_have_skills_other', 'first_technical_round',
+  'second_technical_round', 'ceo_management_round', 'ceo_panel_details', 'hr_round',
+  'client_round', 'client_round_coordinator', 'job_timing', 'first_round_interview_slot',
+  'second_round_interview_slot', 'weekly_meeting_slot', 'client_details',
+  'additional_information', 'competencies_required', 'question_paper',
+  'question_paper_new_owner', 'jd_attachment', 'online_test_paper_attachment',
+  'jd_document_link', 'emailbody',
+];
+
+/** Integer columns on rpa_mrf — validated as numeric when provided. */
+const MAIN_MRF_NUMERIC_FIELDS = [
+  'number_of_positions', 'total_years_of_experience', 'relevant_years_of_experience',
+];
+
+/** Boolean columns on rpa_mrf — coerced from yes/no/true/false when provided. */
+const MAIN_MRF_BOOLEAN_FIELDS = ['existing_resource_allocation'];
+
+/**
+ * @desc    Get a submitted main MRF record (rpa_mrf) for authenticated editing
+ * @route   GET /api/mrf/main/:id
+ * @access  Private
+ */
+export const getMainMrf = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
+  if (!mrf) {
+    throw new AppError('MRF record not found.', 404);
+  }
+
+  // Safe serialization (BigInt -> string)
+  const responseData = { ...mrf, id: mrf.id.toString() };
+  return success(res, responseData, 'Main MRF details retrieved successfully');
+});
+
+/**
+ * @desc    Edit a submitted main MRF record (rpa_mrf)
+ * @route   PATCH /api/mrf/main/:id
+ * @access  Private
+ *
+ * Mirrors n8n 1.1.A: normalizes input (empty string -> null, trims strings),
+ * protects read-only fields, validates numeric fields, and updates only the
+ * whitelisted columns of rpa_mrf.
+ */
+export const updateMainMrf = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const existing = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
+  if (!existing) {
+    throw new AppError('MRF record not found.', 404);
+  }
+
+  const body = req.body || {};
+  const dataToUpdate = {};
+
+  for (const field of MAIN_MRF_EDITABLE_FIELDS) {
+    if (!(field in body)) continue;
+    let value = body[field];
+
+    // Empty string -> null; trim strings
+    if (typeof value === 'string') {
+      value = value.trim();
+      if (value === '') value = null;
+    }
+
+    if (value === null) {
+      dataToUpdate[field] = null;
+      continue;
+    }
+
+    if (MAIN_MRF_NUMERIC_FIELDS.includes(field)) {
+      const num = Number(value);
+      if (Number.isNaN(num)) {
+        throw new AppError(`Field "${field}" must be numeric.`, 400);
+      }
+      dataToUpdate[field] = Math.trunc(num);
+    } else if (MAIN_MRF_BOOLEAN_FIELDS.includes(field)) {
+      const s = String(value).toLowerCase();
+      dataToUpdate[field] = s === 'true' || s === 'yes' || s === '1';
+    } else {
+      dataToUpdate[field] = value;
+    }
+  }
+
+  if (Object.keys(dataToUpdate).length === 0) {
+    throw new AppError('No editable fields provided.', 400);
+  }
+
+  const updated = await prisma.rpa_mrf.update({
+    where: { id: BigInt(id) },
+    data: dataToUpdate,
+  });
+
+  return success(
+    res,
+    { success: true, updated_id: updated.id.toString(), updated_fields: Object.keys(dataToUpdate) },
+    'Main MRF details updated successfully'
+  );
 });
 
 /**
@@ -620,6 +735,11 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     logger.error(`Failed to send MRF Approval Email in background: ${err.message}`);
   });
 
+  // 5b) Send the HR-team submission notification (n8n "Send a message To HR"), async
+  sendMrfSubmissionHrEmail({ mrfRecord: newMrf }).catch((err) => {
+    logger.error(`Failed to send MRF submission HR notification in background: ${err.message}`);
+  });
+
   const responseData = {
     id: newMrf.id.toString(),
     approval_status: newMrf.approval_status
@@ -739,7 +859,8 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
         mrfRecord: updatedMrf,
         approved: isApproved,
         comments: comments || '',
-        approverName: decoded.email
+        approverName: decoded.email,
+        hmEmail: updatedMrf.submitter_email || (parentSend && parentSend.email) || ''
       }).catch((err) => {
         logger.error(`Error sending MRF outcome email: ${err.message}`);
       });

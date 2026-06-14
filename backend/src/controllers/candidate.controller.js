@@ -6,6 +6,7 @@ import AppError from '../utils/AppError.js';
 import { saveCandidateVector } from '../services/vectorStore.service.js';
 import logger from '../config/logger.js';
 import { extractTextFromFile, parseResumeWithOpenRouter } from '../services/hrUpload.service.js';
+import { getApprovedRoles } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import path from 'path';
@@ -89,6 +90,20 @@ export const getCandidateEmails = catchAsync(async (req, res) => {
   }));
 
   return success(res, serializedEmails, 'Candidate email communications retrieved');
+});
+
+/**
+ * @desc    Get approved MRF roles for the public missing-JD form dropdown
+ * @route   GET /api/candidates/public/roles
+ * @access  Public
+ *
+ * The missing-JD form is served to logged-out candidates, so it cannot use the
+ * authenticated /api/screening/roles endpoint. This exposes the same approved
+ * roles publicly (read-only) for the "Position Applied" dropdown.
+ */
+export const getPublicRoles = catchAsync(async (req, res) => {
+  const roles = await getApprovedRoles();
+  return success(res, roles, 'Approved roles retrieved successfully');
 });
 
 /**

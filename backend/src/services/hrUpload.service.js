@@ -21,7 +21,8 @@ import {
   sendEmailIdNullAlert,
   sendDuplicateAlertEmail,
   sendSameVendorDuplicateAlert,
-  sendDifferentVendorDuplicateAlert
+  sendDifferentVendorDuplicateAlert,
+  sendResumeErrorAlert
 } from './emailNotification.service.js';
 
 // Shared fields between rpa_cv_tmp and rpa_cv
@@ -948,6 +949,7 @@ export async function startBackgroundParsing(executionId, files, user, source = 
     let successCount = 0;
     let duplicateCount = 0;
     let failedCount = 0;
+    const batchErrors = []; // accumulates per-file errors across the whole batch for the error alert
 
     for (const file of files) {
       const rowErrors = [];
@@ -1331,6 +1333,11 @@ export async function startBackgroundParsing(executionId, files, user, source = 
         finalStatus = 'duplicate';
       }
 
+      // Accumulate failures for the batch-level error alert
+      if (rowErrors.length > 0) {
+        batchErrors.push(`${file.originalname}: ${rowErrors.join(' | ')}`);
+      }
+
       try {
         await prisma.rpa_upload_log.update({
           where: {
@@ -1387,6 +1394,19 @@ export async function startBackgroundParsing(executionId, files, user, source = 
     }
 
     logger.info(`Completed background resume parsing for batch: ${executionId}. Success: ${successCount}, Duplicates: ${duplicateCount}, Failed: ${failedCount}`);
+
+    // Send a single error-alert email if any files failed (mirrors n8n "Error Alert — Resume Processing")
+    if (failedCount > 0) {
+      sendResumeErrorAlert({
+        executionId,
+        failedCount,
+        totalCount: files.length,
+        errors: batchErrors,
+        source,
+      }).catch(mailErr => {
+        logger.error(`Failed to send resume error alert for batch ${executionId}: ${mailErr.message}`);
+      });
+    }
   });
 }
 

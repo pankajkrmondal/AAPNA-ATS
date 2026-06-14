@@ -7,6 +7,10 @@ import { disconnectRedis } from './config/redis.js';
 import { initializeSocket } from './socket/index.js';
 import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
+import { startEmailResumeIntakeJob, stopEmailResumeIntakeJob } from './jobs/emailResumeIntake.js';
+import { startInboundEmailSyncJob, stopInboundEmailSyncJob } from './jobs/inboundEmailSync.js';
+import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
+import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
 const server = http.createServer(app);
@@ -23,17 +27,29 @@ async function startServer() {
     // 1) Connect to database
     await connectDatabase();
 
-    // 2) Start background jobs
+    // 2) Load per-flow email recipients from rpa_settings (overlays code defaults)
+    await loadEmailRecipients();
+
+    // 3) Start background jobs
     startSessionCleanupJob();
     await startReminderSchedulerJob();
 
-    // 3) Bind to port
+    // Outlook mailbox pollers (replace n8n "Outlook Trigger2" + "WF2"); self-gated by config flags
+    startEmailResumeIntakeJob();
+    startInboundEmailSyncJob();
+
+    // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
+    startZekoSchedulerJob();
+
+    // 4) Bind to port
     server.listen(config.port, () => {
       logger.info(`🚀 ATS Backend listening on port ${config.port} [${config.env}]`);
       logger.info(`   Health check: http://localhost:${config.port}/api/health`);
     });
   } catch (error) {
     logger.error('💥 Failed to start server', { error: error.message });
+    await disconnectDatabase().catch(() => {});
+    await disconnectRedis().catch(() => {});
     process.exit(1);
   }
 }
@@ -46,6 +62,9 @@ async function gracefulShutdown(signal) {
 
   // Stop cron schedulers
   stopReminderSchedulerJob();
+  stopEmailResumeIntakeJob();
+  stopInboundEmailSyncJob();
+  stopZekoSchedulerJob();
 
   // Stop accepting new connections
   server.close(async () => {

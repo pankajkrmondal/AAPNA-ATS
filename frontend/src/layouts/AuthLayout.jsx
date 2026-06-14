@@ -16,11 +16,11 @@ export default function AuthLayout() {
           position: 'absolute',
           top: '10%',
           left: '15%',
-          width: 300,
-          height: 300,
+          width: 450,
+          height: 450,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,95,86,0.08) 0%, transparent 70%)',
-          animation: 'float 12s ease-in-out infinite',
+          background: 'radial-gradient(circle, rgba(0, 95, 86, 0.14) 0%, transparent 70%)',
+          animation: 'float 14s ease-in-out infinite',
           pointerEvents: 'none',
         }}
       />
@@ -29,31 +29,31 @@ export default function AuthLayout() {
           position: 'absolute',
           bottom: '15%',
           right: '10%',
-          width: 250,
-          height: 250,
+          width: 400,
+          height: 400,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(74,124,89,0.06) 0%, transparent 70%)',
-          animation: 'float 16s ease-in-out infinite reverse',
+          background: 'radial-gradient(circle, rgba(79, 70, 229, 0.11) 0%, transparent 70%)',
+          animation: 'float 18s ease-in-out infinite reverse',
           pointerEvents: 'none',
         }}
       />
       <div
         style={{
           position: 'absolute',
-          top: '50%',
+          top: '40%',
           right: '30%',
-          width: 180,
-          height: 180,
+          width: 300,
+          height: 300,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0,122,111,0.05) 0%, transparent 70%)',
-          animation: 'float 10s ease-in-out infinite 2s',
+          background: 'radial-gradient(circle, rgba(217, 119, 6, 0.08) 0%, transparent 70%)',
+          animation: 'float 12s ease-in-out infinite 2s',
           pointerEvents: 'none',
         }}
       />
 
       {/* Card container */}
       <div
-        className="glass"
+        className="glass-auth-card"
         style={{
           position: 'relative',
           zIndex: 1,
@@ -68,10 +68,12 @@ export default function AuthLayout() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <img
             src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-            alt="AAPNA GPTW"
+            alt="AAPNA Logo"
             style={{
               height: 42,
-              objectFit: 'contain',
+              width: 110,
+              objectFit: 'cover',
+              objectPosition: 'left',
               display: 'block',
               margin: '0 auto 20px',
             }}
@@ -98,9 +100,10 @@ export default function AuthLayout() {
                 style={{
                   fontFamily: "'Lora', serif, Georgia",
                   fontSize: 22,
-                  fontWeight: 700,
+                  fontWeight: 800,
                   color: 'var(--text)',
                   marginBottom: 6,
+                  letterSpacing: '-0.02em',
                 }}
               >
                 Welcome Back
@@ -113,10 +116,11 @@ export default function AuthLayout() {
             <>
               <h2
                 style={{
-                  fontSize: 20,
-                  fontWeight: 700,
-                  color: '#1a1a2e',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: 'var(--text)',
                   marginBottom: 6,
+                  letterSpacing: '-0.02em',
                 }}
               >
                 Recruitment Portal
