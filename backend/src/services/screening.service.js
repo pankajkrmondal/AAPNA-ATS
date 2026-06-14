@@ -5,6 +5,7 @@ import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
 import { getAccessToken } from './onedrive.service.js';
 import { compileTemplate } from './emailNotification.service.js';
+import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 
@@ -1521,10 +1522,8 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
       },
     });
 
-    let toEmail = c.EmailID;
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-    }
+    // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
+    const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
 
     if (toEmail) {
       // Replace placeholders
@@ -1546,6 +1545,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
             emailAddress: { address: em },
           }));
 
+        const ccRecipients = (ccEmail || '')
+          .split(',')
+          .map((em) => em.trim())
+          .filter((em) => em.length > 0)
+          .map((em) => ({
+            emailAddress: { address: em },
+          }));
+
         const mailPayload = {
           message: {
             subject,
@@ -1554,6 +1561,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
               content: bodyHtml,
             },
             toRecipients: recipients,
+            ...(ccRecipients.length > 0 ? { ccRecipients } : {}),
           },
           saveToSentItems: 'true',
         };
@@ -1791,12 +1799,14 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
 export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user) {
   const hrEmail = user.email || config.microsoft.defaultSender;
 
-  // 1) Fetch settings Client ID
-  const settingClientId = await prisma.rpa_settings.findUnique({
+  // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
+  //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
+  const settingClientIdRow = await prisma.rpa_settings.findUnique({
     where: { key: 'ZEKO_CLIENT_ID' },
   });
-  if (!settingClientId) {
-    throw new AppError('ZEKO_CLIENT_ID not found in settings.', 500);
+  const zekoClientId = settingClientIdRow?.value || config.zeko.clientId;
+  if (!zekoClientId) {
+    throw new AppError('ZEKO_CLIENT_ID not found in settings or environment.', 500);
   }
 
   // 2) Fetch active Zeko token
@@ -1844,7 +1854,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   const endIso = roundedEnd.toISOString();
 
   // 4) Call Zeko Schedule API
-  const zekoUrl = `https://interview-api.zeko.ai/api/v1/interview/${interviewId}/schedule`;
+  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${interviewId}/schedule`;
   const zekoPayload = {
     candidates: [
       {
@@ -1855,7 +1865,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
         metaData: {
           Id: shortlistId,
           name: job.title || '',
-          clientId: settingClientId.value,
+          clientId: zekoClientId,
         },
       },
     ],
@@ -1901,7 +1911,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     throw new AppError('Zeko Interview Scheduled Invitation template not found in database.', 500);
   }
 
-  const interviewLink = `https://interview.zeko.ai/interview/${job.slug}`;
+  const interviewLink = `${config.zeko.interviewLinkBase}/${job.slug}`;
   const startStr =
     roundedStart.toLocaleString('en-IN', {
       day: '2-digit',
@@ -1931,11 +1941,8 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     interview_link: interviewLink
   });
 
-  // Send email via Outlook
-  let toEmail = shortlist.candidate_email;
-  if (config.env !== 'production') {
-    toEmail = config.microsoft.stagingRecipients;
-  }
+  // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+  const { to: toEmail } = resolveRecipients('interviewScheduled', shortlist.candidate_email);
 
   if (toEmail) {
     try {
@@ -2009,7 +2016,7 @@ export async function cancelInterview(pipelineId, reason, user) {
   const jobTitle = job ? job.title : 'Position';
 
   // 3) Call Zeko Cancel API
-  const zekoUrl = `https://interview-api.zeko.ai/api/v1/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
+  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
   const zekoPayload = {
     candidateEmails: [pipeline.candidate_email],
   };
@@ -2056,11 +2063,8 @@ export async function cancelInterview(pipelineId, reason, user) {
     cancel_reason: reason || 'Not specified'
   });
 
-  // Send email via Outlook
-  let toEmail = pipeline.candidate_email;
-  if (config.env !== 'production') {
-    toEmail = config.microsoft.stagingRecipients;
-  }
+  // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+  const { to: toEmail } = resolveRecipients('interviewCancelled', pipeline.candidate_email);
 
   if (toEmail) {
     try {

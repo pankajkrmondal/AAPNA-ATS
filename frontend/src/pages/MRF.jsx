@@ -16,9 +16,83 @@ As discussed, we would like to initiate the hiring process for the RPA Developer
 
 We request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing.`;
 
+// Editable fields of the submitted main MRF (rpa_mrf), grouped for the modal UI.
+// Mirrors the backend whitelist in mrf.controller.js (MAIN_MRF_EDITABLE_FIELDS).
+const MAIN_MRF_NUMERIC_FIELDS = ['number_of_positions', 'total_years_of_experience', 'relevant_years_of_experience'];
+const MAIN_MRF_FIELD_GROUPS = [
+  {
+    title: 'Position',
+    fields: [
+      ['hiring_manager_name', 'Hiring Manager Name'],
+      ['hiring_manager_designation', 'HM Designation'],
+      ['position_hiring_for', 'Position Hiring For'],
+      ['number_of_positions', 'Number of Positions'],
+      ['required_in', 'Required In'],
+      ['position_reports_to', 'Position Reports To'],
+      ['employment_type', 'Employment Type'],
+    ],
+  },
+  {
+    title: 'Requirement & Experience',
+    fields: [
+      ['requirement_for_team', 'Requirement for Team'],
+      ['requirement_for_team_other', 'Requirement for Team (Other)'],
+      ['desired_qualification', 'Desired Qualification'],
+      ['pg_information', 'PG Information'],
+      ['graduate_other_information', 'Graduate / Other Info'],
+      ['other_qualification_more_info', 'Other Qualification Info'],
+      ['replacement_or_new_role', 'Replacement or New Role'],
+      ['replacement_comments', 'Replacement Comments'],
+      ['total_years_of_experience', 'Total Years of Experience'],
+      ['relevant_years_of_experience', 'Relevant Years of Experience'],
+      ['project_name', 'Project Name'],
+      ['project_duration', 'Project Duration'],
+      ['existing_resource_information', 'Existing Resource Info'],
+    ],
+  },
+  {
+    title: 'Skills & Responsibilities',
+    fields: [
+      ['roles_responsibilities', 'Roles & Responsibilities'],
+      ['roles_responsibilities_other', 'Roles & Responsibilities (Other)'],
+      ['mandatory_skills', 'Mandatory Skills'],
+      ['mandatory_skills_other', 'Mandatory Skills (Other)'],
+      ['good_to_have_skills', 'Good to Have Skills'],
+      ['good_to_have_skills_other', 'Good to Have Skills (Other)'],
+      ['competencies_required', 'Competencies Required'],
+    ],
+  },
+  {
+    title: 'Interview Process',
+    fields: [
+      ['first_technical_round', '1st Technical Round'],
+      ['second_technical_round', '2nd Technical Round'],
+      ['ceo_management_round', 'CEO / Management Round'],
+      ['ceo_panel_details', 'CEO Panel Details'],
+      ['hr_round', 'HR Round'],
+      ['client_round', 'Client Round'],
+      ['client_round_coordinator', 'Client Round Coordinator'],
+      ['job_timing', 'Job Timing'],
+      ['first_round_interview_slot', 'Interview Slot (Round 1)'],
+      ['second_round_interview_slot', 'Interview Slot (Round 2)'],
+      ['weekly_meeting_slot', 'Weekly Meeting Slot'],
+    ],
+  },
+  {
+    title: 'Additional',
+    fields: [
+      ['client_details', 'Client Details'],
+      ['additional_information', 'Additional Information'],
+      ['question_paper_new_owner', 'Question Paper New Owner'],
+      ['jd_document_link', 'JD Document Link'],
+    ],
+  },
+];
+
 export default function MRF() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [mainForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [records, setRecords] = useState([]);
@@ -35,6 +109,12 @@ export default function MRF() {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
+
+  // Submitted main MRF (rpa_mrf) state — loaded when the record has a linked mrf_id
+  const [mainMrf, setMainMrf] = useState(null);
+  const [mainMrfLoading, setMainMrfLoading] = useState(false);
+  const [isEditingMain, setIsEditingMain] = useState(false);
+  const [updatingMain, setUpdatingMain] = useState(false);
 
   const formatSubmittedDate = (val) => {
     if (!val) return '';
@@ -96,6 +176,9 @@ export default function MRF() {
   const handleOpenDetailsModal = (record) => {
     setSelectedRecord(record);
     setIsEditing(false);
+    setIsEditingMain(false);
+    setMainMrf(null);
+    mainForm.resetFields();
     editForm.resetFields();
     editForm.setFieldsValue({
       first_name: record.first_name,
@@ -108,6 +191,45 @@ export default function MRF() {
       mrfstatus: record.mrfstatus || 'pending',
     });
     setDetailsOpen(true);
+
+    // If the Hiring Manager has submitted, load the full main MRF for view/edit.
+    if (record.mrf_id) {
+      loadMainMrf(record.mrf_id);
+    }
+  };
+
+  // Fetch the submitted main MRF (rpa_mrf) and populate the main edit form.
+  const loadMainMrf = async (mrfId) => {
+    setMainMrfLoading(true);
+    try {
+      const res = await mrfService.getMain(mrfId);
+      const data = res.data?.data || res.data;
+      setMainMrf(data);
+      mainForm.resetFields();
+      mainForm.setFieldsValue(data || {});
+    } catch (err) {
+      message.error(err?.message || 'Failed to load submitted MRF details.');
+    } finally {
+      setMainMrfLoading(false);
+    }
+  };
+
+  // Save edits to the submitted main MRF (rpa_mrf) via the dedicated endpoint.
+  const handleSaveMainChanges = async () => {
+    if (!mainMrf) return;
+    setUpdatingMain(true);
+    try {
+      const values = await mainForm.validateFields();
+      await mrfService.updateMain(mainMrf.id, values);
+      message.success('Submitted MRF details updated successfully.');
+      setIsEditingMain(false);
+      await loadMainMrf(mainMrf.id);
+    } catch (err) {
+      if (err?.errorFields) return; // validation errors already shown inline
+      message.error(err?.message || 'Failed to update submitted MRF details.');
+    } finally {
+      setUpdatingMain(false);
+    }
   };
 
   const handleSaveChanges = async () => {
@@ -598,7 +720,7 @@ export default function MRF() {
           )
         }
         open={detailsOpen}
-        onCancel={() => setDetailsOpen(false)}
+        onCancel={() => { setDetailsOpen(false); setIsEditingMain(false); setMainMrf(null); }}
         width={800}
         footer={[
           isEditing ? (
@@ -791,6 +913,62 @@ export default function MRF() {
                 </Col>
               </Row>
             </Form>
+
+            {/* Section 3: Submitted MRF Details (rpa_mrf) — only when HM has submitted */}
+            {selectedRecord.mrf_id && (
+              <div style={{ marginTop: 28, borderTop: '1px solid #f3f4f6', paddingTop: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56' }}>
+                    Submitted MRF Details
+                  </span>
+                  {mainMrf && (
+                    isEditingMain ? (
+                      <Space>
+                        <Button size="small" onClick={() => { setIsEditingMain(false); mainForm.setFieldsValue(mainMrf); }} style={{ borderRadius: 6, fontWeight: 600 }}>
+                          Cancel
+                        </Button>
+                        <Button size="small" type="primary" onClick={handleSaveMainChanges} loading={updatingMain} style={{ background: '#005f56', borderColor: '#005f56', borderRadius: 6, fontWeight: 600 }}>
+                          Save MRF
+                        </Button>
+                      </Space>
+                    ) : (
+                      <Button size="small" onClick={() => setIsEditingMain(true)} style={{ borderRadius: 6, color: '#005f56', borderColor: '#005f56', fontWeight: 600 }}>
+                        Edit MRF
+                      </Button>
+                    )
+                  )}
+                </div>
+
+                {mainMrfLoading ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>Loading submitted MRF details…</Text>
+                ) : mainMrf ? (
+                  <Form form={mainForm} layout="vertical" disabled={!isEditingMain}>
+                    {MAIN_MRF_FIELD_GROUPS.map((group) => (
+                      <div key={group.title} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: '#9ca3af', margin: '4px 0 10px' }}>
+                          {group.title}
+                        </div>
+                        <Row gutter={16}>
+                          {group.fields.map(([name, label]) => (
+                            <Col span={12} key={name}>
+                              <Form.Item
+                                label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}
+                                name={name}
+                                rules={MAIN_MRF_NUMERIC_FIELDS.includes(name) ? [{ pattern: /^\d*$/, message: 'Must be a number' }] : []}
+                              >
+                                <Input style={{ borderRadius: 6 }} />
+                              </Form.Item>
+                            </Col>
+                          ))}
+                        </Row>
+                      </div>
+                    ))}
+                  </Form>
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>No submitted MRF details available.</Text>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Modal>

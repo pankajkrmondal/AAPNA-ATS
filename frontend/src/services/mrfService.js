@@ -39,6 +39,25 @@ const mrfService = {
     return api.patch(`/mrf/${id}`, payload);
   },
 
+  /**
+   * Get the submitted main MRF record (rpa_mrf) by its MRF id.
+   * @param {string|number} id — the rpa_mrf id (the linked mrf_id)
+   * @returns {Promise}
+   */
+  getMain(id) {
+    return api.get(`/mrf/main/${id}`);
+  },
+
+  /**
+   * Edit the submitted main MRF record (rpa_mrf) by its MRF id.
+   * @param {string|number} id — the rpa_mrf id (the linked mrf_id)
+   * @param {object} payload — any editable main-MRF fields
+   * @returns {Promise}
+   */
+  updateMain(id, payload) {
+    return api.patch(`/mrf/main/${id}`, payload);
+  },
+
   // ── Public Endpoints (Use direct axios to prevent redirect on 401) ───
 
   /**

@@ -26,7 +26,6 @@ import {
   CloseCircleOutlined,
   SyncOutlined,
   WarningOutlined,
-  ReloadOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import vendorService from '../services/vendorService';
@@ -56,7 +55,11 @@ export default function VendorPortal() {
   const [candTotal, setCandTotal] = useState(0);
   const [candPage, setCandPage] = useState(1);
   const [candLoading, setCandLoading] = useState(false);
-  const [searchText, setSearchText] = useState('');
+  const [stats, setStats] = useState({ total: 0, withPosition: 0, thisMonth: 0 });
+  // Discrete filters (mirror the n8n vendor "My Uploads" filterName/filterEmail/filterPosition)
+  const [filterName, setFilterName] = useState('');
+  const [filterEmail, setFilterEmail] = useState('');
+  const [filterPosition, setFilterPosition] = useState('');
   const debounceRef = useRef(null);
 
   /* ═══════ INITIAL LOAD ═══════ */
@@ -173,17 +176,28 @@ export default function VendorPortal() {
 
     try {
       const res = await vendorService.getCandidates({
-        search: searchText.trim(),
+        filterName: filterName.trim(),
+        filterEmail: filterEmail.trim(),
+        filterPosition: filterPosition.trim(),
         page,
         limit: PAGE_SIZE,
       });
 
-      const payload = res.data?.data || res.data;
-      const rows = payload?.data || payload?.candidates || [];
-      const total = payload?.pagination?.total || payload?.total || rows.length;
+      // Backend response: { status, message, data: [...], stats: {...}, pagination: {...} }
+      const payload = res.data || {};
+      const rows = payload.data?.data || payload.data || payload.candidates || [];
+      const total = payload.pagination?.total ?? payload.data?.pagination?.total ?? rows.length;
+      const statsPayload = payload.stats || payload.data?.stats || null;
 
-      setCandidates(rows);
+      setCandidates(Array.isArray(rows) ? rows : []);
       setCandTotal(total);
+      if (statsPayload) {
+        setStats({
+          total: statsPayload.total || 0,
+          withPosition: statsPayload.withPosition || 0,
+          thisMonth: statsPayload.thisMonth || 0,
+        });
+      }
     } catch (err) {
       console.error('Failed to load vendor candidates:', err);
       setCandidates([]);
@@ -193,13 +207,13 @@ export default function VendorPortal() {
     }
   };
 
-  /* ═══════ DEBOUNCED SEARCH ═══════ */
+  /* ═══════ DEBOUNCED FILTERS ═══════ */
   const handleSearchChange = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       loadCandidates(1);
     }, 500);
-  }, [searchText]);
+  }, [filterName, filterEmail, filterPosition]);
 
   useEffect(() => {
     handleSearchChange();
@@ -207,7 +221,15 @@ export default function VendorPortal() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchText]);
+  }, [filterName, filterEmail, filterPosition]);
+
+  /* ═══════ CLEAR FILTERS ═══════ */
+  const clearFilters = () => {
+    setFilterName('');
+    setFilterEmail('');
+    setFilterPosition('');
+    // loadCandidates fires via the debounced effect when the values change.
+  };
 
   /* ═══════ CV DOWNLOAD ═══════ */
   const handleOpenCV = (record) => {
@@ -238,6 +260,19 @@ export default function VendorPortal() {
     }
   };
 
+  /* ═══════ STATUS BADGE ═══════ */
+  // Mirrors the n8n badge logic: hired/select → green, reject → red,
+  // stage 0 / empty → gray, everything else → gold.
+  const renderStatus = (record) => {
+    const status = record.FinalStatus || record.status || '';
+    if (!status || status === '-') return <Tag color="default">—</Tag>;
+    let color = 'gold';
+    if (/hired|select/i.test(status)) color = 'success';
+    else if (/reject/i.test(status)) color = 'error';
+    else if (/stage 0/i.test(status)) color = 'default';
+    return <Tag color={color} style={{ fontFamily: 'monospace', fontSize: 11 }}>{status}</Tag>;
+  };
+
   /* ═══════ CANDIDATE TABLE COLUMNS ═══════ */
   const candColumns = [
     {
@@ -253,6 +288,7 @@ export default function VendorPortal() {
     {
       title: 'Name',
       key: 'name',
+      sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
       render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.name || '—'}</Text>,
     },
     {
@@ -268,6 +304,27 @@ export default function VendorPortal() {
       render: (_, r) => (
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.phone || '—'}</span>
       ),
+    },
+    {
+      title: 'Position Applied',
+      key: 'position',
+      sorter: (a, b) => (a.position || '').localeCompare(b.position || ''),
+      render: (_, r) => <span style={{ fontSize: 13 }}>{r.position || '—'}</span>,
+    },
+    {
+      title: 'Location',
+      key: 'location',
+      sorter: (a, b) => (a.location || '').localeCompare(b.location || ''),
+      render: (_, r) => (
+        <span style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{r.location || '—'}</span>
+      ),
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      sorter: (a, b) =>
+        (a.FinalStatus || a.status || '').localeCompare(b.FinalStatus || b.status || ''),
+      render: (_, r) => renderStatus(r),
     },
     {
       title: 'Uploaded At',
@@ -637,33 +694,105 @@ export default function VendorPortal() {
       >
         <div style={{ marginBottom: 20 }}>
           <Text strong style={{ fontSize: 16, display: 'block' }}>
-            Candidates List
+            My Uploaded Candidates
           </Text>
           <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-            Resumes uploaded by the vendor.
+            All candidates uploaded by you via this portal.
           </Text>
         </div>
 
-        {/* Search & Filter */}
+        {/* Persistent Stat Cards */}
         <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-          <Col xs={24} sm={16} md={12}>
+          <Col xs={24} sm={8}>
+            <Card
+              size="small"
+              style={{ borderRadius: 10, background: '#f5f5f0', border: '1px solid rgba(0,0,0,0.07)' }}
+              styles={{ body: { padding: 16 } }}
+            >
+              <Statistic
+                title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Total Uploaded</span>}
+                value={stats.total}
+                valueStyle={{ fontWeight: 700, fontSize: 24 }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={8}>
+            <Card
+              size="small"
+              style={{ borderRadius: 10, background: 'rgba(0,95,86,0.1)', border: '1px solid #005f56' }}
+              styles={{ body: { padding: 16 } }}
+            >
+              <Statistic
+                title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#005f56' }}>With Position</span>}
+                value={stats.withPosition}
+                valueStyle={{ fontWeight: 700, fontSize: 24, color: '#005f56' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={8}>
+            <Card
+              size="small"
+              style={{ borderRadius: 10, background: 'rgba(74,124,89,0.1)', border: '1px solid #4a7c59' }}
+              styles={{ body: { padding: 16 } }}
+            >
+              <Statistic
+                title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#4a7c59' }}>This Month</span>}
+                value={stats.thisMonth}
+                valueStyle={{ fontWeight: 700, fontSize: 24, color: '#4a7c59' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Search & Filter */}
+        <Row gutter={[12, 12]} style={{ marginBottom: 20 }} align="middle">
+          <Col xs={24} sm={12} md={7}>
             <Input
               prefix={<SearchOutlined style={{ color: 'var(--text-2)', opacity: 0.4 }} />}
-              placeholder="Search by candidate name or email..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Candidate name..."
+              value={filterName}
+              onChange={(e) => setFilterName(e.target.value)}
               allowClear
               style={{ borderRadius: 10, height: 42 }}
             />
           </Col>
-          <Col>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={() => loadCandidates(1)}
-              style={{ borderRadius: 10, height: 42, color: '#005f56', borderColor: '#005f56' }}
-            >
-              Refresh
-            </Button>
+          <Col xs={24} sm={12} md={7}>
+            <Input
+              prefix={<SearchOutlined style={{ color: 'var(--text-2)', opacity: 0.4 }} />}
+              placeholder="Email address..."
+              value={filterEmail}
+              onChange={(e) => setFilterEmail(e.target.value)}
+              allowClear
+              style={{ borderRadius: 10, height: 42 }}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Input
+              prefix={<SearchOutlined style={{ color: 'var(--text-2)', opacity: 0.4 }} />}
+              placeholder="Position applied..."
+              value={filterPosition}
+              onChange={(e) => setFilterPosition(e.target.value)}
+              allowClear
+              style={{ borderRadius: 10, height: 42 }}
+            />
+          </Col>
+          <Col xs={24} sm={12} md={4}>
+            <Space>
+              <Button
+                type="primary"
+                icon={<SearchOutlined />}
+                onClick={() => loadCandidates(1)}
+                style={{ borderRadius: 10, height: 42, background: '#005f56', borderColor: '#005f56' }}
+              >
+                Search
+              </Button>
+              <Button
+                onClick={clearFilters}
+                style={{ borderRadius: 10, height: 42 }}
+              >
+                Clear
+              </Button>
+            </Space>
           </Col>
         </Row>
 

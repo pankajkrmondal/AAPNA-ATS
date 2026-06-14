@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { mapCandidate } from './candidate.service.js';
+import { Prisma } from '@prisma/client';
 
 /**
  * Dashboard service.
@@ -19,6 +20,9 @@ export async function getStats() {
       activeMRFs,
       todayUploads,
       shortlistedCount,
+      aiScreenedCount,
+      funnelShortlistedCount,
+      hiredCount,
     ] = await Promise.all([
       // Total candidates in rpa_cv
       prisma.rpa_cv.count(),
@@ -47,6 +51,37 @@ export async function getStats() {
           },
         },
       }),
+
+      // AI Screened: candidates with AI profile insights
+      prisma.rpa_cv.count({
+        where: {
+          ai_profile_insights: {
+            not: Prisma.DbNull,
+          },
+        },
+      }),
+
+      // Funnel Shortlisted: candidates shortlisted and not rejected
+      prisma.rpa_shortlisted_candidates.count({
+        where: {
+          NOT: {
+            pipeline_status: {
+              in: ['rejected', 'Rejected'],
+            },
+          },
+        },
+      }),
+
+      // Hired: candidates with joined_at, offer_accepted_at or hired/joined status
+      prisma.rpa_shortlisted_candidates.count({
+        where: {
+          OR: [
+            { joined_at: { not: null } },
+            { offer_accepted_at: { not: null } },
+            { pipeline_status: { in: ['hired', 'Hired', 'joined', 'Joined', 'selected', 'Selected'] } }
+          ],
+        },
+      }),
     ]);
 
     return {
@@ -54,6 +89,12 @@ export async function getStats() {
       activeMRFs,
       todayUploads,
       shortlisted: shortlistedCount, // Map to frontend expected key: 'shortlisted'
+      funnel: {
+        sourced: totalCandidates,
+        aiScreened: aiScreenedCount,
+        shortlisted: funnelShortlistedCount,
+        hired: hiredCount,
+      },
     };
   } catch (error) {
     logger.error('Dashboard stats query failed', { error: error.message });
@@ -62,6 +103,12 @@ export async function getStats() {
       activeMRFs: 0,
       todayUploads: 0,
       shortlisted: 0,
+      funnel: {
+        sourced: 0,
+        aiScreened: 0,
+        shortlisted: 0,
+        hired: 0,
+      },
     };
   }
 }

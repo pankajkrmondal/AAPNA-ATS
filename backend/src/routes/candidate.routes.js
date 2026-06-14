@@ -42,6 +42,7 @@ const upload = multer({
 });
 
 // Public candidate routes (unauthenticated)
+router.get('/public/roles', candidateController.getPublicRoles);
 router.get('/public/missing-data', candidateController.getPublicMissingData);
 router.post('/public/missing-data', upload.single('uploadResume'), candidateController.submitPublicMissingData);
 

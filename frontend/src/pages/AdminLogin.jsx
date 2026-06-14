@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Alert } from 'antd';
-import { LoginOutlined } from '@ant-design/icons';
+import { LoginOutlined, UserOutlined, LockOutlined } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import adminService from '../services/adminService';
 
@@ -53,12 +53,13 @@ export default function AdminLogin() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: '#374151', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Username</span>}
+          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Username</span>}
           name="username"
           rules={[{ required: true, message: 'Please enter your username' }]}
           style={{ marginBottom: 18 }}
         >
           <Input
+            prefix={<UserOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
             placeholder="Enter your username"
             autoComplete="off"
             style={{ borderRadius: 8, height: 42 }}
@@ -66,12 +67,13 @@ export default function AdminLogin() {
         </Form.Item>
 
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: '#374151', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Password</span>}
+          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Password</span>}
           name="password"
           rules={[{ required: true, message: 'Please enter your password' }]}
           style={{ marginBottom: 24 }}
         >
           <Input.Password
+            prefix={<LockOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
             placeholder="Enter your password"
             autoComplete="new-password"
             style={{ borderRadius: 8, height: 42 }}
@@ -90,12 +92,14 @@ export default function AdminLogin() {
               borderRadius: 8,
               fontWeight: 600,
               fontSize: 14,
-              background: '#005f56',
+              background: 'linear-gradient(135deg, #005f56 0%, #007a6f 100%)',
               border: 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
+              boxShadow: '0 4px 12px rgba(0, 95, 86, 0.25)',
+              transition: 'all 0.2s',
             }}
           >
             Sign In

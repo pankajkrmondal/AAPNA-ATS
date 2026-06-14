@@ -141,7 +141,7 @@ export default function MainLayout() {
             <img
               src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
               alt="AAPNA"
-              style={{ height: 32, objectFit: 'contain' }}
+              style={{ height: 32, width: 85, objectFit: 'cover', objectPosition: 'left' }}
             />
             <div style={{ width: 1, height: 26, background: '#dde2d0' }} />
             <span
@@ -252,7 +252,9 @@ export default function MainLayout() {
             alt="AAPNA Logo"
             style={{
               height: 30,
-              objectFit: 'contain',
+              width: 79,
+              objectFit: 'cover',
+              objectPosition: 'left',
               filter: isDark ? 'invert(1) brightness(2)' : 'none',
               transition: 'filter 0.3s ease',
             }}

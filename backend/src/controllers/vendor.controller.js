@@ -5,7 +5,7 @@ import AdmZip from 'adm-zip';
 import prisma from '../config/database.js';
 import * as candidateService from '../services/candidate.service.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
-import { success, paginated } from '../utils/apiResponse.js';
+import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
@@ -25,20 +25,45 @@ function getMimeType(filename) {
  * @access  Private (Vendor, HR, Admin)
  */
 export const getVendorCandidates = catchAsync(async (req, res) => {
-  const { page = 1, limit = 20, search, sort = 'createdAt', order = 'desc' } = req.query;
+  const {
+    page = 1,
+    limit = 20,
+    search,
+    filterName,
+    filterEmail,
+    filterPosition,
+    sort = 'createdAt',
+    order = 'desc',
+  } = req.query;
 
   const vendorEmail = req.user.email;
   if (!vendorEmail) {
     throw new AppError('Vendor email is required for listing candidates.', 400);
   }
 
-  const filters = { search, vendorEmail };
+  const filters = { search, filterName, filterEmail, filterPosition, vendorEmail };
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
-  const result = await candidateService.search(filters, pageNum, limitNum, sort, order);
+  const [result, stats] = await Promise.all([
+    candidateService.search(filters, pageNum, limitNum, sort, order),
+    candidateService.vendorStats(vendorEmail),
+  ]);
 
-  return paginated(res, result.data, pageNum, limitNum, result.total, 'Vendor candidates retrieved');
+  return res.status(200).json({
+    status: 'success',
+    message: 'Vendor candidates retrieved',
+    data: result.data,
+    stats,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: result.total,
+      totalPages: Math.ceil(result.total / limitNum),
+      hasNext: pageNum * limitNum < result.total,
+      hasPrev: pageNum > 1,
+    },
+  });
 });
 
 /**

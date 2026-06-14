@@ -2,6 +2,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import { resolveRecipients } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
 
 
@@ -13,11 +14,12 @@ import { getAccessToken } from './onedrive.service.js';
  * @param {Object} params
  * @param {string} params.sender - The user mailbox to send from
  * @param {string} params.to - Comma-separated list of recipient emails
+ * @param {string} [params.cc] - Comma-separated list of cc emails
  * @param {string} params.subject - Subject line of the email
  * @param {string} params.html - HTML email body content
  * @returns {Promise<boolean>}
  */
-async function sendGraphEmail({ sender, to, subject, html }) {
+async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
 
@@ -58,6 +60,15 @@ async function sendGraphEmail({ sender, to, subject, html }) {
       throw new Error('No valid recipients provided.');
     }
 
+    // Build cc recipients (optional)
+    const ccRecipients = (cc || '')
+      .split(',')
+      .map(email => email.trim())
+      .filter(email => email.length > 0)
+      .map(email => ({
+        emailAddress: { address: email }
+      }));
+
     const payload = {
       message: {
         subject,
@@ -65,12 +76,13 @@ async function sendGraphEmail({ sender, to, subject, html }) {
           contentType: 'HTML',
           content: html
         },
-        toRecipients
+        toRecipients,
+        ...(ccRecipients.length > 0 ? { ccRecipients } : {})
       },
       saveToSentItems: 'true'
     };
 
-    logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"...`);
+    logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}...`);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -130,13 +142,9 @@ export function compileTemplate(subject, bodyHtml, replacements) {
 export async function sendWelcomeEmail(candidate, hrUserEmail) {
   try {
     const sender = hrUserEmail || config.microsoft.defaultSender;
-    
-    // Staging override logic
-    let toEmail = candidate.EmailID || '';
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: Welcome email target redirected from "${candidate.EmailID}" to "${toEmail}"`);
-    }
+
+    // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('welcome', candidate.EmailID);
 
     if (!toEmail) {
       logger.warn(`Skipping welcome email: No recipient email address available.`);
@@ -184,12 +192,9 @@ export async function sendWelcomeEmail(candidate, hrUserEmail) {
 export async function sendMissingDataEmail(candidate, hrUserEmail) {
   try {
     const sender = hrUserEmail || config.microsoft.defaultSender;
-    
-    let toEmail = candidate.EmailID || '';
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: Missing data email target redirected from "${candidate.EmailID}" to "${toEmail}"`);
-    }
+
+    // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('missingData', candidate.EmailID);
 
     if (!toEmail) {
       logger.warn(`Skipping missing data email: No recipient email address available.`);
@@ -251,8 +256,8 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
 export async function sendEmailIdNullAlert(candidateName, hrUserEmail) {
   try {
     const sender = hrUserEmail || config.microsoft.defaultSender;
-    const toEmail = config.microsoft.hrAlertsRecipients;
-    
+    const { to: toEmail } = resolveRecipients('missingEmailAlert');
+
     if (!toEmail) {
       logger.warn(`Skipping email null alert: No recipient configured.`);
       return false;
@@ -290,14 +295,91 @@ export async function sendEmailIdNullAlert(candidateName, hrUserEmail) {
 }
 
 /**
+ * Sends an internal alert when resume processing fails for one or more files
+ * in a batch. Mirrors the n8n "Error Alert — Resume Processing" workflow.
+ *
+ * @param {Object} params
+ * @param {string} params.executionId - The upload batch / execution id
+ * @param {number} params.failedCount - Number of failed files
+ * @param {number} params.totalCount - Total files in the batch
+ * @param {string[]} [params.errors] - Per-file error messages
+ * @param {string} [params.source] - Intake source (hr_manual_upload | vendor_portal)
+ * @returns {Promise<boolean>}
+ */
+export async function sendResumeErrorAlert({ executionId, failedCount, totalCount, errors = [], source = '' }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('resumeErrorAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping resume error alert: no recipient configured.');
+      return false;
+    }
+
+    const errorList = (errors || []).length
+      ? `<ul>${errors.map(e => `<li style="margin-bottom:4px;">${String(e)}</li>`).join('')}</ul>`
+      : '<p>No per-file detail available.</p>';
+
+    const subject = `🚨 Resume Processing Failed — ${failedCount}/${totalCount} file(s) (Batch ${executionId})`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:#b71c1c;color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    Resume Processing Error Alert
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>One or more resumes failed to process in the latest upload batch.</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Batch / Execution ID:</td><td>${executionId}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Source:</td><td>${source || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Failed / Total:</td><td>${failedCount} / ${totalCount}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Details:</p>
+    ${errorList}
+  </div>
+</body>
+</html>
+    `;
+
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'resume_error_alert',
+        recipient_email: toEmail,
+        recipient_name: 'HR / Admin',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`Resume error alert sent for batch ${executionId} (${failedCount}/${totalCount} failed).`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send resume error alert for batch ${executionId}: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Sends duplicate resume detection alert to HR and administrator.
  */
 export async function sendDuplicateAlertEmail(candidate, hrUserEmail) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    let toEmail = hrUserEmail ? `${hrUserEmail}, pkmondal@aapnainfotech.com` : 'pkmondal@aapnainfotech.com';
-    
+
+    // Internal duplicate alert. In production also notify the uploading HR user.
+    const { to: alertTo } = resolveRecipients('duplicateAlert');
+    let toEmail = alertTo;
+    if (!config.email.redirectInNonProd && hrUserEmail) {
+      toEmail = toEmail ? `${hrUserEmail}, ${toEmail}` : hrUserEmail;
+    }
+
     const template = await prisma.rpa_email_templates.findFirst({
       where: { name: 'Duplicate Resume Alert (Internal HR)', is_active: true }
     });
@@ -338,13 +420,9 @@ export async function sendDuplicateAlertEmail(candidate, hrUserEmail) {
 export async function sendSameVendorDuplicateAlert({ candidateName, candidateEmail, vendorEmail, vendorName }) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    // Redirect to staging recipients if not in production
-    let toEmail = vendorEmail || '';
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: Same vendor duplicate alert redirected from "${vendorEmail}" to "${toEmail}"`);
-    }
+
+    // Resolve recipients (prod -> vendor; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('vendorDuplicateSame', vendorEmail);
 
     if (!toEmail) {
       logger.warn(`Skipping same vendor alert: No recipient email address available.`);
@@ -390,13 +468,9 @@ export async function sendSameVendorDuplicateAlert({ candidateName, candidateEma
 export async function sendDifferentVendorDuplicateAlert({ candidateName, candidateEmail, vendorEmail, vendorName, existingVendorEmail }) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    // Redirect to staging recipients if not in production
-    let toEmail = vendorEmail || '';
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: Different vendor duplicate alert redirected from "${vendorEmail}" to "${toEmail}"`);
-    }
+
+    // Resolve recipients (prod -> vendor; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('vendorDuplicateDiff', vendorEmail);
 
     if (!toEmail) {
       logger.warn(`Skipping different vendor alert: No recipient email address available.`);
@@ -442,15 +516,10 @@ export async function sendDifferentVendorDuplicateAlert({ candidateName, candida
 export async function sendMrfRequestEmail({ first_name, last_name, email, cc_email, role, jd_doc_link, email_body_content, budget_min, budget_max, reference_id, frontendUrl }) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    let toEmail = email || '';
-    let ccEmail = cc_email || '';
-    
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      ccEmail = ''; // Clear CC in staging
-      logger.info(`Staging Mode: MRF request email target redirected from "${email}" to "${toEmail}"`);
-    }
+
+    // Resolve recipients (prod -> Hiring Manager + cc; non-prod -> internal test inbox, no cc)
+    const { to: toEmail } = resolveRecipients('mrfRequest', email);
+    const ccEmail = config.email.redirectInNonProd ? '' : (cc_email || '');
 
     if (!toEmail) {
       logger.warn(`Skipping MRF request email: No recipient email address available.`);
@@ -543,13 +612,12 @@ body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
 </body>
 </html>`;
 
-    // CC recipients addition: we pass combined comma-separated string to to parameter
-    const recipients = ccEmail ? `${toEmail}, ${ccEmail}` : toEmail;
     const subject = `New MRF Request`;
 
     await sendGraphEmail({
       sender,
-      to: recipients,
+      to: toEmail,
+      cc: ccEmail,
       subject,
       html: finalEmailBody
     });
@@ -581,14 +649,9 @@ body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
 export async function sendMrfApprovalEmail({ mrfRecord, token, frontendUrl }) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    // Target recipients
-    let toEmail = 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com, pkmondal@aapnainfotech.com';
-    
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: MRF approval email target redirected to "${toEmail}"`);
-    }
+
+    // Resolve approval recipients (prod -> approvers; non-prod -> internal test inbox)
+    const { to: toEmail, cc: ccEmail } = resolveRecipients('mrfApproval');
 
     const baseUrl = frontendUrl || config.cors.frontendUrl;
     const approveLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=approve&token=${token}`;
@@ -650,6 +713,7 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
     await sendGraphEmail({
       sender,
       to: toEmail,
+      cc: ccEmail,
       subject,
       html
     });
@@ -676,18 +740,68 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
 }
 
 /**
- * Sends a notification of the MRF approval or rejection outcome to the HR team.
+ * Sends an HR-team notification at MRF submission time.
+ * Mirrors the n8n "Send a message To HR" node: a plain informational email
+ * (no approve/reject buttons) containing the submitted MRF detail table.
  */
-export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, approverName }) {
+export async function sendMrfSubmissionHrEmail({ mrfRecord }) {
   try {
     const sender = config.microsoft.defaultSender;
-    
-    // Target recipients
-    let toEmail = 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com';
-    
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-      logger.info(`Staging Mode: MRF outcome email target redirected to "${toEmail}"`);
+
+    // Resolve HR-team recipients (prod -> HR team; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('mrfSubmitHrNotify');
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <p>Hi Team,</p>
+  <p>This is an automated email. A new MRF has been submitted. You can quickly view the submitted details below:</p>
+  ${mrfRecord.emailbody || ''}
+</body>
+</html>
+    `;
+
+    const subject = `New MRF Request - Approval Request`;
+
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_submit_hr',
+        recipient_email: toEmail,
+        recipient_name: 'HR Team',
+        subject,
+        body_html: html,
+        reference_id: Number(mrfRecord.id),
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`MRF submission HR notification sent and logged for MRF ID: ${mrfRecord.id}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send MRF submission HR notification for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Sends a notification of the MRF approval or rejection outcome to the HR team.
+ */
+export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, approverName, hmEmail }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+
+    // Resolve outcome recipients (prod -> HR + leaders cc + HM; non-prod -> test inbox, no cc)
+    const { to: toEmail, cc: baseCc } = resolveRecipients('mrfOutcome');
+    let ccEmail = baseCc;
+    // In production, also CC the hiring manager who submitted the MRF.
+    if (!config.email.redirectInNonProd && hmEmail) {
+      ccEmail = [baseCc, hmEmail].filter(Boolean).join(', ');
     }
 
     const statusText = approved ? 'Approved' : 'Declined';
@@ -737,6 +851,7 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
     await sendGraphEmail({
       sender,
       to: toEmail,
+      cc: ccEmail,
       subject,
       html
     });

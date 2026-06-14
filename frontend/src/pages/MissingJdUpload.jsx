@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { Card, Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Space, Upload } from 'antd';
 import { SolutionOutlined, CheckCircleOutlined, ContactsOutlined, UploadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
-import screeningService from '../services/screeningService';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -45,7 +44,8 @@ export default function MissingJdUpload() {
 
   const fetchRoles = async () => {
     try {
-      const res = await screeningService.getRoles();
+      // Public endpoint — this form is shown to logged-out candidates.
+      const res = await candidateService.getPublicRoles();
       setRoles(res.data?.data || res.data || []);
     } catch (err) {
       console.warn('Failed to load open roles list:', err);
