@@ -10,6 +10,18 @@ import config from '../config/index.js';
  * @returns {AppError|null}
  */
 function handlePrismaError(err) {
+  // Prisma connection / initialization errors — never leak host/port to the client
+  if (
+    err.name === 'PrismaClientInitializationError' ||
+    err.code === 'P1000' || // authentication failed
+    err.code === 'P1001' || // can't reach database server
+    err.code === 'P1002' || // database server timed out
+    err.code === 'P1008' || // operation timed out
+    err.code === 'P1017'    // server closed the connection
+  ) {
+    return new AppError('Service temporarily unavailable. Please try again later.', 503);
+  }
+
   // Prisma known request errors (P2xxx)
   if (err.code === 'P2002') {
     const fields = err.meta?.target?.join(', ') || 'unknown field(s)';
