@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { authenticate, restrictTo } from '../middleware/auth.js';
+import { authenticate, restrictTo, checkModuleAccess } from '../middleware/auth.js';
 import * as vendorController from '../controllers/vendor.controller.js';
 import config from '../config/index.js';
 
@@ -44,6 +44,9 @@ const upload = multer({
 // Protect all vendor routes
 router.use(authenticate);
 router.use(restrictTo('vendor', 'admin', 'hr'));
+// Gate the whole module behind the `vendor_upload` permission (admins/superadmins bypass).
+// Mirrors the n8n flow which returned 403 for users without the module enabled.
+router.use(checkModuleAccess('vendor_upload'));
 
 // ── Vendor APIs ───────────────────────────────────────────────────────
 

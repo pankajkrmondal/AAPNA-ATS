@@ -15,13 +15,13 @@ export default function StatCard({
   value,
   trend,
   trendLabel = 'vs last month',
-  color = '#7a922e',
+  color = '#005f56',
   loading = false,
   style,
 }) {
   const isPositive = trend > 0;
   const isNegative = trend < 0;
-  const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#4a5232';
+  const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#5f6664';
 
   return (
     <Card

@@ -50,12 +50,13 @@ export default function Login() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: '#374151', fontSize: 13 }}>Username</span>}
+          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Username</span>}
           name="username"
           rules={[{ required: true, message: 'Please enter username' }]}
           style={{ marginBottom: 18 }}
         >
           <Input
+            prefix={<UserOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
             placeholder="Enter username"
             autoComplete="off"
             style={{ borderRadius: 8, height: 42 }}
@@ -63,12 +64,13 @@ export default function Login() {
         </Form.Item>
 
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: '#374151', fontSize: 13 }}>Password</span>}
+          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Password</span>}
           name="password"
           rules={[{ required: true, message: 'Please enter password' }]}
           style={{ marginBottom: 24 }}
         >
           <Input.Password
+            prefix={<LockOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
             placeholder="Enter password"
             autoComplete="new-password"
             style={{ borderRadius: 8, height: 42 }}
@@ -86,8 +88,10 @@ export default function Login() {
               borderRadius: 8,
               fontWeight: 600,
               fontSize: 15,
-              background: '#7a922e',
+              background: 'linear-gradient(135deg, #005f56 0%, #007a6f 100%)',
               border: 'none',
+              boxShadow: '0 4px 12px rgba(0, 95, 86, 0.25)',
+              transition: 'all 0.2s',
             }}
           >
             Sign In

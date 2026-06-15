@@ -1,10 +1,11 @@
 # Dependencies
 node_modules/
 
-# Environment
+# Environment — ignore all real env files, keep *.example templates
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+!.env.*.example
 
 # Logs
 logs/

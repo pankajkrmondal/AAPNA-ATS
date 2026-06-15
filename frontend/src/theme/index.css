@@ -7,40 +7,40 @@
 /* ----- Design Token Custom Properties ----- */
 :root {
   /* Brand Palette */
-  --ink: #f5f5f0;
-  --gold: #7a922e;
+  --ink: #f7f6f3;
+  --gold: #005f56;
   --ink-2: #ffffff;
-  --gold-light: #8fa840;
-  --text: #1a1e10;
-  --text-2: #4a5232;
+  --gold-light: #007a6f;
+  --text: #2b2b2b;
+  --text-2: #5f6664;
   --green: #4a7c59;
   --red: #c0392b;
 
   /* Extended Palette */
-  --gold-bg: #f0f4e4;
-  --gold-subtle: rgba(122, 146, 46, 0.06);
-  --border: #d9dcc8;
-  --border-light: #e8eade;
-  --shadow-sm: 0 1px 3px rgba(26, 30, 16, 0.05);
-  --shadow-md: 0 4px 12px rgba(26, 30, 16, 0.08);
-  --shadow-lg: 0 8px 30px rgba(26, 30, 16, 0.12);
-  --shadow-xl: 0 20px 60px rgba(26, 30, 16, 0.15);
+  --gold-bg: #e0f0ef;
+  --gold-subtle: rgba(0, 95, 86, 0.06);
+  --border: #dde1df;
+  --border-light: #eaebe8;
+  --shadow-sm: 0 1px 3px rgba(0, 95, 86, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 95, 86, 0.08);
+  --shadow-lg: 0 8px 30px rgba(0, 95, 86, 0.12);
+  --shadow-xl: 0 20px 60px rgba(0, 95, 86, 0.15);
 
   /* Typography */
-  --font: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'DM Mono', 'Fira Code', 'Courier New', monospace;
 
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.72);
   --glass-border: rgba(255, 255, 255, 0.35);
-  --glass-shadow: 0 8px 32px rgba(26, 30, 16, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 95, 86, 0.08);
   --glass-blur: blur(16px);
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #7a922e 0%, #8fa840 50%, #4a7c59 100%);
-  --gradient-hero: linear-gradient(135deg, #f5f5f0 0%, #e5ebd3 50%, #f5f5f0 100%);
-  --gradient-card: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(245,245,240,0.7) 100%);
-  --gradient-sidebar: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(245,245,240,0.85) 100%);
+  --gradient-primary: linear-gradient(135deg, #005f56 0%, #007a6f 50%, #208b81 100%);
+  --gradient-hero: linear-gradient(135deg, #f7f6f3 0%, #e0f0ef 50%, #f7f6f3 100%);
+  --gradient-card: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(247,246,243,0.7) 100%);
+  --gradient-sidebar: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,246,243,0.9) 100%);
 
   /* Transitions */
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
@@ -60,32 +60,32 @@
 
 /* ----- Dark Mode ----- */
 [data-theme='dark'] {
-  --ink: #111408;
-  --gold: #8fa840;
-  --ink-2: #1a1e10;
-  --gold-light: #a0bc4d;
-  --text: #f5f5f0;
-  --text-2: #c8ccb4;
+  --ink: #0a0e0c;
+  --gold: #00a294;
+  --ink-2: #121816;
+  --gold-light: #00c2b2;
+  --text: #eaeae6;
+  --text-2: #9ca5a2;
   --green: #5a9c6e;
   --red: #e74c3c;
 
-  --gold-bg: rgba(143, 168, 64, 0.12);
-  --gold-subtle: rgba(143, 168, 64, 0.08);
-  --border: #333d1e;
-  --border-light: #2a3218;
+  --gold-bg: rgba(0, 162, 148, 0.12);
+  --gold-subtle: rgba(0, 162, 148, 0.08);
+  --border: #233330;
+  --border-light: #1b2624;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.35);
   --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.4);
 
-  --glass-bg: rgba(26, 30, 16, 0.75);
-  --glass-border: rgba(51, 61, 30, 0.5);
+  --glass-bg: rgba(18, 24, 22, 0.75);
+  --glass-border: rgba(35, 51, 48, 0.5);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 
-  --gradient-primary: linear-gradient(135deg, #8fa840 0%, #7a922e 50%, #5a9c6e 100%);
-  --gradient-hero: linear-gradient(135deg, #111408 0%, #1a1e10 50%, #111408 100%);
-  --gradient-card: linear-gradient(145deg, rgba(26,30,16,0.95) 0%, rgba(35,40,24,0.85) 100%);
-  --gradient-sidebar: linear-gradient(180deg, rgba(26,30,16,0.95) 0%, rgba(17,20,8,0.9) 100%);
+  --gradient-primary: linear-gradient(135deg, #00a294 0%, #208b81 50%, #005f56 100%);
+  --gradient-hero: linear-gradient(135deg, #0a0e0c 0%, #121816 50%, #0a0e0c 100%);
+  --gradient-card: linear-gradient(145deg, rgba(18,24,22,0.95) 0%, rgba(25,32,28,0.85) 100%);
+  --gradient-sidebar: linear-gradient(180deg, rgba(18,24,22,0.98) 0%, rgba(10,14,12,0.92) 100%);
 }
 
 /* ----- CSS Reset & Base ----- */
@@ -133,12 +133,12 @@ code, pre {
 }
 
 ::selection {
-  background: rgba(122, 146, 46, 0.25);
+  background: rgba(0, 95, 86, 0.25);
   color: var(--text);
 }
 
 [data-theme='dark'] ::selection {
-  background: rgba(143, 168, 64, 0.35);
+  background: rgba(0, 122, 111, 0.35);
 }
 
 /* ----- Custom Scrollbar ----- */
@@ -152,27 +152,27 @@ code, pre {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(122, 146, 46, 0.25);
+  background: rgba(0, 95, 86, 0.25);
   border-radius: 10px;
   transition: background var(--transition-fast);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(122, 146, 46, 0.45);
+  background: rgba(0, 95, 86, 0.45);
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-thumb {
-  background: rgba(143, 168, 64, 0.3);
+  background: rgba(0, 122, 111, 0.3);
 }
 
 [data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(143, 168, 64, 0.5);
+  background: rgba(0, 122, 111, 0.5);
 }
 
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(122, 146, 46, 0.25) transparent;
+  scrollbar-color: rgba(0, 95, 86, 0.25) transparent;
 }
 
 /* ----- Keyframe Animations ----- */
@@ -338,7 +338,7 @@ code, pre {
 
 /* Shimmer Loading */
 .shimmer {
-  background: linear-gradient(90deg, var(--gold-subtle) 25%, rgba(122, 146, 46, 0.12) 50%, var(--gold-subtle) 75%);
+  background: linear-gradient(90deg, var(--gold-subtle) 25%, rgba(0, 95, 86, 0.12) 50%, var(--gold-subtle) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.8s infinite;
   border-radius: var(--border-radius);
@@ -424,9 +424,9 @@ code, pre {
   width: 200%;
   height: 200%;
   background:
-    radial-gradient(circle at 20% 80%, rgba(122, 146, 46, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(0, 95, 86, 0.08) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(74, 124, 89, 0.06) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(143, 168, 64, 0.04) 0%, transparent 50%);
+    radial-gradient(circle at 50% 50%, rgba(0, 122, 111, 0.04) 0%, transparent 50%);
   animation: float 20s ease-in-out infinite;
 }
 
@@ -437,7 +437,7 @@ code, pre {
 
 [data-theme='dark'] .auth-background::before {
   background:
-    radial-gradient(circle at 20% 80%, rgba(143, 168, 64, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(0, 122, 111, 0.06) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(90, 156, 110, 0.04) 0%, transparent 50%);
 }
 
@@ -583,7 +583,7 @@ code, pre {
 }
 
 [data-theme='dark'] .ant-rate .ant-rate-star-zero svg {
-  fill: #1a1e10 !important; /* Dark theme background card fill */
+  fill: #2b2b2b !important; /* Dark theme background card fill */
   stroke: #4a5433 !important;
   stroke-width: 40px !important;
 }
@@ -600,4 +600,145 @@ code, pre {
   fill: #5a9c6e !important; /* Lighter deep green for dark theme contrast */
   stroke: #5a9c6e !important;
 }
+
+/* --- Secondary toggle buttons styling (Approve Instead / Reject Instead) --- */
+.btn-reject-secondary {
+  background-color: #fff1f0 !important;
+  border: 1px solid #ffa39e !important;
+  color: #cf1322 !important;
+  transition: all 0.2s var(--ease-out-quint) !important;
+}
+
+.btn-reject-secondary:hover,
+.btn-reject-secondary:focus {
+  background-color: #ffccc7 !important;
+  border-color: #ff4d4f !important;
+  color: #cf1322 !important;
+}
+
+[data-theme='dark'] .btn-reject-secondary {
+  background-color: rgba(231, 76, 60, 0.15) !important;
+  border: 1px solid rgba(231, 76, 60, 0.35) !important;
+  color: #e74c3c !important;
+}
+
+[data-theme='dark'] .btn-reject-secondary:hover,
+[data-theme='dark'] .btn-reject-secondary:focus {
+  background-color: rgba(231, 76, 60, 0.25) !important;
+  border-color: #e74c3c !important;
+  color: #e74c3c !important;
+}
+
+.btn-approve-secondary {
+  background-color: #e0f0ef !important;
+  border: 1px solid #dde1df !important;
+  color: #005f56 !important;
+  transition: all 0.2s var(--ease-out-quint) !important;
+}
+
+.btn-approve-secondary:hover,
+.btn-approve-secondary:focus {
+  background-color: #d0e6e4 !important;
+  border-color: #007a6f !important;
+  color: #005f56 !important;
+}
+
+[data-theme='dark'] .btn-approve-secondary {
+  background-color: rgba(0, 162, 148, 0.15) !important;
+  border: 1px solid rgba(0, 162, 148, 0.35) !important;
+  color: #00c2b2 !important;
+}
+
+[data-theme='dark'] .btn-approve-secondary:hover,
+[data-theme='dark'] .btn-approve-secondary:focus {
+  background-color: rgba(0, 162, 148, 0.25) !important;
+  border-color: #00c2b2 !important;
+  color: #00c2b2 !important;
+}
+
+/* --- Custom premium horizontal menu (Workable-style capsule tabs) --- */
+.ant-menu-horizontal {
+  border-bottom: none !important;
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.ant-menu-horizontal .ant-menu-item::after,
+.ant-menu-horizontal .ant-menu-submenu::after {
+  display: none !important; /* Remove bottom underline */
+}
+
+.ant-menu-horizontal .ant-menu-item,
+.ant-menu-horizontal .ant-menu-submenu {
+  padding: 0 16px !important;
+  margin: 0 4px !important;
+  border-radius: 99px !important; /* Capsule/pill shape */
+  height: 38px !important;
+  line-height: 38px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 500 !important;
+  font-size: 13.5px !important;
+  border: 1px solid transparent !important;
+  transition: all 0.25s var(--ease-out-quint) !important;
+}
+
+/* Light theme overrides */
+[data-theme='light'] .ant-menu-horizontal .ant-menu-item-selected {
+  background-color: rgba(0, 95, 86, 0.08) !important;
+  color: #005f56 !important;
+  font-weight: 600 !important;
+}
+
+[data-theme='light'] .ant-menu-horizontal .ant-menu-item:hover,
+[data-theme='light'] .ant-menu-horizontal .ant-menu-submenu:hover {
+  background-color: rgba(0, 95, 86, 0.04) !important;
+  color: #007a6f !important;
+}
+
+/* Dark theme overrides */
+[data-theme='dark'] .ant-menu-horizontal .ant-menu-item-selected {
+  background-color: rgba(0, 162, 148, 0.18) !important;
+  color: #00c2b2 !important;
+  font-weight: 600 !important;
+}
+
+[data-theme='dark'] .ant-menu-horizontal .ant-menu-item:hover,
+[data-theme='dark'] .ant-menu-horizontal .ant-menu-submenu:hover {
+  background-color: rgba(0, 162, 148, 0.08) !important;
+  color: #00c2b2 !important;
+}
+
+/* --- Modern Auth Card with grid pattern matching bento cards --- */
+.glass-auth-card {
+  background: var(--colorBgContainer) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(0, 95, 86, 0.22) !important;
+  box-shadow: 0 20px 50px rgba(0, 95, 86, 0.1) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-auth-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(0, 95, 86, 0.15) 1px, transparent 1px);
+  background-size: 14px 14px;
+  opacity: 0.25;
+  pointer-events: none;
+  border-radius: 20px;
+}
+
+[data-theme='dark'] .glass-auth-card {
+  border: 1px solid rgba(0, 162, 148, 0.22) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme='dark'] .glass-auth-card::before {
+  background-image: radial-gradient(rgba(0, 162, 148, 0.15) 1px, transparent 1px);
+}
+
 

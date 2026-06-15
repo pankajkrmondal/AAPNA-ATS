@@ -4,8 +4,14 @@
  */
 import axios from 'axios';
 
+// In dev we rely on the Vite proxy (baseURL '/api'). For staging/production
+// builds, set VITE_API_URL to the backend origin (e.g. https://ats.aapnainfotech.com).
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
+  : '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   timeout: 120000,
   headers: {
     'Content-Type': 'application/json',

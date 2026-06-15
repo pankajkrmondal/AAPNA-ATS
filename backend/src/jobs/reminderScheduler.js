@@ -75,11 +75,15 @@ export async function sendPendingReminders() {
     const intervalDays = parseInt(settings.find(s => s.key === 'reminder_interval_days')?.value || '2', 10);
     const maxCount = parseInt(settings.find(s => s.key === 'reminder_max_count')?.value || '3', 10);
 
-    // 2. Fetch pending logs from DB
+    // 2. Fetch pending logs from DB, joining candidate and MRF to verify existence
     const query = `
-      SELECT el.*, c."cvMissingToken"
+      SELECT el.*, 
+             c."cvMissingToken",
+             c.id AS candidate_exists_id,
+             m.id AS mrf_exists_id
       FROM rpa_email_log el
       LEFT JOIN rpa_cv c ON el.reference_id = c.id AND el.email_type = 'missing_jd'
+      LEFT JOIN rpa_mrf m ON el.reference_id = m.id AND el.email_type != 'missing_jd'
       WHERE el.responded_at IS NULL
         AND el.reminder_count < $1
         AND (
@@ -100,6 +104,25 @@ export async function sendPendingReminders() {
 
     for (const log of pendingLogs) {
       try {
+        // Safe guard against orphaned/deleted candidate or MRF reference records
+        if (log.email_type === 'missing_jd' && !log.candidate_exists_id) {
+          logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - referenced candidate ID ${log.reference_id} does not exist.`);
+          await prisma.rpa_email_log.update({
+            where: { id: log.id },
+            data: { responded_at: new Date() }
+          });
+          continue;
+        }
+
+        if (log.email_type !== 'missing_jd' && !log.mrf_exists_id) {
+          logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - referenced MRF ID ${log.reference_id} does not exist.`);
+          await prisma.rpa_email_log.update({
+            where: { id: log.id },
+            data: { responded_at: new Date() }
+          });
+          continue;
+        }
+
         const reminderNumber = log.reminder_count + 1;
         const subject = `Reminder (${reminderNumber}/${maxCount}): ${log.subject}`;
         let finalBody = '';
@@ -174,11 +197,13 @@ export async function sendPendingReminders() {
           finalBody = reminderBanner + (log.body_html || '');
         }
 
-        // Send email via Outlook Graph API
+        // Send email via Outlook Graph API.
+        // Reminders re-send to the original logged recipient in production; in
+        // non-production all mail is redirected to the internal test inbox.
         let toEmail = log.recipient_email;
-        if (config.env !== 'production') {
-          toEmail = config.microsoft.stagingRecipients;
-          logger.info(`[Reminder Scheduler] Staging Mode: Redirected reminder for log ${log.id} to staging: "${toEmail}"`);
+        if (config.email.redirectInNonProd) {
+          toEmail = config.email.testRecipients;
+          logger.info(`[Reminder Scheduler] Non-prod: Redirected reminder for log ${log.id} to test inbox: "${toEmail}"`);
         }
 
         const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`;

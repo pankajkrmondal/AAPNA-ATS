@@ -26,6 +26,8 @@ import {
   SearchOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 import emailTemplateService from '../services/emailTemplateService';
 
 const { Title, Text, Paragraph } = Typography;
@@ -65,7 +67,7 @@ export default function EmailManagement() {
   const [validationError, setValidationError] = useState('');
   const [activeTab, setActiveTab] = useState('1');
 
-  const textareaRef = useRef(null);
+  const quillRef = useRef(null);
 
   useEffect(() => {
     fetchTemplates();
@@ -120,22 +122,11 @@ export default function EmailManagement() {
 
   // Helper to insert placeholders at cursor position
   const handleInsertPlaceholder = (rawPlaceholderName) => {
-    let textarea = textareaRef.current;
-    
-    // Resolve native element from Ant Design wrapper
-    if (textarea) {
-      if (textarea.resizableTextArea && textarea.resizableTextArea.textArea) {
-        textarea = textarea.resizableTextArea.textArea;
-      } else if (textarea.textArea) {
-        textarea = textarea.textArea;
-      }
-    }
+    const editor = quillRef.current?.getEditor();
+    if (!editor) return;
 
-    if (!textarea) return;
-
-    const start = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? 0;
-    const text = textarea.value || '';
+    const range = editor.getSelection(true);
+    const index = range ? range.index : 0;
 
     // Clean any brackets from placeholder name
     const cleanPlaceholder = rawPlaceholderName.replace(/[{}]/g, '');
@@ -148,17 +139,8 @@ export default function EmailManagement() {
       ? `{${cleanPlaceholder}}`
       : `{{${cleanPlaceholder}}}`;
 
-    const before = text.substring(0, start);
-    const after = text.substring(end, text.length);
-
-    const newBody = before + placeholderText + after;
-    setBodyHtml(newBody);
-
-    // Reset cursor to be immediately after inserted placeholder without scrolling the page
-    setTimeout(() => {
-      textarea.focus({ preventScroll: true });
-      textarea.selectionStart = textarea.selectionEnd = start + placeholderText.length;
-    }, 0);
+    editor.insertText(index, placeholderText);
+    editor.setSelection(index + placeholderText.length);
   };
 
   // Pre-save placeholder validation
@@ -523,25 +505,47 @@ export default function EmailManagement() {
                       <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
                         Email HTML Body
                       </Text>
-                      <Input.TextArea
-                        ref={textareaRef}
-                        value={bodyHtml}
-                        onChange={e => {
-                          setBodyHtml(e.target.value);
-                          setValidationError('');
-                        }}
-                        placeholder="Paste or write HTML body contents here..."
-                        autoSize={{ minRows: 12, maxRows: 20 }}
-                        style={{
-                          fontFamily: 'var(--mono)',
-                          fontSize: 12,
-                          background: 'var(--ink-2)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 8,
-                          padding: '12px 16px',
-                        }}
-                      />
+                      <div className="email-quill-editor" style={{ background: '#ffffff' }}>
+                        <ReactQuill
+                          ref={quillRef}
+                          value={bodyHtml}
+                          onChange={(content) => {
+                            setBodyHtml(content);
+                            setValidationError('');
+                          }}
+                          placeholder="Write email body contents here..."
+                          theme="snow"
+                          modules={{
+                            toolbar: [
+                              [{ 'header': [1, 2, 3, false] }],
+                              ['bold', 'italic', 'underline', 'strike'],
+                              [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                              ['link'],
+                              ['clean']
+                            ],
+                          }}
+                          style={{
+                            borderRadius: 8,
+                            minHeight: '200px'
+                          }}
+                        />
+                      </div>
+                      <style>{`
+                        .email-quill-editor .quill {
+                          display: flex;
+                          flex-direction: column;
+                        }
+                        .email-quill-editor .ql-container {
+                          min-height: 250px;
+                          border-bottom-left-radius: 8px;
+                          border-bottom-right-radius: 8px;
+                          font-size: 14px;
+                        }
+                        .email-quill-editor .ql-toolbar {
+                          border-top-left-radius: 8px;
+                          border-top-right-radius: 8px;
+                        }
+                      `}</style>
                     </div>
                   </div>
                 </TabPane>

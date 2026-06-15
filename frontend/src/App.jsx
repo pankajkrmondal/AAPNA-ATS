@@ -32,6 +32,8 @@ import Analytics from './pages/Analytics';
 import EmailManagement from './pages/EmailManagement';
 import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
+import MrfSubmit from './pages/MrfSubmit';
+import MrfApprovalAction from './pages/MrfApprovalAction';
 
 /* ---- Route Guards ---- */
 
@@ -127,6 +129,44 @@ function AdminRoute({ children }) {
 }
 
 /**
+ * ModuleRoute — Gates a route behind a module permission key.
+ * Mirrors the backend `checkModuleAccess` middleware: admins/superadmins
+ * bypass; everyone else needs the module key in their permissions array.
+ * Redirects to /dashboard if the module is not enabled for the user.
+ */
+function ModuleRoute({ moduleKey, children }) {
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--ink)',
+      }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const role = (user?.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'superadmin';
+  const hasModule = (user?.permissions || []).includes(moduleKey);
+
+  if (!isAdmin && !hasModule) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+}
+
+/**
  * Placeholder page for routes that haven't been built yet.
  */
 function ComingSoon({ title }) {
@@ -173,6 +213,10 @@ function AppShell() {
             {/* Public candidate missing data route */}
             <Route path="/missing-jd-upload" element={<MissingJdUpload />} />
 
+            {/* Public MRF submission & approval routes */}
+            <Route path="/mrf-submit" element={<MrfSubmit />} />
+            <Route path="/mrf/:id/approve" element={<MrfApprovalAction />} />
+
             {/* Protected (app) routes */}
             <Route
               element={
@@ -194,7 +238,14 @@ function AppShell() {
               <Route path="/candidates/:id" element={<CandidateDetail />} />
               <Route path="/hr-upload" element={<HRUpload />} />
               <Route path="/mrf" element={<MRF />} />
-              <Route path="/vendor" element={<VendorPortal />} />
+              <Route
+                path="/vendor"
+                element={
+                  <ModuleRoute moduleKey="vendor_upload">
+                    <VendorPortal />
+                  </ModuleRoute>
+                }
+              />
               <Route path="/filtering" element={<CandidateScreening />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/email" element={<EmailManagement />} />

@@ -98,6 +98,9 @@ export function mapCandidate(c) {
     vendorEmail: c.VendorEmail || '',
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
+    resumeTextQuality: c.resume_text_quality || 'unknown',
+    resumeTechnicalTerms: c.resume_technical_terms || [],
+    resumeTermUpdatedAt: c.resume_term_updated_at || null,
 
     // Mapped fields for high fidelity modals
     lastCompanyExperience: c.LastCompanyExperienceYears || '',
@@ -160,6 +163,9 @@ export function unmapCandidate(data) {
   if (data.gender !== undefined) c.Gender = data.gender;
   if (data.reasonForJobChange !== undefined) c.ReasonForJobChange = data.reasonForJobChange;
   if (data.cvFileUrl !== undefined) c.cvFileUrl = data.cvFileUrl;
+  if (data.resumeTextQuality !== undefined) c.resume_text_quality = data.resumeTextQuality;
+  if (data.resumeTechnicalTerms !== undefined) c.resume_technical_terms = data.resumeTechnicalTerms;
+  if (data.resumeTermUpdatedAt !== undefined) c.resume_term_updated_at = data.resumeTermUpdatedAt;
 
   // Expose CurrentCompany serialization
   if (data.currentCompany !== undefined) {
@@ -260,6 +266,35 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
     data: data.map(mapCandidate),
     total,
   };
+}
+
+/**
+ * Compute lifetime upload stats for a single vendor.
+ * Mirrors the n8n "stats" CTE (total / with position / this month) scoped to VendorEmail.
+ * @param {string} vendorEmail - The vendor's email (exact, case-insensitive match)
+ * @returns {Promise<{ total: number, withPosition: number, thisMonth: number }>}
+ */
+export async function vendorStats(vendorEmail) {
+  if (!vendorEmail) {
+    return { total: 0, withPosition: 0, thisMonth: 0 };
+  }
+
+  const base = { VendorEmail: { equals: vendorEmail, mode: 'insensitive' } };
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [total, withPosition, thisMonth] = await Promise.all([
+    prisma.rpa_cv.count({ where: base }),
+    prisma.rpa_cv.count({
+      where: { ...base, PositionApplied: { not: null, notIn: [''] } },
+    }),
+    prisma.rpa_cv.count({
+      where: { ...base, createdAt: { gte: monthStart } },
+    }),
+  ]);
+
+  return { total, withPosition, thisMonth };
 }
 
 /**
@@ -368,6 +403,18 @@ function buildWhereClause(filters) {
     ];
   }
 
+  // Discrete field filters (mirror the n8n vendor "My Uploads" filterName/filterEmail/filterPosition).
+  // Combined with AND so all supplied filters must match.
+  if (filters.filterName) {
+    where.Name = { contains: filters.filterName, mode: 'insensitive' };
+  }
+  if (filters.filterEmail) {
+    where.EmailID = { contains: filters.filterEmail, mode: 'insensitive' };
+  }
+  if (filters.filterPosition) {
+    where.PositionApplied = { contains: filters.filterPosition, mode: 'insensitive' };
+  }
+
   if (filters.status) {
     where.statusActive = filters.status;
   }
@@ -376,8 +423,10 @@ function buildWhereClause(filters) {
     where.FinalStatus = filters.finalStatus;
   }
 
+  // Vendor isolation: exact (case-insensitive) match so a vendor only ever
+  // sees their own uploads — matches the n8n `VendorEmail = <session email>` equality.
   if (filters.vendorEmail) {
-    where.VendorEmail = { contains: filters.vendorEmail, mode: 'insensitive' };
+    where.VendorEmail = { equals: filters.vendorEmail, mode: 'insensitive' };
   }
 
   if (filters.position) {

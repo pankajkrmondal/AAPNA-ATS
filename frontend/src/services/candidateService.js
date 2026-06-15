@@ -47,6 +47,14 @@ const candidateService = {
   },
 
   /**
+   * Get approved MRF roles for the public missing-JD form (no auth required).
+   * @returns {Promise}
+   */
+  getPublicRoles() {
+    return api.get('/candidates/public/roles');
+  },
+
+  /**
    * Get candidate's missing data fields using base64 token.
    * @param {string} token
    * @returns {Promise}

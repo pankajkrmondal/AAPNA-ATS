@@ -21,7 +21,8 @@ import {
   sendEmailIdNullAlert,
   sendDuplicateAlertEmail,
   sendSameVendorDuplicateAlert,
-  sendDifferentVendorDuplicateAlert
+  sendDifferentVendorDuplicateAlert,
+  sendResumeErrorAlert
 } from './emailNotification.service.js';
 
 // Shared fields between rpa_cv_tmp and rpa_cv
@@ -185,11 +186,10 @@ function parseResumeDetails(filePath, originalName, extractedText = '') {
 /**
  * Call Google Gemini API to parse the resume text.
  */
-export async function parseResumeWithGemini(text, originalName, vendorEmail, vendorName) {
-  if (!config.gemini.apiKey) {
-    throw new Error('Gemini API key is not configured.');
-  }
-
+/**
+ * Call OpenRouter / Google Gemini API to parse the resume text.
+ */
+export async function parseResumeWithOpenRouter(text, originalName, vendorEmail, vendorName) {
   const prompt = `You are a strict JSON resume parser.
 Rules (IMPORTANT):
 1. Return ONLY valid JSON matching the schema below.
@@ -253,6 +253,7 @@ Schema:
 - GraduationSpecialization
 - PostGraduationDegree
 - PostGraduationSpecialization
+- ResumeTechnicalTerms (array of strings, max 15): Return named technical tools, platforms, languages, frameworks, databases, software products, and methodologies that a recruiter would search for. STRICT INCLUSION – ONLY extract items that are explicitly written. Do not infer. No parent projects. No counts. Example: ["React", "PostgreSQL", "AWS", "Docker", "Google Analytics"].
 
 Resume text content:
 ---
@@ -268,7 +269,7 @@ ${text}
     const startIdx = rawText.indexOf('{');
     const endIdx = rawText.lastIndexOf('}');
     if (startIdx === -1 || endIdx === -1) {
-      throw new Error('No JSON found in Gemini output');
+      throw new Error('No JSON found in LLM output');
     }
     
     const jsonStr = rawText.slice(startIdx, endIdx + 1);
@@ -948,6 +949,7 @@ export async function startBackgroundParsing(executionId, files, user, source = 
     let successCount = 0;
     let duplicateCount = 0;
     let failedCount = 0;
+    const batchErrors = []; // accumulates per-file errors across the whole batch for the error alert
 
     for (const file of files) {
       const rowErrors = [];
@@ -1015,8 +1017,8 @@ export async function startBackgroundParsing(executionId, files, user, source = 
         for (const item of candidateItems) {
           let parsed = null;
           try {
-            parsed = await parseResumeWithGemini(item.text, item.filename, email, fullName);
-            logger.info(`Successfully parsed candidate using Gemini: ${item.filename}`);
+            parsed = await parseResumeWithOpenRouter(item.text, item.filename, email, fullName);
+            logger.info(`Successfully parsed candidate using OpenRouter: ${item.filename}`);
           } catch (err) {
             logger.error(`Gemini parsing failed for ${item.filename}: ${err.message}`);
             rowErrors.push(`${item.filename}: ${err.message}`);
@@ -1062,6 +1064,26 @@ export async function startBackgroundParsing(executionId, files, user, source = 
             companies: formattedHistory,
             total_companies: formattedHistory.length
           };
+
+          const fullText = (item.text || '').trim();
+          const resume_text_quality = fullText.length === 0 ? 'failed' : (fullText.length < 200 ? 'lossy' : 'extracted');
+          const rawTerms = parsed.ResumeTechnicalTerms;
+          let resume_technical_terms = [];
+          if (Array.isArray(rawTerms) && rawTerms.length > 0 && fullText.length > 0) {
+            const fullTextLower = fullText.toLowerCase();
+            resume_technical_terms = rawTerms
+              .map(term => {
+                const safeTerm = String(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`\\b${safeTerm}\\b`, 'gi');
+                const matches = fullTextLower.match(regex);
+                return {
+                  term: String(term),
+                  count: matches ? matches.length : 1
+                };
+              })
+              .sort((a, b) => b.count - a.count);
+          }
+          const resume_term_updated_at = resume_technical_terms.length > 0 ? new Date() : null;
 
           const missingFields = getMissingFields(parsed);
           if (isExcel) {
@@ -1179,6 +1201,10 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                 updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
                 updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
                 updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
+                updateData.resume_full_text = fullText;
+                updateData.resume_text_quality = resume_text_quality;
+                updateData.resume_technical_terms = (resume_technical_terms.length > 0) ? resume_technical_terms : existingCandidate.resume_technical_terms;
+                updateData.resume_term_updated_at = (resume_technical_terms.length > 0) ? resume_term_updated_at : existingCandidate.resume_term_updated_at;
 
                 const updatedCv = await prisma.rpa_cv.update({
                   where: { id: existingCandidate.id },
@@ -1280,6 +1306,10 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                 TotalExperienceYearsNumeric: parseExperienceNumeric(parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : "2"),
                 ExpectedCTCNumeric: parseExpectedCTCNumeric(parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null),
                 NoticePeriodDays: parseNoticePeriodDays(parsed.NoticePeriod ? String(parsed.NoticePeriod) : null),
+                resume_full_text: fullText,
+                resume_text_quality: resume_text_quality,
+                resume_technical_terms: resume_technical_terms,
+                resume_term_updated_at: resume_term_updated_at,
               }
             });
 
@@ -1301,6 +1331,11 @@ export async function startBackgroundParsing(executionId, files, user, source = 
         finalStatus = 'failed';
       } else if (rowDuplicates.length > 0) {
         finalStatus = 'duplicate';
+      }
+
+      // Accumulate failures for the batch-level error alert
+      if (rowErrors.length > 0) {
+        batchErrors.push(`${file.originalname}: ${rowErrors.join(' | ')}`);
       }
 
       try {
@@ -1359,6 +1394,19 @@ export async function startBackgroundParsing(executionId, files, user, source = 
     }
 
     logger.info(`Completed background resume parsing for batch: ${executionId}. Success: ${successCount}, Duplicates: ${duplicateCount}, Failed: ${failedCount}`);
+
+    // Send a single error-alert email if any files failed (mirrors n8n "Error Alert — Resume Processing")
+    if (failedCount > 0) {
+      sendResumeErrorAlert({
+        executionId,
+        failedCount,
+        totalCount: files.length,
+        errors: batchErrors,
+        source,
+      }).catch(mailErr => {
+        logger.error(`Failed to send resume error alert for batch ${executionId}: ${mailErr.message}`);
+      });
+    }
   });
 }
 

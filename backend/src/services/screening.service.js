@@ -2,9 +2,10 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
-import { generateEmbedding, saveCandidateVector } from './vectorStore.service.js';
+import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
 import { getAccessToken } from './onedrive.service.js';
 import { compileTemplate } from './emailNotification.service.js';
+import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 
@@ -12,34 +13,24 @@ import { generateContentWithFallback } from '../utils/geminiHelper.js';
  * GET /api/screening/roles
  */
 export async function getApprovedRoles() {
-  const mrfList = await prisma.rpa_mrf.findMany({
-    where: {
-      approved_by_abhijit: { in: ['approved', 'true'] },
-      approval_status: 'completed',
-    },
-    orderBy: {
-      created_at: 'desc',
-    },
-  });
+  const mrfList = await prisma.$queryRawUnsafe(
+    `SELECT DISTINCT ON (position_hiring_for)
+        id,
+        position_hiring_for AS role,
+        number_of_positions,
+        created_at
+    FROM rpa_mrf
+    WHERE approved_by_abhijit = 'approved'
+      AND approval_status = 'completed'
+    ORDER BY position_hiring_for, created_at DESC;`
+  );
 
-  // Deduplicate by position_hiring_for, keeping latest
-  const seen = new Set();
-  const uniqueRoles = [];
-
-  for (const mrf of mrfList) {
-    const roleName = (mrf.position_hiring_for || '').trim();
-    if (!roleName || seen.has(roleName.toLowerCase())) continue;
-    seen.add(roleName.toLowerCase());
-
-    uniqueRoles.push({
-      id: Number(mrf.id),
-      role: roleName,
-      number_of_positions: mrf.number_of_positions || 0,
-      created_at: mrf.created_at,
-    });
-  }
-
-  return uniqueRoles;
+  return mrfList.map(mrf => ({
+    id: Number(mrf.id),
+    role: mrf.role,
+    number_of_positions: Number(mrf.number_of_positions || 0),
+    created_at: mrf.created_at
+  }));
 }
 
 /**
@@ -415,7 +406,7 @@ function mapStars(score) {
  * Single-Batch Gemini Profile Insights & Skill Matching Evaluator
  */
 async function generateProfileInsights(roleContext, candidates) {
-  if (!genAI || candidates.length === 0) {
+  if ((!config.gemini.apiKey && !config.openrouter?.apiKey) || candidates.length === 0) {
     return candidates.map((c) => ({
       id: c.id,
       skillMatchScore: 4,
@@ -550,89 +541,104 @@ export async function searchRoleCandidates(mrfId) {
     logger.warn('Failed to read from Redis cache:', { error: err.message });
   }
 
-  // 1) Fetch MRF Job details
-  const mrf = await prisma.rpa_mrf.findUnique({
-    where: { id: BigInt(mrfId) },
-  });
-  if (!mrf) {
+  // 1) Fetch MRF Job details via unified SQL query with fallbacks
+  const mrfRows = await prisma.$queryRawUnsafe(
+    `SELECT
+        m.id,
+        m.position_hiring_for AS role,
+        CASE
+            WHEN UPPER(TRIM(COALESCE(m.mandatory_skills,''))) = 'SAME AS JD'
+                 OR TRIM(COALESCE(m.mandatory_skills,'')) = ''
+            THEN m.parsed_jd_json->>'mandatory_skills'
+            ELSE m.mandatory_skills
+        END AS mandatory_skills,
+        CASE
+            WHEN UPPER(TRIM(COALESCE(m.good_to_have_skills,''))) = 'SAME AS JD'
+                 OR TRIM(COALESCE(m.good_to_have_skills,'')) = ''
+            THEN m.parsed_jd_json->>'good_to_have_skills'
+            ELSE m.good_to_have_skills
+        END AS good_to_have_skills,
+        CASE
+            WHEN UPPER(TRIM(COALESCE(m.roles_responsibilities,''))) = 'SAME AS JD'
+                 OR TRIM(COALESCE(m.roles_responsibilities,'')) = ''
+            THEN m.parsed_jd_json->>'roles_and_responsibilities'
+            ELSE m.roles_responsibilities
+        END AS roles_responsibilities,
+        m.number_of_positions,
+        m.requirement_for_team,
+        m.total_years_of_experience,
+        m.relevant_years_of_experience,
+        CASE
+            WHEN LOWER(m.desired_qualification) LIKE '%be/btech%'
+              OR LOWER(m.desired_qualification) LIKE '%mca%'
+              OR LOWER(m.desired_qualification) LIKE '%any%'
+            THEN 'TECH_GRADUATE'
+            WHEN LOWER(m.desired_qualification) LIKE '%pg%'
+            THEN 'POST_GRADUATE'
+            WHEN LOWER(m.desired_qualification) LIKE '%graduate%'
+            THEN 'GRADUATE'
+            WHEN LOWER(m.desired_qualification) LIKE '%other%'
+            THEN 'OTHER'
+            ELSE 'ANY'
+        END AS required_qualification,
+        CASE
+            WHEN LOWER(m.desired_qualification) LIKE '%pg%'
+            THEN m.pg_information
+            WHEN LOWER(m.desired_qualification) LIKE '%graduate%'
+            THEN m.graduate_other_information
+            WHEN LOWER(m.desired_qualification) LIKE '%other%'
+            THEN m.other_qualification_more_info
+            ELSE NULL
+        END AS required_qualification_stream,
+        j.budget_min,
+        j.budget_max
+    FROM rpa_mrf m
+    LEFT JOIN rpa_mrf_jd_send j
+        ON LOWER(TRIM(j.role)) = LOWER(TRIM(m.position_hiring_for))
+        AND j.email = m.submitter_email
+    WHERE m.id = $1
+    LIMIT 1`,
+    BigInt(mrfId)
+  );
+
+  if (mrfRows.length === 0) {
     throw new AppError('MRF request not found.', 404);
   }
+  const mrf = mrfRows[0];
+  const roleName = (mrf.role || '').trim();
+  const mandatorySkills = mrf.mandatory_skills || '';
+  const goodToHaveSkills = mrf.good_to_have_skills || '';
+  const rolesResponsibilities = mrf.roles_responsibilities || '';
 
-  const roleName = (mrf.position_hiring_for || '').trim();
+  let budgetMin = Number(mrf.budget_min || 0);
+  let budgetMax = Number(mrf.budget_max || 0);
+  if (budgetMin > 1000) budgetMin = budgetMin / 100000;
+  if (budgetMax > 1000) budgetMax = budgetMax / 100000;
 
-  // Robust skills fallback matching n8n SQL CASE logic:
-  // Falls back to parsed_jd_json when value is null, empty, or 'SAME AS JD'
-  const rawMandatory = (mrf.mandatory_skills || '').trim();
-  const mandatorySkills =
-    rawMandatory && rawMandatory.toUpperCase() !== 'SAME AS JD'
-      ? rawMandatory
-      : getJdJsonField(mrf.parsed_jd_json, 'mandatory_skills', 'mandatorySkills', 'Mandatory Skills');
-
-  const rawGoodToHave = (mrf.good_to_have_skills || '').trim();
-  const goodToHaveSkills =
-    rawGoodToHave && rawGoodToHave.toUpperCase() !== 'SAME AS JD'
-      ? rawGoodToHave
-      : getJdJsonField(mrf.parsed_jd_json, 'good_to_have_skills', 'goodToHaveSkills', 'Good to Have Skills');
-
-  const rawResponsibilities = (mrf.roles_responsibilities || '').trim();
-  const rolesResponsibilities =
-    rawResponsibilities && rawResponsibilities.toUpperCase() !== 'SAME AS JD'
-      ? rawResponsibilities
-      : getJdJsonField(mrf.parsed_jd_json, 'roles_and_responsibilities', 'roles_responsibilities', 'rolesAndResponsibilities', 'Roles and Responsibilities');
-
-  // Get budget from mrf_jd_send
-  const jdSend = await prisma.rpa_mrf_jd_send.findFirst({
-    where: {
-      role: { equals: roleName.trim(), mode: 'insensitive' },
-      email: { equals: (mrf.submitter_email || '').trim(), mode: 'insensitive' },
-    },
-  });
-
-  const budgetMin = jdSend ? Number(jdSend.budget_min || 0) : 0;
-  const budgetMax = jdSend ? Number(jdSend.budget_max || 0) : 0;
-
-  let requiredQual = 'ANY';
-  const qualText = (mrf.desired_qualification || '').toLowerCase();
-  if (qualText.includes('be/btech') || qualText.includes('mca') || qualText.includes('any')) {
-    requiredQual = 'TECH_GRADUATE';
-  } else if (qualText.includes('pg')) {
-    requiredQual = 'POST_GRADUATE';
-  } else if (qualText.includes('graduate')) {
-    requiredQual = 'GRADUATE';
-  } else if (qualText.includes('other')) {
-    requiredQual = 'OTHER';
-  }
-
-  const requiredStream =
-    requiredQual === 'POST_GRADUATE'
-      ? mrf.pg_information
-      : requiredQual === 'GRADUATE'
-      ? mrf.graduate_other_information
-      : requiredQual === 'OTHER'
-      ? mrf.other_qualification_more_info
-      : null;
+  const roleTotalYearsVal = Number(mrf.total_years_of_experience || 0);
+  const roleRelevantYearsVal = Number(mrf.relevant_years_of_experience || 0);
 
   const roleContext = {
     position: roleName,
     role_title: roleName,
     requirement_for_team: mrf.requirement_for_team || '',
     role_team: mrf.requirement_for_team || '',
-    number_of_positions: mrf.number_of_positions || 0,
-    role_openings: mrf.number_of_positions || 0,
+    number_of_positions: Number(mrf.number_of_positions || 0),
+    role_openings: Number(mrf.number_of_positions || 0),
     mandatory_skills: mandatorySkills,
     role_mandatory_skills: mandatorySkills,
     good_to_have_skills: goodToHaveSkills,
     role_good_to_have_skills: goodToHaveSkills,
     roles_and_responsibilities: rolesResponsibilities,
     role_responsibilities: rolesResponsibilities,
-    total_experience: Number(mrf.total_years_of_experience || 0),
-    role_total_years_of_experience: Number(mrf.total_years_of_experience || 0),
-    relevant_experience: Number(mrf.relevant_years_of_experience || 0),
-    role_relevant_years_of_experience: Number(mrf.relevant_years_of_experience || 0),
-    required_qualification: requiredQual,
-    role_required_qualification: requiredQual,
-    required_stream: requiredStream,
-    role_required_qualification_stream: requiredStream,
+    total_experience: roleTotalYearsVal,
+    role_total_years_of_experience: roleTotalYearsVal,
+    relevant_experience: roleRelevantYearsVal,
+    role_relevant_years_of_experience: roleRelevantYearsVal,
+    required_qualification: mrf.required_qualification || 'ANY',
+    role_required_qualification: mrf.required_qualification || 'ANY',
+    required_stream: mrf.required_qualification_stream || null,
+    role_required_qualification_stream: mrf.required_qualification_stream || null,
     budget_min: budgetMin,
     role_budget_min: budgetMin,
     budget_max: budgetMax,
@@ -646,12 +652,8 @@ export async function searchRoleCandidates(mrfId) {
   const embedding = await generateEmbedding(searchQuery);
   const vectorStr = `[${embedding.join(',')}]`;
 
-  // 2) Semantic PGVector Search with SQL Pre-Filtering (Experience & Budget Max to avoid candidate starvation)
-  const roleTotalYearsVal = Number(mrf.total_years_of_experience || 0);
-  const roleBudgetMaxLPA = budgetMax > 1000 ? budgetMax / 100000 : budgetMax; // convert to LPA if needed
-
   // Query vector DB for top 50 (joined with rpa_cv to apply hard pre-filtering matching n8n logic)
-  const hardFiltered = await prisma.$queryRawUnsafe(
+  const dbCandidates = await prisma.$queryRawUnsafe(
     `SELECT 
         c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification", 
         c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA", 
@@ -665,7 +667,7 @@ export async function searchRoleCandidates(mrfId) {
         c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
         c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
         c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-        c."cvFileUrl", c.resume_technical_terms, c.ai_profile_insights, v.embedding <=> $1::vector as distance
+        c."cvFileUrl", c.resume_technical_terms, c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance
      FROM public.rpa_cv_vectors v
      JOIN public.rpa_cv c ON c.id = v.candidate_id
      WHERE 
@@ -683,8 +685,11 @@ export async function searchRoleCandidates(mrfId) {
      LIMIT 50`,
     vectorStr,
     roleTotalYearsVal,
-    roleBudgetMaxLPA
+    budgetMax
   );
+
+  // Rerank candidates using Cohere Reranker
+  const hardFiltered = await rerankCandidates(searchQuery, dbCandidates);
 
   if (hardFiltered.length === 0) {
     const totalCandidates = await prisma.rpa_cv.count();
@@ -716,11 +721,11 @@ export async function searchRoleCandidates(mrfId) {
     const p4 = scoreEducation(
       eduScores,
       { graduationdegree: c.graduationdegree, postgraduationdegree: c.postgraduationdegree },
-      requiredQual
+      mrf.required_qualification || 'ANY'
     );
     const p5 = scoreCommunication(cComm);
     const p6 = scoreJDMatch(c.Top5KeySkills, mandatorySkills);
-    const p7 = scoreCTCAlignment(cCTC, budgetMin > 1000 ? budgetMin / 100000 : budgetMin, roleBudgetMaxLPA);
+    const p7 = scoreCTCAlignment(cCTC, budgetMin, budgetMax);
     const p8 = scoreAvailability(cNotice);
 
     const finalScore = parseFloat(((p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8).toFixed(2));
@@ -963,7 +968,7 @@ export async function searchKeywordCandidates(filters) {
           c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
           c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
           c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-          c."cvFileUrl", c.ai_profile_insights, v.embedding <=> $1::vector as distance
+          c."cvFileUrl", c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance
        FROM public.rpa_cv_vectors v
        JOIN public.rpa_cv c ON c.id = v.candidate_id
        WHERE 
@@ -1005,6 +1010,9 @@ export async function searchKeywordCandidates(filters) {
       fCtcMin || 0,
       safeKeyword
     );
+
+    // Rerank candidates using Cohere Reranker
+    candidates = await rerankCandidates(fKeyword, candidates);
   } else {
     // Standard database query filters (no keyword) - Optimized database-side filter to prevent Out-Of-Memory/slow queries with 60,000+ candidates
     const where = {};
@@ -1371,6 +1379,7 @@ export async function searchKeywordCandidates(filters) {
       if (c.relevanceScore.avgScore < 5) return false;
       if (fKeyword) {
         const skillPts = c.relevanceScore.breakdown.skillMatch?.pts ?? 0;
+        if (skillPts === 0 && !c.ai_profile_insights?.skillMatchScore) return true; // null/unknown, pass through
         return skillPts >= 3;
       }
       return true;
@@ -1513,10 +1522,8 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
       },
     });
 
-    let toEmail = c.EmailID;
-    if (config.env !== 'production') {
-      toEmail = config.microsoft.stagingRecipients;
-    }
+    // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
+    const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
 
     if (toEmail) {
       // Replace placeholders
@@ -1538,6 +1545,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
             emailAddress: { address: em },
           }));
 
+        const ccRecipients = (ccEmail || '')
+          .split(',')
+          .map((em) => em.trim())
+          .filter((em) => em.length > 0)
+          .map((em) => ({
+            emailAddress: { address: em },
+          }));
+
         const mailPayload = {
           message: {
             subject,
@@ -1546,6 +1561,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
               content: bodyHtml,
             },
             toRecipients: recipients,
+            ...(ccRecipients.length > 0 ? { ccRecipients } : {}),
           },
           saveToSentItems: 'true',
         };
@@ -1783,12 +1799,14 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
 export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user) {
   const hrEmail = user.email || config.microsoft.defaultSender;
 
-  // 1) Fetch settings Client ID
-  const settingClientId = await prisma.rpa_settings.findUnique({
+  // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
+  //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
+  const settingClientIdRow = await prisma.rpa_settings.findUnique({
     where: { key: 'ZEKO_CLIENT_ID' },
   });
-  if (!settingClientId) {
-    throw new AppError('ZEKO_CLIENT_ID not found in settings.', 500);
+  const zekoClientId = settingClientIdRow?.value || config.zeko.clientId;
+  if (!zekoClientId) {
+    throw new AppError('ZEKO_CLIENT_ID not found in settings or environment.', 500);
   }
 
   // 2) Fetch active Zeko token
@@ -1836,7 +1854,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   const endIso = roundedEnd.toISOString();
 
   // 4) Call Zeko Schedule API
-  const zekoUrl = `https://interview-api.zeko.ai/api/v1/interview/${interviewId}/schedule`;
+  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${interviewId}/schedule`;
   const zekoPayload = {
     candidates: [
       {
@@ -1847,7 +1865,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
         metaData: {
           Id: shortlistId,
           name: job.title || '',
-          clientId: settingClientId.value,
+          clientId: zekoClientId,
         },
       },
     ],
@@ -1893,7 +1911,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     throw new AppError('Zeko Interview Scheduled Invitation template not found in database.', 500);
   }
 
-  const interviewLink = `https://interview.zeko.ai/interview/${job.slug}`;
+  const interviewLink = `${config.zeko.interviewLinkBase}/${job.slug}`;
   const startStr =
     roundedStart.toLocaleString('en-IN', {
       day: '2-digit',
@@ -1923,11 +1941,8 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     interview_link: interviewLink
   });
 
-  // Send email via Outlook
-  let toEmail = shortlist.candidate_email;
-  if (config.env !== 'production') {
-    toEmail = config.microsoft.stagingRecipients;
-  }
+  // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+  const { to: toEmail } = resolveRecipients('interviewScheduled', shortlist.candidate_email);
 
   if (toEmail) {
     try {
@@ -2001,7 +2016,7 @@ export async function cancelInterview(pipelineId, reason, user) {
   const jobTitle = job ? job.title : 'Position';
 
   // 3) Call Zeko Cancel API
-  const zekoUrl = `https://interview-api.zeko.ai/api/v1/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
+  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
   const zekoPayload = {
     candidateEmails: [pipeline.candidate_email],
   };
@@ -2048,11 +2063,8 @@ export async function cancelInterview(pipelineId, reason, user) {
     cancel_reason: reason || 'Not specified'
   });
 
-  // Send email via Outlook
-  let toEmail = pipeline.candidate_email;
-  if (config.env !== 'production') {
-    toEmail = config.microsoft.stagingRecipients;
-  }
+  // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
+  const { to: toEmail } = resolveRecipients('interviewCancelled', pipeline.candidate_email);
 
   if (toEmail) {
     try {

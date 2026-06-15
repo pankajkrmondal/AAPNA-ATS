@@ -5,7 +5,8 @@ import prisma from '../config/database.js';
 import AppError from '../utils/AppError.js';
 import { saveCandidateVector } from '../services/vectorStore.service.js';
 import logger from '../config/logger.js';
-import { extractTextFromFile, parseResumeWithGemini } from '../services/hrUpload.service.js';
+import { extractTextFromFile, parseResumeWithOpenRouter } from '../services/hrUpload.service.js';
+import { getApprovedRoles } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import path from 'path';
@@ -89,6 +90,20 @@ export const getCandidateEmails = catchAsync(async (req, res) => {
   }));
 
   return success(res, serializedEmails, 'Candidate email communications retrieved');
+});
+
+/**
+ * @desc    Get approved MRF roles for the public missing-JD form dropdown
+ * @route   GET /api/candidates/public/roles
+ * @access  Public
+ *
+ * The missing-JD form is served to logged-out candidates, so it cannot use the
+ * authenticated /api/screening/roles endpoint. This exposes the same approved
+ * roles publicly (read-only) for the "Position Applied" dropdown.
+ */
+export const getPublicRoles = catchAsync(async (req, res) => {
+  const roles = await getApprovedRoles();
+  return success(res, roles, 'Approved roles retrieved successfully');
 });
 
 /**
@@ -266,17 +281,42 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
       logger.warn(`OneDrive: Failed to upload missing JD resume for candidate ${candidate.id}, using local fallback: ${odErr.message}`);
     }
 
-    // 2) Parse using Gemini
+    // 2) Parse using OpenRouter
     try {
       const text = await extractTextFromFile(req.file.path, req.file.originalname);
       if (text && text.trim().length > 0) {
-        parsedResume = await parseResumeWithGemini(text, req.file.originalname, candidate.VendorEmail, candidate.vendorName);
-        logger.info(`Successfully parsed missing JD resume using Gemini for candidate: ${candidate.id}`);
+        parsedResume = await parseResumeWithOpenRouter(text, req.file.originalname, candidate.VendorEmail, candidate.vendorName);
+        logger.info(`Successfully parsed missing JD resume using OpenRouter for candidate: ${candidate.id}`);
+        
+        const fullText = text.trim();
+        const resume_text_quality = fullText.length === 0 ? 'failed' : (fullText.length < 200 ? 'lossy' : 'extracted');
+        const rawTerms = parsedResume.ResumeTechnicalTerms;
+        let resume_technical_terms = [];
+        if (Array.isArray(rawTerms) && rawTerms.length > 0 && fullText.length > 0) {
+          const fullTextLower = fullText.toLowerCase();
+          resume_technical_terms = rawTerms
+            .map(term => {
+              const safeTerm = String(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`\\b${safeTerm}\\b`, 'gi');
+              const matches = fullTextLower.match(regex);
+              return {
+                term: String(term),
+                count: matches ? matches.length : 1
+              };
+            })
+            .sort((a, b) => b.count - a.count);
+        }
+        const resume_term_updated_at = resume_technical_terms.length > 0 ? new Date() : null;
+
+        resumeData.resume_full_text = fullText;
+        resumeData.resume_text_quality = resume_text_quality;
+        resumeData.resume_technical_terms = resume_technical_terms;
+        resumeData.resume_term_updated_at = resume_term_updated_at;
       } else {
         logger.warn(`Extracted text from uploaded resume was empty for candidate: ${candidate.id}`);
       }
     } catch (parseErr) {
-      logger.error(`Gemini parsing failed during missing JD upload for candidate ${candidate.id}: ${parseErr.message}`);
+      logger.error(`OpenRouter parsing failed during missing JD upload for candidate ${candidate.id}: ${parseErr.message}`);
     }
   }
 
