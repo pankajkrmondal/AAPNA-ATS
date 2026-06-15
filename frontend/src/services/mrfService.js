@@ -62,10 +62,14 @@ const mrfService = {
 
   /**
    * Get pre-fill options for the hiring manager form.
+   * Returns all prior submissions for this email (+ role when given), matching
+   * the n8n form's prefill dropdown.
    * @param {string} email
+   * @param {string} [role]
    */
-  getPrefillOptions(email) {
-    return axios.get('/api/mrf/prefill-options', { params: { email } }).then((res) => res.data);
+  getPrefillOptions(email, role) {
+    const params = role ? { email, role } : { email };
+    return axios.get('/api/mrf/prefill-options', { params }).then((res) => res.data);
   },
 
   /**
