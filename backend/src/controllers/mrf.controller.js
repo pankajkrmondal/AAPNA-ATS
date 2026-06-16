@@ -35,6 +35,39 @@ export const createMrfRequest = catchAsync(async (req, res) => {
     throw new AppError('Missing required fields: first_name, last_name, email, role, and jd_doc_link are required.', 400);
   }
 
+  // Email validation — same pattern the n8n MRF form enforces.
+  const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!EMAIL_PATTERN.test(email.trim())) {
+    throw new AppError('Please enter a valid Email.', 400);
+  }
+
+  // CC Email validation (optional) — comma-separated, no trailing separator,
+  // every entry must be a valid email.
+  if (cc_email && cc_email.trim()) {
+    const cc = cc_email.trim();
+    if (/[;,]\s*$/.test(cc)) {
+      throw new AppError('CC Email should not end with comma or semicolon.', 400);
+    }
+    const cclist = cc.split(',').map((e) => e.trim()).filter((e) => e !== '');
+    const invalid = cclist.filter((e) => !EMAIL_PATTERN.test(e));
+    if (cclist.length === 0 || invalid.length > 0) {
+      throw new AppError(`Invalid CC Email(s): ${invalid.join(', ') || cc}`, 400);
+    }
+  }
+
+  // Budget validation — Budget Min >= 10,000 and Budget Max > Budget Min.
+  const minBudget = Number(budget_min);
+  const maxBudget = Number(budget_max);
+  if (Number.isNaN(minBudget) || Number.isNaN(maxBudget)) {
+    throw new AppError('Budget values must be valid numbers.', 400);
+  }
+  if (minBudget < 10000) {
+    throw new AppError('Budget Min should be at least 10,000.', 400);
+  }
+  if (maxBudget <= minBudget) {
+    throw new AppError('Budget Max must be greater than Budget Min.', 400);
+  }
+
   // Insert into rpa_mrf_jd_send
   const newMrf = await prisma.rpa_mrf_jd_send.create({
     data: {
@@ -450,30 +483,37 @@ const generateMrfEmailTable = (j, jdLink, testPaperLink) => {
 };
 
 /**
- * @desc    Get pre-fill options based on a manager's email
+ * @desc    Get pre-fill options based on a manager's email (and optionally role)
  * @route   GET /api/mrf/prefill-options
  * @access  Public
+ *
+ * Mirrors the n8n form behaviour: returns ALL prior submissions matching the
+ * submitter email and (when provided) the position being hired for. The form
+ * shows these as a dropdown so the user can pick which prior request to copy.
  */
 export const getPrefillOptions = catchAsync(async (req, res) => {
-  const { email } = req.query;
+  const { email, role } = req.query;
   if (!email) {
     throw new AppError('Email query parameter is required.', 400);
   }
 
-  const record = await prisma.rpa_mrf.findFirst({
-    where: { submitter_email: { equals: email.trim(), mode: 'insensitive' } },
-    orderBy: { created_at: 'desc' }
-  });
-
-  if (!record) {
-    return success(res, null, 'No previous requisition found for this email');
+  const where = {
+    submitter_email: { equals: email.trim(), mode: 'insensitive' },
+  };
+  if (role && role.trim()) {
+    where.position_hiring_for = { equals: role.trim(), mode: 'insensitive' };
   }
 
+  const records = await prisma.rpa_mrf.findMany({
+    where,
+    orderBy: { created_at: 'desc' },
+  });
+
   // Safe serialization (BigInt to string)
-  const responseData = {
+  const responseData = records.map((record) => ({
     ...record,
     id: record.id.toString(),
-  };
+  }));
 
   return success(res, responseData, 'Prefill options retrieved successfully');
 });
@@ -527,6 +567,7 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     additional_information,
     competencies_required,
     question_paper_new_owner,
+    approved_by_abhijit,
     parent_id
   } = req.body;
 
@@ -583,7 +624,12 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
   const parsedTotalExp = total_years_of_experience ? parseInt(total_years_of_experience, 10) : null;
   const parsedRelExp = relevant_years_of_experience ? parseInt(relevant_years_of_experience, 10) : null;
   const parsedDate = date_of_request ? new Date(date_of_request) : new Date();
-  const parsedExistingResourceAlloc = existing_resource_allocation === 'true' || existing_resource_allocation === true;
+  // The form now sends "Yes"/"No" (matching n8n); keep back-compat with the
+  // previous "true"/boolean encoding.
+  const parsedExistingResourceAlloc =
+    existing_resource_allocation === 'Yes' ||
+    existing_resource_allocation === 'true' ||
+    existing_resource_allocation === true;
 
   // Gather fields to store and compile HTML email body representation
   const inputData = {
@@ -679,7 +725,7 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
       competencies_required: competencies_required || null,
       question_paper: testPaperUrl || null,
       question_paper_new_owner: question_paper_new_owner || null,
-      approved_by_abhijit: 'No',
+      approved_by_abhijit: approved_by_abhijit || 'No',
       jd_attachment: jdFile ? jdFile.originalname : null,
       online_test_paper_attachment: testPaperFile ? testPaperFile.originalname : null,
       jd_document_link: jdUrl || null,

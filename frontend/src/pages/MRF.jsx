@@ -11,6 +11,32 @@ import mrfService from '../services/mrfService';
 
 const { Title, Text } = Typography;
 
+// Same email pattern the n8n MRF form uses for main and CC email validation.
+const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+// CC Email is optional, but when provided it must be a comma-separated list of
+// valid emails with no trailing comma/semicolon — mirrors the n8n form rules.
+const validateCcEmail = (_, value) => {
+  const ccEmail = (value || '').trim();
+  if (!ccEmail) return Promise.resolve();
+
+  if (/[;,]\s*$/.test(ccEmail)) {
+    return Promise.reject(new Error('CC Email should not end with comma or semicolon'));
+  }
+
+  const ccEmails = ccEmail.split(',').map((e) => e.trim()).filter((e) => e !== '');
+  if (ccEmails.length === 0) {
+    return Promise.reject(new Error('Please enter a valid CC email address'));
+  }
+
+  const invalidEmails = ccEmails.filter((e) => !EMAIL_PATTERN.test(e));
+  if (invalidEmails.length > 0) {
+    return Promise.reject(new Error(`Invalid CC Email(s): ${invalidEmails.join(', ')}`));
+  }
+
+  return Promise.resolve();
+};
+
 const DEFAULT_EMAIL_BODY = `Default Message:
 As discussed, we would like to initiate the hiring process for the RPA Developer position.
 
@@ -287,6 +313,23 @@ export default function MRF() {
 
   // Handle submit new MRF
   const handleSubmit = async (values) => {
+    // Budget validation — mirrors the n8n MRF form rules
+    // (Budget Min >= 10,000 and Budget Max > Budget Min).
+    const min = Number(values.budget_min);
+    const max = Number(values.budget_max);
+    if (Number.isNaN(min) || Number.isNaN(max)) {
+      message.error('Budget values must be valid numbers.');
+      return;
+    }
+    if (min < 10000) {
+      message.error('Budget Min should be at least 10,000.');
+      return;
+    }
+    if (max <= min) {
+      message.error('Budget Max must be greater than Budget Min.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await mrfService.create({
@@ -521,7 +564,7 @@ export default function MRF() {
               <Form.Item
                 label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Email *</span>}
                 name="email"
-                rules={[{ required: true, message: 'Required' }, { type: 'email', message: 'Invalid email' }]}
+                rules={[{ required: true, message: 'Required' }, { pattern: EMAIL_PATTERN, message: 'Please enter a valid Email' }]}
               >
                 <Input placeholder="e.g. aroy@aapnainfotech.com" style={{ height: 42, borderRadius: 8 }} />
               </Form.Item>
@@ -533,6 +576,7 @@ export default function MRF() {
               <Form.Item
                 label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>CC Email (Keep Comma Separated)</span>}
                 name="cc_email"
+                rules={[{ validator: validateCcEmail }]}
               >
                 <Input placeholder="e.g. example1@aapnainfotech.com, example2@aapnainfotech.com" style={{ height: 42, borderRadius: 8 }} />
               </Form.Item>
