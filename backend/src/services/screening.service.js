@@ -20,8 +20,8 @@ export async function getApprovedRoles() {
         number_of_positions,
         created_at
     FROM rpa_mrf
-    WHERE approved_by_abhijit = 'approved'
-      AND approval_status = 'completed'
+    WHERE approval_status = 'approved'
+       OR (approval_status = 'completed' AND approved_by_abhijit IN ('approved', 'true'))
     ORDER BY position_hiring_for, created_at DESC;`
   );
 

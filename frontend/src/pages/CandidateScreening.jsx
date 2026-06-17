@@ -117,6 +117,16 @@ const formatCurrentCompany = (companyStr) => {
   return cleaned;
 };
 
+const parseTechnicalTerms = (techTerms) => {
+  if (!techTerms) return [];
+  try {
+    const parsed = typeof techTerms === 'string' ? JSON.parse(techTerms) : techTerms;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+};
+
 export default function CandidateScreening() {
   const { user } = useAuth();
   const convBodyRef = useRef(null);
@@ -1236,6 +1246,36 @@ export default function CandidateScreening() {
                             <SkillTags skills={parsePostgresArray(c.Top5KeySkills)} max={5} />
                           </div>
 
+                          {/* Resume Signals */}
+                          {(() => {
+                            const technicalTerms = parseTechnicalTerms(c.resume_technical_terms);
+                            if (technicalTerms.length === 0) return null;
+                            return (
+                              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Resume Signals:</span>
+                                <Space size={[4, 6]} wrap>
+                                  {technicalTerms.slice(0, 8).map((t, idx) => (
+                                    <Tag 
+                                      key={idx} 
+                                      style={{ 
+                                        margin: 0, 
+                                        fontSize: '11px', 
+                                        padding: '1px 6px', 
+                                        borderRadius: '4px', 
+                                        background: 'var(--ink-4)', 
+                                        border: '1px solid var(--border-light)', 
+                                        color: 'var(--text-2)', 
+                                        fontWeight: 500 
+                                      }}
+                                    >
+                                      {t.term || t} <span style={{ opacity: 0.6, marginLeft: '2px', fontSize: '9.5px', fontWeight: 600 }}>x{t.count || 1}</span>
+                                    </Tag>
+                                  ))}
+                                </Space>
+                              </div>
+                            );
+                          })()}
+
                           {/* Highest Qualification Badge */}
                           {c.HighestQualification && (
                             <div style={{ marginTop: 4 }}>
@@ -1642,6 +1682,35 @@ export default function CandidateScreening() {
                           )}
                         </div>
                       )}
+
+                      {/* Resume Signals Section */}
+                      {(() => {
+                        const technicalTerms = parseTechnicalTerms(selectedCandidate.resume_technical_terms);
+                        if (technicalTerms.length === 0) return null;
+                        return (
+                          <div style={{ marginBottom: '14px' }}>
+                            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>Resume Signals</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {technicalTerms.slice(0, 15).map((t, idx) => (
+                                <span 
+                                  key={idx} 
+                                  style={{ 
+                                    fontSize: '11px', 
+                                    background: 'var(--ink-4)', 
+                                    color: 'var(--text-2)', 
+                                    padding: '3px 9px', 
+                                    borderRadius: '6px', 
+                                    border: '1px solid var(--border-light)', 
+                                    fontWeight: 500 
+                                  }}
+                                >
+                                  {t.term || t} <span style={{ opacity: 0.6, marginLeft: '2px', fontSize: '9.5px', fontWeight: 600 }}>x{t.count || 1}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Career Trajectory Card */}
                       {selectedCandidate.profile?.careerProgression && (
