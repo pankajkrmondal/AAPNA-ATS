@@ -36,7 +36,7 @@ import {
 
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
-import NotificationBell from '../components/common/NotificationBell';
+// import NotificationBell from '../components/common/NotificationBell';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -317,18 +317,18 @@ export default function MainLayout() {
             </Button>
           )}
 
-          {/* Dark Mode Switcher */}
-          <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {/* Dark Mode Switcher - Hidden as requested */}
+          {/* <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
             <Button
               type="text"
               icon={isDark ? <SunOutlined style={{ fontSize: 16, color: '#f0b429' }} /> : <MoonOutlined style={{ fontSize: 16 }} />}
               onClick={toggleTheme}
               style={{ width: 36, height: 36, borderRadius: 8 }}
             />
-          </Tooltip>
+          </Tooltip> */}
 
-          {/* Real-time Notifications Bell */}
-          <NotificationBell />
+          {/* Real-time Notifications Bell - Hidden as requested */}
+          {/* <NotificationBell /> */}
 
           {/* User Profile Dropdown Menu */}
           <Dropdown

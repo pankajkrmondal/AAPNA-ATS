@@ -348,15 +348,30 @@ export default function HRUpload() {
 
   const parseCompany = (val) => {
     if (!val) return {};
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {
+        return {};
+      }
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (!parsed) return {};
+        if (Array.isArray(parsed)) {
+          return parsed.length > 0 ? (typeof parsed[0] === 'object' ? parsed[0] : { Name: String(parsed[0]) }) : {};
+        }
+        if (typeof parsed === 'object') return parsed;
+        return { Name: String(parsed) };
+      } catch {
+        return { Name: val };
+      }
+    }
     if (typeof val === 'object') {
-      if (Array.isArray(val) && val.length > 0) return val[0];
+      if (Array.isArray(val)) {
+        return val.length > 0 ? (typeof val[0] === 'object' ? val[0] : { Name: String(val[0]) }) : {};
+      }
       return val;
     }
-    try {
-      const parsed = JSON.parse(val);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
-      return parsed;
-    } catch { return {}; }
+    return {};
   };
 
   const parseEmploymentHistory = (val) => {
@@ -436,40 +451,45 @@ export default function HRUpload() {
       key: 'action',
       width: 120,
       align: 'center',
-      render: (_, record) => (
-        <Space size={6}>
-          <Tooltip title="View Info">
-            <Button
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() => openViewModal(record)}
-              style={{
-                borderRadius: 6,
-                background: '#eef3da',
-                color: '#005f56',
-                borderColor: '#b8cc6e',
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="View Resume">
-            <Button
-              size="small"
-              onClick={() => handleOpenCV(record)}
-              style={{
-                borderRadius: 6,
-                fontWeight: 600,
-                fontFamily: 'monospace',
-                fontSize: 11,
-                background: 'transparent',
-                color: '#005f56',
-                borderColor: '#005f56',
-              }}
-            >
-              CV
-            </Button>
-          </Tooltip>
-        </Space>
-      ),
+      render: (_, record) => {
+        const url = record.cvFileUrl || record.CvFileUrl || record.cvfileurl || '';
+        const hasCV = !!(url && url !== 'null' && url !== 'undefined' && url.trim() !== '');
+        return (
+          <Space size={6}>
+            <Tooltip title="View Info">
+              <Button
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() => openViewModal(record)}
+                style={{
+                  borderRadius: 6,
+                  background: '#eef3da',
+                  color: '#005f56',
+                  borderColor: '#b8cc6e',
+                }}
+              />
+            </Tooltip>
+            <Tooltip title={hasCV ? "View Resume" : "No Resume Available"}>
+              <Button
+                size="small"
+                onClick={() => handleOpenCV(record)}
+                disabled={!hasCV}
+                style={{
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  background: 'transparent',
+                  color: hasCV ? '#005f56' : 'rgba(0,0,0,0.25)',
+                  borderColor: hasCV ? '#005f56' : 'rgba(0,0,0,0.15)',
+                }}
+              >
+                CV
+              </Button>
+            </Tooltip>
+          </Space>
+        );
+      },
     },
   ];
 

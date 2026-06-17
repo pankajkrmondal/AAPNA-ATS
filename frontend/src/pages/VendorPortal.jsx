@@ -338,26 +338,31 @@ export default function VendorPortal() {
       key: 'action',
       width: 100,
       align: 'center',
-      render: (_, record) => (
-        <Tooltip title="View Resume">
-          <Button
-            size="small"
-            onClick={() => handleOpenCV(record)}
-            icon={<FileTextOutlined />}
-            style={{
-              borderRadius: 6,
-              fontWeight: 600,
-              fontFamily: 'monospace',
-              fontSize: 11,
-              background: 'transparent',
-              color: '#005f56',
-              borderColor: '#005f56',
-            }}
-          >
-            CV
-          </Button>
-        </Tooltip>
-      ),
+      render: (_, record) => {
+        const url = record.cvFileUrl || record.CvFileUrl || record.cvfileurl || '';
+        const hasCV = !!(url && url !== 'null' && url !== 'undefined' && url.trim() !== '');
+        return (
+          <Tooltip title={hasCV ? "View Resume" : "No Resume Available"}>
+            <Button
+              size="small"
+              onClick={() => handleOpenCV(record)}
+              disabled={!hasCV}
+              icon={<FileTextOutlined />}
+              style={{
+                borderRadius: 6,
+                fontWeight: 600,
+                fontFamily: 'monospace',
+                fontSize: 11,
+                background: 'transparent',
+                color: hasCV ? '#005f56' : 'rgba(0,0,0,0.25)',
+                borderColor: hasCV ? '#005f56' : 'rgba(0,0,0,0.15)',
+              }}
+            >
+              CV
+            </Button>
+          </Tooltip>
+        );
+      },
     },
   ];
 

@@ -167,7 +167,14 @@ export default function MrfApprovalAction() {
 
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
-          <Descriptions title={<span style={{ color: '#005f56', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>} bordered column={{ xs: 1, sm: 2 }} size="small">
+          <Descriptions
+            title={<span style={{ color: '#005f56', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
+            bordered
+            column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
+            size="small"
+            labelStyle={{ width: '18%', minWidth: '100px', fontWeight: 600 }}
+            contentStyle={{ width: '32%', minWidth: '150px', wordBreak: 'break-word' }}
+          >
             <Descriptions.Item label="Position Hiring For" span={2}>
               <Text strong style={{ fontSize: 15 }}>{mrfDetails?.position_hiring_for}</Text>
             </Descriptions.Item>

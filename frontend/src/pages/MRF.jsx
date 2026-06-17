@@ -936,7 +936,7 @@ export default function MRF() {
                     label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>MRF Raise Status</span>}
                     name="mrfstatus"
                   >
-                    <Select style={{ width: '100%', borderRadius: 6 }}>
+                    <Select style={{ width: '100%', borderRadius: 6 }} disabled>
                       <Select.Option value="pending">Pending</Select.Option>
                       <Select.Option value="pendingfromleader">Pending from Leader</Select.Option>
                       <Select.Option value="managersubmitted">Manager Submitted</Select.Option>
