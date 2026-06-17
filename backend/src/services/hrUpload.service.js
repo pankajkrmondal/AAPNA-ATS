@@ -43,7 +43,8 @@ const CV_SHARED_FIELDS = [
   'ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore',
   'graduationdegree', 'graduationspecialization',
   'postgraduationdegree', 'postgraduationspecialization',
-  'employment_history', 'cvVectorLock', 'cvFileUrl'
+  'employment_history', 'cvVectorLock', 'cvFileUrl',
+  'resume_full_text', 'resume_text_quality', 'resume_technical_terms', 'resume_term_updated_at'
 ];
 
 // Initialize Google Gemini info log
@@ -1154,67 +1155,21 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                 });
                 rowDuplicates.push(`${item.filename}: Same vendor duplicate`);
                 duplicateCount++;
-              } else if (existingVendorEmail && existingVendorEmail !== '') {
-                logger.info(`Duplicate resume uploaded by DIFFERENT vendor: ${uploadingVendorEmail} (Existing: ${existingVendorEmail}) for candidate: ${parsed.Name}`);
+              } else {
+                logger.info(`Duplicate resume uploaded by DIFFERENT vendor/owner: ${uploadingVendorEmail} (Existing: ${existingVendorEmail || 'HR/Outlook'}) for candidate: ${parsed.Name}`);
                 sendDifferentVendorDuplicateAlert({
                   candidateName: parsed.Name || 'Candidate',
                   candidateEmail: emailToSearch,
                   vendorEmail: uploadingVendorEmail,
                   vendorName: fullName,
-                  existingVendorEmail
+                  existingVendorEmail: existingVendorEmail || 'HR/Outlook'
                 }).catch(mailErr => {
                   logger.error(`Failed to send Different Vendor alert email: ${mailErr.message}`);
                 });
                 rowDuplicates.push(`${item.filename}: Different vendor duplicate`);
                 duplicateCount++;
-              } else {
-                logger.info(`Duplicate resume found with NO vendor assigned. Directly updating candidate ID ${existingCandidate.id}`);
-                
-                const updateData = {};
-                for (const field of CV_SHARED_FIELDS) {
-                  if (field === 'ContactNumber') {
-                    updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber);
-                  } else if (field === 'EmailID') {
-                    updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch);
-                  } else if (field === 'employment_history') {
-                    updateData.employment_history = employmentHistoryDb;
-                  } else {
-                    const val = prefer(parsed[field], existingCandidate[field]);
-                    if (val !== null && val !== undefined) {
-                      if (['ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore'].includes(field)) {
-                        updateData[field] = val;
-                      } else {
-                        updateData[field] = String(val);
-                      }
-                    } else {
-                      updateData[field] = null;
-                    }
-                  }
-                }
-
-                updateData.VendorEmail = uploadingVendorEmail;
-                updateData.vendorName = fullName;
-                updateData.cvFileUrl = cvUrl;
-                updateData.statusActive = statusActive;
-                updateData.missingData = missingDataJson;
-                updateData.modifiedAt = new Date();
-                updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
-                updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
-                updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
-                updateData.resume_full_text = fullText;
-                updateData.resume_text_quality = resume_text_quality;
-                updateData.resume_technical_terms = (resume_technical_terms.length > 0) ? resume_technical_terms : existingCandidate.resume_technical_terms;
-                updateData.resume_term_updated_at = (resume_technical_terms.length > 0) ? resume_term_updated_at : existingCandidate.resume_term_updated_at;
-
-                const updatedCv = await prisma.rpa_cv.update({
-                  where: { id: existingCandidate.id },
-                  data: updateData
-                });
-
-                successCount++;
-                runPostProcessing(updatedCv.id, parsed, source, fullName, email, missingFields);
               }
-            } else {
+            } else if (source === 'hr_manual_upload') {
               // HR Manual Upload duplicate path: create in rpa_cv_tmp review table
               const tempCandidate = await prisma.rpa_cv_tmp.create({
                 data: {
@@ -1250,6 +1205,10 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                   uploadSource: 'HR Manual Upload',
                   statusActive: statusActive,
                   missingData: missingDataJson,
+                  resume_full_text: fullText,
+                  resume_text_quality: resume_text_quality,
+                  resume_technical_terms: resume_technical_terms,
+                  resume_term_updated_at: resume_term_updated_at,
                   createdAt: new Date(),
                   modifiedAt: new Date(),
                 }
@@ -1264,6 +1223,59 @@ export async function startBackgroundParsing(executionId, files, user, source = 
               sendDuplicateAlertEmail(serialTemp, email).catch(mailErr => {
                 logger.error(`Failed to send duplicate alert email: ${mailErr.message}`);
               });
+            } else {
+              // Outlook Trigger or other automated email ingest: directly update the existing candidate in public.rpa_cv
+              logger.info(`Duplicate resume found from Outlook/other source. Directly updating candidate ID ${existingCandidate.id}`);
+              
+              const updateData = {};
+              for (const field of CV_SHARED_FIELDS) {
+                if (field === 'ContactNumber') {
+                  updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber);
+                } else if (field === 'EmailID') {
+                  updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch);
+                } else if (field === 'employment_history') {
+                  updateData.employment_history = employmentHistoryDb;
+                } else {
+                  // Keep vendor fields from the existing candidate
+                  if (field === 'vendorName' || field === 'VendorEmail') {
+                    updateData[field] = existingCandidate[field];
+                  } else {
+                    const val = prefer(parsed[field], existingCandidate[field]);
+                    if (val !== null && val !== undefined) {
+                      if (['ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore'].includes(field)) {
+                        updateData[field] = val;
+                      } else {
+                        updateData[field] = String(val);
+                      }
+                    } else {
+                      updateData[field] = null;
+                    }
+                  }
+                }
+              }
+
+              // Preserve existing vendor email and name (don't overwrite them)
+              updateData.VendorEmail = existingCandidate.VendorEmail;
+              updateData.vendorName = existingCandidate.vendorName;
+              updateData.cvFileUrl = cvUrl;
+              updateData.statusActive = statusActive;
+              updateData.missingData = missingDataJson;
+              updateData.modifiedAt = new Date();
+              updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
+              updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
+              updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
+              updateData.resume_full_text = fullText;
+              updateData.resume_text_quality = resume_text_quality;
+              updateData.resume_technical_terms = (resume_technical_terms.length > 0) ? resume_technical_terms : existingCandidate.resume_technical_terms;
+              updateData.resume_term_updated_at = (resume_technical_terms.length > 0) ? resume_term_updated_at : existingCandidate.resume_term_updated_at;
+
+              const updatedCv = await prisma.rpa_cv.update({
+                where: { id: existingCandidate.id },
+                data: updateData
+              });
+
+              successCount++;
+              runPostProcessing(updatedCv.id, parsed, source, fullName, email, missingFields);
             }
           } else {
             // New candidate! Create directly in main rpa_cv table
