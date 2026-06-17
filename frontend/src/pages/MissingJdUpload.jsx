@@ -109,40 +109,6 @@ export default function MissingJdUpload() {
       );
     }
 
-    if (key === 'PositionApplied') {
-      if (roles.length > 0) {
-        return (
-          <Space direction="vertical" style={{ width: '100%' }} size={10}>
-            <Select
-              placeholder="Select Position Applied For"
-              style={{ width: '100%' }}
-              onChange={(val) => {
-                setShowCustomPosition(val === 'Other');
-              }}
-            >
-              {roles.map((r) => (
-                <Select.Option key={r.id} value={r.role}>
-                  {r.role}
-                </Select.Option>
-              ))}
-              <Select.Option value="Other">Other (Please Specify)</Select.Option>
-            </Select>
-            {showCustomPosition && (
-              <Form.Item
-                name="customPositionApplied"
-                noStyle
-                rules={[{ required: true, message: 'Please specify the position.' }]}
-              >
-                <Input placeholder="Specify custom position" style={{ borderRadius: 8 }} />
-              </Form.Item>
-            )}
-          </Space>
-        );
-      } else {
-        return <Input placeholder="e.g. Software Engineer, QA Analyst" style={{ borderRadius: 8 }} />;
-      }
-    }
-
     // Dropdown mappings
     if (key === 'NoticePeriod') {
       return (
@@ -192,6 +158,17 @@ export default function MissingJdUpload() {
           <Select.Option value="4pm - 1am">4:00 PM – 1:00 AM (Late Shift)</Select.Option>
           <Select.Option value="Flexible">Flexible / Rotational</Select.Option>
           <Select.Option value="Others">Others</Select.Option>
+        </Select>
+      );
+    }
+
+    if (key === 'RecruiterInfoAAPNA') {
+      return (
+        <Select placeholder="Select AAPNA Recruiter Name">
+          <Select.Option value="Naveen Satywali">Naveen Satywali</Select.Option>
+          <Select.Option value="Chhaya Verma">Chhaya Verma</Select.Option>
+          <Select.Option value="Prakash Pant">Prakash Pant</Select.Option>
+          <Select.Option value="None">None</Select.Option>
         </Select>
       );
     }
@@ -409,6 +386,48 @@ export default function MissingJdUpload() {
         >
           {missingKeys.map((key) => {
             const isUpload = key === 'uploadResume';
+            
+            if (key === 'PositionApplied') {
+              return (
+                <div key={key} style={{ marginBottom: 18 }}>
+                  <Form.Item
+                    name="PositionApplied"
+                    label={
+                      <span style={{ fontWeight: 600, color: '#374151', fontSize: 13 }}>
+                        {formatFieldLabel(key)}
+                      </span>
+                    }
+                    rules={[{ required: true, message: `Please select your ${formatFieldLabel(key)}` }]}
+                    style={{ marginBottom: showCustomPosition ? 10 : 0 }}
+                  >
+                    <Select
+                      placeholder="Select Position Applied For"
+                      style={{ width: '100%' }}
+                      onChange={(val) => {
+                        setShowCustomPosition(val === 'Other');
+                      }}
+                    >
+                      {roles.map((r) => (
+                        <Select.Option key={r.id} value={r.role}>
+                          {r.role}
+                        </Select.Option>
+                      ))}
+                      <Select.Option value="Other">Other (Please Specify)</Select.Option>
+                    </Select>
+                  </Form.Item>
+                  {showCustomPosition && (
+                    <Form.Item
+                      name="customPositionApplied"
+                      rules={[{ required: true, message: 'Please specify the position.' }]}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <Input placeholder="Specify custom position" style={{ borderRadius: 8 }} />
+                    </Form.Item>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Form.Item
                 key={key}

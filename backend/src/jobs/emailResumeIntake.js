@@ -11,9 +11,9 @@
  * Disabled by default; enabled via EMAIL_INTAKE_ENABLED.
  */
 import cron from 'node-cron';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import prisma from '../config/database.js';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
@@ -22,6 +22,20 @@ import { startBackgroundParsing } from '../services/hrUpload.service.js';
 
 const WATERMARK_KEY = 'email_intake_last_sync';
 const RESUME_EXTS = ['.pdf', '.docx'];
+
+/**
+ * Build a stable, short execution id from a Graph message id.
+ *
+ * Graph message ids are ~150+ chars, but rpa_upload_batch_summary.execution_id
+ * is VarChar(100). We hash the message id (sha1, first 16 hex chars) so the id is
+ * both well under the column limit and deterministic — re-polling the same message
+ * yields the same execution id, preserving idempotency. The full graph_message_id
+ * is still recorded in the batch summary `details`.
+ */
+function executionIdFor(graphMessageId) {
+  const hash = crypto.createHash('sha1').update(graphMessageId).digest('hex').slice(0, 16);
+  return `email-${hash}`;
+}
 
 let job;
 let running = false; // overlap guard
@@ -72,9 +86,13 @@ export async function runEmailResumeIntake() {
       // even for messages whose attachments we skip.
       if (msg.receivedAt > newestReceived) newestReceived = msg.receivedAt;
 
+      // Deterministic execution id (hashed Graph id) keeps us under the
+      // execution_id VarChar(100) limit while staying stable across re-polls.
+      const executionId = executionIdFor(msg.graphMessageId);
+
       // Idempotency: skip a message we've already turned into an upload batch.
       const seen = await prisma.rpa_upload_log.findFirst({
-        where: { execution_id: { startsWith: `email-${msg.graphMessageId}` } },
+        where: { execution_id: executionId },
         select: { id: true },
       });
       if (seen) continue;
@@ -111,9 +129,6 @@ export async function runEmailResumeIntake() {
           size: fs.statSync(filePath).size,
         });
       }
-
-      // Deterministic execution id so re-polls map to the same (already-seen) batch.
-      const executionId = `email-${msg.graphMessageId}-${uuidv4().slice(0, 8)}`;
 
       try {
         // Mirror the controller's batch scaffolding that startBackgroundParsing expects.
