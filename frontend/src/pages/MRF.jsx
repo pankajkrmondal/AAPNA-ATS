@@ -8,8 +8,10 @@ import { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Radio, Modal, Select } from 'antd';
 import { FileExcelOutlined, SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
+import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 
 const { Title, Text } = Typography;
+const { TextArea } = Input;
 
 // Same email pattern the n8n MRF form uses for main and CC email validation.
 const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -37,20 +39,29 @@ const validateCcEmail = (_, value) => {
   return Promise.resolve();
 };
 
-const DEFAULT_EMAIL_BODY = `Default Message:
-As discussed, we would like to initiate the hiring process for the RPA Developer position.
+// Hint text shown as a placeholder only (never submitted as real content) — see Fixes/mrf-default-email-body.md
+const DEFAULT_EMAIL_BODY = `As discussed, we would like to initiate the hiring process for this position.
 
 We request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing.`;
 
+// Field type/options lookup, sourced from the canonical Hiring Manager form (MrfSubmit.jsx)
+// so the recruiter edit modal below renders the same widget (dropdown, number, etc.) the
+// Hiring Manager originally saw for each field.
+const MAIN_MRF_FIELD_TYPES = Object.fromEntries(
+  MRF_SUBMIT_FIELDS
+    .filter((f) => !f.section && !f.transient && f.type !== 'file')
+    .map((f) => [f.name, f])
+);
+
 // Editable fields of the submitted main MRF (rpa_mrf), grouped for the modal UI.
 // Mirrors the backend whitelist in mrf.controller.js (MAIN_MRF_EDITABLE_FIELDS).
-const MAIN_MRF_NUMERIC_FIELDS = ['number_of_positions', 'total_years_of_experience', 'relevant_years_of_experience'];
 const MAIN_MRF_FIELD_GROUPS = [
   {
     title: 'Position',
     fields: [
       ['hiring_manager_name', 'Hiring Manager Name'],
       ['hiring_manager_designation', 'HM Designation'],
+      ['date_of_request', 'Date of Submission'],
       ['position_hiring_for', 'Position Hiring For'],
       ['number_of_positions', 'Number of Positions'],
       ['required_in', 'Required In'],
@@ -115,6 +126,37 @@ const MAIN_MRF_FIELD_GROUPS = [
   },
 ];
 
+// Renders the correct widget for a Main MRF field based on its canonical type from
+// MrfSubmit.jsx — Select for dropdowns (legacy values not in the option list are kept
+// visible via an extra option rather than rendering blank), InputNumber for numeric
+// fields, TextArea for long-form text, plain Input otherwise.
+const renderMainMrfField = (name, currentValue) => {
+  const meta = MAIN_MRF_FIELD_TYPES[name];
+
+  if (meta?.type === 'select') {
+    const options = meta.options || [];
+    const hasLegacyValue = currentValue && !options.includes(currentValue);
+    return (
+      <Select style={{ width: '100%' }} placeholder="Select your answer">
+        {hasLegacyValue && <Select.Option value={currentValue}>{currentValue}</Select.Option>}
+        {options.map((opt) => (
+          <Select.Option key={opt} value={opt}>{opt}</Select.Option>
+        ))}
+      </Select>
+    );
+  }
+
+  if (meta?.type === 'number') {
+    return <InputNumber min={0} max={60} style={{ width: '100%' }} />;
+  }
+
+  if (meta?.type === 'textarea') {
+    return <TextArea rows={3} style={{ borderRadius: 6 }} />;
+  }
+
+  return <Input style={{ borderRadius: 6 }} />;
+};
+
 export default function MRF() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
@@ -139,8 +181,6 @@ export default function MRF() {
   // Submitted main MRF (rpa_mrf) state — loaded when the record has a linked mrf_id
   const [mainMrf, setMainMrf] = useState(null);
   const [mainMrfLoading, setMainMrfLoading] = useState(false);
-  const [isEditingMain, setIsEditingMain] = useState(false);
-  const [updatingMain, setUpdatingMain] = useState(false);
 
   const formatSubmittedDate = (val) => {
     if (!val) return '';
@@ -173,7 +213,13 @@ export default function MRF() {
       raiseColor = 'gold';
     } else {
       raiseLabel = mrfStatusStr.toUpperCase();
-      raiseColor = raiseLabel.includes('COMPLETED') ? 'success' : 'gold';
+      if (raiseLabel.includes('COMPLETED') || raiseLabel.includes('APPROV')) {
+        raiseColor = 'success';
+      } else if (raiseLabel.includes('REJECT')) {
+        raiseColor = 'error';
+      } else {
+        raiseColor = 'gold';
+      }
     }
 
     const approvalStatusStr = (record.approval_status || '').trim().toLowerCase();
@@ -199,12 +245,8 @@ export default function MRF() {
     };
   };
 
-  const handleOpenDetailsModal = (record) => {
-    setSelectedRecord(record);
-    setIsEditing(false);
-    setIsEditingMain(false);
-    setMainMrf(null);
-    mainForm.resetFields();
+  // Seeds the "New MRF Request" form from a record snapshot — used both on open and on Cancel.
+  const seedEditForm = (record) => {
     editForm.resetFields();
     editForm.setFieldsValue({
       first_name: record.first_name,
@@ -216,6 +258,14 @@ export default function MRF() {
       role: record.role,
       mrfstatus: record.mrfstatus || 'pending',
     });
+  };
+
+  const handleOpenDetailsModal = (record) => {
+    setSelectedRecord(record);
+    setIsEditing(false);
+    setMainMrf(null);
+    mainForm.resetFields();
+    seedEditForm(record);
     setDetailsOpen(true);
 
     // If the Hiring Manager has submitted, load the full main MRF for view/edit.
@@ -240,48 +290,86 @@ export default function MRF() {
     }
   };
 
-  // Save edits to the submitted main MRF (rpa_mrf) via the dedicated endpoint.
-  const handleSaveMainChanges = async () => {
-    if (!mainMrf) return;
-    setUpdatingMain(true);
-    try {
-      const values = await mainForm.validateFields();
-      await mrfService.updateMain(mainMrf.id, values);
-      message.success('Submitted MRF details updated successfully.');
-      setIsEditingMain(false);
+  // Saves whichever section(s) actually have unsaved changes — "New MRF Request"
+  // (rpa_mrf_jd_send) and/or "Submitted MRF Details" (rpa_mrf) — via their separate
+  // endpoints, in parallel. A failure in one section never blocks or discards the other.
+  const handleSaveAll = async () => {
+    if (!selectedRecord) return;
+
+    const editTouched = editForm.isFieldsTouched();
+    const mainTouched = !!mainMrf && mainForm.isFieldsTouched();
+
+    if (!editTouched && !mainTouched) {
+      setIsEditing(false);
+      return;
+    }
+
+    setUpdating(true);
+    const tasks = [];
+
+    if (editTouched) {
+      tasks.push(
+        editForm
+          .validateFields()
+          .then((values) =>
+            mrfService.update(selectedRecord.id, {
+              first_name: values.first_name,
+              last_name: values.last_name,
+              email: values.email,
+              budget_min: values.budget_min,
+              budget_max: values.budget_max,
+              jd_doc_link: values.jd_doc_link,
+              role: values.role,
+              mrfstatus: values.mrfstatus,
+            })
+          )
+          .then(() => ({ key: 'New MRF Request', ok: true }))
+          .catch((err) => ({ key: 'New MRF Request', ok: false, err }))
+      );
+    }
+
+    if (mainTouched) {
+      tasks.push(
+        mainForm
+          .validateFields()
+          .then((values) => mrfService.updateMain(mainMrf.id, values))
+          .then(() => ({ key: 'Submitted MRF Details', ok: true }))
+          .catch((err) => ({ key: 'Submitted MRF Details', ok: false, err }))
+      );
+    }
+
+    const results = await Promise.all(tasks);
+    setUpdating(false);
+
+    const failed = results.filter((r) => !r.ok);
+    const succeeded = results.filter((r) => r.ok);
+
+    if (failed.length === 0) {
+      message.success('MRF details updated successfully.');
+      setIsEditing(false);
+    } else {
+      failed.forEach((r) => {
+        message.error(
+          r.err?.errorFields
+            ? `${r.key}: please fix the highlighted fields.`
+            : `${r.key}: ${r.err?.message || 'Failed to save changes.'}`
+        );
+      });
+    }
+
+    if (succeeded.some((r) => r.key === 'New MRF Request')) {
+      loadRecords(page, searchQuery, statusTab);
+    }
+    if (succeeded.some((r) => r.key === 'Submitted MRF Details') && mainMrf) {
       await loadMainMrf(mainMrf.id);
-    } catch (err) {
-      if (err?.errorFields) return; // validation errors already shown inline
-      message.error(err?.message || 'Failed to update submitted MRF details.');
-    } finally {
-      setUpdatingMain(false);
     }
   };
 
-  const handleSaveChanges = async () => {
-    if (!selectedRecord) return;
-    setUpdating(true);
-    try {
-      const values = await editForm.validateFields();
-      await mrfService.update(selectedRecord.id, {
-        first_name: values.first_name,
-        last_name: values.last_name,
-        email: values.email,
-        budget_min: values.budget_min,
-        budget_max: values.budget_max,
-        jd_doc_link: values.jd_doc_link,
-        role: values.role,
-        mrfstatus: values.mrfstatus,
-      });
-
-      message.success('MRF Request details updated successfully.');
-      setDetailsOpen(false);
-      loadRecords(page, searchQuery, statusTab);
-    } catch (err) {
-      message.error(err?.message || 'Failed to update MRF Request.');
-    } finally {
-      setUpdating(false);
-    }
+  // Discards unsaved edits in both sections and exits edit mode.
+  const handleCancelEdit = () => {
+    if (selectedRecord) seedEditForm(selectedRecord);
+    if (mainMrf) mainForm.setFieldsValue(mainMrf);
+    setIsEditing(false);
   };
 
   // Load MRF records
@@ -346,7 +434,6 @@ export default function MRF() {
 
       message.success('MRF Request submitted successfully!');
       form.resetFields();
-      form.setFieldsValue({ email_body_content: DEFAULT_EMAIL_BODY });
       setPage(1);
       loadRecords(1, searchQuery, statusTab);
     } catch (err) {
@@ -359,7 +446,6 @@ export default function MRF() {
   // Handle clear form
   const handleClear = () => {
     form.resetFields();
-    form.setFieldsValue({ email_body_content: DEFAULT_EMAIL_BODY });
   };
 
   // Handle search record input changes
@@ -481,21 +567,27 @@ export default function MRF() {
       render: (status) => {
         const statusStr = (status || '').trim().toLowerCase();
         let displayStatus = 'PENDING';
-        let isManager = false;
+        let color = 'gold';
 
         if (statusStr === 'managersubmitted' || statusStr === 'manager submitted') {
           displayStatus = 'MANAGER SUBMITTED';
-          isManager = true;
+          color = 'success';
         } else if (statusStr === 'pending' || statusStr === 'pendingfromleader') {
           displayStatus = 'PENDING';
-          isManager = false;
+          color = 'gold';
         } else {
           displayStatus = (status || '').toUpperCase();
-          isManager = displayStatus.includes('MANAGER');
+          if (displayStatus.includes('MANAGER') || displayStatus.includes('APPROV')) {
+            color = 'success';
+          } else if (displayStatus.includes('REJECT')) {
+            color = 'error';
+          } else {
+            color = 'gold';
+          }
         }
 
         return (
-          <Tag color={isManager ? 'success' : 'gold'} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
+          <Tag color={color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
             {displayStatus}
           </Tag>
         );
@@ -522,15 +614,15 @@ export default function MRF() {
         style={{
           borderRadius: 12,
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #005f56',
+          borderTop: '4px solid #7a922e',
           marginBottom: 28,
         }}
       >
         <div style={{ marginBottom: 24 }}>
-          <Title level={3} style={{ fontFamily: "'Lora', serif", fontWeight: 700, margin: '0 0 4px 0' }}>
+          <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 4px 0' }}>
             New MRF Request
           </Title>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56' }}>
+          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e' }}>
             Hiring Manager Details
           </Text>
         </div>
@@ -539,7 +631,6 @@ export default function MRF() {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
-          initialValues={{ email_body_content: DEFAULT_EMAIL_BODY }}
         >
           <Row gutter={16}>
             <Col xs={24} sm={8}>
@@ -636,7 +727,7 @@ export default function MRF() {
             label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Email Body</span>}
             name="email_body_content"
           >
-            <Input.TextArea rows={5} style={{ borderRadius: 8 }} />
+            <Input.TextArea rows={5} style={{ borderRadius: 8 }} placeholder={DEFAULT_EMAIL_BODY} />
           </Form.Item>
 
           <Space size={12}>
@@ -646,8 +737,8 @@ export default function MRF() {
               icon={<SendOutlined />}
               loading={submitting}
               style={{
-                background: '#005f56',
-                borderColor: '#005f56',
+                background: '#7a922e',
+                borderColor: '#7a922e',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,
@@ -719,8 +810,8 @@ export default function MRF() {
             onClick={handleExportCSV}
             style={{
               borderRadius: 6,
-              color: '#005f56',
-              borderColor: '#005f56',
+              color: '#7a922e',
+              borderColor: '#7a922e',
               fontWeight: 600,
             }}
           >
@@ -754,7 +845,7 @@ export default function MRF() {
         title={
           selectedRecord && (
             <div style={{ paddingBottom: 10, borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ fontSize: 16, fontFamily: "'Lora', serif", fontWeight: 700, color: '#1f2937' }}>
+              <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#1f2937' }}>
                 {selectedRecord.first_name} {selectedRecord.last_name} — {selectedRecord.role}
               </div>
               <div style={{ fontSize: 11, fontWeight: 500, color: '#6b7280', marginTop: 2 }}>
@@ -764,22 +855,22 @@ export default function MRF() {
           )
         }
         open={detailsOpen}
-        onCancel={() => { setDetailsOpen(false); setIsEditingMain(false); setMainMrf(null); }}
+        onCancel={() => { setDetailsOpen(false); setIsEditing(false); setMainMrf(null); }}
         width={800}
         footer={[
           isEditing ? (
             <Space key="footer-edit">
-              <Button onClick={() => setIsEditing(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
+              <Button onClick={handleCancelEdit} style={{ borderRadius: 6, fontWeight: 600 }}>
                 Cancel
               </Button>
-              <Button type="primary" onClick={handleSaveChanges} loading={updating} style={{ background: '#005f56', borderColor: '#005f56', borderRadius: 6, fontWeight: 600 }}>
+              <Button type="primary" onClick={handleSaveAll} loading={updating} style={{ background: '#7a922e', borderColor: '#7a922e', borderRadius: 6, fontWeight: 600 }}>
                 Save Changes
               </Button>
             </Space>
           ) : (
             <Space key="footer-view">
-              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#005f56', borderColor: '#005f56', fontWeight: 600 }}>
-                Edit Request
+              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#7a922e', borderColor: '#7a922e', fontWeight: 600 }}>
+                Edit
               </Button>
               <Button onClick={() => setDetailsOpen(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
                 Close
@@ -817,7 +908,7 @@ export default function MRF() {
             </div>
 
             {/* Section 2: New MRF Request Info */}
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e', marginBottom: 16 }}>
               New MRF Request Info
             </div>
 
@@ -961,32 +1052,16 @@ export default function MRF() {
             {/* Section 3: Submitted MRF Details (rpa_mrf) — only when HM has submitted */}
             {selectedRecord.mrf_id && (
               <div style={{ marginTop: 28, borderTop: '1px solid #f3f4f6', paddingTop: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#005f56' }}>
+                <div style={{ marginBottom: 16 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e' }}>
                     Submitted MRF Details
                   </span>
-                  {mainMrf && (
-                    isEditingMain ? (
-                      <Space>
-                        <Button size="small" onClick={() => { setIsEditingMain(false); mainForm.setFieldsValue(mainMrf); }} style={{ borderRadius: 6, fontWeight: 600 }}>
-                          Cancel
-                        </Button>
-                        <Button size="small" type="primary" onClick={handleSaveMainChanges} loading={updatingMain} style={{ background: '#005f56', borderColor: '#005f56', borderRadius: 6, fontWeight: 600 }}>
-                          Save MRF
-                        </Button>
-                      </Space>
-                    ) : (
-                      <Button size="small" onClick={() => setIsEditingMain(true)} style={{ borderRadius: 6, color: '#005f56', borderColor: '#005f56', fontWeight: 600 }}>
-                        Edit MRF
-                      </Button>
-                    )
-                  )}
                 </div>
 
                 {mainMrfLoading ? (
                   <Text type="secondary" style={{ fontSize: 12 }}>Loading submitted MRF details…</Text>
                 ) : mainMrf ? (
-                  <Form form={mainForm} layout="vertical" disabled={!isEditingMain}>
+                  <Form form={mainForm} layout="vertical" disabled={!isEditing}>
                     {MAIN_MRF_FIELD_GROUPS.map((group) => (
                       <div key={group.title} style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: '#9ca3af', margin: '4px 0 10px' }}>
@@ -995,18 +1070,70 @@ export default function MRF() {
                         <Row gutter={16}>
                           {group.fields.map(([name, label]) => (
                             <Col span={12} key={name}>
-                              <Form.Item
-                                label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}
-                                name={name}
-                                rules={MAIN_MRF_NUMERIC_FIELDS.includes(name) ? [{ pattern: /^\d*$/, message: 'Must be a number' }] : []}
-                              >
-                                <Input style={{ borderRadius: 6 }} />
-                              </Form.Item>
+                              {name === 'date_of_request' ? (
+                                // Read-only display only — never bound to mainForm, so it can
+                                // never be touched/submitted (submission dates stay non-editable).
+                                <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}>
+                                  <Input
+                                    value={mainMrf.date_of_request ? new Date(mainMrf.date_of_request).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                                    readOnly
+                                    disabled
+                                    style={{ borderRadius: 6 }}
+                                  />
+                                </Form.Item>
+                              ) : (
+                                <Form.Item
+                                  label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}
+                                  name={name}
+                                >
+                                  {renderMainMrfField(name, mainMrf?.[name])}
+                                </Form.Item>
+                              )}
                             </Col>
                           ))}
                         </Row>
                       </div>
                     ))}
+
+                    {mainMrf.parsed_jd_json && (
+                      <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px dashed #e5e7eb' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: '#9ca3af', margin: '4px 0 10px' }}>
+                          AI-Parsed JD Summary
+                        </div>
+                        <Row gutter={16}>
+                          <Col span={12}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Experience Range (AI)</span>}>
+                              <Input
+                                readOnly
+                                disabled
+                                value={`${mainMrf.parsed_jd_json.min_experience_years ?? '—'} - ${mainMrf.parsed_jd_json.max_experience_years ?? '—'} years`}
+                                style={{ borderRadius: 6 }}
+                              />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Education (AI)</span>}>
+                              <Input readOnly disabled value={mainMrf.parsed_jd_json.education || '—'} style={{ borderRadius: 6 }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Mandatory Skills (AI)</span>}>
+                              <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.mandatory_skills || '—'} style={{ borderRadius: 6 }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={12}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Good to Have Skills (AI)</span>}>
+                              <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.good_to_have_skills || '—'} style={{ borderRadius: 6 }} />
+                            </Form.Item>
+                          </Col>
+                          <Col span={24}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Roles & Responsibilities (AI)</span>}>
+                              <TextArea readOnly disabled rows={3} value={mainMrf.parsed_jd_json.roles_and_responsibilities || '—'} style={{ borderRadius: 6 }} />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      </div>
+                    )}
                   </Form>
                 ) : (
                   <Text type="secondary" style={{ fontSize: 12 }}>No submitted MRF details available.</Text>

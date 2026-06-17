@@ -24,7 +24,7 @@ const REQUIRED = '#bc2f32';
  * keys so the submit + prefill pipeline is untouched; only labels, descriptions,
  * options and behaviour are matched to n8n.
  */
-const FIELDS = [
+export const FIELDS = [
   // 1
   { name: 'hiring_manager_name', label: 'Name of the Hiring Manager', desc: 'Please provide the name of the intender', type: 'text', required: true },
   // 2 — n8n "hiring_manager_email" maps to our submitter_email column
@@ -243,6 +243,9 @@ export default function MrfSubmit() {
       good_to_have_skills: data.good_to_have_skills,
       ceo_management_round: data.ceo_management_round,
       client_round: data.client_round,
+      // question_paper_choice is transient (not a DB column) — derive it from whether
+      // the prior submission already has a question paper on file.
+      question_paper_choice: data.question_paper ? 'Use the existing one' : 'Creating new',
     };
 
     // Smart-match Same-as-JD/Other selects: unknown value => "Other" + fill paired textbox.
@@ -289,7 +292,8 @@ export default function MrfSubmit() {
       additional_information: data.additional_information,
       competencies_required: data.competencies_required,
       question_paper_new_owner: data.question_paper_new_owner,
-      approved_by_abhijit: data.approved_by_abhijit,
+      // approved_by_abhijit is intentionally NOT prefilled — it's a per-submission
+      // approval flag, not a property of the role/project that should carry over.
       ...otherText,
     });
     message.success('Form prefilled from the selected requisition.');

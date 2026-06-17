@@ -1,6 +1,7 @@
 /**
- * MainLayout — Primary app shell with horizontal top navigation bar.
- * Replicates modern ATS layouts (like Workable, Greenhouse) by placing navigation in a clean top bar.
+ * MainLayout — Primary app shell with a left collapsible sidebar navigation.
+ * The sidebar holds the brand + nav menu (icon rail when collapsed); a slim top
+ * bar carries the page title, Admin Portal access, and the user menu.
  */
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
@@ -32,14 +33,18 @@ import {
   MoonOutlined,
   UploadOutlined,
   CrownOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
 // import NotificationBell from '../components/common/NotificationBell';
 
-const { Header, Content } = Layout;
+const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
+
+const SIDEBAR_COLLAPSED_KEY = 'ats.sidebarCollapsed';
 
 /** Navigation menu items */
 const MENU_ITEMS = [
@@ -73,14 +78,16 @@ export default function MainLayout() {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
-  /** Build breadcrumb items from the current path. */
+  /** Sidebar collapse state — persisted across reloads. */
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  );
+  const handleCollapse = (value) => {
+    setCollapsed(value);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(value));
+  };
+
   const pathSegments = location.pathname.split('/').filter(Boolean);
-  const breadcrumbItems = [
-    { title: 'Home' },
-    ...pathSegments.map((seg) => ({
-      title: BREADCRUMB_MAP[seg] || seg.charAt(0).toUpperCase() + seg.slice(1),
-    })),
-  ];
 
   /** User dropdown menu */
   const userMenuItems = [
@@ -101,22 +108,21 @@ export default function MainLayout() {
   /** Get the currently active menu key */
   const selectedKey = '/' + (pathSegments[0] || 'dashboard');
   const isAdminPath = location.pathname.startsWith('/admin');
-  const isDashboard = location.pathname === '/dashboard';
+
+  /** Title for the current page, shown in the top bar. */
+  const pageTitle = BREADCRUMB_MAP[pathSegments[0]] || 'Dashboard';
 
   const hasAdminAccess =
     ['admin', 'superadmin'].includes((user?.role || '').toLowerCase());
 
-  // Filter and strip icons from menu items by user role
+  // Filter menu items by user role (icons kept for the sidebar rail).
   const menuItems = MENU_ITEMS.filter(item => {
     const role = (user?.role || '').toLowerCase();
     if (role === 'vendor') {
       return item.key === '/dashboard' || item.key === '/vendor';
     }
     return true;
-  }).map(item => ({
-    key: item.key,
-    label: item.label,
-  }));
+  });
 
   if (isAdminPath) {
     return (
@@ -146,9 +152,9 @@ export default function MainLayout() {
             <div style={{ width: 1, height: 26, background: '#dde2d0' }} />
             <span
               style={{
-                fontFamily: "'Lora', serif",
+                fontFamily: 'var(--font-heading)',
                 fontSize: 15,
-                color: '#005f56',
+                color: '#7a922e',
                 fontWeight: 700,
                 letterSpacing: '0.2px',
               }}
@@ -166,7 +172,7 @@ export default function MainLayout() {
               style={{
                 fontSize: 12,
                 fontWeight: 600,
-                color: '#005f56',
+                color: '#7a922e',
                 border: '1px solid #dde1df',
                 borderRadius: 6,
                 height: 30,
@@ -182,8 +188,8 @@ export default function MainLayout() {
               style={{
                 display: 'inline-block',
                 lineHeight: '24px',
-                background: '#e0f0ef',
-                color: '#005f56',
+                background: '#eef3da',
+                color: '#7a922e',
                 border: '1px solid #dde1df',
                 fontSize: 11,
                 fontWeight: 600,
@@ -226,144 +232,166 @@ export default function MainLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh', background: 'var(--ink)' }}>
-      {/* ---- Top Header Menu Bar ---- */}
-      <Header
-        className="glass"
+      {/* ---- Left Sidebar Navigation ---- */}
+      <Sider
+        className="glass-sidebar"
+        theme="light"
+        width={248}
+        collapsedWidth={72}
+        collapsible
+        collapsed={collapsed}
+        onCollapse={handleCollapse}
+        trigger={null}
+        breakpoint="lg"
+        onBreakpoint={(broken) => handleCollapse(broken)}
         style={{
           position: 'sticky',
           top: 0,
-          zIndex: 100,
-          height: 64,
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid var(--border-light)',
-          background: 'var(--colorBgContainer)',
+          height: '100vh',
+          overflow: 'auto',
+          borderRight: '1px solid var(--border-light)',
         }}
       >
-        {/* Left: Logo and Brand Title */}
-        <div 
-          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexShrink: 0 }} 
+        {/* Brand */}
+        <div
           onClick={() => navigate('/dashboard')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            height: 64,
+            padding: collapsed ? '0' : '0 18px',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            cursor: 'pointer',
+            borderBottom: '1px solid var(--border-light)',
+          }}
         >
           <img
             src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
             alt="AAPNA Logo"
             style={{
-              height: 30,
-              width: 79,
+              height: 28,
+              width: collapsed ? 32 : 74,
               objectFit: 'cover',
               objectPosition: 'left',
               filter: isDark ? 'invert(1) brightness(2)' : 'none',
-              transition: 'filter 0.3s ease',
+              transition: 'all 0.3s ease',
             }}
           />
-          <div style={{ lineHeight: 1.2 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, display: 'block', color: 'var(--text)', letterSpacing: '-0.02em' }}>
-              AAPNA
-            </span>
-            <span style={{ fontSize: 9, letterSpacing: '0.05em', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: 500 }}>
-              ATS Platform
-            </span>
-          </div>
-        </div>
-
-        {/* Middle: Horizontal Navigation Menu (hide on dashboard page) */}
-        {!isDashboard ? (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', padding: '0 12px' }}>
-            <Menu
-              mode="horizontal"
-              selectedKeys={[selectedKey]}
-              items={menuItems}
-              onClick={({ key }) => navigate(key)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                width: '100%',
-                maxWidth: 900,
-                justifyContent: 'center',
-                lineHeight: '64px',
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ flex: 1 }} />
-        )}
-
-        {/* Right: Dark Mode, Notifications, Avatar */}
-        <Space size={12} align="center" style={{ flexShrink: 0 }}>
-          {/* Admin Dashboard Access */}
-          {hasAdminAccess && (
-            <Button
-              type="text"
-              icon={<CrownOutlined style={{ color: 'var(--gold)', fontSize: 14 }} />}
-              onClick={() => navigate('/admin/dashboard')}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--gold)',
-                background: 'var(--gold-subtle)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                height: 32,
-                padding: '0 10px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              Admin Portal
-            </Button>
+          {!collapsed && (
+            <div style={{ lineHeight: 1.2 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, display: 'block', color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                AAPNA
+              </span>
+              <span style={{ fontSize: 9, letterSpacing: '0.05em', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: 500 }}>
+                ATS Platform
+              </span>
+            </div>
           )}
+        </div>
 
-          {/* Dark Mode Switcher - Hidden as requested */}
-          {/* <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+        {/* Navigation Menu */}
+        <Menu
+          mode="inline"
+          selectedKeys={[selectedKey]}
+          items={menuItems}
+          onClick={({ key }) => navigate(key)}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: '12px 8px',
+          }}
+        />
+      </Sider>
+
+      {/* ---- Right Side: Top Bar + Content ---- */}
+      <Layout style={{ background: 'var(--ink)' }}>
+        {/* ---- Top Bar ---- */}
+        <Header
+          className="glass"
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            height: 64,
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid var(--border-light)',
+            background: 'var(--colorBgContainer)',
+          }}
+        >
+          {/* Left: collapse toggle + page title */}
+          <Space size={14} align="center" style={{ minWidth: 0 }}>
             <Button
               type="text"
-              icon={isDark ? <SunOutlined style={{ fontSize: 16, color: '#f0b429' }} /> : <MoonOutlined style={{ fontSize: 16 }} />}
-              onClick={toggleTheme}
-              style={{ width: 36, height: 36, borderRadius: 8 }}
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => handleCollapse(!collapsed)}
+              style={{ width: 36, height: 36, borderRadius: 8, fontSize: 16 }}
             />
-          </Tooltip> */}
+            <Text style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }} className="text-truncate">
+              {pageTitle}
+            </Text>
+          </Space>
 
-          {/* Real-time Notifications Bell - Hidden as requested */}
-          {/* <NotificationBell /> */}
-
-          {/* User Profile Dropdown Menu */}
-          <Dropdown
-            menu={{ items: userMenuItems, onClick: handleUserMenu }}
-            trigger={['click']}
-            placement="bottomRight"
-          >
-            <Space style={{ cursor: 'pointer', padding: '2px 4px', borderRadius: 8 }}>
-              <Avatar
-                size={32}
-                icon={<UserOutlined />}
+          {/* Right: Admin Portal + Avatar */}
+          <Space size={12} align="center" style={{ flexShrink: 0 }}>
+            {hasAdminAccess && (
+              <Button
+                type="text"
+                icon={<CrownOutlined style={{ color: 'var(--gold)', fontSize: 14 }} />}
+                onClick={() => navigate('/admin/dashboard')}
                 style={{
-                  background: 'var(--gradient-primary)',
-                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--gold)',
+                  background: 'var(--gold-subtle)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  height: 32,
+                  padding: '0 10px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
                 }}
-              />
-            </Space>
-          </Dropdown>
-        </Space>
-      </Header>
+              >
+                Admin Portal
+              </Button>
+            )}
 
-      {/* ---- Main Content Area ---- */}
-      <Content
-        style={{
-          padding: '24px 28px 48px',
-          maxWidth: 1200,
-          width: '100%',
-          margin: '0 auto',
-        }}
-      >
-        {/* Child Routes Content Outlet */}
-        <div className="page-enter">
-          <Outlet />
-        </div>
-      </Content>
+            <Dropdown
+              menu={{ items: userMenuItems, onClick: handleUserMenu }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Space style={{ cursor: 'pointer', padding: '2px 4px', borderRadius: 8 }}>
+                <Avatar
+                  size={32}
+                  icon={<UserOutlined />}
+                  style={{
+                    background: 'var(--gradient-primary)',
+                    cursor: 'pointer',
+                  }}
+                />
+              </Space>
+            </Dropdown>
+          </Space>
+        </Header>
+
+        {/* ---- Main Content Area ---- */}
+        <Content
+          style={{
+            padding: '24px 28px 40px',
+            width: '100%',
+          }}
+        >
+          {/* Child Routes Content Outlet */}
+          <div className="page-enter">
+            <Outlet />
+          </div>
+        </Content>
+      </Layout>
     </Layout>
   );
 }

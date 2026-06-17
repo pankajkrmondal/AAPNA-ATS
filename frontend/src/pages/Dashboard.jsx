@@ -1,10 +1,10 @@
 /**
- * Dashboard Page — Overview with 7 module blocks and recent candidates table.
- * Replicates the legacy n8n UI style with an aurora background animation and locks.
+ * Dashboard Page — Modern app-style KPI overview.
+ * Greeting header + KPI stat cards + pipeline funnel + quick actions + recent candidates.
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Table, Button, Typography, Tag, Modal, message, Space } from 'antd';
+import { Row, Col, Card, Table, Button, Typography, Modal, Space, Tooltip } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
@@ -19,7 +19,7 @@ import {
   CalendarOutlined,
   CheckCircleOutlined,
   ArrowRightOutlined,
-  CheckOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import candidateService from '../services/candidateService';
@@ -28,181 +28,38 @@ import StatCard from '../components/common/StatCard';
 
 const { Title, Text } = Typography;
 
-// --- Bento Grid Custom Mockups ---
+/** Quick-action shortcuts — each gated by the same module permission keys as before. */
+const QUICK_ACTIONS = [
+  { label: 'Candidate Screening', url: '/filtering', moduleKey: 'candidate_screening', icon: <FilterOutlined />, color: '#d97706', desc: 'Find the best-fit candidates with AI skill matching, custom score criteria, and advanced filters.' },
+  { label: 'Screening Analytics', url: '/analytics', moduleKey: 'screening_analytics', icon: <BarChartOutlined />, color: '#e11d48', desc: 'Track recruitment performance — shortlisted, rejected, on-hold and total candidate insights.' },
+  { label: 'New MRF Request', url: '/mrf', moduleKey: 'new_mrf', icon: <PlusOutlined />, color: '#7a922e', desc: 'Raise a new Manpower Requisition Form to kick off hiring for a specific role.' },
+  { label: 'Search & Edit Candidates', url: '/candidates', moduleKey: 'search_candidates', icon: <SearchOutlined />, color: '#7a922e', desc: 'Search the candidate database, open profiles, and update candidate information.' },
+  { label: 'HR Manual Upload', url: '/hr-upload', moduleKey: 'hr_upload', icon: <UploadOutlined />, color: '#2563eb', desc: 'Manually upload candidate resumes to parse and store them for future hiring.' },
+  { label: 'Vendor Upload', url: '/vendor', moduleKey: 'vendor_upload', icon: <CloudUploadOutlined />, color: '#4f46e5', desc: 'Upload and manage vendor-sourced resumes and documents for third-party hiring.' },
+  { label: 'System Configuration', url: '/settings', moduleKey: 'system_config', icon: <SettingOutlined />, color: '#b45309', desc: 'Configure system processes, automation rules, and recruitment settings.' },
+];
 
-function MRFRequestMockup() {
-  return (
-    <div className="mockup-container mrf-mockup">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontWeight: 700, borderBottom: '1px solid var(--border-light)', paddingBottom: 6 }}>
-        <span>Requisition Form</span>
-        <span style={{ fontSize: 9, color: 'var(--accent-color)' }}>Draft</span>
-      </div>
-      <div className="mrf-stepper">
-        <div className="step active"><span>✓</span> Details</div>
-        <div className="step active"><span>✓</span> Budget</div>
-        <div className="step current"><span>3</span> Approvals</div>
-      </div>
-      <div className="mrf-form-lines">
-        <div className="form-line-short" />
-        <div className="form-line-long" />
-        <div className="form-line-medium" />
-      </div>
-    </div>
-  );
-}
+/** Pipeline funnel stages — keys map to the funnel object from dashboardService.getStats(). */
+const FUNNEL_STAGES = [
+  { key: 'sourced', label: 'Sourced', gradient: 'linear-gradient(90deg, #0284c7 0%, #0ea5e9 100%)', desc: 'Every candidate sourced into the system across all roles and channels.' },
+  { key: 'aiScreened', label: 'AI Screened', gradient: 'linear-gradient(90deg, #7a922e 0%, #92a63c 100%)', desc: 'Candidates whose profiles have been analysed and scored by the AI screening engine.' },
+  { key: 'shortlisted', label: 'Shortlisted', gradient: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)', desc: 'Candidates advanced to the shortlist and approved for the interview pipeline.' },
+  { key: 'hired', label: 'Hired', gradient: 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)', desc: 'Candidates who accepted an offer or have joined.' },
+];
 
-function SearchCandidatesMockup() {
-  return (
-    <div className="mockup-container search-mockup">
-      <div className="search-bar">
-        <span className="search-icon">🔍</span>
-        <span className="search-text">Python Developer</span>
-      </div>
-      <div className="candidate-card-mini">
-        <div className="avatar" />
-        <div className="candidate-info" style={{ flex: 1 }}>
-          <div className="name-line" />
-          <div className="match-pills">
-            <span className="pill green">Python</span>
-            <span className="pill green">Django</span>
-            <span className="pill gray">AWS</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+/** Detailed explanatory tooltip text for each KPI metric. */
+const KPI_TOOLTIPS = {
+  'Total Candidates': 'Every CV in the system across all roles and sources.',
+  'Active MRFs': 'Manpower Requisition Forms currently pending, awaiting, or approved.',
+  "Today's Uploads": 'Candidate CVs added to the system since midnight today.',
+  'Shortlisted': 'Candidates moved to a shortlisted / selected pipeline stage.',
+};
 
-function HRUploadMockup() {
-  return (
-    <div className="mockup-container upload-mockup">
-      <div className="dropzone-area">
-        <span className="cloud-icon">☁️</span>
-        <span className="drop-text">Drag & Drop Resume</span>
-      </div>
-      <div className="upload-progress-card">
-        <span className="file-icon" style={{ fontSize: 14 }}>📄</span>
-        <div className="progress-details">
-          <div className="progress-label">resume_rahul.docx</div>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: '75%' }} />
-          </div>
-        </div>
-        <span className="progress-percent">75%</span>
-      </div>
-    </div>
-  );
-}
-
-function SystemConfigMockup() {
-  return (
-    <div className="mockup-container config-mockup">
-      <div className="config-row">
-        <span className="config-label">AI Auto-Screening</span>
-        <div className="toggle-switch active"><div className="toggle-knob" /></div>
-      </div>
-      <div className="config-row">
-        <span className="config-label">Email Notifications</span>
-        <div className="toggle-switch active"><div className="toggle-knob" /></div>
-      </div>
-      <div className="slider-row">
-        <div className="slider-label">Min Match Score: <span>75%</span></div>
-        <div className="slider-track">
-          <div className="slider-fill" style={{ width: '75%' }} />
-          <div className="slider-knob" style={{ left: '75%' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function VendorUploadMockup() {
-  return (
-    <div className="mockup-container vendor-mockup">
-      <div className="vendor-header">
-        <span className="vendor-badge">TopTech Staffing</span>
-        <span className="submission-count">12 Profiles</span>
-      </div>
-      <div className="submission-list">
-        <div className="list-item">
-          <span className="candidate-name" style={{ fontWeight: 600 }}>Vikas Babu</span>
-          <span className="status-tag green">Shortlisted</span>
-        </div>
-        <div className="list-item">
-          <span className="candidate-name" style={{ fontWeight: 600 }}>Sahil Sarma</span>
-          <span className="status-tag blue">Emailed</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CandidateScreeningMockup() {
-  return (
-    <div className="mockup-container screening-mockup">
-      <div className="scorecard-header">
-        <span className="candidate-name" style={{ fontWeight: 700, fontSize: 13 }}>Sneha Gupta</span>
-        <span className="ai-badge">AI MATCH</span>
-      </div>
-      <div className="scorecard-body">
-        <div className="circular-progress-container">
-          <svg width="60" height="60" viewBox="0 0 64 64" className="progress-svg">
-            <circle cx="32" cy="32" r="26" className="progress-bg" />
-            <circle cx="32" cy="32" r="26" className="progress-bar" strokeDasharray="163.3" strokeDashoffset="19.6" />
-          </svg>
-          <div className="progress-value">8.8</div>
-        </div>
-        <div className="score-details">
-          <div className="score-row">
-            <span className="metric-label">Technical</span>
-            <div className="metric-track"><div className="metric-fill" style={{ width: '90%' }} /></div>
-            <span className="metric-val">9.0</span>
-          </div>
-          <div className="score-row">
-            <span className="metric-label">Communication</span>
-            <div className="metric-track"><div className="metric-fill" style={{ width: '85%' }} /></div>
-            <span className="metric-val">8.5</span>
-          </div>
-          <div className="score-row">
-            <span className="metric-label">Aptitude</span>
-            <div className="metric-track"><div className="metric-fill" style={{ width: '90%' }} /></div>
-            <span className="metric-val">9.0</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AnalyticsMockup() {
-  return (
-    <div className="mockup-container analytics-mockup">
-      <div className="analytics-header">
-        <div className="tile">
-          <span className="tile-label">Selection Rate</span>
-          <span className="tile-val">74%</span>
-        </div>
-        <div className="tile">
-          <span className="tile-label">Interviews Done</span>
-          <span className="tile-val">82</span>
-        </div>
-      </div>
-      <div className="chart-canvas">
-        <svg viewBox="0 0 200 80" className="chart-svg">
-          <defs>
-            <linearGradient id="chart-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent-color)" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="var(--accent-color)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d="M 0 60 Q 30 50 60 35 T 120 45 T 180 15 L 180 80 L 0 80 Z" fill="url(#chart-grad)" />
-          <path d="M 0 60 Q 30 50 60 35 T 120 45 T 180 15" fill="none" stroke="var(--accent-color)" strokeWidth="3" />
-          <circle cx="60" cy="35" r="4" fill="var(--accent-color)" />
-          <circle cx="180" cy="15" r="4" fill="var(--accent-color)" />
-        </svg>
-      </div>
-    </div>
-  );
+function greetingForNow() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 export default function Dashboard() {
@@ -214,6 +71,12 @@ export default function Dashboard() {
   const [total, setTotal] = useState(0);
   const pageSize = 10;
 
+  const [stats, setStats] = useState({
+    totalCandidates: 0,
+    activeMRFs: 0,
+    todayUploads: 0,
+    shortlisted: 0,
+  });
   const [funnelStats, setFunnelStats] = useState({
     sourced: 0,
     aiScreened: 0,
@@ -222,14 +85,20 @@ export default function Dashboard() {
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
-  // Load dashboard funnel stats
+  // Load dashboard stats (KPIs + funnel)
   useEffect(() => {
     const fetchStats = async () => {
       try {
         const res = await dashboardService.getStats();
         const statsData = res.data?.data || res.data;
-        if (statsData?.funnel) {
-          setFunnelStats(statsData.funnel);
+        if (statsData) {
+          setStats({
+            totalCandidates: statsData.totalCandidates || 0,
+            activeMRFs: statsData.activeMRFs || 0,
+            todayUploads: statsData.todayUploads || 0,
+            shortlisted: statsData.shortlisted || 0,
+          });
+          if (statsData.funnel) setFunnelStats(statsData.funnel);
         }
       } catch (err) {
         console.error('Failed to load dashboard stats', err);
@@ -246,11 +115,10 @@ export default function Dashboard() {
       setLoading(true);
       try {
         const res = await candidateService.search({}, page, pageSize);
-        // Extract candidate array from paginated response
         const candidateList = Array.isArray(res.data?.data)
           ? res.data.data
           : (res.data?.data?.data || res.data?.data?.candidates || res.data || []);
-        
+
         const paginationObj = res.data?.pagination || res.data?.data?.pagination || {};
         const totalCount = paginationObj.total || res.data?.total || candidateList.length;
 
@@ -271,126 +139,12 @@ export default function Dashboard() {
     return (user?.permissions || []).includes(moduleKey);
   };
 
-  const bentoModules = [
-    {
-      title: 'Candidate Screening',
-      description: 'Identify the best candidates using advanced filtering, skill-based matching, and custom score criteria.',
-      url: '/filtering',
-      moduleKey: 'candidate_screening',
-      accentColor: '#d97706',
-      accentBg: 'rgba(217, 119, 6, 0.08)',
-      accentBorder: 'rgba(217, 119, 6, 0.3)',
-      accentGrid: 'rgba(217, 119, 6, 0.35)',
-      accentGlow: 'rgba(217, 119, 6, 0.12)',
-      icon: <FilterOutlined />,
-      span: 12,
-      isLarge: true,
-      mockup: <CandidateScreeningMockup />,
-    },
-    {
-      title: 'Recruitment Screening Analytics',
-      description: 'Track recruitment performance with detailed insights on shortlisted, rejected, on-hold, and total candidates.',
-      url: '/analytics',
-      moduleKey: 'screening_analytics',
-      accentColor: '#e11d48',
-      accentBg: 'rgba(225, 29, 72, 0.08)',
-      accentBorder: 'rgba(225, 29, 72, 0.3)',
-      accentGrid: 'rgba(225, 29, 72, 0.35)',
-      accentGlow: 'rgba(225, 29, 72, 0.12)',
-      icon: <BarChartOutlined />,
-      span: 12,
-      isLarge: true,
-      mockup: <AnalyticsMockup />,
-    },
-    {
-      title: 'New MRF Request',
-      description: 'Create and submit a new Manpower Requisition Form to initiate hiring for a specific role.',
-      url: '/mrf',
-      moduleKey: 'new_mrf',
-      accentColor: '#0f766e',
-      accentBg: 'rgba(15, 118, 110, 0.08)',
-      accentBorder: 'rgba(15, 118, 110, 0.3)',
-      accentGrid: 'rgba(15, 118, 110, 0.35)',
-      accentGlow: 'rgba(15, 118, 110, 0.12)',
-      icon: <PlusOutlined />,
-      span: 8,
-      isLarge: false,
-      mockup: <MRFRequestMockup />,
-    },
-    {
-      title: 'Search & Edit Candidates',
-      description: 'Search existing candidates, update profiles, and manage candidate information efficiently.',
-      url: '/candidates',
-      moduleKey: 'search_candidates',
-      accentColor: '#005f56',
-      accentBg: 'rgba(0, 95, 86, 0.08)',
-      accentBorder: 'rgba(0, 95, 86, 0.3)',
-      accentGrid: 'rgba(0, 95, 86, 0.35)',
-      accentGlow: 'rgba(0, 95, 86, 0.12)',
-      icon: <SearchOutlined />,
-      span: 8,
-      isLarge: false,
-      mockup: <SearchCandidatesMockup />,
-    },
-    {
-      title: 'HR Manual Upload',
-      description: 'Upload candidate resumes manually to store and manage them for future hiring needs.',
-      url: '/hr-upload',
-      moduleKey: 'hr_manual_upload',
-      accentColor: '#0369a1',
-      accentBg: 'rgba(3, 105, 161, 0.08)',
-      accentBorder: 'rgba(3, 105, 161, 0.3)',
-      accentGrid: 'rgba(3, 105, 161, 0.35)',
-      accentGlow: 'rgba(3, 105, 161, 0.12)',
-      icon: <UploadOutlined />,
-      span: 8,
-      isLarge: false,
-      mockup: <HRUploadMockup />,
-    },
-    {
-      title: 'Vendor Manual Upload',
-      description: 'Upload and manage vendor-sourced resumes and documents for third-party hiring.',
-      url: '/vendor',
-      moduleKey: 'vendor_upload',
-      accentColor: '#4f46e5',
-      accentBg: 'rgba(79, 70, 229, 0.08)',
-      accentBorder: 'rgba(79, 70, 229, 0.3)',
-      accentGrid: 'rgba(79, 70, 229, 0.35)',
-      accentGlow: 'rgba(79, 70, 229, 0.12)',
-      icon: <CloudUploadOutlined />,
-      span: 12,
-      isLarge: false,
-      mockup: <VendorUploadMockup />,
-    },
-    {
-      title: 'System Configuration',
-      description: 'Manage configuration settings for system processes and automation rules.',
-      url: '/settings',
-      moduleKey: 'system_config',
-      accentColor: '#c2410c',
-      accentBg: 'rgba(194, 65, 12, 0.08)',
-      accentBorder: 'rgba(194, 65, 12, 0.3)',
-      accentGrid: 'rgba(194, 65, 12, 0.35)',
-      accentGlow: 'rgba(194, 65, 12, 0.12)',
-      icon: <SettingOutlined />,
-      span: 12,
-      isLarge: false,
-      mockup: <SystemConfigMockup />,
-    },
-  ];
-
-  const handleModuleClick = (mod) => {
-    if (isModuleEnabled(mod.moduleKey)) {
-      navigate(mod.url);
-    }
-  };
-
   const handleDownloadResume = (cvFileUrl) => {
     if (!cvFileUrl || cvFileUrl === 'null' || cvFileUrl === 'undefined' || String(cvFileUrl).trim() === '') {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
+        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       });
       return;
     }
@@ -403,6 +157,15 @@ export default function Dashboard() {
     document.body.removeChild(link);
   };
 
+  const kpiCards = [
+    { title: 'Total Candidates', value: stats.totalCandidates, icon: <TeamOutlined />, color: '#7a922e' },
+    { title: 'Active MRFs', value: stats.activeMRFs, icon: <FileTextOutlined />, color: '#2563eb' },
+    { title: "Today's Uploads", value: stats.todayUploads, icon: <CalendarOutlined />, color: '#d97706' },
+    { title: 'Shortlisted', value: stats.shortlisted, icon: <CheckCircleOutlined />, color: '#16a34a' },
+  ];
+
+  const maxFunnel = Math.max(1, ...FUNNEL_STAGES.map((s) => funnelStats[s.key] || 0));
+
   const tableColumns = [
     {
       title: 'Name',
@@ -411,12 +174,12 @@ export default function Dashboard() {
         const nameVal = record.Name || record.name || '—';
         const expVal = record.TotalExperienceYears || record.experience;
         const qualVal = record.HighestQualification || record.education;
-        
+
         let subtext = '';
         if (expVal) subtext += `${expVal} yrs`;
         if (expVal && qualVal) subtext += ' • ';
         if (qualVal) subtext += qualVal;
-        
+
         return (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <Text strong style={{ fontSize: 13.5, color: 'var(--text)' }}>{nameVal}</Text>
@@ -430,7 +193,7 @@ export default function Dashboard() {
       key: 'email',
       render: (_, record) => {
         const emailVal = record.EmailID || record.email || '—';
-        return <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#1f2937' }}>{emailVal}</span>;
+        return <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{emailVal}</span>;
       },
     },
     {
@@ -438,7 +201,7 @@ export default function Dashboard() {
       key: 'role',
       render: (_, record) => {
         const roleVal = record.PositionApplied || record.position || '—';
-        return <span style={{ color: '#1f2937', fontWeight: 500 }}>{roleVal}</span>;
+        return <span style={{ color: 'var(--text)', fontWeight: 500 }}>{roleVal}</span>;
       },
     },
     {
@@ -447,7 +210,7 @@ export default function Dashboard() {
       render: (_, record) => {
         const dateVal = record.createdAt || record.created_at;
         return (
-          <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#374151' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-2)' }}>
             {dateVal ? dateVal.split('T')[0] : '—'}
           </span>
         );
@@ -468,7 +231,7 @@ export default function Dashboard() {
             style={{
               borderRadius: 6,
               background: isResumeOk ? '#eef3da' : '#f5f5f0',
-              color: isResumeOk ? '#005f56' : '#a0aa84',
+              color: isResumeOk ? '#7a922e' : '#a0aa84',
               borderColor: isResumeOk ? '#b8cc6e' : '#dde1df',
             }}
             title="Download Resume"
@@ -478,891 +241,286 @@ export default function Dashboard() {
     },
   ];
 
-  return (
-    <div style={{ minHeight: '100vh', padding: '16px 8px 60px' }}>
-      {/* Dynamic backdrop and module card overrides */}
-      <style>{`
-        /* Bento Grid Layout */
-        .bento-grid {
-          display: grid;
-          grid-template-columns: repeat(24, 1fr);
-          gap: 20px;
-        }
-        
-        .bento-card {
-          border-radius: 18px;
-          cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), 
-                      box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), 
-                      border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-          display: flex;
-          flex-direction: column;
-          background: var(--colorBgContainer) !important;
-          border: 1px solid var(--border-light) !important;
-          box-shadow: var(--shadow-sm);
-          height: 100%;
-        }
-        .bento-card:hover {
-          transform: translateY(-6px);
-          box-shadow: 0 12px 30px -4px var(--accent-glow);
-          border-color: var(--accent-color) !important;
-        }
-        .bento-card:hover .arrow-icon {
-          transform: translateX(4px);
-        }
-        
-        /* Split card layout */
-        .bento-card-visual {
-          height: 155px;
-          background: linear-gradient(135deg, var(--accent-bg) 0%, var(--accent-border) 100%);
-          border-bottom: 1px solid var(--border-light);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 16px;
-          position: relative;
-          overflow: hidden;
-        }
-        .bento-card-visual::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background-image: radial-gradient(var(--accent-grid) 1px, transparent 1px);
-          background-size: 14px 14px;
-          opacity: 0.28;
-          pointer-events: none;
-        }
-        .bento-card-large .bento-card-visual {
-          height: 175px;
-        }
-        
-        .bento-card-details {
-          padding: 18px;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          flex: 1;
-        }
-        
-        .bento-card-icon-tag {
-          width: 32px;
-          height: 32px;
-          background: var(--accent-bg);
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--accent-color);
-          font-size: 15px;
-          margin-bottom: 2px;
-        }
-        
-        .bento-card.disabled {
-          background: var(--ink) !important;
-          border: 1px dashed var(--border) !important;
-          cursor: not-allowed !important;
-          opacity: 0.65;
-          box-shadow: none !important;
-          transform: none !important;
-        }
-        .bento-card.disabled .bento-card-visual {
-          filter: grayscale(1) opacity(0.4);
-        }
-        
-        /* Mockup Base styles */
-        .mockup-container {
-          width: 100%;
-          max-width: 250px;
-          border-radius: 12px;
-          background: var(--colorBgContainer);
-          border: 1px solid var(--accent-border) !important;
-          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04) !important;
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          transition: all 0.3s ease;
-          overflow: hidden;
-        }
-        .bento-card-large .mockup-container {
-          max-width: 310px;
-        }
-        
-        /* MRF Request Mockup */
-        .mrf-stepper {
-          display: flex;
-          justify-content: space-between;
-          font-size: 9px;
-          border-bottom: 1px solid var(--border-light);
-          padding-bottom: 6px;
-        }
-        .mrf-stepper .step {
-          display: flex;
-          align-items: center;
-          gap: 3px;
-          color: var(--text-2);
-        }
-        .mrf-stepper .step.active {
-          color: var(--accent-color);
-          font-weight: 700;
-        }
-        .mrf-stepper .step.current {
-          color: var(--text);
-          font-weight: 600;
-        }
-        .mrf-form-lines {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-        .mrf-form-lines div {
-          height: 6px;
-          background: var(--border-light);
-          border-radius: 3px;
-        }
-        .form-line-short { width: 40%; }
-        .form-line-long { width: 85%; }
-        .form-line-medium { width: 60%; }
-        
-        /* Search Candidates Mockup */
-        .search-bar {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          border: 1px solid var(--border-light);
-          border-radius: 6px;
-          padding: 4px 8px;
-          background: var(--colorBgContainer);
-          font-size: 10px;
-        }
-        .search-text {
-          font-weight: 600;
-          color: var(--text);
-        }
-        .candidate-card-mini {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-          padding: 6px;
-          border-radius: 8px;
-          background: var(--accent-bg);
-          border: 1px dashed var(--accent-border);
-        }
-        .candidate-card-mini .avatar {
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background: var(--accent-color);
-          opacity: 0.8;
-        }
-        .candidate-card-mini .name-line {
-          height: 6px;
-          width: 60px;
-          background: var(--text);
-          opacity: 0.3;
-          border-radius: 3px;
-          margin-bottom: 4px;
-        }
-        .match-pills {
-          display: flex;
-          gap: 3px;
-        }
-        .match-pills .pill {
-          font-size: 7.5px;
-          padding: 1px 3px;
-          border-radius: 2px;
-          font-weight: 600;
-        }
-        .match-pills .pill.green {
-          background: rgba(16, 185, 129, 0.15);
-          color: #10b981;
-        }
-        .match-pills .pill.gray {
-          background: var(--border-light);
-          color: var(--text-2);
-        }
-        
-        /* HR Upload Mockup */
-        .dropzone-area {
-          border: 1.5px dashed var(--accent-color);
-          background: var(--accent-bg);
-          border-radius: 8px;
-          padding: 10px;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 2px;
-        }
-        .dropzone-area .cloud-icon {
-          font-size: 14px;
-          color: var(--accent-color);
-        }
-        .drop-text {
-          font-size: 8.5px;
-          color: var(--accent-color);
-          font-weight: 600;
-        }
-        .upload-progress-card {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: var(--colorBgContainer);
-          border: 1px solid var(--border-light);
-          border-radius: 8px;
-          padding: 5px 8px;
-        }
-        .progress-details {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        .progress-label {
-          font-size: 8.5px;
-          font-weight: 600;
-          color: var(--text);
-        }
-        .progress-track {
-          height: 3px;
-          background: var(--border-light);
-          border-radius: 1.5px;
-          overflow: hidden;
-        }
-        .progress-fill {
-          height: 100%;
-          background: var(--accent-color);
-          transition: width 0.3s ease;
-        }
-        .progress-percent {
-          font-size: 8.5px;
-          font-weight: 700;
-          color: var(--text-2);
-        }
-        
-        /* System Config Mockup */
-        .config-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-size: 10px;
-        }
-        .toggle-switch {
-          width: 24px;
-          height: 14px;
-          background: var(--border-light);
-          border-radius: 99px;
-          padding: 1.5px;
-          transition: background 0.2s;
-          cursor: pointer;
-        }
-        .toggle-switch.active {
-          background: var(--accent-color);
-        }
-        .toggle-knob {
-          width: 11px;
-          height: 11px;
-          background: #fff;
-          border-radius: 50%;
-          transition: transform 0.2s;
-        }
-        .toggle-switch.active .toggle-knob {
-          transform: translateX(10px);
-        }
-        .slider-row {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          font-size: 9px;
-        }
-        .slider-label {
-          display: flex;
-          justify-content: space-between;
-          font-weight: 600;
-        }
-        .slider-track {
-          height: 3px;
-          background: var(--border-light);
-          position: relative;
-          border-radius: 1.5px;
-        }
-        .slider-fill {
-          height: 100%;
-          background: var(--accent-color);
-          border-radius: 1.5px;
-        }
-        .slider-knob {
-          width: 8px;
-          height: 8px;
-          background: var(--accent-color);
-          border-radius: 50%;
-          position: absolute;
-          top: -2.5px;
-          transform: translateX(-50%);
-          box-shadow: 0 0 3px var(--accent-color);
-        }
-        
-        /* Vendor Upload Mockup */
-        .vendor-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .vendor-badge {
-          font-size: 8.5px;
-          font-weight: 700;
-          background: var(--accent-bg);
-          color: var(--accent-color);
-          padding: 1.5px 5px;
-          border-radius: 4px;
-        }
-        .submission-count {
-          font-size: 8.5px;
-          color: var(--text-2);
-        }
-        .submission-list {
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-        .list-item {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 5px;
-          border-radius: 6px;
-          background: var(--border-light);
-          font-size: 9.5px;
-        }
-        .status-tag {
-          font-size: 7.5px;
-          padding: 1px 3px;
-          border-radius: 2px;
-          font-weight: 700;
-        }
-        .status-tag.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-        .status-tag.blue { background: rgba(2, 132, 199, 0.15); color: #0284c7; }
-        
-        /* Candidate Screening Mockup */
-        .scorecard-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .ai-badge {
-          font-size: 8.5px;
-          font-weight: 800;
-          background: var(--accent-bg);
-          color: var(--accent-color);
-          padding: 1.5px 7px;
-          border-radius: 99px;
-          letter-spacing: 0.05em;
-        }
-        .scorecard-body {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-        .circular-progress-container {
-          position: relative;
-          width: 56px;
-          height: 56px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .progress-svg {
-          transform: rotate(-90deg);
-        }
-        .progress-bg {
-          fill: none;
-          stroke: var(--border-light);
-          stroke-width: 4;
-        }
-        .progress-bar {
-          fill: none;
-          stroke: var(--accent-color);
-          stroke-width: 4;
-          stroke-linecap: round;
-          transition: stroke-dashoffset 0.6s ease;
-        }
-        .progress-value {
-          position: absolute;
-          font-size: 13px;
-          font-weight: 850;
-          color: var(--text);
-        }
-        .score-details {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 5px;
-        }
-        .score-row {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 8.5px;
-        }
-        .metric-label {
-          width: 65px;
-          color: var(--text-2);
-        }
-        .metric-track {
-          flex: 1;
-          height: 3px;
-          background: var(--border-light);
-          border-radius: 1.5px;
-          overflow: hidden;
-        }
-        .metric-fill {
-          height: 100%;
-          background: var(--accent-color);
-        }
-        .metric-val {
-          font-weight: 700;
-          color: var(--text);
-        }
-        
-        /* Analytics Mockup */
-        .analytics-header {
-          display: flex;
-          gap: 10px;
-        }
-        .tile {
-          flex: 1;
-          background: var(--border-light);
-          padding: 5px 8px;
-          border-radius: 8px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5px;
-        }
-        .tile-label {
-          font-size: 7.5px;
-          color: var(--text-2);
-        }
-        .tile-val {
-          font-size: 12px;
-          font-weight: 800;
-          color: var(--accent-color);
-        }
-        .chart-canvas {
-          height: 60px;
-          border-top: 1px dashed var(--border-light);
-          padding-top: 4px;
-        }
-        .chart-svg {
-          width: 100%;
-          height: 100%;
-        }
-        
-        /* Hover Micro-animations */
-        .bento-card:hover .progress-fill {
-          width: 100% !important;
-        }
-        .bento-card:hover .progress-percent {
-          color: var(--accent-color);
-        }
-        .bento-card:hover .toggle-switch {
-          background: var(--accent-color);
-        }
-        .bento-card:hover .toggle-switch .toggle-knob {
-          transform: translateX(10px);
-        }
-        .bento-card:hover .slider-fill {
-          width: 90% !important;
-        }
-        .bento-card:hover .slider-knob {
-          left: 90% !important;
-        }
-        .bento-card:hover .progress-bar {
-          stroke-dashoffset: 8.2 !important; /* Rings to 95% */
-        }
-        .bento-card:hover .progress-value {
-          color: var(--accent-color);
-          scale: 1.05;
-        }
-        .bento-card:hover .metric-fill {
-          width: 95% !important;
-        }
-        .bento-card:hover .mockup-container {
-          border-color: var(--accent-border);
-          box-shadow: 0 4px 12px var(--accent-glow);
-        }
-        
-        /* Candidates Table cell padding & background overrides */
-        .ant-table {
-          border: 1px solid rgba(0, 95, 86, 0.08) !important;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-        .ant-table-thead > tr > th {
-          padding: 16px 16px !important;
-          background: rgba(0, 95, 86, 0.06) !important;
-          color: var(--text) !important;
-          font-weight: 700 !important;
-          border-bottom: 1px solid rgba(0, 95, 86, 0.08) !important;
-        }
-        .ant-table-tbody > tr > td {
-          padding: 16px 16px !important;
-          background: rgba(0, 95, 86, 0.01) !important;
-          border-bottom: 1px solid rgba(0, 95, 86, 0.04) !important;
-          transition: background 0.2s ease;
-        }
-        .ant-table-tbody > tr.ant-table-row-level-0:nth-child(even) > td {
-          background: rgba(0, 95, 86, 0.035) !important;
-        }
-        .ant-table-tbody > tr:hover > td {
-          background: rgba(0, 95, 86, 0.08) !important;
-        }
-        
-        /* Funnel Card custom styling matching New MRF Request */
-        .funnel-card {
-          background: linear-gradient(135deg, rgba(15, 118, 110, 0.05) 0%, rgba(15, 118, 110, 0.16) 100%) !important;
-          border: 1px solid rgba(15, 118, 110, 0.35) !important;
-          box-shadow: 0 8px 30px rgba(15, 118, 110, 0.08) !important;
-          position: relative;
-          overflow: hidden;
-        }
-        .funnel-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background-image: radial-gradient(rgba(15, 118, 110, 0.3) 1px, transparent 1px);
-          background-size: 14px 14px;
-          opacity: 0.22;
-          pointer-events: none;
-          border-radius: 16px;
-        }
-        .funnel-card > .ant-card-body {
-          position: relative;
-          z-index: 2;
-        }
-        
-        @media (max-width: 992px) {
-          .bento-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-          }
-          .bento-card {
-            grid-column: span 24 !important;
-          }
-        }
-      `}</style>
+  const firstName = user?.firstName || user?.username || 'there';
 
-      <div style={{ zIndex: 1, maxWidth: 1200, margin: '0 auto' }}>
-        {/* Premium split Hero section (inspired by Workable/Ashby landing pages) */}
+  return (
+    <div className="animate-fade-in" style={{ maxWidth: 1320, margin: '0 auto' }}>
+      {/* ---- Premium welcome band ---- */}
+      <div
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: 20,
+          padding: '32px 36px',
+          marginBottom: 28,
+          background:
+            'linear-gradient(135deg, var(--colorBgContainer) 0%, var(--gold-bg) 100%)',
+          border: '1px solid var(--border-light)',
+          boxShadow: 'var(--shadow-md)',
+        }}
+      >
+        {/* Floating decorative accents */}
+        <div
+          className="animate-float-slow"
+          style={{
+            position: 'absolute', top: '-40%', right: '-4%', width: 360, height: 360,
+            borderRadius: '50%', pointerEvents: 'none', zIndex: 0,
+            background: 'radial-gradient(circle, rgba(122, 146, 46,0.14) 0%, transparent 70%)',
+          }}
+        />
         <div
           style={{
-            background: 'linear-gradient(135deg, var(--colorBgContainer) 0%, var(--gold-subtle) 100%)',
-            border: '1px solid var(--border-light)',
-            borderRadius: 20,
-            padding: '40px 48px',
-            marginBottom: 36,
-            boxShadow: 'var(--shadow-sm)',
+            position: 'absolute', bottom: '-50%', left: '20%', width: 280, height: 280,
+            borderRadius: '50%', pointerEvents: 'none', zIndex: 0,
+            background: 'radial-gradient(circle, rgba(122,146,46,0.10) 0%, transparent 70%)',
+          }}
+        />
+
+        <div
+          style={{
             position: 'relative',
-            overflow: 'hidden',
+            zIndex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 20,
           }}
         >
-          {/* Subtle background circles for depth */}
-          <div
-            style={{
-              position: 'absolute',
-              top: '-30%',
-              right: '-10%',
-              width: 400,
-              height: 400,
-              borderRadius: '50%',
-              background: 'radial-gradient(circle, var(--colorBgContainer) 0%, transparent 70%)',
-              opacity: 0.8,
-              zIndex: 0,
-              pointerEvents: 'none',
-            }}
-          />
+          <div style={{ minWidth: 260 }}>
+            <span
+              style={{
+                display: 'inline-block', background: 'var(--colorBgContainer)', color: 'var(--gold)',
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase',
+                padding: '4px 12px', borderRadius: 999, marginBottom: 14, border: '1px solid var(--border)',
+              }}
+            >
+              AAPNA Recruitment Operations
+            </span>
+            <Title level={2} style={{ margin: '0 0 8px', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.15 }}>
+              {greetingForNow()}, {firstName} 👋
+            </Title>
+            <Text style={{ fontSize: 15, color: 'var(--text-2)', lineHeight: 1.6 }}>
+              Here's what's happening across your recruitment pipeline today.
+            </Text>
+          </div>
 
-          <Row gutter={[40, 32]} align="middle" style={{ position: 'relative', zIndex: 1 }}>
-            {/* Left side: Value proposition */}
-            <Col xs={24} md={13}>
-              <span
-                style={{
-                  display: 'inline-block',
-                  background: 'var(--gold-bg)',
-                  color: 'var(--gold)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  textTransform: 'uppercase',
-                  padding: '4px 12px',
-                  borderRadius: 999,
-                  marginBottom: 16,
-                }}
+          <Space size={12} wrap>
+            {isModuleEnabled('new_mrf') && (
+              <Button
+                type="primary"
+                size="large"
+                icon={<PlusOutlined />}
+                className="cta-primary"
+                onClick={() => navigate('/mrf')}
+                style={{ height: 46, borderRadius: 10, fontWeight: 600, paddingInline: 22 }}
               >
-                AAPNA Recruitment Operations
-              </span>
-              <h1
-                style={{
-                  fontSize: 'clamp(28px, 4vw, 38px)',
-                  fontWeight: 800,
-                  lineHeight: 1.2,
-                  letterSpacing: '-0.02em',
-                  margin: '0 0 16px 0',
-                  color: 'var(--text)',
-                }}
+                New MRF Request
+              </Button>
+            )}
+            {isModuleEnabled('candidate_screening') && (
+              <Button
+                size="large"
+                icon={<FilterOutlined />}
+                className="cta-secondary"
+                onClick={() => navigate('/filtering')}
+                style={{ height: 46, borderRadius: 10, fontWeight: 600, paddingInline: 22, borderColor: 'var(--gold)', color: 'var(--gold)' }}
               >
-                The modern ATS built for{' '}
-                <span style={{ color: 'var(--gold)' }}>speed</span> and{' '}
-                <span style={{ color: 'var(--gold-light)' }}>automation</span>
-              </h1>
-              <p
-                style={{
-                  fontSize: 15,
-                  color: 'var(--text-2)',
-                  lineHeight: 1.6,
-                  margin: '0 0 24px 0',
-                }}
-              >
-                Welcome back, <strong>{user?.username || 'Recruiter'}</strong>! Drive hiring decisions faster with semantic screening, automated requisition channels, and structured candidate pipelines.
-              </p>
+                Screen Candidates
+              </Button>
+            )}
+          </Space>
+        </div>
+      </div>
 
-              {/* Bullet checklist */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  'AI-powered semantic candidate screening & profiling',
-                  'Automated MRF request submissions & approvals',
-                  'Multi-channel resume parsing (Manual + Vendor uploads)',
-                  'Complete pipeline metrics & analytics dashboard',
-                ].map((text, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div
-                      style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: '50%',
-                        background: 'var(--gold-bg)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <CheckOutlined style={{ color: 'var(--gold)', fontSize: 10, fontWeight: 'bold' }} />
-                    </div>
-                    <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text-2)' }}>{text}</span>
-                  </div>
-                ))}
+      {/* ---- KPI cards ---- */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
+        {kpiCards.map((kpi, idx) => (
+          <Col xs={24} sm={12} lg={6} key={kpi.title}>
+            <Tooltip title={KPI_TOOLTIPS[kpi.title]} mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 260 }}>
+              <div className={`animate-fade-in-up stagger-${idx + 1}`}>
+                <StatCard
+                  title={kpi.title}
+                  value={kpi.value}
+                  icon={kpi.icon}
+                  color={kpi.color}
+                  loading={statsLoading}
+                />
               </div>
-            </Col>
+            </Tooltip>
+          </Col>
+        ))}
+      </Row>
 
-            {/* Right side: Modern interactive mockup widget */}
-            <Col xs={24} md={11}>
-              <Card
-                className="funnel-card"
-                bordered={false}
-                style={{
-                  borderRadius: 16,
-                  padding: '20px 24px 24px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <div>
-                    <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
-                      Active Pipeline Funnel
-                    </h3>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      Live applicant conversion stages
-                    </Text>
-                  </div>
-                  <Tag color="cyan" style={{ borderRadius: 6, fontWeight: 600, border: 'none' }}>
-                    Active Roles
-                  </Tag>
-                </div>
+      {/* ---- Funnel + Quick Actions ---- */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={15}>
+          <Card
+            bordered={false}
+            className="glass-card"
+            style={{ height: '100%' }}
+            styles={{ body: { padding: 24 } }}
+          >
+            <Space size={6} align="center" style={{ marginBottom: 2 }}>
+              <Title level={5} style={{ margin: 0 }}>Pipeline Funnel</Title>
+              <Tooltip title="Live conversion of candidates from sourced through hired, based on current pipeline data." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 280 }}>
+                <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
+              </Tooltip>
+            </Space>
+            <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>From sourced to hired</Text>
 
-                {/* Vertical Funnel Illustration */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {(() => {
-                    const maxCount = funnelStats.sourced || 1;
-                    const stages = [
-                      {
-                        label: 'Sourced Candidates',
-                        count: funnelStats.sourced,
-                        width: funnelStats.sourced > 0 ? '100%' : '0%',
-                        color: 'linear-gradient(90deg, #0284c7 0%, #0ea5e9 100%)',
-                        percentage: funnelStats.sourced > 0 ? 100 : 0,
-                      },
-                      {
-                        label: 'AI Match Profile',
-                        count: funnelStats.aiScreened,
-                        width: `${Math.round((funnelStats.aiScreened / maxCount) * 100)}%`,
-                        color: 'linear-gradient(90deg, #005f56 0%, #007a6f 100%)',
-                        percentage: Math.round((funnelStats.aiScreened / maxCount) * 100),
-                      },
-                      {
-                        label: 'Shortlisted approved',
-                        count: funnelStats.shortlisted,
-                        width: `${Math.round((funnelStats.shortlisted / maxCount) * 100)}%`,
-                        color: 'linear-gradient(90deg, #0d9488 0%, #0f766e 100%)',
-                        percentage: Math.round((funnelStats.shortlisted / maxCount) * 100),
-                      },
-                      {
-                        label: 'Hired offers',
-                        count: funnelStats.hired,
-                        width: `${Math.round((funnelStats.hired / maxCount) * 100)}%`,
-                        color: 'linear-gradient(90deg, #ea580c 0%, #f97316 100%)',
-                        percentage: Math.round((funnelStats.hired / maxCount) * 100),
-                      },
-                    ];
-
-                    return stages.map((stage, idx) => (
-                      <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 600, color: 'var(--text-2)' }}>
-                          <span>{stage.label}</span>
-                          <span style={{ fontFamily: 'monospace' }}>{stage.count} candidates</span>
-                        </div>
-                        <div
-                          style={{
-                            height: 28,
-                            width: '100%',
-                            background: 'var(--colorBgContainer)',
-                            border: '1px solid rgba(15, 118, 110, 0.15)',
-                            borderRadius: 6,
-                            overflow: 'hidden',
-                            position: 'relative',
-                          }}
-                        >
+            <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {FUNNEL_STAGES.map((stage) => {
+                const val = funnelStats[stage.key] || 0;
+                const pct = Math.round((val / maxFunnel) * 100);
+                return (
+                  <Tooltip key={stage.key} title={stage.desc} mouseEnterDelay={0.3} placement="top" overlayStyle={{ maxWidth: 280 }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <Text style={{ fontSize: 13, fontWeight: 500 }}>{stage.label}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                          {val.toLocaleString()}
+                        </Text>
+                      </div>
+                      <div
+                        className={statsLoading ? 'shimmer' : ''}
+                        style={{
+                          height: 14,
+                          borderRadius: 999,
+                          background: 'var(--gold-subtle)',
+                          overflow: 'hidden',
+                          boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)',
+                        }}
+                      >
+                        {!statsLoading && (
                           <div
                             style={{
+                              width: `${pct}%`,
+                              minWidth: val > 0 ? 28 : 0,
                               height: '100%',
-                              width: stage.width,
-                              background: stage.color,
-                              borderRadius: 6,
-                              transition: 'width 0.8s ease-in-out',
+                              borderRadius: 999,
+                              background: stage.gradient,
+                              transition: 'width 0.9s var(--ease-out-quint)',
                               display: 'flex',
                               alignItems: 'center',
-                              paddingLeft: 12,
+                              justifyContent: 'flex-end',
+                              paddingRight: 8,
                             }}
                           >
-                            {stage.count > 0 && (
-                              <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', letterSpacing: '0.05em' }}>
-                                {stage.percentage}%
+                            {val > 0 && (
+                              <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', letterSpacing: '0.04em' }}>
+                                {pct}%
                               </span>
                             )}
                           </div>
-                        </div>
+                        )}
                       </div>
-                    ));
-                  })()}
-                </div>
-              </Card>
-            </Col>
-          </Row>
-        </div>
-
-        {/* Recruitment Automation Modules section */}
-        <Card
-          bordered={false}
-          style={{
-            background: 'var(--colorBgContainer)',
-            border: '1px solid var(--border-light)',
-            borderRadius: 12,
-            padding: 24,
-            marginBottom: 28,
-            boxShadow: 'var(--shadow-sm)',
-          }}
-          styles={{ body: { padding: 0 } }}
-        >
-          <Text style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-2)', display: 'block', marginBottom: 20 }}>
-            Recruitment Automation Modules
-          </Text>
-
-          <div className="bento-grid">
-            {bentoModules.map((mod) => {
-              const enabled = isModuleEnabled(mod.moduleKey);
-              return (
-                <div
-                  key={mod.moduleKey}
-                  onClick={() => handleModuleClick(mod)}
-                  className={`bento-card ${mod.isLarge ? 'bento-card-large' : ''} ${enabled ? '' : 'disabled'}`}
-                  style={{
-                    gridColumn: `span ${mod.span}`,
-                    '--accent-color': mod.accentColor,
-                    '--accent-bg': mod.accentBg,
-                    '--accent-border': mod.accentBorder,
-                    '--accent-grid': mod.accentGrid,
-                    '--accent-glow': mod.accentGlow,
-                    cursor: enabled ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  {/* Mockup Canvas */}
-                  <div className="bento-card-visual">
-                    {mod.mockup}
-                  </div>
-
-                  {/* Card Details */}
-                  <div className="bento-card-details">
-                    <div className="bento-card-icon-tag">
-                      {enabled ? mod.icon : <LockOutlined style={{ fontSize: 14 }} />}
                     </div>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, margin: '4px 0 0 0', color: 'var(--text)' }}>
-                      {mod.title}
-                    </h3>
-                    <p style={{ fontSize: 12, lineHeight: 1.5, margin: '4px 0 0 0', color: 'var(--text-2)', opacity: 0.85 }}>
-                      {mod.description}
-                    </p>
-                    <div style={{ marginTop: 'auto', fontSize: 11, fontWeight: 600, paddingTop: 12 }}>
-                      {enabled ? (
-                        <span style={{ color: mod.accentColor, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          Open Module <ArrowRightOutlined style={{ fontSize: 10, transition: 'transform 0.2s' }} className="arrow-icon" />
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--red)', background: 'rgba(192,57,43,0.08)', padding: '2px 8px', borderRadius: 999, fontSize: 10 }}>
-                          🔒 Access Restricted
-                        </span>
-                      )}
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </Card>
+        </Col>
+
+        <Col xs={24} lg={9}>
+          <Card
+            bordered={false}
+            className="glass-card"
+            style={{ height: '100%' }}
+            styles={{ body: { padding: 24 } }}
+          >
+            <Space size={6} align="center" style={{ marginBottom: 16 }}>
+              <Title level={5} style={{ margin: 0 }}>Quick Actions</Title>
+              <Tooltip title="Jump straight into the recruitment modules you have access to." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 260 }}>
+                <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
+              </Tooltip>
+            </Space>
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              {QUICK_ACTIONS.map((action) => {
+                const enabled = isModuleEnabled(action.moduleKey);
+                const tip = enabled ? action.desc : `${action.desc} — you don't have access to this module.`;
+                return (
+                  <Tooltip key={action.moduleKey} title={tip} mouseEnterDelay={0.3} placement="left" overlayStyle={{ maxWidth: 260 }}>
+                    <div
+                      className={`quick-action-row ${enabled ? 'enabled' : ''}`}
+                      onClick={() => enabled && navigate(action.url)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid var(--border-light)',
+                        cursor: enabled ? 'pointer' : 'not-allowed',
+                        opacity: enabled ? 1 : 0.5,
+                        background: 'var(--colorBgContainer)',
+                      }}
+                      onMouseEnter={(e) => { if (enabled) e.currentTarget.style.borderColor = action.color; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-light)'; }}
+                    >
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 9,
+                          background: `linear-gradient(135deg, ${action.color} 0%, ${action.color}cc 100%)`,
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 16,
+                          flexShrink: 0,
+                          boxShadow: `0 3px 8px ${action.color}44`,
+                        }}
+                      >
+                        {action.icon}
+                      </div>
+                      <Text style={{ flex: 1, fontSize: 13.5, fontWeight: 500 }}>{action.label}</Text>
+                      {enabled
+                        ? <ArrowRightOutlined className="qa-arrow" style={{ color: action.color, fontSize: 12 }} />
+                        : <LockOutlined style={{ color: 'var(--text-2)', fontSize: 12 }} />}
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
+                  </Tooltip>
+                );
+              })}
+            </Space>
+          </Card>
+        </Col>
+      </Row>
 
-        {/* Recent Candidates section */}
-        <Card
-          bordered={false}
-          style={{
-            background: 'var(--colorBgContainer)',
-            border: '1px solid var(--border-light)',
-            borderRadius: 12,
-            padding: 24,
-            boxShadow: 'var(--shadow-sm)',
+      {/* ---- Recent Candidates ---- */}
+      <Card
+        bordered={false}
+        style={{
+          background: 'var(--colorBgContainer)',
+          border: '1px solid var(--border-light)',
+          borderRadius: 12,
+          boxShadow: 'var(--shadow-sm)',
+        }}
+        styles={{ body: { padding: 24 } }}
+      >
+        <Space size={6} align="center" style={{ marginBottom: 16 }}>
+          <Title level={5} style={{ margin: 0 }}>Recent Candidates</Title>
+          <Tooltip title="The most recently added candidates across all roles. Use the action button to download a résumé." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 280 }}>
+            <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
+          </Tooltip>
+        </Space>
+        <Table
+          dataSource={candidates}
+          columns={tableColumns}
+          rowKey={(record) => record.id || record.EmailID || Math.random().toString()}
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize: pageSize,
+            total: total,
+            onChange: setPage,
+            showSizeChanger: false,
           }}
-          styles={{ body: { padding: 0 } }}
-        >
-          <Text style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-2)', display: 'block', marginBottom: 16 }}>
-            Recent Candidates
-          </Text>
-
-          <Table
-            dataSource={candidates}
-            columns={tableColumns}
-            rowKey={(record) => record.id || record.EmailID || Math.random().toString()}
-            loading={loading}
-            pagination={{
-              current: page,
-              pageSize: pageSize,
-              total: total,
-              onChange: setPage,
-              showSizeChanger: false,
-              style: { paddingRight: 20 },
-            }}
-            size="middle"
-          />
-        </Card>
-      </div>
+          size="middle"
+        />
+      </Card>
     </div>
   );
 }

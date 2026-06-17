@@ -1,153 +1,137 @@
 /**
- * AuthLayout — Layout for login / registration pages.
- * Centered glassmorphism card over an animated gradient background with AAPNA branding.
+ * AuthLayout — Split-screen auth layout for login / admin-login.
+ * Left: rich olive brand panel (logo, value proposition, feature highlights).
+ * Right: clean form panel with contextual heading + the page form (Outlet).
  */
 import { Outlet } from 'react-router-dom';
 import { Typography } from 'antd';
+import { CheckCircleFilled } from '@ant-design/icons';
 
 const { Text } = Typography;
 
-export default function AuthLayout() {
-  return (
-    <div className="auth-background">
-      {/* Floating orbs (decorative) */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '10%',
-          left: '15%',
-          width: 450,
-          height: 450,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0, 95, 86, 0.14) 0%, transparent 70%)',
-          animation: 'float 14s ease-in-out infinite',
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '15%',
-          right: '10%',
-          width: 400,
-          height: 400,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(79, 70, 229, 0.11) 0%, transparent 70%)',
-          animation: 'float 18s ease-in-out infinite reverse',
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          top: '40%',
-          right: '30%',
-          width: 300,
-          height: 300,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(217, 119, 6, 0.08) 0%, transparent 70%)',
-          animation: 'float 12s ease-in-out infinite 2s',
-          pointerEvents: 'none',
-        }}
-      />
+const LOGO = 'https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png';
 
-      {/* Card container */}
-      <div
-        className="glass-auth-card"
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          width: '100%',
-          maxWidth: 440,
-          borderRadius: 20,
-          padding: '44px 40px 36px',
-          animation: 'scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-        }}
-      >
-        {/* Brand header matching legacy screenshots */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <img
-            src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-            alt="AAPNA Logo"
+const BRAND_HIGHLIGHTS = [
+  'AI-powered candidate screening & profiling',
+  'Automated requisition & approval workflows',
+  'Real-time pipeline metrics & analytics',
+];
+
+export default function AuthLayout() {
+  const isAdmin = window.location.pathname.includes('/admin');
+
+  return (
+    <div className="auth-split">
+      {/* ---- Left: brand panel ---- */}
+      <div className="auth-brand-panel">
+        {/* Logo chip (keeps the original colored logo legible on olive) */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div
             style={{
-              height: 42,
-              width: 110,
-              objectFit: 'cover',
-              objectPosition: 'left',
-              display: 'block',
-              margin: '0 auto 20px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: '#fff',
+              borderRadius: 12,
+              padding: '10px 16px',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
             }}
-          />
-          {window.location.pathname.includes('/admin') ? (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <span
-                  style={{
-                    display: 'inline-block',
-                    background: '#eef3da',
-                    color: '#5c6f1f',
-                    border: '1px solid #b8cc6e',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '3px 12px',
-                    borderRadius: 999,
-                  }}
-                >
-                  HR Admin Portal
-                </span>
-              </div>
-              <h2
-                style={{
-                  fontFamily: "'Lora', serif, Georgia",
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: 'var(--text)',
-                  marginBottom: 6,
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Welcome Back
-              </h2>
-              <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>
-                Sign in to manage users and system access
-              </Text>
-            </>
-          ) : (
-            <>
-              <h2
-                style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: 'var(--text)',
-                  marginBottom: 6,
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Recruitment Portal
-              </h2>
-              <Text type="secondary" style={{ fontSize: 13, display: 'block' }}>
-                Sign in to access the dashboard
-              </Text>
-            </>
-          )}
+          >
+            <img src={LOGO} alt="AAPNA" style={{ height: 32, width: 'auto', objectFit: 'contain', display: 'block' }} />
+          </div>
         </div>
 
-        {/* Page content (Login / Register form) */}
-        <Outlet />
+        {/* Value proposition */}
+        <div style={{ position: 'relative', zIndex: 1, maxWidth: 460 }}>
+          <h1
+            style={{
+              fontFamily: 'var(--font-heading)',
+              fontSize: 'clamp(28px, 3.4vw, 40px)',
+              fontWeight: 800,
+              lineHeight: 1.18,
+              letterSpacing: '-0.02em',
+              margin: '0 0 16px',
+              color: '#fff',
+            }}
+          >
+            Recruitment, reimagined for speed and precision.
+          </h1>
+          <p style={{ fontSize: 15.5, lineHeight: 1.7, color: 'rgba(255,255,255,0.88)', margin: '0 0 28px' }}>
+            AAPNA's intelligent ATS streamlines every step — from sourcing and AI screening to
+            requisitions, approvals, and analytics.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {BRAND_HIGHLIGHTS.map((text) => (
+              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <CheckCircleFilled style={{ color: '#fff', fontSize: 18, opacity: 0.95 }} />
+                <span style={{ fontSize: 14.5, fontWeight: 500, color: 'rgba(255,255,255,0.94)' }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <Text style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>
+            © {new Date().getFullYear()} AAPNA Infotech · All rights reserved
+          </Text>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 24,
-          zIndex: 1,
-          textAlign: 'center',
-        }}
-      >
-        <Text type="secondary" style={{ fontSize: 12, opacity: 0.6 }}>
-          © {new Date().getFullYear()} AAPNA · All rights reserved
-        </Text>
+      {/* ---- Right: form panel ---- */}
+      <div className="auth-form-panel">
+        <div className="auth-form-inner animate-fade-in-up">
+          {/* Logo (mobile only — brand panel is hidden) */}
+          <img
+            src={LOGO}
+            alt="AAPNA"
+            className="auth-brand-logo-mobile"
+            style={{ height: 38, width: 'auto', objectFit: 'contain', margin: '0 auto 24px' }}
+          />
+
+          {/* Heading */}
+          <div style={{ marginBottom: 24 }}>
+            {isAdmin && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: 'var(--gold-bg)',
+                  color: 'var(--gold)',
+                  border: '1px solid var(--border)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  padding: '3px 12px',
+                  borderRadius: 999,
+                  marginBottom: 14,
+                }}
+              >
+                HR Admin Portal
+              </span>
+            )}
+            <h2
+              style={{
+                fontFamily: 'var(--font-heading)',
+                fontSize: 26,
+                fontWeight: 800,
+                color: 'var(--text)',
+                margin: '0 0 6px',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {isAdmin ? 'Welcome back' : 'Sign in to your account'}
+            </h2>
+            <Text type="secondary" style={{ fontSize: 14 }}>
+              {isAdmin
+                ? 'Sign in to manage users and system access'
+                : 'Enter your credentials to access the dashboard'}
+            </Text>
+          </div>
+
+          {/* Login / form */}
+          <Outlet />
+        </div>
       </div>
     </div>
   );

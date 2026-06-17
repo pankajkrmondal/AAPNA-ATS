@@ -147,8 +147,8 @@ export default function CandidateDetail() {
         <div className="animate-fade-in" style={{ padding: '24px 0' }}>
           <Timeline
             items={[
-              { color: '#005f56', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
-              { color: '#007a6f', children: <><Text strong>AI screening completed</Text> — Score: 92%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
+              { color: '#7a922e', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
+              { color: '#92a63c', children: <><Text strong>AI screening completed</Text> — Score: 92%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
               { color: '#2980b9', children: <><Text strong>Shortlisted</Text> by HR Admin<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 3:15 PM</Text></> },
               { color: 'gray', children: <><Text type="secondary">Awaiting interview scheduling</Text></> },
             ]}
