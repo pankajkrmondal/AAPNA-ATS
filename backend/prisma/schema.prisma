@@ -385,6 +385,13 @@ model rpa_cv_tmp {
   uploadedByHRName             String?
   uploadedAt                   DateTime? @default(now()) @db.Timestamp(6)
   uploadSource                 String?
+  resume_full_text             String?
+  resume_text_quality          String?   @default("unknown") @db.VarChar(20)
+  resume_technical_terms       Json?     @default("[]")
+  resume_term_updated_at       DateTime? @db.Timestamptz(6)
+  resume_tsvector              Unsupported("tsvector")?
+
+  @@index([resume_tsvector], map: "idx_rpa_cv_tmp_resume_tsvector", type: Gin)
 }
 
 model rpa_email_log {
