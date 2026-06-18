@@ -53,13 +53,13 @@ export default function Login() {
           label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Username</span>}
           name="username"
           rules={[{ required: true, message: 'Please enter username' }]}
-          style={{ marginBottom: 18 }}
+          style={{ marginBottom: 20 }}
         >
           <Input
-            prefix={<UserOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
+            prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
             placeholder="Enter username"
             autoComplete="off"
-            style={{ borderRadius: 8, height: 42 }}
+            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
@@ -67,13 +67,13 @@ export default function Login() {
           label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Password</span>}
           name="password"
           rules={[{ required: true, message: 'Please enter password' }]}
-          style={{ marginBottom: 24 }}
+          style={{ marginBottom: 28 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(0, 95, 86, 0.45)', marginRight: 4 }} />}
+            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
             placeholder="Enter password"
             autoComplete="new-password"
-            style={{ borderRadius: 8, height: 42 }}
+            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
@@ -83,15 +83,12 @@ export default function Login() {
             htmlType="submit"
             loading={loading}
             block
+            className="cta-primary"
             style={{
-              height: 44,
-              borderRadius: 8,
-              fontWeight: 600,
+              height: 48,
+              borderRadius: 10,
+              fontWeight: 700,
               fontSize: 15,
-              background: 'linear-gradient(135deg, #005f56 0%, #007a6f 100%)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(0, 95, 86, 0.25)',
-              transition: 'all 0.2s',
             }}
           >
             Sign In

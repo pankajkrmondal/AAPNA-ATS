@@ -271,7 +271,7 @@ export default function HRUpload() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
+        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       });
       return;
     }
@@ -288,7 +288,7 @@ export default function HRUpload() {
       content: `Are you sure you want to merge ${selectedRowKeys.length} duplicate candidate(s) into the main database?`,
       okText: 'Yes, Merge',
       cancelText: 'No, Cancel',
-      okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
+      okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       async onOk() {
         setMerging(true);
         try {
@@ -464,7 +464,7 @@ export default function HRUpload() {
                 style={{
                   borderRadius: 6,
                   background: '#eef3da',
-                  color: '#005f56',
+                  color: '#7a922e',
                   borderColor: '#b8cc6e',
                 }}
               />
@@ -480,8 +480,8 @@ export default function HRUpload() {
                   fontFamily: 'monospace',
                   fontSize: 11,
                   background: 'transparent',
-                  color: hasCV ? '#005f56' : 'rgba(0,0,0,0.25)',
-                  borderColor: hasCV ? '#005f56' : 'rgba(0,0,0,0.15)',
+                  color: hasCV ? '#7a922e' : 'rgba(0,0,0,0.25)',
+                  borderColor: hasCV ? '#7a922e' : 'rgba(0,0,0,0.15)',
                 }}
               >
                 CV
@@ -571,7 +571,7 @@ export default function HRUpload() {
         }}
         styles={{ body: { padding: 0 } }}
       >
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #005f56, #007a6f)' }} />
+        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
         <div style={{ padding: '28px 28px 32px' }}>
           <Text
             style={{
@@ -603,7 +603,7 @@ export default function HRUpload() {
             }}
           >
             <p className="ant-upload-drag-icon">
-              <InboxOutlined style={{ color: '#005f56', fontSize: 40 }} />
+              <InboxOutlined style={{ color: '#7a922e', fontSize: 40 }} />
             </p>
             <p className="ant-upload-text" style={{ fontWeight: 600, color: '#2b2b2b' }}>
               Click or drag files to upload
@@ -626,8 +626,8 @@ export default function HRUpload() {
               fontWeight: 600,
               fontSize: 14,
               borderRadius: 10,
-              background: fileList.length === 0 ? '#8a9270' : '#005f56',
-              borderColor: fileList.length === 0 ? '#8a9270' : '#005f56',
+              background: fileList.length === 0 ? '#8a9270' : '#7a922e',
+              borderColor: fileList.length === 0 ? '#8a9270' : '#7a922e',
             }}
           >
             Upload Resumes
@@ -663,7 +663,7 @@ export default function HRUpload() {
           <div
             style={{
               height: 3,
-              background: 'linear-gradient(90deg, #005f56, #4a7c59)',
+              background: 'linear-gradient(90deg, #7a922e, #4a7c59)',
             }}
           />
           <div style={{ padding: '28px 28px 32px' }}>
@@ -744,15 +744,15 @@ export default function HRUpload() {
                   style={{
                     textAlign: 'center',
                     borderRadius: 10,
-                    background: 'rgba(0,95,86,0.1)',
-                    border: '1px solid #005f56',
+                    background: 'rgba(122, 146, 46,0.1)',
+                    border: '1px solid #7a922e',
                   }}
                   styles={{ body: { padding: 16 } }}
                 >
                   <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#005f56' }}>Duplicates Found</span>}
+                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7a922e' }}>Duplicates Found</span>}
                     value={batchSummary.duplicate_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#005f56' }}
+                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#7a922e' }}
                   />
                 </Card>
               </Col>
@@ -835,7 +835,7 @@ export default function HRUpload() {
         }}
         styles={{ body: { padding: 0 } }}
       >
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #005f56, #007a6f)' }} />
+        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
         <div style={{ padding: '28px 28px 32px' }}>
           {/* Queue Header */}
           <Title level={4} style={{ margin: 0, fontWeight: 700, marginBottom: 4 }}>
@@ -890,9 +890,9 @@ export default function HRUpload() {
               onClick={() => loadDuplicates(1)}
               style={{
                 borderRadius: 10,
-                background: '#005f56',
+                background: '#7a922e',
                 color: '#fff',
-                borderColor: '#005f56',
+                borderColor: '#7a922e',
                 fontWeight: 600,
               }}
             >
@@ -953,7 +953,7 @@ export default function HRUpload() {
                 transform: 'translateX(-50%)',
                 background: 'rgba(26, 30, 16, 0.95)',
                 backdropFilter: 'blur(10px)',
-                border: '1px solid #005f56',
+                border: '1px solid #7a922e',
                 boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
                 borderRadius: 12,
                 padding: '12px 24px',
@@ -991,7 +991,7 @@ export default function HRUpload() {
                     borderRadius: 8,
                     fontWeight: 600,
                     fontSize: 12,
-                    background: '#005f56',
+                    background: '#7a922e',
                     color: '#fff',
                     border: 'none',
                   }}

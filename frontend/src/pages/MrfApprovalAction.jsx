@@ -96,7 +96,7 @@ export default function MrfApprovalAction() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#005f56', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close Window
               </Button>
@@ -168,7 +168,7 @@ export default function MrfApprovalAction() {
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
           <Descriptions
-            title={<span style={{ color: '#005f56', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
+            title={<span style={{ color: '#7a922e', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
             bordered
             column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
             size="small"
@@ -181,7 +181,7 @@ export default function MrfApprovalAction() {
             <Descriptions.Item label="Hiring Manager">{mrfDetails?.hiring_manager_name} ({mrfDetails?.hiring_manager_designation})</Descriptions.Item>
             <Descriptions.Item label="Submitter Email">{mrfDetails?.submitter_email}</Descriptions.Item>
             <Descriptions.Item label="Number of Positions">
-              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: '#005f56' }} />
+              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: '#7a922e' }} />
             </Descriptions.Item>
             <Descriptions.Item label="Required Timeline">{mrfDetails?.required_in}</Descriptions.Item>
             <Descriptions.Item label="Reports To">{mrfDetails?.position_reports_to || 'Not Specified'}</Descriptions.Item>
@@ -194,7 +194,7 @@ export default function MrfApprovalAction() {
             )}
             <Descriptions.Item label="Job Description (JD)" span={2}>
               {mrfDetails?.jd_document_link ? (
-                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: '#005f56' }}>
+                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: '#7a922e' }}>
                   View Uploaded Job Description File →
                 </Button>
               ) : (
@@ -204,12 +204,35 @@ export default function MrfApprovalAction() {
           </Descriptions>
         </div>
 
+        {mrfDetails?.parsed_jd_json && (
+          <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
+            <Descriptions
+              title={<span style={{ color: '#7a922e', fontSize: 16, fontWeight: 700 }}>AI-Parsed JD Summary</span>}
+              bordered
+              column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
+              size="small"
+              labelStyle={{ width: '18%', minWidth: '100px', fontWeight: 600 }}
+              contentStyle={{ width: '32%', minWidth: '150px', wordBreak: 'break-word' }}
+            >
+              <Descriptions.Item label="Experience Range">
+                {mrfDetails.parsed_jd_json.min_experience_years ?? '—'} - {mrfDetails.parsed_jd_json.max_experience_years ?? '—'} years
+              </Descriptions.Item>
+              <Descriptions.Item label="Education">{mrfDetails.parsed_jd_json.education || 'Not specified'}</Descriptions.Item>
+              <Descriptions.Item label="Mandatory Skills (from JD)" span={2}>{mrfDetails.parsed_jd_json.mandatory_skills || 'Not specified'}</Descriptions.Item>
+              {mrfDetails.parsed_jd_json.good_to_have_skills && (
+                <Descriptions.Item label="Good to Have Skills (from JD)" span={2}>{mrfDetails.parsed_jd_json.good_to_have_skills}</Descriptions.Item>
+              )}
+              <Descriptions.Item label="Roles & Responsibilities (from JD)" span={2}>{mrfDetails.parsed_jd_json.roles_and_responsibilities || 'Not specified'}</Descriptions.Item>
+            </Descriptions>
+          </div>
+        )}
+
         {/* Action Form */}
         <Divider style={{ borderColor: '#e8ede0' }} />
         
         <div style={{ marginTop: 12 }}>
           <Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageOutlined style={{ color: '#005f56' }} /> Add Review Comments (Optional)
+            <MessageOutlined style={{ color: '#7a922e' }} /> Add Review Comments (Optional)
           </Title>
           <TextArea
             value={comments}
@@ -235,8 +258,8 @@ export default function MrfApprovalAction() {
                     borderRadius: 10,
                     fontWeight: 700,
                     fontSize: 15,
-                    background: '#005f56',
-                    borderColor: '#005f56',
+                    background: '#7a922e',
+                    borderColor: '#7a922e',
                   }}
                 >
                   Confirm Requisition Approval

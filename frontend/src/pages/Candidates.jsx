@@ -249,7 +249,7 @@ export default function Candidates() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#005f56', borderColor: '#005f56' } },
+        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       });
       return;
     }
@@ -423,8 +423,8 @@ export default function Candidates() {
               onClick={() => handleDownloadResume(fileUrl)}
               style={{
                 borderRadius: 6,
-                background: hasCv ? '#005f56' : '#f3f4f6',
-                borderColor: hasCv ? '#005f56' : '#d1d5db',
+                background: hasCv ? '#7a922e' : '#f3f4f6',
+                borderColor: hasCv ? '#7a922e' : '#d1d5db',
                 color: hasCv ? '#fff' : '#9ca3af',
               }}
             />
@@ -438,7 +438,7 @@ export default function Candidates() {
             <Button
               size="small"
               onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: '#005f56', borderColor: '#005f56', color: '#fff', fontWeight: 500 }}
+              style={{ borderRadius: 6, background: '#7a922e', borderColor: '#7a922e', color: '#fff', fontWeight: 500 }}
             >
               Edit
             </Button>
@@ -468,7 +468,7 @@ export default function Candidates() {
         style={{
           borderRadius: 12,
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #005f56',
+          borderTop: '4px solid #7a922e',
           marginBottom: 28,
         }}
       >
@@ -520,8 +520,8 @@ export default function Candidates() {
               icon={<SearchOutlined />}
               loading={loading}
               style={{
-                background: '#005f56',
-                borderColor: '#005f56',
+                background: '#7a922e',
+                borderColor: '#7a922e',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,
@@ -864,7 +864,7 @@ export default function Candidates() {
         onOk={handleSaveEdit}
         onCancel={() => setEditOpen(false)}
         okText="Update Candidate"
-        okButtonProps={{ style: { background: '#005f56', borderColor: '#005f56' }, loading: updating }}
+        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' }, loading: updating }}
         width={750}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >

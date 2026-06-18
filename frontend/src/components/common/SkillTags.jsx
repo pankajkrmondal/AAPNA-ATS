@@ -7,7 +7,7 @@ import { Tag, Tooltip } from 'antd';
 
 /** Palette of subtle colors for skill tags. */
 const TAG_COLORS = [
-  '#005f56', '#4a7c59', '#2980b9', '#8e44ad',
+  '#7a922e', '#4a7c59', '#2980b9', '#8e44ad',
   '#d4a017', '#16a085', '#c0392b', '#2c3e50',
 ];
 

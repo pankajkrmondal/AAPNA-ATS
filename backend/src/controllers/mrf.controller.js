@@ -386,11 +386,13 @@ export const updateMainMrf = catchAsync(async (req, res) => {
     }
 
     if (MAIN_MRF_NUMERIC_FIELDS.includes(field)) {
-      const num = Number(value);
+      // parseInt (not Number) to match submitHiringManagerMrf's leniency — number_of_positions
+      // accepts the canonical '6+' option, which Number() would reject as NaN.
+      const num = parseInt(value, 10);
       if (Number.isNaN(num)) {
         throw new AppError(`Field "${field}" must be numeric.`, 400);
       }
-      dataToUpdate[field] = Math.trunc(num);
+      dataToUpdate[field] = num;
     } else if (MAIN_MRF_BOOLEAN_FIELDS.includes(field)) {
       const s = String(value).toLowerCase();
       dataToUpdate[field] = s === 'true' || s === 'yes' || s === '1';
@@ -418,12 +420,16 @@ export const updateMainMrf = catchAsync(async (req, res) => {
 /**
  * Helper to generate the legacy HTML table representation of the MRF data.
  */
-const generateMrfEmailTable = (j, jdLink, testPaperLink) => {
+const generateMrfEmailTable = (j, jdLink, testPaperLink, parsedJd) => {
   const v = (val) => {
     if (val === null || val === undefined || val === '') return '';
     return String(val);
   };
-  
+
+  const aiExperienceRange = parsedJd && (parsedJd.min_experience_years != null || parsedJd.max_experience_years != null)
+    ? `${v(parsedJd.min_experience_years) || '—'} - ${v(parsedJd.max_experience_years) || '—'} years`
+    : '';
+
   return `
 <table style="border: 1px solid black; border-collapse: collapse; width: 100%; font-family: Calibri, sans-serif; font-size: 14px;">
 <thead>
@@ -477,6 +483,12 @@ const generateMrfEmailTable = (j, jdLink, testPaperLink) => {
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper Link:</td><td style="border: 1px solid black; padding: 8px;">${testPaperLink ? `<a href="${testPaperLink}">Click here to view Test Paper</a>` : 'Not Uploaded'}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper New Owner:</td><td style="border: 1px solid black; padding: 8px;">${v(j.question_paper_new_owner)}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">JD Document Link:</td><td style="border: 1px solid black; padding: 8px;">${jdLink ? `<a href="${jdLink}">Click here to view JD</a>` : 'Not Uploaded'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold; background-color: #f2f2f2;" colspan="2">AI-Parsed JD Summary</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Experience Range:</td><td style="border: 1px solid black; padding: 8px;">${aiExperienceRange || 'Not Available'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Mandatory Skills (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.mandatory_skills) || 'Not Available'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Good to Have Skills (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.good_to_have_skills) || 'Not Available'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Education (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.education) || 'Not Available'}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Roles & Responsibilities (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.roles_and_responsibilities) || 'Not Available'}</td></tr>
 </tbody>
 </table>
   `;
@@ -677,7 +689,7 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     question_paper_new_owner,
   };
 
-  const compiledHtmlTable = generateMrfEmailTable(inputData, jdUrl, testPaperUrl);
+  const compiledHtmlTable = generateMrfEmailTable(inputData, jdUrl, testPaperUrl, parsedJdJson);
 
   // 2) Insert record into rpa_mrf
   const newMrf = await prisma.rpa_mrf.create({

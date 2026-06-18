@@ -43,7 +43,7 @@ import useAuth from '../hooks/useAuth';
 const { Title, Text } = Typography;
 
 const MODULES_INFO = [
-  { key: 'new_mrf',             label: 'New MRF Request',                 desc: 'Create and submit Manpower Requisition Forms',      icon: '📋', color: '#1890ff' },
+  { key: 'new_mrf',             label: '+ New MRF Request',                 desc: 'Create and submit Manpower Requisition Forms',      icon: '📋', color: '#1890ff' },
   { key: 'search_candidates',   label: 'Search & Edit Candidates',         desc: 'Search, update and manage candidate profiles',      icon: '🔍', color: '#52c41a' },
   { key: 'hr_manual_upload',    label: 'HR Manual Upload',                 desc: 'Upload candidate resumes for future hiring',        icon: '📤', color: '#faad14' },
   { key: 'system_config',       label: 'System Configuration',             desc: 'Manage configuration and automation settings',      icon: '⚙️', color: '#722ed1' },
@@ -425,7 +425,7 @@ export default function AdminDashboard() {
                   disabled={!isAuthorized}
                   icon={<EditOutlined />}
                   onClick={() => openUserModal(record)}
-                  style={{ color: !isAuthorized ? '#d9d9d9' : '#005f56' }}
+                  style={{ color: !isAuthorized ? '#d9d9d9' : '#7a922e' }}
                 />
               </span>
             </Tooltip>
@@ -482,7 +482,7 @@ export default function AdminDashboard() {
             style={{
               height: 52,
               borderRadius: 0,
-              borderBottom: activeTab === 'users' ? '2px solid #005f56' : '2px solid transparent',
+              borderBottom: activeTab === 'users' ? '2px solid #7a922e' : '2px solid transparent',
               color: activeTab === 'users' ? '#5c6f1f' : '#6b7561',
               fontWeight: 600,
               fontSize: 13,
@@ -502,7 +502,7 @@ export default function AdminDashboard() {
             style={{
               height: 52,
               borderRadius: 0,
-              borderBottom: activeTab === 'modules' ? '2px solid #005f56' : '2px solid transparent',
+              borderBottom: activeTab === 'modules' ? '2px solid #7a922e' : '2px solid transparent',
               color: activeTab === 'modules' ? '#5c6f1f' : '#6b7561',
               fontWeight: 600,
               fontSize: 13,
@@ -513,7 +513,7 @@ export default function AdminDashboard() {
           </Button>
         </div>
         <div>
-          <ReloadOutlined style={{ color: '#005f56', cursor: 'pointer' }} onClick={loadUsers} spin={loading} />
+          <ReloadOutlined style={{ color: '#7a922e', cursor: 'pointer' }} onClick={loadUsers} spin={loading} />
         </div>
       </div>
 
@@ -536,7 +536,7 @@ export default function AdminDashboard() {
                 <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
                   Total Users
                 </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: "'Lora', serif", fontWeight: 700, fontSize: 34 }}>
+                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34 }}>
                   {stats.total}
                 </Title>
                 <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
@@ -556,7 +556,7 @@ export default function AdminDashboard() {
                 <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
                   Active
                 </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: "'Lora', serif", fontWeight: 700, fontSize: 34, color: '#166534' }}>
+                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, color: '#166534' }}>
                   {stats.active}
                 </Title>
                 <Text type="secondary" style={{ fontSize: 11 }}>Can log in</Text>
@@ -576,7 +576,7 @@ export default function AdminDashboard() {
                 <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
                   Inactive
                 </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: "'Lora', serif", fontWeight: 700, fontSize: 34, color: '#c0392b' }}>
+                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, color: '#c0392b' }}>
                   {stats.inactive}
                 </Title>
                 <Text type="secondary" style={{ fontSize: 11 }}>Access revoked</Text>
@@ -643,7 +643,7 @@ export default function AdminDashboard() {
                     icon={<PlusOutlined />}
                     disabled={!isAuthorized}
                     onClick={() => openUserModal()}
-                    style={{ background: !isAuthorized ? '#d9d9d9' : '#005f56', borderColor: !isAuthorized ? '#d9d9d9' : '#005f56', borderRadius: 6, fontWeight: 600 }}
+                    style={{ background: !isAuthorized ? '#d9d9d9' : '#7a922e', borderColor: !isAuthorized ? '#d9d9d9' : '#7a922e', borderRadius: 6, fontWeight: 600 }}
                   >
                     Add User
                   </Button>
@@ -696,7 +696,7 @@ export default function AdminDashboard() {
                           cursor: 'pointer',
                           borderBottom: '1px solid #f0f2eb',
                           background: selected ? '#eef3da' : 'transparent',
-                          borderLeft: selected ? '3px solid #005f56' : '3px solid transparent',
+                          borderLeft: selected ? '3px solid #7a922e' : '3px solid transparent',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 12,
@@ -809,7 +809,7 @@ export default function AdminDashboard() {
                             checked={enabled}
                             loading={permsLoading}
                             onChange={(checked) => handlePermissionToggle(mod.key, checked)}
-                            style={{ background: enabled ? '#005f56' : '#d9d9d9' }}
+                            style={{ background: enabled ? '#7a922e' : '#d9d9d9' }}
                           />
                         </div>
                       );
@@ -844,7 +844,7 @@ export default function AdminDashboard() {
                         checked={!!userPermissions['hr_admin']}
                         loading={permsLoading}
                         onChange={(checked) => handlePermissionToggle('hr_admin', checked)}
-                        style={{ background: userPermissions['hr_admin'] ? '#005f56' : '#d9d9d9' }}
+                        style={{ background: userPermissions['hr_admin'] ? '#7a922e' : '#d9d9d9' }}
                       />
                     </div>
                   </div>
@@ -858,7 +858,7 @@ export default function AdminDashboard() {
       {/* CREATE / EDIT USER MODAL */}
       <Modal
         title={
-          <div style={{ fontSize: 16, fontFamily: "'Lora', serif", fontWeight: 700 }}>
+          <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
             {editingUser ? 'Edit User Details' : 'Add New User'}
           </div>
         }
@@ -866,7 +866,7 @@ export default function AdminDashboard() {
         onOk={handleSaveUser}
         onCancel={() => setUserModalOpen(false)}
         okText={editingUser ? 'Save Changes' : 'Create User & Send Email'}
-        okButtonProps={{ style: { background: '#005f56', borderColor: '#005f56' } }}
+        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
         width={540}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
@@ -1015,7 +1015,7 @@ export default function AdminDashboard() {
         onOk={confirmToggleStatus}
         onCancel={() => setToggleModalOpen(false)}
         okText="Confirm"
-        okButtonProps={{ style: { background: '#005f56', borderColor: '#005f56' } }}
+        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
         width={400}
       >
         <div style={{ padding: '10px 0' }}>

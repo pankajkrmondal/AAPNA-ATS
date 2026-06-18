@@ -1,13 +1,49 @@
 /**
- * StatCard — Animated dashboard stat card with icon, value, trend indicator.
- * Uses glassmorphism styling and entrance animation.
+ * StatCard — Premium dashboard stat card with gradient surface, glowing icon tile,
+ * animated count-up value, and hover lift. Uses glassmorphism styling.
  *
  * @param {{ icon: React.ReactNode, title: string, value: number|string, trend?: number, trendLabel?: string, color?: string, loading?: boolean, style?: object }} props
  */
+import { useEffect, useRef, useState } from 'react';
 import { Card, Typography, Space } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
 
 const { Text, Title } = Typography;
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Animates a number from 0 → target with an ease-out curve (no dependency). */
+function useCountUp(target, duration = 1100) {
+  const isNumeric = typeof target === 'number' && Number.isFinite(target);
+  const [display, setDisplay] = useState(isNumeric ? 0 : target);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    if (!isNumeric) {
+      setDisplay(target);
+      return undefined;
+    }
+    if (prefersReducedMotion() || target === 0) {
+      setDisplay(target);
+      return undefined;
+    }
+
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setDisplay(Math.round(target * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => rafRef.current && cancelAnimationFrame(rafRef.current);
+  }, [target, duration, isNumeric]);
+
+  return isNumeric ? display.toLocaleString() : display;
+}
 
 export default function StatCard({
   icon,
@@ -15,56 +51,61 @@ export default function StatCard({
   value,
   trend,
   trendLabel = 'vs last month',
-  color = '#005f56',
+  color = '#7a922e',
   loading = false,
   style,
 }) {
   const isPositive = trend > 0;
   const isNegative = trend < 0;
   const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#5f6664';
+  const displayValue = useCountUp(value);
 
   return (
     <Card
       loading={loading}
       bordered={false}
-      className="glass-card"
+      className="premium-stat-card"
       style={{
         overflow: 'hidden',
         position: 'relative',
+        borderTop: `3px solid ${color}`,
+        background: `linear-gradient(150deg, var(--colorBgContainer) 0%, ${color}0a 100%)`,
         ...style,
       }}
       styles={{
-        body: { padding: '24px', position: 'relative', zIndex: 1 },
+        body: { padding: '22px 24px', position: 'relative', zIndex: 1 },
       }}
     >
-      {/* Background accent circle */}
+      {/* Background accent glow */}
       <div
         style={{
           position: 'absolute',
-          top: -20,
-          right: -20,
-          width: 100,
-          height: 100,
+          top: -30,
+          right: -30,
+          width: 130,
+          height: 130,
           borderRadius: '50%',
-          background: color,
-          opacity: 0.06,
+          background: `radial-gradient(circle, ${color}33 0%, transparent 70%)`,
           zIndex: 0,
+          pointerEvents: 'none',
         }}
       />
 
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {/* Icon row */}
+        {/* Icon tile — filled gradient + glow */}
         <div
+          className="premium-stat-icon"
           style={{
             width: 48,
             height: 48,
             borderRadius: 12,
-            background: `${color}14`,
+            background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: 22,
-            color,
+            color: '#fff',
+            boxShadow: `0 6px 16px ${color}55`,
           }}
         >
           {icon}
@@ -73,11 +114,11 @@ export default function StatCard({
         {/* Label */}
         <Text
           style={{
-            fontSize: 13,
-            fontWeight: 500,
+            fontSize: 12.5,
+            fontWeight: 600,
             textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            opacity: 0.65,
+            letterSpacing: '0.06em',
+            color: 'var(--text-2)',
           }}
         >
           {title}
@@ -88,16 +129,17 @@ export default function StatCard({
           level={2}
           style={{
             margin: 0,
-            fontSize: 32,
-            fontWeight: 700,
+            fontSize: 34,
+            fontWeight: 800,
             lineHeight: 1.1,
-            fontFamily: "'DM Mono', monospace",
+            fontFamily: 'var(--mono)',
+            color: 'var(--text)',
           }}
         >
-          {typeof value === 'number' ? value.toLocaleString() : value}
+          {displayValue}
         </Title>
 
-        {/* Trend */}
+        {/* Trend (optional) */}
         {trend !== undefined && trend !== null && (
           <Space size={4} style={{ fontSize: 13 }}>
             <span style={{ color: trendColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
