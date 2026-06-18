@@ -106,7 +106,10 @@ export default function MainLayout() {
   };
 
   /** Get the currently active menu key */
-  const selectedKey = '/' + (pathSegments[0] || 'dashboard');
+  let selectedKey = '/' + (pathSegments[0] || 'dashboard');
+  if (pathSegments[0] === 'candidates' && pathSegments[1] && location.state?.from === 'analytics') {
+    selectedKey = '/analytics';
+  }
   const isAdminPath = location.pathname.startsWith('/admin');
 
   /** Title for the current page, shown in the top bar. */
