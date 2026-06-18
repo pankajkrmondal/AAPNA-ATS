@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import prisma from '../config/database.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { sendCredentialEmail } from '../services/emailNotification.service.js';
 
 /**
  * Verify token and check if the user is authorized for HR Admin Portal.
@@ -138,6 +139,9 @@ export const createUser = catchAsync(async (req, res) => {
     },
   });
 
+  // Send credentials email in the background
+  sendCredentialEmail({ user: newUser, plainTextPassword: password, isNewUser: true });
+
   const { password_hash: _, ...safeUser } = newUser;
   return res.status(201).json(safeUser);
 });
@@ -202,6 +206,11 @@ export const updateUser = catchAsync(async (req, res) => {
     where: { id: userId },
     data: updateData,
   });
+
+  // If a new password was provided, send credentials update email in the background
+  if (password && password.trim() !== '') {
+    sendCredentialEmail({ user: updatedUser, plainTextPassword: password, isNewUser: false });
+  }
 
   const { password_hash: _, ...safeUser } = updatedUser;
   return res.status(200).json(safeUser);

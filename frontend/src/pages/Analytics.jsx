@@ -560,7 +560,7 @@ export default function Analytics() {
               type="text"
               shape="circle"
               icon={<ArrowRightOutlined />}
-              onClick={() => navigate(`/candidates/${record.cv_id || record.id}`)}
+              onClick={() => navigate(`/candidates/${record.cv_id || record.id}`, { state: { from: 'analytics' } })}
             />
           </Tooltip>
         </Space>

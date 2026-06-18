@@ -877,4 +877,147 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
   }
 }
 
+/**
+ * Sends login credentials or password change notifications to the user.
+ * In staging/dev environments, the email is redirected to staging overrides.
+ */
+export async function sendCredentialEmail({ user, plainTextPassword, isNewUser = false }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const recipientEmail = user.email || user.username;
+
+    // Resolve recipients (prod -> user; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('userCredentialUpdate', recipientEmail);
+
+    if (!toEmail) {
+      logger.warn(`Skipping credential email: No recipient email address available.`);
+      return false;
+    }
+
+    const actionText = isNewUser ? 'created' : 'updated';
+    const subject = isNewUser 
+      ? 'Your AAPNA ATS Account Credentials'
+      : 'Your AAPNA ATS Account Password Has Been Updated';
+
+    const loginUrl = config.cors.frontendUrl || 'https://ats.aapnainfotech.com';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #e8ede0;
+      border-radius: 5px;
+    }
+    .header {
+      background-color: #f7f9f6;
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid #7cb342;
+      margin-bottom: 20px;
+    }
+    .header h2 {
+      margin: 0;
+      color: #33691e;
+    }
+    .credential-box {
+      background-color: #f1f8e9;
+      border: 1px solid #c5e1a5;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .credential-row {
+      margin-bottom: 8px;
+    }
+    .credential-label {
+      font-weight: bold;
+      display: inline-block;
+      width: 120px;
+    }
+    .footer {
+      font-size: 12px;
+      color: #777;
+      margin-top: 30px;
+      border-top: 1px solid #e8ede0;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>AAPNA Recruitment Process Automation</h2>
+    </div>
+    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
+    <p>Your AAPNA ATS account credentials have been ${actionText} by the Administrator. Please find your login details below:</p>
+    
+    <div class="credential-box">
+      <div class="credential-row">
+        <span class="credential-label">Portal URL:</span>
+        <a href="${loginUrl}">${loginUrl}</a>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">Username:</span>
+        <code>${user.username}</code>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">Email:</span>
+        <code>${user.email}</code>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">New Password:</span>
+        <code>${plainTextPassword}</code>
+      </div>
+    </div>
+    
+    <p>For security reasons, we recommend that you log in and change your password as soon as possible.</p>
+    <p>If you did not request this change, please contact the IT administrator immediately.</p>
+    
+    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
+    
+    <div class="footer">
+      This is an automated notification. Please do not reply directly to this email.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    // 1) Send email
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    // 2) Log to rpa_email_log
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: isNewUser ? 'user_created' : 'user_password_changed',
+        recipient_email: toEmail,
+        recipient_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User',
+        subject,
+        body_html: html,
+        reference_id: user.id ? Number(user.id) : null,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`Credential email (${isNewUser ? 'creation' : 'update'}) sent & logged for user ID ${user.id}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send credential email for user ${user?.id || user?.email}: ${err.message}`);
+    return false;
+  }
+}
+
+
 
