@@ -1010,7 +1010,7 @@ export async function searchKeywordCandidates(filters) {
                OR c."ExpectedCTCNumeric" >= $5::numeric
            )
            AND (
-               c.resume_tsvector IS NULL 
+               c.resume_tsvector IS NULL
                OR c.resume_tsvector @@ plainto_tsquery('english', $6)
                OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')
                OR c."PositionApplied" ILIKE CONCAT('%', $6, '%')
@@ -1018,6 +1018,10 @@ export async function searchKeywordCandidates(filters) {
                OR c."CurrentCompany" ILIKE CONCAT('%', $6, '%')
                OR (c.resume_technical_terms IS NOT NULL AND c.resume_technical_terms::text ILIKE CONCAT('%', $6, '%'))
            )
+           -- Hard filters (mirror the no-keyword branch so they apply in keyword mode too)
+           AND ($7 = '' OR c."CurrentLocation" ILIKE CONCAT('%', $7, '%'))
+           AND ($8 = '' OR LOWER(c."Gender") = $8)
+           AND ($9::numeric = 0 OR c."NoticePeriodDays" IS NULL OR c."NoticePeriodDays" <= $9::numeric)
        ORDER BY distance ASC
        LIMIT 50`,
       vectorStr,
@@ -1025,7 +1029,10 @@ export async function searchKeywordCandidates(filters) {
       fExpMax || 0,
       fCtcMax || 0,
       fCtcMin || 0,
-      safeKeyword
+      safeKeyword,
+      fLocation || '',
+      fGender || '',
+      fNoticePeriod || 0
     );
 
     // Rerank candidates using Cohere Reranker
