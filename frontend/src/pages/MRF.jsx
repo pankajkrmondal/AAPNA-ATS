@@ -157,10 +157,20 @@ const renderMainMrfField = (name, currentValue) => {
   return <Input style={{ borderRadius: 6 }} />;
 };
 
+// "Other" detail fields → the select that gates them. The detail textarea is only
+// shown (and only saved) when its select is "Other"; otherwise it's hidden/cleared.
+const OTHER_DEPENDENTS = {
+  roles_responsibilities_other: 'roles_responsibilities',
+  mandatory_skills_other: 'mandatory_skills',
+  good_to_have_skills_other: 'good_to_have_skills',
+};
+
 export default function MRF() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [mainForm] = Form.useForm();
+  // Watch the main form so the "Other" detail fields show/hide reactively.
+  const mainValues = Form.useWatch([], mainForm) || {};
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [records, setRecords] = useState([]);
@@ -312,6 +322,9 @@ export default function MRF() {
         editForm
           .validateFields()
           .then((values) =>
+            // NOTE: mrfstatus (raise status) is intentionally NOT sent — it is
+            // workflow-managed and display-only here. Recruiter edits must never
+            // change the MRF status, no matter how many times the record is edited.
             mrfService.update(selectedRecord.id, {
               first_name: values.first_name,
               last_name: values.last_name,
@@ -320,7 +333,6 @@ export default function MRF() {
               budget_max: values.budget_max,
               jd_doc_link: values.jd_doc_link,
               role: values.role,
-              mrfstatus: values.mrfstatus,
             })
           )
           .then(() => ({ key: 'New MRF Request', ok: true }))
@@ -332,7 +344,14 @@ export default function MRF() {
       tasks.push(
         mainForm
           .validateFields()
-          .then((values) => mrfService.updateMain(mainMrf.id, values))
+          .then((values) => {
+            // Clear any "Other" detail text whose select is no longer "Other".
+            const cleaned = { ...values };
+            Object.entries(OTHER_DEPENDENTS).forEach(([otherKey, trigger]) => {
+              if (String(cleaned[trigger] || '').toLowerCase() !== 'other') cleaned[otherKey] = null;
+            });
+            return mrfService.updateMain(mainMrf.id, cleaned);
+          })
           .then(() => ({ key: 'Submitted MRF Details', ok: true }))
           .catch((err) => ({ key: 'Submitted MRF Details', ok: false, err }))
       );
@@ -1068,7 +1087,13 @@ export default function MRF() {
                           {group.title}
                         </div>
                         <Row gutter={16}>
-                          {group.fields.map(([name, label]) => (
+                          {group.fields.map(([name, label]) => {
+                            // "Other" detail fields only render when their select is "Other".
+                            const trigger = OTHER_DEPENDENTS[name];
+                            if (trigger && String(mainValues[trigger] || '').toLowerCase() !== 'other') {
+                              return null;
+                            }
+                            return (
                             <Col span={12} key={name}>
                               {name === 'date_of_request' ? (
                                 // Read-only display only — never bound to mainForm, so it can
@@ -1090,7 +1115,8 @@ export default function MRF() {
                                 </Form.Item>
                               )}
                             </Col>
-                          ))}
+                            );
+                          })}
                         </Row>
                       </div>
                     ))}
