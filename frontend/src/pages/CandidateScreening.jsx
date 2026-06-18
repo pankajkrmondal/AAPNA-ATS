@@ -117,6 +117,15 @@ const formatCurrentCompany = (companyStr) => {
   return cleaned;
 };
 
+// Friendly labels for the backend's required_qualification codes (role JD panel).
+const ROLE_QUAL_LABELS = {
+  TECH_GRADUATE: 'BE / BTech / MCA / Any',
+  POST_GRADUATE: 'Post Graduate',
+  GRADUATE: 'Graduate',
+  OTHER: 'Other',
+  ANY: 'Any',
+};
+
 const parseTechnicalTerms = (techTerms) => {
   if (!techTerms) return [];
   try {
@@ -677,6 +686,7 @@ export default function CandidateScreening() {
         styles={{ body: { padding: '4px 20px 20px' } }}
       >
         <Tabs
+          className="screening-tabs"
           activeKey={activeTab}
           onChange={(k) => {
             setActiveTab(k);
@@ -763,19 +773,56 @@ export default function CandidateScreening() {
                               </Button>
                             </Col>
                             <Col xs={24}>
-                              <Divider style={{ margin: '8px 0' }} />
-                              <Space size={4} direction="vertical" style={{ width: '100%' }}>
-                                <div>
-                                  <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
-                                  <Text style={{ fontSize: 13 }}>{roleDetails.role_mandatory_skills || 'N/A'}</Text>
-                                </div>
-                                {roleDetails.role_good_to_have_skills && (
-                                  <div style={{ marginTop: 4 }}>
-                                    <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 600 }}>GOOD TO HAVE</Tag>
-                                    <Text style={{ fontSize: 13 }}>{roleDetails.role_good_to_have_skills}</Text>
-                                  </div>
-                                )}
-                              </Space>
+                              {(() => {
+                                const team = roleDetails.requirement_for_team || roleDetails.role_team;
+                                const qualKey = roleDetails.required_qualification || roleDetails.role_required_qualification;
+                                const qualLabel = ROLE_QUAL_LABELS[qualKey] || qualKey;
+                                const stream = roleDetails.required_stream || roleDetails.role_required_qualification_stream;
+                                const responsibilities = roleDetails.role_responsibilities || roleDetails.roles_and_responsibilities;
+                                return (
+                                  <>
+                                    <Divider style={{ margin: '8px 0' }} />
+                                    {/* Meta row: team + qualification */}
+                                    {(team || (qualLabel && qualLabel !== 'ANY')) && (
+                                      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginBottom: 10 }}>
+                                        {team && (
+                                          <div>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>Requirement For Team</Text>
+                                            <div style={{ fontWeight: 600, fontSize: 13 }}>{team}</div>
+                                          </div>
+                                        )}
+                                        {qualLabel && (
+                                          <div>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>Qualification</Text>
+                                            <div style={{ fontWeight: 600, fontSize: 13 }}>{qualLabel}{stream ? ` — ${stream}` : ''}</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    {/* Skills */}
+                                    <Space size={6} direction="vertical" style={{ width: '100%' }}>
+                                      <div>
+                                        <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
+                                        <Text style={{ fontSize: 13 }}>{roleDetails.role_mandatory_skills || 'N/A'}</Text>
+                                      </div>
+                                      {roleDetails.role_good_to_have_skills && (
+                                        <div>
+                                          <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 600 }}>GOOD TO HAVE</Tag>
+                                          <Text style={{ fontSize: 13 }}>{roleDetails.role_good_to_have_skills}</Text>
+                                        </div>
+                                      )}
+                                      {responsibilities && (
+                                        <div>
+                                          <Tag color="green" style={{ borderRadius: 4, fontWeight: 600 }}>RESPONSIBILITIES</Tag>
+                                          <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginTop: 6, maxHeight: 110, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                                            {responsibilities}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </Space>
+                                  </>
+                                );
+                              })()}
                             </Col>
                           </Row>
                         </Card>
@@ -982,12 +1029,12 @@ export default function CandidateScreening() {
                       </Collapse>
                     </Col>
 
-                    <Col xs={24} style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 12 }}>
-                      <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
-                        Search Candidates
-                      </Button>
-                      <Button onClick={handleClearFilters}>
+                    <Col xs={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
+                      <Button onClick={handleClearFilters} className="cta-secondary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 22 }}>
                         Clear Filters
+                      </Button>
+                      <Button type="primary" htmlType="submit" icon={<SearchOutlined />} className="cta-primary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 26 }}>
+                        Search Candidates
                       </Button>
                     </Col>
                   </Row>
@@ -1006,29 +1053,38 @@ export default function CandidateScreening() {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '8px 12px',
+              flexWrap: 'wrap',
+              gap: 10,
+              padding: '12px 16px',
               background: 'var(--ink-3)',
-              borderRadius: 8,
+              border: '1px solid var(--border-light)',
+              borderRadius: 10,
               marginBottom: 16,
-              fontSize: 13,
-              fontFamily: "'DM Mono', monospace",
             }}
           >
-            <Text strong style={{ color: 'var(--color-primary)' }}>{summary.summaryText || `${candidates.length} candidates match`}</Text>
-            {activeTab === 'jd' && (
-              <Space size={12}>
-                <Badge color="#4a7c59" text={`5★: ${summary.fiveStar || 0}`} />
-                <Badge color="#7a922e" text={`4★: ${summary.fourStar || 0}`} />
-                <Badge color="#d4a017" text={`3★: ${summary.threeStar || 0}`} />
-              </Space>
-            )}
-            {activeTab === 'keyword' && (
-              <Space size={12}>
-                <Badge color="#4a7c59" text={`Strong: ${summary.high || 0}`} />
-                <Badge color="#7a922e" text={`Moderate: ${summary.medium || 0}`} />
-                <Badge color="#d4a017" text={`Weak: ${summary.low || 0}`} />
-              </Space>
-            )}
+            <Text strong style={{ color: 'var(--text)', fontSize: 14 }}>
+              {summary.summaryText || `${candidates.length} candidates match`}
+            </Text>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {(activeTab === 'jd'
+                ? [
+                    { label: '5★', value: summary.fiveStar || 0, color: '#4a7c59' },
+                    { label: '4★', value: summary.fourStar || 0, color: '#7a922e' },
+                    { label: '3★', value: summary.threeStar || 0, color: '#d4a017' },
+                  ]
+                : [
+                    { label: 'Strong', value: summary.high || 0, color: '#4a7c59' },
+                    { label: 'Moderate', value: summary.medium || 0, color: '#7a922e' },
+                    { label: 'Weak', value: summary.low || 0, color: '#d4a017' },
+                  ]
+              ).map((s) => (
+                <span key={s.label} className="screening-stat-chip">
+                  <span className="dot" style={{ background: s.color }} />
+                  {s.label}
+                  <span style={{ color: 'var(--text)', fontWeight: 800 }}>{s.value}</span>
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1101,16 +1157,18 @@ export default function CandidateScreening() {
                   <Card
                     key={c.id}
                     className="glass-card hover-lift"
+                    onClick={() => openCandidateDrawer(c)}
                     style={{
-                      borderLeft: isSelected 
-                        ? '4px solid var(--gold)' 
+                      cursor: 'pointer',
+                      borderLeft: isSelected
+                        ? '4px solid var(--gold)'
                         : '1px solid var(--border-light)',
                       border: isSelected ? '1px solid rgba(122, 146, 46, 0.4)' : '1px solid var(--border-light)',
-                      background: isSelected 
-                        ? 'linear-gradient(145deg, rgba(122, 146, 46, 0.04) 0%, rgba(255, 255, 255, 0.98) 100%)' 
+                      background: isSelected
+                        ? 'linear-gradient(145deg, rgba(122, 146, 46, 0.04) 0%, rgba(255, 255, 255, 0.98) 100%)'
                         : 'var(--gradient-card)',
-                      boxShadow: isSelected 
-                        ? '0 8px 25px -4px rgba(122, 146, 46, 0.12), 0 4px 10px -2px rgba(122, 146, 46, 0.08)' 
+                      boxShadow: isSelected
+                        ? '0 8px 25px -4px rgba(122, 146, 46, 0.12), 0 4px 10px -2px rgba(122, 146, 46, 0.08)'
                         : 'var(--shadow-sm)',
                       transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                       borderRadius: '12px',
@@ -1121,6 +1179,7 @@ export default function CandidateScreening() {
                       <Col>
                         <Checkbox
                           checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (e.target.checked) {
                               setSelectedCandidateKeys((prev) => [...prev, c.id]);
@@ -1193,53 +1252,20 @@ export default function CandidateScreening() {
                           })()}
 
                           {/* Detail Indicators (Pills) */}
-                          <Space size={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
-                            <Space
-                              size={6}
-                              style={{
-                                background: 'rgba(0,0,0,0.02)',
-                                padding: '3px 9px',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-light)',
-                                fontSize: '11.5px',
-                                color: 'var(--text-2)',
-                                fontWeight: 500
-                              }}
-                            >
-                              <EnvironmentOutlined style={{ color: 'var(--gold)', opacity: 0.8 }} />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                            <span className="screening-pill">
+                              <EnvironmentOutlined style={{ color: 'var(--gold)' }} />
                               <span>{c.CurrentLocation || 'N/A'}</span>
-                            </Space>
-                            <Space
-                              size={6}
-                              style={{
-                                background: 'rgba(0,0,0,0.02)',
-                                padding: '3px 9px',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-light)',
-                                fontSize: '11.5px',
-                                color: 'var(--text-2)',
-                                fontWeight: 500
-                              }}
-                            >
-                              <ClockCircleOutlined style={{ color: 'var(--green)', opacity: 0.8 }} />
+                            </span>
+                            <span className="screening-pill">
+                              <ClockCircleOutlined style={{ color: 'var(--green)' }} />
                               <span>{c.TotalExperienceYears || '0'} yrs exp ({c.LastCompanyExperienceYears ? `${c.LastCompanyExperienceYears} yrs last co.` : '0 yrs last co.'})</span>
-                            </Space>
-                            <Space
-                              size={6}
-                              style={{
-                                background: 'rgba(0,0,0,0.02)',
-                                padding: '3px 9px',
-                                borderRadius: '6px',
-                                border: '1px solid var(--border-light)',
-                                fontSize: '11.5px',
-                                color: 'var(--text-2)',
-                                fontWeight: 500
-                              }}
-                            >
+                            </span>
+                            <span className="screening-pill">
                               <span style={{ fontWeight: 700, color: 'var(--gold)' }}>₹</span>
                               <span>{c.ExpectedCTC_LPA || c.CTC_LPA || '0'} LPA</span>
-                            </Space>
-                          </Space>
+                            </span>
+                          </div>
                           
                           {/* Skill Tags */}
                           <div style={{ marginTop: 6 }}>
@@ -1354,72 +1380,35 @@ export default function CandidateScreening() {
                             </Tag>
                           )}
                         </div>
-                        <Tooltip title="Conversations">
-                          <Button
-                            icon={<MessageOutlined style={{ fontSize: '15px' }} />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openConversationsModal(c);
-                            }}
-                            className="hover-lift"
-                            style={{
-                              borderRadius: '50%',
-                              borderColor: 'var(--border-light)',
-                              background: '#fff',
-                              color: 'var(--text-2)',
-                              height: 38,
-                              width: 38,
-                              display: 'flex',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                              transition: 'all 0.2s'
-                            }}
-                          />
-                        </Tooltip>
-                        <Tooltip title="Download Resume">
-                          <Button
-                            icon={<FileTextOutlined style={{ fontSize: '15px' }} />}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadResume(c);
-                            }}
-                            className="hover-lift"
-                            style={{
-                              borderRadius: '50%',
-                              borderColor: 'var(--border-light)',
-                              background: '#fff',
-                              color: 'var(--text-2)',
-                              height: 38,
-                              width: 38,
-                              display: 'flex',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                              transition: 'all 0.2s'
-                            }}
-                          />
-                        </Tooltip>
-                        <Tooltip title="View">
-                          <Button
-                            icon={<RightOutlined style={{ fontSize: '12px' }} />}
-                            onClick={() => openCandidateDrawer(c)}
-                            className="hover-lift"
-                            style={{
-                              borderRadius: '10px',
-                              borderColor: 'var(--border-light)',
-                              background: '#fff',
-                              color: 'var(--text-2)',
-                              height: 38,
-                              width: 38,
-                              display: 'flex',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
-                              transition: 'all 0.2s'
-                            }}
-                          />
-                        </Tooltip>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Tooltip title="Conversations">
+                            <Button
+                              icon={<MessageOutlined style={{ fontSize: '15px' }} />}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openConversationsModal(c);
+                              }}
+                              className="screening-action-btn"
+                            />
+                          </Tooltip>
+                          <Tooltip title="Download Resume">
+                            <Button
+                              icon={<FileTextOutlined style={{ fontSize: '15px' }} />}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                downloadResume(c);
+                              }}
+                              className="screening-action-btn"
+                            />
+                          </Tooltip>
+                          <Tooltip title="View details">
+                            <Button
+                              icon={<RightOutlined style={{ fontSize: '13px' }} />}
+                              onClick={(e) => { e.stopPropagation(); openCandidateDrawer(c); }}
+                              className="screening-action-btn primary"
+                            />
+                          </Tooltip>
+                        </div>
                       </Col>
                     </Row>
                   </Card>
@@ -1428,15 +1417,30 @@ export default function CandidateScreening() {
             </Space>
           </div>
         ) : (
-          <Empty
-            description={
-              selectedRoleId || form.getFieldValue('keyword')
-                ? "No candidates matched the screening requirements."
-                : "Select filters above to search for qualified resumes."
-            }
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            style={{ padding: '60px 0' }}
-          />
+          <div style={{ padding: '64px 24px', textAlign: 'center' }}>
+            <div
+              style={{
+                width: 64, height: 64, borderRadius: '50%',
+                background: 'var(--gold-subtle)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: 18,
+              }}
+            >
+              <SearchOutlined style={{ fontSize: 26, color: 'var(--gold)' }} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+              {selectedRoleId || form.getFieldValue('keyword')
+                ? 'No matching candidates'
+                : 'Start screening candidates'}
+            </div>
+            <Text type="secondary" style={{ fontSize: 13.5 }}>
+              {selectedRoleId || form.getFieldValue('keyword')
+                ? 'No candidates matched the screening requirements. Try widening your filters.'
+                : (activeTab === 'jd'
+                    ? 'Select an open role above to instantly match and rank qualified candidates.'
+                    : 'Enter skills and filters above, then hit Search to find qualified resumes.')}
+            </Text>
+          </div>
         )}
       </Card>
 
