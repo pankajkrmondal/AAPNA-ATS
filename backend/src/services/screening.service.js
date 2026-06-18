@@ -394,6 +394,23 @@ function getJdJsonField(parsedJd, ...keys) {
   return '';
 }
 
+/**
+ * Resolve the AI profile for a candidate: prefer the freshly-generated insights
+ * for this search, but fall back to the candidate's own cached ai_profile_insights
+ * so any previously-analyzed candidate still shows their AI Insights in the drawer,
+ * even when they rank outside this search's top-N (which is the only set re-analyzed).
+ */
+function resolveProfile(insights, candidate) {
+  if (insights && insights.profile) return insights.profile;
+  let cached = candidate && candidate.ai_profile_insights;
+  if (!cached) return null;
+  if (typeof cached === 'string') {
+    try { cached = JSON.parse(cached); } catch { return null; }
+  }
+  if (!cached || typeof cached !== 'object') return null;
+  return cached.profile || (cached.summary ? cached : null);
+}
+
 function mapStars(score) {
   if (score >= 9) return { stars: 5, label: 'Excellent Fit' };
   if (score >= 7) return { stars: 4, label: 'Strong Candidate' };
@@ -858,7 +875,7 @@ export async function searchRoleCandidates(mrfId) {
       educationContext,
       maxTenureYears: parseFloat(item.maxTenureYears.toFixed(2)),
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
-      profile: insights.profile || null,
+      profile: resolveProfile(insights, c),
       starRating: {
         finalScore,
         stars,
@@ -968,7 +985,7 @@ export async function searchKeywordCandidates(filters) {
           c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
           c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
           c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-          c."cvFileUrl", c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance
+          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, v.text, v.embedding <=> $1::vector as distance
        FROM public.rpa_cv_vectors v
        JOIN public.rpa_cv c ON c.id = v.candidate_id
        WHERE 
@@ -1360,7 +1377,7 @@ export async function searchKeywordCandidates(filters) {
       id: Number(c.id),
       educationContext,
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
-      profile: insights.profile || null,
+      profile: resolveProfile(insights, c),
       relevanceScore: {
         scorePct,
         stars,

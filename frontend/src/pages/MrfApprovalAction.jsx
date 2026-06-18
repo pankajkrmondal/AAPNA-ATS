@@ -7,6 +7,12 @@ import mrfService from '../services/mrfService';
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
+// Dropdown fields with an "Other" option render as "Other - <custom text>".
+const fmtOther = (sel, other) =>
+  String(sel || '').trim().toLowerCase() === 'other' && other
+    ? `Other - ${other}`
+    : (sel || 'Not specified');
+
 export default function MrfApprovalAction() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -188,9 +194,18 @@ export default function MrfApprovalAction() {
             <Descriptions.Item label="Employment Type">{mrfDetails?.employment_type || 'Not Specified'}</Descriptions.Item>
             <Descriptions.Item label="Experience Required">{mrfDetails?.total_years_of_experience} Years total ({mrfDetails?.relevant_years_of_experience} Years relevant)</Descriptions.Item>
             <Descriptions.Item label="Project Details">{mrfDetails?.project_name} ({mrfDetails?.project_duration})</Descriptions.Item>
-            <Descriptions.Item label="Mandatory Skills" span={2}>{mrfDetails?.mandatory_skills}</Descriptions.Item>
+            {mrfDetails?.roles_responsibilities && (
+              <Descriptions.Item label="Roles & Responsibilities" span={2}>
+                {fmtOther(mrfDetails?.roles_responsibilities, mrfDetails?.roles_responsibilities_other)}
+              </Descriptions.Item>
+            )}
+            <Descriptions.Item label="Mandatory Skills" span={2}>
+              {fmtOther(mrfDetails?.mandatory_skills, mrfDetails?.mandatory_skills_other)}
+            </Descriptions.Item>
             {mrfDetails?.good_to_have_skills && (
-              <Descriptions.Item label="Good to Have Skills" span={2}>{mrfDetails?.good_to_have_skills}</Descriptions.Item>
+              <Descriptions.Item label="Good to Have Skills" span={2}>
+                {fmtOther(mrfDetails?.good_to_have_skills, mrfDetails?.good_to_have_skills_other)}
+              </Descriptions.Item>
             )}
             <Descriptions.Item label="Job Description (JD)" span={2}>
               {mrfDetails?.jd_document_link ? (

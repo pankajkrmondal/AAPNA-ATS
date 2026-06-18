@@ -254,8 +254,10 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
     role,
     budget_min,
     budget_max,
-    mrfstatus,
   } = req.body;
+  // mrfstatus (raise status) is intentionally NOT accepted here — it is
+  // workflow-managed (manager submission / approval) and must never be changed
+  // by a recruiter editing the MRF, regardless of how often it is edited.
 
   const mrfSend = await prisma.rpa_mrf_jd_send.findUnique({
     where: { id: BigInt(id) },
@@ -272,7 +274,6 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
   if (role !== undefined) dataToUpdate.role = role.trim();
   if (budget_min !== undefined) dataToUpdate.budget_min = budget_min !== null ? Number(budget_min) : null;
   if (budget_max !== undefined) dataToUpdate.budget_max = budget_max !== null ? Number(budget_max) : null;
-  if (mrfstatus !== undefined) dataToUpdate.mrfstatus = mrfstatus.trim();
 
   const updated = await prisma.rpa_mrf_jd_send.update({
     where: { id: BigInt(id) },
@@ -426,6 +427,12 @@ const generateMrfEmailTable = (j, jdLink, testPaperLink, parsedJd) => {
     return String(val);
   };
 
+  // For dropdown fields with an "Other" option: show "Other - <custom text>" when chosen.
+  const otherFmt = (sel, other) =>
+    String(sel || '').trim().toLowerCase() === 'other' && v(other)
+      ? `Other - ${v(other)}`
+      : v(sel);
+
   const aiExperienceRange = parsedJd && (parsedJd.min_experience_years != null || parsedJd.max_experience_years != null)
     ? `${v(parsedJd.min_experience_years) || '—'} - ${v(parsedJd.max_experience_years) || '—'} years`
     : '';
@@ -462,10 +469,9 @@ const generateMrfEmailTable = (j, jdLink, testPaperLink, parsedJd) => {
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Employment Type:</td><td style="border: 1px solid black; padding: 8px;">${v(j.employment_type)}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Allocation Possible:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_allocation ? 'Yes' : 'No')}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_information)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities:</td><td style="border: 1px solid black; padding: 8px;">${v(j.roles_responsibilities)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities (Other):</td><td style="border: 1px solid black; padding: 8px;">${v(j.roles_responsibilities_other)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Mandatory Skills:</td><td style="border: 1px solid black; padding: 8px;">${v(j.mandatory_skills)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Good to Have Skills:</td><td style="border: 1px solid black; padding: 8px;">${v(j.good_to_have_skills)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.roles_responsibilities, j.roles_responsibilities_other)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Mandatory Skills:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.mandatory_skills, j.mandatory_skills_other)}</td></tr>
+  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Good to Have Skills:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.good_to_have_skills, j.good_to_have_skills_other)}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">1st Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.first_technical_round)}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">2nd Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.second_technical_round)}</td></tr>
   <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">CEO / Management Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.ceo_management_round)}</td></tr>
@@ -563,7 +569,9 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     roles_responsibilities,
     roles_responsibilities_other,
     mandatory_skills,
+    mandatory_skills_other,
     good_to_have_skills,
+    good_to_have_skills_other,
     first_technical_round,
     second_technical_round,
     ceo_management_round,
@@ -671,7 +679,9 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     roles_responsibilities,
     roles_responsibilities_other,
     mandatory_skills,
+    mandatory_skills_other,
     good_to_have_skills,
+    good_to_have_skills_other,
     first_technical_round,
     second_technical_round,
     ceo_management_round,
@@ -720,7 +730,9 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
       roles_responsibilities: roles_responsibilities || null,
       roles_responsibilities_other: roles_responsibilities_other || null,
       mandatory_skills: mandatory_skills || null,
+      mandatory_skills_other: mandatory_skills_other || null,
       good_to_have_skills: good_to_have_skills || null,
+      good_to_have_skills_other: good_to_have_skills_other || null,
       first_technical_round: first_technical_round || null,
       second_technical_round: second_technical_round || null,
       ceo_management_round: ceo_management_round || null,
