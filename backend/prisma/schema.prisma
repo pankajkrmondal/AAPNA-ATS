@@ -7,11 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model rpa_companies {
+  id         Int         @id @default(autoincrement())
+  name       String      @db.VarChar(255)
+  slug       String      @unique @db.VarChar(100)
+  domain     String?     @db.VarChar(255)
+  is_active  Boolean     @default(true)
+  created_at DateTime?   @default(now()) @db.Timestamp(6)
+  users      rpa_users[]
+
+  @@map("rpa_companies")
+}
+
 model rpa_users {
   id                   Int                      @id @default(autoincrement())
   username             String                   @unique @db.VarChar(100)
   password_hash        String
   role                 String?                  @default("recruiter") @db.VarChar(50)
+  company_id           Int?
   is_active            Boolean?                 @default(true)
   created_at           DateTime?                @default(now()) @db.Timestamp(6)
   first_name           String?                  @db.VarChar(100)
@@ -19,12 +32,14 @@ model rpa_users {
   email                String?                  @unique(map: "idx_rpa_users_email") @db.VarChar(255)
   is_approved          Boolean?                 @default(false)
   department           String?                  @default("HR") @db.VarChar(100)
+  company              rpa_companies?           @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   rpa_email_messages   rpa_email_messages[]
   rpa_email_templates  rpa_email_templates[]
   module_permissions   rpa_module_permissions[]
   rpa_outlook_accounts rpa_outlook_accounts[]
   sessions             rpa_sessions[]
 
+  @@index([company_id], map: "idx_rpa_users_company")
   @@map("rpa_users")
 }
 
@@ -33,6 +48,7 @@ model rpa_sessions {
   token      String     @unique
   user_id    Int?
   role       String?    @db.VarChar(50)
+  company_id Int?
   created_at DateTime?  @default(now()) @db.Timestamp(6)
   expires_at DateTime   @db.Timestamp(6)
   user       rpa_users? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
