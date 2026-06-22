@@ -411,10 +411,10 @@ export default function VendorPortal() {
 
   return (
     <div className="page-enter" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
-      {/* Page Header */}
+      {/* Page Header — vendors see a candidate-centric label on their own portal. */}
       <div style={{ marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0, fontWeight: 700 }}>
-          Vendor Manual Upload
+          {(user?.role || '').toLowerCase() === 'vendor' ? 'Upload Candidate' : 'Vendor Manual Upload'}
         </Title>
         <Text style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
           Upload and manage vendor-sourced candidate resumes

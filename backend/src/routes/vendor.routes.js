@@ -41,14 +41,33 @@ const upload = multer({
   },
 });
 
-// Protect all vendor routes
+// All vendor routes require authentication.
 router.use(authenticate);
-router.use(restrictTo('vendor', 'admin', 'hr'));
-// Gate the whole module behind the `vendor_upload` permission (admins/superadmins bypass).
-// Mirrors the n8n flow which returned 403 for users without the module enabled.
-router.use(checkModuleAccess('vendor_upload'));
 
-// ── Vendor APIs ───────────────────────────────────────────────────────
+// ── Dashboard & vendor list (vendors + internal staff) ─────────────────
+
+/**
+ * Vendor dashboard summary. Vendors see their own submissions (scoped to their
+ * email); internal staff (admin/superadmin/recruiter) pick a vendor to view via
+ * the `vendorEmail` query param. Defined before the upload-only guards so
+ * recruiters/superadmins (who can't upload) can still view the dashboard.
+ */
+router.get(
+  '/dashboard',
+  restrictTo('vendor', 'admin', 'superadmin', 'recruiter'),
+  vendorController.getVendorDashboard,
+);
+
+/** List registered vendors — powers the staff vendor-picker. */
+router.get(
+  '/vendors',
+  restrictTo('admin', 'superadmin', 'recruiter'),
+  vendorController.listVendors,
+);
+
+// ── Upload-related APIs (vendor/admin/hr + vendor_upload module) ────────
+router.use(restrictTo('vendor', 'admin', 'hr'));
+router.use(checkModuleAccess('vendor_upload'));
 
 /** Get candidates uploaded by the vendor */
 router.get('/candidates', vendorController.getVendorCandidates);

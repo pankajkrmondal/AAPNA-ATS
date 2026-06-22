@@ -15,6 +15,26 @@ const vendorService = {
   },
 
   /**
+   * Get the vendor dashboard summary (candidate status + recent uploads).
+   * Vendors omit the arg (scoped to themselves); staff pass a vendor's email.
+   * @param {string} [vendorEmail]
+   * @returns {Promise}
+   */
+  getDashboard(vendorEmail) {
+    return api.get('/vendor/dashboard', {
+      params: vendorEmail ? { vendorEmail } : {},
+    });
+  },
+
+  /**
+   * List registered vendors for the staff vendor-picker.
+   * @returns {Promise}
+   */
+  getVendors() {
+    return api.get('/vendor/vendors');
+  },
+
+  /**
    * Upload resumes to the parsing system.
    * @param {FormData} formData — Multi-part form data containing 'resumes' array
    * @param {function} onUploadProgress — Callback for upload progress bar

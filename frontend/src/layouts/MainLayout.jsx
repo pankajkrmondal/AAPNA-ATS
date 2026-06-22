@@ -4,7 +4,7 @@
  * bar carries the page title, Admin Portal access, and the user menu.
  */
 import { useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   Layout,
   Menu,
@@ -33,6 +33,7 @@ import {
   MoonOutlined,
   UploadOutlined,
   CrownOutlined,
+  FundOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
@@ -59,9 +60,23 @@ const MENU_ITEMS = [
   { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
 ];
 
+/** Navigation menu shown to vendors — restricted to their own surfaces. */
+const VENDOR_MENU_ITEMS = [
+  { key: '/vendor-dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '/vendor',           icon: <UploadOutlined />,    label: 'Upload Candidate' },
+];
+
+/** Path prefixes a vendor is allowed to visit; anything else redirects. */
+const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
+
+/** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
+const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
+const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <FundOutlined />, label: 'Vendor Dashboard' };
+
 /** Map paths to breadcrumb labels */
 const BREADCRUMB_MAP = {
   dashboard: 'Dashboard',
+  'vendor-dashboard': 'Vendor Dashboard',
   candidates: 'Candidates',
   'hr-upload': 'HR Upload',
   mrf: 'MRF',
@@ -89,12 +104,14 @@ export default function MainLayout() {
 
   const pathSegments = location.pathname.split('/').filter(Boolean);
 
-  /** User dropdown menu */
-  const userMenuItems = [
-    { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-    { type: 'divider' },
-    { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
-  ];
+  /** User dropdown menu — vendors don't have access to Settings. */
+  const userMenuItems = (user?.role || '').toLowerCase() === 'vendor'
+    ? [{ key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true }]
+    : [
+        { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+        { type: 'divider' },
+        { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
+      ];
 
   const handleUserMenu = async ({ key }) => {
     if (key === 'logout') {
@@ -112,20 +129,40 @@ export default function MainLayout() {
   }
   const isAdminPath = location.pathname.startsWith('/admin');
 
-  /** Title for the current page, shown in the top bar. */
-  const pageTitle = BREADCRUMB_MAP[pathSegments[0]] || 'Dashboard';
+  /** Title for the current page, shown in the top bar. Vendors get their own
+   *  labels (Upload Candidate / Dashboard) for their restricted surfaces. */
+  const pageTitle = (user?.role || '').toLowerCase() === 'vendor'
+    ? (selectedKey === '/vendor' ? 'Upload Candidate' : 'Dashboard')
+    : (BREADCRUMB_MAP[pathSegments[0]] || 'Dashboard');
 
-  const hasAdminAccess =
-    ['admin', 'superadmin'].includes((user?.role || '').toLowerCase());
+  const role = (user?.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+  const hasAdminAccess = ['admin', 'superadmin'].includes(role);
 
-  // Filter menu items by user role (icons kept for the sidebar rail).
-  const menuItems = MENU_ITEMS.filter(item => {
-    const role = (user?.role || '').toLowerCase();
-    if (role === 'vendor') {
-      return item.key === '/dashboard' || item.key === '/vendor';
+  // Vendors are confined to their own surfaces. Redirect any other path
+  // (including direct URL navigation) to the vendor dashboard. This is the
+  // single choke point for all protected routes (MainLayout wraps the Outlet).
+  if (isVendor) {
+    const allowed = VENDOR_ALLOWED_PATHS.some(
+      (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
+    );
+    if (!allowed) {
+      return <Navigate to="/vendor-dashboard" replace />;
     }
-    return true;
-  });
+  }
+
+  // Vendors get a restricted menu; staff additionally get the Vendor Dashboard
+  // item (inserted after the Vendor upload entry); everyone else sees the base nav.
+  let menuItems;
+  if (isVendor) {
+    menuItems = VENDOR_MENU_ITEMS;
+  } else if (VENDOR_DASHBOARD_ROLES.includes(role)) {
+    menuItems = [...MENU_ITEMS];
+    const idx = menuItems.findIndex((m) => m.key === '/vendor');
+    menuItems.splice(idx + 1, 0, VENDOR_DASHBOARD_MENU_ITEM);
+  } else {
+    menuItems = MENU_ITEMS;
+  }
 
   if (isAdminPath) {
     return (
