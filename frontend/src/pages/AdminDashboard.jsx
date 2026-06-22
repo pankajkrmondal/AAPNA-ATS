@@ -36,6 +36,8 @@ import {
   SolutionOutlined,
   ReloadOutlined,
   SafetyOutlined,
+  BankOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import adminService from '../services/adminService';
 import useAuth from '../hooks/useAuth';
@@ -52,6 +54,21 @@ const MODULES_INFO = [
   { key: 'screening_analytics', label: 'Recruitment Screening Analytics',  desc: 'Track recruitment performance and analytics',       icon: '📊', color: '#eb2f96' },
 ];
 
+// Per-role badge metadata — distinct, on-brand colors so the hierarchy reads at a glance.
+const ROLE_META = {
+  superadmin: { label: 'Super Admin', cls: 'role-badge--superadmin' },
+  admin:      { label: 'Admin',       cls: 'role-badge--admin' },
+  recruiter:  { label: 'Recruiter',   cls: 'role-badge--recruiter' },
+  vendor:     { label: 'Vendor',      cls: 'role-badge--vendor' },
+};
+
+/** Colored, uppercase role pill. */
+function RoleBadge({ role }) {
+  const key = (role || '').toLowerCase();
+  const meta = ROLE_META[key] || { label: role || '—', cls: 'role-badge--admin' };
+  return <span className={`role-badge ${meta.cls}`}>{meta.label}</span>;
+}
+
 export default function AdminDashboard() {
   const { user: currentUser } = useAuth();
 
@@ -63,6 +80,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState(''); // superadmin only
 
   // Selected User for Module Permissions
   const [selectedModUser, setSelectedModUser] = useState(null);
@@ -84,9 +102,33 @@ export default function AdminDashboard() {
   const [toggleModalOpen, setToggleModalOpen] = useState(false);
   const [userToToggle, setUserToToggle] = useState(null);
 
+  // Companies (superadmin only)
+  const [companies, setCompanies] = useState([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companyModalOpen, setCompanyModalOpen] = useState(false);
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [companyForm] = Form.useForm();
+
   const isAuthorized = useMemo(() => {
     return currentUser?.role && ['admin', 'superadmin'].includes(currentUser.role.toLowerCase());
   }, [currentUser]);
+
+  const isSuper = useMemo(
+    () => (currentUser?.role || '').toLowerCase() === 'superadmin',
+    [currentUser],
+  );
+
+  // Roles a requester may assign. A company admin may assign Company Admin /
+  // Recruiter / Vendor within their own company; a superadmin can additionally
+  // assign the global Super Admin role.
+  const roleOptions = useMemo(() => {
+    const base = [
+      { value: 'admin', label: 'Company Admin' },
+      { value: 'recruiter', label: 'Recruiter' },
+      { value: 'vendor', label: 'Vendor' },
+    ];
+    return isSuper ? [{ value: 'superadmin', label: 'Super Admin' }, ...base] : base;
+  }, [isSuper]);
 
   const nonAdminUsers = useMemo(() => {
     return users.filter((u) => !['admin', 'superadmin'].includes((u.role || '').toLowerCase()));
@@ -116,6 +158,69 @@ export default function AdminDashboard() {
     loadUsers();
   }, []);
 
+  // Load companies (superadmin only)
+  const loadCompanies = async () => {
+    setCompaniesLoading(true);
+    try {
+      const res = await adminService.listCompanies();
+      setCompanies(res.data || []);
+    } catch (err) {
+      message.error('Failed to load companies.');
+    } finally {
+      setCompaniesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSuper) loadCompanies();
+  }, [isSuper]);
+
+  // Map company_id -> name for the User table column (covers the superadmin's
+  // cross-company view; the backend also returns company_name on each user).
+  const companyNameById = useMemo(() => {
+    const map = {};
+    companies.forEach((c) => { map[c.id] = c.name; });
+    return map;
+  }, [companies]);
+
+  // Open the Company create/edit modal
+  const openCompanyModal = (record = null) => {
+    setEditingCompany(record);
+    companyForm.resetFields();
+    if (record) {
+      companyForm.setFieldsValue({ name: record.name, slug: record.slug, domain: record.domain });
+    }
+    setCompanyModalOpen(true);
+  };
+
+  const handleSaveCompany = async () => {
+    try {
+      const values = await companyForm.validateFields();
+      if (editingCompany) {
+        await adminService.updateCompany({ id: editingCompany.id, ...values });
+        message.success('Company updated.');
+      } else {
+        await adminService.createCompany(values);
+        message.success('Company created.');
+      }
+      setCompanyModalOpen(false);
+      loadCompanies();
+    } catch (err) {
+      if (err?.errorFields) return; // form validation error — already shown
+      message.error(err?.data?.message || 'Failed to save company.');
+    }
+  };
+
+  const handleToggleCompany = async (record) => {
+    try {
+      await adminService.toggleCompanyStatus(record.id, !record.is_active);
+      message.success(`Company ${!record.is_active ? 'activated' : 'deactivated'}.`);
+      loadCompanies();
+    } catch (err) {
+      message.error('Failed to change company status.');
+    }
+  };
+
   // Filtered users
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -123,9 +228,10 @@ export default function AdminDashboard() {
       const matchesSearch = nameText.includes(searchQuery.toLowerCase());
       const matchesRole = !roleFilter || (u.role || '').toLowerCase() === roleFilter.toLowerCase();
       const matchesStatus = !statusFilter || (statusFilter === 'active' ? u.is_active : !u.is_active);
-      return matchesSearch && matchesRole && matchesStatus;
+      const matchesCompany = !companyFilter || String(u.company_id) === String(companyFilter);
+      return matchesSearch && matchesRole && matchesStatus && matchesCompany;
     });
-  }, [users, searchQuery, roleFilter, statusFilter]);
+  }, [users, searchQuery, roleFilter, statusFilter, companyFilter]);
 
   // Stats
   const stats = useMemo(() => {
@@ -212,6 +318,7 @@ export default function AdminDashboard() {
         last_name: record.last_name,
         email: record.email,
         role: record.role,
+        company_id: record.company_id ?? undefined,
         is_active: record.is_active ? '1' : '0',
       });
     }
@@ -241,6 +348,11 @@ export default function AdminDashboard() {
           is_active: true,
           is_approved: true,
         };
+        // Only superadmin assigns a company. A superadmin account is global
+        // (company_id null); every other role carries its selected company.
+        if (isSuper) {
+          payload.company_id = values.role === 'superadmin' ? null : values.company_id;
+        }
 
         // Check email first
         const emailCheck = await adminService.checkEmail(payload.email);
@@ -273,6 +385,11 @@ export default function AdminDashboard() {
         if (values.password) {
           payload.password = values.password;
         }
+        // Only superadmin may reassign a user's company. Driven by the chosen
+        // role so a promotion to superadmin clears the company (global).
+        if (isSuper) {
+          payload.company_id = values.role === 'superadmin' ? null : values.company_id;
+        }
 
         await adminService.updateUser(payload);
         message.success('User updated successfully.');
@@ -280,10 +397,11 @@ export default function AdminDashboard() {
       setUserModalOpen(false);
       loadUsers();
     } catch (err) {
+      if (err?.errorFields) return; // form validation error — inline messages already shown
       if (err?.data?.error === 'EMAIL_EXISTS') {
         form.setFields([{ name: 'email', errors: [err.message] }]);
       } else {
-        message.error('An error occurred while saving user.');
+        message.error(err?.message || 'An error occurred while saving user.');
       }
     }
   };
@@ -358,23 +476,18 @@ export default function AdminDashboard() {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (role) => (
-        <span
-          style={{
-            background: '#eef3da',
-            color: '#5c6f1f',
-            fontSize: 10,
-            fontWeight: 700,
-            padding: '2px 8px',
-            borderRadius: 5,
-            textTransform: 'uppercase',
-            letterSpacing: '0.4px',
-          }}
-        >
-          {role}
-        </span>
-      ),
+      render: (role) => <RoleBadge role={role} />,
     },
+    ...(isSuper ? [{
+      title: 'Company',
+      key: 'company',
+      render: (_, record) => {
+        const name = record.company_name || companyNameById[record.company_id];
+        return name
+          ? <Text style={{ fontSize: 12 }}>{name}</Text>
+          : <Text type="secondary" style={{ fontSize: 12 }}>— Global —</Text>;
+      },
+    }] : []),
     {
       title: 'Status',
       key: 'status',
@@ -415,6 +528,11 @@ export default function AdminDashboard() {
       align: 'right',
       render: (_, record) => {
         const isSelf = record.id === currentUser?.id;
+        // Only a superadmin may see/manage superadmin accounts.
+        const targetIsSuper = (record.role || '').toLowerCase() === 'superadmin';
+        if (targetIsSuper && !isSuper) {
+          return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
+        }
         return (
           <Space>
             <Tooltip title={isAuthorized ? "Edit" : "Only Superadmin and Admin role can perform this operation"}>
@@ -460,61 +578,47 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div style={{ padding: '28px 24px', maxWidth: 1200, margin: '0 auto' }}>
-      {/* Tab Navigation header */}
-      <div
-        style={{
-          background: '#fff',
-          borderBottom: '1px solid #dde2d0',
-          padding: '0 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 24,
-          borderRadius: 8,
-          boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-        }}
-      >
-        <div style={{ display: 'flex', gap: 4 }}>
+    <div className="admin-portal" style={{ padding: '28px 24px', maxWidth: 1200, margin: '0 auto' }}>
+      {/* Capsule / segmented tab bar */}
+      <div className="admin-tabbar">
+        <div className="admin-tabs">
           <Button
             type="text"
+            className={`admin-tab ${activeTab === 'users' ? 'admin-tab--active' : ''}`}
             onClick={() => setActiveTab('users')}
-            style={{
-              height: 52,
-              borderRadius: 0,
-              borderBottom: activeTab === 'users' ? '2px solid #7a922e' : '2px solid transparent',
-              color: activeTab === 'users' ? '#5c6f1f' : '#6b7561',
-              fontWeight: 600,
-              fontSize: 13,
-            }}
             icon={<UserOutlined />}
           >
             User Management
           </Button>
           <Button
             type="text"
+            className={`admin-tab ${activeTab === 'modules' ? 'admin-tab--active' : ''}`}
             onClick={() => {
               setActiveTab('modules');
               if (nonAdminUsers.length > 0 && !selectedModUser) {
                 handleSelectModUser(nonAdminUsers[0]);
               }
             }}
-            style={{
-              height: 52,
-              borderRadius: 0,
-              borderBottom: activeTab === 'modules' ? '2px solid #7a922e' : '2px solid transparent',
-              color: activeTab === 'modules' ? '#5c6f1f' : '#6b7561',
-              fontWeight: 600,
-              fontSize: 13,
-            }}
             icon={<SettingOutlined />}
           >
             Module Access
           </Button>
+          {isSuper && (
+            <Button
+              type="text"
+              className={`admin-tab ${activeTab === 'companies' ? 'admin-tab--active' : ''}`}
+              onClick={() => setActiveTab('companies')}
+              icon={<BankOutlined />}
+            >
+              Companies
+            </Button>
+          )}
         </div>
-        <div>
-          <ReloadOutlined style={{ color: '#7a922e', cursor: 'pointer' }} onClick={loadUsers} spin={loading} />
-        </div>
+        <ReloadOutlined
+          style={{ color: 'var(--gold)', cursor: 'pointer', fontSize: 16 }}
+          onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
+          spin={loading || companiesLoading}
+        />
       </div>
 
       {/* Tab Content 1: User Management */}
@@ -522,66 +626,66 @@ export default function AdminDashboard() {
         <div className="animate-fade-in">
           {/* Stats Metrics Cards */}
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} sm={8}>
-              <Card
-                bordered={false}
-                style={{
-                  borderRadius: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{ position: 'absolute', right: -15, top: -15, width: 50, height: 50, borderRadius: '50%', background: '#eef3da', opacity: 0.6 }} />
-                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
-                  Total Users
-                </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34 }}>
-                  {stats.total}
-                </Title>
-                <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
+            <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
+              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-1">
+                <div className="admin-stat-body">
+                  <div>
+                    <Text type="secondary" className="admin-stat-label">Total Users</Text>
+                    <Title level={2} className="admin-stat-num">{stats.total}</Title>
+                    <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
+                  </div>
+                  <div className="admin-stat-icon" style={{ color: '#7a922e', background: 'rgba(122,146,46,0.10)' }}>
+                    <TeamOutlined />
+                  </div>
+                </div>
               </Card>
             </Col>
-            <Col xs={24} sm={8}>
-              <Card
-                bordered={false}
-                style={{
-                  borderRadius: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{ position: 'absolute', right: -15, top: -15, width: 50, height: 50, borderRadius: '50%', background: '#f0fdf4', opacity: 0.6 }} />
-                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
-                  Active
-                </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, color: '#166534' }}>
-                  {stats.active}
-                </Title>
-                <Text type="secondary" style={{ fontSize: 11 }}>Can log in</Text>
+            <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
+              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-2">
+                <div className="admin-stat-body">
+                  <div>
+                    <Text type="secondary" className="admin-stat-label">Active</Text>
+                    <Title level={2} className="admin-stat-num" style={{ color: '#166534' }}>{stats.active}</Title>
+                    <Text type="secondary" style={{ fontSize: 11 }}>Can log in</Text>
+                  </div>
+                  <div className="admin-stat-icon" style={{ color: '#166534', background: 'rgba(22,101,52,0.10)' }}>
+                    <CheckCircleOutlined />
+                  </div>
+                </div>
               </Card>
             </Col>
-            <Col xs={24} sm={8}>
-              <Card
-                bordered={false}
-                style={{
-                  borderRadius: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{ position: 'absolute', right: -15, top: -15, width: 50, height: 50, borderRadius: '50%', background: '#fdf2f0', opacity: 0.6 }} />
-                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>
-                  Inactive
-                </Text>
-                <Title level={2} style={{ margin: '8px 0 0 0', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 34, color: '#c0392b' }}>
-                  {stats.inactive}
-                </Title>
-                <Text type="secondary" style={{ fontSize: 11 }}>Access revoked</Text>
+            <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
+              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-3">
+                <div className="admin-stat-body">
+                  <div>
+                    <Text type="secondary" className="admin-stat-label">Inactive</Text>
+                    <Title level={2} className="admin-stat-num" style={{ color: '#c0392b' }}>{stats.inactive}</Title>
+                    <Text type="secondary" style={{ fontSize: 11 }}>Access revoked</Text>
+                  </div>
+                  <div className="admin-stat-icon" style={{ color: '#c0392b', background: 'rgba(192,57,43,0.10)' }}>
+                    <CloseCircleOutlined />
+                  </div>
+                </div>
               </Card>
             </Col>
+            {isSuper && (
+              <Col xs={24} sm={12} md={6}>
+                <Card bordered={false} className="admin-stat animate-fade-in-up stagger-4">
+                  <div className="admin-stat-body">
+                    <div>
+                      <Text type="secondary" className="admin-stat-label">Companies</Text>
+                      <Title level={2} className="admin-stat-num" style={{ color: '#1d6fb8' }}>{companies.length}</Title>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {companies.filter((c) => c.is_active).length} active tenants
+                      </Text>
+                    </div>
+                    <div className="admin-stat-icon" style={{ color: '#1d6fb8', background: 'rgba(29,111,184,0.10)' }}>
+                      <BankOutlined />
+                    </div>
+                  </div>
+                </Card>
+              </Col>
+            )}
           </Row>
 
           {/* User Management Toolbar Card */}
@@ -617,9 +721,10 @@ export default function AdminDashboard() {
                 <Select
                   value={roleFilter}
                   onChange={setRoleFilter}
-                  style={{ width: 130 }}
+                  style={{ width: 140 }}
                   options={[
                     { value: '', label: 'All Roles' },
+                    ...(isSuper ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
                     { value: 'admin', label: 'Admin' },
                     { value: 'recruiter', label: 'Recruiter' },
                     { value: 'vendor', label: 'Vendor' },
@@ -635,6 +740,19 @@ export default function AdminDashboard() {
                     { value: 'inactive', label: 'Inactive' },
                   ]}
                 />
+                {isSuper && (
+                  <Select
+                    value={companyFilter}
+                    onChange={setCompanyFilter}
+                    style={{ width: 180 }}
+                    showSearch
+                    optionFilterProp="label"
+                    options={[
+                      { value: '', label: 'All Companies' },
+                      ...companies.map((c) => ({ value: String(c.id), label: c.name })),
+                    ]}
+                  />
+                )}
               </Space>
               <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : ""}>
                 <span>
@@ -855,6 +973,94 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Tab Content 3: Companies (superadmin only) */}
+      {activeTab === 'companies' && isSuper && (
+        <div className="animate-fade-in">
+          <Card
+            bordered={false}
+            style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)' }}
+            styles={{ body: { padding: 0 } }}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #dde2d0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Companies</span>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => openCompanyModal()}
+                style={{ background: '#7a922e', borderColor: '#7a922e', borderRadius: 6, fontWeight: 600 }}
+              >
+                Add Company
+              </Button>
+            </div>
+            <Table
+              dataSource={companies}
+              rowKey="id"
+              loading={companiesLoading}
+              pagination={false}
+              columns={[
+                {
+                  title: 'Company',
+                  key: 'name',
+                  render: (_, r) => (
+                    <Space>
+                      <Avatar style={{ background: '#eef3da', color: '#5c6f1f', border: '1px solid #b8cc6e' }} icon={<BankOutlined />} />
+                      <div>
+                        <Text strong style={{ fontSize: 13, display: 'block' }}>{r.name}</Text>
+                        <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{r.slug}</Text>
+                      </div>
+                    </Space>
+                  ),
+                },
+                {
+                  title: 'Domain',
+                  dataIndex: 'domain',
+                  key: 'domain',
+                  render: (d) => <Text style={{ fontSize: 12 }}>{d || '—'}</Text>,
+                },
+                {
+                  title: 'Users',
+                  dataIndex: 'user_count',
+                  key: 'user_count',
+                  render: (n) => <Text style={{ fontSize: 12 }}>{n ?? 0}</Text>,
+                },
+                {
+                  title: 'Status',
+                  key: 'status',
+                  render: (_, r) => (
+                    <Tag color={r.is_active ? 'success' : 'error'} style={{ borderRadius: 999, fontWeight: 600, fontSize: 11, padding: '1px 10px' }}>
+                      {r.is_active ? 'Active' : 'Inactive'}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: 'Actions',
+                  key: 'actions',
+                  align: 'right',
+                  render: (_, r) => (
+                    <Space>
+                      <Tooltip title="Edit">
+                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} style={{ color: '#7a922e' }} />
+                      </Tooltip>
+                      <Tooltip title={r.is_active ? 'Deactivate' : 'Activate'}>
+                        <Button type="text" size="small" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} style={{ color: '#fa8c16' }} />
+                      </Tooltip>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Card>
+        </div>
+      )}
+
       {/* CREATE / EDIT USER MODAL */}
       <Modal
         title={
@@ -902,12 +1108,33 @@ export default function AdminDashboard() {
             Account Settings
           </Text>
           <Form.Item label="Role" name="role" rules={[{ required: true, message: 'Please select a role' }]}>
-            <Select placeholder="— Select role —">
-              <Select.Option value="admin">Admin</Select.Option>
-              <Select.Option value="recruiter">Recruiter</Select.Option>
-              <Select.Option value="vendor">Vendor</Select.Option>
-            </Select>
+            <Select placeholder="— Select role —" options={roleOptions} />
           </Form.Item>
+
+          {/* Company assignment — superadmin only. Required for every non-superadmin role. */}
+          {isSuper && (
+            <Form.Item
+              noStyle
+              shouldUpdate={(prev, cur) => prev.role !== cur.role}
+            >
+              {({ getFieldValue }) =>
+                getFieldValue('role') === 'superadmin' ? null : (
+                  <Form.Item
+                    label="Company"
+                    name="company_id"
+                    rules={[{ required: true, message: 'Please assign a company' }]}
+                  >
+                    <Select
+                      placeholder="— Select company —"
+                      options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                      showSearch
+                      optionFilterProp="label"
+                    />
+                  </Form.Item>
+                )
+              }
+            </Form.Item>
+          )}
 
           {!editingUser ? (
             <div>
@@ -1047,6 +1274,37 @@ export default function AdminDashboard() {
             Delete &quot;{userToDelete?.first_name} {userToDelete?.last_name}&quot; ({userToDelete?.email})? This is permanent.
           </Text>
         </div>
+      </Modal>
+
+      {/* CREATE / EDIT COMPANY MODAL (superadmin only) */}
+      <Modal
+        title={
+          <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
+            {editingCompany ? 'Edit Company' : 'Add New Company'}
+          </div>
+        }
+        open={companyModalOpen}
+        onOk={handleSaveCompany}
+        onCancel={() => setCompanyModalOpen(false)}
+        okText={editingCompany ? 'Save Changes' : 'Create Company'}
+        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
+        width={460}
+      >
+        <Form form={companyForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item label="Company Name" name="name" rules={[{ required: true, message: 'Company name is required' }]}>
+            <Input placeholder="e.g. AAPNA Infotech" />
+          </Form.Item>
+          <Form.Item
+            label="Slug"
+            name="slug"
+            tooltip="URL-safe identifier. Leave blank to derive from the name."
+          >
+            <Input placeholder="e.g. aapna" disabled={!!editingCompany} />
+          </Form.Item>
+          <Form.Item label="Email Domain (optional)" name="domain">
+            <Input placeholder="e.g. aapnainfotech.com" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );
