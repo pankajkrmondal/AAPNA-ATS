@@ -96,6 +96,7 @@ export function mapCandidate(c) {
     reasonForJobChange: c.ReasonForJobChange || '',
     cvFileUrl: c.cvFileUrl || '',
     vendorEmail: c.VendorEmail || '',
+    finalStatus: c.FinalStatus || '',
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
     resumeTextQuality: c.resume_text_quality || 'unknown',
@@ -295,6 +296,39 @@ export async function vendorStats(vendorEmail) {
   ]);
 
   return { total, withPosition, thisMonth };
+}
+
+/**
+ * Status summary of a single vendor's candidates, for the vendor dashboard.
+ * Returns the lifetime stats plus a breakdown grouped by FinalStatus, all
+ * scoped to the vendor's email (exact, case-insensitive match).
+ * @param {string} vendorEmail
+ * @returns {Promise<{ total: number, withPosition: number, thisMonth: number, byFinalStatus: Array<{ status: string, count: number }> }>}
+ */
+export async function vendorStatusSummary(vendorEmail) {
+  if (!vendorEmail) {
+    return { total: 0, withPosition: 0, thisMonth: 0, byFinalStatus: [] };
+  }
+
+  const base = { VendorEmail: { equals: vendorEmail, mode: 'insensitive' } };
+
+  const [stats, grouped] = await Promise.all([
+    vendorStats(vendorEmail),
+    prisma.rpa_cv.groupBy({
+      by: ['FinalStatus'],
+      where: base,
+      _count: { _all: true },
+    }),
+  ]);
+
+  const byFinalStatus = grouped
+    .map((g) => ({
+      status: g.FinalStatus && g.FinalStatus.trim() !== '' ? g.FinalStatus : 'Pending',
+      count: g._count._all,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  return { ...stats, byFinalStatus };
 }
 
 /**

@@ -67,6 +67,79 @@ export const getVendorCandidates = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Vendor dashboard summary (candidate status overview)
+ * @route   GET /api/vendor/dashboard
+ * @access  Private — vendors see their own; staff pick a vendor via ?vendorEmail
+ */
+export const getVendorDashboard = catchAsync(async (req, res) => {
+  const role = (req.user.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+
+  // Vendors are locked to their own email; staff choose a vendor via the query.
+  const vendorEmail = isVendor
+    ? req.user.email
+    : (req.query.vendorEmail || '').trim();
+
+  if (isVendor && !vendorEmail) {
+    throw new AppError('Vendor email is required for the dashboard.', 400);
+  }
+
+  // Staff who haven't picked a vendor yet get an empty shell to prompt selection.
+  if (!vendorEmail) {
+    return res.status(200).json({
+      status: 'success',
+      message: 'Select a vendor to view their dashboard',
+      data: {
+        stats: { total: 0, withPosition: 0, thisMonth: 0, byFinalStatus: [] },
+        recentCandidates: [],
+        selectedVendorEmail: null,
+      },
+    });
+  }
+
+  const [summary, recent] = await Promise.all([
+    candidateService.vendorStatusSummary(vendorEmail),
+    candidateService.search({ vendorEmail }, 1, 5, 'createdAt', 'desc'),
+  ]);
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Vendor dashboard retrieved',
+    data: {
+      stats: summary,
+      recentCandidates: recent.data,
+      selectedVendorEmail: vendorEmail,
+    },
+  });
+});
+
+/**
+ * @desc    List registered vendors (for the staff vendor-picker)
+ * @route   GET /api/vendor/vendors
+ * @access  Private (Admin, SuperAdmin, Recruiter)
+ */
+export const listVendors = catchAsync(async (req, res) => {
+  const vendors = await prisma.rpa_users.findMany({
+    where: { role: 'vendor' },
+    select: { id: true, email: true, first_name: true, last_name: true },
+    orderBy: [{ first_name: 'asc' }, { last_name: 'asc' }],
+  });
+
+  const data = vendors
+    .filter((v) => v.email)
+    .map((v) => ({
+      email: v.email,
+      name: `${v.first_name || ''} ${v.last_name || ''}`.trim() || v.email,
+    }));
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Vendors retrieved',
+    data,
+  });
+});
+
+/**
  * @desc    Handle resume uploads from vendor, unzip packages, and log batch details
  * @route   POST /api/vendor/upload
  * @access  Private (Vendor, HR, Admin)

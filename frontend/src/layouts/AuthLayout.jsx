@@ -3,7 +3,7 @@
  * Left: rich olive brand panel (logo, value proposition, feature highlights).
  * Right: clean form panel with contextual heading + the page form (Outlet).
  */
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Typography } from 'antd';
 import { CheckCircleFilled } from '@ant-design/icons';
 
@@ -18,7 +18,8 @@ const BRAND_HIGHLIGHTS = [
 ];
 
 export default function AuthLayout() {
-  const isAdmin = window.location.pathname.includes('/admin');
+  const location = useLocation();
+  const isAdmin = location.pathname.includes('/admin');
 
   return (
     <div className="auth-split">

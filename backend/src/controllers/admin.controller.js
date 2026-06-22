@@ -23,6 +23,28 @@ function toSafeUser(user) {
 }
 
 /**
+ * Default module permissions seeded when a user is created, keyed by role.
+ * - vendor: only the vendor-facing surfaces.
+ * - recruiter: every module except the admin-portal gate (`hr_admin`).
+ * admin/superadmin need no rows — they bypass `checkModuleAccess` entirely.
+ * Keys must match the canonical module keys managed in the Admin Dashboard
+ * (see AdminDashboard MODULES_INFO) and checked by the routes/ModuleRoute.
+ */
+const DEFAULT_MODULES_BY_ROLE = {
+  vendor: ['vendor_dashboard', 'vendor_upload'],
+  recruiter: [
+    'new_mrf',
+    'search_candidates',
+    'hr_manual_upload',
+    'system_config',
+    'vendor_upload',
+    'candidate_screening',
+    'screening_analytics',
+    'vendor_dashboard',
+  ],
+};
+
+/**
  * Verify token and check if the user is authorized for HR Admin Portal.
  */
 export const verifyToken = catchAsync(async (req, res) => {
@@ -177,6 +199,8 @@ export const createUser = catchAsync(async (req, res) => {
   const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
   const password_hash = `${salt}:${hash}`;
 
+  const normalizedRole = role.trim().toLowerCase();
+
   const newUser = await prisma.rpa_users.create({
     data: {
       first_name: first_name?.trim(),
@@ -187,10 +211,27 @@ export const createUser = catchAsync(async (req, res) => {
       company_id: companyId,
       password_hash,
       is_active: is_active ?? true,
-      is_approved: is_approved ?? false,
+      // is_approved is not enforced at login for any role; we set it true on
+      // creation for data consistency (admin-created accounts are implicitly approved).
+      is_approved: is_approved ?? true,
     },
     include: { company: true },
   });
+
+  // Seed default module permissions for the role so the user can use their
+  // surfaces immediately (e.g. vendors get vendor_dashboard + vendor_upload).
+  const defaultModules = DEFAULT_MODULES_BY_ROLE[normalizedRole] || [];
+  if (defaultModules.length > 0) {
+    await prisma.rpa_module_permissions.createMany({
+      data: defaultModules.map((module_key) => ({
+        user_id: newUser.id,
+        module_key,
+        is_enabled: true,
+        updated_at: new Date(),
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   // Send credentials email in the background
   sendCredentialEmail({ user: newUser, plainTextPassword: password, isNewUser: true });

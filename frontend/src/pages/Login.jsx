@@ -21,8 +21,9 @@ export default function Login() {
     setError('');
 
     try {
-      await login(values.username, values.password);
-      navigate('/dashboard', { replace: true });
+      const userData = await login(values.username, values.password);
+      const isVendor = (userData?.role || '').toLowerCase() === 'vendor';
+      navigate(isVendor ? '/vendor-dashboard' : '/dashboard', { replace: true });
     } catch (err) {
       setError(err?.message || 'Invalid username or password. Please try again.');
     } finally {
