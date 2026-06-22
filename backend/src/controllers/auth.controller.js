@@ -42,8 +42,9 @@ export const logout = catchAsync(async (req, res) => {
  * @access  Private
  */
 export const getCurrentUser = catchAsync(async (req, res) => {
-  // req.user is already attached by the authenticate middleware
-  const { password_hash, salt, ...safeUser } = req.user;
+  // req.user is already attached by the authenticate middleware (includes company)
+  const { password_hash, salt, company, ...rest } = req.user;
+  const safeUser = { ...rest, company_name: company?.name ?? null };
 
   const permissions = await prisma.rpa_module_permissions.findMany({
     where: {

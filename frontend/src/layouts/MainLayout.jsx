@@ -16,6 +16,7 @@ import {
   Typography,
   Space,
   Tooltip,
+  Tag,
 } from 'antd';
 import {
   DashboardOutlined,
@@ -148,6 +149,21 @@ export default function MainLayout() {
     );
     if (!allowed) {
       return <Navigate to="/vendor-dashboard" replace />;
+  // Tenant badge: superadmin is global; everyone else shows their company.
+  const roleKey = (user?.role || '').toLowerCase();
+  const isSuperadmin = roleKey === 'superadmin';
+  const companyLabel = isSuperadmin ? 'All Companies' : (user?.company_name || 'Unassigned');
+  const adminRoleLabel = isSuperadmin ? 'Super Admin' : roleKey === 'admin' ? 'Admin' : (user?.role || '');
+  const userInitials = (
+    `${(user?.first_name || '')[0] || ''}${(user?.last_name || '')[0] || ''}`.toUpperCase()
+    || (user?.username || 'A')[0].toUpperCase()
+  );
+
+  // Filter menu items by user role (icons kept for the sidebar rail).
+  const menuItems = MENU_ITEMS.filter(item => {
+    const role = (user?.role || '').toLowerCase();
+    if (role === 'vendor') {
+      return item.key === '/dashboard' || item.key === '/vendor';
     }
   }
 
@@ -167,103 +183,63 @@ export default function MainLayout() {
   if (isAdminPath) {
     return (
       <Layout style={{ minHeight: '100vh', background: '#f2f4f0' }}>
-        <Header
-          style={{
-            background: '#ffffff',
-            borderBottom: '1px solid #dde2d0',
-            height: 60,
-            padding: '0 28px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 90,
-            boxShadow: '0 1px 0 #dde2d0',
-          }}
-        >
-          {/* Left: Logo + Sep + Title */}
+        <Header className="admin-topbar">
+          {/* Left: Logo + Sep + Title cluster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <img
               src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
               alt="AAPNA"
               style={{ height: 32, width: 85, objectFit: 'cover', objectPosition: 'left' }}
             />
-            <div style={{ width: 1, height: 26, background: '#dde2d0' }} />
-            <span
-              style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: 15,
-                color: '#7a922e',
-                fontWeight: 700,
-                letterSpacing: '0.2px',
-              }}
-            >
-              HR Admin
-            </span>
+            <div style={{ width: 1, height: 30, background: '#dde2d0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <div className="admin-brand-icon"><CrownOutlined /></div>
+              <div style={{ lineHeight: 1.2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                    HR Admin
+                  </span>
+                  <span className={`role-badge role-badge--${isSuperadmin ? 'superadmin' : 'admin'}`}>
+                    {adminRoleLabel}
+                  </span>
+                </div>
+                <span style={{ fontSize: 11, color: '#8b938a', fontWeight: 500 }}>
+                  Users · Access · Companies
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Right: Badge + Logout */}
+          {/* Right: Portal switch + user chip + Logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Button
+              className="admin-top-btn"
               type="text"
               onClick={() => navigate('/dashboard')}
               icon={<DashboardOutlined />}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#7a922e',
-                border: '1px solid #dde1df',
-                borderRadius: 6,
-                height: 30,
-                padding: '0 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
             >
               Recruitment Portal
             </Button>
-            <span
-              style={{
-                display: 'inline-block',
-                lineHeight: '24px',
-                background: '#eef3da',
-                color: '#7a922e',
-                border: '1px solid #dde1df',
-                fontSize: 11,
-                fontWeight: 600,
-                padding: '0 12px',
-                borderRadius: 999,
-              }}
-            >
-              {user?.username || 'Admin'}
-            </span>
+            <div className="admin-user-chip">
+              <Avatar size={26} style={{ background: 'var(--gradient-primary)', fontSize: 11, fontWeight: 700 }}>
+                {userInitials}
+              </Avatar>
+              <span>{user?.username || 'Admin'}</span>
+            </div>
             <Button
+              className="admin-top-btn admin-top-btn--logout"
               type="text"
               onClick={async () => {
                 await logout();
                 navigate('/admin/login');
               }}
               icon={<LogoutOutlined />}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#6b7561',
-                border: '1px solid #dde2d0',
-                borderRadius: 6,
-                height: 30,
-                padding: '0 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
             >
               Logout
             </Button>
           </div>
         </Header>
-        <Content style={{ minHeight: 'calc(100vh - 60px)', background: '#f2f4f0' }}>
+        <Content style={{ minHeight: 'calc(100vh - 64px)', background: '#f2f4f0' }}>
           <Outlet />
         </Content>
       </Layout>
@@ -373,6 +349,12 @@ export default function MainLayout() {
             <Text style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }} className="text-truncate">
               {pageTitle}
             </Text>
+            <Tag
+              color={companyLabel === 'All Companies' ? 'gold' : 'default'}
+              style={{ borderRadius: 999, fontSize: 11, fontWeight: 600, margin: 0 }}
+            >
+              {companyLabel}
+            </Tag>
           </Space>
 
           {/* Right: Admin Portal + Avatar */}
