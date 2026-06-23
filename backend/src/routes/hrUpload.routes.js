@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
-import { authenticate, restrictTo } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess } from '../middleware/auth.js';
 import * as hrUploadController from '../controllers/hrUpload.controller.js';
 
 const router = Router();
@@ -28,7 +28,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 500 * 1024 * 1024, // 500MB — a single .zip bundles many resumes
   },
   fileFilter: (req, file, cb) => {
     const allowedExts = ['.pdf', '.docx', '.zip', '.xlsx'];
@@ -41,9 +41,11 @@ const upload = multer({
   },
 });
 
-// Protect all HR upload routes
+// Protect all HR upload routes — admin/superadmin bypass; recruiters/hr need the
+// hr_manual_upload module toggle (managed in the Admin Portal). Mirrors the
+// screening & vendor route guards.
 router.use(authenticate);
-router.use(restrictTo('hr', 'admin'));
+router.use(checkModuleAccess('hr_manual_upload'));
 
 // ── HR Upload APIs ────────────────────────────────────────────────────
 

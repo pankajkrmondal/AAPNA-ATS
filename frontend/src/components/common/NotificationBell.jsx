@@ -7,34 +7,36 @@
 import { useState, useEffect } from 'react';
 import { Badge, Popover, List, Typography, Button, Empty, Space } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
-// import { io } from 'socket.io-client';  // Uncomment when backend is ready
+import { getSocket } from '../../services/socket';
 
 const { Text } = Typography;
 
-/** Mock notifications for demo. Replace with real data from API/socket. */
-const MOCK_NOTIFICATIONS = [
-  { id: '1', title: '5 new resumes uploaded', description: 'From Vendor: TechStaff Solutions', time: '2 min ago', read: false },
-  { id: '2', title: 'MRF-2024-042 approved', description: 'Senior React Developer position approved by VP Engineering', time: '15 min ago', read: false },
-  { id: '3', title: 'Interview scheduled', description: 'Priya Sharma — Round 2 with Hiring Manager', time: '1 hour ago', read: true },
-  { id: '4', title: 'Candidate shortlisted', description: 'AI score: 92% match for Full-Stack Engineer', time: '3 hours ago', read: true },
-];
-
 export default function NotificationBell({ style }) {
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   /**
-   * Socket.io placeholder — subscribe to real-time notifications.
-   * Uncomment and configure when backend socket server is ready.
+   * Subscribe to real-time review notifications. The backend emits 'review:new'
+   * to recruiter/HR rooms whenever a duplicate resume needs review.
    */
   useEffect(() => {
-    // const socket = io({ path: '/socket.io' });
-    // socket.on('notification', (data) => {
-    //   setNotifications((prev) => [{ ...data, read: false }, ...prev]);
-    // });
-    // return () => socket.disconnect();
+    const socket = getSocket();
+    if (!socket) return undefined;
+
+    const onReview = (job) => {
+      setNotifications((prev) => [{
+        id: `${job?.id || Date.now()}-${Date.now()}`,
+        title: 'Duplicate resume needs review',
+        description: `${job?.candidate_name || 'A candidate'}${job?.vendor_name ? ` — vendor: ${job.vendor_name}` : ''}`,
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      }, ...prev].slice(0, 50));
+    };
+
+    socket.on('review:new', onReview);
+    return () => socket.off('review:new', onReview);
   }, []);
 
   const markAllRead = () => {

@@ -9,6 +9,7 @@ import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
+import * as uploadJobService from '../services/uploadJob.service.js';
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -130,8 +131,15 @@ export const uploadResumes = catchAsync(async (req, res) => {
     )
   );
 
-  // 3) Trigger parsing asynchronously in background
-  await hrUploadService.startBackgroundParsing(executionId, flatFiles, req.user);
+  // 2b) Create durable per-resume job rows (powers the persistent dashboard)
+  await uploadJobService.createJobsForBatch(executionId, flatFiles, {
+    uploadedBy: username,
+    uploadedById: req.user.id,
+    source: 'hr_manual_upload',
+  });
+
+  // 3) Dispatch parsing (durable queue when enabled, else in-process background)
+  await hrUploadService.dispatchBatchParsing(executionId, flatFiles, req.user, 'hr_manual_upload');
 
   return success(
     res,

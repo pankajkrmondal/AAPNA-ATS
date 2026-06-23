@@ -149,6 +149,9 @@ export default function MainLayout() {
     );
     if (!allowed) {
       return <Navigate to="/vendor-dashboard" replace />;
+    }
+  }
+
   // Tenant badge: superadmin is global; everyone else shows their company.
   const roleKey = (user?.role || '').toLowerCase();
   const isSuperadmin = roleKey === 'superadmin';
@@ -158,14 +161,6 @@ export default function MainLayout() {
     `${(user?.first_name || '')[0] || ''}${(user?.last_name || '')[0] || ''}`.toUpperCase()
     || (user?.username || 'A')[0].toUpperCase()
   );
-
-  // Filter menu items by user role (icons kept for the sidebar rail).
-  const menuItems = MENU_ITEMS.filter(item => {
-    const role = (user?.role || '').toLowerCase();
-    if (role === 'vendor') {
-      return item.key === '/dashboard' || item.key === '/vendor';
-    }
-  }
 
   // Vendors get a restricted menu; staff additionally get the Vendor Dashboard
   // item (inserted after the Vendor upload entry); everyone else sees the base nav.

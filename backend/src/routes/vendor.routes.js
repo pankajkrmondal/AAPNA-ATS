@@ -65,8 +65,10 @@ router.get(
   vendorController.listVendors,
 );
 
-// ── Upload-related APIs (vendor/admin/hr + vendor_upload module) ────────
-router.use(restrictTo('vendor', 'admin', 'hr'));
+// ── Upload-related APIs (vendor + internal staff, gated by vendor_upload) ──
+// Staff (admin/superadmin/recruiter/hr) may upload on behalf of a vendor; the
+// vendor they're acting for is supplied per-request and validated server-side.
+router.use(restrictTo('vendor', 'admin', 'superadmin', 'recruiter', 'hr'));
 router.use(checkModuleAccess('vendor_upload'));
 
 /** Get candidates uploaded by the vendor */
@@ -77,6 +79,16 @@ router.post('/upload', upload.array('resumes', 100), vendorController.uploadResu
 
 /** Get recent upload batches for this vendor */
 router.get('/batches', vendorController.getUploadBatches);
+
+/** Persistent upload/job-tracking dashboard feed (one row per resume) */
+router.get('/jobs', vendorController.getUploadJobs);
+
+/** Reprocess a failed upload job */
+router.post('/jobs/:id/reprocess', vendorController.reprocessJob);
+
+/** Recruiter review actions on the duplicate queue (staff only — never vendors) */
+router.post('/review/merge', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewMerge);
+router.post('/review/cancel', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewCancel);
 
 /** Get batch summary details */
 router.get('/summary/:executionId', vendorController.getSummary);
