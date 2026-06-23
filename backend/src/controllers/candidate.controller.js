@@ -6,6 +6,7 @@ import AppError from '../utils/AppError.js';
 import { saveCandidateVector } from '../services/vectorStore.service.js';
 import logger from '../config/logger.js';
 import { extractTextFromFile, parseResumeWithOpenRouter } from '../services/hrUpload.service.js';
+import { updateJobByCvId } from '../services/uploadJob.service.js';
 import { getApprovedRoles } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
@@ -408,6 +409,25 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     where: { id: candidate.id },
     data: finalUpdateData
   });
+
+  // If the candidate has now supplied all missing details, advance the originating
+  // upload job from "Awaiting Candidate Details" to "Saved to Database". Matched by
+  // cv_id and candidate email (the job may have been linked by either).
+  logger.info(`[missing-data] submit for candidate ${candidate.id} (${email}): stillMissingCount=${stillMissingCount}`
+    + (stillMissingCount > 0 ? `, remaining=[${Object.keys(missingFields).join(', ')}]` : ''));
+  if (stillMissingCount === 0) {
+    try {
+      const advanced = await updateJobByCvId(
+        candidate.id,
+        { status: 'Completed', action_required: false },
+        ['Missing_Information'],
+        email,
+      );
+      logger.info(`[missing-data] job advance: ${advanced ? `job ${advanced.id} → ${advanced.status}` : 'no matching Missing_Information job found'}`);
+    } catch (e) {
+      logger.warn(`Failed to advance upload job after missing-info submission: ${e.message}`);
+    }
+  }
 
   // Regenerate vector and update candidate metadata asynchronously in the background
   setImmediate(async () => {

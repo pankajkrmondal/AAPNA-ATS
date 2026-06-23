@@ -30,27 +30,27 @@ const resumeQueue = new Queue('resume-processing', {
 });
 
 /**
- * Add a resume-processing job to the queue.
+ * Add a resume-processing job to the queue. One job == one resume file.
  *
  * @param {Object} payload
- * @param {string} payload.filePath - Absolute path to the uploaded file
- * @param {string} payload.fileName - Original file name
- * @param {string} payload.vendorEmail - Uploader / vendor email
- * @param {string} payload.batchId - Upload batch identifier
- * @param {string} [payload.mrfId] - Optional MRF to match against
+ * @param {string} payload.executionId - Upload batch identifier
+ * @param {Object} payload.file - The multer file object (originalname, path, …)
+ * @param {Object} payload.user - Slim uploader identity (id, email, names, role)
+ * @param {string} payload.source - 'vendor_portal' | 'hr_manual_upload'
+ * @param {Object|null} [payload.attribution] - { vendorEmail, vendorName }
  * @param {Object} [opts] - BullMQ JobsOptions overrides
  * @returns {Promise<import('bullmq').Job>}
  */
 export async function addResumeJob(payload, opts = {}) {
   const job = await resumeQueue.add('process-resume', payload, {
     ...opts,
-    jobId: `resume-${payload.batchId}-${Date.now()}`,
+    jobId: `resume-${payload.executionId}-${payload.file?.originalname || ''}-${Date.now()}`,
   });
 
   logger.info('Resume job added to queue', {
     jobId: job.id,
-    fileName: payload.fileName,
-    batchId: payload.batchId,
+    fileName: payload.file?.originalname,
+    batchId: payload.executionId,
   });
 
   return job;

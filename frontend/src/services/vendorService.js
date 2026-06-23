@@ -65,6 +65,42 @@ const vendorService = {
   getSummary(executionId) {
     return api.get(`/vendor/summary/${executionId}`);
   },
+
+  /**
+   * Persistent upload/job-tracking dashboard feed (one row per resume).
+   * @param {object} [params] — page, limit, status, actionRequired, vendorEmail
+   * @returns {Promise}
+   */
+  getJobs(params = {}) {
+    return api.get('/vendor/jobs', { params });
+  },
+
+  /**
+   * Reprocess a failed upload job.
+   * @param {string|number} id
+   * @returns {Promise}
+   */
+  reprocessJob(id) {
+    return api.post(`/vendor/jobs/${id}/reprocess`);
+  },
+
+  /**
+   * Recruiter review action — merge selected duplicates into the main DB.
+   * @param {Array<number|string>} ids — rpa_cv_tmp ids
+   * @returns {Promise}
+   */
+  reviewMerge(ids) {
+    return api.post('/vendor/review/merge', { ids });
+  },
+
+  /**
+   * Recruiter review action — cancel/reject selected duplicates.
+   * @param {Array<number|string>} ids — rpa_cv_tmp ids
+   * @returns {Promise}
+   */
+  reviewCancel(ids) {
+    return api.post('/vendor/review/cancel', { ids });
+  },
 };
 
 export default vendorService;

@@ -24,6 +24,7 @@ import {
   sendDifferentVendorDuplicateAlert,
   sendResumeErrorAlert
 } from './emailNotification.service.js';
+import { setJobStatus, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
 
 // Shared fields between rpa_cv_tmp and rpa_cv
 const CV_SHARED_FIELDS = [
@@ -610,6 +611,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
           
           postMergeTasks.push({
             id: existingCandidate.id,
+            tempId,
             data: updateData
           });
         } else {
@@ -631,6 +633,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
           
           postMergeTasks.push({
             id: newCv.id,
+            tempId,
             data: insertData
           });
         }
@@ -707,6 +710,24 @@ export async function mergeDuplicates(ids, token, user = {}) {
         } catch (mailErr) {
           logger.error(`Failed to send candidate email notifications during merge: ${mailErr.message}`);
         }
+
+        // Resolve the review: the job becomes "Saved to Database", unless the merged
+        // candidate still has missing fields (a missing-data email was sent) — then it
+        // waits as "Awaiting Candidate Details" until the candidate submits them.
+        if (task.tempId != null) {
+          let mergedMissing = {};
+          try {
+            mergedMissing = updatedCv.missingData ? JSON.parse(updatedCv.missingData) : {};
+          } catch { mergedMissing = {}; }
+          const mergedStatus = Object.keys(mergedMissing).length > 0
+            ? JOB_STATUS.MISSING_INFORMATION
+            : JOB_STATUS.COMPLETED;
+          await updateJobByCvTmpId(task.tempId, {
+            status: mergedStatus,
+            action_required: false,
+            cv_id: task.id,
+          }).catch((e) => logger.warn(`Failed to flip job after merge: ${e.message}`));
+        }
       } catch (err) {
         logger.error(`Failed to update vector/lock info for candidate ${task.id}: ${err.message}`);
       }
@@ -748,6 +769,28 @@ export async function deleteDuplicates(ids, token) {
 
   try {
     const bigIntIds = ids.map(id => BigInt(id));
+
+    // Audit each cancellation and flip the originating upload job(s) to Cancelled
+    // before the staging rows are removed.
+    for (const id of bigIntIds) {
+      const tmp = await prisma.rpa_cv_tmp.findUnique({ where: { id } });
+      await prisma.rpa_processing_log.create({
+        data: {
+          fileName: tmp?.Name ? `${tmp.Name}_Resume.pdf` : 'candidate_resume.pdf',
+          source: 'REVIEW_CANCELLED',
+          status: 'cancelled',
+          logMessage: `Recruiter cancelled/rejected duplicate review. Tmp ID: ${id}` +
+            (tmp?.VendorEmail ? ` (vendor: ${tmp.VendorEmail})` : ''),
+          createdAt: new Date(),
+        },
+      }).catch((e) => logger.warn(`Failed to write cancel audit log: ${e.message}`));
+
+      await updateJobByCvTmpId(id, {
+        status: JOB_STATUS.CANCELLED,
+        action_required: false,
+      }).catch((e) => logger.warn(`Failed to flip job to Cancelled: ${e.message}`));
+    }
+
     const deleteResult = await prisma.rpa_cv_tmp.deleteMany({
       where: {
         id: { in: bigIntIds }
@@ -940,11 +983,19 @@ Return ONLY a valid JSON object in this exact structure - no markdown, no explan
  * Background parsing worker.
  * Extracts text, calls Gemini API, handles fallback, updates DB.
  */
-export async function startBackgroundParsing(executionId, files, user, source = 'hr_manual_upload') {
+export async function runBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
   const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'User';
   const email = user.email || 'unknown@user.com';
-  
-  setImmediate(async () => {
+
+  // Vendor attribution for the candidates in this batch. An explicit attribution
+  // (e.g. staff uploading on behalf of a vendor) wins; otherwise vendor self-uploads
+  // fall back to the uploader's own identity. Non-vendor sources have no attribution.
+  const attr = attribution
+    || (source === 'vendor_portal' ? { vendorEmail: email, vendorName: fullName } : null);
+  const attrEmail = attr?.vendorEmail || null;
+  const attrName = attr?.vendorName || null;
+
+  await (async () => {
     logger.info(`Starting background resume parsing for batch: ${executionId}`);
     
     let successCount = 0;
@@ -955,9 +1006,17 @@ export async function startBackgroundParsing(executionId, files, user, source = 
     for (const file of files) {
       const rowErrors = [];
       const rowDuplicates = [];
+      // Per-file job-tracking state (last candidate item wins for multi-row files).
+      const jobInfo = {
+        candidate_name: null,
+        candidate_email: null,
+        cv_id: null,
+        cv_tmp_id: null,
+        missingInfo: false,
+      };
 
       try {
-        // 1) Set log to processing
+        // 1) Set log + job to processing
         await prisma.rpa_upload_log.update({
           where: {
             execution_id_file_name: {
@@ -967,6 +1026,7 @@ export async function startBackgroundParsing(executionId, files, user, source = 
           },
           data: { status: 'processing' }
         });
+        await setJobStatus(executionId, file.originalname, JOB_STATUS.PROCESSING).catch(() => {});
 
         // 2) Determine if file is Excel
         const ext = path.extname(file.originalname).toLowerCase();
@@ -1013,12 +1073,13 @@ export async function startBackgroundParsing(executionId, files, user, source = 
         } catch (odErr) {
           logger.warn(`OneDrive: Failed to upload to OneDrive for file ${file.originalname}, using local fallback: ${odErr.message}`);
         }
+        jobInfo.file_url = cvUrl;
 
         // Process each item (row or file text)
         for (const item of candidateItems) {
           let parsed = null;
           try {
-            parsed = await parseResumeWithOpenRouter(item.text, item.filename, email, fullName);
+            parsed = await parseResumeWithOpenRouter(item.text, item.filename, attrEmail || email, attrName || fullName);
             logger.info(`Successfully parsed candidate using OpenRouter: ${item.filename}`);
           } catch (err) {
             logger.error(`Gemini parsing failed for ${item.filename}: ${err.message}`);
@@ -1138,39 +1199,11 @@ export async function startBackgroundParsing(executionId, files, user, source = 
           }
 
           if (existingCandidate) {
-            if (source === 'vendor_portal') {
-              // Vendor Manual Upload Duplicate Check
-              const existingVendorEmail = (existingCandidate.VendorEmail || '').trim().toLowerCase();
-              const uploadingVendorEmail = email.trim().toLowerCase();
-
-              if (existingVendorEmail === uploadingVendorEmail) {
-                logger.info(`Duplicate resume uploaded by SAME vendor: ${uploadingVendorEmail} for candidate: ${parsed.Name}`);
-                sendSameVendorDuplicateAlert({
-                  candidateName: parsed.Name || 'Candidate',
-                  candidateEmail: emailToSearch,
-                  vendorEmail: uploadingVendorEmail,
-                  vendorName: fullName
-                }).catch(mailErr => {
-                  logger.error(`Failed to send Same Vendor alert email: ${mailErr.message}`);
-                });
-                rowDuplicates.push(`${item.filename}: Same vendor duplicate`);
-                duplicateCount++;
-              } else {
-                logger.info(`Duplicate resume uploaded by DIFFERENT vendor/owner: ${uploadingVendorEmail} (Existing: ${existingVendorEmail || 'HR/Outlook'}) for candidate: ${parsed.Name}`);
-                sendDifferentVendorDuplicateAlert({
-                  candidateName: parsed.Name || 'Candidate',
-                  candidateEmail: emailToSearch,
-                  vendorEmail: uploadingVendorEmail,
-                  vendorName: fullName,
-                  existingVendorEmail: existingVendorEmail || 'HR/Outlook'
-                }).catch(mailErr => {
-                  logger.error(`Failed to send Different Vendor alert email: ${mailErr.message}`);
-                });
-                rowDuplicates.push(`${item.filename}: Different vendor duplicate`);
-                duplicateCount++;
-              }
-            } else if (source === 'hr_manual_upload') {
-              // HR Manual Upload duplicate path: create in rpa_cv_tmp review table
+            if (source === 'vendor_portal' || source === 'hr_manual_upload') {
+              // Duplicate of an existing candidate → route to the rpa_cv_tmp review
+              // queue for recruiter Merge/Cancel. Vendor uploads carry their vendor
+              // attribution so a later merge stamps VendorEmail + the 90-day lock.
+              const isVendorSource = source === 'vendor_portal';
               const tempCandidate = await prisma.rpa_cv_tmp.create({
                 data: {
                   Name: parsed.Name || "Candidate",
@@ -1202,7 +1235,11 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                   LinkedInProfile: parsed.LinkedInProfile || existingCandidate.LinkedInProfile || null,
                   cvFileUrl: cvUrl,
                   uploadedByHRName: fullName,
-                  uploadSource: 'HR Manual Upload',
+                  uploadSource: isVendorSource ? 'Vendor Portal' : 'HR Manual Upload',
+                  // New review-queue columns — only sent when provisioned (table + client).
+                  ...(jobsModelReady() ? { source, reviewStatus: 'pending_review' } : {}),
+                  VendorEmail: isVendorSource ? attrEmail : null,
+                  vendorName: isVendorSource ? attrName : null,
                   statusActive: statusActive,
                   missingData: missingDataJson,
                   resume_full_text: fullText,
@@ -1214,11 +1251,15 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                 }
               });
 
-              logger.info(`Duplicate resume logged in rpa_cv_tmp. ID: ${tempCandidate.id}`);
-              rowDuplicates.push(`${item.filename}: HR review duplicate`);
+              logger.info(`Duplicate resume routed to review queue (rpa_cv_tmp ID: ${tempCandidate.id}, source: ${source})`);
+              rowDuplicates.push(`${item.filename}: Duplicate - pending recruiter review`);
               duplicateCount++;
+              jobInfo.candidate_name = parsed.Name || 'Candidate';
+              jobInfo.candidate_email = emailToSearch;
+              jobInfo.cv_tmp_id = tempCandidate.id;
 
-              // Send duplicate resume alert to HR asynchronously
+              // Notify recruiter/HR by email; the in-app socket notification fires via
+              // the job's action_required transition at the per-file aggregate below.
               const serialTemp = { ...tempCandidate, id: Number(tempCandidate.id) };
               sendDuplicateAlertEmail(serialTemp, email).catch(mailErr => {
                 logger.error(`Failed to send duplicate alert email: ${mailErr.message}`);
@@ -1275,7 +1316,11 @@ export async function startBackgroundParsing(executionId, files, user, source = 
               });
 
               successCount++;
-              runPostProcessing(updatedCv.id, parsed, source, fullName, email, missingFields);
+              jobInfo.candidate_name = parsed.Name || updatedCv.Name || 'Candidate';
+              jobInfo.candidate_email = emailToSearch;
+              jobInfo.cv_id = updatedCv.id;
+              jobInfo.missingInfo = Object.keys(missingFields).length > 0;
+              runPostProcessing(updatedCv.id, parsed, source, fullName, email, missingFields, attr);
             }
           } else {
             // New candidate! Create directly in main rpa_cv table
@@ -1311,8 +1356,8 @@ export async function startBackgroundParsing(executionId, files, user, source = 
                 cvFileUrl: cvUrl,
                 statusActive: statusActive,
                 missingData: missingDataJson,
-                VendorEmail: source === 'vendor_portal' ? email : null,
-                vendorName: source === 'vendor_portal' ? fullName : null,
+                VendorEmail: attrEmail,
+                vendorName: attrName,
                 createdAt: new Date(),
                 modifiedAt: new Date(),
                 TotalExperienceYearsNumeric: parseExperienceNumeric(parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : "2"),
@@ -1326,9 +1371,13 @@ export async function startBackgroundParsing(executionId, files, user, source = 
             });
 
             successCount++;
+            jobInfo.candidate_name = parsed.Name || 'Candidate';
+            jobInfo.candidate_email = emailToSearch;
+            jobInfo.cv_id = newCv.id;
+            jobInfo.missingInfo = Object.keys(missingFields).length > 0;
 
             // Run post-processing asynchronously (non-blocking)
-            runPostProcessing(newCv.id, parsed, source, fullName, email, missingFields);
+            runPostProcessing(newCv.id, parsed, source, fullName, email, missingFields, attr);
           }
         }
       } catch (err) {
@@ -1349,6 +1398,24 @@ export async function startBackgroundParsing(executionId, files, user, source = 
       if (rowErrors.length > 0) {
         batchErrors.push(`${file.originalname}: ${rowErrors.join(' | ')}`);
       }
+
+      // Map the per-file outcome to a persistent job status + emit live update.
+      let jobStatus;
+      if (rowErrors.length > 0) jobStatus = JOB_STATUS.FAILED;
+      else if (rowDuplicates.length > 0) jobStatus = JOB_STATUS.DUPLICATE_PENDING_REVIEW;
+      else if (jobInfo.missingInfo) jobStatus = JOB_STATUS.MISSING_INFORMATION;
+      else jobStatus = JOB_STATUS.COMPLETED;
+
+      await setJobStatus(executionId, file.originalname, jobStatus, {
+        candidate_name: jobInfo.candidate_name,
+        candidate_email: jobInfo.candidate_email,
+        cv_id: jobInfo.cv_id,
+        cv_tmp_id: jobInfo.cv_tmp_id,
+        file_url: jobInfo.file_url || null,
+        is_duplicate: rowDuplicates.length > 0,
+        action_required: jobStatus === JOB_STATUS.DUPLICATE_PENDING_REVIEW,
+        error_message: rowErrors.length > 0 ? rowErrors.join(' | ') : null,
+      }).catch((e) => logger.warn(`Failed to update upload job status: ${e.message}`));
 
       try {
         await prisma.rpa_upload_log.update({
@@ -1419,13 +1486,54 @@ export async function startBackgroundParsing(executionId, files, user, source = 
         logger.error(`Failed to send resume error alert for batch ${executionId}: ${mailErr.message}`);
       });
     }
+  })();
+}
+
+/**
+ * Fire-and-forget, in-process batch parser. Schedules runBatchParsing on the next
+ * tick so the HTTP request returns immediately. Used when the durable BullMQ queue
+ * is disabled (USE_RESUME_QUEUE !== 'true'); otherwise controllers enqueue jobs and
+ * the resumeWorker calls runBatchParsing per file.
+ */
+export function startBackgroundParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
+  setImmediate(() => {
+    runBatchParsing(executionId, files, user, source, attribution).catch((err) => {
+      logger.error(`Background parsing failed for batch ${executionId}: ${err.message}`);
+    });
   });
+}
+
+/**
+ * Dispatch a batch for processing. When the durable queue is enabled
+ * (USE_RESUME_QUEUE === 'true') each file is enqueued as a BullMQ job (durable,
+ * concurrent, retried); otherwise it runs in-process via startBackgroundParsing.
+ */
+export async function dispatchBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
+  if (process.env.USE_RESUME_QUEUE === 'true') {
+    // Lazy-import so Redis/BullMQ is only touched when the queue is enabled.
+    const { addResumeJob } = await import('../queues/resumeQueue.js');
+    const slimUser = {
+      id: user.id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      username: user.username,
+      role: user.role,
+    };
+    for (const file of files) {
+      await addResumeJob({ executionId, file, user: slimUser, source, attribution });
+      await setJobStatus(executionId, file.originalname, JOB_STATUS.QUEUED).catch(() => {});
+    }
+    logger.info(`Enqueued ${files.length} resume job(s) for batch ${executionId} (durable queue).`);
+  } else {
+    startBackgroundParsing(executionId, files, user, source, attribution);
+  }
 }
 
 /**
  * Run candidate post-processing (vector generation, AI insights, and emails) asynchronously.
  */
-function runPostProcessing(cvId, parsed, source, fullName, email, missingFields) {
+function runPostProcessing(cvId, parsed, source, fullName, email, missingFields, attr = null) {
   setImmediate(async () => {
     try {
       logger.info(`Starting asynchronous post-processing for candidate ID ${cvId}`);
@@ -1433,10 +1541,11 @@ function runPostProcessing(cvId, parsed, source, fullName, email, missingFields)
       // 1) Save vector embedding and get metadata
       const metadata = await saveCandidateVector(cvId, parsed);
 
-      // 2) Calculate lockForNinetyDays
+      // 2) Calculate lockForNinetyDays — prefer the explicit attribution (vendor the
+      // resume was uploaded for), then any vendor parsed from the resume.
       let lockForNinetyDays = null;
-      const vendorName = parsed.VendorName || parsed.vendorName || (source === 'vendor_portal' ? fullName : null);
-      const vendorEmail = parsed.VendorEmail || parsed.vendorEmail || (source === 'vendor_portal' ? email : null);
+      const vendorName = attr?.vendorName || parsed.VendorName || parsed.vendorName || null;
+      const vendorEmail = attr?.vendorEmail || parsed.VendorEmail || parsed.vendorEmail || null;
       if (vendorName && vendorEmail) {
         const date = new Date();
         date.setDate(date.getDate() + 90);

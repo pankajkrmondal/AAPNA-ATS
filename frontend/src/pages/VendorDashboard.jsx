@@ -12,6 +12,8 @@ import {
   Empty,
   Button,
   Select,
+  Progress,
+  Tooltip,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -19,6 +21,12 @@ import {
   TeamOutlined,
   RiseOutlined,
   AimOutlined,
+  CheckCircleOutlined,
+  SyncOutlined,
+  PauseCircleOutlined,
+  CloseCircleOutlined,
+  ClockCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import vendorService from '../services/vendorService';
@@ -108,15 +116,77 @@ const KPI_CARDS = [
   },
 ];
 
-/** Map a FinalStatus value to a tag colour for quick visual scanning. */
-function statusColor(status) {
-  const s = (status || '').toLowerCase();
-  if (s.includes('select') || s.includes('hired') || s.includes('offer')) return 'green';
-  if (s.includes('reject')) return 'red';
-  if (s.includes('hold')) return 'orange';
-  if (s.includes('pending') || s === '') return 'default';
-  return 'blue';
+/** Recruiter-only KPI: duplicates awaiting review (from the upload job tracker). */
+const PENDING_REVIEW_CARD = {
+  key: 'pendingReview',
+  label: 'Pending Review',
+  icon: <WarningOutlined />,
+  color: '#c0392b',
+  tint: 'rgba(192,57,43,0.12)',
+  accent: 'linear-gradient(90deg,#c0392b,#e0654f)',
+};
+
+/**
+ * Bucket a raw FinalStatus into a pipeline stage, per the AAPNA hiring workflow
+ * (Stage 0 Resume Screening → Stages 1–9 → Final Outcome). Order matters: lost
+ * outcomes are checked before positive/offer keywords so e.g. "Offer Rejected" and
+ * "Did Not Join" are not mistaken for wins.
+ */
+function classifyStatus(status) {
+  const s = (status || '').trim().toLowerCase();
+
+  // Not yet screened (Stage 0 / blank → "Awaiting Screening").
+  if (!s || s === 'stage 0' || s.includes('resume screening') || s.includes('awaiting')) {
+    return 'pending';
+  }
+
+  // Lost — we rejected OR the candidate dropped out.
+  if (
+    s.includes('reject')          // Resume/Offer/Interview/Tech/HR/Client/CEO ... Rejected
+    || s.includes('failed')       // Evalground Test Failed
+    || s.includes('did not join')
+    || s.includes('joined and left')
+    || s.includes('withdrew')
+    || s.includes('backed out')
+    || s.includes('high salary')  // Resume Rejected sub-reasons
+    || s.includes('high notice')
+    || s.includes('weak communication')
+    || s.includes('skills mismatch')
+    || s.includes('frequent job')
+  ) {
+    return 'rejected';
+  }
+
+  // Parked.
+  if (s.includes('hold') || s.includes('future prospect')) return 'onHold';
+
+  // Positive final outcomes.
+  if (s === 'selected' || s.includes('offer accepted') || s === 'joined') return 'selected';
+
+  // Everything else is actively moving through the pipeline — Resume Shortlisted,
+  // "... Approved", "... Passed", "... Shared", "Offer Shared", etc.
+  return 'inProcess';
 }
+
+/** Tag colour derived from the pipeline bucket so tiles and tags stay consistent. */
+function statusColor(status) {
+  switch (classifyStatus(status)) {
+    case 'selected': return 'green';
+    case 'rejected': return 'red';
+    case 'onHold': return 'orange';
+    case 'pending': return 'default';
+    default: return 'blue'; // inProcess
+  }
+}
+
+/** Pipeline stage tiles — order, label, colour, icon. */
+const PIPELINE_STAGES = [
+  { key: 'selected', label: 'Selected / Joined', color: '#4a7c59', icon: <CheckCircleOutlined /> },
+  { key: 'inProcess', label: 'In Process', color: '#7a922e', icon: <SyncOutlined /> },
+  { key: 'onHold', label: 'On Hold', color: '#b6883a', icon: <PauseCircleOutlined /> },
+  { key: 'rejected', label: 'Rejected / Dropped', color: '#c0392b', icon: <CloseCircleOutlined /> },
+  { key: 'pending', label: 'Awaiting Screening', color: '#8a9270', icon: <ClockCircleOutlined /> },
+];
 
 export default function VendorDashboard() {
   const { user } = useAuth();
@@ -124,7 +194,7 @@ export default function VendorDashboard() {
   // Internal staff review a chosen vendor; vendors view their own submissions.
   const isStaff = ['admin', 'superadmin', 'recruiter'].includes(role);
 
-  const [loading, setLoading] = useState(!isStaff);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [recent, setRecent] = useState([]);
@@ -145,14 +215,8 @@ export default function VendorDashboard() {
   }, [isStaff]);
 
   const load = useCallback(async () => {
-    // Staff must select a vendor before any data is fetched.
-    if (isStaff && !selectedVendor) {
-      setStats(EMPTY_STATS);
-      setRecent([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    // Staff default to an all-vendors overview (no vendor selected); selecting a
+    // vendor drills into that vendor. Vendors always see their own.
     setLoading(true);
     setError(null);
     try {
@@ -178,7 +242,7 @@ export default function VendorDashboard() {
       title: 'Status',
       dataIndex: 'finalStatus',
       key: 'finalStatus',
-      render: (v) => <Tag color={statusColor(v)}>{v && v.trim() !== '' ? v : 'Pending'}</Tag>,
+      render: (v) => <Tag color={statusColor(v)}>{v && v.trim() !== '' ? v : 'Awaiting Screening'}</Tag>,
     },
     {
       title: 'Uploaded At',
@@ -192,7 +256,16 @@ export default function VendorDashboard() {
     },
   ];
 
-  const needsVendorSelection = isStaff && !selectedVendor;
+  // Derive a hiring pipeline + selection rate from the status breakdown (no extra API call).
+  const pipeline = (() => {
+    const b = { selected: 0, inProcess: 0, onHold: 0, rejected: 0, pending: 0 };
+    (stats.byFinalStatus || []).forEach(({ status, count }) => {
+      b[classifyStatus(status)] += count;
+    });
+    return b;
+  })();
+  const decided = pipeline.selected + pipeline.rejected;
+  const selectionRate = decided ? Math.round((pipeline.selected / decided) * 100) : 0;
 
   return (
     <div className="page-enter" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
@@ -213,7 +286,7 @@ export default function VendorDashboard() {
           </Title>
           <Text style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
             {isStaff
-              ? 'Review the candidate submissions of a selected vendor'
+              ? (selectedVendor ? 'Reviewing a single vendor — clear to see all vendors' : 'Overview across all vendors — filter to drill into one')
               : "Status overview of the candidates you've submitted"}
           </Text>
         </div>
@@ -224,7 +297,7 @@ export default function VendorDashboard() {
             allowClear
             value={selectedVendor}
             onChange={(val) => setSelectedVendor(val || null)}
-            placeholder="Select a vendor"
+            placeholder="All Vendors"
             suffixIcon={<ShopOutlined />}
             optionFilterProp="label"
             style={{ minWidth: 280 }}
@@ -247,17 +320,7 @@ export default function VendorDashboard() {
         />
       )}
 
-      {needsVendorSelection ? (
-        <Card bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
-          <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
-          <div style={{ padding: '48px 28px' }}>
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="Select a vendor above to view their candidate submissions"
-            />
-          </div>
-        </Card>
-      ) : loading ? (
+      {loading ? (
         <div style={{ textAlign: 'center', padding: '80px 0' }}>
           <Spin size="large" />
         </div>
@@ -265,8 +328,8 @@ export default function VendorDashboard() {
         <>
           {/* ═══════ SECTION 1: SUMMARY STATS ═══════ */}
           <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            {KPI_CARDS.map((kpi, i) => (
-              <Col xs={24} sm={8} key={kpi.key}>
+            {(isStaff ? [...KPI_CARDS, PENDING_REVIEW_CARD] : KPI_CARDS).map((kpi, i, arr) => (
+              <Col xs={24} sm={arr.length >= 4 ? 6 : 8} key={kpi.key}>
                 <KpiCard
                   index={i}
                   icon={kpi.icon}
@@ -280,9 +343,9 @@ export default function VendorDashboard() {
             ))}
           </Row>
 
-          {/* ═══════ SECTION 2: STATUS BREAKDOWN ═══════ */}
+          {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
           <Card bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
-            <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
+            <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
                 style={{
@@ -292,25 +355,89 @@ export default function VendorDashboard() {
                   textTransform: 'uppercase',
                   color: 'var(--text-secondary)',
                   display: 'block',
-                  marginBottom: 16,
+                  marginBottom: 20,
                 }}
               >
-                Candidates by Status
+                Hiring Pipeline
               </Text>
-              {stats.byFinalStatus && stats.byFinalStatus.length > 0 ? (
-                <Space size={[10, 12]} wrap>
-                  {stats.byFinalStatus.map((item) => (
-                    <Tag
-                      key={item.status}
-                      color={statusColor(item.status)}
-                      style={{ padding: '5px 12px', fontSize: 14, borderRadius: 8 }}
-                    >
-                      {item.status}: <strong>{item.count}</strong>
-                    </Tag>
-                  ))}
-                </Space>
+
+              {stats.total > 0 ? (
+                <Row gutter={[20, 20]} align="middle">
+                  {/* Selection-rate gauge */}
+                  <Col xs={24} md={7} style={{ textAlign: 'center' }}>
+                    <Progress
+                      type="dashboard"
+                      percent={selectionRate}
+                      strokeColor="#4a7c59"
+                      trailColor="rgba(0,0,0,0.06)"
+                      size={130}
+                      format={(p) => (
+                        <span style={{ fontSize: 24, fontWeight: 700, color: '#3f3f3f' }}>{p}%</span>
+                      )}
+                    />
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginTop: 6 }}>
+                      Selection Rate
+                    </div>
+                    <Tooltip title="Selected ÷ (Selected + Rejected)">
+                      <div style={{ fontSize: 11, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                        {pipeline.selected} selected / {decided} decided
+                      </div>
+                    </Tooltip>
+                  </Col>
+
+                  {/* Stage tiles */}
+                  <Col xs={24} md={17}>
+                    <Row gutter={[12, 12]}>
+                      {PIPELINE_STAGES.map((st) => (
+                        <Col xs={12} sm={8} key={st.key}>
+                          <div
+                            style={{
+                              borderRadius: 10,
+                              border: `1px solid ${st.color}33`,
+                              background: `${st.color}0d`,
+                              padding: '12px 14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 12,
+                            }}
+                          >
+                            <span style={{ color: st.color, fontSize: 20, lineHeight: 1 }}>{st.icon}</span>
+                            <div>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: st.color, lineHeight: 1.1 }}>
+                                {pipeline[st.key]}
+                              </div>
+                              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-2)' }}>
+                                {st.label}
+                              </div>
+                            </div>
+                          </div>
+                        </Col>
+                      ))}
+                    </Row>
+                  </Col>
+                </Row>
               ) : (
                 <Empty description="No candidates submitted yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+
+              {/* Detailed raw status breakdown */}
+              {stats.byFinalStatus && stats.byFinalStatus.length > 0 && (
+                <div style={{ marginTop: 22, borderTop: '1px solid var(--border-light)', paddingTop: 16 }}>
+                  <Text style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 10 }}>
+                    Detailed status
+                  </Text>
+                  <Space size={[8, 10]} wrap>
+                    {stats.byFinalStatus.map((item) => (
+                      <Tag
+                        key={item.status}
+                        color={statusColor(item.status)}
+                        style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}
+                      >
+                        {item.status}: <strong>{item.count}</strong>
+                      </Tag>
+                    ))}
+                  </Space>
+                </div>
               )}
             </div>
           </Card>
@@ -322,7 +449,9 @@ export default function VendorDashboard() {
                 Recent Submissions
               </Text>
               <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-                {isStaff ? "This vendor's most recent candidates." : 'Your most recently uploaded candidates.'}
+                {isStaff
+                  ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
+                  : 'Your most recently uploaded candidates.'}
               </Text>
             </div>
             <Table
