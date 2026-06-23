@@ -344,7 +344,7 @@ export default function VendorDashboard() {
           </Row>
 
           {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
-          <Card bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
+          <Card className="animate-fade-in-up stagger-2" bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
             <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
@@ -364,7 +364,7 @@ export default function VendorDashboard() {
               {stats.total > 0 ? (
                 <Row gutter={[20, 20]} align="middle">
                   {/* Selection-rate gauge */}
-                  <Col xs={24} md={7} style={{ textAlign: 'center' }}>
+                  <Col xs={24} md={7} style={{ textAlign: 'center' }} className="animate-scale-in">
                     <Progress
                       type="dashboard"
                       percent={selectionRate}
@@ -388,9 +388,10 @@ export default function VendorDashboard() {
                   {/* Stage tiles */}
                   <Col xs={24} md={17}>
                     <Row gutter={[12, 12]}>
-                      {PIPELINE_STAGES.map((st) => (
+                      {PIPELINE_STAGES.map((st, idx) => (
                         <Col xs={12} sm={8} key={st.key}>
                           <div
+                            className="pipeline-tile"
                             style={{
                               borderRadius: 10,
                               border: `1px solid ${st.color}33`,
@@ -399,6 +400,7 @@ export default function VendorDashboard() {
                               display: 'flex',
                               alignItems: 'center',
                               gap: 12,
+                              animationDelay: `${0.15 + idx * 0.06}s`,
                             }}
                           >
                             <span style={{ color: st.color, fontSize: 20, lineHeight: 1 }}>{st.icon}</span>
@@ -443,7 +445,7 @@ export default function VendorDashboard() {
           </Card>
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
-          <Card bordered={false} style={{ ...SECTION_CARD_STYLE, marginBottom: 0 }}>
+          <Card className="animate-fade-in-up stagger-4" bordered={false} style={{ ...SECTION_CARD_STYLE, marginBottom: 0 }}>
             <div style={{ marginBottom: 20 }}>
               <Text strong style={{ fontSize: 16, display: 'block' }}>
                 Recent Submissions

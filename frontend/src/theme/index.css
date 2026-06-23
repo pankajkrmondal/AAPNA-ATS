@@ -312,6 +312,17 @@ h1, h2, h3, h4, h5, h6,
 .stagger-5 { animation-delay: 0.25s; }
 .stagger-6 { animation-delay: 0.3s; }
 
+/* ----- Pipeline stage tiles (dashboard) — scale in + gentle hover lift ----- */
+.pipeline-tile {
+  animation: scaleIn 0.4s var(--ease-spring) both;
+  transition: transform 0.3s var(--ease-out-quint), box-shadow 0.3s var(--ease-out-quint);
+  will-change: transform;
+}
+.pipeline-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.09);
+}
+
 /* ----- KPI / Stat Cards (elegant, animated) ----- */
 .kpi-card {
   position: relative;

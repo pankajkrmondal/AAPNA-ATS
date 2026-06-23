@@ -8,6 +8,16 @@
 
 ## Update Log
 
+### 2026-06-23 — UI polish: compact upload + animated dashboard
+- **Vendor Upload page:** the dropzone is now **compact** (single row, no longer dominates the page),
+  and a **"Uploading for: <vendor>"** chip confirms attribution (red prompt chip until one is picked).
+  (`VendorPortal.jsx`.)
+- **Vendor Dashboard:** an elegant entrance/animation pass reusing the theme's animation kit — KPI cards
+  animate + lift on hover (existing), the hiring-pipeline card and recent-submissions card fade-in-up
+  with stagger, the selection-rate gauge scales in, and the pipeline stage tiles scale in (staggered)
+  with a gentle hover lift. New `.pipeline-tile` class in `theme/index.css`. Purely presentational —
+  no data/logic change.
+
 ### 2026-06-23 — Pipeline buckets aligned to the real hiring workflow
 - Rewrote the dashboard's `classifyStatus`/`statusColor` to match the actual `FinalStatus`
   vocabulary (Stage 0 Resume Screening → Stages 1–9 → Final Outcome). Lost outcomes are evaluated

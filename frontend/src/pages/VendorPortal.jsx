@@ -404,30 +404,51 @@ export default function VendorPortal() {
       <Card bordered={false} style={{ borderRadius: 12, marginBottom: 24, border: '1px solid rgba(0,0,0,0.07)' }}
         styles={{ body: { padding: 0 } }}>
         <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
-        <div style={{ padding: '24px 28px 28px' }}>
-          {/* Staff must pick a vendor (top-right) before uploading. */}
-          {isStaff && !selectedVendor && (
-            <Alert
-              type="info"
-              showIcon
-              message="Select a vendor at the top right to upload on their behalf."
-              style={{ marginBottom: 16, borderRadius: 10 }}
-            />
+        <div style={{ padding: '20px 28px 24px' }}>
+          {/* Staff: prompt to pick a vendor, or confirm who they're uploading for. */}
+          {isStaff && (
+            <div style={{ marginBottom: 14 }}>
+              {selectedVendor ? (
+                <Tag
+                  icon={<ShopOutlined />}
+                  style={{
+                    borderRadius: 16,
+                    padding: '4px 12px',
+                    fontSize: 13,
+                    background: 'rgba(122,146,46,0.1)',
+                    border: '1px solid #7a922e',
+                    color: '#5e7325',
+                  }}
+                >
+                  Uploading for: <strong>{vendors.find((v) => v.email === selectedVendor)?.name || selectedVendor}</strong>
+                </Tag>
+              ) : (
+                <Tag
+                  icon={<ShopOutlined />}
+                  style={{ borderRadius: 16, padding: '4px 12px', fontSize: 13, background: 'rgba(192,57,43,0.06)', border: '1px solid #e0b4ad', color: '#c0392b' }}
+                >
+                  Select a vendor (top right) to upload on their behalf
+                </Tag>
+              )}
+            </div>
           )}
 
+          {/* Compact dropzone — single row, doesn't dominate the page. */}
           <Dragger
             multiple
             fileList={fileList}
             beforeUpload={() => false}
             onChange={({ fileList: newList }) => setFileList(newList)}
             accept=".zip,.pdf,.docx"
-            style={{ padding: '20px', background: '#f5f5f0', borderRadius: 10, marginBottom: 16 }}
+            style={{ background: '#f5f5f0', borderRadius: 10, marginBottom: 14 }}
           >
-            <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#7a922e', fontSize: 38 }} /></p>
-            <p className="ant-upload-text" style={{ fontWeight: 600 }}>Click or drag files to upload</p>
-            <p className="ant-upload-hint" style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>
-              Supported: .pdf, .docx, .zip
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
+              <InboxOutlined style={{ color: '#7a922e', fontSize: 30 }} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#2b2b2b' }}>Click or drag files to upload</div>
+                <div style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
+              </div>
+            </div>
           </Dragger>
 
           <Button
