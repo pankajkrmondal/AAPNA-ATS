@@ -26,6 +26,10 @@ import {
 } from './emailNotification.service.js';
 import { setJobStatus, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
 
+// Marker stamped on candidates who applied themselves (website or direct email),
+// where there is no recruiter. Stored in last_action_by for the email_intake source.
+const SELF_APPLIED_TAG = 'Self Applied';
+
 // Shared fields between rpa_cv_tmp and rpa_cv
 const CV_SHARED_FIELDS = [
   'Name', 'NoticePeriod', 'ContactNumber', 'EmailID',
@@ -995,6 +999,10 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
   const attrEmail = attr?.vendorEmail || null;
   const attrName = attr?.vendorName || null;
 
+  // Website applications and direct candidate emails both arrive via the intake poller
+  // and have no recruiter — they are self-applied.
+  const isSelfApplied = source === 'email_intake';
+
   await (async () => {
     logger.info(`Starting background resume parsing for batch: ${executionId}`);
     
@@ -1299,9 +1307,37 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               updateData.VendorEmail = existingCandidate.VendorEmail;
               updateData.vendorName = existingCandidate.vendorName;
               updateData.cvFileUrl = cvUrl;
-              updateData.statusActive = statusActive;
-              updateData.missingData = missingDataJson;
+
+              // Recompute missing fields against the MERGED record so a sparser resubmission
+              // does not re-flag fields already stored on the existing candidate (which would
+              // wrongly mark the row INACTIVE and re-ask the candidate for data we already have).
+              const mergedForMissing = { ...parsed };
+              const FIELDS_FROM_EXISTING = [
+                'Name', 'NoticePeriod', 'ContactNumber', 'EmailID', 'HighestQualification',
+                'TotalExperienceYears', 'LastCompanyExperienceYears', 'CurrentLocation', 'CTC_LPA',
+                'ExpectedCTC_LPA', 'JobSource', 'RecruiterInfoAAPNA', 'PositionApplied', 'Top5KeySkills',
+                'CurrentCompany', 'Gender', 'EnglishCommunicationRating',
+                'graduationdegree', 'graduationspecialization', 'postgraduationdegree', 'postgraduationspecialization',
+                'PreferredShift', 'ReasonForJobChange', 'WillingToTakeOnlineTest', 'HasLaptopForInitialDays', 'LinkedInProfile',
+              ];
+              for (const f of FIELDS_FROM_EXISTING) {
+                mergedForMissing[f] = prefer(parsed[f], existingCandidate[f]);
+              }
+              // EducationalScoresPercentage is an object in parsed but split across
+              // a10th/a12th/graduation/postGraduation columns on the existing row — merge per score.
+              const parsedEdu = parsed.EducationalScoresPercentage || {};
+              mergedForMissing.EducationalScoresPercentage = {
+                '10th': prefer(parsedEdu['10th'], existingCandidate.a10th),
+                '12th': prefer(parsedEdu['12th'], existingCandidate.a12th),
+                'Graduation': prefer(parsedEdu['Graduation'], existingCandidate.graduation),
+                'PostGraduation': prefer(parsedEdu['PostGraduation'], existingCandidate.postGraduation),
+              };
+              const mergedMissing = getMissingFields(mergedForMissing);
+              updateData.statusActive = Object.keys(mergedMissing).length > 0 ? 'INACTIVE' : 'ACTIVE';
+              updateData.missingData = JSON.stringify(mergedMissing);
               updateData.modifiedAt = new Date();
+              updateData.last_action_by = isSelfApplied ? SELF_APPLIED_TAG : email;
+              updateData.last_action_context = source;
               updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
               updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
               updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
@@ -1319,8 +1355,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               jobInfo.candidate_name = parsed.Name || updatedCv.Name || 'Candidate';
               jobInfo.candidate_email = emailToSearch;
               jobInfo.cv_id = updatedCv.id;
-              jobInfo.missingInfo = Object.keys(missingFields).length > 0;
-              runPostProcessing(updatedCv.id, parsed, source, fullName, email, missingFields, attr);
+              jobInfo.missingInfo = Object.keys(mergedMissing).length > 0;
+              runPostProcessing(updatedCv.id, parsed, source, fullName, email, mergedMissing, attr);
             }
           } else {
             // New candidate! Create directly in main rpa_cv table
@@ -1358,6 +1394,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 missingData: missingDataJson,
                 VendorEmail: attrEmail,
                 vendorName: attrName,
+                last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
+                last_action_context: source,
                 createdAt: new Date(),
                 modifiedAt: new Date(),
                 TotalExperienceYearsNumeric: parseExperienceNumeric(parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : "2"),
