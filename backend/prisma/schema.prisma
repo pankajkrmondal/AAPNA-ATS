@@ -135,6 +135,8 @@ model rpa_cv {
   NoticePeriodDays             Int?
   TotalExperienceYearsNumeric  Decimal?                     @db.Decimal(5, 2)
   ai_profile_insights          Json?
+  last_action_by               String?
+  last_action_context          String?
   emails                       rpa_email_messages[]
   shortlisted                  rpa_shortlisted_candidates[]
 
@@ -408,6 +410,8 @@ model rpa_cv_tmp {
   resume_tsvector              Unsupported("tsvector")?
   reviewStatus                 String?                  @default("pending_review")
   source                       String?
+  last_action_by               String?
+  last_action_context          String?
 
   @@index([resume_tsvector], map: "idx_rpa_cv_tmp_resume_tsvector", type: Gin)
   @@index([reviewStatus], map: "idx_rpa_cv_tmp_review_status")
