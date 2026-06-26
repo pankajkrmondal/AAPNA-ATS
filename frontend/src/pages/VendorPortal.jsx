@@ -14,18 +14,17 @@ import {
   Button,
   Typography,
   Table,
-  Input,
   Space,
   Tag,
   Tooltip,
   Modal,
   Alert,
   message,
-  Statistic,
   Row,
   Col,
   Select,
   Descriptions,
+  Progress,
 } from 'antd';
 import {
   UploadOutlined,
@@ -40,10 +39,13 @@ import {
   MergeCellsOutlined,
   ExclamationCircleOutlined,
   RedoOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import vendorService from '../services/vendorService';
 import { getSocket } from '../services/socket';
+import KpiCard from '../components/common/KpiCard';
+import UploadCelebration from '../components/common/UploadCelebration';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -52,14 +54,15 @@ const PAGE_SIZE = 10;
 
 /** Map a stored status (underscored) to a user-friendly label + AntD tag colour/icon. */
 const STATUS_META = {
-  Uploaded: { label: 'Received', color: 'default' },
-  Queued: { label: 'Waiting in Queue', color: 'blue', icon: <SyncOutlined /> },
-  Processing: { label: 'Processing', color: 'processing', icon: <SyncOutlined spin /> },
-  Duplicate_Pending_Review: { label: 'Pending Recruiter Review', color: 'warning', icon: <WarningOutlined /> },
-  Missing_Information: { label: 'Awaiting Candidate Details', color: 'orange', icon: <ExclamationCircleOutlined /> },
-  Completed: { label: 'Saved to Database', color: 'success', icon: <CheckCircleOutlined /> },
-  Failed: { label: 'Processing Failed', color: 'error', icon: <CloseCircleOutlined /> },
-  Cancelled: { label: 'Rejected by Recruiter', color: 'default', icon: <CloseCircleOutlined /> },
+  Uploaded: { label: 'Received', color: 'default', hint: 'Received and queued — parsing hasn’t started yet.' },
+  Queued: { label: 'Waiting in Queue', color: 'blue', icon: <SyncOutlined />, hint: 'Waiting for the background worker to pick it up.' },
+  Processing: { label: 'Processing', color: 'processing', icon: <SyncOutlined spin />, hint: 'Extracting text and parsing the resume with AI.' },
+  Duplicate_Pending_Review: { label: 'Pending Recruiter Review', color: 'warning', icon: <WarningOutlined />, hint: 'Candidate already exists — a recruiter must merge or reject it.' },
+  Missing_Information: { label: 'Awaiting Candidate Details', color: 'orange', icon: <ExclamationCircleOutlined />, hint: 'Saved, but waiting on mandatory candidate details.' },
+  Completed: { label: 'Saved to Database', color: 'success', icon: <CheckCircleOutlined />, hint: 'Saved to the candidate database.' },
+  Failed: { label: 'Processing Failed', color: 'error', icon: <CloseCircleOutlined />, hint: 'Processing failed — you can reprocess it.' },
+  Rejected_By_System: { label: 'Rejected by System', color: 'volcano', icon: <CloseCircleOutlined />, hint: 'No valid email or phone on the resume — rejected; re-upload with at least one.' },
+  Cancelled: { label: 'Rejected by Recruiter', color: 'default', icon: <CloseCircleOutlined />, hint: 'A recruiter rejected this duplicate.' },
 };
 
 const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
@@ -96,6 +99,8 @@ export default function VendorPortal() {
   const [jobs, setJobs] = useState([]);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [actionCount, setActionCount] = useState(0);
+  const [processingCount, setProcessingCount] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState(null);
@@ -108,6 +113,13 @@ export default function VendorPortal() {
   const [reviewBusy, setReviewBusy] = useState(false);
 
   const reloadRef = useRef(null);
+
+  // ── Premium UX state (count-up KPIs, live flash, upload progress, celebration) ──
+  const [flashIds, setFlashIds] = useState(() => new Set());
+  const [uploadPct, setUploadPct] = useState(0);
+  const [celebrate, setCelebrate] = useState(false);
+  const prevJobsRef = useRef(null);
+  const flashTimerRef = useRef(null);
 
   /* ═══════ LOAD VENDOR LIST (staff only) ═══════ */
   useEffect(() => {
@@ -130,9 +142,29 @@ export default function VendorPortal() {
         ...(isStaff && jobFilterVendor ? { vendorEmail: jobFilterVendor } : {}),
       });
       const payload = res.data || {};
-      setJobs(payload.data || []);
-      setJobsTotal(payload.pagination?.total ?? (payload.data || []).length);
+      const list = payload.data || [];
+
+      // Live flash: highlight rows whose status changed since the last load.
+      const prev = prevJobsRef.current;
+      if (prev) {
+        const changed = new Set();
+        list.forEach((j) => {
+          const before = prev.get(String(j.id));
+          if (before !== undefined && before !== j.updated_at) changed.add(String(j.id));
+        });
+        if (changed.size) {
+          setFlashIds(changed);
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlashIds(new Set()), 1700);
+        }
+      }
+      prevJobsRef.current = new Map(list.map((j) => [String(j.id), j.updated_at]));
+
+      setJobs(list);
+      setJobsTotal(payload.pagination?.total ?? list.length);
       setActionCount(payload.stats?.actionRequired ?? 0);
+      setProcessingCount(payload.stats?.processing ?? 0);
+      setCompletedCount(payload.stats?.completed ?? 0);
     } catch (err) {
       console.error('Failed to load upload jobs:', err);
       setJobs([]); setJobsTotal(0);
@@ -188,22 +220,28 @@ export default function VendorPortal() {
 
     setUploading(true);
     setUploadMsg(null);
+    setUploadPct(0);
 
     const formData = new FormData();
     fileList.forEach((file) => formData.append('resumes', file.originFileObj || file));
     if (isStaff && selectedVendor) formData.append('vendorEmail', selectedVendor);
 
     try {
-      await vendorService.uploadResumes(formData);
+      await vendorService.uploadResumes(formData, (e) => {
+        if (e.total) setUploadPct(Math.round((e.loaded / e.total) * 100));
+      });
       setUploadMsg({ type: 'success', text: '✅ Uploaded. Track processing status in the dashboard below.' });
       setFileList([]);
       setStatusFilter(null);
       setOnlyActionRequired(false);
+      setCelebrate(true);
+      setTimeout(() => setCelebrate(false), 1300);
       setTimeout(() => loadJobs(1), 800);
     } catch (err) {
       setUploadMsg({ type: 'error', text: `❌ ${err.response?.data?.message || err.message || 'Upload failed.'}` });
     } finally {
       setUploading(false);
+      setUploadPct(0);
     }
   };
 
@@ -291,7 +329,11 @@ export default function VendorPortal() {
       key: 'status',
       render: (_, r) => {
         const meta = STATUS_META[r.status] || { label: r.status, color: 'default' };
-        return <Tag icon={meta.icon} color={meta.color}>{meta.label}</Tag>;
+        return (
+          <Tooltip title={meta.hint}>
+            <Tag icon={meta.icon} color={meta.color} className={r.action_required ? 'tag-attention' : undefined} style={{ cursor: 'default' }}>{meta.label}</Tag>
+          </Tooltip>
+        );
       },
     },
     {
@@ -347,7 +389,7 @@ export default function VendorPortal() {
   const visibleColumns = columns.filter((c) => isStaff || !STAFF_ONLY_COLS.includes(c.key));
 
   return (
-    <div className="page-enter" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 0 40px' }}>
+    <div className="page-enter upload-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 0 40px' }}>
       <div
         style={{
           marginBottom: 24,
@@ -401,10 +443,10 @@ export default function VendorPortal() {
       </div>
 
       {/* ═══════ UPLOAD CARD ═══════ */}
-      <Card bordered={false} style={{ borderRadius: 12, marginBottom: 24, border: '1px solid rgba(0,0,0,0.07)' }}
+      <Card className="animate-fade-in-up" bordered={false} style={{ borderRadius: 12, marginBottom: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.06)', borderTop: '4px solid #7a922e' }}
         styles={{ body: { padding: 0 } }}>
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
-        <div style={{ padding: '20px 28px 24px' }}>
+        <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
+          <UploadCelebration show={celebrate} />
           {/* Staff: prompt to pick a vendor, or confirm who they're uploading for. */}
           {isStaff && (
             <div style={{ marginBottom: 14 }}>
@@ -440,10 +482,10 @@ export default function VendorPortal() {
             beforeUpload={() => false}
             onChange={({ fileList: newList }) => setFileList(newList)}
             accept=".zip,.pdf,.docx"
-            style={{ background: '#f5f5f0', borderRadius: 10, marginBottom: 14 }}
+            style={{ marginBottom: 14 }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
-              <InboxOutlined style={{ color: '#7a922e', fontSize: 30 }} />
+              <InboxOutlined className="upload-inbox-icon" style={{ color: '#7a922e', fontSize: 30 }} />
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 600, fontSize: 14, color: '#2b2b2b' }}>Click or drag files to upload</div>
                 <div style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
@@ -452,6 +494,7 @@ export default function VendorPortal() {
           </Dragger>
 
           <Button
+            className="btn-sheen"
             type="primary" size="large" block icon={<UploadOutlined />}
             loading={uploading} onClick={handleUpload}
             disabled={fileList.length === 0 || (isStaff && !selectedVendor)}
@@ -462,6 +505,11 @@ export default function VendorPortal() {
             Upload Resumes
           </Button>
 
+          {uploading && uploadPct > 0 && (
+            <Progress percent={uploadPct} size="small" status="active"
+              strokeColor={{ from: '#7a922e', to: '#92a63c' }} style={{ marginTop: 12 }} />
+          )}
+
           {uploadMsg && (
             <Alert message={uploadMsg.text} type={uploadMsg.type} showIcon closable
               onClose={() => setUploadMsg(null)} style={{ marginTop: 14, borderRadius: 10 }} />
@@ -470,31 +518,42 @@ export default function VendorPortal() {
       </Card>
 
       {/* ═══════ PERSISTENT JOB DASHBOARD ═══════ */}
-      <Card bordered={false} style={{ borderRadius: 12, border: '1px solid rgba(0,0,0,0.07)' }}>
+      <Card className="animate-fade-in-up stagger-2" bordered={false} style={{ borderRadius: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <div>
-            <Text strong style={{ fontSize: 16, display: 'block' }}>Upload Status</Text>
-            <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <Text strong style={{ fontSize: 16 }}>Upload Status</Text>
+              <Tooltip title="This list updates automatically as resumes are processed.">
+                <span className="live-badge">
+                  <span className="live-badge__dot" /> Real-time
+                </span>
+              </Tooltip>
+            </span>
+            <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', display: 'block' }}>
               {isStaff ? 'Live processing status across all vendors — filter below.' : 'Live processing status for every uploaded resume.'}
             </Text>
           </div>
           <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
         </div>
 
-        {/* Stat cards */}
-        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col xs={12} sm={8}>
-            <Card size="small" style={{ borderRadius: 10, background: '#f5f5f0' }} styles={{ body: { padding: 14 } }}>
-              <Statistic title="Total Uploads" value={jobsTotal} valueStyle={{ fontWeight: 700 }} />
-            </Card>
+        {/* Premium count-up KPI cards */}
+        <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
+          <Col xs={12} md={6}>
+            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={jobsTotal}
+              color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
           </Col>
-          {isStaff && (
-            <Col xs={12} sm={8}>
-              <Card size="small" style={{ borderRadius: 10, background: 'rgba(192,57,43,0.08)', border: '1px solid #c0392b' }} styles={{ body: { padding: 14 } }}>
-                <Statistic title="Pending Review" value={actionCount} valueStyle={{ fontWeight: 700, color: '#c0392b' }} />
-              </Card>
-            </Col>
-          )}
+          <Col xs={12} md={6}>
+            <KpiCard index={1} icon={<SyncOutlined />} label="Processing" value={processingCount}
+              color="#2f6f9f" tint="rgba(47,111,159,0.12)" accent="linear-gradient(90deg,#2f6f9f,#4f93c4)" />
+          </Col>
+          <Col xs={12} md={6}>
+            <KpiCard index={2} icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount}
+              color="#4a7c59" tint="rgba(74,124,89,0.12)" accent="linear-gradient(90deg,#4a7c59,#6aa67c)" />
+          </Col>
+          <Col xs={12} md={6}>
+            <KpiCard index={3} icon={<WarningOutlined />} label="Pending Review" value={actionCount}
+              color="#c0392b" tint="rgba(192,57,43,0.12)" accent="linear-gradient(90deg,#c0392b,#e0654f)" />
+          </Col>
         </Row>
 
         {/* Filters */}
@@ -534,6 +593,12 @@ export default function VendorPortal() {
           loading={jobsLoading}
           size="small"
           scroll={{ x: 900 }}
+          rowClassName={(r) => {
+            const cls = [];
+            if (['Processing', 'Queued', 'Uploaded'].includes(r.status)) cls.push('is-processing');
+            if (flashIds.has(String(r.id))) cls.push('row-flash');
+            return cls.join(' ');
+          }}
           pagination={{
             current: jobsPage,
             pageSize: PAGE_SIZE,
@@ -554,7 +619,7 @@ export default function VendorPortal() {
           <Button key="cancel" danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={doCancel}>
             Cancel / Reject
           </Button>,
-          <Button key="merge" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={doMerge}
+          <Button key="merge" className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={doMerge}
             style={{ background: '#7a922e', borderColor: '#7a922e' }}>
             Merge into Database
           </Button>,

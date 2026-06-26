@@ -119,6 +119,7 @@ export const getVendorDashboard = catchAsync(async (req, res) => {
   if (prisma.rpa_upload_jobs) {
     pendingReview = await prisma.rpa_upload_jobs.count({
       where: {
+        source: 'vendor_portal',
         action_required: true,
         ...(vendorEmail ? { vendor_email: { equals: vendorEmail, mode: 'insensitive' } } : {}),
       },
@@ -396,12 +397,33 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   }
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
-  const isVendor = (req.user.role || '').toLowerCase() === 'vendor';
-  const vendorEmail = isVendor ? req.user.email : (req.query.vendorEmail || '').trim();
+  const role = (req.user.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+  const isAdmin = role === 'admin' || role === 'superadmin';
 
-  const where = {};
-  if (vendorEmail) {
-    where.vendor_email = { equals: vendorEmail, mode: 'insensitive' };
+  // The Vendor screen only ever shows vendor-portal uploads (never HR manual uploads).
+  const where = { source: 'vendor_portal' };
+
+  // Visibility scoping:
+  //  • admin / superadmin → all vendor-portal uploads
+  //  • recruiter / hr     → only the records THEY uploaded (on behalf of a vendor), plus
+  //                         anything needing review (the review queue is shared across recruiters)
+  //  • vendor             → only their OWN self-uploads
+  if (!isAdmin) {
+    if (isVendor) {
+      where.uploaded_by_id = req.user.id;
+    } else {
+      where.OR = [
+        { uploaded_by_id: req.user.id },
+        { action_required: true },
+      ];
+    }
+  }
+
+  // Optional staff filter: drill into a specific vendor.
+  if (!isVendor) {
+    const vendorEmail = (req.query.vendorEmail || '').trim();
+    if (vendorEmail) where.vendor_email = { equals: vendorEmail, mode: 'insensitive' };
   }
   if (status) where.status = status;
   if (actionRequired === 'true') where.action_required = true;
@@ -409,7 +431,7 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
-  const [rows, total, actionCount] = await Promise.all([
+  const [rows, total, actionCount, grouped] = await Promise.all([
     prisma.rpa_upload_jobs.findMany({
       where,
       orderBy: { updated_at: 'desc' },
@@ -418,13 +440,20 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     }),
     prisma.rpa_upload_jobs.count({ where }),
     prisma.rpa_upload_jobs.count({ where: { ...where, action_required: true } }),
+    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where, _count: { _all: true } }),
   ]);
+
+  // Status roll-up for the KPI cards (accurate across the whole scoped set, not just this page).
+  const byStatus = {};
+  grouped.forEach((g) => { byStatus[g.status] = g._count._all; });
+  const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
+  const completed = byStatus.Completed || 0;
 
   return res.status(200).json({
     status: 'success',
     message: 'Upload jobs retrieved',
     data: rows.map(uploadJobService.serializeJob),
-    stats: { actionRequired: actionCount },
+    stats: { actionRequired: actionCount, total, processing, completed },
     pagination: {
       page: pageNum,
       limit: limitNum,

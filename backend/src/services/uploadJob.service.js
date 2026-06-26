@@ -19,6 +19,7 @@ export const JOB_STATUS = Object.freeze({
   COMPLETED: 'Completed',
   FAILED: 'Failed',
   CANCELLED: 'Cancelled',
+  REJECTED_SYSTEM: 'Rejected_By_System',
 });
 
 /** Roles that should receive "a duplicate needs review" notifications. */

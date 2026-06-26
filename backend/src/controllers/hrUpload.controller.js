@@ -163,6 +163,143 @@ export const getSummary = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Persistent upload/job-tracking dashboard feed (one row per resume).
+ *          Scoped to HR manual uploads (source = 'hr_manual_upload') — a shared
+ *          queue visible to the authorized HR/recruiter roles.
+ * @route   GET /api/hr-upload/jobs
+ * @access  Private (HR, Admin, Recruiter w/ hr_manual_upload)
+ */
+export const getUploadJobs = catchAsync(async (req, res) => {
+  // Graceful degradation when the job-tracking table isn't provisioned yet.
+  if (!prisma.rpa_upload_jobs) {
+    return res.status(200).json({
+      status: 'success',
+      message: 'Upload job tracking is not provisioned yet',
+      data: [],
+      stats: { actionRequired: 0 },
+      pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false, hasPrev: false },
+    });
+  }
+
+  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
+  // already complete (statusActive = ACTIVE). Keeps the dashboard correct regardless of
+  // which path resolved the missing data. Cheap (filtered on status) and best-effort.
+  try {
+    await prisma.$executeRaw`
+      UPDATE rpa_upload_jobs AS j
+      SET status = 'Completed', action_required = false, updated_at = now()
+      FROM rpa_cv AS c
+      WHERE j.cv_id = c.id
+        AND j.status = 'Missing_Information'
+        AND c."statusActive" = 'ACTIVE'
+    `;
+  } catch (e) {
+    logger.warn(`HR upload-job self-heal skipped: ${e.message}`);
+  }
+
+  const { page = 1, limit = 20, status, actionRequired } = req.query;
+
+  const where = { source: 'hr_manual_upload' };
+  if (status) where.status = status;
+  if (actionRequired === 'true') where.action_required = true;
+
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+
+  const [rows, total, actionCount, grouped] = await Promise.all([
+    prisma.rpa_upload_jobs.findMany({
+      where,
+      orderBy: { updated_at: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    }),
+    prisma.rpa_upload_jobs.count({ where }),
+    prisma.rpa_upload_jobs.count({ where: { ...where, action_required: true } }),
+    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where, _count: { _all: true } }),
+  ]);
+
+  // Status roll-up for the KPI cards (accurate across the whole set, not just this page).
+  const byStatus = {};
+  grouped.forEach((g) => { byStatus[g.status] = g._count._all; });
+  const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
+  const completed = byStatus.Completed || 0;
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Upload jobs retrieved',
+    data: rows.map(uploadJobService.serializeJob),
+    stats: { actionRequired: actionCount, total, processing, completed },
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      hasNext: pageNum * limitNum < total,
+      hasPrev: pageNum > 1,
+    },
+  });
+});
+
+/**
+ * @desc    Reprocess a failed upload job by re-running parsing on its stored file.
+ * @route   POST /api/hr-upload/jobs/:id/reprocess
+ * @access  Private (HR, Admin, Recruiter w/ hr_manual_upload)
+ */
+export const reprocessJob = catchAsync(async (req, res) => {
+  if (!prisma.rpa_upload_jobs) {
+    throw new AppError('Upload job tracking is not provisioned yet.', 503);
+  }
+  const { id } = req.params;
+  const job = await prisma.rpa_upload_jobs.findUnique({ where: { id: BigInt(id) } });
+  if (!job) {
+    throw new AppError('Upload job not found.', 404);
+  }
+  if (job.status !== 'Failed') {
+    throw new AppError('Only failed jobs can be reprocessed.', 400);
+  }
+
+  // Locate the original file in the uploads directory (local fallback path).
+  const basename = (job.file_url || '').startsWith('/uploads/') ? path.basename(job.file_url) : null;
+  const uploadDir = path.resolve(config.upload.dir);
+  const diskPath = basename ? path.join(uploadDir, basename) : null;
+  if (!diskPath || !fs.existsSync(diskPath)) {
+    throw new AppError('The original resume file is no longer available on the server. Please re-upload it.', 422);
+  }
+
+  const fileObj = {
+    originalname: job.file_name,
+    path: diskPath,
+    filename: basename,
+    size: fs.statSync(diskPath).size,
+  };
+
+  await uploadJobService.updateJobById(id, {
+    status: 'Queued',
+    error_message: null,
+    attempts: (job.attempts || 0) + 1,
+  });
+  await prisma.rpa_processing_log.create({
+    data: {
+      fileName: job.file_name,
+      source: 'REPROCESS',
+      status: 'reprocess',
+      logMessage: `Recruiter triggered reprocess for HR upload job ${id}`,
+      createdAt: new Date(),
+    },
+  }).catch(() => {});
+
+  await hrUploadService.dispatchBatchParsing(
+    job.execution_id,
+    [fileObj],
+    req.user,
+    job.source || 'hr_manual_upload',
+    null,
+  );
+
+  return success(res, { id }, 'Resume reprocessing started.');
+});
+
+/**
  * @desc    Search duplicate records in review queue
  * @route   POST /api/hr-upload/duplicates/search
  * @access  Private (HR, Admin)
