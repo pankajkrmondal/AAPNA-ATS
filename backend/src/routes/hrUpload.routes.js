@@ -55,6 +55,12 @@ router.post('/upload', upload.array('resumes', 100), hrUploadController.uploadRe
 /** Get batch summary */
 router.get('/summary/:executionId', hrUploadController.getSummary);
 
+/** Persistent per-resume job feed (powers the live Upload Status dashboard) */
+router.get('/jobs', hrUploadController.getUploadJobs);
+
+/** Reprocess a failed upload job */
+router.post('/jobs/:id/reprocess', hrUploadController.reprocessJob);
+
 /** Search duplicate records in staging table */
 router.post('/duplicates/search', hrUploadController.searchDuplicates);
 

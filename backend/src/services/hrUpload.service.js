@@ -30,6 +30,42 @@ import { setJobStatus, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
 const SELF_APPLIED_TAG = 'Self Applied';
 
+// Basic email-format check used to build dedupe keys. The parser echoes the email
+// into `unique_key`; without this check a stray/non-email value could leak through
+// and produce a false duplicate match.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Placeholder phone the code injects as a default for missing numbers — must never
+// be used as a match key (it would falsely match every no-phone candidate).
+const PLACEHOLDER_CONTACT = '9876543210';
+
+/**
+ * Build a clean list of email match-keys from a raw comma-separated string.
+ * Keeps only valid-format emails (lowercased, trimmed); drops blanks/'null'/junk and
+ * any address in `exclude` (e.g. the uploader's / vendor's own email, which is never
+ * the candidate's identity and must not leak in as one).
+ */
+function sanitizeMatchEmails(raw, exclude = []) {
+  const blocked = exclude
+    .filter(Boolean)
+    .map((e) => String(e).trim().toLowerCase());
+  return String(raw || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.length > 0 && e !== 'null' && EMAIL_RE.test(e) && !blocked.includes(e));
+}
+
+/**
+ * Build a clean list of phone match-keys from a raw comma-separated string.
+ * Keeps the existing space-stripped format; drops blanks and the placeholder default.
+ */
+function sanitizeMatchContacts(raw) {
+  return String(raw || '')
+    .split(',')
+    .map((n) => n.replace(/\s+/g, ''))
+    .filter((n) => n.length > 0 && n !== PLACEHOLDER_CONTACT);
+}
+
 // Shared fields between rpa_cv_tmp and rpa_cv
 const CV_SHARED_FIELDS = [
   'Name', 'NoticePeriod', 'ContactNumber', 'EmailID',
@@ -204,6 +240,7 @@ Rules (IMPORTANT):
 4. If a value is not mentioned in the resume, assign it as null.
 5. EmailID must be treated as a unique identifier and returned as "unique_key".
 6. If VendorEmail or VendorName is already provided below and is not empty, you MUST use it as-is and MUST NOT override it from resume text.
+7. NEVER invent, guess, or derive an EmailID, unique_key, or ContactNumber. Do NOT build an email from the candidate's name and do NOT use placeholder/example values (e.g. "@example.com", "1234567890"). If an email or phone number is not explicitly written in the resume text, return null for EmailID, unique_key, and ContactNumber.
 
 Input Details:
 - Original File Name: ${originalName}
@@ -552,16 +589,11 @@ export async function mergeDuplicates(ids, token, user = {}) {
           throw new Error(`Temporary candidate with ID ${tempId} not found in queue.`);
         }
 
-        // 2) Search for matching candidate in rpa_cv (by ContactNumber and EmailID arrays intersection)
-        const cleanContactNumbers = (tempCandidate.ContactNumber || '')
-          .split(',')
-          .map(num => num.replace(/\s+/g, ''))
-          .filter(num => num.length > 0);
-
-        const cleanEmails = (tempCandidate.EmailID || '')
-          .split(',')
-          .map(email => email.trim().toLowerCase())
-          .filter(email => email.length > 0);
+        // 2) Search for matching candidate in rpa_cv (by ContactNumber and EmailID arrays
+        //    intersection). Same validated keys as parse-time so junk/placeholder values
+        //    can't re-find an unrelated candidate.
+        const cleanContactNumbers = sanitizeMatchContacts(tempCandidate.ContactNumber);
+        const cleanEmails = sanitizeMatchEmails(tempCandidate.EmailID);
 
         let existingCandidate = null;
         if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
@@ -602,6 +634,8 @@ export async function mergeDuplicates(ids, token, user = {}) {
             }
           }
           updateData.modifiedAt = new Date();
+          updateData.last_action_by = user?.email || user?.username || 'recruiter';
+          updateData.last_action_context = 'duplicate_merge';
           updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
           updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
           updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
@@ -626,6 +660,8 @@ export async function mergeDuplicates(ids, token, user = {}) {
           }
           insertData.createdAt = tempCandidate.createdAt || new Date();
           insertData.modifiedAt = new Date();
+          insertData.last_action_by = user?.email || user?.username || 'recruiter';
+          insertData.last_action_context = 'duplicate_merge';
           insertData.TotalExperienceYearsNumeric = parseExperienceNumeric(insertData.TotalExperienceYears);
           insertData.ExpectedCTCNumeric = parseExpectedCTCNumeric(insertData.ExpectedCTC_LPA);
           insertData.NoticePeriodDays = parseNoticePeriodDays(insertData.NoticePeriod);
@@ -1009,11 +1045,13 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
     let successCount = 0;
     let duplicateCount = 0;
     let failedCount = 0;
+    let rejectedCount = 0; // resumes rejected for no valid email/phone — NOT processing failures
     const batchErrors = []; // accumulates per-file errors across the whole batch for the error alert
 
     for (const file of files) {
       const rowErrors = [];
       const rowDuplicates = [];
+      const rowRejected = [];
       // Per-file job-tracking state (last candidate item wins for multi-row files).
       const jobInfo = {
         candidate_name: null,
@@ -1087,7 +1125,10 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
         for (const item of candidateItems) {
           let parsed = null;
           try {
-            parsed = await parseResumeWithOpenRouter(item.text, item.filename, attrEmail || email, attrName || fullName);
+            // Pass ONLY a real vendor attribution (null for HR). Never feed the uploader's
+            // own email/name — the LLM would otherwise leak it into EmailID/unique_key and
+            // a candidate with no email would inherit the recruiter's address.
+            parsed = await parseResumeWithOpenRouter(item.text, item.filename, attrEmail, attrName);
             logger.info(`Successfully parsed candidate using OpenRouter: ${item.filename}`);
           } catch (err) {
             logger.error(`Gemini parsing failed for ${item.filename}: ${err.message}`);
@@ -1162,28 +1203,37 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
           const missingDataJson = JSON.stringify(missingFields);
           const statusActive = Object.keys(missingFields).length > 0 ? 'INACTIVE' : 'ACTIVE';
 
-          // 5) Check if candidate email already exists in main database (by Email or ContactNumber arrays)
-          const emailToSearch = parsed.EmailID || parsed.unique_key;
+          // 5) Build dedupe keys from validated identifiers (drops non-email junk that the
+          //    parser may have echoed into unique_key, the uploader's/vendor's own email,
+          //    and the placeholder phone default).
+          // Then VERIFY each identifier actually appears in the resume text — the parser
+          // sometimes fabricates a plausible email from the name (e.g. firstname.lastname@example.com)
+          // or returns the placeholder phone; those won't be present in the source text.
+          const resumeTextLower = fullText.toLowerCase();
+          const resumeDigits = fullText.replace(/\D/g, '');
+          const cleanEmails = sanitizeMatchEmails(parsed.EmailID || parsed.unique_key, [email, attrEmail])
+            .filter((e) => resumeTextLower.includes(e));
+          const cleanContactNumbers = sanitizeMatchContacts(parsed.ContactNumber)
+            .filter((n) => {
+              const digits = n.replace(/\D/g, '');
+              return digits.length > 0 && resumeDigits.includes(digits);
+            });
 
-          if (!emailToSearch || emailToSearch === '' || emailToSearch.toLowerCase() === 'null') {
-            logger.warn(`Candidate EmailID is missing for ${item.filename}. Alerting HR...`);
+          // Reject rule: a resume with no valid email AND no phone cannot be identified
+          // or deduped — reject it as "Rejected by System" rather than guessing a match.
+          if (cleanEmails.length === 0 && cleanContactNumbers.length === 0) {
+            logger.warn(`Candidate has no valid email or phone for ${item.filename}. Rejecting...`);
             sendEmailIdNullAlert(parsed.Name || item.filename, email).catch(mailErr => {
               logger.error(`Failed to send EmailID NULL alert: ${mailErr.message}`);
             });
-            rowErrors.push(`${item.filename}: Missing EmailID`);
-            failedCount++;
+            rowRejected.push(`${item.filename}: No valid email or phone`);
+            rejectedCount++;
             continue;
           }
 
-          const cleanContactNumbers = (parsed.ContactNumber || '')
-            .split(',')
-            .map(num => num.replace(/\s+/g, ''))
-            .filter(num => num.length > 0);
-
-          const cleanEmails = (emailToSearch || '')
-            .split(',')
-            .map(email => email.trim().toLowerCase())
-            .filter(email => email.length > 0);
+          // EmailID stored on the candidate uses only the validated emails (empty for a
+          // phone-only candidate, which the missing-data flow then follows up on).
+          const emailToSearch = cleanEmails.join(', ');
 
           let existingCandidate = null;
           if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
@@ -1248,6 +1298,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                   ...(jobsModelReady() ? { source, reviewStatus: 'pending_review' } : {}),
                   VendorEmail: isVendorSource ? attrEmail : null,
                   vendorName: isVendorSource ? attrName : null,
+                  last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
+                  last_action_context: source,
                   statusActive: statusActive,
                   missingData: missingDataJson,
                   resume_full_text: fullText,
@@ -1269,9 +1321,39 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               // Notify recruiter/HR by email; the in-app socket notification fires via
               // the job's action_required transition at the per-file aggregate below.
               const serialTemp = { ...tempCandidate, id: Number(tempCandidate.id) };
-              sendDuplicateAlertEmail(serialTemp, email).catch(mailErr => {
-                logger.error(`Failed to send duplicate alert email: ${mailErr.message}`);
-              });
+              const onMailErr = (label) => (mailErr) => {
+                logger.error(`Failed to send ${label} email: ${mailErr.message}`);
+              };
+
+              if (isVendorSource) {
+                // Vendor duplicate: pick the alert by comparing the incoming vendor to
+                // the existing candidate's current vendor (VENDOR_PROCESS.md §6).
+                const incomingVendor = (attrEmail || '').trim().toLowerCase();
+                const existingVendor = (existingCandidate.VendorEmail || '').trim().toLowerCase();
+                const vendorPayload = {
+                  candidateName: parsed.Name || 'Candidate',
+                  candidateEmail: emailToSearch,
+                  vendorEmail: attrEmail,
+                  vendorName: attrName,
+                };
+
+                if (!existingVendor) {
+                  // Existing candidate has no vendor → internal HR alert.
+                  sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
+                } else if (existingVendor === incomingVendor) {
+                  // Same vendor re-submitted the candidate.
+                  sendSameVendorDuplicateAlert(vendorPayload).catch(onMailErr('same vendor duplicate'));
+                } else {
+                  // A different vendor submitted an already-owned candidate.
+                  sendDifferentVendorDuplicateAlert({
+                    ...vendorPayload,
+                    existingVendorEmail: existingCandidate.VendorEmail,
+                  }).catch(onMailErr('different vendor duplicate'));
+                }
+              } else {
+                // hr_manual_upload duplicate → generic internal HR alert.
+                sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
+              }
             } else {
               // Outlook Trigger or other automated email ingest: directly update the existing candidate in public.rpa_cv
               logger.info(`Duplicate resume found from Outlook/other source. Directly updating candidate ID ${existingCandidate.id}`);
@@ -1426,7 +1508,9 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
 
       // Update file log to final aggregate status
       let finalStatus = 'success';
-      if (rowErrors.length > 0) {
+      if (rowRejected.length > 0) {
+        finalStatus = 'rejected';
+      } else if (rowErrors.length > 0) {
         finalStatus = 'failed';
       } else if (rowDuplicates.length > 0) {
         finalStatus = 'duplicate';
@@ -1438,8 +1522,10 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
       }
 
       // Map the per-file outcome to a persistent job status + emit live update.
+      // Rejected (no valid email/phone) is distinct from a processing Failure.
       let jobStatus;
-      if (rowErrors.length > 0) jobStatus = JOB_STATUS.FAILED;
+      if (rowRejected.length > 0) jobStatus = JOB_STATUS.REJECTED_SYSTEM;
+      else if (rowErrors.length > 0) jobStatus = JOB_STATUS.FAILED;
       else if (rowDuplicates.length > 0) jobStatus = JOB_STATUS.DUPLICATE_PENDING_REVIEW;
       else if (jobInfo.missingInfo) jobStatus = JOB_STATUS.MISSING_INFORMATION;
       else jobStatus = JOB_STATUS.COMPLETED;
@@ -1452,7 +1538,9 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
         file_url: jobInfo.file_url || null,
         is_duplicate: rowDuplicates.length > 0,
         action_required: jobStatus === JOB_STATUS.DUPLICATE_PENDING_REVIEW,
-        error_message: rowErrors.length > 0 ? rowErrors.join(' | ') : null,
+        error_message: rowRejected.length > 0
+          ? rowRejected.join(' | ')
+          : (rowErrors.length > 0 ? rowErrors.join(' | ') : null),
       }).catch((e) => logger.warn(`Failed to update upload job status: ${e.message}`));
 
       try {
@@ -1479,7 +1567,9 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             const fileItem = details.files.find(f => f.name === file.originalname);
             if (fileItem) {
               fileItem.status = finalStatus;
-              if (rowErrors.length > 0) {
+              if (rowRejected.length > 0) {
+                fileItem.error = rowRejected.join(' | ');
+              } else if (rowErrors.length > 0) {
                 fileItem.error = rowErrors.join(' | ');
               } else if (rowDuplicates.length > 0) {
                 fileItem.error = rowDuplicates.join(' | ');
@@ -1510,9 +1600,11 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
       }
     }
 
-    logger.info(`Completed background resume parsing for batch: ${executionId}. Success: ${successCount}, Duplicates: ${duplicateCount}, Failed: ${failedCount}`);
+    logger.info(`Completed background resume parsing for batch: ${executionId}. Success: ${successCount}, Duplicates: ${duplicateCount}, Failed: ${failedCount}, Rejected: ${rejectedCount}`);
 
-    // Send a single error-alert email if any files failed (mirrors n8n "Error Alert — Resume Processing")
+    // Send a single error-alert email only for genuine processing failures — NOT for
+    // resumes rejected for missing email/phone (those are an expected outcome, alerted
+    // per-file via sendEmailIdNullAlert).
     if (failedCount > 0) {
       sendResumeErrorAlert({
         executionId,

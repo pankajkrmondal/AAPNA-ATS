@@ -323,6 +323,182 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.09);
 }
 
+/* ----- Resume upload pages (HR Manual Upload + Vendor Upload) ----- */
+/* Elegant dropzone: lifts + tints on hover, icon gives a subtle spring. */
+.upload-page .ant-upload-drag {
+  transition: border-color 0.3s var(--ease-out-quint),
+    background 0.3s var(--ease-out-quint),
+    transform 0.3s var(--ease-out-quint),
+    box-shadow 0.3s var(--ease-out-quint);
+}
+.upload-page .ant-upload-drag:hover {
+  border-color: #7a922e !important;
+  background: #eef3da !important;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(122, 146, 46, 0.14);
+}
+.upload-page .upload-inbox-icon {
+  transition: transform 0.35s var(--ease-spring);
+  will-change: transform;
+}
+.upload-page .ant-upload-drag:hover .upload-inbox-icon {
+  transform: translateY(-3px) scale(1.08);
+}
+
+/* Stat tiles: fade-in-up on mount + gentle hover lift. */
+.stat-tile {
+  animation: fadeInUp 0.5s var(--ease-out-quint) both;
+  transition: transform 0.3s var(--ease-out-quint), box-shadow 0.3s var(--ease-out-quint);
+  will-change: transform;
+}
+.stat-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+/* Subtle row hover on the upload-status tables. */
+.upload-page .ant-table-tbody > tr > td {
+  transition: background 0.2s ease;
+}
+
+/* ===== Premium upload experience (HR Manual Upload + Vendor Upload) ===== */
+
+/* Drag-active "release to upload" state (AntD adds .ant-upload-drag-hover on drag-over). */
+.upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover {
+  border-color: #7a922e !important;
+  background: linear-gradient(135deg, #eef3da, #e3ecc8) !important;
+  transform: scale(1.01);
+  box-shadow: 0 14px 34px rgba(122, 146, 46, 0.22);
+}
+.upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover .upload-inbox-icon {
+  transform: translateY(-4px) scale(1.16);
+  color: #5e7325;
+}
+
+/* Real-time indicator — understated muted pill with a soft pulsing halo. */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #6b7a52;
+  background: rgba(122, 146, 46, 0.07);
+  border: 1px solid rgba(122, 146, 46, 0.18);
+}
+.live-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7a922e;
+  animation: liveHalo 2.6s ease-out infinite;
+}
+@keyframes liveHalo {
+  0%   { box-shadow: 0 0 0 0 rgba(122, 146, 46, 0.30); }
+  70%  { box-shadow: 0 0 0 6px rgba(122, 146, 46, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(122, 146, 46, 0); }
+}
+
+/* Row entrance + green change-flash on live (socket) updates. */
+.upload-page .ant-table-tbody > tr.row-flash > td { animation: rowFlash 1.6s var(--ease-out-quint); }
+@keyframes rowFlash {
+  0%   { background: rgba(122, 146, 46, 0.20); }
+  100% { background: transparent; }
+}
+
+/* Subtle shimmer on in-flight (Processing / Queued) rows. */
+.upload-page .ant-table-tbody > tr.is-processing > td:first-child {
+  position: relative;
+  overflow: hidden;
+}
+.upload-page .ant-table-tbody > tr.is-processing > td:first-child::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(122, 146, 46, 0.14), transparent);
+  transform: translateX(-100%);
+  animation: rowShimmer 1.6s ease-in-out infinite;
+}
+@keyframes rowShimmer { 100% { transform: translateX(100%); } }
+
+/* Soft pulse glow on action-required tags. */
+.tag-attention { animation: tagAttention 2.2s ease-in-out infinite; border-radius: 6px; }
+@keyframes tagAttention {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0); }
+  50%      { box-shadow: 0 0 0 3px rgba(192, 57, 43, 0.16); }
+}
+
+/* Sheen sweep on primary buttons (hover). */
+.btn-sheen { position: relative; overflow: hidden; }
+.btn-sheen::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+}
+.btn-sheen:hover::after { animation: btnSheen 0.8s ease; }
+@keyframes btnSheen { 100% { left: 140%; } }
+
+/* ----- Quiet success confirmation (UploadCelebration) — a single refined check. ----- */
+.upload-celebration {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 50;
+}
+.celebration-check {
+  position: relative;
+  margin-top: 4px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  color: #7a922e;
+  font-size: 22px;
+  border: 1.5px solid rgba(122, 146, 46, 0.55);
+  box-shadow: 0 8px 22px rgba(122, 146, 46, 0.18);
+  animation: checkIn 0.4s var(--ease-out-quint) both;
+}
+@keyframes checkIn {
+  0%   { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.check-ripple {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(122, 146, 46, 0.4);
+  animation: checkRipple 0.9s ease-out forwards;
+}
+@keyframes checkRipple {
+  0%   { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* Respect reduced-motion preferences — keep meaning, drop the flourish. */
+@media (prefers-reduced-motion: reduce) {
+  .live-badge__dot,
+  .upload-page .ant-table-tbody > tr.is-processing > td:first-child::after,
+  .tag-attention,
+  .check-ripple { animation: none !important; }
+  .upload-page .ant-table-tbody > tr.row-flash > td { animation-duration: 0.01s; }
+}
+
 /* ----- KPI / Stat Cards (elegant, animated) ----- */
 .kpi-card {
   position: relative;

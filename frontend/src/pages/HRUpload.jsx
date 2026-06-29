@@ -1,9 +1,11 @@
 /**
- * HRUpload.jsx — HR Manual Upload page.
- * Faithfully replicates the n8n workflow HR Upload UI with three sections:
- *   1. Upload Card (file drag-and-drop)
- *   2. Batch Summary Dashboard (polling + metrics)
- *   3. Pending Duplicates Review Queue (table + search + bulk actions)
+ * HRUpload.jsx — HR Manual Upload page (vendor-style).
+ *
+ *  • Compact upload card (drag-and-drop).
+ *  • A single persistent "Upload Status" dashboard: loads existing upload jobs from the DB
+ *    on mount (survives navigation/refresh) and updates live via Socket.io. It is the one
+ *    place for everything — track processing status, and review duplicates inline
+ *    (Review → full details → Merge / Reject) and reprocess failures.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -12,84 +14,176 @@ import {
   Button,
   Typography,
   Table,
-  Input,
   Space,
   Tag,
   Tooltip,
   Modal,
-  Spin,
   Alert,
   Descriptions,
   Divider,
-  Checkbox,
   message,
-  Statistic,
   Row,
   Col,
-  Badge,
-  Empty,
-  notification,
+  Select,
+  Progress,
 } from 'antd';
 import {
   UploadOutlined,
   InboxOutlined,
-  SearchOutlined,
   EyeOutlined,
   FileTextOutlined,
   MergeCellsOutlined,
-  DeleteOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
   WarningOutlined,
   ExclamationCircleOutlined,
+  ReloadOutlined,
+  RedoOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
-import useAuth from '../hooks/useAuth';
 import hrUploadService from '../services/hrUploadService';
+import { getSocket } from '../services/socket';
+import KpiCard from '../components/common/KpiCard';
+import UploadCelebration from '../components/common/UploadCelebration';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 const { Dragger } = Upload;
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 10; // upload-status jobs table
+
+/** Map a stored status (underscored) to a user-friendly label + AntD tag colour/icon. */
+const STATUS_META = {
+  Uploaded: { label: 'Received', color: 'default', hint: 'Received and queued — parsing hasn’t started yet.' },
+  Queued: { label: 'Waiting in Queue', color: 'blue', icon: <SyncOutlined />, hint: 'Waiting for the background worker to pick it up.' },
+  Processing: { label: 'Processing', color: 'processing', icon: <SyncOutlined spin />, hint: 'Extracting text and parsing the resume with AI.' },
+  Duplicate_Pending_Review: { label: 'Pending Recruiter Review', color: 'warning', icon: <WarningOutlined />, hint: 'Candidate already exists — a recruiter must merge or reject it.' },
+  Missing_Information: { label: 'Awaiting Candidate Details', color: 'orange', icon: <ExclamationCircleOutlined />, hint: 'Saved, but waiting on mandatory candidate details.' },
+  Completed: { label: 'Saved to Database', color: 'success', icon: <CheckCircleOutlined />, hint: 'Saved to the candidate database.' },
+  Failed: { label: 'Processing Failed', color: 'error', icon: <CloseCircleOutlined />, hint: 'Processing failed — you can reprocess it.' },
+  Rejected_By_System: { label: 'Rejected by System', color: 'volcano', icon: <CloseCircleOutlined />, hint: 'No valid email or phone on the resume — rejected; re-upload with at least one.' },
+  Cancelled: { label: 'Rejected by Recruiter', color: 'default', icon: <CloseCircleOutlined />, hint: 'A recruiter rejected this duplicate.' },
+};
+
+const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
+  value: s,
+  label: STATUS_META[s].label,
+}));
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    return new Date(dateStr).toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
+}
 
 export default function HRUpload() {
-  const { user } = useAuth();
-
-  // ── Upload State ──
+  // ── Upload state ──
   const [fileList, setFileList] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState(null); // { type: 'success'|'error', text: '' }
+  const [uploadMsg, setUploadMsg] = useState(null);
 
-  // ── Batch Summary State ──
-  const [batchSummary, setBatchSummary] = useState(null);
-  const [batchFiles, setBatchFiles] = useState([]);
-  const [polling, setPolling] = useState(false);
-  const pollRef = useRef(null);
-  const pollCountRef = useRef(0);
+  // ── Jobs dashboard state ──
+  const [jobs, setJobs] = useState([]);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [actionCount, setActionCount] = useState(0);
+  const [processingCount, setProcessingCount] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState(null);
+  const [onlyActionRequired, setOnlyActionRequired] = useState(false);
+  const reloadRef = useRef(null);
 
-  // ── Duplicates Queue State ──
-  const [duplicates, setDuplicates] = useState([]);
-  const [dupTotal, setDupTotal] = useState(0);
-  const [dupPage, setDupPage] = useState(1);
-  const [dupLoading, setDupLoading] = useState(false);
-  const [filterName, setFilterName] = useState('');
-  const [filterEmail, setFilterEmail] = useState('');
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const debounceRef = useRef(null);
+  // ── Premium UX state (count-up KPIs, live flash, upload progress, celebration) ──
+  const [flashIds, setFlashIds] = useState(() => new Set());
+  const [uploadPct, setUploadPct] = useState(0);
+  const [celebrate, setCelebrate] = useState(false);
+  const prevJobsRef = useRef(null);
+  const flashTimerRef = useRef(null);
 
-  // ── View Modal State ──
+  // ── Compact review modal ──
+  const [reviewJob, setReviewJob] = useState(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+
+  // ── Full-details modal (opened from the Review modal) ──
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [viewCandidate, setViewCandidate] = useState(null);
+  // Holds the job while its full details are shown, so Merge/Cancel stay available there.
+  const [detailReviewJob, setDetailReviewJob] = useState(null);
 
-  // ── Bulk Action State ──
-  const [merging, setMerging] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  /* ═══════ JOBS LOADER ═══════ */
+  const loadJobs = useCallback(async (page = jobsPage) => {
+    setJobsLoading(true);
+    try {
+      const res = await hrUploadService.getJobs({
+        page,
+        limit: PAGE_SIZE,
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(onlyActionRequired ? { actionRequired: 'true' } : {}),
+      });
+      const payload = res.data || {};
+      const list = payload.data || [];
 
-  /* ═══════ INITIAL LOAD ═══════ */
-  useEffect(() => {
-    loadDuplicates(1);
+      // Live flash: highlight rows whose status changed since the last load (not new
+      // rows / page swaps — only genuine transitions, so the table doesn't flash wholesale).
+      const prev = prevJobsRef.current;
+      if (prev) {
+        const changed = new Set();
+        list.forEach((j) => {
+          const before = prev.get(String(j.id));
+          if (before !== undefined && before !== j.updated_at) changed.add(String(j.id));
+        });
+        if (changed.size) {
+          setFlashIds(changed);
+          if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+          flashTimerRef.current = setTimeout(() => setFlashIds(new Set()), 1700);
+        }
+      }
+      prevJobsRef.current = new Map(list.map((j) => [String(j.id), j.updated_at]));
+
+      setJobs(list);
+      setJobsTotal(payload.pagination?.total ?? list.length);
+      setActionCount(payload.stats?.actionRequired ?? 0);
+      setProcessingCount(payload.stats?.processing ?? 0);
+      setCompletedCount(payload.stats?.completed ?? 0);
+    } catch (err) {
+      console.error('Failed to load upload jobs:', err);
+      setJobs([]); setJobsTotal(0);
+    } finally {
+      setJobsLoading(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [statusFilter, onlyActionRequired, jobsPage]);
+
+  // Reload whenever filters change (reset to page 1).
+  useEffect(() => {
+    setJobsPage(1);
+    loadJobs(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, onlyActionRequired]);
+
+  /* ═══════ LIVE SOCKET UPDATES ═══════ */
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+    const scheduleReload = () => {
+      if (reloadRef.current) clearTimeout(reloadRef.current);
+      reloadRef.current = setTimeout(() => loadJobs(jobsPage), 600);
+    };
+    socket.on('upload:job', scheduleReload);
+    socket.on('review:new', scheduleReload);
+    return () => {
+      socket.off('upload:job', scheduleReload);
+      socket.off('review:new', scheduleReload);
+      if (reloadRef.current) clearTimeout(reloadRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadJobs, jobsPage]);
 
   /* ═══════ UPLOAD HANDLER ═══════ */
   const handleUpload = async () => {
@@ -97,262 +191,135 @@ export default function HRUpload() {
       setUploadMsg({ type: 'error', text: 'Please select at least one file.' });
       return;
     }
-
-    // Validate file types
     const allowedExts = ['zip', 'pdf', 'docx', 'doc', 'xlsx', 'xls'];
-    const badFiles = fileList.filter((f) => {
-      const ext = f.name.split('.').pop().toLowerCase();
-      return !allowedExts.includes(ext);
-    });
+    const badFiles = fileList.filter((f) => !allowedExts.includes(f.name.split('.').pop().toLowerCase()));
     if (badFiles.length > 0) {
-      setUploadMsg({
-        type: 'error',
-        text: `❌ Invalid file type(s): ${badFiles.map((f) => f.name).join(', ')}`,
-      });
+      setUploadMsg({ type: 'error', text: `❌ Invalid file type(s): ${badFiles.map((f) => f.name).join(', ')}` });
       return;
     }
 
     setUploading(true);
     setUploadMsg(null);
+    setUploadPct(0);
 
     const formData = new FormData();
-    fileList.forEach((file) => {
-      formData.append('resumes', file.originFileObj || file);
-    });
+    fileList.forEach((file) => formData.append('resumes', file.originFileObj || file));
 
     try {
-      const res = await hrUploadService.uploadResumes(formData);
-      const data = res.data?.data || res.data;
-
-      setUploadMsg({
-        type: 'success',
-        text: '✅ Resumes uploaded successfully. Parsing started...',
+      await hrUploadService.uploadResumes(formData, (e) => {
+        if (e.total) setUploadPct(Math.round((e.loaded / e.total) * 100));
       });
+      setUploadMsg({ type: 'success', text: '✅ Uploaded. Track processing status in the dashboard below.' });
       setFileList([]);
-
-      if (data?.executionId) {
-        startPolling(data.executionId);
-      } else {
-        // Reload duplicates after a delay
-        setTimeout(() => loadDuplicates(1), 3500);
-      }
+      setStatusFilter(null);
+      setOnlyActionRequired(false);
+      setCelebrate(true);
+      setTimeout(() => setCelebrate(false), 1300);
+      setTimeout(() => loadJobs(1), 800);
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Upload failed.';
-      setUploadMsg({ type: 'error', text: `❌ ${errMsg}` });
+      setUploadMsg({ type: 'error', text: `❌ ${err.response?.data?.message || err.message || 'Upload failed.'}` });
     } finally {
       setUploading(false);
+      setUploadPct(0);
     }
   };
 
-  /* ═══════ BATCH SUMMARY POLLING ═══════ */
-  const startPolling = useCallback((executionId) => {
-    setPolling(true);
-    pollCountRef.current = 0;
-    setBatchSummary({ execution_id: executionId, status: 'processing' });
-    setBatchFiles([]);
-
-    const poll = async () => {
-      pollCountRef.current += 1;
-      if (pollCountRef.current > 24) {
-        // Max 60s polling
-        clearInterval(pollRef.current);
-        setPolling(false);
-        loadDuplicates(1);
-        return;
-      }
-
-      try {
-        const res = await hrUploadService.getSummary(executionId);
-        const summary = res.data?.data || res.data;
-
-        if (summary) {
-          setBatchSummary(summary);
-          setBatchFiles(summary.files || summary.details?.files || []);
-
-          if (summary.status === 'completed' || summary.success_count + summary.failed_count + summary.duplicate_count >= summary.total_count) {
-            clearInterval(pollRef.current);
-            setPolling(false);
-            loadDuplicates(1);
-            if (summary.failed_count > 0) {
-              const filesList = summary.files || [];
-              const failedFiles = filesList.filter(f => f.status === 'failed' || f.status === 'error');
-              const failedListText = failedFiles.map(f => `${f.name}: ${f.detail || 'Unknown error'}`).join('\n');
-              notification.error({
-                message: 'Resume Parsing Failed',
-                description: (
-                  <div style={{ whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto' }}>
-                    {failedListText || `${summary.failed_count} resume(s) failed to parse.`}
-                  </div>
-                ),
-                duration: 0,
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Polling error:', err);
-      }
-    };
-
-    // Poll every 2.5 seconds
-    pollRef.current = setInterval(poll, 2500);
-    poll(); // Run immediately
-
-    return () => clearInterval(pollRef.current);
-  }, []);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  /* ═══════ DUPLICATES LOADER ═══════ */
-  const loadDuplicates = async (page = 1) => {
-    setDupLoading(true);
-    setDupPage(page);
-    setSelectedRowKeys([]);
-
+  /* ═══════ REVIEW / REPROCESS ═══════ */
+  // Resolve a staged duplicate (merge or cancel) from either the compact Review modal or
+  // the full-details modal; closes both and refreshes on success.
+  const resolveDuplicate = async (action, job) => {
+    if (!job?.cv_tmp_id) return;
+    setReviewBusy(true);
     try {
-      const res = await hrUploadService.searchDuplicates({
-        filterName: filterName.trim(),
-        filterEmail: filterEmail.trim(),
-        page,
-        perPage: PAGE_SIZE,
-      });
-
-      const payload = res.data?.data || res.data;
-      const rows = payload?.data || payload?.candidates || [];
-      const total = payload?.pagination?.total || payload?.total || rows.length;
-
-      setDuplicates(rows);
-      setDupTotal(total);
+      if (action === 'merge') {
+        await hrUploadService.mergeDuplicates([job.cv_tmp_id]);
+        message.success('Merged into the main candidate database.');
+      } else {
+        await hrUploadService.deleteDuplicates([job.cv_tmp_id]);
+        message.success('Duplicate cancelled/rejected.');
+      }
+      setReviewJob(null);
+      setDetailReviewJob(null);
+      setViewModalOpen(false);
+      setViewCandidate(null);
+      loadJobs(jobsPage);
     } catch (err) {
-      console.error('Failed to load duplicates:', err);
-      setDuplicates([]);
-      setDupTotal(0);
+      const verb = action === 'merge' ? 'Merge' : 'Cancel';
+      message.error(err.response?.data?.message || err.message || `${verb} failed.`);
     } finally {
-      setDupLoading(false);
+      setReviewBusy(false);
     }
   };
 
-  /* ═══════ DEBOUNCED SEARCH ═══════ */
-  const handleFilterChange = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      loadDuplicates(1);
-    }, 500);
-  }, [filterName, filterEmail]);
-
-  useEffect(() => {
-    handleFilterChange();
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterName, filterEmail]);
-
-  /* ═══════ VIEW CANDIDATE MODAL ═══════ */
-  const openViewModal = (record) => {
-    setViewCandidate(record);
-    setViewModalOpen(true);
+  const doReprocess = (record) => {
+    Modal.confirm({
+      title: 'Reprocess this resume?',
+      icon: <ExclamationCircleOutlined />,
+      content: `Re-run parsing for "${record.file_name}". Needs the original file still on the server.`,
+      okText: 'Reprocess',
+      async onOk() {
+        try {
+          await hrUploadService.reprocessJob(record.id);
+          message.success('Reprocessing started.');
+          loadJobs(jobsPage);
+        } catch (err) {
+          message.error(err.response?.data?.message || err.message || 'Reprocess failed.');
+        }
+      },
+    });
   };
 
-  const closeViewModal = () => {
-    setViewModalOpen(false);
-    setViewCandidate(null);
-  };
-
-  /* ═══════ CV/RESUME DOWNLOAD ═══════ */
-  const handleOpenCV = (record) => {
-    const url = record.cvFileUrl || record.CvFileUrl || record.cvfileurl || '';
-    if (!url || url === 'null' || url === 'undefined' || url.trim() === '') {
-      Modal.warning({
-        title: '⚠️ Alert',
-        content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
-      });
+  const openCV = (url) => {
+    if (!url || url === 'null' || String(url).trim() === '') {
+      Modal.warning({ title: '⚠️ Alert', content: 'Resume file is not available for this job.' });
       return;
     }
     window.open(url, '_blank');
   };
 
-  /* ═══════ BULK MERGE ═══════ */
-  const handleBulkMerge = () => {
-    if (selectedRowKeys.length === 0) return;
-
-    Modal.confirm({
-      title: 'Confirm Merge',
-      icon: <ExclamationCircleOutlined />,
-      content: `Are you sure you want to merge ${selectedRowKeys.length} duplicate candidate(s) into the main database?`,
-      okText: 'Yes, Merge',
-      cancelText: 'No, Cancel',
-      okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
-      async onOk() {
-        setMerging(true);
-        try {
-          const res = await hrUploadService.mergeDuplicates(selectedRowKeys);
-          message.success(res.data?.message || 'Merged successfully.');
-          setSelectedRowKeys([]);
-          // Recalculate safe page
-          const newTotal = Math.max(0, dupTotal - selectedRowKeys.length);
-          const maxPage = Math.max(1, Math.ceil(newTotal / PAGE_SIZE));
-          const safePage = Math.min(dupPage, maxPage);
-          loadDuplicates(safePage);
-        } catch (err) {
-          message.error(err.response?.data?.message || 'Merge failed.');
-        } finally {
-          setMerging(false);
-        }
-      },
-    });
+  // From a job row, pull the full staging record so the full-details modal can open.
+  const openFullDetailsFromJob = async (job) => {
+    if (!job?.cv_tmp_id) {
+      message.info('Full details are only available for duplicates pending review.');
+      return;
+    }
+    try {
+      const res = await hrUploadService.searchDuplicates({
+        filterEmail: job.candidate_email || '',
+        page: 1,
+        perPage: 50,
+      });
+      const payload = res.data?.data || res.data;
+      const rows = payload?.data || payload?.candidates || [];
+      const match = rows.find((r) => Number(r.id) === Number(job.cv_tmp_id)) || rows[0];
+      if (match) {
+        // Swap the compact Review modal for the full-details one (never both at once),
+        // keeping the job so Merge/Cancel stay available from the full view.
+        setReviewJob(null);
+        setDetailReviewJob(job);
+        setViewCandidate(match);
+        setViewModalOpen(true);
+      } else {
+        message.info('Full details not found — the record may already have been resolved.');
+      }
+    } catch {
+      message.error('Could not load full details.');
+    }
   };
 
-  /* ═══════ BULK DELETE ═══════ */
-  const handleBulkDelete = () => {
-    if (selectedRowKeys.length === 0) return;
+  const closeViewModal = () => { setViewModalOpen(false); setViewCandidate(null); setDetailReviewJob(null); };
 
-    Modal.confirm({
-      title: 'Confirm Delete',
-      icon: <ExclamationCircleOutlined style={{ color: '#c0392b' }} />,
-      content: `Are you sure you want to delete ${selectedRowKeys.length} duplicate candidate(s)? This action cannot be undone.`,
-      okText: 'Yes, Delete',
-      cancelText: 'No, Cancel',
-      okButtonProps: { danger: true },
-      async onOk() {
-        setDeleting(true);
-        try {
-          const res = await hrUploadService.deleteDuplicates(selectedRowKeys);
-          message.success(res.data?.message || 'Deleted successfully.');
-          setSelectedRowKeys([]);
-          const newTotal = Math.max(0, dupTotal - selectedRowKeys.length);
-          const maxPage = Math.max(1, Math.ceil(newTotal / PAGE_SIZE));
-          const safePage = Math.min(dupPage, maxPage);
-          loadDuplicates(safePage);
-        } catch (err) {
-          message.error(err.response?.data?.message || 'Deletion failed.');
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
-  };
-
-  /* ═══════ PARSE HELPERS ═══════ */
+  /* ═══════ PARSE HELPERS (full-details modal) ═══════ */
   const parseJSON = (val) => {
     if (!val) return {};
     if (typeof val === 'object') return val;
     try { return JSON.parse(val); } catch { return {}; }
   };
-
   const parseCompany = (val) => {
     if (!val) return {};
     if (typeof val === 'string') {
       const trimmed = val.trim();
-      if (trimmed === '' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {
-        return {};
-      }
+      if (trimmed === '' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') return {};
       try {
         const parsed = JSON.parse(trimmed);
         if (!parsed) return {};
@@ -366,14 +333,11 @@ export default function HRUpload() {
       }
     }
     if (typeof val === 'object') {
-      if (Array.isArray(val)) {
-        return val.length > 0 ? (typeof val[0] === 'object' ? val[0] : { Name: String(val[0]) }) : {};
-      }
+      if (Array.isArray(val)) return val.length > 0 ? (typeof val[0] === 'object' ? val[0] : { Name: String(val[0]) }) : {};
       return val;
     }
     return {};
   };
-
   const parseEmploymentHistory = (val) => {
     if (!val) return [];
     const obj = parseJSON(val);
@@ -381,652 +345,275 @@ export default function HRUpload() {
     if (Array.isArray(obj)) return obj;
     return [];
   };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '—';
-    try {
-      return new Date(dateStr).toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '—';
-    }
-  };
-
   const displayVal = (v) => {
     if (v === null || v === undefined || v === '') return '—';
     if (Array.isArray(v)) return v.join(', ');
     return String(v);
   };
 
-  /* ═══════ TABLE COLUMNS ═══════ */
-  const dupColumns = [
+  /* ═══════ JOBS TABLE COLUMNS ═══════ */
+  const jobColumns = [
     {
-      title: '#',
-      key: 'index',
-      width: 50,
-      render: (_, __, idx) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#8a9270' }}>
-          {(dupPage - 1) * PAGE_SIZE + idx + 1}
-        </span>
-      ),
+      title: 'Candidate Name',
+      key: 'candidate_name',
+      render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
     },
     {
-      title: 'Name',
-      key: 'Name',
-      render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.Name || '—'}</Text>,
-    },
-    {
-      title: 'Email',
-      key: 'EmailID',
-      render: (_, r) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.EmailID || '—'}</span>
-      ),
-    },
-    {
-      title: 'Contact Number',
-      key: 'ContactNumber',
-      render: (_, r) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.ContactNumber || '—'}</span>
-      ),
-    },
-    {
-      title: 'Uploaded By HR',
-      key: 'uploadedByHRName',
-      render: (_, r) => r.uploadedByHRName || '—',
+      title: 'Uploaded By',
+      key: 'uploaded_by',
+      render: (_, r) => <span style={{ fontSize: 12 }}>{r.uploaded_by || '—'}</span>,
     },
     {
       title: 'Uploaded At',
-      key: 'uploadedAt',
-      render: (_, r) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{formatDate(r.uploadedAt)}</span>
-      ),
+      key: 'created_at',
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.created_at)}</span>,
+    },
+    {
+      title: 'Status',
+      key: 'status',
+      render: (_, r) => {
+        const meta = STATUS_META[r.status] || { label: r.status, color: 'default' };
+        return (
+          <Tooltip title={meta.hint}>
+            <Tag icon={meta.icon} color={meta.color} className={r.action_required ? 'tag-attention' : undefined} style={{ cursor: 'default' }}>{meta.label}</Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Duplicate',
+      key: 'is_duplicate',
+      align: 'center',
+      render: (_, r) => (r.is_duplicate ? <Tag color="warning">Yes</Tag> : <Tag color="default">No</Tag>),
+    },
+    {
+      title: 'Last Updated',
+      key: 'updated_at',
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.updated_at)}</span>,
     },
     {
       title: 'Action',
       key: 'action',
-      width: 120,
       align: 'center',
-      render: (_, record) => {
-        const url = record.cvFileUrl || record.CvFileUrl || record.cvfileurl || '';
-        const hasCV = !!(url && url !== 'null' && url !== 'undefined' && url.trim() !== '');
+      render: (_, r) => {
+        const canReview = r.action_required && r.cv_tmp_id;
         return (
           <Space size={6}>
-            <Tooltip title="View Info">
-              <Button
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={() => openViewModal(record)}
-                style={{
-                  borderRadius: 6,
-                  background: '#eef3da',
-                  color: '#7a922e',
-                  borderColor: '#b8cc6e',
-                }}
-              />
-            </Tooltip>
-            <Tooltip title={hasCV ? "View Resume" : "No Resume Available"}>
-              <Button
-                size="small"
-                onClick={() => handleOpenCV(record)}
-                disabled={!hasCV}
-                style={{
-                  borderRadius: 6,
-                  fontWeight: 600,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  background: 'transparent',
-                  color: hasCV ? '#7a922e' : 'rgba(0,0,0,0.25)',
-                  borderColor: hasCV ? '#7a922e' : 'rgba(0,0,0,0.15)',
-                }}
-              >
-                CV
+            {canReview && (
+              <Button size="small" type="primary" onClick={() => setReviewJob(r)}
+                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+                Review
               </Button>
-            </Tooltip>
+            )}
+            {r.status === 'Failed' && (
+              <Tooltip title="Reprocess (needs the original file on the server)">
+                <Button size="small" icon={<RedoOutlined />} onClick={() => doReprocess(r)} />
+              </Tooltip>
+            )}
+            {r.file_url && (
+              <Tooltip title="View Resume">
+                <Button size="small" icon={<FileTextOutlined />} onClick={() => openCV(r.file_url)} />
+              </Tooltip>
+            )}
           </Space>
         );
       },
     },
   ];
 
-  /* ═══════ BATCH SUMMARY FILE TABLE COLUMNS ═══════ */
-  const batchFileColumns = [
-    {
-      title: '#',
-      key: 'idx',
-      width: 50,
-      align: 'center',
-      render: (_, __, idx) => idx + 1,
-    },
-    {
-      title: 'Resume File Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (v) => v || '—',
-    },
-    {
-      title: 'Parsing Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => {
-        if (!status || status === 'pending') {
-          return <Tag icon={<SyncOutlined spin />} color="processing">Processing</Tag>;
-        }
-        if (status === 'success' || status === 'added') {
-          return <Tag icon={<CheckCircleOutlined />} color="success">✅ Added</Tag>;
-        }
-        if (status === 'duplicate') {
-          return <Tag icon={<WarningOutlined />} color="warning">🔀 Duplicate</Tag>;
-        }
-        if (status === 'failed' || status === 'error') {
-          return <Tag icon={<CloseCircleOutlined />} color="error">❌ Failed</Tag>;
-        }
-        return <Tag>{status}</Tag>;
-      },
-    },
-    {
-      title: 'Details / Action Taken',
-      dataIndex: 'detail',
-      key: 'detail',
-      render: (v) => v || '—',
-    },
-  ];
-
-  /* ═══════ ROW SELECTION CONFIG ═══════ */
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (keys) => setSelectedRowKeys(keys),
-    getCheckboxProps: (record) => ({
-      disabled: merging || deleting,
-    }),
-  };
-
   /* ═══════ RENDER ═══════ */
   return (
-    <div className="page-enter" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
+    <div className="page-enter upload-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 0 40px' }}>
       {/* Page Header */}
       <div style={{ marginBottom: 24 }}>
-        <Title level={3} style={{ margin: 0, fontWeight: 700 }}>
-          HR Manual Upload
-        </Title>
+        <Title level={3} style={{ margin: 0, fontWeight: 700 }}>HR Manual Upload</Title>
         <Text style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-          Upload resumes to the recruitment system
+          Upload resumes and track processing status in real time
         </Text>
       </div>
 
-      {/* ═══════ SECTION 1: UPLOAD CARD ═══════ */}
-      <Card
-        bordered={false}
-        style={{
-          background: '#ffffff',
-          border: '1px solid rgba(0,0,0,0.07)',
-          borderRadius: 12,
-          marginBottom: 24,
-          boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
-          overflow: 'hidden',
-        }}
-        styles={{ body: { padding: 0 } }}
-      >
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
-        <div style={{ padding: '28px 28px 32px' }}>
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'var(--text-secondary)',
-              display: 'block',
-              marginBottom: 16,
-            }}
-          >
-            Select Resumes (.zip, .pdf, .docx, .xlsx)
-          </Text>
-
+      {/* ═══════ UPLOAD CARD ═══════ */}
+      <Card className="animate-fade-in-up" bordered={false} style={{ borderRadius: 12, marginBottom: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.06)', borderTop: '4px solid #7a922e' }}
+        styles={{ body: { padding: 0 } }}>
+        <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
+          <UploadCelebration show={celebrate} />
+          {/* Compact dropzone — single row, doesn't dominate the page. */}
           <Dragger
             multiple
             fileList={fileList}
-            beforeUpload={() => false} // Prevent auto-upload
+            beforeUpload={() => false}
             onChange={({ fileList: newList }) => setFileList(newList)}
             accept=".zip,.pdf,.docx,.xlsx"
-            showUploadList={{ showPreviewIcon: false, showRemoveIcon: true }}
-            style={{
-              padding: '24px 20px',
-              background: '#f5f5f0',
-              border: '2px dashed rgba(0,0,0,0.13)',
-              borderRadius: 10,
-              marginBottom: 16,
-            }}
+            style={{ marginBottom: 14 }}
           >
-            <p className="ant-upload-drag-icon">
-              <InboxOutlined style={{ color: '#7a922e', fontSize: 40 }} />
-            </p>
-            <p className="ant-upload-text" style={{ fontWeight: 600, color: '#2b2b2b' }}>
-              Click or drag files to upload
-            </p>
-            <p className="ant-upload-hint" style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>
-              Supported formats: .pdf, .docx, .zip, .xlsx
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
+              <InboxOutlined className="upload-inbox-icon" style={{ color: '#7a922e', fontSize: 30 }} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#2b2b2b' }}>Click or drag files to upload</div>
+                <div style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip, .xlsx</div>
+              </div>
+            </div>
           </Dragger>
 
           <Button
-            type="primary"
-            size="large"
-            block
-            icon={<UploadOutlined />}
-            loading={uploading}
-            onClick={handleUpload}
-            disabled={fileList.length === 0}
-            style={{
-              height: 44,
-              fontWeight: 600,
-              fontSize: 14,
-              borderRadius: 10,
+            className="btn-sheen"
+            type="primary" size="large" block icon={<UploadOutlined />}
+            loading={uploading} onClick={handleUpload} disabled={fileList.length === 0}
+            style={{ height: 44, fontWeight: 600, borderRadius: 10,
               background: fileList.length === 0 ? '#8a9270' : '#7a922e',
-              borderColor: fileList.length === 0 ? '#8a9270' : '#7a922e',
-            }}
+              borderColor: fileList.length === 0 ? '#8a9270' : '#7a922e' }}
           >
             Upload Resumes
           </Button>
 
+          {uploading && uploadPct > 0 && (
+            <Progress percent={uploadPct} size="small" status="active"
+              strokeColor={{ from: '#7a922e', to: '#92a63c' }} style={{ marginTop: 12 }} />
+          )}
+
           {uploadMsg && (
-            <Alert
-              message={uploadMsg.text}
-              type={uploadMsg.type}
-              showIcon
-              style={{ marginTop: 14, borderRadius: 10 }}
-              closable
-              onClose={() => setUploadMsg(null)}
-            />
+            <Alert message={uploadMsg.text} type={uploadMsg.type} showIcon closable
+              onClose={() => setUploadMsg(null)} style={{ marginTop: 14, borderRadius: 10 }} />
           )}
         </div>
       </Card>
 
-      {/* ═══════ SECTION 2: BATCH SUMMARY DASHBOARD ═══════ */}
-      {batchSummary && (
-        <Card
-          bordered={false}
-          style={{
-            background: '#ffffff',
-            border: '1px solid rgba(0,0,0,0.07)',
-            borderRadius: 12,
-            marginBottom: 24,
-            boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
-            overflow: 'hidden',
-          }}
-          styles={{ body: { padding: 0 } }}
-        >
-          <div
-            style={{
-              height: 3,
-              background: 'linear-gradient(90deg, #7a922e, #4a7c59)',
-            }}
-          />
-          <div style={{ padding: '28px 28px 32px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 12,
-              }}
-            >
-              <Text strong style={{ fontSize: 16 }}>
-                📊 Latest Upload Summary Dashboard
-              </Text>
-              <Tag
-                style={{
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  borderRadius: 6,
-                }}
-              >
-                Batch: {batchSummary.execution_id?.slice(0, 8) || '—'}
-              </Tag>
-            </div>
-            <Text
-              style={{
-                display: 'block',
-                fontSize: 12,
-                color: 'var(--text-secondary)',
-                fontFamily: 'monospace',
-                marginBottom: 20,
-              }}
-            >
-              Real-time analysis and parsing metrics for the uploaded resumes.
+      {/* ═══════ PERSISTENT JOB DASHBOARD (single source for status + duplicate review) ═══════ */}
+      <Card className="animate-fade-in-up stagger-2" bordered={false} style={{ borderRadius: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+          <div>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+              <Text strong style={{ fontSize: 16 }}>Upload Status</Text>
+              <Tooltip title="This list updates automatically as resumes are processed.">
+                <span className="live-badge">
+                  <span className="live-badge__dot" /> Real-time
+                </span>
+              </Tooltip>
+            </span>
+            <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', display: 'block' }}>
+              Live processing status for every uploaded resume — review duplicates inline.
             </Text>
-
-            {/* Metrics Grid */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-              <Col xs={12} sm={6}>
-                <Card
-                  size="small"
-                  style={{
-                    textAlign: 'center',
-                    borderRadius: 10,
-                    background: '#f5f5f0',
-                    border: '1px solid rgba(0,0,0,0.07)',
-                  }}
-                  styles={{ body: { padding: 16 } }}
-                >
-                  <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Total Uploaded</span>}
-                    value={batchSummary.total_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24 }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card
-                  size="small"
-                  style={{
-                    textAlign: 'center',
-                    borderRadius: 10,
-                    background: 'rgba(74,124,89,0.1)',
-                    border: '1px solid #4a7c59',
-                  }}
-                  styles={{ body: { padding: 16 } }}
-                >
-                  <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#4a7c59' }}>Added Successfully</span>}
-                    value={batchSummary.success_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#4a7c59' }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card
-                  size="small"
-                  style={{
-                    textAlign: 'center',
-                    borderRadius: 10,
-                    background: 'rgba(122, 146, 46,0.1)',
-                    border: '1px solid #7a922e',
-                  }}
-                  styles={{ body: { padding: 16 } }}
-                >
-                  <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#7a922e' }}>Duplicates Found</span>}
-                    value={batchSummary.duplicate_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#7a922e' }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={6}>
-                <Card
-                  size="small"
-                  style={{
-                    textAlign: 'center',
-                    borderRadius: 10,
-                    background: 'rgba(192,57,43,0.08)',
-                    border: '1px solid #c0392b',
-                  }}
-                  styles={{ body: { padding: 16 } }}
-                >
-                  <Statistic
-                    title={<span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#c0392b' }}>Failed / Skipped</span>}
-                    value={batchSummary.failed_count || 0}
-                    valueStyle={{ fontWeight: 700, fontSize: 24, color: '#c0392b' }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-
-            {/* Processing spinner */}
-            {polling && (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <Spin size="large" />
-                <Paragraph
-                  style={{
-                    marginTop: 16,
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  Processing batch resumes in the background... Please wait.
-                </Paragraph>
-              </div>
-            )}
-
-            {/* File Breakdown Table */}
-            {!polling && batchFiles.length > 0 && (
-              <>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: '0.12em',
-                    textTransform: 'uppercase',
-                    color: 'var(--text-secondary)',
-                    display: 'block',
-                    marginBottom: 12,
-                  }}
-                >
-                  File Breakdown & Parsing Status
-                </Text>
-                <Table
-                  dataSource={batchFiles}
-                  columns={batchFileColumns}
-                  rowKey={(r, idx) => r.name || idx}
-                  pagination={false}
-                  size="small"
-                  bordered
-                />
-              </>
-            )}
           </div>
-        </Card>
-      )}
-
-      {/* ═══════ SECTION 3: PENDING DUPLICATES REVIEW QUEUE ═══════ */}
-      <Card
-        bordered={false}
-        style={{
-          background: '#ffffff',
-          border: '1px solid rgba(0,0,0,0.07)',
-          borderRadius: 12,
-          boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
-          overflow: 'hidden',
-        }}
-        styles={{ body: { padding: 0 } }}
-      >
-        <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #92a63c)' }} />
-        <div style={{ padding: '28px 28px 32px' }}>
-          {/* Queue Header */}
-          <Title level={4} style={{ margin: 0, fontWeight: 700, marginBottom: 4 }}>
-            Pending Duplicates Review Queue
-          </Title>
-          <Text
-            style={{
-              display: 'block',
-              fontSize: 12,
-              color: 'var(--text-secondary)',
-              fontFamily: 'monospace',
-              marginBottom: 24,
-            }}
-          >
-            Resumes uploaded by HR that already exist in the database. Review and merge their
-            details into the main candidate pool.
-          </Text>
-
-          {/* Search & Filter */}
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'var(--text-secondary)',
-              display: 'block',
-              marginBottom: 12,
-            }}
-          >
-            Search & Filter
-          </Text>
-          <Space size={10} style={{ marginBottom: 20, width: '100%' }} wrap>
-            <Input
-              placeholder="Candidate name..."
-              value={filterName}
-              onChange={(e) => setFilterName(e.target.value)}
-              style={{ minWidth: 200, borderRadius: 10 }}
-              allowClear
-              autoComplete="off"
-            />
-            <Input
-              placeholder="Email address..."
-              value={filterEmail}
-              onChange={(e) => setFilterEmail(e.target.value)}
-              style={{ minWidth: 200, borderRadius: 10 }}
-              allowClear
-              autoComplete="off"
-            />
-            <Button
-              icon={<SearchOutlined />}
-              onClick={() => loadDuplicates(1)}
-              style={{
-                borderRadius: 10,
-                background: '#7a922e',
-                color: '#fff',
-                borderColor: '#7a922e',
-                fontWeight: 600,
-              }}
-            >
-              Search
-            </Button>
-          </Space>
-
-          {/* Duplicate Candidate Queue Label */}
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'var(--text-secondary)',
-              display: 'block',
-              marginBottom: 12,
-            }}
-          >
-            Duplicate Candidate Queue
-          </Text>
-
-          {/* Table */}
-          <Table
-            dataSource={duplicates}
-            columns={dupColumns}
-            rowKey={(record) => Number(record.id)}
-            rowSelection={rowSelection}
-            loading={dupLoading}
-            pagination={{
-              current: dupPage,
-              pageSize: PAGE_SIZE,
-              total: dupTotal,
-              onChange: (page) => loadDuplicates(page),
-              showSizeChanger: false,
-              showTotal: (total, range) =>
-                `Showing ${range[0]}–${range[1]} of ${total} candidates`,
-              style: { paddingRight: 20 },
-            }}
-            size="middle"
-            locale={{
-              emptyText: (
-                <Empty
-                  description="No pending duplicate candidate resumes found."
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
-              ),
-            }}
-          />
-
-          {/* Bulk Actions */}
-          {selectedRowKeys.length > 0 && (
-            <div
-              style={{
-                position: 'fixed',
-                bottom: 24,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'rgba(26, 30, 16, 0.95)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid #7a922e',
-                boxShadow: '0 10px 40px rgba(0,0,0,0.35)',
-                borderRadius: 12,
-                padding: '12px 24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 20,
-                zIndex: 9500,
-                animation: 'slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2)',
-              }}
-            >
-              <style>{`
-                @keyframes slideUp {
-                  from { transform: translateX(-50%) translateY(120px); opacity: 0; }
-                  to { transform: translateX(-50%) translateY(0); opacity: 1; }
-                }
-              `}</style>
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: '#fff',
-                  fontFamily: 'monospace',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {selectedRowKeys.length} candidate(s) selected
-              </Text>
-              <Space size={8}>
-                <Button
-                  icon={<MergeCellsOutlined />}
-                  loading={merging}
-                  onClick={handleBulkMerge}
-                  style={{
-                    borderRadius: 8,
-                    fontWeight: 600,
-                    fontSize: 12,
-                    background: '#7a922e',
-                    color: '#fff',
-                    border: 'none',
-                  }}
-                >
-                  Merge Selected
-                </Button>
-                <Button
-                  icon={<DeleteOutlined />}
-                  loading={deleting}
-                  onClick={handleBulkDelete}
-                  danger
-                  style={{
-                    borderRadius: 8,
-                    fontWeight: 600,
-                    fontSize: 12,
-                  }}
-                >
-                  Delete Selected
-                </Button>
-              </Space>
-            </div>
-          )}
+          <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
         </div>
+
+        {/* Premium count-up KPI cards */}
+        <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
+          <Col xs={12} md={6}>
+            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={jobsTotal}
+              color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
+          </Col>
+          <Col xs={12} md={6}>
+            <KpiCard index={1} icon={<SyncOutlined />} label="Processing" value={processingCount}
+              color="#2f6f9f" tint="rgba(47,111,159,0.12)" accent="linear-gradient(90deg,#2f6f9f,#4f93c4)" />
+          </Col>
+          <Col xs={12} md={6}>
+            <KpiCard index={2} icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount}
+              color="#4a7c59" tint="rgba(74,124,89,0.12)" accent="linear-gradient(90deg,#4a7c59,#6aa67c)" />
+          </Col>
+          <Col xs={12} md={6}>
+            <KpiCard index={3} icon={<WarningOutlined />} label="Pending Review" value={actionCount}
+              color="#c0392b" tint="rgba(192,57,43,0.12)" accent="linear-gradient(90deg,#c0392b,#e0654f)" />
+          </Col>
+        </Row>
+
+        {/* Filters — use "Show Action Required" to focus on duplicates pending review. */}
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Select
+            allowClear placeholder="Filter by status" style={{ minWidth: 220 }}
+            value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={STATUS_FILTERS}
+          />
+          <Button
+            type={onlyActionRequired ? 'primary' : 'default'}
+            danger={onlyActionRequired}
+            onClick={() => setOnlyActionRequired((v) => !v)}
+          >
+            {onlyActionRequired ? 'Showing: Action Required' : 'Show Action Required'}
+          </Button>
+        </Space>
+
+        <Table
+          rowKey="id"
+          dataSource={jobs}
+          columns={jobColumns}
+          loading={jobsLoading}
+          size="small"
+          scroll={{ x: 900 }}
+          rowClassName={(r) => {
+            const cls = [];
+            if (['Processing', 'Queued', 'Uploaded'].includes(r.status)) cls.push('is-processing');
+            if (flashIds.has(String(r.id))) cls.push('row-flash');
+            return cls.join(' ');
+          }}
+          pagination={{
+            current: jobsPage,
+            pageSize: PAGE_SIZE,
+            total: jobsTotal,
+            onChange: (p) => { setJobsPage(p); loadJobs(p); },
+            showSizeChanger: false,
+            showTotal: (t) => `Total ${t} uploads`,
+          }}
+        />
       </Card>
 
-      {/* ═══════ VIEW CANDIDATE MODAL ═══════ */}
+      {/* ═══════ COMPACT REVIEW MODAL ═══════ */}
       <Modal
-        title="View Candidate"
+        title="Duplicate Review"
+        open={!!reviewJob}
+        onCancel={() => setReviewJob(null)}
+        width={620}
+        footer={(
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <Button icon={<EyeOutlined />} onClick={() => openFullDetailsFromJob(reviewJob)}>
+              View full details
+            </Button>
+            <Space size={8}>
+              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
+                Cancel / Reject
+              </Button>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}
+                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+                Merge into Database
+              </Button>
+            </Space>
+          </div>
+        )}
+      >
+        {reviewJob && (
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="Candidate">{reviewJob.candidate_name || '—'}</Descriptions.Item>
+            <Descriptions.Item label="Email">{reviewJob.candidate_email || '—'}</Descriptions.Item>
+            <Descriptions.Item label="File">{reviewJob.file_name}</Descriptions.Item>
+            <Descriptions.Item label="Uploaded By">{reviewJob.uploaded_by || '—'}</Descriptions.Item>
+          </Descriptions>
+        )}
+        <Alert
+          style={{ marginTop: 16 }} type="info" showIcon
+          message="Merge updates the existing candidate with new values (blanks retained). Cancel deletes the staging record and keeps the existing candidate unchanged."
+        />
+      </Modal>
+
+      {/* ═══════ FULL-DETAILS MODAL ═══════ */}
+      <Modal
+        title="Duplicate Review — Full Details"
         open={viewModalOpen}
         onCancel={closeViewModal}
-        footer={[
-          <Button key="close" onClick={closeViewModal}>
-            Close
-          </Button>,
-        ]}
+        footer={(
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <Button onClick={() => { closeViewModal(); if (detailReviewJob) setReviewJob(detailReviewJob); }}>
+              Back to Review
+            </Button>
+            <Space size={8}>
+              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
+                Cancel / Reject
+              </Button>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}
+                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+                Merge into Database
+              </Button>
+            </Space>
+          </div>
+        )}
         width={880}
         styles={{ body: { maxHeight: '72vh', overflowY: 'auto', padding: '24px 28px' } }}
       >
@@ -1038,7 +625,6 @@ export default function HRUpload() {
 
           return (
             <>
-              {/* Personal Information */}
               <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
                 Personal Information
               </Divider>
@@ -1063,9 +649,10 @@ export default function HRUpload() {
                 <Descriptions.Item label="Reason for Job Change" span={2}>{displayVal(c.ReasonForJobChange)}</Descriptions.Item>
                 <Descriptions.Item label="Willing to Take Online Test?">{displayVal(c.WillingToTakeOnlineTest)}</Descriptions.Item>
                 <Descriptions.Item label="Has Laptop for Initial Days?">{displayVal(c.HasLaptopForInitialDays)}</Descriptions.Item>
+                <Descriptions.Item label="Last Activity By">{displayVal(c.last_action_by)}</Descriptions.Item>
+                <Descriptions.Item label="Last Activity Context">{displayVal(c.last_action_context)}</Descriptions.Item>
               </Descriptions>
 
-              {/* Current Company */}
               <div style={{ marginTop: 12, padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)' }}>
                 <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a9270', display: 'block', marginBottom: 10 }}>
                   Current Company
@@ -1076,7 +663,6 @@ export default function HRUpload() {
                 </Descriptions>
               </div>
 
-              {/* Education */}
               <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
                 Education
               </Divider>
@@ -1092,7 +678,6 @@ export default function HRUpload() {
                 <Descriptions.Item label="LinkedIn Profile" span={2}>{displayVal(c.LinkedInProfile)}</Descriptions.Item>
               </Descriptions>
 
-              {/* Employment History */}
               <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
                 Employment History
               </Divider>
@@ -1100,16 +685,7 @@ export default function HRUpload() {
                 <Text style={{ fontSize: 13, color: '#8a9270' }}>No employment history recorded.</Text>
               ) : (
                 companies.map((co, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: 14,
-                      background: '#f5f5f0',
-                      borderRadius: 10,
-                      border: '1px solid rgba(0,0,0,0.07)',
-                      marginBottom: 10,
-                    }}
-                  >
+                  <div key={i} style={{ padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', marginBottom: 10 }}>
                     <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
                       <Descriptions.Item label="Company Name">{displayVal(co.CompanyName)}</Descriptions.Item>
                       <Descriptions.Item label="Start Date">{displayVal(co.StartDate)}</Descriptions.Item>
@@ -1119,27 +695,6 @@ export default function HRUpload() {
                 ))
               )}
 
-              {/* Assessment & Interview */}
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
-                Assessment & Interview
-              </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
-                <Descriptions.Item label="Heat">{displayVal(c.Heat)}</Descriptions.Item>
-                <Descriptions.Item label="HR Quick Comments" span={2}>{displayVal(c.HRQuickcomments)}</Descriptions.Item>
-                <Descriptions.Item label="IQ Score">{displayVal(c.IQScore)}</Descriptions.Item>
-                <Descriptions.Item label="Tech Score">{displayVal(c.TechScore)}</Descriptions.Item>
-                <Descriptions.Item label="Zeko Interview Score">{displayVal(c.ZekoInterviewScore)}</Descriptions.Item>
-                <Descriptions.Item label="Zeko Coding Score">{displayVal(c.ZekoCodingScore)}</Descriptions.Item>
-                <Descriptions.Item label="Zeko Comm. Score">{displayVal(c.ZekoCommunicationScore)}</Descriptions.Item>
-                <Descriptions.Item label="Final Status">{displayVal(c.FinalStatus)}</Descriptions.Item>
-                <Descriptions.Item label="Tech Round One" span={2}>{displayVal(c.TechRoundOne)}</Descriptions.Item>
-                <Descriptions.Item label="Tech Round Two" span={2}>{displayVal(c.TechRoundTwo)}</Descriptions.Item>
-                <Descriptions.Item label="Tech Round Three" span={2}>{displayVal(c.TechRoundThree)}</Descriptions.Item>
-                <Descriptions.Item label="Managerial/CEO Feedback" span={2}>{displayVal(c.ManagerialOrCEOFeedback)}</Descriptions.Item>
-                <Descriptions.Item label="HR Interview" span={2}>{displayVal(c.HRInterview)}</Descriptions.Item>
-              </Descriptions>
-
-              {/* Upload Details */}
               <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
                 Upload Details
               </Divider>
