@@ -141,7 +141,11 @@ export function compileTemplate(subject, bodyHtml, replacements) {
  */
 export async function sendWelcomeEmail(candidate, hrUserEmail) {
   try {
-    const sender = hrUserEmail || config.microsoft.defaultSender;
+    // Always send candidate-facing mail from the authorized shared mailbox
+    // (MS_DEFAULT_SENDER_EMAIL). Sending as the uploader's personal mailbox is
+    // rejected by the tenant AppOnly Application Access Policy with
+    // ErrorAccessDenied ("Blocked by tenant configured AppOnly AccessPolicy").
+    const sender = config.microsoft.defaultSender;
 
     // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
     const { to: toEmail } = resolveRecipients('welcome', candidate.EmailID);
@@ -190,9 +194,30 @@ export async function sendWelcomeEmail(candidate, hrUserEmail) {
  * Generates a base64 encoded token from the email for validation.
  */
 export async function sendMissingDataEmail(candidate, hrUserEmail) {
-  try {
-    const sender = hrUserEmail || config.microsoft.defaultSender;
+  // Always send candidate-facing mail from the authorized shared mailbox
+  // (MS_DEFAULT_SENDER_EMAIL); the uploader's personal mailbox is rejected by the
+  // tenant AppOnly Application Access Policy with ErrorAccessDenied.
+  const sender = config.microsoft.defaultSender;
 
+  // Generate the data-collection token from the candidate email (base64).
+  const token = Buffer.from(candidate.EmailID || '').toString('base64');
+
+  // Persist the token UP-FRONT, decoupled from the email send. The missing-data
+  // link must always exist (so the collection portal works and reminders can
+  // re-send) even if the Graph send later fails. Status starts PENDING and is
+  // flipped to SENT on success / FAILED on error below.
+  if (candidate.id) {
+    try {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingToken: token, cvMissingTokenStatus: 'PENDING' }
+      });
+    } catch (tokErr) {
+      logger.error(`Failed to persist missing-data token for candidate ID ${candidate?.id}: ${tokErr.message}`);
+    }
+  }
+
+  try {
     // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
     const { to: toEmail } = resolveRecipients('missingData', candidate.EmailID);
 
@@ -201,8 +226,6 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
       return false;
     }
 
-    // Generate token from email (base64)
-    const token = Buffer.from(candidate.EmailID || '').toString('base64');
     const weblink = `${config.cors.frontendUrl}/missing-jd-upload?token=${token}`;
 
     const template = await prisma.rpa_email_templates.findFirst({
@@ -233,19 +256,26 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
       }
     });
 
-    // 3) Update token in rpa_cv
-    await prisma.rpa_cv.update({
-      where: { id: BigInt(candidate.id) },
-      data: {
-        cvMissingToken: token,
-        cvMissingTokenStatus: 'SENT'
-      }
-    });
+    // 3) Mark the token SENT (it was already written above).
+    if (candidate.id) {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingTokenStatus: 'SENT' }
+      });
+    }
 
     logger.info(`Missing data email sent & logged for candidate ID ${candidate.id}`);
     return true;
   } catch (err) {
     logger.error(`Failed to send missing data email for candidate ID ${candidate?.id}: ${err.message}`);
+    // Token is already persisted; record that the email delivery failed so a
+    // retry/reminder can pick it up. The link itself remains usable.
+    if (candidate.id) {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingTokenStatus: 'FAILED' }
+      }).catch((e) => logger.error(`Failed to mark missing-data token FAILED for candidate ID ${candidate?.id}: ${e.message}`));
+    }
     return false;
   }
 }

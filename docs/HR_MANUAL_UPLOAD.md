@@ -21,6 +21,31 @@ Source of truth in code:
 
 ## Update Log
 
+### 2026-06-29 — Fix: missing-data email + token stopped writing since June 23
+- **Symptom:** since 2026-06-23 ~13:04, uploaded candidates got `missingData`/`statusActive`
+  populated but `cvMissingToken`/`cvMissingTokenStatus` stayed null, and no welcome/missing-data
+  email went out. Duplicate/error alerts kept working.
+- **Root cause:** the Microsoft 365 tenant applied an **AppOnly Application Access Policy (RAOP)**
+  that no longer lets the app send *as the uploader's mailbox* (e.g. `hmopuri@…`) → Graph
+  `sendMail` returns `ErrorAccessDenied` ("Blocked by tenant configured AppOnly AccessPolicy").
+  `sendWelcomeEmail`/`sendMissingDataEmail` sent **as the uploader**, while duplicate/error alerts
+  send as the default `MS_DEFAULT_SENDER_EMAIL` (`pkmondal@…`, still allowed) — which is why only the
+  former broke. The token was also written *only after* a successful send, so a blocked email left
+  the candidate with no token at all.
+- **Fix (2b):** welcome and missing-data emails now always send from
+  `config.microsoft.defaultSender` (`MS_DEFAULT_SENDER_EMAIL`); recipients still resolve via
+  `EMAIL_STAGING_RECIPIENTS` in non-prod. (`services/emailNotification.service.js`.)
+  > Note: `sendEmailIdNullAlert` still sends as the uploader and will keep hitting the same
+  > `ErrorAccessDenied` until either IT updates the access policy or it's switched to the default
+  > sender — left unchanged pending approval.
+- **Fix (2c):** `sendMissingDataEmail` now persists `cvMissingToken` up-front with
+  `cvMissingTokenStatus='PENDING'`, then flips to `SENT` on success or `FAILED` on a send error —
+  decoupling the collection token/link from email delivery. New statuses are additive
+  (`RECEIVED` on submit, reminder scheduler reads `cvMissingToken` not the status — both unaffected).
+- **Still open:** the real delivery fix is an IT/M365 action — add the HR sender mailboxes (or a
+  shared mailbox) to the app's Application Access Policy. Candidates uploaded 06-23→06-29
+  (ids ~140–213) have no token yet; a one-time backfill can generate tokens + re-send.
+
 ### 2026-06-26 — Premium pass refinement: quieter success + "Real-time" indicator
 - Toned the premium pass to feel more professional: **removed the confetti** (now a single refined check
   with a soft ring), and replaced the bright uppercase **"● LIVE"** badge with an understated muted
