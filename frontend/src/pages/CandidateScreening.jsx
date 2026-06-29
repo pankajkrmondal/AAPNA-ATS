@@ -643,7 +643,7 @@ export default function CandidateScreening() {
   };
 
   return (
-    <div className="page-enter" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 8px 40px' }}>
+    <div className="stagger-children" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 8px 40px' }}>
       
       {/* Title */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -1475,12 +1475,14 @@ export default function CandidateScreening() {
           >
             Shortlist Selected
           </Button>
-          <Button
-            type="text"
-            icon={<CloseCircleOutlined />}
-            onClick={() => setSelectedCandidateKeys([])}
-            style={{ fontWeight: 600 }}
-          />
+          <Tooltip title="Clear selection">
+            <Button
+              type="text"
+              icon={<CloseCircleOutlined />}
+              onClick={() => setSelectedCandidateKeys([])}
+              style={{ fontWeight: 600 }}
+            />
+          </Tooltip>
         </div>,
         document.body
       )}

@@ -5,10 +5,11 @@
  * @param {{ icon: React.ReactNode, title: string, value: number|string, trend?: number, trendLabel?: string, color?: string, loading?: boolean, style?: object }} props
  */
 import { useEffect, useRef, useState } from 'react';
-import { Card, Typography, Space } from 'antd';
+import { Card, Typography } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
+import Sparkline from '../dashboard/Sparkline';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -54,11 +55,20 @@ export default function StatCard({
   color = '#7a922e',
   loading = false,
   style,
+  sparklineData = null,
+  delta = null, // { value: number (percent), label?: string }
 }) {
   const isPositive = trend > 0;
   const isNegative = trend < 0;
   const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#5f6664';
   const displayValue = useCountUp(value);
+
+  // Week-over-week delta badge (independent of the optional `trend` prop).
+  const hasDelta = delta && delta.value !== null && delta.value !== undefined;
+  const deltaUp = hasDelta && delta.value > 0;
+  const deltaDown = hasDelta && delta.value < 0;
+
+  const hasSpark = Array.isArray(sparklineData) && sparklineData.length > 1;
 
   return (
     <Card
@@ -66,90 +76,67 @@ export default function StatCard({
       bordered={false}
       className="premium-stat-card"
       style={{
-        overflow: 'hidden',
-        position: 'relative',
-        borderTop: `3px solid ${color}`,
-        background: `linear-gradient(150deg, var(--colorBgContainer) 0%, ${color}0a 100%)`,
+        '--stat-color': color,
+        borderTop: `4px solid ${color}`,
+        background: `linear-gradient(160deg, var(--colorBgContainer) 0%, ${color}0a 100%)`,
         ...style,
       }}
       styles={{
-        body: { padding: '22px 24px', position: 'relative', zIndex: 1 },
+        body: { padding: 0, position: 'relative', zIndex: 1, height: '100%' },
       }}
     >
-      {/* Background accent glow */}
-      <div
-        style={{
-          position: 'absolute',
-          top: -30,
-          right: -30,
-          width: 130,
-          height: 130,
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${color}33 0%, transparent 70%)`,
-          zIndex: 0,
-          pointerEvents: 'none',
-        }}
+      {/* Soft corner aura — subtle, behind content */}
+      <span
+        className="premium-stat-aura"
+        aria-hidden
+        style={{ background: `radial-gradient(circle, ${color}26 0%, transparent 70%)` }}
       />
 
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {/* Icon tile — filled gradient + glow */}
-        <div
-          className="premium-stat-icon"
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 22,
-            color: '#fff',
-            boxShadow: `0 6px 16px ${color}55`,
-          }}
-        >
-          {icon}
+      <div className="premium-stat-inner">
+        {/* Header: icon tile + compact trend chip */}
+        <div className="premium-stat-head">
+          <div
+            className="premium-stat-icon"
+            style={{
+              background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+              boxShadow: `0 6px 16px ${color}55`,
+            }}
+          >
+            {icon}
+          </div>
+          {hasDelta && (
+            <span
+              className={`delta-chip ${deltaUp ? 'is-up' : deltaDown ? 'is-down' : 'is-flat'}`}
+              title={delta.label || 'vs last week'}
+            >
+              {deltaUp ? <ArrowUpOutlined /> : deltaDown ? <ArrowDownOutlined /> : <MinusOutlined />}
+              {Math.abs(delta.value)}%
+            </span>
+          )}
         </div>
 
-        {/* Label */}
-        <Text
-          style={{
-            fontSize: 12.5,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: 'var(--text-2)',
-          }}
-        >
-          {title}
-        </Text>
+        {/* Label + value */}
+        <Text className="premium-stat-label">{title}</Text>
+        <div className="premium-stat-value">{displayValue}</div>
 
-        {/* Value */}
-        <Title
-          level={2}
-          style={{
-            margin: 0,
-            fontSize: 34,
-            fontWeight: 800,
-            lineHeight: 1.1,
-            fontFamily: 'var(--mono)',
-            color: 'var(--text)',
-          }}
-        >
-          {displayValue}
-        </Title>
-
-        {/* Trend (optional) */}
+        {/* Optional legacy trend line */}
         {trend !== undefined && trend !== null && (
-          <Space size={4} style={{ fontSize: 13 }}>
-            <span style={{ color: trendColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
-              {isPositive ? <ArrowUpOutlined /> : isNegative ? <ArrowDownOutlined /> : <MinusOutlined />}
-              {Math.abs(trend)}%
-            </span>
-            <Text type="secondary" style={{ fontSize: 12 }}>{trendLabel}</Text>
-          </Space>
+          <span className="premium-stat-trend" style={{ color: trendColor }}>
+            {isPositive ? <ArrowUpOutlined /> : isNegative ? <ArrowDownOutlined /> : <MinusOutlined />}
+            {Math.abs(trend)}%
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>{trendLabel}</Text>
+          </span>
         )}
-      </Space>
+
+        {/* Full-bleed bottom band — gradient wash on every card for a consistent,
+            rich finish; a live sparkline overlays where we have a real series. */}
+        <div
+          className="premium-stat-band"
+          style={{ background: `linear-gradient(180deg, transparent 0%, ${color}14 100%)` }}
+        >
+          {hasSpark && <Sparkline data={sparklineData} color={color} height={56} />}
+        </div>
+      </div>
     </Card>
   );
 }

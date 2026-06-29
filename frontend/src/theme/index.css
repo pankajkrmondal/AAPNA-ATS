@@ -24,10 +24,15 @@
   --gold-subtle: rgba(122, 146, 46, 0.06);
   --border: #dde1df;
   --border-light: #eaebe8;
-  --shadow-sm: 0 1px 3px rgba(122, 146, 46, 0.05);
-  --shadow-md: 0 4px 12px rgba(122, 146, 46, 0.08);
-  --shadow-lg: 0 8px 30px rgba(122, 146, 46, 0.12);
-  --shadow-xl: 0 20px 60px rgba(122, 146, 46, 0.15);
+
+  /* Elevation — neutral ink-based ramp (depth is colourless; green is reserved
+     for intentional accents via --glow-accent). */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 20, 0.04);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 20, 0.06);
+  --shadow-md: 0 4px 12px rgba(16, 24, 20, 0.08);
+  --shadow-lg: 0 10px 28px rgba(16, 24, 20, 0.10);
+  --shadow-xl: 0 20px 48px rgba(16, 24, 20, 0.14);
+  --glow-accent: 0 4px 14px rgba(122, 146, 46, 0.30); /* primary buttons only */
 
   /* Typography */
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -37,7 +42,7 @@
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.72);
   --glass-border: rgba(255, 255, 255, 0.35);
-  --glass-shadow: 0 8px 32px rgba(122, 146, 46, 0.08);
+  --glass-shadow: 0 8px 32px rgba(16, 24, 20, 0.10);
   --glass-blur: blur(16px);
 
   /* Gradients */
@@ -53,12 +58,29 @@
   --transition-normal: 0.25s var(--ease-out-quint);
   --transition-slow: 0.4s var(--ease-out-quint);
 
+  /* Radius scale — one family. --border-radius* kept as aliases so existing
+     references keep working. */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Spacing scale (4px base) — available for future consistency. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
   /* Layout */
   --sidebar-width: 260px;
   --sidebar-collapsed: 80px;
   --header-height: 64px;
-  --border-radius: 8px;
-  --border-radius-lg: 12px;
+  --border-radius: var(--radius-sm);
+  --border-radius-lg: var(--radius-lg);
   --border-radius-xl: 16px;
 }
 
@@ -80,10 +102,12 @@
   --gold-subtle: rgba(168, 194, 74, 0.08);
   --border: #233330;
   --border-light: #1b2624;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.18);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.35);
-  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.4);
+  --glow-accent: 0 4px 14px rgba(168, 194, 74, 0.30);
 
   --glass-bg: rgba(18, 24, 22, 0.75);
   --glass-border: rgba(35, 51, 48, 0.5);
@@ -154,6 +178,13 @@ h1, h2, h3, h4, h5, h6,
 
 [data-theme='dark'] ::selection {
   background: rgba(146, 166, 60, 0.35);
+}
+
+/* ----- App-wide keyboard focus ring (keyboard nav only, not mouse clicks) ----- */
+:where(a, button, .ant-btn, .ant-input, .ant-input-affix-wrapper,
+  .ant-select-selector, .ant-picker, [tabindex]):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 /* ----- Custom Scrollbar ----- */
@@ -312,6 +343,21 @@ h1, h2, h3, h4, h5, h6,
 .stagger-5 { animation-delay: 0.25s; }
 .stagger-6 { animation-delay: 0.3s; }
 
+/* ----- Auto-staggered section entrance -----
+   Add `stagger-children` to any page/container and its DIRECT children rise in
+   sequence (the lively entrance the dashboards have, without hand-tagging each
+   card). Pairs with the layout-level .page-enter wrapper. */
+.stagger-children > * {
+  animation: fadeInUp 0.5s var(--ease-out-quint) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.04s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.10s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.16s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.22s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.28s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.34s; }
+.stagger-children > *:nth-child(n+7) { animation-delay: 0.40s; }
+
 /* ----- Pipeline stage tiles (dashboard) — scale in + gentle hover lift ----- */
 .pipeline-tile {
   animation: scaleIn 0.4s var(--ease-spring) both;
@@ -320,7 +366,7 @@ h1, h2, h3, h4, h5, h6,
 }
 .pipeline-tile:hover {
   transform: translateY(-3px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.09);
+  box-shadow: var(--shadow-lg);
 }
 
 /* ----- Resume upload pages (HR Manual Upload + Vendor Upload) ----- */
@@ -352,8 +398,8 @@ h1, h2, h3, h4, h5, h6,
   will-change: transform;
 }
 .stat-tile:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.10);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
 }
 
 /* Subtle row hover on the upload-status tables. */
@@ -503,11 +549,11 @@ h1, h2, h3, h4, h5, h6,
 .kpi-card {
   position: relative;
   background: var(--gradient-card, #fff);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
   padding: 22px 24px 20px;
   overflow: hidden;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
   transition: transform 0.4s var(--ease-out-quint),
     box-shadow 0.4s var(--ease-out-quint),
     border-color 0.4s var(--ease-out-quint);
@@ -529,9 +575,9 @@ h1, h2, h3, h4, h5, h6,
 }
 
 .kpi-card:hover {
-  transform: translateY(-6px);
-  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.12);
-  border-color: rgba(0, 0, 0, 0.09);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border);
 }
 
 .kpi-card:hover::before {
@@ -562,7 +608,7 @@ h1, h2, h3, h4, h5, h6,
   position: relative;
   width: 46px;
   height: 46px;
-  border-radius: 13px;
+  border-radius: var(--radius-lg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -682,26 +728,137 @@ h1, h2, h3, h4, h5, h6,
 
 /* Stat cards: depth + hover lift + icon pop */
 .premium-stat-card {
-  border-radius: var(--border-radius-lg) !important;
+  border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-md) !important;
   transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  /* Fill the (equal-height) grid column so a row of KPI cards aligns. */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.premium-stat-card > .ant-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 .premium-stat-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg) !important;
 }
-.premium-stat-card .premium-stat-icon {
+
+/* Soft corner aura, behind content */
+.premium-stat-aura {
+  position: absolute;
+  top: -44px;
+  right: -34px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.7;
+  transition: transform var(--transition-slow), opacity var(--transition-slow);
+}
+.premium-stat-card:hover .premium-stat-aura {
+  transform: scale(1.18);
+  opacity: 1;
+}
+
+/* Inner layout — content padded; the band bleeds to the card edges at the bottom. */
+.premium-stat-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.premium-stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.premium-stat-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+  color: #fff;
+  flex-shrink: 0;
   transition: transform var(--transition-normal);
 }
 .premium-stat-card:hover .premium-stat-icon {
   transform: scale(1.08) rotate(-4deg);
 }
 
+.premium-stat-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.premium-stat-value {
+  font-family: var(--font-heading);
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.premium-stat-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+/* Compact trend chip (week-over-week), top-right of the header. */
+.delta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.delta-chip.is-up   { background: rgba(74, 124, 89, 0.12); color: #4a7c59; }
+.delta-chip.is-down { background: rgba(192, 57, 43, 0.12); color: #c0392b; }
+.delta-chip.is-flat { background: var(--ink-3); color: var(--text-2); }
+
+/* Full-bleed bottom band: a gradient wash on every card (consistent rich finish);
+   a live sparkline overlays where a real series exists. */
+.premium-stat-band {
+  margin: 16px -22px 0;
+  margin-top: auto;
+  height: 56px;
+  position: relative;
+  overflow: hidden;
+}
+.premium-stat-band > div {
+  position: absolute;
+  inset: 0;
+}
+
 /* CTA buttons — gradient, lift, press, focus ring */
 .cta-primary {
   background: var(--gradient-primary) !important;
   border: none !important;
-  box-shadow: 0 4px 14px rgba(122, 146, 46, 0.3) !important;
+  box-shadow: var(--glow-accent) !important;
   transition: transform 0.2s var(--ease-out-quint), box-shadow 0.2s var(--ease-out-quint) !important;
 }
 .cta-primary:hover {
@@ -820,7 +977,7 @@ h1, h2, h3, h4, h5, h6,
   font-size: 11.5px;
   font-weight: 500;
   padding: 3px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
@@ -828,7 +985,7 @@ h1, h2, h3, h4, h5, h6,
 .screening-action-btn {
   width: 36px !important;
   height: 36px !important;
-  border-radius: 9px !important;
+  border-radius: var(--radius-md) !important;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -921,6 +1078,16 @@ h1, h2, h3, h4, h5, h6,
   transition: transform var(--transition-normal), box-shadow var(--transition-normal);
 }
 
+/* Global card hover-lift — gives every screen the same responsive feel as the
+   dashboard cards. Component-specific cards (.premium-stat-card, .glass-card,
+   .admin-stat, .kpi-card) define their own matching lift, so this is the baseline
+   for plain <Card>s. Suppressed under prefers-reduced-motion by the global guard.
+   Opt a container card out with the `no-lift` class if a full-width card feels jumpy. */
+.ant-card:not(.no-lift):hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
 /* AntD Table row transition */
 .ant-table-tbody > tr {
   transition: background-color var(--transition-fast);
@@ -1000,7 +1167,7 @@ h1, h2, h3, h4, h5, h6,
   display: flex;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  border-bottom: 1px solid var(--border-light);
   background: var(--ink-2);
 }
 .conv-modal-title {
@@ -1111,6 +1278,21 @@ h1, h2, h3, h4, h5, h6,
   font-weight: 700;
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
+}
+
+/* Dark-mode parity for the conversation badges (light hex above is illegible on
+   the dark message surfaces — use translucent tints instead). */
+[data-theme='dark'] .conv-b-opened {
+  background: rgba(90, 156, 110, 0.18);
+  color: #7fc999;
+}
+[data-theme='dark'] .conv-b-delivered {
+  background: rgba(59, 130, 246, 0.18);
+  color: #7fb0f5;
+}
+[data-theme='dark'] .conv-msg-count {
+  background: rgba(59, 130, 246, 0.2);
+  color: #7fb0f5;
 }
 
 /* --- Rate Component Star Contrast Fixes --- */
@@ -1305,6 +1487,17 @@ h1, h2, h3, h4, h5, h6,
 .role-badge--admin     { background: #e8f0fb; color: #1d6fb8; border-color: #cfe1f6; }
 .role-badge--recruiter { background: #e7f6ec; color: #1f7a47; border-color: #cdebd6; }
 .role-badge--vendor    { background: #fdefdc; color: #b5650f; border-color: #f6dcb6; }
+
+/* Dark-mode parity for role pills (light hex above washes out on dark chrome). */
+[data-theme='dark'] .role-badge--admin {
+  background: rgba(59, 130, 246, 0.16); color: #7fb0f5; border-color: rgba(59, 130, 246, 0.32);
+}
+[data-theme='dark'] .role-badge--recruiter {
+  background: rgba(90, 156, 110, 0.16); color: #7fc999; border-color: rgba(90, 156, 110, 0.32);
+}
+[data-theme='dark'] .role-badge--vendor {
+  background: rgba(240, 180, 41, 0.16); color: #e6b454; border-color: rgba(240, 180, 41, 0.32);
+}
 
 /* Premium, glassy stat cards */
 .admin-portal .admin-stat {
@@ -1544,6 +1737,229 @@ h1, h2, h3, h4, h5, h6,
 .admin-portal .ant-btn-primary:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(122, 146, 46, 0.28);
+}
+
+/* ============================================================
+   Advanced Dashboard — command center (scoped)
+   ============================================================ */
+
+/* Chart/widget cards stay put on hover so charts & tooltips read cleanly
+   (overrides the global .ant-card and .glass-card lifts for these cards only). */
+.dash-chart-card:hover {
+  transform: none !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ----- Hero with animated gradient mesh ----- */
+.dash-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 30px 34px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-light);
+  background: linear-gradient(135deg, var(--colorBgContainer) 0%, var(--gold-bg) 100%);
+  box-shadow: var(--shadow-md);
+}
+.dash-hero__mesh {
+  position: absolute;
+  inset: -40%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 25%, rgba(122, 146, 46, 0.18) 0%, transparent 38%),
+    radial-gradient(circle at 82% 18%, rgba(37, 99, 235, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 70% 85%, rgba(217, 119, 6, 0.10) 0%, transparent 42%),
+    radial-gradient(circle at 30% 80%, rgba(22, 163, 74, 0.10) 0%, transparent 40%);
+  background-size: 200% 200%;
+  animation: meshDrift 18s ease-in-out infinite;
+  filter: blur(8px);
+}
+@keyframes meshDrift {
+  0%, 100% { background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%; }
+  50%      { background-position: 30% 20%, 70% 30%, 70% 70%, 30% 70%; }
+}
+.dash-hero__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.dash-hero__intro { min-width: 280px; }
+.dash-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--colorBgContainer);
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.dash-hero__pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold);
+  animation: liveHalo 2.6s ease-out infinite;
+}
+.dash-hero__title { margin: 0 0 6px !important; font-weight: 800 !important; letter-spacing: -0.02em; line-height: 1.15 !important; }
+.dash-hero__subtitle { font-size: 14.5px; color: var(--text-2); }
+.dash-hero__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.dash-hero__cmd.ant-btn {
+  height: 44px; border-radius: 10px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--text-2); border-color: var(--border);
+  background: var(--colorBgContainer);
+}
+.dash-kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--ink-3);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+/* ----- Shared widget card header ----- */
+.dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dash-card-metric { text-align: right; line-height: 1.1; cursor: help; }
+.dash-card-metric__num { display: block; font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--text); }
+.dash-card-metric__cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); font-weight: 600; }
+.dash-funnel-metrics { display: flex; gap: 18px; }
+.dash-card-link { font-size: 12.5px; font-weight: 600; color: var(--gold); cursor: pointer; white-space: nowrap; }
+.dash-card-link:hover { color: var(--gold-light); }
+
+/* ----- Delta badge (KPI cards) ----- */
+.delta-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; width: fit-content;
+}
+.delta-badge__label { font-weight: 500; opacity: 0.8; margin-left: 2px; }
+.delta-badge--up   { background: rgba(74, 124, 89, 0.12); color: #4a7c59; }
+.delta-badge--down { background: rgba(192, 57, 43, 0.12); color: #c0392b; }
+.delta-badge--flat { background: var(--ink-3); color: var(--text-2); }
+
+/* ----- Conversion funnel step connector ----- */
+.dash-funnel-step {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  padding: 3px 0 3px 2px;
+}
+.dash-funnel-step .anticon { color: var(--gold); font-size: 10px; }
+
+/* ----- Action center rows ----- */
+.dash-action-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 12px; border-radius: 11px;
+  border: 1px solid var(--border-light);
+  background: var(--colorBgContainer);
+  cursor: pointer;
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.dash-action-row:hover { transform: translateX(3px); border-color: var(--row-color); box-shadow: var(--shadow-sm); }
+.dash-action-row.is-empty { opacity: 0.6; }
+.dash-action-row__icon { width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+.dash-action-row__label { flex: 1; font-size: 13.5px; font-weight: 500; display: flex; align-items: center; }
+.dash-action-row__count { font-size: 18px; font-weight: 800; font-family: var(--mono); }
+.dash-action-row__arrow { color: var(--text-3); font-size: 12px; transition: transform var(--transition-fast); }
+.dash-action-row:hover .dash-action-row__arrow { transform: translateX(3px); color: var(--row-color); }
+.dash-allclear {
+  display: flex; align-items: center; gap: 10px;
+  padding: 22px 16px; border-radius: 12px;
+  background: rgba(74, 124, 89, 0.07); border: 1px dashed rgba(74, 124, 89, 0.3);
+  color: #4a7c59; font-size: 13px; font-weight: 500;
+}
+.dash-allclear .anticon { font-size: 18px; }
+
+/* ----- Live activity feed ----- */
+.dash-feed { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.dash-feed__idle { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 36px 0; }
+.dash-feed__radar {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 2px solid var(--gold); position: relative;
+  animation: liveHalo 2.2s ease-out infinite;
+}
+.dash-feed__row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 11px; border-radius: 10px;
+  background: var(--ink-4); border: 1px solid var(--border-light);
+  animation: fadeInDown 0.4s var(--ease-out-quint) both;
+}
+.dash-feed__icon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; background: var(--gold-subtle); color: var(--gold); }
+.dash-feed__row.tone-success .dash-feed__icon { background: rgba(74,124,89,0.14); color: #4a7c59; }
+.dash-feed__row.tone-warning .dash-feed__icon { background: rgba(212,160,23,0.16); color: #b8860b; }
+.dash-feed__row.tone-error .dash-feed__icon { background: rgba(192,57,43,0.14); color: #c0392b; }
+.dash-feed__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dash-feed__title { font-size: 13px; font-weight: 600; color: var(--text); }
+.dash-feed__detail { font-size: 11.5px; }
+.dash-feed__time { font-size: 11px; flex-shrink: 0; }
+
+/* ----- Upcoming interviews agenda ----- */
+.dash-agenda { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.dash-agenda__row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 11px; border-radius: 11px;
+  border: 1px solid var(--border-light); background: var(--colorBgContainer);
+  cursor: pointer; transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.dash-agenda__row:hover { transform: translateX(3px); border-color: var(--gold); box-shadow: var(--shadow-sm); }
+.dash-agenda__row.is-today { border-color: rgba(122,146,46,0.4); background: var(--gold-subtle); }
+.dash-agenda__date { width: 42px; text-align: center; flex-shrink: 0; line-height: 1; }
+.dash-agenda__day { display: block; font-size: 18px; font-weight: 800; font-family: var(--mono); color: var(--gold); }
+.dash-agenda__mon { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); font-weight: 600; }
+.dash-agenda__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dash-agenda__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.dash-agenda__role { font-size: 11.5px; }
+.dash-agenda__time { text-align: right; flex-shrink: 0; font-size: 12px; color: var(--text-2); font-weight: 600; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.dash-agenda__today { font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em; color: #fff; background: var(--gold); padding: 1px 6px; border-radius: 999px; }
+
+/* ----- Recharts custom tooltip ----- */
+.dash-chart-tip {
+  background: var(--colorBgElevated);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 12px;
+  box-shadow: var(--shadow-lg);
+}
+.dash-chart-tip__label { font-size: 11px; color: var(--text-2); margin-bottom: 2px; }
+.dash-chart-tip__value { font-size: 14px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+
+/* ----- Command palette (⌘K) ----- */
+.dash-cmdk .ant-modal-content { padding: 0; overflow: hidden; border-radius: 16px; }
+.dash-cmdk__input {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-light);
+  font-size: 16px; color: var(--text-2);
+}
+.dash-cmdk__input .ant-input { font-size: 15px; }
+.dash-cmdk__body { max-height: 50vh; overflow-y: auto; padding: 8px; }
+.dash-cmdk__group { margin-bottom: 6px; }
+.dash-cmdk__grouphead { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); font-weight: 700; padding: 8px 12px 4px; }
+.dash-cmdk__hint { padding: 10px 12px; font-size: 12.5px; color: var(--text-3); }
+.dash-cmdk__row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 9px; cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.dash-cmdk__row:hover { background: var(--gold-subtle); }
+.dash-cmdk__icon { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--ink-3); color: var(--gold); font-size: 13px; flex-shrink: 0; }
+.dash-cmdk__label { flex: 1; font-size: 13.5px; font-weight: 500; color: var(--text); }
+.dash-cmdk__sub { color: var(--text-2); font-weight: 400; }
+.dash-cmdk__enter { color: var(--text-3); font-size: 12px; opacity: 0; transition: opacity var(--transition-fast); }
+.dash-cmdk__row:hover .dash-cmdk__enter { opacity: 1; }
+
+@media (max-width: 768px) {
+  .dash-hero__actions { align-items: flex-start; width: 100%; }
 }
 
 

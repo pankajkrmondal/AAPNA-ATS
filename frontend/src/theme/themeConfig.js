@@ -18,9 +18,10 @@
 const sharedTokens = {
   fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   fontFamilyCode: "'DM Mono', 'Fira Code', 'Courier New', monospace",
+  // Radius scale — one family, mirrors theme/index.css (--radius-sm/md/lg).
   borderRadius: 8,
-  borderRadiusLG: 12,
-  borderRadiusSM: 6,
+  borderRadiusLG: 14,
+  borderRadiusSM: 8,
   wireframe: false,
   motion: true,
 };
@@ -44,7 +45,7 @@ export const lightTheme = {
     colorBgSpotlight: '#7a922e',
     colorText: '#2b2b2b',
     colorTextSecondary: '#5f6664',
-    colorTextTertiary: '#808785',
+    colorTextTertiary: '#6f7671',
     colorTextQuaternary: '#b4bcba',
     colorBorder: '#dde1df',
     colorBorderSecondary: '#eaebe8',
@@ -60,25 +61,26 @@ export const lightTheme = {
     fontSizeHeading3: 22,
     fontSizeHeading4: 18,
     lineHeight: 1.6,
-    boxShadow: '0 2px 8px rgba(122, 146, 46, 0.06)',
-    boxShadowSecondary: '0 6px 20px rgba(122, 146, 46, 0.08)',
+    boxShadow: '0 1px 3px rgba(16, 24, 20, 0.06)',
+    boxShadowSecondary: '0 10px 28px rgba(16, 24, 20, 0.10)',
   },
   components: {
     Button: {
-      primaryShadow: '0 2px 8px rgba(122, 146, 46, 0.35)',
+      primaryShadow: '0 4px 14px rgba(122, 146, 46, 0.30)',
       controlHeight: 40,
       borderRadius: 8,
       fontWeight: 600,
     },
     Card: {
-      borderRadiusLG: 12,
-      boxShadowTertiary: '0 1px 4px rgba(122, 146, 46, 0.06)',
+      borderRadiusLG: 14,
+      boxShadowTertiary: '0 1px 3px rgba(16, 24, 20, 0.06)',
     },
     Table: {
       headerBg: '#f7f6f3',
       headerColor: '#2b2b2b',
       rowHoverBg: 'rgba(122, 146, 46, 0.04)',
       borderColor: '#eaebe8',
+      cellPaddingBlock: 12,
     },
     Menu: {
       itemBg: 'transparent',
@@ -163,20 +165,21 @@ export const darkTheme = {
   },
   components: {
     Button: {
-      primaryShadow: '0 2px 8px rgba(168, 194, 74, 0.3)',
+      primaryShadow: '0 4px 14px rgba(168, 194, 74, 0.30)',
       controlHeight: 40,
       borderRadius: 8,
       fontWeight: 600,
     },
     Card: {
-      borderRadiusLG: 12,
-      boxShadowTertiary: '0 1px 4px rgba(0, 0, 0, 0.2)',
+      borderRadiusLG: 14,
+      boxShadowTertiary: '0 1px 3px rgba(0, 0, 0, 0.22)',
     },
     Table: {
       headerBg: '#151e1b',
       headerColor: '#eaeae6',
       rowHoverBg: 'rgba(168, 194, 74, 0.06)',
       borderColor: '#233330',
+      cellPaddingBlock: 12,
     },
     Menu: {
       itemBg: 'transparent',
