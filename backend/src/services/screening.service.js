@@ -3,8 +3,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
-import { getAccessToken } from './onedrive.service.js';
-import { compileTemplate } from './emailNotification.service.js';
+import { compileTemplate, sendGraphEmail, describeEmailError } from './emailNotification.service.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
@@ -358,6 +357,92 @@ function scoreJDMatch(top5Skills, roleSkills) {
   return 2;
 }
 
+/**
+ * Split a JD skill string into individual skill phrases.
+ * Splits only on list separators (comma / semicolon / newline / slash) so that
+ * multi-word skills like "Machine Learning" stay intact (unlike scoreJDMatch,
+ * which tokenizes for percentage scoring).
+ */
+function splitSkillPhrases(skillsStr) {
+  if (!skillsStr) return [];
+  return String(skillsStr)
+    .split(/[,;\n/]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/** Parse Top5KeySkills which may be a JS array, a Postgres array literal, or a comma string. */
+function parseDeclaredSkills(top5) {
+  if (Array.isArray(top5)) return top5.map((s) => String(s).trim()).filter(Boolean);
+  if (!top5) return [];
+  const str = String(top5).trim().replace(/^\{|\}$/g, ''); // strip Postgres {..} braces if present
+  return str
+    .split(',')
+    .map((s) => s.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean);
+}
+
+/** Parse resume_technical_terms (JSON column) into a normalized [{term, count}] array. */
+function parseTechnicalTerms(raw) {
+  let arr = [];
+  try {
+    arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
+  } catch {
+    arr = [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((t) => (typeof t === 'string' ? { term: t, count: 1 } : { term: t.term, count: t.count || 1 }))
+    .filter((t) => t.term);
+}
+
+/** Fuzzy bidirectional containment match (parity with the P6 grounding block). */
+function skillMatchesTerm(skillLower, termLower) {
+  if (!skillLower || !termLower) return false;
+  return termLower.includes(skillLower) || skillLower.includes(termLower);
+}
+
+/**
+ * Display-only JD skill signal builder (does NOT affect scoring).
+ * For each JD skill (mandatory + good-to-have) records whether the skill is found in
+ * the resume signals (resume_technical_terms) and/or the candidate's declared skills
+ * section (Top5KeySkills), and derives a status the UI uses to explain the profile.
+ *
+ *   status:
+ *     evidenced    - in resume signals AND declared skills
+ *     signals_only - in resume signals but NOT declared (recruiter's key case)
+ *     listed_only  - declared but not surfaced as a resume signal
+ *     missing       - neither
+ */
+function buildJdSkillSignals(candidate, mandatorySkills, goodToHaveSkills) {
+  const terms = parseTechnicalTerms(candidate.resume_technical_terms);
+  const declared = parseDeclaredSkills(candidate.Top5KeySkills).map((s) => s.toLowerCase());
+
+  const classify = (skill) => {
+    const skillLower = skill.toLowerCase();
+    const matchedTerm = terms.find((t) => skillMatchesTerm(skillLower, String(t.term).toLowerCase()));
+    const inSignals = Boolean(matchedTerm);
+    const inSkillsSection = declared.some((d) => skillMatchesTerm(skillLower, d));
+    let status;
+    if (inSignals && inSkillsSection) status = 'evidenced';
+    else if (inSignals && !inSkillsSection) status = 'signals_only';
+    else if (!inSignals && inSkillsSection) status = 'listed_only';
+    else status = 'missing';
+    return {
+      skill,
+      count: matchedTerm ? matchedTerm.count || 1 : 0,
+      inSignals,
+      inSkillsSection,
+      status,
+    };
+  };
+
+  return {
+    mandatory: splitSkillPhrases(mandatorySkills).map(classify),
+    goodToHave: splitSkillPhrases(goodToHaveSkills).map(classify),
+  };
+}
+
 function scoreCTCAlignment(expectedCTC, budgetMin, budgetMax) {
   const exp = parseFloat(expectedCTC);
   const bMax = parseFloat(budgetMax);
@@ -545,17 +630,19 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
 /**
  * POST /api/screening/roles/:id/search
  */
-export async function searchRoleCandidates(mrfId) {
-  // Check cache first
+export async function searchRoleCandidates(mrfId, force = false) {
+  // Check cache first (skipped on an explicit refresh so fresh results are recomputed)
   const cacheKey = `screening:role:${mrfId}`;
-  try {
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      logger.info(`Serving screening results for MRF ${mrfId} from Redis cache`);
-      return JSON.parse(cachedData);
+  if (!force) {
+    try {
+      const cachedData = await redis.get(cacheKey);
+      if (cachedData) {
+        logger.info(`Serving screening results for MRF ${mrfId} from Redis cache`);
+        return JSON.parse(cachedData);
+      }
+    } catch (err) {
+      logger.warn('Failed to read from Redis cache:', { error: err.message });
     }
-  } catch (err) {
-    logger.warn('Failed to read from Redis cache:', { error: err.message });
   }
 
   // 1) Fetch MRF Job details via unified SQL query with fallbacks
@@ -875,6 +962,7 @@ export async function searchRoleCandidates(mrfId) {
       educationContext,
       maxTenureYears: parseFloat(item.maxTenureYears.toFixed(2)),
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
+      jdSkillSignals: buildJdSkillSignals(c, mandatorySkills, goodToHaveSkills),
       profile: resolveProfile(insights, c),
       starRating: {
         finalScore,
@@ -1372,11 +1460,20 @@ export async function searchKeywordCandidates(filters) {
       candidate_pg_specialization: c.postgraduationspecialization || null,
     };
 
+    // Display-only: cross-reference the searched skill(s) against the candidate's
+    // declared skills + resume signals (same treatment as the JD tab). Only when a
+    // searched term is present; pure filter-only searches keep the generic signals strip.
+    const searchedSkillsStr = [fKeyword, fDesignation].filter(Boolean).join(', ');
+    const jdSkillSignals = searchedSkillsStr
+      ? buildJdSkillSignals(c, searchedSkillsStr, '')
+      : undefined;
+
     return {
       ...c,
       id: Number(c.id),
       educationContext,
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
+      ...(jdSkillSignals ? { jdSkillSignals } : {}),
       profile: resolveProfile(insights, c),
       relevanceScore: {
         scorePct,
@@ -1485,8 +1582,15 @@ async function refreshCandidateVector(candidateId) {
  * POST /api/screening/shortlist
  */
 export async function shortlistCandidates(candidates, mrfId, roleName, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
   let emailsSent = 0;
+  let shortlistedCount = 0;
+  const emailFailures = [];
+
+  // A keyword search is not tied to an MRF role. mrf_id is a nullable FK to
+  // rpa_mrf, so for keyword (mrfId <= 0) we must store NULL — inserting 0 (no
+  // such MRF) violates the rpa_shortlisted_candidates_mrf_id_fkey constraint.
+  const mrfRef = mrfId > 0 ? BigInt(mrfId) : null;
+  const searchType = mrfId > 0 ? 'jd' : 'keyword';
 
   // 1) Fetch template
   const template = await prisma.rpa_email_templates.findFirst({
@@ -1507,7 +1611,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     const exists = await prisma.rpa_shortlisted_candidates.findFirst({
       where: {
         cv_id: candidateId,
-        mrf_id: BigInt(mrfId),
+        mrf_id: mrfRef,
       },
     });
 
@@ -1520,7 +1624,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     const shortlist = await prisma.rpa_shortlisted_candidates.create({
       data: {
         cv_id: candidateId,
-        mrf_id: BigInt(mrfId),
+        mrf_id: mrfRef,
         candidate_name: c.Name || 'Candidate',
         candidate_email: c.EmailID || '',
         position_applied: roleName,
@@ -1529,6 +1633,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
         pipeline_status: 'shortlisted',
       },
     });
+    shortlistedCount++;
 
     // Update candidate status
     await prisma.rpa_cv.update({
@@ -1542,96 +1647,86 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
     const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
 
-    if (toEmail) {
+    if (!toEmail) {
+      emailFailures.push({
+        name: c.Name || 'Candidate',
+        email: c.EmailID || '',
+        reason: describeEmailError('No valid recipients'),
+      });
+    } else {
+      // Build the search-type-specific intro paragraph (JD vs keyword), injected
+      // into the branded template via the {role_paragraph} placeholder since
+      // compileTemplate cannot branch on its own.
+      const roleParagraph =
+        searchType === 'jd'
+          ? `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
+          : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
+
       // Replace placeholders
       const { subject, html: bodyHtml } = compileTemplate(template.subject, template.body_html, {
         candidate_name: c.Name || 'Candidate',
-        job_title: roleName,
-        recruiter_name: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'Recruitment Team'
+        position: roleName,
+        role_paragraph: roleParagraph,
       });
 
       try {
-        const token = await getAccessToken();
-        const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-        const recipients = toEmail
-          .split(',')
-          .map((em) => em.trim())
-          .filter((em) => em.length > 0)
-          .map((em) => ({
-            emailAddress: { address: em },
-          }));
-
-        const ccRecipients = (ccEmail || '')
-          .split(',')
-          .map((em) => em.trim())
-          .filter((em) => em.length > 0)
-          .map((em) => ({
-            emailAddress: { address: em },
-          }));
-
-        const mailPayload = {
-          message: {
-            subject,
-            body: {
-              contentType: 'HTML',
-              content: bodyHtml,
-            },
-            toRecipients: recipients,
-            ...(ccRecipients.length > 0 ? { ccRecipients } : {}),
-          },
-          saveToSentItems: 'true',
-        };
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(mailPayload),
+        // Send from the authorized shared mailbox (MS_DEFAULT_SENDER_EMAIL).
+        // Sending as the recruiter's personal mailbox is rejected by the tenant
+        // AppOnly Application Access Policy with ErrorAccessDenied. sendGraphEmail
+        // throws (with the Graph error body) on any non-ok response, so failures
+        // surface in the logs below instead of being silently dropped.
+        await sendGraphEmail({
+          sender: config.microsoft.defaultSender,
+          to: toEmail,
+          cc: ccEmail,
+          subject,
+          html: bodyHtml,
         });
 
-        if (res.ok) {
-          emailsSent++;
-          // Log mail message to db
-          const emailMsg = await prisma.rpa_email_messages.create({
-            data: {
-              conversation_id: `shortlist-conv-${shortlist.id}`,
-              from_email: hrEmail,
-              to_emails: toEmail.split(','),
-              subject,
-              body_html: bodyHtml,
-              direction: 'outbound',
-              candidate_id: candidateId,
-              mrf_id: BigInt(mrfId),
-              shortlist_id: shortlist.id,
-              sent_at: new Date(),
-            },
-          });
+        emailsSent++;
 
-          // Create tracking record
-          await prisma.rpa_email_tracking.create({
-            data: {
-              message_id: emailMsg.id,
-              delivered: true,
-              delivered_at: new Date(),
-            },
-          });
+        // Log mail message to db
+        const emailMsg = await prisma.rpa_email_messages.create({
+          data: {
+            conversation_id: `shortlist-conv-${shortlist.id}`,
+            from_email: config.microsoft.defaultSender,
+            to_emails: toEmail.split(','),
+            subject,
+            body_html: bodyHtml,
+            direction: 'outbound',
+            candidate_id: candidateId,
+            mrf_id: mrfRef,
+            shortlist_id: shortlist.id,
+            sent_at: new Date(),
+          },
+        });
 
-          // Update shortlist flag
-          await prisma.rpa_shortlisted_candidates.update({
-            where: { id: shortlist.id },
-            data: {
-              email_sent: true,
-              email_sent_at: new Date(),
-              email_subject: subject,
-              email_body_snapshot: bodyHtml,
-            },
-          });
-        }
+        // Create tracking record
+        await prisma.rpa_email_tracking.create({
+          data: {
+            message_id: emailMsg.id,
+            delivered: true,
+            delivered_at: new Date(),
+          },
+        });
+
+        // Update shortlist flag
+        await prisma.rpa_shortlisted_candidates.update({
+          where: { id: shortlist.id },
+          data: {
+            email_sent: true,
+            email_sent_at: new Date(),
+            email_subject: subject,
+            email_body_snapshot: bodyHtml,
+          },
+        });
       } catch (err) {
         logger.error(`Failed to send shortlist email to ${toEmail}:`, { error: err.message });
+        emailFailures.push({
+          name: c.Name || 'Candidate',
+          email: c.EmailID || '',
+          reason: describeEmailError(err),
+        });
       }
     }
 
@@ -1650,7 +1745,12 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     logger.warn('Failed to invalidate Redis cache:', { error: err.message });
   }
 
-  return { success: true, emails_sent: emailsSent };
+  return {
+    success: true,
+    shortlisted: shortlistedCount,
+    emails_sent: emailsSent,
+    email_failures: emailFailures,
+  };
 }
 
 /**
@@ -1814,8 +1914,6 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
  * POST /api/screening/analytics/schedule
  */
 export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
-
   // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
   //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
   const settingClientIdRow = await prisma.rpa_settings.findUnique({
@@ -1892,14 +1990,23 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   logger.info(`Zeko API: Scheduling interview at Zeko for candidate ${shortlist.candidate_name}`);
 
-  const zekoRes = await fetch(zekoUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${tokenRecord.access_token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(zekoPayload),
-  });
+  let zekoRes;
+  try {
+    zekoRes = await fetch(zekoUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokenRecord.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(zekoPayload),
+    });
+  } catch (err) {
+    logger.error(`Zeko Schedule API network error: ${err.message}`, { cause: err.cause?.code });
+    throw new AppError(
+      'Could not reach the Zeko interview platform (connection timed out). Please check the connection and try again, or schedule from the Zeko Interview Schedule tab.',
+      502
+    );
+  }
 
   if (!zekoRes.ok) {
     const errorBody = await zekoRes.json().catch(() => ({}));
@@ -1963,32 +2070,12 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   if (toEmail) {
     try {
-      const token = await getAccessToken();
-      const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-      const mailPayload = {
-        message: {
-          subject,
-          body: {
-            contentType: 'HTML',
-            content: emailHtml,
-          },
-          toRecipients: toEmail
-            .split(',')
-            .map((em) => em.trim())
-            .filter((em) => em.length > 0)
-            .map((em) => ({ emailAddress: { address: em } })),
-        },
-        saveToSentItems: 'true',
-      };
-
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(mailPayload),
+      // Send from the authorized shared mailbox (see shortlistCandidates).
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: toEmail,
+        subject,
+        html: emailHtml,
       });
     } catch (err) {
       logger.error('Failed to send interview scheduling email:', { error: err.message });
@@ -2002,8 +2089,6 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
  * POST /api/screening/analytics/cancel
  */
 export async function cancelInterview(pipelineId, reason, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
-
   // 1) Fetch active Zeko token
   const tokenRecord = await prisma.rpa_zeko_auth_token.findFirst({
     where: {
@@ -2085,32 +2170,12 @@ export async function cancelInterview(pipelineId, reason, user) {
 
   if (toEmail) {
     try {
-      const token = await getAccessToken();
-      const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-      const mailPayload = {
-        message: {
-          subject,
-          body: {
-            contentType: 'HTML',
-            content: emailHtml,
-          },
-          toRecipients: toEmail
-            .split(',')
-            .map((em) => em.trim())
-            .filter((em) => em.length > 0)
-            .map((em) => ({ emailAddress: { address: em } })),
-        },
-        saveToSentItems: 'true',
-      };
-
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(mailPayload),
+      // Send from the authorized shared mailbox (see shortlistCandidates).
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: toEmail,
+        subject,
+        html: emailHtml,
       });
     } catch (err) {
       logger.error('Failed to send interview cancellation email:', { error: err.message });
@@ -2250,17 +2315,85 @@ export async function getOutlookConversations(email) {
 /**
  * Update candidate pipeline status in rpa_shortlisted_candidates.
  */
-export async function updateCandidateStatus(candidateId, status) {
+/**
+ * Maps a screening pipeline status to the email it should trigger.
+ * Each entry resolves the right template (by category, or by name when the
+ * category CHECK constraint has no dedicated value) and the recipient flow key.
+ */
+const STATUS_EMAIL_MAP = {
+  rejected: { templateWhere: { category: 'rejection', is_active: true }, flowKey: 'rejection' },
+  on_hold: { templateWhere: { name: 'Application On Hold', is_active: true }, flowKey: 'onHold' },
+};
+
+export async function updateCandidateStatus(candidateId, status, user) {
   const updated = await prisma.rpa_shortlisted_candidates.update({
     where: { id: candidateId },
     data: { pipeline_status: status }
   });
+
+  // Notify the candidate when their status changes to a notifiable state
+  // (Rejected / On Hold). Email failures must NOT roll back the status update;
+  // the reason is captured and returned so the UI can show it to the user.
+  let emailSent = false;
+  let emailError = null;
+  const mapping = STATUS_EMAIL_MAP[String(status).toLowerCase()];
+  if (mapping) {
+    try {
+      const template = await prisma.rpa_email_templates.findFirst({ where: mapping.templateWhere });
+      if (!template) {
+        emailError = `No active email template configured for "${status}".`;
+        logger.warn(`No active email template found for status "${status}"; skipping candidate notification.`);
+      } else {
+        const { to: toEmail, cc: ccEmail } = resolveRecipients(mapping.flowKey, updated.candidate_email);
+        if (!toEmail) {
+          emailError = describeEmailError('No valid recipients');
+          logger.warn(`Skipping "${status}" email for shortlist ${candidateId}: no recipient address available.`);
+        } else {
+          const { subject, html: bodyHtml } = compileTemplate(template.subject, template.body_html, {
+            candidate_name: updated.candidate_name || 'Candidate',
+            position: updated.position_applied || 'the role',
+            job_title: updated.position_applied || 'the role',
+          });
+
+          await sendGraphEmail({
+            sender: config.microsoft.defaultSender,
+            to: toEmail,
+            cc: ccEmail,
+            subject,
+            html: bodyHtml,
+          });
+          emailSent = true;
+
+          // Record the outbound message for the conversation/audit view
+          await prisma.rpa_email_messages.create({
+            data: {
+              conversation_id: `status-${status}-conv-${updated.id}`,
+              from_email: config.microsoft.defaultSender,
+              to_emails: toEmail.split(','),
+              subject,
+              body_html: bodyHtml,
+              direction: 'outbound',
+              candidate_id: updated.cv_id ? BigInt(updated.cv_id) : null,
+              mrf_id: updated.mrf_id ? BigInt(updated.mrf_id) : null,
+              shortlist_id: updated.id,
+              sent_at: new Date(),
+            },
+          });
+        }
+      }
+    } catch (err) {
+      emailError = describeEmailError(err);
+      logger.error(`Failed to send "${status}" status email for shortlist ${candidateId}:`, { error: err.message });
+    }
+  }
 
   return {
     ...updated,
     id: Number(updated.id),
     cv_id: updated.cv_id ? Number(updated.cv_id) : null,
     mrf_id: updated.mrf_id ? Number(updated.mrf_id) : null,
+    email_sent: emailSent,
+    email_error: emailError,
   };
 }
 

@@ -74,6 +74,10 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
+  // Screening status -> Rejected notification to candidate. Prod -> candidate.
+  rejection: { to: '', cc: '', dynamic: true },
+  // Screening status -> On Hold notification to candidate. Prod -> candidate.
+  onHold: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */
