@@ -626,7 +626,7 @@ export default function MRF() {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="animate-fade-in">
+    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
       {/* MRF Create Request Form Card */}
       <Card
         bordered={false}

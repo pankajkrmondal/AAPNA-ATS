@@ -293,7 +293,7 @@ export default function CandidateDetail() {
   ];
 
   return (
-    <div>
+    <div className="stagger-children">
       {/* Back button */}
       <Button
         type="text"

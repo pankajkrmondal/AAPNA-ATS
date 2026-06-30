@@ -461,7 +461,7 @@ export default function Candidates() {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="animate-fade-in">
+    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
       {/* 3-Field Candidate Search Card */}
       <Card
         bordered={false}
@@ -1189,11 +1189,12 @@ export default function Candidates() {
                       <Input placeholder="e.g. Dec 2024" style={{ borderRadius: 6 }} />
                     </Form.Item>
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                      <Button 
-                        type="text" 
-                        danger 
-                        icon={<DeleteOutlined />} 
-                        onClick={() => remove(name)} 
+                      <Button
+                        type="text"
+                        danger
+                        title="Remove"
+                        icon={<DeleteOutlined />}
+                        onClick={() => remove(name)}
                         style={{ height: 38 }}
                       />
                     </div>

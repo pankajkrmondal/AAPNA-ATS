@@ -815,7 +815,7 @@ export default function Analytics() {
   ];
 
   return (
-    <div className="page-enter" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <div className="stagger-children" style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* Page Header */}
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>

@@ -106,7 +106,7 @@ export default function Settings() {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto' }} className="animate-fade-in">
+    <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto' }} className="stagger-children">
       <Card
         bordered={false}
         style={{

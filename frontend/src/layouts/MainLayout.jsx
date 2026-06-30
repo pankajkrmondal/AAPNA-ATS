@@ -16,25 +16,24 @@ import {
   Typography,
   Space,
   Tooltip,
-  Tag,
 } from 'antd';
 import {
   DashboardOutlined,
-  TeamOutlined,
+  SolutionOutlined,
   FileTextOutlined,
   ShopOutlined,
   FilterOutlined,
   BarChartOutlined,
   MailOutlined,
-  SettingOutlined,
+  BellOutlined,
   SearchOutlined,
   UserOutlined,
   LogoutOutlined,
   SunOutlined,
   MoonOutlined,
   UploadOutlined,
-  CrownOutlined,
-  FundOutlined,
+  SettingOutlined,
+  AuditOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
@@ -48,17 +47,29 @@ const { Text } = Typography;
 
 const SIDEBAR_COLLAPSED_KEY = 'ats.sidebarCollapsed';
 
+/** Admin Portal glyph — a person with a small gear badge ("manage accounts").
+ *  AntD has no single person+gear icon, so we compose UserOutlined + a small
+ *  SettingOutlined. Inherits color/size (em-based) from the surrounding text. */
+function AdminPortalIcon() {
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}>
+      <UserOutlined />
+      <SettingOutlined style={{ position: 'absolute', right: '-0.32em', bottom: '-0.16em', fontSize: '0.62em' }} />
+    </span>
+  );
+}
+
 /** Navigation menu items */
 const MENU_ITEMS = [
   { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/candidates', icon: <TeamOutlined />,      label: 'Candidates' },
-  { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Upload' },
+  { key: '/candidates', icon: <SolutionOutlined />,  label: 'Search Candidate' },
+  { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Manual Upload' },
   { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
-  { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor' },
-  { key: '/filtering',  icon: <FilterOutlined />,    label: 'Screening' },
+  { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
+  { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Analytics' },
-  { key: '/email',      icon: <MailOutlined />,      label: 'Email' },
-  { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
+  { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
+  { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
 ];
 
 /** Navigation menu shown to vendors — restricted to their own surfaces. */
@@ -72,20 +83,20 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
-const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <FundOutlined />, label: 'Vendor Dashboard' };
+const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <AuditOutlined />, label: 'Vendor Dashboard' };
 
 /** Map paths to breadcrumb labels */
 const BREADCRUMB_MAP = {
   dashboard: 'Dashboard',
   'vendor-dashboard': 'Vendor Dashboard',
-  candidates: 'Candidates',
-  'hr-upload': 'HR Upload',
+  candidates: 'Search Candidate',
+  'hr-upload': 'HR Manual Upload',
   mrf: 'MRF',
-  vendor: 'Vendor',
-  filtering: 'Screening',
-  analytics: 'Analytics',
-  email: 'Email',
-  settings: 'Settings',
+  vendor: 'Vendor Manual Upload',
+  filtering: 'Candidate Screening',
+  analytics: 'Recruitment Screening Analytics',
+  email: 'Email Template Management',
+  settings: 'Reminder Settings',
 };
 
 export default function MainLayout() {
@@ -105,21 +116,15 @@ export default function MainLayout() {
 
   const pathSegments = location.pathname.split('/').filter(Boolean);
 
-  /** User dropdown menu — vendors don't have access to Settings. */
-  const userMenuItems = (user?.role || '').toLowerCase() === 'vendor'
-    ? [{ key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true }]
-    : [
-        { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-        { type: 'divider' },
-        { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
-      ];
+  /** User dropdown menu — only Logout (Reminder Settings lives in the sidebar). */
+  const userMenuItems = [
+    { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
+  ];
 
   const handleUserMenu = async ({ key }) => {
     if (key === 'logout') {
       await logout();
       navigate('/login');
-    } else if (key === 'settings') {
-      navigate('/settings');
     }
   };
 
@@ -155,7 +160,6 @@ export default function MainLayout() {
   // Tenant badge: superadmin is global; everyone else shows their company.
   const roleKey = (user?.role || '').toLowerCase();
   const isSuperadmin = roleKey === 'superadmin';
-  const companyLabel = isSuperadmin ? 'All Companies' : (user?.company_name || 'Unassigned');
   const adminRoleLabel = isSuperadmin ? 'Super Admin' : roleKey === 'admin' ? 'Admin' : (user?.role || '');
   const userInitials = (
     `${(user?.first_name || '')[0] || ''}${(user?.last_name || '')[0] || ''}`.toUpperCase()
@@ -188,7 +192,7 @@ export default function MainLayout() {
             />
             <div style={{ width: 1, height: 30, background: '#dde2d0' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-              <div className="admin-brand-icon"><CrownOutlined /></div>
+              <div className="admin-brand-icon"><AdminPortalIcon /></div>
               <div style={{ lineHeight: 1.2 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
@@ -235,7 +239,11 @@ export default function MainLayout() {
           </div>
         </Header>
         <Content style={{ minHeight: 'calc(100vh - 64px)', background: '#f2f4f0' }}>
-          <Outlet />
+          {/* Keyed by path so the entrance animation replays on every navigation
+              (a persistent wrapper would only animate on first mount). */}
+          <div className="page-enter" key={location.pathname}>
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     );
@@ -344,34 +352,17 @@ export default function MainLayout() {
             <Text style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }} className="text-truncate">
               {pageTitle}
             </Text>
-            <Tag
-              color={companyLabel === 'All Companies' ? 'gold' : 'default'}
-              style={{ borderRadius: 999, fontSize: 11, fontWeight: 600, margin: 0 }}
-            >
-              {companyLabel}
-            </Tag>
+            {/* Company badge intentionally hidden for now (not required in the UI). */}
           </Space>
 
           {/* Right: Admin Portal + Avatar */}
           <Space size={12} align="center" style={{ flexShrink: 0 }}>
             {hasAdminAccess && (
               <Button
+                className="admin-top-btn"
                 type="text"
-                icon={<CrownOutlined style={{ color: 'var(--gold)', fontSize: 14 }} />}
+                icon={<AdminPortalIcon />}
                 onClick={() => navigate('/admin/dashboard')}
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--gold)',
-                  background: 'var(--gold-subtle)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  height: 32,
-                  padding: '0 10px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}
               >
                 Admin Portal
               </Button>
@@ -403,8 +394,9 @@ export default function MainLayout() {
             width: '100%',
           }}
         >
-          {/* Child Routes Content Outlet */}
-          <div className="page-enter">
+          {/* Child Routes Content Outlet — keyed by path so the entrance
+              animation replays on every navigation, not just first mount. */}
+          <div className="page-enter" key={location.pathname}>
             <Outlet />
           </div>
         </Content>

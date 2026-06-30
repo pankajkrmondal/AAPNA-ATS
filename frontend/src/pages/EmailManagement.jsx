@@ -253,7 +253,7 @@ export default function EmailManagement() {
   ];
 
   return (
-    <div className="page-enter" style={{ minHeight: 'calc(100vh - 120px)' }}>
+    <div className="stagger-children" style={{ minHeight: 'calc(100vh - 120px)' }}>
       {/* Page Header */}
       <div style={{ marginBottom: 24 }}>
         <Title level={2} style={{ fontWeight: 800, margin: 0 }}>
