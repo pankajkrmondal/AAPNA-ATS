@@ -19,7 +19,7 @@ import { getAccessToken } from './onedrive.service.js';
  * @param {string} params.html - HTML email body content
  * @returns {Promise<boolean>}
  */
-async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
+export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
 
@@ -84,14 +84,29 @@ async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
 
     logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}...`);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    // Retry transient network failures (connect timeouts / resets). Graph itself
+    // does not throw — a non-ok HTTP status is a real rejection and is NOT retried.
+    const MAX_ATTEMPTS = 3;
+    let response;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        break;
+      } catch (netErr) {
+        if (attempt === MAX_ATTEMPTS) {
+          throw new Error(`Graph sendMail network error after ${MAX_ATTEMPTS} attempts: ${netErr.message}${netErr.cause ? ` (${netErr.cause.code || netErr.cause.message})` : ''}`);
+        }
+        logger.warn(`MS Graph Email: network error on attempt ${attempt}/${MAX_ATTEMPTS} (${netErr.cause?.code || netErr.message}); retrying...`);
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -101,6 +116,43 @@ async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
     logger.info(`MS Graph Email: Email successfully sent from ${activeSender}`);
     return true;
   }
+}
+
+/**
+ * Translates a raw email-send error (from sendGraphEmail / token / recipient
+ * resolution) into a short, user-readable reason for display in the UI.
+ * @param {Error|string} err
+ * @returns {string}
+ */
+export function describeEmailError(err) {
+  const msg = (typeof err === 'string' ? err : err?.message || '').trim();
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('und_err_connect_timeout') ||
+    lower.includes('connecttimeout') ||
+    lower.includes('network error') ||
+    lower.includes('fetch failed') ||
+    lower.includes('econnreset') ||
+    lower.includes('enotfound') ||
+    lower.includes('etimedout')
+  ) {
+    return 'Could not connect to the Microsoft email server (connection timed out). The server’s internet/VPN may be down — please try again.';
+  }
+  if (lower.includes('erroraccessdenied') || lower.includes('apponly') || lower.includes('accesspolicy')) {
+    return 'The sending mailbox is not authorized to send email (Microsoft access policy). Ask IT to grant send access for the recruitment mailbox.';
+  }
+  if (lower.includes('access token') || lower.includes('invalid_client') || lower.includes('unauthorized_client')) {
+    return 'Could not authenticate with Microsoft (token request failed). The app credentials may be invalid or expired.';
+  }
+  if (lower.includes('no valid recipients') || lower.includes('no recipient')) {
+    return 'No email address is on file for this candidate.';
+  }
+  if (lower.includes('template')) {
+    return msg; // e.g. "Shortlist email template not found." — already clear.
+  }
+  // Fall back to the raw message so something actionable is still shown.
+  return msg || 'Unknown email error.';
 }
 
 /**
