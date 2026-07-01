@@ -49,9 +49,74 @@ import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
 import screeningService from '../services/screeningService';
 import StatusBadge from '../components/common/StatusBadge';
+import CandidateDetailCard from '../components/CandidateDetailCard';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
+
+// Maps an Analytics shortlist record (with its raw rpa_cv at `.cv`) into the
+// normalized shape consumed by the shared <CandidateDetailCard />.
+const parseEmploymentHistory = (raw) => {
+  if (!raw) return { companies: [] };
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return { companies: [] }; }
+  }
+  return { companies: Array.isArray(obj?.companies) ? obj.companies : [] };
+};
+
+function mapCvToCandidate(record) {
+  const cv = record?.cv || {};
+  const currentCompany = typeof cv.CurrentCompany === 'object' && cv.CurrentCompany !== null
+    ? cv.CurrentCompany
+    : { Name: cv.CurrentCompany || '', Website: '' };
+  return {
+    name: record.candidate_name || cv.Name,
+    email: record.candidate_email || cv.EmailID,
+    phone: cv.ContactNumber,
+    education: cv.HighestQualification,
+    experience: cv.TotalExperienceYears,
+    lastCompanyExperience: cv.LastCompanyExperienceYears,
+    location: cv.CurrentLocation,
+    currentCTC: cv.CTC_LPA,
+    expectedCTC: cv.ExpectedCTC_LPA,
+    noticePeriod: cv.NoticePeriod,
+    position: cv.PositionApplied || record.position_applied,
+    jobSource: cv.JobSource,
+    recruiterInfo: cv.RecruiterInfoAAPNA,
+    englishCommunicationRating: cv.EnglishCommunicationRating,
+    top5KeySkills: cv.Top5KeySkills,
+    gender: cv.Gender,
+    preferredShift: cv.PreferredShift,
+    reasonForJobChange: cv.ReasonForJobChange,
+    willingToTakeOnlineTest: cv.WillingToTakeOnlineTest,
+    hasLaptopForInitialDays: cv.HasLaptopForInitialDays,
+    currentCompany,
+    a10th: cv.a10th,
+    a12th: cv.a12th,
+    graduation: cv.graduation,
+    postGraduation: cv.postGraduation,
+    graduationdegree: cv.graduationdegree,
+    graduationspecialization: cv.graduationspecialization,
+    postgraduationdegree: cv.postgraduationdegree,
+    postgraduationspecialization: cv.postgraduationspecialization,
+    LinkedInProfile: cv.LinkedInProfile,
+    employment_history: parseEmploymentHistory(cv.employment_history),
+    Heat: cv.Heat,
+    FinalStatus: cv.FinalStatus,
+    HRQuickcomments: cv.HRQuickcomments,
+    IQScore: cv.IQScore,
+    TechScore: cv.TechScore,
+    ZekoInterviewScore: cv.ZekoInterviewScore,
+    ZekoCodingScore: cv.ZekoCodingScore,
+    ZekoCommunicationScore: cv.ZekoCommunicationScore,
+    TechRoundOne: cv.TechRoundOne,
+    TechRoundTwo: cv.TechRoundTwo,
+    TechRoundThree: cv.TechRoundThree,
+    ManagerialOrCEOFeedback: cv.ManagerialOrCEOFeedback,
+    HRInterview: cv.HRInterview,
+  };
+}
 
 // Helper: Clean email message bodies
 const cleanMsgBody = (s) => {
@@ -86,6 +151,7 @@ export default function Analytics() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ pipeline: [], candidates: [], tiles: {} });
   const [activeTab, setActiveTab] = useState('analytics');
+  const [highlightedScheduleId, setHighlightedScheduleId] = useState(null);
   const [viewingCandidate, setViewingCandidate] = useState(null);
 
   // --- Filtering State ---
@@ -242,11 +308,19 @@ export default function Analytics() {
 
     setSavingStatusId(candidateId);
     try {
-      await screeningService.updateCandidateStatus({
+      const resp = await screeningService.updateCandidateStatus({
         candidate_id: candidateId,
         status: status
       });
-      message.success('Candidate status updated successfully');
+      const result = resp.data?.data || resp.data || {};
+      const notifiable = status === 'rejected' || status === 'on_hold';
+      if (notifiable && result.email_sent) {
+        message.success('Candidate status updated and notification email sent.');
+      } else if (notifiable && !result.email_sent) {
+        message.error(`Status updated, but email not sent: ${result.email_error || 'Unknown email error.'}`, 6);
+      } else {
+        message.success('Candidate status updated successfully');
+      }
       
       // Update local data state without full reload
       setData(prev => ({
@@ -317,6 +391,18 @@ export default function Analytics() {
     const assignedJobId = candidate.rpa_zeko_candidate_pipeline?.[0]?.zeko_job_id;
     setSelectedZekoJobId(assignedJobId || null);
     setInterviewDates(null);
+  };
+
+  // Send the recruiter to the Zeko Interview Schedule tab and spotlight the
+  // candidate's row (the dedicated assign + schedule flow).
+  const goToScheduleTab = (candidate) => {
+    setActiveTab('schedule');
+    setHighlightedScheduleId(candidate.id);
+    setTimeout(() => {
+      const el = document.querySelector('.row-highlight');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    setTimeout(() => setHighlightedScheduleId(null), 4000);
   };
 
   const handleScheduleInterview = async () => {
@@ -537,12 +623,12 @@ export default function Analytics() {
             />
           </Tooltip>
 
-          <Tooltip title="Schedule Zeko Interview">
+          <Tooltip title="Go to Zeko Interview Schedule">
             <Button
               type="text"
               shape="circle"
               icon={<CalendarOutlined style={{ color: '#185fa5' }} />}
-              onClick={() => handleOpenScheduleModal(record)}
+              onClick={() => goToScheduleTab(record)}
             />
           </Tooltip>
 
@@ -876,6 +962,7 @@ export default function Analytics() {
       {/* Main Tabs Container */}
       <Card className="glass" style={{ borderRadius: 16, border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-md)' }}>
         <Tabs
+          className="screening-tabs"
           activeKey={activeTab}
           onChange={setActiveTab}
           size="large"
@@ -885,7 +972,7 @@ export default function Analytics() {
               key: 'analytics',
               label: (
                 <span>
-                  <BarChartOutlined />
+                  <BarChartOutlined className="tab-ico" />
                   Analytics Summary
                 </span>
               ),
@@ -903,7 +990,7 @@ export default function Analytics() {
               key: 'all',
               label: (
                 <span>
-                  <TeamOutlined />
+                  <TeamOutlined className="tab-ico" />
                   All Candidates
                 </span>
               ),
@@ -963,7 +1050,7 @@ export default function Analytics() {
               key: 'schedule',
               label: (
                 <span>
-                  <CalendarOutlined />
+                  <CalendarOutlined className="tab-ico" />
                   Zeko Interview Schedule
                 </span>
               ),
@@ -973,6 +1060,7 @@ export default function Analytics() {
                   columns={zekoScheduleColumns}
                   rowKey="id"
                   loading={loading}
+                  rowClassName={(record) => (record.id === highlightedScheduleId ? 'row-highlight' : '')}
                   pagination={{ pageSize: 10 }}
                   locale={{ emptyText: <Empty description="No candidates available for scheduling" /> }}
                 />
@@ -982,7 +1070,7 @@ export default function Analytics() {
               key: 'cancel',
               label: (
                 <span>
-                  <CloseCircleOutlined />
+                  <CloseCircleOutlined className="tab-ico" />
                   Zeko Cancel Interview
                 </span>
               ),
@@ -1003,25 +1091,30 @@ export default function Analytics() {
 
       {/* --- Outlook Conversations Modal --- */}
       <Modal
-        visible={outlookModalVisible}
+        open={outlookModalVisible}
         onCancel={() => setOutlookModalVisible(false)}
         footer={null}
-        width={760}
+        width={780}
         bodyStyle={{ padding: 0 }}
         destroyOnClose
         centered
+        closable={false}
+        className="conv-modal"
       >
         <div className="conv-modal-head">
-          <div style={{ flex: 1 }}>
+          <div className="conv-modal-avatar">
+            <MailOutlined />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div className="conv-modal-title">
-              Outlook Email Threads — {outlookCandidateName}
+              {outlookCandidateName || 'Candidate'}
             </div>
             <div className="conv-modal-sub">
               {outlookEmail}
             </div>
           </div>
-          <button className="conv-close" onClick={() => setOutlookModalVisible(false)}>
-            &times;
+          <button className="conv-close" aria-label="Close" onClick={() => setOutlookModalVisible(false)}>
+            <CloseOutlined />
           </button>
         </div>
 
@@ -1096,12 +1189,13 @@ export default function Analytics() {
       >
         {schedulingCandidate && (
           <Form layout="vertical" style={{ marginTop: 12 }}>
-            <Form.Item label="Candidate Details">
-              <Input
-                value={`${schedulingCandidate.candidate_name} (${schedulingCandidate.candidate_email})`}
-                disabled
-              />
-            </Form.Item>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--ink-2)', border: '1px solid var(--border-light)', borderRadius: 10, marginBottom: 18 }}>
+              <Avatar size={40} style={{ background: 'var(--green)', flexShrink: 0 }} icon={<UserOutlined />} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{schedulingCandidate.candidate_name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{schedulingCandidate.candidate_email}</div>
+              </div>
+            </div>
 
             <Form.Item label="Select Zeko Job" required>
               <Select
@@ -1298,272 +1392,19 @@ export default function Analytics() {
 
       {/* --- View Candidate Modal --- */}
       <Modal
-        visible={!!viewingCandidate}
+        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>View Candidate</span>}
+        open={!!viewingCandidate}
         onCancel={() => setViewingCandidate(null)}
-        footer={null}
-        title={null}
+        footer={[
+          <Button key="close" style={{ borderRadius: 8, fontWeight: 600 }} onClick={() => setViewingCandidate(null)}>
+            Close
+          </Button>
+        ]}
         destroyOnClose
-        centered
-        width={800}
-        bodyStyle={{ padding: '24px 28px' }}
+        width={760}
+        styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: 12 } }}
       >
-        {viewingCandidate && (() => {
-          const cv = viewingCandidate.cv || {};
-          return (
-            <div>
-              {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px', marginBottom: '20px' }}>
-                <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text)' }}>
-                  View Candidate
-                </span>
-                <button 
-                  onClick={() => setViewingCandidate(null)}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    fontSize: '20px',
-                    color: 'var(--text-2)',
-                    cursor: 'pointer',
-                    lineHeight: '1'
-                  }}
-                >
-                  &times;
-                </button>
-              </div>
-
-              {/* Title Section */}
-              <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-                <span style={{ fontSize: '11px', color: 'var(--gold)', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                  Personal Information
-                </span>
-                <div style={{ width: '40px', height: '2px', background: 'var(--gold)', margin: '0 auto 16px' }} />
-              </div>
-
-              {/* 2-Column Centered Key-Value Grid */}
-              <div style={{ maxHeight: '480px', overflowY: 'auto', paddingRight: '4px' }}>
-                <Row gutter={[16, 20]} justify="center" align="middle" style={{ textAlign: 'center' }}>
-                  {/* Candidate Name */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Candidate Name
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {viewingCandidate.candidate_name || cv.Name || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Candidate Email */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Candidate Email
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {viewingCandidate.candidate_email || cv.EmailID || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Contact Number */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Candidate Contact Number
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.ContactNumber || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Highest Qualification */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Highest Qualification
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.HighestQualification || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Total Experience */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Total Experience (Years)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.TotalExperienceYears || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Last Company Experience */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Last Company Experience (Years)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.LastCompanyExperienceYears || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Current Location */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Current Location
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.CurrentLocation || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* CTC (LPA) */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      CTC (LPA)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.CTC_LPA || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Expected CTC (LPA) */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Expected CTC (LPA)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.ExpectedCTC_LPA || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Notice Period */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Notice Period (Days)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.NoticePeriod != null ? (
-                        String(cv.NoticePeriod).toLowerCase().includes('day') 
-                          ? cv.NoticePeriod 
-                          : `${cv.NoticePeriod} days`
-                      ) : 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Position Applied */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Position Applied
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.PositionApplied || viewingCandidate.position_applied || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Job Source */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Job Source
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.JobSource || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Recruiter Info */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Recruiter Info (AAPNA)
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.RecruiterInfoAAPNA || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* English Communication */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      English Communication Rating
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.EnglishCommunicationRating || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Divider line before skills */}
-                  <Col span={24}>
-                    <Divider style={{ margin: '8px 0' }} />
-                  </Col>
-
-                  {/* Top 5 Key Skills */}
-                  <Col span={24}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                      Top 5 Key Skills
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700', display: 'block' }}>
-                      {(() => {
-                        const skills = cv.Top5KeySkills;
-                        if (!skills) return 'N/A';
-                        if (Array.isArray(skills)) return skills.join(', ');
-                        if (typeof skills === 'string') {
-                          let str = skills.trim();
-                          if (str.startsWith('{') && str.endsWith('}')) {
-                            str = str.slice(1, -1);
-                            return str.split(',')
-                              .map(s => s.trim().replace(/^"|"$/g, '').trim())
-                              .filter(Boolean)
-                              .join(', ');
-                          }
-                          return str;
-                        }
-                        return String(skills);
-                      })()}
-                    </span>
-                  </Col>
-
-                  {/* Divider line before gender/shift */}
-                  <Col span={24}>
-                    <Divider style={{ margin: '8px 0' }} />
-                  </Col>
-
-                  {/* Gender */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Gender
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.Gender || 'N/A'}
-                    </span>
-                  </Col>
-
-                  {/* Preferred Shift */}
-                  <Col span={12}>
-                    <span style={{ fontSize: '10px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>
-                      Preferred Shift
-                    </span>
-                    <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                      {cv.PreferredShift || 'N/A'}
-                    </span>
-                  </Col>
-                </Row>
-              </div>
-
-              {/* Modal Footer */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '24px', borderTop: '1px solid var(--border-light)', paddingTop: '16px' }}>
-                <Button 
-                  onClick={() => setViewingCandidate(null)}
-                  style={{
-                    borderRadius: '6px',
-                    backgroundColor: '#f5f5f5',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-2)',
-                    fontWeight: '600',
-                    height: '36px',
-                    padding: '0 24px'
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          );
-        })()}
+        {viewingCandidate && <CandidateDetailCard candidate={mapCvToCandidate(viewingCandidate)} />}
       </Modal>
     </div>
   );
