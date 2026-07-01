@@ -15,7 +15,6 @@ import {
   Badge,
   Drawer,
   Timeline,
-  Progress,
   Collapse,
   Alert,
   DatePicker,
@@ -28,7 +27,8 @@ import {
   Avatar,
   Empty,
   Modal,
-  notification
+  notification,
+  Pagination
 } from 'antd';
 import {
   UserOutlined,
@@ -50,11 +50,14 @@ import {
   SolutionOutlined,
   RiseOutlined,
   MessageOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useQueryClient } from '@tanstack/react-query';
 import useAuth from '../hooks/useAuth';
 import screeningService from '../services/screeningService';
+import { useApprovedRoles, useRoleCandidates, screeningKeys } from '../hooks/useScreeningData';
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 
@@ -136,26 +139,193 @@ const parseTechnicalTerms = (techTerms) => {
   }
 };
 
+// Visual style + explanation per JD-skill match status (display-only).
+const JD_SKILL_STATUS = {
+  evidenced: {
+    color: '#237804',
+    bg: 'rgba(82, 196, 26, 0.10)',
+    border: 'rgba(82, 196, 26, 0.35)',
+    explain: (s) => `Mentioned in resume (×${s.count}) and listed in skills section`,
+  },
+  signals_only: {
+    color: '#096dd9',
+    bg: 'rgba(24, 144, 255, 0.10)',
+    border: 'rgba(24, 144, 255, 0.35)',
+    explain: (s) => `Found in resume (×${s.count}) but NOT in the candidate's declared skills section`,
+  },
+  listed_only: {
+    color: '#ad6800',
+    bg: 'rgba(250, 173, 20, 0.12)',
+    border: 'rgba(250, 173, 20, 0.40)',
+    explain: () => `Listed in skills section but not surfaced in resume signals`,
+  },
+  missing: {
+    color: 'var(--text-3)',
+    bg: 'var(--ink-4)',
+    border: 'var(--border-light)',
+    explain: () => `Not found in resume signals or declared skills`,
+  },
+};
+
+const isPresent = (s) => s.status === 'evidenced' || s.status === 'signals_only';
+
+// Renders the JD Skill Match for a candidate.
+//  - variant="card"  → compact: a match meter + chips for PRESENT skills only (calm, premium).
+//  - variant="full"  → drawer: the complete present + missing breakdown.
+// Returns null when no JD signals are present (e.g. keyword-search results).
+const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills' }) => {
+  if (!signals) return null;
+  const mandatory = Array.isArray(signals.mandatory) ? signals.mandatory : [];
+  const goodToHave = Array.isArray(signals.goodToHave) ? signals.goodToHave : [];
+  if (mandatory.length === 0 && goodToHave.length === 0) return null;
+
+  // Skills mentioned in the resume but absent from the declared skills section — the recruiter's key signal.
+  const signalsOnly = [...mandatory, ...goodToHave].filter((s) => s.status === 'signals_only');
+
+  /* ---- Compact card variant: meter + present chips only ---- */
+  if (variant === 'card') {
+    const head = label.replace(/ JD Skills$/, '').replace(/ Skills$/, '');
+    const mandPresent = mandatory.filter(isPresent);
+    const gthPresent = goodToHave.filter(isPresent);
+    const pct = mandatory.length ? Math.round((mandPresent.length / mandatory.length) * 100) : 0;
+    const CAP = 5;
+    const shown = mandPresent.slice(0, CAP);
+    const extra = mandPresent.length - shown.length;
+
+    const renderChip = (s, idx) => {
+      const cls = s.status === 'signals_only' ? 'skill-chip skill-chip--signal' : 'skill-chip skill-chip--present';
+      const style = JD_SKILL_STATUS[s.status] || JD_SKILL_STATUS.missing;
+      return (
+        <Tooltip key={`${s.skill}-${idx}`} title={style.explain(s)}>
+          <span className={cls}>
+            {s.skill}<span className="skill-chip__x">×{s.count}</span>
+          </span>
+        </Tooltip>
+      );
+    };
+
+    return (
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+        {mandatory.length > 0 && (
+          <div className="match-meter">
+            <span className="match-meter__head">{head}</span>
+            <span className="match-meter__bar"><span className="match-meter__fill" style={{ width: `${pct}%` }} /></span>
+            <span className="match-meter__count">{mandPresent.length}/{mandatory.length}</span>
+          </div>
+        )}
+        {(shown.length > 0 || goodToHave.length > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {shown.map(renderChip)}
+            {extra > 0 && <span className="skill-chip skill-chip--more">+{extra}</span>}
+            {goodToHave.length > 0 && (
+              <Tooltip title="Good-to-have skills present in resume">
+                <span className="skill-chip">Good-to-have <span className="skill-chip__x">{gthPresent.length}/{goodToHave.length}</span></span>
+              </Tooltip>
+            )}
+          </div>
+        )}
+        {signalsOnly.length > 0 && (
+          <div className="cand-signal-hint">
+            ⓘ In resume, not in declared skills: <strong>{signalsOnly.map((s) => s.skill).join(', ')}</strong>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ---- Full variant (drawer): complete present + missing breakdown ---- */
+  const renderTag = (s, idx, secondary) => {
+    const style = JD_SKILL_STATUS[s.status] || JD_SKILL_STATUS.missing;
+    return (
+      <Tooltip key={`${s.skill}-${idx}`} title={style.explain(s)}>
+        <Tag
+          style={{
+            margin: 0,
+            fontSize: '11px',
+            padding: '1px 6px',
+            borderRadius: '4px',
+            background: style.bg,
+            border: `1px solid ${style.border}`,
+            color: style.color,
+            fontWeight: 500,
+            opacity: secondary ? 0.85 : 1,
+          }}
+        >
+          {s.skill}
+          {isPresent(s) ? (
+            <span style={{ opacity: 0.7, marginLeft: '3px', fontSize: '9.5px', fontWeight: 700 }}>×{s.count}</span>
+          ) : s.status === 'listed_only' ? (
+            <span style={{ opacity: 0.7, marginLeft: '3px', fontSize: '9px', fontWeight: 600 }}>listed</span>
+          ) : (
+            <span style={{ opacity: 0.6, marginLeft: '3px', fontSize: '9px', fontWeight: 600 }}>missing</span>
+          )}
+        </Tag>
+      </Tooltip>
+    );
+  };
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      {mandatory.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>{label}:</span>
+          <Space size={[4, 6]} wrap>
+            {mandatory.map((s, idx) => renderTag(s, idx, false))}
+          </Space>
+        </div>
+      )}
+      {goodToHave.length > 0 && (
+        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Good-to-have:</span>
+          <Space size={[4, 6]} wrap>
+            {goodToHave.map((s, idx) => renderTag(s, idx, true))}
+          </Space>
+        </div>
+      )}
+      {signalsOnly.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: '11px', color: '#096dd9', lineHeight: 1.4 }}>
+          ⓘ Found in resume but not in declared skills:{' '}
+          <strong>{signalsOnly.map((s) => `${s.skill} (×${s.count})`).join(', ')}</strong>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CandidateScreening() {
   const { user } = useAuth();
   const convBodyRef = useRef(null);
 
-  // ── Mode/Tab State ──
-  const [activeTab, setActiveTab] = useState('jd'); // 'jd' or 'keyword'
+  const queryClient = useQueryClient();
+
+  // ── Mode/Tab State (persisted so returning to the page restores the view) ──
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('screening_active_tab') || 'jd'); // 'jd' or 'keyword'
   const [activeEduKeys, setActiveEduKeys] = useState([]);
 
   // ── Roles Dropdown State ──
-  const [roles, setRoles] = useState([]);
-  const [selectedRoleId, setSelectedRoleId] = useState(null);
+  // Roles come from React Query (prefetched at app load), cached for the session.
+  const rolesQuery = useApprovedRoles();
+  const roles = rolesQuery.data || [];
+  const loadingRoles = rolesQuery.isLoading;
+  const [selectedRoleId, setSelectedRoleId] = useState(() => {
+    const v = localStorage.getItem('screening_selected_role');
+    return v ? Number(v) : null;
+  });
   const [roleDetails, setRoleDetails] = useState(null);
-  const [loadingRoles, setLoadingRoles] = useState(false);
-  const [preloadingProgress, setPreloadingProgress] = useState({ current: 0, total: 0, show: false });
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Per-role candidates (JD tab) — cached per role so revisiting the page keeps results.
+  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd');
 
   // ── Candidates List State ──
   const [candidates, setCandidates] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateKeys, setSelectedCandidateKeys] = useState([]);
+
+  // ── Pagination State (client-side; result sets are bounded server-side) ──
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // ── Keyword Filter Fields ──
   const [form] = Form.useForm();
@@ -225,37 +395,58 @@ export default function CandidateScreening() {
   const [cancelReason, setCancelReason] = useState('');
 
   /* ═══════ INITIAL LOAD ═══════ */
+  // Roles load via React Query (prefetched at app load); only Zeko data fetched here.
   useEffect(() => {
-    fetchApprovedRoles();
     fetchZekoData();
   }, []);
 
-  /* ═══════ API FETCHERS ═══════ */
-  const fetchApprovedRoles = async () => {
-    setLoadingRoles(true);
-    try {
-      const res = await screeningService.getRoles();
-      const roleList = res.data?.data || res.data || [];
-      setRoles(roleList);
-      
-      // Simulate sequential background preloading progress bar
-      if (roleList.length > 0) {
-        setPreloadingProgress({ current: 0, total: roleList.length, show: true });
-        for (let i = 0; i < roleList.length; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          setPreloadingProgress((prev) => ({ ...prev, current: i + 1 }));
-        }
-        setTimeout(() => {
-          setPreloadingProgress({ current: 0, total: 0, show: false });
-        }, 800);
-      }
-    } catch (err) {
-      message.error('Failed to load approved MRF roles list.');
-    } finally {
-      setLoadingRoles(false);
-    }
-  };
+  /* ═══════ PERSIST VIEW (survives navigation) ═══════ */
+  useEffect(() => {
+    localStorage.setItem('screening_active_tab', activeTab);
+  }, [activeTab]);
 
+  useEffect(() => {
+    if (selectedRoleId) localStorage.setItem('screening_selected_role', String(selectedRoleId));
+    else localStorage.removeItem('screening_selected_role');
+  }, [selectedRoleId]);
+
+  /* ═══════ SYNC JD CANDIDATES QUERY → RENDER STATE ═══════ */
+  // Keep the existing render path (local candidates/summary/roleDetails + pagination) but
+  // source it from the cached per-role query so navigation away/back shows results instantly.
+  useEffect(() => {
+    if (activeTab !== 'jd') return;
+    const data = roleCandidatesQuery.data;
+    if (data) {
+      setRoleDetails(data.role || null);
+      setCandidates(data.candidates || []);
+      setSummary(data.summary || null);
+    }
+  }, [roleCandidatesQuery.data, activeTab]);
+
+  // Mirror the query's fetching state into the existing loading flag (keyword path sets it directly).
+  useEffect(() => {
+    if (activeTab === 'jd') {
+      setLoadingCandidates(Boolean(selectedRoleId) && roleCandidatesQuery.isFetching);
+    }
+  }, [roleCandidatesQuery.isFetching, activeTab, selectedRoleId]);
+
+  // Surface JD candidate-search errors (e.g. AI model overloaded).
+  useEffect(() => {
+    if (activeTab !== 'jd' || !roleCandidatesQuery.error) return;
+    const err = roleCandidatesQuery.error;
+    const isAIError = err?.status === 503 || err?.status === 429;
+    if (isAIError) {
+      notification.error({
+        message: 'AI Model Overloaded',
+        description: err.message || 'The AI Model is currently experiencing high demand. Please try again in a few moments.',
+        duration: 0,
+      });
+    } else {
+      message.error(err?.message || 'Error occurred while loading matching candidates.');
+    }
+  }, [roleCandidatesQuery.error, activeTab]);
+
+  /* ═══════ API FETCHERS ═══════ */
   const fetchZekoData = async () => {
     setLoadingZekoJobs(true);
     try {
@@ -282,36 +473,41 @@ export default function CandidateScreening() {
   };
 
   /* ═══════ SEARCH / MATCH ACTION ═══════ */
-  const handleRoleSelect = async (roleId) => {
+  // Selecting a role just sets the id; useRoleCandidates fires (or serves cache) and the
+  // sync effect populates the list. Clearing resets the local render state.
+  const handleRoleSelect = (roleId) => {
     setSelectedRoleId(roleId);
     setSelectedCandidateKeys([]);
-    setRoleDetails(null);
-    setCandidates([]);
-    setSummary(null);
+    setCurrentPage(1);
+    if (!roleId) {
+      setRoleDetails(null);
+      setCandidates([]);
+      setSummary(null);
+    }
+  };
 
-    if (!roleId) return;
+  // Force-reload the selected role's candidates, bypassing the backend Redis cache,
+  // and write the fresh result into the query cache so the UI updates.
+  const forceReloadRoleCandidates = async () => {
+    if (!selectedRoleId) return;
+    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true });
+    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), res);
+  };
 
-    setLoadingCandidates(true);
+  /* ═══════ REFRESH (roles + current candidates) ═══════ */
+  const handleRefresh = async () => {
+    setRefreshing(true);
     try {
-      const res = await screeningService.searchRoleCandidates(roleId);
-      const data = res.data?.data || res.data || {};
-      setRoleDetails(data.role || null);
-      setCandidates(data.candidates || []);
-      setSummary(data.summary || null);
-      message.success(`Found ${data.candidates?.length || 0} matching candidates`);
-    } catch (err) {
-      const isAIError = err.status === 503 || err.status === 429;
-      if (isAIError) {
-        notification.error({
-          message: 'AI Model Overloaded',
-          description: err.message || 'The AI Model is currently experiencing high demand. Please try again in a few moments.',
-          duration: 0,
-        });
+      if (activeTab === 'jd') {
+        await rolesQuery.refetch();
+        await forceReloadRoleCandidates();
       } else {
-        message.error(err.message || 'Error occurred while loading matching candidates.');
+        form.submit(); // keyword results are computed fresh server-side
       }
+    } catch (err) {
+      message.error(err?.message || 'Failed to refresh.');
     } finally {
-      setLoadingCandidates(false);
+      setRefreshing(false);
     }
   };
 
@@ -319,6 +515,7 @@ export default function CandidateScreening() {
     setSelectedCandidateKeys([]);
     setCandidates([]);
     setSummary(null);
+    setCurrentPage(1);
     setLoadingCandidates(true);
 
     const payload = {
@@ -353,6 +550,7 @@ export default function CandidateScreening() {
     setSelectedEduCategories([]);
     setCandidates([]);
     setSummary(null);
+    setCurrentPage(1);
     setSelectedCandidateKeys([]);
   };
 
@@ -374,12 +572,35 @@ export default function CandidateScreening() {
     try {
       const res = await screeningService.shortlistCandidates(payload);
       const result = res.data?.data || res.data || {};
-      message.success(`Successfully shortlisted ${result.emails_sent || selectedList.length} candidates and sent notifications.`);
+      const emailsSent = result.emails_sent ?? 0;
+      const shortlistedCount = selectedList.length;
+      const failures = result.email_failures || [];
+
+      if (failures.length > 0) {
+        // Group identical reasons so the message stays readable for bulk actions.
+        const reasons = [...new Set(failures.map((f) => f.reason))];
+        notification.warning({
+          message: `Shortlisted ${shortlistedCount}, but ${failures.length} email(s) not sent`,
+          description: (
+            <div>
+              {reasons.map((r, i) => (
+                <div key={i} style={{ marginBottom: 4 }}>• {r}</div>
+              ))}
+              <div style={{ marginTop: 6, color: '#888' }}>
+                Affected: {failures.map((f) => f.name).join(', ')}
+              </div>
+            </div>
+          ),
+          duration: 0,
+        });
+      } else {
+        message.success(`Successfully shortlisted ${shortlistedCount} candidate(s) and sent ${emailsSent} notification email(s).`);
+      }
       setSelectedCandidateKeys([]);
       
-      // Refresh candidates list
+      // Refresh candidates list (force-bypass cache so updated shortlist status reflects)
       if (activeTab === 'jd') {
-        handleRoleSelect(selectedRoleId);
+        await forceReloadRoleCandidates();
       } else {
         form.submit();
       }
@@ -625,17 +846,25 @@ export default function CandidateScreening() {
     return 'warning';
   };
 
-  const renderStars = (starCount) => {
+  const renderStars = (starCount, size = 14) => {
     return Array.from({ length: 5 }).map((_, i) => (
       <StarFilled
         key={i}
         style={{
           color: i < starCount ? '#fadb14' : 'var(--border-secondary)',
-          fontSize: 14,
+          fontSize: size,
           marginRight: 2,
         }}
       />
     ));
+  };
+
+  // Left fit-accent rail colour, keyed to the candidate's star tier.
+  const scoreTierColor = (stars) => {
+    if (stars >= 5) return 'var(--green)';
+    if (stars >= 4) return 'var(--gold)';
+    if (stars >= 3) return '#d4a017';
+    return 'var(--border)';
   };
 
   const handleEduCheckboxChange = (checkedValues) => {
@@ -657,27 +886,6 @@ export default function CandidateScreening() {
         </div>
       </div>
 
-      {/* Preloading bar */}
-      {preloadingProgress.show && (
-        <Card style={{ marginBottom: 20, borderRadius: 12, border: '1px solid var(--color-primary-light)' }} styles={{ body: { padding: 16 } }}>
-          <Space direction="vertical" style={{ width: '100%' }} size={8}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Text strong style={{ color: 'var(--color-primary)' }}>Pre-loading MRF matching profiles...</Text>
-              <Text type="secondary" style={{ fontFamily: 'monospace' }}>
-                {preloadingProgress.current}/{preloadingProgress.total} completed
-              </Text>
-            </div>
-            <Progress
-              percent={Math.round((preloadingProgress.current / preloadingProgress.total) * 100)}
-              strokeColor="var(--color-primary)"
-              trailColor="var(--border-secondary)"
-              showInfo={false}
-              status="active"
-            />
-          </Space>
-        </Card>
-      )}
-
       {/* Main card */}
       <Card
         bordered={false}
@@ -692,6 +900,7 @@ export default function CandidateScreening() {
             setActiveTab(k);
             setCandidates([]);
             setSummary(null);
+            setCurrentPage(1);
             setSelectedCandidateKeys([]);
             setRoleDetails(null);
             setSelectedRoleId(null);
@@ -713,20 +922,30 @@ export default function CandidateScreening() {
                         <Text strong style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           Select an open role to instantly match and rank qualified candidates
                         </Text>
-                        <Select
-                          showSearch
-                          placeholder={(loadingRoles || preloadingProgress.show) ? "Waiting for Pre-loading MRF matching profiles..." : "— Select an Open Role —"}
-                          disabled={loadingRoles || preloadingProgress.show}
-                          style={{ width: '100%', height: 44 }}
-                          loading={loadingRoles}
-                          value={selectedRoleId}
-                          onChange={handleRoleSelect}
-                          optionFilterProp="children"
-                          options={roles.map((r) => ({
-                            value: r.id,
-                            label: `${r.role} (${r.number_of_positions} openings)`,
-                          }))}
-                        />
+                        <Space.Compact style={{ width: '100%' }}>
+                          <Select
+                            showSearch
+                            placeholder={loadingRoles ? "Loading open roles..." : "— Select an Open Role —"}
+                            disabled={loadingRoles}
+                            style={{ width: '100%', height: 44 }}
+                            loading={loadingRoles}
+                            value={selectedRoleId}
+                            onChange={handleRoleSelect}
+                            optionFilterProp="children"
+                            options={roles.map((r) => ({
+                              value: r.id,
+                              label: `${r.role} (${r.number_of_positions} openings)`,
+                            }))}
+                          />
+                          <Tooltip title="Refresh roles & candidates">
+                            <Button
+                              icon={<ReloadOutlined />}
+                              style={{ height: 44 }}
+                              loading={refreshing || rolesQuery.isFetching}
+                              onClick={handleRefresh}
+                            />
+                          </Tooltip>
+                        </Space.Compact>
                       </Space>
                     </Col>
 
@@ -1030,6 +1249,18 @@ export default function CandidateScreening() {
                     </Col>
 
                     <Col xs={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
+                      <Tooltip title="Re-run the current search">
+                        <Button
+                          icon={<ReloadOutlined />}
+                          onClick={handleRefresh}
+                          loading={refreshing}
+                          disabled={candidates.length === 0}
+                          size="large"
+                          style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 18 }}
+                        >
+                          Refresh
+                        </Button>
+                      </Tooltip>
                       <Button onClick={handleClearFilters} className="cta-secondary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 22 }}>
                         Clear Filters
                       </Button>
@@ -1062,9 +1293,19 @@ export default function CandidateScreening() {
               marginBottom: 16,
             }}
           >
-            <Text strong style={{ color: 'var(--text)', fontSize: 14 }}>
-              {summary.summaryText || `${candidates.length} candidates match`}
-            </Text>
+            {(() => {
+              // Show a clean primary count; drop the trailing "· ★..." (the chips cover it),
+              // and mute the parenthetical breakdown detail.
+              const primary = (summary.summaryText || `${candidates.length} candidates match`).split('·')[0].trim();
+              const [head, ...rest] = primary.split('(');
+              const detail = rest.length ? `(${rest.join('(')}` : '';
+              return (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <Text strong style={{ color: 'var(--text)', fontSize: 15, letterSpacing: '-0.01em' }}>{head.trim()}</Text>
+                  {detail && <Text style={{ color: 'var(--text-3)', fontSize: 12 }}>{detail.trim()}</Text>}
+                </div>
+              );
+            })()}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(activeTab === 'jd'
                 ? [
@@ -1149,33 +1390,21 @@ export default function CandidateScreening() {
 
             {/* Candidates card list */}
             <Space direction="vertical" style={{ width: '100%' }} size={10}>
-              {candidates.map((c) => {
+              {candidates
+                .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                .map((c) => {
                 const isSelected = selectedCandidateKeys.includes(c.id);
                 const rating = activeTab === 'jd' ? c.starRating : c.relevanceScore;
                 
                 return (
                   <Card
                     key={c.id}
-                    className="glass-card hover-lift"
+                    className={`cand-card no-lift${isSelected ? ' is-selected' : ''}`}
                     onClick={() => openCandidateDrawer(c)}
-                    style={{
-                      cursor: 'pointer',
-                      borderLeft: isSelected
-                        ? '4px solid var(--gold)'
-                        : '1px solid var(--border-light)',
-                      border: isSelected ? '1px solid rgba(122, 146, 46, 0.4)' : '1px solid var(--border-light)',
-                      background: isSelected
-                        ? 'linear-gradient(145deg, rgba(122, 146, 46, 0.04) 0%, rgba(255, 255, 255, 0.98) 100%)'
-                        : 'var(--gradient-card)',
-                      boxShadow: isSelected
-                        ? '0 8px 25px -4px rgba(122, 146, 46, 0.12), 0 4px 10px -2px rgba(122, 146, 46, 0.08)'
-                        : 'var(--shadow-sm)',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      borderRadius: '12px',
-                    }}
-                    styles={{ body: { padding: 18 } }}
+                    style={{ cursor: 'pointer', '--cand-accent': scoreTierColor(rating?.stars ?? 0) }}
+                    styles={{ body: { padding: 20 } }}
                   >
-                    <Row gutter={[16, 12]} align="middle">
+                    <Row gutter={[18, 14]} align="middle">
                       <Col>
                         <Checkbox
                           checked={isSelected}
@@ -1193,29 +1422,29 @@ export default function CandidateScreening() {
                         {(() => {
                           const initials = (c.Name || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                           return (
-                            <Avatar
-                              shape="circle"
-                              size={48}
-                              style={{
-                                background: isSelected 
-                                  ? 'linear-gradient(135deg, var(--gold) 0%, var(--green) 100%)' 
-                                  : 'linear-gradient(135deg, var(--ink-4) 0%, var(--border-light) 100%)',
-                                border: '1px solid var(--border-light)',
-                                color: isSelected ? '#fff' : 'var(--text-2)',
-                                fontWeight: 700,
-                                fontSize: '15px',
-                                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.02)'
-                              }}
-                            >
-                              {initials}
-                            </Avatar>
+                            <span className="cand-avatar-ring">
+                              <Avatar
+                                shape="circle"
+                                size={46}
+                                style={{
+                                  background: isSelected
+                                    ? 'linear-gradient(135deg, var(--gold) 0%, var(--green) 100%)'
+                                    : 'var(--ink-2)',
+                                  color: isSelected ? '#fff' : 'var(--text-2)',
+                                  fontWeight: 700,
+                                  fontSize: '15px',
+                                }}
+                              >
+                                {initials}
+                              </Avatar>
+                            </span>
                           );
                         })()}
                       </Col>
                       <Col xs={24} sm={12} md={14}>
-                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                        <Space direction="vertical" size={5} style={{ width: '100%' }}>
                           <Space align="center" size={8} wrap>
-                            <Text strong style={{ fontSize: 17, color: 'var(--text)', letterSpacing: '-0.01em' }}>{c.Name}</Text>
+                            <span className="cand-name">{c.Name}</span>
                             <StatusBadge status={c.FinalStatus ? 'shortlisted' : 'applied'} />
                             {rating && rating.stars >= 4 && (
                               <Tag
@@ -1245,14 +1474,12 @@ export default function CandidateScreening() {
                           {(() => {
                             const companyName = formatCurrentCompany(c.CurrentCompany);
                             return companyName ? (
-                              <div style={{ fontSize: '13px', color: 'var(--text-2)', fontWeight: 600, marginTop: '-2px' }}>
-                                {companyName}
-                              </div>
+                              <div className="cand-company" style={{ marginTop: '-1px' }}>{companyName}</div>
                             ) : null;
                           })()}
 
                           {/* Detail Indicators (Pills) */}
-                          <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
                             <span className="screening-pill">
                               <EnvironmentOutlined style={{ color: 'var(--gold)' }} />
                               <span>{c.CurrentLocation || 'N/A'}</span>
@@ -1265,66 +1492,46 @@ export default function CandidateScreening() {
                               <span style={{ fontWeight: 700, color: 'var(--gold)' }}>₹</span>
                               <span>{c.ExpectedCTC_LPA || c.CTC_LPA || '0'} LPA</span>
                             </span>
-                          </div>
-                          
-                          {/* Skill Tags */}
-                          <div style={{ marginTop: 6 }}>
-                            <SkillTags skills={parsePostgresArray(c.Top5KeySkills)} max={5} />
+                            {c.HighestQualification && (
+                              <span className="screening-pill">
+                                <SolutionOutlined style={{ color: 'var(--gold)' }} />
+                                <span>{c.HighestQualification}{c.graduationdegree ? ` (${c.graduationdegree})` : ''}</span>
+                              </span>
+                            )}
                           </div>
 
-                          {/* Resume Signals */}
+                          <div className="cand-divider" />
+
+                          {/* Skills */}
                           {(() => {
-                            const technicalTerms = parseTechnicalTerms(c.resume_technical_terms);
-                            if (technicalTerms.length === 0) return null;
+                            const skills = parsePostgresArray(c.Top5KeySkills);
+                            if (!skills || skills.length === 0) return null;
                             return (
-                              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Resume Signals:</span>
-                                <Space size={[4, 6]} wrap>
-                                  {technicalTerms.slice(0, 8).map((t, idx) => (
-                                    <Tag 
-                                      key={idx} 
-                                      style={{ 
-                                        margin: 0, 
-                                        fontSize: '11px', 
-                                        padding: '1px 6px', 
-                                        borderRadius: '4px', 
-                                        background: 'var(--ink-4)', 
-                                        border: '1px solid var(--border-light)', 
-                                        color: 'var(--text-2)', 
-                                        fontWeight: 500 
-                                      }}
-                                    >
-                                      {t.term || t} <span style={{ opacity: 0.6, marginLeft: '2px', fontSize: '9.5px', fontWeight: 600 }}>x{t.count || 1}</span>
-                                    </Tag>
-                                  ))}
-                                </Space>
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span className="cand-section-label">Skills</span>
+                                <SkillTags skills={skills} max={6} />
                               </div>
                             );
                           })()}
 
-                          {/* Highest Qualification Badge */}
-                          {c.HighestQualification && (
-                            <div style={{ marginTop: 4 }}>
-                              <Tag 
-                                icon={<SolutionOutlined style={{ color: 'var(--gold)', fontSize: '12px' }} />} 
-                                style={{ 
-                                  background: 'rgba(122, 146, 46, 0.05)', 
-                                  border: '1px solid rgba(122, 146, 46, 0.2)', 
-                                  color: 'var(--text-2)',
-                                  borderRadius: '6px', 
-                                  fontSize: '11px',
-                                  padding: '3px 10px',
-                                  fontWeight: 600,
-                                  margin: 0,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                              >
-                                {c.HighestQualification} {c.graduationdegree ? `(${c.graduationdegree})` : ''}
-                              </Tag>
-                            </div>
-                          )}
+                          {/* JD / Searched skill match — compact meter + present chips */}
+                          <JdSkillMatch signals={c.jdSkillSignals} variant="card" label={activeTab === 'keyword' ? 'Searched Skills' : 'Mandatory JD Skills'} />
+
+                          {/* Resume Signals (generic fallback when no JD context, e.g. filter-only search) */}
+                          {!c.jdSkillSignals && (() => {
+                            const technicalTerms = parseTechnicalTerms(c.resume_technical_terms);
+                            if (technicalTerms.length === 0) return null;
+                            return (
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span className="cand-section-label">Resume Signals</span>
+                                {technicalTerms.slice(0, 6).map((t, idx) => (
+                                  <span key={idx} className="skill-chip">
+                                    {t.term || t}<span className="skill-chip__x">×{t.count || 1}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </Space>
                       </Col>
 
@@ -1332,52 +1539,25 @@ export default function CandidateScreening() {
                       <Col xs={24} sm={8} md={6} style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginLeft: 'auto' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                           {rating && (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                background: 'rgba(255, 255, 255, 0.9)',
-                                border: '1px solid rgba(122, 146, 46, 0.15)',
-                                padding: '4px 10px',
-                                borderRadius: '20px',
-                                boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
-                              }}>
-                                <div style={{ display: 'flex', alignItems: 'center' }}>{renderStars(rating.stars)}</div>
-                                <span style={{
-                                  fontSize: '13px',
-                                  fontWeight: 800,
-                                  color: 'var(--gold)',
-                                  fontFamily: 'monospace',
-                                  borderLeft: '1px solid var(--border-light)',
-                                  paddingLeft: '8px',
-                                  lineHeight: 1
-                                }}>
-                                  {rating.avgScore ?? rating.finalScore ?? (rating.scorePct ? rating.scorePct / 10 : '')}
-                                </span>
+                            <div className="cand-score">
+                              <div className="cand-score__value">
+                                {rating.avgScore ?? rating.finalScore ?? (rating.scorePct ? (rating.scorePct / 10) : '')}<small>/10</small>
                               </div>
+                              <div className="cand-score__stars">{renderStars(rating.stars, 11)}</div>
                               <Tag
                                 color={getFitVerdictColor(rating.label)}
-                                style={{
-                                  borderRadius: '12px',
-                                  fontWeight: 800,
-                                  fontSize: 9.5,
-                                  margin: 0,
-                                  padding: '2px 10px',
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.03em',
-                                  border: '1px solid transparent',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-                                }}
+                                className="cand-score__verdict"
+                                style={{ margin: 0, border: '1px solid transparent' }}
                               >
                                 {rating.label}
                               </Tag>
                             </div>
                           )}
                           {c.NoticePeriod && (
-                            <Tag style={{ borderRadius: '6px', margin: 0, fontSize: 10.5, background: 'var(--ink-4)', border: '1px solid var(--border-light)', color: 'var(--text-2)', fontWeight: 500 }}>
-                              {c.NoticePeriod} days notice
-                            </Tag>
+                            <span className="screening-pill" style={{ fontSize: 10.5 }}>
+                              <ClockCircleOutlined style={{ color: 'var(--green)' }} />
+                              <span>{c.NoticePeriod} days notice</span>
+                            </span>
                           )}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1415,6 +1595,22 @@ export default function CandidateScreening() {
                 );
               })}
             </Space>
+
+            {/* Pagination (client-side; result set is bounded server-side) */}
+            {candidates.length > pageSize && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={candidates.length}
+                  showSizeChanger
+                  pageSizeOptions={['10', '20', '50']}
+                  showTotal={(total, range) => `${range[0]}-${range[1]} of ${total}`}
+                  onChange={(p, s) => { setCurrentPage(p); setPageSize(s); }}
+                  onShowSizeChange={(_, s) => { setPageSize(s); setCurrentPage(1); }}
+                />
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ padding: '64px 24px', textAlign: 'center' }}>
@@ -1686,6 +1882,14 @@ export default function CandidateScreening() {
                               </div>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* JD Skill Match Section (cross-references JD skills vs resume signals + declared skills) */}
+                      {selectedCandidate.jdSkillSignals && (
+                        <div style={{ marginBottom: '14px' }}>
+                          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>{activeTab === 'keyword' ? 'Searched Skill Match' : 'JD Skill Match'}</div>
+                          <JdSkillMatch signals={selectedCandidate.jdSkillSignals} label={activeTab === 'keyword' ? 'Searched Skills' : 'Mandatory JD Skills'} />
                         </div>
                       )}
 

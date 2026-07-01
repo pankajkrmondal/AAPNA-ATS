@@ -3,14 +3,18 @@
  * Sets up React Router, AntD ConfigProvider with theme, Auth context,
  * Theme context, and route definitions with protected/public guards.
  */
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
 import { lightTheme, darkTheme } from './theme/themeConfig';
+import screeningService from './services/screeningService';
+import { screeningKeys } from './hooks/useScreeningData';
 
 /* Layouts */
 import MainLayout from './layouts/MainLayout';
@@ -211,7 +215,25 @@ function ComingSoon({ title }) {
 
 function AppShell() {
   const { isDark } = useTheme();
+  const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const currentTheme = isDark ? darkTheme : lightTheme;
+
+  // Preload the Screening (JD Filtering) roles once at app load, so the dropdown is
+  // warm before the user navigates to /filtering. Gated on the same access rule as the
+  // route (admins bypass; others need the candidate_screening module) to avoid wasted calls.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const role = (user?.role || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'superadmin';
+    const hasModule = (user?.permissions || []).includes('candidate_screening');
+    if (!isAdmin && !hasModule) return;
+    queryClient.prefetchQuery({
+      queryKey: screeningKeys.roles,
+      queryFn: screeningService.getRoles,
+      staleTime: Infinity,
+    });
+  }, [isAuthenticated, user, queryClient]);
 
   return (
     <ConfigProvider theme={currentTheme}>
