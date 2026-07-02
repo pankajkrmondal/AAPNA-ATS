@@ -1037,6 +1037,70 @@ h1, h2, h3, h4, h5, h6,
 /* Spacing between a tab's leading icon and its label (icons were glued to text). */
 .screening-tabs .ant-tabs-tab .tab-ico { margin-right: 8px; }
 
+/* ───────────────── Premium screening filter form ───────────────── */
+.screening-filter .ant-form-item-label { padding-bottom: 4px; }
+.screening-filter .ant-form-item-label > label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-2);
+  height: auto;
+}
+.screening-filter .ant-form-item-label > label::after { content: none; }
+
+/* Inline helper/hint text under a field. */
+.screening-filter .field-hint,
+.field-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+  display: block;
+  margin-top: 4px;
+}
+
+/* Inputs / selects — rounded, subtle, with a soft green focus ring. */
+.screening-filter .ant-input-affix-wrapper,
+.screening-filter .ant-input,
+.screening-filter .ant-input-number,
+.screening-filter .ant-input-number-group-wrapper,
+.screening-filter .ant-select .ant-select-selector,
+.screening-filter .ant-picker {
+  border-radius: 10px !important;
+  border-color: var(--border-light);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.screening-filter .ant-input-affix-wrapper:hover,
+.screening-filter .ant-input:hover,
+.screening-filter .ant-input-number:hover,
+.screening-filter .ant-select:hover .ant-select-selector,
+.screening-filter .ant-picker:hover {
+  border-color: var(--green);
+}
+.screening-filter .ant-input-affix-wrapper-focused,
+.screening-filter .ant-input:focus,
+.screening-filter .ant-input-number-focused,
+.screening-filter .ant-select-focused .ant-select-selector,
+.screening-filter .ant-picker-focused {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 0 3px rgba(122, 146, 46, 0.14) !important;
+}
+/* Compact Min/Max groups — round only the outer corners so they read as one control. */
+.screening-filter .ant-input-group.ant-input-group-compact > *:first-child,
+.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:first-child { border-radius: 10px 0 0 10px !important; }
+.screening-filter .ant-input-group.ant-input-group-compact > *:last-child,
+.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:last-child { border-radius: 0 10px 10px 0 !important; }
+
+/* Education accordion — premium panel feel + hover. */
+.screening-filter .ant-collapse-item {
+  border-radius: 12px !important;
+  overflow: hidden;
+  transition: box-shadow var(--transition-fast);
+}
+.screening-filter .ant-collapse-item:hover { box-shadow: var(--shadow-sm); }
+.screening-filter .ant-collapse-header { align-items: center !important; }
+.screening-filter .ant-checkbox-wrapper { font-size: 13px; padding: 3px 0; }
+
 /* ───────────────── Shared Candidate Detail Card ───────────────── */
 .cdc-root { animation: cdc-fade-in 0.35s ease both; }
 @keyframes cdc-fade-in {

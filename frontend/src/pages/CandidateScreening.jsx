@@ -1064,27 +1064,38 @@ export default function CandidateScreening() {
                   form={form}
                   layout="vertical"
                   onFinish={handleKeywordSearch}
+                  className="screening-filter"
                   style={{ marginTop: 8 }}
                 >
-                  <Row gutter={[12, 12]}>
+                  <Row gutter={[16, 8]}>
                     <Col xs={24} sm={8}>
-                      <Form.Item label="SKILLS" name="keyword">
-                        <Input placeholder="e.g. Python, SQL" prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />} />
+                      <Form.Item
+                        label="Skills"
+                        name="keyword"
+                        extra={
+                          <span className="field-hint">
+                            Separate skills with commas — matched against skills, resume keywords &amp; full resume text.
+                          </span>
+                        }
+                      >
+                        <Input size="large" allowClear placeholder="e.g. Python, Django, AWS" prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={8}>
-                      <Form.Item label="DESIGNATION" name="designation">
-                        <Input placeholder="e.g. Senior Developer" />
+                      <Form.Item label="Designation" name="designation" extra={<span className="field-hint">Target role or title</span>}>
+                        <Input size="large" allowClear placeholder="e.g. Senior Developer" prefix={<SolutionOutlined style={{ color: 'var(--text-3)' }} />} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={8}>
-                      <Form.Item label="LOCATION" name="location">
-                        <Input placeholder="e.g. Noida, Pune" />
+                      <Form.Item label="Location" name="location" extra={<span className="field-hint">City or region</span>}>
+                        <Input size="large" allowClear placeholder="e.g. Noida, Pune" prefix={<EnvironmentOutlined style={{ color: 'var(--text-3)' }} />} />
                       </Form.Item>
                     </Col>
                     <Col xs={12} sm={4}>
-                      <Form.Item label="GENDER" name="gender">
+                      <Form.Item label="Gender" name="gender" extra={<span className="field-hint">Optional</span>}>
                         <Select
+                          size="large"
+                          placeholder="Any"
                           options={[
                             { value: '', label: 'Any' },
                             { value: 'male', label: 'Male' },
@@ -1094,32 +1105,34 @@ export default function CandidateScreening() {
                       </Form.Item>
                     </Col>
                     <Col xs={12} sm={5}>
-                      <Form.Item label="EXPERIENCE (YEARS)">
+                      <Form.Item label="Experience (Years)" extra={<span className="field-hint">Range in years</span>}>
                         <Input.Group compact style={{ display: 'flex' }}>
                           <Form.Item name="expMin" noStyle>
-                            <InputNumber placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
                           </Form.Item>
                           <Form.Item name="expMax" noStyle>
-                            <InputNumber placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
                           </Form.Item>
                         </Input.Group>
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={5}>
-                      <Form.Item label="ANNUAL CTC (LPA)">
+                      <Form.Item label="Annual CTC (LPA)" extra={<span className="field-hint">Range in LPA</span>}>
                         <Input.Group compact style={{ display: 'flex' }}>
                           <Form.Item name="ctcMin" noStyle>
-                            <InputNumber placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
                           </Form.Item>
                           <Form.Item name="ctcMax" noStyle>
-                            <InputNumber placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
                           </Form.Item>
                         </Input.Group>
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={5}>
-                      <Form.Item label="NOTICE PERIOD (MAX DAYS)" name="noticePeriod">
+                      <Form.Item label="Notice Period (Max Days)" name="noticePeriod" extra={<span className="field-hint">Max joining time</span>}>
                         <Select
+                          size="large"
+                          placeholder="Any"
                           options={[
                             { value: '', label: 'Any' },
                             { value: '15', label: '15 days' },

@@ -164,3 +164,62 @@ Premium/animated UI pass plus the Zeko scheduling fallback.
   for the modal/message bubbles. CSS: `.cdc-*` card styles, `.row-highlight` keyframes,
   `.conv-modal-avatar`, refreshed `.conv-*` with subtle motion.
 - Verified with a full `vite build` (3976 modules, no errors).
+
+---
+
+## 10. Keyword filtering — term-based matching (skills + technical terms + resume text)
+
+`searchKeywordCandidates()` previously matched the keyword box as one opaque string,
+scored only against `Top5KeySkills` + `resume_technical_terms` (never the resume body),
+and let semantic/unknown candidates pass through — so typing 2 skills didn't behave as 2
+skills and unrelated profiles appeared. Reworked to be **term-based** with the agreed
+semantics: **match ANY, rank by coverage** and **require the literal term(s) but keep
+vector recall**.
+
+- Keyword box is split into terms via `splitSkillPhrases` (comma/semicolon/newline;
+  multi-word phrases kept intact).
+- **Retrieval SQL**: added `c.resume_full_text` to the SELECT and replaced the single
+  whole-string text gate with a **per-term OR** gate (each term ILIKE'd across
+  Top5KeySkills / resume_full_text / resume_technical_terms / PositionApplied / Name /
+  CurrentCompany), plus the tsvector match. Fixes the case where "pytest, python"
+  (ANDed by `plainto_tsquery`) excluded python-only candidates at the DB gate.
+- **Coverage scoring**: new `matchKeywordTerms()` checks each term against declared
+  skills, resume technical terms, and **resume full text**; `coverageSkillScore()` maps
+  the matched fraction to 0-10 (all terms → 10, none → 0). This drives ranking, so
+  candidates matching more of the typed skills rank higher.
+- **Filter**: require ≥1 literal term match (skill score ≥ 5) when a keyword is present —
+  removed the old pass-through that let 0-match candidates through.
+- **Skill signals**: `buildJdSkillSignals()` now also consults `resume_full_text`, so a
+  searched skill present only in the resume body shows as evidenced/signals_only (not
+  "missing"). Benefits the JD tab too.
+- **Privacy/perf**: `resume_full_text` is used only server-side and stripped from the API
+  response.
+- Verified end-to-end: `pytest` → only pytest candidates; `pytest, python` → both-term
+  matches ranked above single-term; response contains no `resume_full_text`.
+- Note (pre-existing, not changed): a candidate with multiple resume vector chunks can
+  appear more than once in results, since the query joins `rpa_cv_vectors`.
+
+### 10a. Evidence-based tiebreak (equal-coverage ordering)
+Previously two candidates with the same coverage (e.g. both 2/2) tied at 100% and their
+order fell to the Cohere semantic rerank — so a candidate with a searched skill appearing
+0× could sit above one with 16×. `matchKeywordTerms()` now also computes an `evidenceScore`
+(`declaredKeySkillTerms · 1e9 + totalResumeTermFrequency · 1000 + resumeOnlyTerms`), exposed
+as `relevanceScore.evidence`, and the final sort breaks ties by it: **declared key-skills
+first, then resume term frequency**. Verified: for "python, sql" all 2/2 matches now order
+by frequency (17, 16, 15 … 0) deterministically, independent of Cohere.
+
+---
+
+## 11. Keyword Filtering form — premium styling + hint text
+
+Visual polish of the Candidate Screening → Keyword Filtering form
+(`frontend/src/pages/CandidateScreening.jsx`, `frontend/src/theme/index.css`).
+
+- All fields are `size="large"` with rounded corners, refined uppercase labels, and a
+  soft green focus ring; text inputs gained prefix icons (search / role / location) and
+  `allowClear`.
+- **Hint text**: added a helper under **Skills** — "Separate skills with commas — matched
+  against skills, resume keywords & full resume text" (reflects §10) — plus short hints
+  under Designation and Location.
+- Education accordion panels rounded with a hover shadow; checkboxes spaced.
+- New `.screening-filter` / `.field-hint` CSS block; verified with `vite build`.

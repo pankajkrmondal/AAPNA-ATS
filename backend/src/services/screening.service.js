@@ -403,6 +403,69 @@ function skillMatchesTerm(skillLower, termLower) {
 }
 
 /**
+ * Keyword coverage matcher. For each searched term, checks whether it appears in the
+ * candidate's declared skills, resume technical terms, OR resume full text (with
+ * name/position/company as a weak fallback). Returns how many terms matched so the
+ * caller can score by coverage (more terms matched → higher score/rank).
+ */
+function matchKeywordTerms(terms, candidate) {
+  const total = terms.length;
+  if (total === 0) return { matchedCount: 0, total: 0, perTerm: [], evidenceScore: 0 };
+
+  const declared = parseDeclaredSkills(candidate.Top5KeySkills).map((s) => s.toLowerCase());
+  const techTerms = parseTechnicalTerms(candidate.resume_technical_terms); // [{ term, count }]
+  const resumeText = String(candidate.resume_full_text || '').toLowerCase();
+  const weak = [candidate.Name, candidate.PositionApplied, candidate.CurrentCompany]
+    .map((x) => String(x || '').toLowerCase())
+    .join(' ');
+
+  let declaredCount = 0;
+  let totalFreq = 0;
+  let resumeOnlyCount = 0;
+
+  const perTerm = terms.map((term) => {
+    const t = term.toLowerCase().trim();
+    const inSkills = declared.some((d) => skillMatchesTerm(t, d));
+    const matchedTech = techTerms.find((x) => skillMatchesTerm(t, String(x.term || '').toLowerCase()));
+    const inTerms = Boolean(matchedTech);
+    const count = matchedTech ? matchedTech.count || 1 : 0;
+    const inResumeText = t.length > 0 && resumeText.includes(t);
+    const inWeak = t.length > 0 && weak.includes(t);
+    const matched = inSkills || inTerms || inResumeText || inWeak;
+    if (matched) {
+      if (inSkills) declaredCount++;
+      totalFreq += count;
+      if (inResumeText && !inSkills && !inTerms) resumeOnlyCount++;
+    }
+    return { term, inSkills, inTerms, inResumeText, count, matched };
+  });
+
+  // Tiebreak evidence (used only among candidates with equal coverage):
+  // 1) terms present in the candidate's declared key-skills dominate,
+  // 2) then total resume technical-term frequency,
+  // 3) then terms found only in the resume body.
+  const evidenceScore = declaredCount * 1e9 + totalFreq * 1000 + resumeOnlyCount;
+
+  return { matchedCount: perTerm.filter((p) => p.matched).length, total, perTerm, evidenceScore };
+}
+
+/**
+ * Maps keyword term coverage to a 0-10 skill-match score.
+ * 0 matched terms → 0 (candidate is filtered out); otherwise scaled by the fraction
+ * of searched terms present, so matching more terms ranks higher.
+ */
+function coverageSkillScore(match) {
+  if (!match || match.total === 0) return 4;
+  if (match.matchedCount === 0) return 0;
+  const coverage = match.matchedCount / match.total;
+  if (coverage >= 1) return 10;
+  if (coverage >= 0.66) return 8;
+  if (coverage >= 0.5) return 7;
+  if (coverage >= 0.34) return 6;
+  return 5;
+}
+
+/**
  * Display-only JD skill signal builder (does NOT affect scoring).
  * For each JD skill (mandatory + good-to-have) records whether the skill is found in
  * the resume signals (resume_technical_terms) and/or the candidate's declared skills
@@ -417,11 +480,15 @@ function skillMatchesTerm(skillLower, termLower) {
 function buildJdSkillSignals(candidate, mandatorySkills, goodToHaveSkills) {
   const terms = parseTechnicalTerms(candidate.resume_technical_terms);
   const declared = parseDeclaredSkills(candidate.Top5KeySkills).map((s) => s.toLowerCase());
+  const resumeText = String(candidate.resume_full_text || '').toLowerCase();
 
   const classify = (skill) => {
     const skillLower = skill.toLowerCase();
     const matchedTerm = terms.find((t) => skillMatchesTerm(skillLower, String(t.term).toLowerCase()));
-    const inSignals = Boolean(matchedTerm);
+    // A skill counts as an evidenced resume signal if it's a technical term OR it
+    // appears in the resume body text.
+    const inResumeText = skillLower.length > 0 && resumeText.includes(skillLower);
+    const inSignals = Boolean(matchedTerm) || inResumeText;
     const inSkillsSection = declared.some((d) => skillMatchesTerm(skillLower, d));
     let status;
     if (inSignals && inSkillsSection) status = 'evidenced';
@@ -433,6 +500,7 @@ function buildJdSkillSignals(candidate, mandatorySkills, goodToHaveSkills) {
       count: matchedTerm ? matchedTerm.count || 1 : 0,
       inSignals,
       inSkillsSection,
+      inResumeText,
       status,
     };
   };
@@ -1053,30 +1121,47 @@ export async function searchKeywordCandidates(filters) {
 
   let candidates = [];
 
+  // Split the keyword box into individual terms so multiple skills are matched
+  // per-term (not as one opaque string). Kept for both retrieval and scoring.
+  const keywordTerms = splitSkillPhrases(fKeyword);
+
   if (fKeyword) {
-    const safeKeyword = fKeyword.replace(/'/g, "''");
     const embedding = await generateEmbedding(fKeyword);
     const vectorStr = `[${embedding.join(',')}]`;
 
-    // 1) Combined SQL Pre-filtered Vector Search (checks exp range, CTC range, and full-text tsvector directly in database to avoid candidate starvation)
+    // Per-term retrieval gate: a candidate is retrieved if the full-text index
+    // matches OR ANY single term appears in skills / resume text / technical terms /
+    // position / name / company. Params start at $7 (one %term% per term).
+    const termParams = keywordTerms.map((t) => `%${t}%`);
+    const termClause = keywordTerms
+      .map((_, i) => {
+        const p = 7 + i;
+        return `(c."Top5KeySkills" ILIKE $${p} OR c.resume_full_text ILIKE $${p} OR (c.resume_technical_terms IS NOT NULL AND c.resume_technical_terms::text ILIKE $${p}) OR c."PositionApplied" ILIKE $${p} OR c."Name" ILIKE $${p} OR c."CurrentCompany" ILIKE $${p})`;
+      })
+      .join(' OR ');
+    const textGate = `c.resume_tsvector IS NULL
+               OR c.resume_tsvector @@ plainto_tsquery('english', $6)
+               ${termClause ? `OR ${termClause}` : `OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')`}`;
+
+    // 1) Combined SQL Pre-filtered Vector Search (exp/CTC range + full-text + per-term match in DB to avoid candidate starvation)
     candidates = await prisma.$queryRawUnsafe(
-      `SELECT 
-          c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification", 
-          c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA", 
-          c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills", 
-          c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange", 
-          c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage", 
-          c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken", 
-          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays", 
-          c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat", 
-          c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo", 
-          c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
-          c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
-          c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, v.text, v.embedding <=> $1::vector as distance
+      `SELECT
+          c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification",
+          c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA",
+          c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills",
+          c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange",
+          c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage",
+          c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken",
+          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays",
+          c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat",
+          c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo",
+          c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
+          c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization,
+          c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock",
+          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, c.resume_full_text, v.text, v.embedding <=> $1::vector as distance
        FROM public.rpa_cv_vectors v
        JOIN public.rpa_cv c ON c.id = v.candidate_id
-       WHERE 
+       WHERE
            (
                $2::numeric = 0
                OR c."TotalExperienceYearsNumeric" IS NULL
@@ -1098,13 +1183,7 @@ export async function searchKeywordCandidates(filters) {
                OR c."ExpectedCTCNumeric" >= $5::numeric
            )
            AND (
-               c.resume_tsvector IS NULL 
-               OR c.resume_tsvector @@ plainto_tsquery('english', $6)
-               OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')
-               OR c."PositionApplied" ILIKE CONCAT('%', $6, '%')
-               OR c."Name" ILIKE CONCAT('%', $6, '%')
-               OR c."CurrentCompany" ILIKE CONCAT('%', $6, '%')
-               OR (c.resume_technical_terms IS NOT NULL AND c.resume_technical_terms::text ILIKE CONCAT('%', $6, '%'))
+               ${textGate}
            )
        ORDER BY distance ASC
        LIMIT 50`,
@@ -1113,7 +1192,8 @@ export async function searchKeywordCandidates(filters) {
       fExpMax || 0,
       fCtcMax || 0,
       fCtcMin || 0,
-      safeKeyword
+      fKeyword,
+      ...termParams
     );
 
     // Rerank candidates using Cohere Reranker
@@ -1189,37 +1269,13 @@ export async function searchKeywordCandidates(filters) {
     const scores = [];
     const breakdown = {};
 
-    // A. Skill Match - check if keyword is present in Top5KeySkills or technical terms
+    // A. Skill Match - coverage across searched terms, checking the candidate's
+    // declared skills, resume technical terms, AND resume full text.
     let baselineSkillScore = 4;
+    let keywordMatch = null;
     if (fKeyword) {
-      const skills = String(c.Top5KeySkills || '')
-        .replace(/[{}"\\]/g, '')
-        .split(',')
-        .map((s) => s.toLowerCase().trim())
-        .filter(Boolean);
-      
-      const technicalTerms = (() => {
-        try {
-          const raw = c.resume_technical_terms;
-          return Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
-        } catch {
-          return [];
-        }
-      })();
-
-      const kwLower = fKeyword.toLowerCase();
-      const hasSkillMatch = skills.some(s => s.includes(kwLower) || kwLower.includes(s));
-      const hasTermMatch = technicalTerms.some(t => {
-        const term = String(t.term || t || '').toLowerCase();
-        return term.includes(kwLower) || kwLower.includes(term);
-      });
-      const hasNameMatch = String(c.Name || '').toLowerCase().includes(kwLower);
-      const hasPositionMatch = String(c.PositionApplied || '').toLowerCase().includes(kwLower);
-      const hasCompanyMatch = String(c.CurrentCompany || '').toLowerCase().includes(kwLower);
-
-      baselineSkillScore = (hasSkillMatch || hasTermMatch || hasNameMatch || hasPositionMatch || hasCompanyMatch) ? 10 : 2;
-    }
-    if (fKeyword) {
+      keywordMatch = matchKeywordTerms(keywordTerms, c);
+      baselineSkillScore = coverageSkillScore(keywordMatch);
       scores.push(baselineSkillScore);
       breakdown.skillMatch = { pts: baselineSkillScore, max: 10, label: 'Skill Match' };
     }
@@ -1302,7 +1358,8 @@ export async function searchKeywordCandidates(filters) {
       scorePct,
       scores,
       breakdown,
-      baselineSkillScore
+      baselineSkillScore,
+      keywordMatch
     };
   });
 
@@ -1388,7 +1445,6 @@ export async function searchKeywordCandidates(filters) {
     const c = item.c;
     const candidateIdStr = c.id.toString();
     const insights = insightsMap[candidateIdStr] || {};
-    const skillScore = insights.skillMatchScore != null ? Number(insights.skillMatchScore) : item.baselineSkillScore;
     const skillMatchReason = insights.skillMatchReason || 'Grounded keyword evaluation';
 
     // Recalculate skill match score with keywords matching
@@ -1396,48 +1452,23 @@ export async function searchKeywordCandidates(filters) {
     const breakdown = { ...item.breakdown };
 
     if (fKeyword) {
-      let adjustedSkillScore = skillScore;
-      const skills = String(c.Top5KeySkills || '')
-        .replace(/[{}"\\]/g, '')
-        .split(',')
-        .map((s) => s.toLowerCase().trim())
-        .filter(Boolean);
-      
-      const technicalTerms = (() => {
-        try {
-          const raw = c.resume_technical_terms;
-          return Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
-        } catch {
-          return [];
-        }
-      })();
+      // Literal term coverage (skills + resume technical terms + resume text) is
+      // authoritative for the keyword tab, so ranking/filtering reflect what the
+      // recruiter actually typed rather than semantic similarity.
+      const coverageScore = item.baselineSkillScore;
+      const match = item.keywordMatch;
+      const reason = match && match.total > 0
+        ? `Matched ${match.matchedCount}/${match.total} searched skill(s)${insights.skillMatchReason ? ` · ${insights.skillMatchReason}` : ''}`
+        : skillMatchReason;
 
-      const kwLower = fKeyword.toLowerCase();
-      const hasSkillMatch = skills.some(s => s.includes(kwLower) || kwLower.includes(s));
-      const matchedTerm = technicalTerms.find(t => {
-        const term = String(t.term || t || '').toLowerCase();
-        return term.includes(kwLower) || kwLower.includes(term);
-      });
-      const hasNameMatch = String(c.Name || '').toLowerCase().includes(kwLower);
-      const hasPositionMatch = String(c.PositionApplied || '').toLowerCase().includes(kwLower);
-      const hasCompanyMatch = String(c.CurrentCompany || '').toLowerCase().includes(kwLower);
-
-      if (hasSkillMatch || matchedTerm || hasNameMatch || hasPositionMatch || hasCompanyMatch) {
-        adjustedSkillScore = Math.max(skillScore, 5);
-        if (hasSkillMatch || (matchedTerm && (matchedTerm.count || 1) >= 3) || hasNameMatch || hasPositionMatch || hasCompanyMatch) {
-          adjustedSkillScore = Math.max(adjustedSkillScore, 7);
-        }
-      } else {
-        adjustedSkillScore = Math.min(skillScore, 4);
-      }
-
-      // Update skill match score in list and breakdown
-      scores[0] = adjustedSkillScore;
+      scores[0] = coverageScore;
       breakdown.skillMatch = {
-        pts: adjustedSkillScore,
+        pts: coverageScore,
         max: 10,
         label: 'Skill Match',
-        reason: skillMatchReason,
+        reason,
+        matched: match ? match.matchedCount : 0,
+        totalTerms: match ? match.total : 0,
       };
     }
 
@@ -1468,8 +1499,11 @@ export async function searchKeywordCandidates(filters) {
       ? buildJdSkillSignals(c, searchedSkillsStr, '')
       : undefined;
 
+    // Never ship the (potentially large) resume body to the client — it is used
+    // only for server-side matching.
+    const { resume_full_text: _omitResumeText, ...cPublic } = c;
     return {
-      ...c,
+      ...cPublic,
       id: Number(c.id),
       educationContext,
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
@@ -1483,22 +1517,31 @@ export async function searchKeywordCandidates(filters) {
         filtersApplied: scores.length,
         breakdown,
         mode: 'keyword',
+        evidence: item.keywordMatch ? item.keywordMatch.evidenceScore : 0,
       },
     };
   });
 
-  // Filter out avgScore < 5. If keyword is present, also check that skillMatch >= 3
+  // Filter out avgScore < 5. When a keyword is present, require at least one typed
+  // term to literally match (skill coverage score >= 5), so candidates who don't
+  // contain the searched skill(s) are dropped rather than passing through.
   const filtered = scoredCandidates
     .filter((c) => {
       if (c.relevanceScore.avgScore < 5) return false;
       if (fKeyword) {
         const skillPts = c.relevanceScore.breakdown.skillMatch?.pts ?? 0;
-        if (skillPts === 0 && !c.ai_profile_insights?.skillMatchScore) return true; // null/unknown, pass through
-        return skillPts >= 3;
+        return skillPts >= 5;
       }
       return true;
     })
-    .sort((a, b) => b.relevanceScore.scorePct - a.relevanceScore.scorePct);
+    // Rank by overall score, then break ties by evidence strength (declared
+    // key-skills first, then resume term frequency) so a stronger-evidenced
+    // candidate never sits below an equal-coverage but weaker one.
+    .sort((a, b) => {
+      const byScore = b.relevanceScore.scorePct - a.relevanceScore.scorePct;
+      if (byScore !== 0) return byScore;
+      return (b.relevanceScore.evidence || 0) - (a.relevanceScore.evidence || 0);
+    });
 
   // Compute stats
   const high = filtered.filter((c) => c.relevanceScore.scorePct >= 75).length;
