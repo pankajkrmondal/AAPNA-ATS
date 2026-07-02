@@ -87,6 +87,7 @@ router.get('/jobs', vendorController.getUploadJobs);
 router.post('/jobs/:id/reprocess', vendorController.reprocessJob);
 
 /** Recruiter review actions on the duplicate queue (staff only — never vendors) */
+router.post('/review/search', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewSearch);
 router.post('/review/merge', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewMerge);
 router.post('/review/cancel', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewCancel);
 

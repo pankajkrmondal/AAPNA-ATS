@@ -401,8 +401,11 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   const isVendor = role === 'vendor';
   const isAdmin = role === 'admin' || role === 'superadmin';
 
-  // The Vendor screen only ever shows vendor-portal uploads (never HR manual uploads).
-  const where = { source: 'vendor_portal' };
+  // `baseWhere` is "what this user is scoped to see" — vendor-portal uploads plus
+  // visibility scoping and the optional vendor drill-down. The KPI cards are computed
+  // against it so they stay accurate regardless of the transient status / action-required
+  // quick-filters. `where` layers those quick-filters on top for the table + pagination.
+  const baseWhere = { source: 'vendor_portal' };
 
   // Visibility scoping:
   //  • admin / superadmin → all vendor-portal uploads
@@ -411,27 +414,29 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   //  • vendor             → only their OWN self-uploads
   if (!isAdmin) {
     if (isVendor) {
-      where.uploaded_by_id = req.user.id;
+      baseWhere.uploaded_by_id = req.user.id;
     } else {
-      where.OR = [
+      baseWhere.OR = [
         { uploaded_by_id: req.user.id },
         { action_required: true },
       ];
     }
   }
 
-  // Optional staff filter: drill into a specific vendor.
+  // Optional staff filter: drill into a specific vendor (part of the scope, kept in KPIs).
   if (!isVendor) {
     const vendorEmail = (req.query.vendorEmail || '').trim();
-    if (vendorEmail) where.vendor_email = { equals: vendorEmail, mode: 'insensitive' };
+    if (vendorEmail) baseWhere.vendor_email = { equals: vendorEmail, mode: 'insensitive' };
   }
+
+  const where = { ...baseWhere };
   if (status) where.status = status;
   if (actionRequired === 'true') where.action_required = true;
 
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
-  const [rows, total, actionCount, grouped] = await Promise.all([
+  const [rows, filteredTotal, baseTotal, actionCount, grouped] = await Promise.all([
     prisma.rpa_upload_jobs.findMany({
       where,
       orderBy: { updated_at: 'desc' },
@@ -439,11 +444,13 @@ export const getUploadJobs = catchAsync(async (req, res) => {
       take: limitNum,
     }),
     prisma.rpa_upload_jobs.count({ where }),
-    prisma.rpa_upload_jobs.count({ where: { ...where, action_required: true } }),
-    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where, _count: { _all: true } }),
+    prisma.rpa_upload_jobs.count({ where: baseWhere }),
+    prisma.rpa_upload_jobs.count({ where: { ...baseWhere, action_required: true } }),
+    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }),
   ]);
 
-  // Status roll-up for the KPI cards (accurate across the whole scoped set, not just this page).
+  // Status roll-up for the KPI cards (accurate across the whole scoped set, not just this
+  // page and unaffected by the active quick-filters).
   const byStatus = {};
   grouped.forEach((g) => { byStatus[g.status] = g._count._all; });
   const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
@@ -453,13 +460,13 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     status: 'success',
     message: 'Upload jobs retrieved',
     data: rows.map(uploadJobService.serializeJob),
-    stats: { actionRequired: actionCount, total, processing, completed },
+    stats: { actionRequired: actionCount, total: baseTotal, processing, completed },
     pagination: {
       page: pageNum,
       limit: limitNum,
-      total,
-      totalPages: Math.ceil(total / limitNum),
-      hasNext: pageNum * limitNum < total,
+      total: filteredTotal,
+      totalPages: Math.ceil(filteredTotal / limitNum),
+      hasNext: pageNum * limitNum < filteredTotal,
       hasPrev: pageNum > 1,
     },
   });
@@ -550,4 +557,21 @@ export const reviewCancel = catchAsync(async (req, res) => {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const result = await hrUploadService.deleteDuplicates(ids, token);
   return success(res, result, 'Duplicate candidates cancelled');
+});
+
+/**
+ * @desc    Search the duplicate review queue (staging) so recruiters can view the
+ *          full parsed CV while reviewing a vendor duplicate. Shares rpa_cv_tmp.
+ * @route   POST /api/vendor/review/search
+ * @access  Private (staff: admin/superadmin/recruiter/hr)
+ */
+export const reviewSearch = catchAsync(async (req, res) => {
+  const { filterName, filterEmail, page, perPage } = req.body;
+  const result = await hrUploadService.searchDuplicates({
+    filterName,
+    filterEmail,
+    page: parseInt(page, 10) || 1,
+    perPage: parseInt(perPage, 10) || 5,
+  });
+  return success(res, result, 'Duplicate candidates retrieved');
 });

@@ -199,14 +199,17 @@ export const getUploadJobs = catchAsync(async (req, res) => {
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
 
-  const where = { source: 'hr_manual_upload' };
+  // KPI cards always reflect the whole HR-manual-upload set; the table/pagination
+  // layer the active status / action-required filters on top via `where`.
+  const baseWhere = { source: 'hr_manual_upload' };
+  const where = { ...baseWhere };
   if (status) where.status = status;
   if (actionRequired === 'true') where.action_required = true;
 
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
-  const [rows, total, actionCount, grouped] = await Promise.all([
+  const [rows, filteredTotal, baseTotal, actionCount, grouped] = await Promise.all([
     prisma.rpa_upload_jobs.findMany({
       where,
       orderBy: { updated_at: 'desc' },
@@ -214,11 +217,13 @@ export const getUploadJobs = catchAsync(async (req, res) => {
       take: limitNum,
     }),
     prisma.rpa_upload_jobs.count({ where }),
-    prisma.rpa_upload_jobs.count({ where: { ...where, action_required: true } }),
-    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where, _count: { _all: true } }),
+    prisma.rpa_upload_jobs.count({ where: baseWhere }),
+    prisma.rpa_upload_jobs.count({ where: { ...baseWhere, action_required: true } }),
+    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }),
   ]);
 
-  // Status roll-up for the KPI cards (accurate across the whole set, not just this page).
+  // Status roll-up for the KPI cards (accurate across the whole set, not just this
+  // page and unaffected by the active filters).
   const byStatus = {};
   grouped.forEach((g) => { byStatus[g.status] = g._count._all; });
   const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
@@ -228,13 +233,13 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     status: 'success',
     message: 'Upload jobs retrieved',
     data: rows.map(uploadJobService.serializeJob),
-    stats: { actionRequired: actionCount, total, processing, completed },
+    stats: { actionRequired: actionCount, total: baseTotal, processing, completed },
     pagination: {
       page: pageNum,
       limit: limitNum,
-      total,
-      totalPages: Math.ceil(total / limitNum),
-      hasNext: pageNum * limitNum < total,
+      total: filteredTotal,
+      totalPages: Math.ceil(filteredTotal / limitNum),
+      hasNext: pageNum * limitNum < filteredTotal,
       hasPrev: pageNum > 1,
     },
   });

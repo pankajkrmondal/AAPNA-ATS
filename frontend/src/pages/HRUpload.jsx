@@ -89,7 +89,8 @@ export default function HRUpload() {
 
   // ── Jobs dashboard state ──
   const [jobs, setJobs] = useState([]);
-  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsTotal, setJobsTotal] = useState(0); // filtered total — drives table pagination
+  const [totalAll, setTotalAll] = useState(0);   // grand total — drives the "Total Uploads" KPI
   const [actionCount, setActionCount] = useState(0);
   const [processingCount, setProcessingCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -148,6 +149,7 @@ export default function HRUpload() {
 
       setJobs(list);
       setJobsTotal(payload.pagination?.total ?? list.length);
+      setTotalAll(payload.stats?.total ?? payload.pagination?.total ?? 0);
       setActionCount(payload.stats?.actionRequired ?? 0);
       setProcessingCount(payload.stats?.processing ?? 0);
       setCompletedCount(payload.stats?.completed ?? 0);
@@ -191,7 +193,7 @@ export default function HRUpload() {
       setUploadMsg({ type: 'error', text: 'Please select at least one file.' });
       return;
     }
-    const allowedExts = ['zip', 'pdf', 'docx', 'doc', 'xlsx', 'xls'];
+    const allowedExts = ['zip', 'pdf', 'docx', 'xlsx'];
     const badFiles = fileList.filter((f) => !allowedExts.includes(f.name.split('.').pop().toLowerCase()));
     if (badFiles.length > 0) {
       setUploadMsg({ type: 'error', text: `❌ Invalid file type(s): ${badFiles.map((f) => f.name).join(', ')}` });
@@ -500,7 +502,7 @@ export default function HRUpload() {
         {/* Premium count-up KPI cards */}
         <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
           <Col xs={12} md={6}>
-            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={jobsTotal}
+            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll}
               color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
           </Col>
           <Col xs={12} md={6}>
