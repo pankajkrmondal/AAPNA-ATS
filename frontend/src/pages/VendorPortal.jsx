@@ -24,11 +24,13 @@ import {
   Col,
   Select,
   Descriptions,
+  Divider,
   Progress,
 } from 'antd';
 import {
   UploadOutlined,
   InboxOutlined,
+  EyeOutlined,
   FileTextOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -97,7 +99,8 @@ export default function VendorPortal() {
 
   // ── Jobs dashboard state ──
   const [jobs, setJobs] = useState([]);
-  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsTotal, setJobsTotal] = useState(0); // filtered total — drives table pagination
+  const [totalAll, setTotalAll] = useState(0);   // scoped grand total — drives the "Total Uploads" KPI
   const [actionCount, setActionCount] = useState(0);
   const [processingCount, setProcessingCount] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -111,6 +114,12 @@ export default function VendorPortal() {
   // ── Review modal ──
   const [reviewJob, setReviewJob] = useState(null);
   const [reviewBusy, setReviewBusy] = useState(false);
+
+  // ── Full-details modal (opened from the Review modal) ──
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewCandidate, setViewCandidate] = useState(null);
+  // Holds the job while its full details are shown, so Merge/Cancel stay available there.
+  const [detailReviewJob, setDetailReviewJob] = useState(null);
 
   const reloadRef = useRef(null);
 
@@ -162,6 +171,7 @@ export default function VendorPortal() {
 
       setJobs(list);
       setJobsTotal(payload.pagination?.total ?? list.length);
+      setTotalAll(payload.stats?.total ?? payload.pagination?.total ?? 0);
       setActionCount(payload.stats?.actionRequired ?? 0);
       setProcessingCount(payload.stats?.processing ?? 0);
       setCompletedCount(payload.stats?.completed ?? 0);
@@ -246,31 +256,27 @@ export default function VendorPortal() {
   };
 
   /* ═══════ REVIEW / REPROCESS ACTIONS ═══════ */
-  const doMerge = async () => {
-    if (!reviewJob?.cv_tmp_id) return;
+  // Resolve a staged duplicate (merge or cancel) from either the compact Review modal or
+  // the full-details modal; closes both and refreshes on success.
+  const resolveDuplicate = async (action, job) => {
+    if (!job?.cv_tmp_id) return;
     setReviewBusy(true);
     try {
-      await vendorService.reviewMerge([reviewJob.cv_tmp_id]);
-      message.success('Merged into the main candidate database.');
+      if (action === 'merge') {
+        await vendorService.reviewMerge([job.cv_tmp_id]);
+        message.success('Merged into the main candidate database.');
+      } else {
+        await vendorService.reviewCancel([job.cv_tmp_id]);
+        message.success('Duplicate cancelled/rejected.');
+      }
       setReviewJob(null);
+      setDetailReviewJob(null);
+      setViewModalOpen(false);
+      setViewCandidate(null);
       loadJobs(jobsPage);
     } catch (err) {
-      message.error(err.response?.data?.message || err.message || 'Merge failed.');
-    } finally {
-      setReviewBusy(false);
-    }
-  };
-
-  const doCancel = async () => {
-    if (!reviewJob?.cv_tmp_id) return;
-    setReviewBusy(true);
-    try {
-      await vendorService.reviewCancel([reviewJob.cv_tmp_id]);
-      message.success('Duplicate cancelled/rejected.');
-      setReviewJob(null);
-      loadJobs(jobsPage);
-    } catch (err) {
-      message.error(err.response?.data?.message || err.message || 'Cancel failed.');
+      const verb = action === 'merge' ? 'Merge' : 'Cancel';
+      message.error(err.response?.data?.message || err.message || `${verb} failed.`);
     } finally {
       setReviewBusy(false);
     }
@@ -300,6 +306,80 @@ export default function VendorPortal() {
       return;
     }
     window.open(url, '_blank');
+  };
+
+  // From a job row, pull the full staging record so the full-details modal can open.
+  const openFullDetailsFromJob = async (job) => {
+    if (!job?.cv_tmp_id) {
+      message.info('Full details are only available for duplicates pending review.');
+      return;
+    }
+    try {
+      const res = await vendorService.searchDuplicates({
+        filterEmail: job.candidate_email || '',
+        page: 1,
+        perPage: 50,
+      });
+      const payload = res.data?.data || res.data;
+      const rows = payload?.data || payload?.candidates || [];
+      const match = rows.find((r) => Number(r.id) === Number(job.cv_tmp_id)) || rows[0];
+      if (match) {
+        // Swap the compact Review modal for the full-details one (never both at once),
+        // keeping the job so Merge/Cancel stay available from the full view.
+        setReviewJob(null);
+        setDetailReviewJob(job);
+        setViewCandidate(match);
+        setViewModalOpen(true);
+      } else {
+        message.info('Full details not found — the record may already have been resolved.');
+      }
+    } catch {
+      message.error('Could not load full details.');
+    }
+  };
+
+  const closeViewModal = () => { setViewModalOpen(false); setViewCandidate(null); setDetailReviewJob(null); };
+
+  /* ═══════ PARSE HELPERS (full-details modal) ═══════ */
+  const parseJSON = (val) => {
+    if (!val) return {};
+    if (typeof val === 'object') return val;
+    try { return JSON.parse(val); } catch { return {}; }
+  };
+  const parseCompany = (val) => {
+    if (!val) return {};
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') return {};
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (!parsed) return {};
+        if (Array.isArray(parsed)) {
+          return parsed.length > 0 ? (typeof parsed[0] === 'object' ? parsed[0] : { Name: String(parsed[0]) }) : {};
+        }
+        if (typeof parsed === 'object') return parsed;
+        return { Name: String(parsed) };
+      } catch {
+        return { Name: val };
+      }
+    }
+    if (typeof val === 'object') {
+      if (Array.isArray(val)) return val.length > 0 ? (typeof val[0] === 'object' ? val[0] : { Name: String(val[0]) }) : {};
+      return val;
+    }
+    return {};
+  };
+  const parseEmploymentHistory = (val) => {
+    if (!val) return [];
+    const obj = parseJSON(val);
+    if (obj && Array.isArray(obj.companies)) return obj.companies;
+    if (Array.isArray(obj)) return obj;
+    return [];
+  };
+  const displayVal = (v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    if (Array.isArray(v)) return v.join(', ');
+    return String(v);
   };
 
   /* ═══════ COLUMNS ═══════ */
@@ -539,7 +619,7 @@ export default function VendorPortal() {
         {/* Premium count-up KPI cards */}
         <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
           <Col xs={12} md={6}>
-            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={jobsTotal}
+            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll}
               color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
           </Col>
           <Col xs={12} md={6}>
@@ -615,15 +695,23 @@ export default function VendorPortal() {
         title="Duplicate Review"
         open={!!reviewJob}
         onCancel={() => setReviewJob(null)}
-        footer={[
-          <Button key="cancel" danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={doCancel}>
-            Cancel / Reject
-          </Button>,
-          <Button key="merge" className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={doMerge}
-            style={{ background: '#7a922e', borderColor: '#7a922e' }}>
-            Merge into Database
-          </Button>,
-        ]}
+        width={620}
+        footer={(
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <Button icon={<EyeOutlined />} onClick={() => openFullDetailsFromJob(reviewJob)}>
+              View full details
+            </Button>
+            <Space size={8}>
+              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
+                Cancel / Reject
+              </Button>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}
+                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+                Merge into Database
+              </Button>
+            </Space>
+          </div>
+        )}
       >
         {reviewJob && (
           <Descriptions column={1} size="small" bordered>
@@ -638,6 +726,120 @@ export default function VendorPortal() {
           style={{ marginTop: 16 }} type="info" showIcon
           message="Merge updates the existing candidate with new values (blanks retained). Cancel deletes the staging record and keeps the existing candidate unchanged."
         />
+      </Modal>
+
+      {/* ═══════ FULL-DETAILS MODAL ═══════ */}
+      <Modal
+        title="Duplicate Review — Full Details"
+        open={viewModalOpen}
+        onCancel={closeViewModal}
+        footer={(
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <Button onClick={() => { closeViewModal(); if (detailReviewJob) setReviewJob(detailReviewJob); }}>
+              Back to Review
+            </Button>
+            <Space size={8}>
+              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
+                Cancel / Reject
+              </Button>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}
+                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+                Merge into Database
+              </Button>
+            </Space>
+          </div>
+        )}
+        width={880}
+        styles={{ body: { maxHeight: '72vh', overflowY: 'auto', padding: '24px 28px' } }}
+      >
+        {viewCandidate && (() => {
+          const c = viewCandidate;
+          const cc = parseCompany(c.CurrentCompany);
+          const edu = parseJSON(c.EducationalScoresPercentage);
+          const companies = parseEmploymentHistory(c.employment_history);
+
+          return (
+            <>
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+                Personal Information
+              </Divider>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                <Descriptions.Item label="Candidate Name">{displayVal(c.Name)}</Descriptions.Item>
+                <Descriptions.Item label="Candidate Email">{displayVal(c.EmailID)}</Descriptions.Item>
+                <Descriptions.Item label="Contact Number">{displayVal(c.ContactNumber)}</Descriptions.Item>
+                <Descriptions.Item label="Highest Qualification">{displayVal(c.HighestQualification)}</Descriptions.Item>
+                <Descriptions.Item label="Total Experience (Yrs)">{displayVal(c.TotalExperienceYears)}</Descriptions.Item>
+                <Descriptions.Item label="Last Company Exp (Yrs)">{displayVal(c.LastCompanyExperienceYears)}</Descriptions.Item>
+                <Descriptions.Item label="Current Location">{displayVal(c.CurrentLocation)}</Descriptions.Item>
+                <Descriptions.Item label="CTC (LPA)">{displayVal(c.CTC_LPA)}</Descriptions.Item>
+                <Descriptions.Item label="Expected CTC (LPA)">{displayVal(c.ExpectedCTC_LPA)}</Descriptions.Item>
+                <Descriptions.Item label="Notice Period">{displayVal(c.NoticePeriod)}</Descriptions.Item>
+                <Descriptions.Item label="Position Applied">{displayVal(c.PositionApplied)}</Descriptions.Item>
+                <Descriptions.Item label="Job Source">{displayVal(c.JobSource)}</Descriptions.Item>
+                <Descriptions.Item label="Recruiter Info">{displayVal(c.RecruiterInfoAAPNA)}</Descriptions.Item>
+                <Descriptions.Item label="English Comm. Rating">{displayVal(c.EnglishCommunicationRating)}</Descriptions.Item>
+                <Descriptions.Item label="Top 5 Key Skills" span={2}>{displayVal(c.Top5KeySkills)}</Descriptions.Item>
+                <Descriptions.Item label="Gender">{displayVal(c.Gender)}</Descriptions.Item>
+                <Descriptions.Item label="Preferred Shift">{displayVal(c.PreferredShift)}</Descriptions.Item>
+                <Descriptions.Item label="Reason for Job Change" span={2}>{displayVal(c.ReasonForJobChange)}</Descriptions.Item>
+                <Descriptions.Item label="Willing to Take Online Test?">{displayVal(c.WillingToTakeOnlineTest)}</Descriptions.Item>
+                <Descriptions.Item label="Has Laptop for Initial Days?">{displayVal(c.HasLaptopForInitialDays)}</Descriptions.Item>
+              </Descriptions>
+
+              <div style={{ marginTop: 12, padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)' }}>
+                <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a9270', display: 'block', marginBottom: 10 }}>
+                  Current Company
+                </Text>
+                <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                  <Descriptions.Item label="Company Name">{displayVal(cc.Name)}</Descriptions.Item>
+                  <Descriptions.Item label="Website">{displayVal(cc.Website)}</Descriptions.Item>
+                </Descriptions>
+              </div>
+
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+                Education
+              </Divider>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                <Descriptions.Item label="10th %">{displayVal(edu['10th'] || c.a10th)}</Descriptions.Item>
+                <Descriptions.Item label="12th %">{displayVal(edu['12th'] || c.a12th)}</Descriptions.Item>
+                <Descriptions.Item label="Graduation %">{displayVal(edu.Graduation || c.graduation)}</Descriptions.Item>
+                <Descriptions.Item label="Post Graduation %">{displayVal(edu.PostGraduation || c.postGraduation)}</Descriptions.Item>
+                <Descriptions.Item label="Graduation Degree">{displayVal(c.graduationdegree)}</Descriptions.Item>
+                <Descriptions.Item label="Graduation Specialization">{displayVal(c.graduationspecialization)}</Descriptions.Item>
+                <Descriptions.Item label="PG Degree">{displayVal(c.postgraduationdegree)}</Descriptions.Item>
+                <Descriptions.Item label="PG Specialization">{displayVal(c.postgraduationspecialization)}</Descriptions.Item>
+                <Descriptions.Item label="LinkedIn Profile" span={2}>{displayVal(c.LinkedInProfile)}</Descriptions.Item>
+              </Descriptions>
+
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+                Employment History
+              </Divider>
+              {companies.length === 0 ? (
+                <Text style={{ fontSize: 13, color: '#8a9270' }}>No employment history recorded.</Text>
+              ) : (
+                companies.map((co, i) => (
+                  <div key={i} style={{ padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', marginBottom: 10 }}>
+                    <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                      <Descriptions.Item label="Company Name">{displayVal(co.CompanyName)}</Descriptions.Item>
+                      <Descriptions.Item label="Start Date">{displayVal(co.StartDate)}</Descriptions.Item>
+                      <Descriptions.Item label="End Date">{displayVal(co.EndDate)}</Descriptions.Item>
+                    </Descriptions>
+                  </div>
+                ))
+              )}
+
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+                Upload Details
+              </Divider>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                <Descriptions.Item label="Uploaded By">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
+                <Descriptions.Item label="Uploaded At">{formatDate(c.uploadedAt)}</Descriptions.Item>
+                <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>
+                <Descriptions.Item label="Vendor">{displayVal(c.vendorName || c.VendorEmail)}</Descriptions.Item>
+              </Descriptions>
+            </>
+          );
+        })()}
       </Modal>
     </div>
   );

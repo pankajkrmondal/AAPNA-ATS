@@ -101,6 +101,16 @@ const vendorService = {
   reviewCancel(ids) {
     return api.post('/vendor/review/cancel', { ids });
   },
+
+  /**
+   * Search the duplicate review queue (staging) to load a candidate's full parsed
+   * CV while reviewing. Staff-only.
+   * @param {object} params — { filterName, filterEmail, page, perPage }
+   * @returns {Promise}
+   */
+  searchDuplicates(params) {
+    return api.post('/vendor/review/search', params);
+  },
 };
 
 export default vendorService;
