@@ -114,6 +114,15 @@ const config = {
     testRecipients: env('EMAIL_STAGING_RECIPIENTS', 'saukumar@aapnainfotech.com, hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com'),
 
     /**
+     * Recipients for the "Resume Processing Failed" internal alert
+     * (resume_error_alert). Single per-environment switch: whatever is set here
+     * is used verbatim in staging AND production, and is NOT affected by the
+     * EMAIL_REDIRECT_TO_TEST redirect. When set, it overrides the DB/default
+     * recipient for this one flow, so no seeder re-run is needed to change it.
+     */
+    resumeErrorRecipients: env('EMAIL_RESUME_ERROR_RECIPIENTS', ''),
+
+    /**
      * Email-based resume intake poller (n8n "Microsoft Outlook Trigger2").
      * Polls the defaultSender mailbox for messages with attachments and feeds
      * them into the resume-parse pipeline. Default OFF.
