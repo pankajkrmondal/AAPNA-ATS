@@ -2,6 +2,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
+import { stripControlChars } from './textSanitize.js';
 
 /**
  * Extracts raw text from a document buffer based on mimetype.
@@ -20,7 +21,7 @@ export async function extractTextFromBuffer(buffer, mimetype) {
 
   if (mime === 'application/pdf') {
     const data = await pdfParse(buffer);
-    return data.text || '';
+    return stripControlChars(data.text || '');
   }
 
   if (
@@ -28,12 +29,12 @@ export async function extractTextFromBuffer(buffer, mimetype) {
     mime === 'application/msword'
   ) {
     const data = await mammoth.extractRawText({ buffer });
-    return data.value || '';
+    return stripControlChars(data.value || '');
   }
 
   // Fallback to text if plaintext
   if (mime.startsWith('text/')) {
-    return buffer.toString('utf8');
+    return stripControlChars(buffer.toString('utf8'));
   }
 
   throw new Error(`Unsupported file type for text extraction: ${mimetype}`);
