@@ -65,7 +65,7 @@ const prisma = new PrismaClient({
  */
 const RECIPIENTS = {
   staging: {
-    resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com', cc: '' },
+    resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '' },
     missingEmailAlert:  { to: 'hmopuri@aapnainfotech.com', cc: '' },
     duplicateAlert:     { to: 'pkmondal@aapnainfotech.com', cc: '' },
     mrfApproval:        { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '' },
@@ -74,7 +74,7 @@ const RECIPIENTS = {
     shortlistCc:        { to: '', cc: 'pkmondal@aapnainfotech.com' },
   },
   production: {
-    resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com', cc: '' },
+    resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '' },
     missingEmailAlert:  { to: 'nsatywali@aapnainfotech.com, cverma@aapnainfotech.com', cc: '' },
     duplicateAlert:     { to: 'claudepankajmondal@gmail.com', cc: '' },
     mrfApproval:        { to: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com', cc: '' },

@@ -112,6 +112,7 @@ The backend reads its configurations from the `.env` file located in the `backen
 | `MS_DEFAULT_SENDER_EMAIL`| Microsoft Account email used to send outbound emails. | `recruitment@yourdomain.com` | Yes (for Graph) |
 | `EMAIL_STAGING_RECIPIENTS`| Redirect target for staging (comma-separated emails). | `dev@yourdomain.com` | Yes (in dev/staging)|
 | `EMAIL_HR_ALERTS_RECIPIENTS`| Target recipients for HR Alerts (comma-separated). | `hr@yourdomain.com` | Yes |
+| `EMAIL_RESUME_ERROR_RECIPIENTS`| Recipients for the "Resume Processing Failed" alert (comma-separated). Used verbatim in every env and NOT affected by `EMAIL_REDIRECT_TO_TEST`. | `pkmondal@aapnainfotech.com,hmopuri@aapnainfotech.com` | No (falls back to DB/default) |
 | `ZEKO_API_URL` | Base API URL for Zeko AI interview platform. | `https://api.zeko.ai/v1` | Yes (for Zeko) |
 | `ZEKO_API_KEY` | API authentication key for Zeko AI. | `zeko_api_key_here` | Yes (for Zeko) |
 | `UPLOAD_MAX_SIZE` | Maximum file size allowed for resume uploads. | `50mb` | Yes |

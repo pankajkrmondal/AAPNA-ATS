@@ -46,7 +46,7 @@ const DEFAULTS = {
   // Missing JD/data collection email to the candidate. Prod -> candidate.
   missingData: { to: '', cc: '', dynamic: true },
   // Internal alert: resume processing failure ("Error Alert — Resume Processing").
-  resumeErrorAlert: { to: 'pkmondal@aapnainfotech.com', cc: '', dynamic: false },
+  resumeErrorAlert: { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal alert: candidate email id was null/missing ("Email ID Null Alert").
   missingEmailAlert: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal duplicate-resume alert to HR/admin.
@@ -85,6 +85,14 @@ const recipients = {};
 for (const [key, val] of Object.entries(DEFAULTS)) {
   recipients[key] = { ...val };
 }
+
+/**
+ * Flows that must ALWAYS reach their configured recipients, even in
+ * non-production or when EMAIL_REDIRECT_TO_TEST is on. These are internal
+ * failure alerts that ops must always see, so they bypass the test-inbox
+ * redirect and resolve to their static `to`/`cc` in every environment.
+ */
+const NEVER_REDIRECT = new Set(['resumeErrorAlert']);
 
 let loaded = false;
 
@@ -147,8 +155,19 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
     logger.warn(`resolveRecipients("${flowKey}") called before rpa_settings were loaded; using defaults.`);
   }
 
+  // Single per-environment override for the resume error alert. When
+  // EMAIL_RESUME_ERROR_RECIPIENTS is set (in .env.<env>), it is used verbatim in
+  // every environment and is not affected by the redirect flag — making the
+  // .env file the single place to manage who gets this alert. Falls through to
+  // the DB/default value below when the var is unset.
+  if (flowKey === 'resumeErrorAlert' && config.email.resumeErrorRecipients) {
+    return { to: config.email.resumeErrorRecipients, cc: '' };
+  }
+
   // Non-production: redirect everything to the internal test inbox, no cc.
-  if (config.email.redirectInNonProd) {
+  // Exception: NEVER_REDIRECT flows (internal failure alerts) always go to
+  // their configured recipients regardless of environment / redirect flag.
+  if (config.email.redirectInNonProd && !NEVER_REDIRECT.has(flowKey)) {
     return { to: config.email.testRecipients, cc: '' };
   }
 
