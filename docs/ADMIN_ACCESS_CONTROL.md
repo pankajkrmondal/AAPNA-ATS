@@ -2,7 +2,8 @@
 
 Consolidated reference for the role hierarchy, company (tenant) model, and access rules of the
 Admin Portal — plus a record of the work done to introduce them. Complements
-[ADMIN_PORTAL.md](./ADMIN_PORTAL.md) (which documents the original portal internals).
+[ADMIN_PORTAL.md](./ADMIN_PORTAL.md) (which documents the original portal internals) and
+[ROLE_RULES.md](./ROLE_RULES.md) (per-role can/cannot rules).
 
 ---
 
@@ -28,20 +29,33 @@ Scope decisions (agreed):
 
 Canonical roles and helpers live in [`backend/src/config/roles.js`](../backend/src/config/roles.js):
 `ROLES`, `ROLE_RANK`, `ADMIN_ASSIGNABLE_ROLES`, `MODULES`, `isAdminTier`, `isSuperadmin`,
-`normalizeRole`. Legacy `hr` is treated as recruiter-tier.
+`normalizeRole`, `outranks`. Legacy `hr` is treated as recruiter-tier.
 
 Hierarchy: `superadmin (global) > admin (one company) > recruiter / vendor (one company)`.
 
 **Core rules**
 1. **Super Admin is global** (`company_id = NULL`) and the only actor that crosses companies.
    **Multiple super admins are allowed**; only a super admin can create or promote one.
-2. **Company Admins are hard-scoped to their own company.** They can manage that company's
-   **admins, recruiters, and vendors** (create/edit/delete/(de)activate, set module permissions) and
-   may assign the roles **admin / recruiter / vendor** — never **superadmin**.
-3. **Company admins cannot see or touch** users of other companies, nor any super admin.
-4. **Only a super admin** can manage **companies** and **reassign** a user's `company_id`.
-5. **Email is globally unique** across the whole system (one person = one account). The duplicate
+2. **Company Admins are hard-scoped to their own company.** They can **create** that company's
+   admins, recruiters, and vendors and may assign the roles **admin / recruiter / vendor** — never
+   **superadmin**.
+3. **Edit / password reset / (de)activate follow the rank rule** (`outranks` in `roles.js`): a
+   requester may act on **their own account** or on accounts of a **strictly lower role**
+   (`superadmin 40 > admin 30 > recruiter/hr 20 > vendor 10`). In practice:
+   - an **admin** edits/resets passwords of **self + recruiters/vendors** (own company) — **not co-admins**;
+   - a **superadmin** edits/resets passwords of **admins/recruiters/vendors**, and may edit a peer
+     superadmin's **details / status** — but a superadmin's **password** can only be changed by the
+     account owner;
+   - nobody can change their **own role** or their **own active status** (lockout prevention).
+4. **Delete User is superadmin-only**, and self-deletion is blocked (server-side).
+5. **Company admins cannot see or touch** users of other companies, nor any super admin.
+6. **Only a super admin** can manage **companies** and **reassign** a user's `company_id`.
+7. **Email is globally unique** across the whole system (one person = one account). The duplicate
    check is therefore global and returns only a boolean.
+8. **Credential/password emails always go to the affected user's own inbox** in every environment —
+   the `userCredentialUpdate` flow is in `NEVER_REDIRECT`
+   ([`config/emailRecipients.js`](../backend/src/config/emailRecipients.js)), bypassing the staging
+   test-inbox redirect.
 
 ### Capability matrix
 
@@ -51,9 +65,14 @@ Hierarchy: `superadmin (global) > admin (one company) > recruiter / vendor (one 
 | Manage companies (create/edit/(de)activate) | ✅ | ❌ | ❌ | ❌ |
 | See users of **other** companies | ✅ | ❌ | ❌ | ❌ |
 | See **super admin** accounts | ✅ | ❌ | ❌ | ❌ |
-| Create/edit/delete/(de)activate users in **own** company | ✅ (any company) | ✅ (own only) | ❌ | ❌ |
+| Create users | ✅ (any company, any role) | ✅ (own company; admin/recruiter/vendor) | ❌ | ❌ |
 | Roles they can assign | superadmin, admin, recruiter, vendor | admin, recruiter, vendor | — | — |
-| Manage other **admins** in own company | ✅ | ✅ (same company) | ❌ | ❌ |
+| **Delete** users | ✅ (anyone except self) | ❌ | ❌ | ❌ |
+| Edit details / reset password: **recruiter, vendor** | ✅ | ✅ (own company) | ❌ | ❌ |
+| Edit details / reset password: **admin** | ✅ | Self only | ❌ | ❌ |
+| Edit details: **superadmin** | ✅ (any superadmin) | ❌ (rows hidden) | ❌ | ❌ |
+| Reset password: **superadmin** | Self only | ❌ | ❌ | ❌ |
+| (De)activate users | ✅ (anyone except self) | ✅ (recruiter/vendor only, not self/co-admins) | ❌ | ❌ |
 | Set per-user **module permissions** | ✅ | ✅ (own company) | ❌ | ❌ |
 | Reassign a user's **company** | ✅ | ❌ | ❌ | ❌ |
 | Access the **Admin Portal** | ✅ | ✅ | ❌ | ❌ |
@@ -61,7 +80,7 @@ Hierarchy: `superadmin (global) > admin (one company) > recruiter / vendor (one 
 
 Admin-tier (superadmin/admin) **bypass** module-permission checks. Recruiters/vendors are gated by
 `rpa_module_permissions`; vendors additionally have their sidebar limited to Dashboard + Vendor.
-Self-deactivate / self-delete is UI-blocked for everyone.
+Self-delete / self-deactivate / self-role-change are blocked **server-side** (and mirrored in the UI).
 
 ---
 
@@ -77,9 +96,9 @@ is deactivated. JWT and `rpa_sessions` both carry `company_id`.
 |---|---|
 | `GET /admin/users/list` | superadmin → all (optional `?company_id=`); admin → own company only, superadmins excluded |
 | `POST /admin/users/create` | admin forced to own company; may assign admin/recruiter/vendor; superadmin any role + company |
-| `POST /admin/users/update` | hierarchy guard + `restrictToCompanyScope`; only superadmin reassigns role-to-superadmin / company |
-| `POST /admin/users/delete` | hierarchy guard + `restrictToCompanyScope` |
-| `POST /admin/users/toggle-status` | hierarchy guard + `restrictToCompanyScope` |
+| `POST /admin/users/update` | self-or-`outranks` guard (covers details **and** password reset) + `restrictToCompanyScope`; own role / own `is_active` changes rejected; only superadmin reassigns role-to-superadmin / company |
+| `POST /admin/users/delete` | **superadmin-only**; self-delete rejected; `restrictToCompanyScope` |
+| `POST /admin/users/toggle-status` | strict-`outranks` guard (self-toggle rejected) + `restrictToCompanyScope` |
 | `GET /admin/modules/get-access` | loads target + `restrictToCompanyScope` (no cross-tenant reads) |
 | `POST /admin/modules/set-access` | hierarchy guard + `restrictToCompanyScope` |
 | `GET /admin/users/check-email` | **global boolean** (email is globally unique) — only true/false, no data |

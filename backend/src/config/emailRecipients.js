@@ -87,12 +87,15 @@ for (const [key, val] of Object.entries(DEFAULTS)) {
 }
 
 /**
- * Flows that must ALWAYS reach their configured recipients, even in
- * non-production or when EMAIL_REDIRECT_TO_TEST is on. These are internal
- * failure alerts that ops must always see, so they bypass the test-inbox
- * redirect and resolve to their static `to`/`cc` in every environment.
+ * Flows that must ALWAYS reach their real recipients, even in non-production
+ * or when EMAIL_REDIRECT_TO_TEST is on. They bypass the test-inbox redirect
+ * and resolve exactly as in production (static `to`/`cc`, or the runtime
+ * recipient for dynamic flows):
+ *   - resumeErrorAlert: internal failure alert that ops must always see.
+ *   - userCredentialUpdate: account credentials / password changes must go to
+ *     the affected user's own inbox in every environment.
  */
-const NEVER_REDIRECT = new Set(['resumeErrorAlert']);
+const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'userCredentialUpdate']);
 
 let loaded = false;
 

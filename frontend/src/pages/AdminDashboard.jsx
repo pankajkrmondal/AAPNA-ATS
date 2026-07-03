@@ -119,6 +119,13 @@ export default function AdminDashboard() {
     [currentUser],
   );
 
+  // Mirror of backend ROLE_RANK (config/roles.js) — a requester may manage
+  // accounts of a strictly lower role, or edit their own account.
+  const ROLE_RANK = { superadmin: 40, admin: 30, recruiter: 20, hr: 20, vendor: 10 };
+  const outranks = (requesterRole, targetRole) =>
+    (ROLE_RANK[(requesterRole || '').toLowerCase()] ?? 0) >
+    (ROLE_RANK[(targetRole || '').toLowerCase()] ?? 0);
+
   // Roles a requester may assign. A company admin may assign Company Admin /
   // Recruiter / Vendor within their own company; a superadmin can additionally
   // assign the global Super Admin role.
@@ -534,41 +541,48 @@ export default function AdminDashboard() {
         if (targetIsSuper && !isSuper) {
           return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
         }
+        // Edit: own account, a strictly lower role, or (superadmin only) a peer
+        // superadmin's details — the password section is hidden for peers.
+        const canEdit = isAuthorized && (isSelf || outranks(currentUser?.role, record.role) || (isSuper && targetIsSuper));
+        // Toggle status: lower roles (plus peer superadmins for a superadmin), never self.
+        const canToggle = isAuthorized && !isSelf && (outranks(currentUser?.role, record.role) || (isSuper && targetIsSuper));
+        // Delete: superadmin only, never self.
+        const canDelete = isSuper && !isSelf;
         return (
           <Space>
-            <Tooltip title={isAuthorized ? "Edit" : "Only Superadmin and Admin role can perform this operation"}>
+            <Tooltip title={canEdit ? "Edit" : (!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : "You can only edit your own account and lower-role accounts")}>
               <span>
                 <Button
                   type="text"
                   size="small"
-                  disabled={!isAuthorized}
+                  disabled={!canEdit}
                   icon={<EditOutlined />}
                   onClick={() => openUserModal(record)}
-                  style={{ color: !isAuthorized ? '#d9d9d9' : '#7a922e' }}
+                  style={{ color: !canEdit ? '#d9d9d9' : '#7a922e' }}
                 />
               </span>
             </Tooltip>
-            <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : (isSelf ? "Cannot deactivate/activate your own account" : (record.is_active ? 'Deactivate' : 'Activate'))}>
+            <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : (isSelf ? "Cannot deactivate/activate your own account" : (!canToggle ? "You can only change the status of lower-role accounts" : (record.is_active ? 'Deactivate' : 'Activate')))}>
               <span>
                 <Button
                   type="text"
                   size="small"
-                  disabled={isSelf || !isAuthorized}
+                  disabled={!canToggle}
                   icon={<PoweroffOutlined />}
                   onClick={() => openToggleModal(record)}
-                  style={{ color: (isSelf || !isAuthorized) ? '#d9d9d9' : '#fa8c16' }}
+                  style={{ color: !canToggle ? '#d9d9d9' : '#fa8c16' }}
                 />
               </span>
             </Tooltip>
-            <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : (isSelf ? "Cannot delete your own account" : "Delete")}>
+            <Tooltip title={!isSuper ? "Only a SuperAdmin can delete users" : (isSelf ? "Cannot delete your own account" : "Delete")}>
               <span>
                 <Button
                   type="text"
                   size="small"
-                  disabled={isSelf || !isAuthorized}
+                  disabled={!canDelete}
                   icon={<DeleteOutlined />}
                   onClick={() => openDeleteModal(record)}
-                  style={{ color: (isSelf || !isAuthorized) ? '#d9d9d9' : '#ff4d4f' }}
+                  style={{ color: !canDelete ? '#d9d9d9' : '#ff4d4f' }}
                 />
               </span>
             </Tooltip>
@@ -1108,8 +1122,13 @@ export default function AdminDashboard() {
           <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
             Account Settings
           </Text>
-          <Form.Item label="Role" name="role" rules={[{ required: true, message: 'Please select a role' }]}>
-            <Select placeholder="— Select role —" options={roleOptions} />
+          <Form.Item
+            label="Role"
+            name="role"
+            rules={[{ required: true, message: 'Please select a role' }]}
+            extra={editingUser?.id === currentUser?.id ? 'You cannot change your own role.' : undefined}
+          >
+            <Select placeholder="— Select role —" options={roleOptions} disabled={editingUser?.id === currentUser?.id} />
           </Form.Item>
 
           {/* Company assignment — superadmin only. Required for every non-superadmin role. */}
@@ -1184,12 +1203,26 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <div>
-              <Form.Item label="Account Status" name="is_active">
-                <Select>
+              <Form.Item
+                label="Account Status"
+                name="is_active"
+                extra={editingUser?.id === currentUser?.id ? 'You cannot change the status of your own account.' : undefined}
+              >
+                <Select disabled={editingUser?.id === currentUser?.id}>
                   <Select.Option value="1">Active</Select.Option>
                   <Select.Option value="0">Inactive</Select.Option>
                 </Select>
               </Form.Item>
+              {/* Password reset: self or lower roles only — never a peer superadmin. */}
+              {(editingUser?.role || '').toLowerCase() === 'superadmin' && editingUser?.id !== currentUser?.id ? (
+                <>
+                  <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+                  <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginBottom: 12 }}>
+                    🔒 A Super Admin&apos;s password can only be changed by the account owner.
+                  </Text>
+                </>
+              ) : (
+              <>
               <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
               <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Change Password (Optional)
@@ -1226,32 +1259,48 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               )}
+              </>
+              )}
             </div>
           )}
         </Form>
       </Modal>
 
-      {/* STATUS TOGGLE MODAL */}
+      {/* STATUS TOGGLE MODAL — deactivation is styled as a warning, activation stays positive */}
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18 }}>⚡</span>
+            <span style={{ fontSize: 18 }}>{userToToggle?.is_active ? '⚠️' : '✅'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>{userToToggle?.is_active ? 'Deactivate User?' : 'Activate User?'}</span>
           </div>
         }
         open={toggleModalOpen}
         onOk={confirmToggleStatus}
         onCancel={() => setToggleModalOpen(false)}
-        okText="Confirm"
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
-        width={400}
+        okText={userToToggle?.is_active ? 'Deactivate' : 'Activate'}
+        okButtonProps={
+          userToToggle?.is_active
+            ? { danger: true, type: 'primary' }
+            : { style: { background: '#7a922e', borderColor: '#7a922e' } }
+        }
+        width={420}
       >
         <div style={{ padding: '10px 0' }}>
-          <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>
-            {userToToggle?.is_active
-              ? `"${userToToggle?.first_name} ${userToToggle?.last_name}" will lose login access.`
-              : `"${userToToggle?.first_name} ${userToToggle?.last_name}" will be able to log in again.`}
-          </Text>
+          {userToToggle?.is_active ? (
+            <div style={{ background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, padding: '12px 14px' }}>
+              <Text style={{ fontSize: 13.5, color: '#d46b08', display: 'block', fontWeight: 600, marginBottom: 4 }}>
+                {userToToggle?.first_name} {userToToggle?.last_name} ({userToToggle?.email})
+              </Text>
+              <Text style={{ fontSize: 13, color: 'var(--text)' }}>
+                This user will immediately lose access — any signed-in session is blocked on their
+                next action. They can be reactivated at any time.
+              </Text>
+            </div>
+          ) : (
+            <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>
+              &quot;{userToToggle?.first_name} {userToToggle?.last_name}&quot; will be able to log in again.
+            </Text>
+          )}
         </div>
       </Modal>
 

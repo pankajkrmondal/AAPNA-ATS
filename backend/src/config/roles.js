@@ -80,3 +80,14 @@ export function isAdminTier(role) {
 export function isSuperadmin(role) {
   return normalizeRole(role) === ROLES.SUPERADMIN;
 }
+
+/**
+ * True if the requester's role strictly outranks the target's role.
+ * Equal-rank roles (e.g. admin acting on a co-admin) do NOT outrank each other.
+ * @param {string|null|undefined} requesterRole
+ * @param {string|null|undefined} targetRole
+ * @returns {boolean}
+ */
+export function outranks(requesterRole, targetRole) {
+  return (ROLE_RANK[normalizeRole(requesterRole)] ?? 0) > (ROLE_RANK[normalizeRole(targetRole)] ?? 0);
+}
