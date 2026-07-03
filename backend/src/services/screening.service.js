@@ -3,8 +3,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
-import { getAccessToken } from './onedrive.service.js';
-import { compileTemplate } from './emailNotification.service.js';
+import { compileTemplate, sendGraphEmail, describeEmailError } from './emailNotification.service.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
@@ -358,6 +357,160 @@ function scoreJDMatch(top5Skills, roleSkills) {
   return 2;
 }
 
+/**
+ * Split a JD skill string into individual skill phrases.
+ * Splits only on list separators (comma / semicolon / newline / slash) so that
+ * multi-word skills like "Machine Learning" stay intact (unlike scoreJDMatch,
+ * which tokenizes for percentage scoring).
+ */
+function splitSkillPhrases(skillsStr) {
+  if (!skillsStr) return [];
+  return String(skillsStr)
+    .split(/[,;\n/]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/** Parse Top5KeySkills which may be a JS array, a Postgres array literal, or a comma string. */
+function parseDeclaredSkills(top5) {
+  if (Array.isArray(top5)) return top5.map((s) => String(s).trim()).filter(Boolean);
+  if (!top5) return [];
+  const str = String(top5).trim().replace(/^\{|\}$/g, ''); // strip Postgres {..} braces if present
+  return str
+    .split(',')
+    .map((s) => s.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean);
+}
+
+/** Parse resume_technical_terms (JSON column) into a normalized [{term, count}] array. */
+function parseTechnicalTerms(raw) {
+  let arr = [];
+  try {
+    arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
+  } catch {
+    arr = [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((t) => (typeof t === 'string' ? { term: t, count: 1 } : { term: t.term, count: t.count || 1 }))
+    .filter((t) => t.term);
+}
+
+/** Fuzzy bidirectional containment match (parity with the P6 grounding block). */
+function skillMatchesTerm(skillLower, termLower) {
+  if (!skillLower || !termLower) return false;
+  return termLower.includes(skillLower) || skillLower.includes(termLower);
+}
+
+/**
+ * Keyword coverage matcher. For each searched term, checks whether it appears in the
+ * candidate's declared skills, resume technical terms, OR resume full text (with
+ * name/position/company as a weak fallback). Returns how many terms matched so the
+ * caller can score by coverage (more terms matched → higher score/rank).
+ */
+function matchKeywordTerms(terms, candidate) {
+  const total = terms.length;
+  if (total === 0) return { matchedCount: 0, total: 0, perTerm: [], evidenceScore: 0 };
+
+  const declared = parseDeclaredSkills(candidate.Top5KeySkills).map((s) => s.toLowerCase());
+  const techTerms = parseTechnicalTerms(candidate.resume_technical_terms); // [{ term, count }]
+  const resumeText = String(candidate.resume_full_text || '').toLowerCase();
+  const weak = [candidate.Name, candidate.PositionApplied, candidate.CurrentCompany]
+    .map((x) => String(x || '').toLowerCase())
+    .join(' ');
+
+  let declaredCount = 0;
+  let totalFreq = 0;
+  let resumeOnlyCount = 0;
+
+  const perTerm = terms.map((term) => {
+    const t = term.toLowerCase().trim();
+    const inSkills = declared.some((d) => skillMatchesTerm(t, d));
+    const matchedTech = techTerms.find((x) => skillMatchesTerm(t, String(x.term || '').toLowerCase()));
+    const inTerms = Boolean(matchedTech);
+    const count = matchedTech ? matchedTech.count || 1 : 0;
+    const inResumeText = t.length > 0 && resumeText.includes(t);
+    const inWeak = t.length > 0 && weak.includes(t);
+    const matched = inSkills || inTerms || inResumeText || inWeak;
+    if (matched) {
+      if (inSkills) declaredCount++;
+      totalFreq += count;
+      if (inResumeText && !inSkills && !inTerms) resumeOnlyCount++;
+    }
+    return { term, inSkills, inTerms, inResumeText, count, matched };
+  });
+
+  // Tiebreak evidence (used only among candidates with equal coverage):
+  // 1) terms present in the candidate's declared key-skills dominate,
+  // 2) then total resume technical-term frequency,
+  // 3) then terms found only in the resume body.
+  const evidenceScore = declaredCount * 1e9 + totalFreq * 1000 + resumeOnlyCount;
+
+  return { matchedCount: perTerm.filter((p) => p.matched).length, total, perTerm, evidenceScore };
+}
+
+/**
+ * Maps keyword term coverage to a 0-10 skill-match score.
+ * 0 matched terms → 0 (candidate is filtered out); otherwise scaled by the fraction
+ * of searched terms present, so matching more terms ranks higher.
+ */
+function coverageSkillScore(match) {
+  if (!match || match.total === 0) return 4;
+  if (match.matchedCount === 0) return 0;
+  const coverage = match.matchedCount / match.total;
+  if (coverage >= 1) return 10;
+  if (coverage >= 0.66) return 8;
+  if (coverage >= 0.5) return 7;
+  if (coverage >= 0.34) return 6;
+  return 5;
+}
+
+/**
+ * Display-only JD skill signal builder (does NOT affect scoring).
+ * For each JD skill (mandatory + good-to-have) records whether the skill is found in
+ * the resume signals (resume_technical_terms) and/or the candidate's declared skills
+ * section (Top5KeySkills), and derives a status the UI uses to explain the profile.
+ *
+ *   status:
+ *     evidenced    - in resume signals AND declared skills
+ *     signals_only - in resume signals but NOT declared (recruiter's key case)
+ *     listed_only  - declared but not surfaced as a resume signal
+ *     missing       - neither
+ */
+function buildJdSkillSignals(candidate, mandatorySkills, goodToHaveSkills) {
+  const terms = parseTechnicalTerms(candidate.resume_technical_terms);
+  const declared = parseDeclaredSkills(candidate.Top5KeySkills).map((s) => s.toLowerCase());
+  const resumeText = String(candidate.resume_full_text || '').toLowerCase();
+
+  const classify = (skill) => {
+    const skillLower = skill.toLowerCase();
+    const matchedTerm = terms.find((t) => skillMatchesTerm(skillLower, String(t.term).toLowerCase()));
+    // A skill counts as an evidenced resume signal if it's a technical term OR it
+    // appears in the resume body text.
+    const inResumeText = skillLower.length > 0 && resumeText.includes(skillLower);
+    const inSignals = Boolean(matchedTerm) || inResumeText;
+    const inSkillsSection = declared.some((d) => skillMatchesTerm(skillLower, d));
+    let status;
+    if (inSignals && inSkillsSection) status = 'evidenced';
+    else if (inSignals && !inSkillsSection) status = 'signals_only';
+    else if (!inSignals && inSkillsSection) status = 'listed_only';
+    else status = 'missing';
+    return {
+      skill,
+      count: matchedTerm ? matchedTerm.count || 1 : 0,
+      inSignals,
+      inSkillsSection,
+      inResumeText,
+      status,
+    };
+  };
+
+  return {
+    mandatory: splitSkillPhrases(mandatorySkills).map(classify),
+    goodToHave: splitSkillPhrases(goodToHaveSkills).map(classify),
+  };
+}
+
 function scoreCTCAlignment(expectedCTC, budgetMin, budgetMax) {
   const exp = parseFloat(expectedCTC);
   const bMax = parseFloat(budgetMax);
@@ -392,6 +545,23 @@ function getJdJsonField(parsedJd, ...keys) {
     }
   }
   return '';
+}
+
+/**
+ * Resolve the AI profile for a candidate: prefer the freshly-generated insights
+ * for this search, but fall back to the candidate's own cached ai_profile_insights
+ * so any previously-analyzed candidate still shows their AI Insights in the drawer,
+ * even when they rank outside this search's top-N (which is the only set re-analyzed).
+ */
+function resolveProfile(insights, candidate) {
+  if (insights && insights.profile) return insights.profile;
+  let cached = candidate && candidate.ai_profile_insights;
+  if (!cached) return null;
+  if (typeof cached === 'string') {
+    try { cached = JSON.parse(cached); } catch { return null; }
+  }
+  if (!cached || typeof cached !== 'object') return null;
+  return cached.profile || (cached.summary ? cached : null);
 }
 
 function mapStars(score) {
@@ -528,17 +698,19 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
 /**
  * POST /api/screening/roles/:id/search
  */
-export async function searchRoleCandidates(mrfId) {
-  // Check cache first
+export async function searchRoleCandidates(mrfId, force = false) {
+  // Check cache first (skipped on an explicit refresh so fresh results are recomputed)
   const cacheKey = `screening:role:${mrfId}`;
-  try {
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      logger.info(`Serving screening results for MRF ${mrfId} from Redis cache`);
-      return JSON.parse(cachedData);
+  if (!force) {
+    try {
+      const cachedData = await redis.get(cacheKey);
+      if (cachedData) {
+        logger.info(`Serving screening results for MRF ${mrfId} from Redis cache`);
+        return JSON.parse(cachedData);
+      }
+    } catch (err) {
+      logger.warn('Failed to read from Redis cache:', { error: err.message });
     }
-  } catch (err) {
-    logger.warn('Failed to read from Redis cache:', { error: err.message });
   }
 
   // 1) Fetch MRF Job details via unified SQL query with fallbacks
@@ -858,7 +1030,8 @@ export async function searchRoleCandidates(mrfId) {
       educationContext,
       maxTenureYears: parseFloat(item.maxTenureYears.toFixed(2)),
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
-      profile: insights.profile || null,
+      jdSkillSignals: buildJdSkillSignals(c, mandatorySkills, goodToHaveSkills),
+      profile: resolveProfile(insights, c),
       starRating: {
         finalScore,
         stars,
@@ -948,30 +1121,47 @@ export async function searchKeywordCandidates(filters) {
 
   let candidates = [];
 
+  // Split the keyword box into individual terms so multiple skills are matched
+  // per-term (not as one opaque string). Kept for both retrieval and scoring.
+  const keywordTerms = splitSkillPhrases(fKeyword);
+
   if (fKeyword) {
-    const safeKeyword = fKeyword.replace(/'/g, "''");
     const embedding = await generateEmbedding(fKeyword);
     const vectorStr = `[${embedding.join(',')}]`;
 
-    // 1) Combined SQL Pre-filtered Vector Search (checks exp range, CTC range, and full-text tsvector directly in database to avoid candidate starvation)
+    // Per-term retrieval gate: a candidate is retrieved if the full-text index
+    // matches OR ANY single term appears in skills / resume text / technical terms /
+    // position / name / company. Params start at $7 (one %term% per term).
+    const termParams = keywordTerms.map((t) => `%${t}%`);
+    const termClause = keywordTerms
+      .map((_, i) => {
+        const p = 7 + i;
+        return `(c."Top5KeySkills" ILIKE $${p} OR c.resume_full_text ILIKE $${p} OR (c.resume_technical_terms IS NOT NULL AND c.resume_technical_terms::text ILIKE $${p}) OR c."PositionApplied" ILIKE $${p} OR c."Name" ILIKE $${p} OR c."CurrentCompany" ILIKE $${p})`;
+      })
+      .join(' OR ');
+    const textGate = `c.resume_tsvector IS NULL
+               OR c.resume_tsvector @@ plainto_tsquery('english', $6)
+               ${termClause ? `OR ${termClause}` : `OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')`}`;
+
+    // 1) Combined SQL Pre-filtered Vector Search (exp/CTC range + full-text + per-term match in DB to avoid candidate starvation)
     candidates = await prisma.$queryRawUnsafe(
-      `SELECT 
-          c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification", 
-          c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA", 
-          c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills", 
-          c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange", 
-          c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage", 
-          c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken", 
-          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays", 
-          c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat", 
-          c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo", 
-          c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
-          c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
-          c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-          c."cvFileUrl", c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance
+      `SELECT
+          c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification",
+          c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA",
+          c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills",
+          c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange",
+          c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage",
+          c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken",
+          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays",
+          c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat",
+          c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo",
+          c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
+          c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization,
+          c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock",
+          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, c.resume_full_text, v.text, v.embedding <=> $1::vector as distance
        FROM public.rpa_cv_vectors v
        JOIN public.rpa_cv c ON c.id = v.candidate_id
-       WHERE 
+       WHERE
            (
                $2::numeric = 0
                OR c."TotalExperienceYearsNumeric" IS NULL
@@ -993,13 +1183,7 @@ export async function searchKeywordCandidates(filters) {
                OR c."ExpectedCTCNumeric" >= $5::numeric
            )
            AND (
-               c.resume_tsvector IS NULL 
-               OR c.resume_tsvector @@ plainto_tsquery('english', $6)
-               OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')
-               OR c."PositionApplied" ILIKE CONCAT('%', $6, '%')
-               OR c."Name" ILIKE CONCAT('%', $6, '%')
-               OR c."CurrentCompany" ILIKE CONCAT('%', $6, '%')
-               OR (c.resume_technical_terms IS NOT NULL AND c.resume_technical_terms::text ILIKE CONCAT('%', $6, '%'))
+               ${textGate}
            )
        ORDER BY distance ASC
        LIMIT 50`,
@@ -1008,7 +1192,8 @@ export async function searchKeywordCandidates(filters) {
       fExpMax || 0,
       fCtcMax || 0,
       fCtcMin || 0,
-      safeKeyword
+      fKeyword,
+      ...termParams
     );
 
     // Rerank candidates using Cohere Reranker
@@ -1084,37 +1269,13 @@ export async function searchKeywordCandidates(filters) {
     const scores = [];
     const breakdown = {};
 
-    // A. Skill Match - check if keyword is present in Top5KeySkills or technical terms
+    // A. Skill Match - coverage across searched terms, checking the candidate's
+    // declared skills, resume technical terms, AND resume full text.
     let baselineSkillScore = 4;
+    let keywordMatch = null;
     if (fKeyword) {
-      const skills = String(c.Top5KeySkills || '')
-        .replace(/[{}"\\]/g, '')
-        .split(',')
-        .map((s) => s.toLowerCase().trim())
-        .filter(Boolean);
-      
-      const technicalTerms = (() => {
-        try {
-          const raw = c.resume_technical_terms;
-          return Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
-        } catch {
-          return [];
-        }
-      })();
-
-      const kwLower = fKeyword.toLowerCase();
-      const hasSkillMatch = skills.some(s => s.includes(kwLower) || kwLower.includes(s));
-      const hasTermMatch = technicalTerms.some(t => {
-        const term = String(t.term || t || '').toLowerCase();
-        return term.includes(kwLower) || kwLower.includes(term);
-      });
-      const hasNameMatch = String(c.Name || '').toLowerCase().includes(kwLower);
-      const hasPositionMatch = String(c.PositionApplied || '').toLowerCase().includes(kwLower);
-      const hasCompanyMatch = String(c.CurrentCompany || '').toLowerCase().includes(kwLower);
-
-      baselineSkillScore = (hasSkillMatch || hasTermMatch || hasNameMatch || hasPositionMatch || hasCompanyMatch) ? 10 : 2;
-    }
-    if (fKeyword) {
+      keywordMatch = matchKeywordTerms(keywordTerms, c);
+      baselineSkillScore = coverageSkillScore(keywordMatch);
       scores.push(baselineSkillScore);
       breakdown.skillMatch = { pts: baselineSkillScore, max: 10, label: 'Skill Match' };
     }
@@ -1197,7 +1358,8 @@ export async function searchKeywordCandidates(filters) {
       scorePct,
       scores,
       breakdown,
-      baselineSkillScore
+      baselineSkillScore,
+      keywordMatch
     };
   });
 
@@ -1283,7 +1445,6 @@ export async function searchKeywordCandidates(filters) {
     const c = item.c;
     const candidateIdStr = c.id.toString();
     const insights = insightsMap[candidateIdStr] || {};
-    const skillScore = insights.skillMatchScore != null ? Number(insights.skillMatchScore) : item.baselineSkillScore;
     const skillMatchReason = insights.skillMatchReason || 'Grounded keyword evaluation';
 
     // Recalculate skill match score with keywords matching
@@ -1291,48 +1452,23 @@ export async function searchKeywordCandidates(filters) {
     const breakdown = { ...item.breakdown };
 
     if (fKeyword) {
-      let adjustedSkillScore = skillScore;
-      const skills = String(c.Top5KeySkills || '')
-        .replace(/[{}"\\]/g, '')
-        .split(',')
-        .map((s) => s.toLowerCase().trim())
-        .filter(Boolean);
-      
-      const technicalTerms = (() => {
-        try {
-          const raw = c.resume_technical_terms;
-          return Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : []);
-        } catch {
-          return [];
-        }
-      })();
+      // Literal term coverage (skills + resume technical terms + resume text) is
+      // authoritative for the keyword tab, so ranking/filtering reflect what the
+      // recruiter actually typed rather than semantic similarity.
+      const coverageScore = item.baselineSkillScore;
+      const match = item.keywordMatch;
+      const reason = match && match.total > 0
+        ? `Matched ${match.matchedCount}/${match.total} searched skill(s)${insights.skillMatchReason ? ` · ${insights.skillMatchReason}` : ''}`
+        : skillMatchReason;
 
-      const kwLower = fKeyword.toLowerCase();
-      const hasSkillMatch = skills.some(s => s.includes(kwLower) || kwLower.includes(s));
-      const matchedTerm = technicalTerms.find(t => {
-        const term = String(t.term || t || '').toLowerCase();
-        return term.includes(kwLower) || kwLower.includes(term);
-      });
-      const hasNameMatch = String(c.Name || '').toLowerCase().includes(kwLower);
-      const hasPositionMatch = String(c.PositionApplied || '').toLowerCase().includes(kwLower);
-      const hasCompanyMatch = String(c.CurrentCompany || '').toLowerCase().includes(kwLower);
-
-      if (hasSkillMatch || matchedTerm || hasNameMatch || hasPositionMatch || hasCompanyMatch) {
-        adjustedSkillScore = Math.max(skillScore, 5);
-        if (hasSkillMatch || (matchedTerm && (matchedTerm.count || 1) >= 3) || hasNameMatch || hasPositionMatch || hasCompanyMatch) {
-          adjustedSkillScore = Math.max(adjustedSkillScore, 7);
-        }
-      } else {
-        adjustedSkillScore = Math.min(skillScore, 4);
-      }
-
-      // Update skill match score in list and breakdown
-      scores[0] = adjustedSkillScore;
+      scores[0] = coverageScore;
       breakdown.skillMatch = {
-        pts: adjustedSkillScore,
+        pts: coverageScore,
         max: 10,
         label: 'Skill Match',
-        reason: skillMatchReason,
+        reason,
+        matched: match ? match.matchedCount : 0,
+        totalTerms: match ? match.total : 0,
       };
     }
 
@@ -1355,12 +1491,24 @@ export async function searchKeywordCandidates(filters) {
       candidate_pg_specialization: c.postgraduationspecialization || null,
     };
 
+    // Display-only: cross-reference the searched skill(s) against the candidate's
+    // declared skills + resume signals (same treatment as the JD tab). Only when a
+    // searched term is present; pure filter-only searches keep the generic signals strip.
+    const searchedSkillsStr = [fKeyword, fDesignation].filter(Boolean).join(', ');
+    const jdSkillSignals = searchedSkillsStr
+      ? buildJdSkillSignals(c, searchedSkillsStr, '')
+      : undefined;
+
+    // Never ship the (potentially large) resume body to the client — it is used
+    // only for server-side matching.
+    const { resume_full_text: _omitResumeText, ...cPublic } = c;
     return {
-      ...c,
+      ...cPublic,
       id: Number(c.id),
       educationContext,
       shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
-      profile: insights.profile || null,
+      ...(jdSkillSignals ? { jdSkillSignals } : {}),
+      profile: resolveProfile(insights, c),
       relevanceScore: {
         scorePct,
         stars,
@@ -1369,22 +1517,31 @@ export async function searchKeywordCandidates(filters) {
         filtersApplied: scores.length,
         breakdown,
         mode: 'keyword',
+        evidence: item.keywordMatch ? item.keywordMatch.evidenceScore : 0,
       },
     };
   });
 
-  // Filter out avgScore < 5. If keyword is present, also check that skillMatch >= 3
+  // Filter out avgScore < 5. When a keyword is present, require at least one typed
+  // term to literally match (skill coverage score >= 5), so candidates who don't
+  // contain the searched skill(s) are dropped rather than passing through.
   const filtered = scoredCandidates
     .filter((c) => {
       if (c.relevanceScore.avgScore < 5) return false;
       if (fKeyword) {
         const skillPts = c.relevanceScore.breakdown.skillMatch?.pts ?? 0;
-        if (skillPts === 0 && !c.ai_profile_insights?.skillMatchScore) return true; // null/unknown, pass through
-        return skillPts >= 3;
+        return skillPts >= 5;
       }
       return true;
     })
-    .sort((a, b) => b.relevanceScore.scorePct - a.relevanceScore.scorePct);
+    // Rank by overall score, then break ties by evidence strength (declared
+    // key-skills first, then resume term frequency) so a stronger-evidenced
+    // candidate never sits below an equal-coverage but weaker one.
+    .sort((a, b) => {
+      const byScore = b.relevanceScore.scorePct - a.relevanceScore.scorePct;
+      if (byScore !== 0) return byScore;
+      return (b.relevanceScore.evidence || 0) - (a.relevanceScore.evidence || 0);
+    });
 
   // Compute stats
   const high = filtered.filter((c) => c.relevanceScore.scorePct >= 75).length;
@@ -1468,8 +1625,15 @@ async function refreshCandidateVector(candidateId) {
  * POST /api/screening/shortlist
  */
 export async function shortlistCandidates(candidates, mrfId, roleName, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
   let emailsSent = 0;
+  let shortlistedCount = 0;
+  const emailFailures = [];
+
+  // A keyword search is not tied to an MRF role. mrf_id is a nullable FK to
+  // rpa_mrf, so for keyword (mrfId <= 0) we must store NULL — inserting 0 (no
+  // such MRF) violates the rpa_shortlisted_candidates_mrf_id_fkey constraint.
+  const mrfRef = mrfId > 0 ? BigInt(mrfId) : null;
+  const searchType = mrfId > 0 ? 'jd' : 'keyword';
 
   // 1) Fetch template
   const template = await prisma.rpa_email_templates.findFirst({
@@ -1490,7 +1654,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     const exists = await prisma.rpa_shortlisted_candidates.findFirst({
       where: {
         cv_id: candidateId,
-        mrf_id: BigInt(mrfId),
+        mrf_id: mrfRef,
       },
     });
 
@@ -1503,7 +1667,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     const shortlist = await prisma.rpa_shortlisted_candidates.create({
       data: {
         cv_id: candidateId,
-        mrf_id: BigInt(mrfId),
+        mrf_id: mrfRef,
         candidate_name: c.Name || 'Candidate',
         candidate_email: c.EmailID || '',
         position_applied: roleName,
@@ -1512,6 +1676,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
         pipeline_status: 'shortlisted',
       },
     });
+    shortlistedCount++;
 
     // Update candidate status
     await prisma.rpa_cv.update({
@@ -1525,96 +1690,86 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
     const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
 
-    if (toEmail) {
+    if (!toEmail) {
+      emailFailures.push({
+        name: c.Name || 'Candidate',
+        email: c.EmailID || '',
+        reason: describeEmailError('No valid recipients'),
+      });
+    } else {
+      // Build the search-type-specific intro paragraph (JD vs keyword), injected
+      // into the branded template via the {role_paragraph} placeholder since
+      // compileTemplate cannot branch on its own.
+      const roleParagraph =
+        searchType === 'jd'
+          ? `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
+          : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
+
       // Replace placeholders
       const { subject, html: bodyHtml } = compileTemplate(template.subject, template.body_html, {
         candidate_name: c.Name || 'Candidate',
-        job_title: roleName,
-        recruiter_name: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'Recruitment Team'
+        position: roleName,
+        role_paragraph: roleParagraph,
       });
 
       try {
-        const token = await getAccessToken();
-        const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-        const recipients = toEmail
-          .split(',')
-          .map((em) => em.trim())
-          .filter((em) => em.length > 0)
-          .map((em) => ({
-            emailAddress: { address: em },
-          }));
-
-        const ccRecipients = (ccEmail || '')
-          .split(',')
-          .map((em) => em.trim())
-          .filter((em) => em.length > 0)
-          .map((em) => ({
-            emailAddress: { address: em },
-          }));
-
-        const mailPayload = {
-          message: {
-            subject,
-            body: {
-              contentType: 'HTML',
-              content: bodyHtml,
-            },
-            toRecipients: recipients,
-            ...(ccRecipients.length > 0 ? { ccRecipients } : {}),
-          },
-          saveToSentItems: 'true',
-        };
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(mailPayload),
+        // Send from the authorized shared mailbox (MS_DEFAULT_SENDER_EMAIL).
+        // Sending as the recruiter's personal mailbox is rejected by the tenant
+        // AppOnly Application Access Policy with ErrorAccessDenied. sendGraphEmail
+        // throws (with the Graph error body) on any non-ok response, so failures
+        // surface in the logs below instead of being silently dropped.
+        await sendGraphEmail({
+          sender: config.microsoft.defaultSender,
+          to: toEmail,
+          cc: ccEmail,
+          subject,
+          html: bodyHtml,
         });
 
-        if (res.ok) {
-          emailsSent++;
-          // Log mail message to db
-          const emailMsg = await prisma.rpa_email_messages.create({
-            data: {
-              conversation_id: `shortlist-conv-${shortlist.id}`,
-              from_email: hrEmail,
-              to_emails: toEmail.split(','),
-              subject,
-              body_html: bodyHtml,
-              direction: 'outbound',
-              candidate_id: candidateId,
-              mrf_id: BigInt(mrfId),
-              shortlist_id: shortlist.id,
-              sent_at: new Date(),
-            },
-          });
+        emailsSent++;
 
-          // Create tracking record
-          await prisma.rpa_email_tracking.create({
-            data: {
-              message_id: emailMsg.id,
-              delivered: true,
-              delivered_at: new Date(),
-            },
-          });
+        // Log mail message to db
+        const emailMsg = await prisma.rpa_email_messages.create({
+          data: {
+            conversation_id: `shortlist-conv-${shortlist.id}`,
+            from_email: config.microsoft.defaultSender,
+            to_emails: toEmail.split(','),
+            subject,
+            body_html: bodyHtml,
+            direction: 'outbound',
+            candidate_id: candidateId,
+            mrf_id: mrfRef,
+            shortlist_id: shortlist.id,
+            sent_at: new Date(),
+          },
+        });
 
-          // Update shortlist flag
-          await prisma.rpa_shortlisted_candidates.update({
-            where: { id: shortlist.id },
-            data: {
-              email_sent: true,
-              email_sent_at: new Date(),
-              email_subject: subject,
-              email_body_snapshot: bodyHtml,
-            },
-          });
-        }
+        // Create tracking record
+        await prisma.rpa_email_tracking.create({
+          data: {
+            message_id: emailMsg.id,
+            delivered: true,
+            delivered_at: new Date(),
+          },
+        });
+
+        // Update shortlist flag
+        await prisma.rpa_shortlisted_candidates.update({
+          where: { id: shortlist.id },
+          data: {
+            email_sent: true,
+            email_sent_at: new Date(),
+            email_subject: subject,
+            email_body_snapshot: bodyHtml,
+          },
+        });
       } catch (err) {
         logger.error(`Failed to send shortlist email to ${toEmail}:`, { error: err.message });
+        emailFailures.push({
+          name: c.Name || 'Candidate',
+          email: c.EmailID || '',
+          reason: describeEmailError(err),
+        });
       }
     }
 
@@ -1633,7 +1788,12 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     logger.warn('Failed to invalidate Redis cache:', { error: err.message });
   }
 
-  return { success: true, emails_sent: emailsSent };
+  return {
+    success: true,
+    shortlisted: shortlistedCount,
+    emails_sent: emailsSent,
+    email_failures: emailFailures,
+  };
 }
 
 /**
@@ -1797,8 +1957,6 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
  * POST /api/screening/analytics/schedule
  */
 export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
-
   // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
   //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
   const settingClientIdRow = await prisma.rpa_settings.findUnique({
@@ -1875,14 +2033,23 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   logger.info(`Zeko API: Scheduling interview at Zeko for candidate ${shortlist.candidate_name}`);
 
-  const zekoRes = await fetch(zekoUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${tokenRecord.access_token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(zekoPayload),
-  });
+  let zekoRes;
+  try {
+    zekoRes = await fetch(zekoUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokenRecord.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(zekoPayload),
+    });
+  } catch (err) {
+    logger.error(`Zeko Schedule API network error: ${err.message}`, { cause: err.cause?.code });
+    throw new AppError(
+      'Could not reach the Zeko interview platform (connection timed out). Please check the connection and try again, or schedule from the Zeko Interview Schedule tab.',
+      502
+    );
+  }
 
   if (!zekoRes.ok) {
     const errorBody = await zekoRes.json().catch(() => ({}));
@@ -1946,32 +2113,12 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   if (toEmail) {
     try {
-      const token = await getAccessToken();
-      const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-      const mailPayload = {
-        message: {
-          subject,
-          body: {
-            contentType: 'HTML',
-            content: emailHtml,
-          },
-          toRecipients: toEmail
-            .split(',')
-            .map((em) => em.trim())
-            .filter((em) => em.length > 0)
-            .map((em) => ({ emailAddress: { address: em } })),
-        },
-        saveToSentItems: 'true',
-      };
-
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(mailPayload),
+      // Send from the authorized shared mailbox (see shortlistCandidates).
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: toEmail,
+        subject,
+        html: emailHtml,
       });
     } catch (err) {
       logger.error('Failed to send interview scheduling email:', { error: err.message });
@@ -1985,8 +2132,6 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
  * POST /api/screening/analytics/cancel
  */
 export async function cancelInterview(pipelineId, reason, user) {
-  const hrEmail = user.email || config.microsoft.defaultSender;
-
   // 1) Fetch active Zeko token
   const tokenRecord = await prisma.rpa_zeko_auth_token.findFirst({
     where: {
@@ -2068,32 +2213,12 @@ export async function cancelInterview(pipelineId, reason, user) {
 
   if (toEmail) {
     try {
-      const token = await getAccessToken();
-      const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(hrEmail)}/sendMail`;
-
-      const mailPayload = {
-        message: {
-          subject,
-          body: {
-            contentType: 'HTML',
-            content: emailHtml,
-          },
-          toRecipients: toEmail
-            .split(',')
-            .map((em) => em.trim())
-            .filter((em) => em.length > 0)
-            .map((em) => ({ emailAddress: { address: em } })),
-        },
-        saveToSentItems: 'true',
-      };
-
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(mailPayload),
+      // Send from the authorized shared mailbox (see shortlistCandidates).
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: toEmail,
+        subject,
+        html: emailHtml,
       });
     } catch (err) {
       logger.error('Failed to send interview cancellation email:', { error: err.message });
@@ -2233,17 +2358,85 @@ export async function getOutlookConversations(email) {
 /**
  * Update candidate pipeline status in rpa_shortlisted_candidates.
  */
-export async function updateCandidateStatus(candidateId, status) {
+/**
+ * Maps a screening pipeline status to the email it should trigger.
+ * Each entry resolves the right template (by category, or by name when the
+ * category CHECK constraint has no dedicated value) and the recipient flow key.
+ */
+const STATUS_EMAIL_MAP = {
+  rejected: { templateWhere: { category: 'rejection', is_active: true }, flowKey: 'rejection' },
+  on_hold: { templateWhere: { name: 'Application On Hold', is_active: true }, flowKey: 'onHold' },
+};
+
+export async function updateCandidateStatus(candidateId, status, user) {
   const updated = await prisma.rpa_shortlisted_candidates.update({
     where: { id: candidateId },
     data: { pipeline_status: status }
   });
+
+  // Notify the candidate when their status changes to a notifiable state
+  // (Rejected / On Hold). Email failures must NOT roll back the status update;
+  // the reason is captured and returned so the UI can show it to the user.
+  let emailSent = false;
+  let emailError = null;
+  const mapping = STATUS_EMAIL_MAP[String(status).toLowerCase()];
+  if (mapping) {
+    try {
+      const template = await prisma.rpa_email_templates.findFirst({ where: mapping.templateWhere });
+      if (!template) {
+        emailError = `No active email template configured for "${status}".`;
+        logger.warn(`No active email template found for status "${status}"; skipping candidate notification.`);
+      } else {
+        const { to: toEmail, cc: ccEmail } = resolveRecipients(mapping.flowKey, updated.candidate_email);
+        if (!toEmail) {
+          emailError = describeEmailError('No valid recipients');
+          logger.warn(`Skipping "${status}" email for shortlist ${candidateId}: no recipient address available.`);
+        } else {
+          const { subject, html: bodyHtml } = compileTemplate(template.subject, template.body_html, {
+            candidate_name: updated.candidate_name || 'Candidate',
+            position: updated.position_applied || 'the role',
+            job_title: updated.position_applied || 'the role',
+          });
+
+          await sendGraphEmail({
+            sender: config.microsoft.defaultSender,
+            to: toEmail,
+            cc: ccEmail,
+            subject,
+            html: bodyHtml,
+          });
+          emailSent = true;
+
+          // Record the outbound message for the conversation/audit view
+          await prisma.rpa_email_messages.create({
+            data: {
+              conversation_id: `status-${status}-conv-${updated.id}`,
+              from_email: config.microsoft.defaultSender,
+              to_emails: toEmail.split(','),
+              subject,
+              body_html: bodyHtml,
+              direction: 'outbound',
+              candidate_id: updated.cv_id ? BigInt(updated.cv_id) : null,
+              mrf_id: updated.mrf_id ? BigInt(updated.mrf_id) : null,
+              shortlist_id: updated.id,
+              sent_at: new Date(),
+            },
+          });
+        }
+      }
+    } catch (err) {
+      emailError = describeEmailError(err);
+      logger.error(`Failed to send "${status}" status email for shortlist ${candidateId}:`, { error: err.message });
+    }
+  }
 
   return {
     ...updated,
     id: Number(updated.id),
     cv_id: updated.cv_id ? Number(updated.cv_id) : null,
     mrf_id: updated.mrf_id ? Number(updated.mrf_id) : null,
+    email_sent: emailSent,
+    email_error: emailError,
   };
 }
 

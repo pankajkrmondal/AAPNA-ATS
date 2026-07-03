@@ -1,20 +1,15 @@
 import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis.js';
 import logger from '../config/logger.js';
+import { runBatchParsing } from '../services/hrUpload.service.js';
 
 /**
  * BullMQ worker for the 'resume-processing' queue.
  *
- * This worker picks up jobs added by the upload pipeline and:
- *   1. Reads the uploaded file from disk
- *   2. Parses text content (PDF / DOCX)
- *   3. Extracts structured fields (name, email, skills, experience …)
- *   4. Optionally runs AI scoring via Gemini
- *   5. Writes / updates the rpa_cv record in the database
- *   6. Emits a Socket.io event so the dashboard refreshes in real time
- *
- * The actual implementation of each step will be filled in during later phases.
- * This file provides the complete worker scaffold with error handling and logging.
+ * Each job is one resume file. The worker delegates to runBatchParsing (the same
+ * code path used by the in-process executor), which extracts text, AI-parses the
+ * resume, runs duplicate detection, writes rpa_cv / rpa_cv_tmp, and persists the
+ * job status (which is emitted to the dashboard over Socket.io).
  */
 
 /**
@@ -23,65 +18,30 @@ import logger from '../config/logger.js';
  * @returns {Promise<Object>} Processing result
  */
 async function processResume(job) {
-  const { filePath, fileName, vendorEmail, batchId, mrfId } = job.data;
+  const { executionId, file, user, source, attribution } = job.data;
 
-  logger.info(`📄 Processing resume: ${fileName}`, {
+  logger.info(`📄 Processing resume: ${file?.originalname}`, {
     jobId: job.id,
-    batchId,
-    vendorEmail,
+    batchId: executionId,
+    source,
     attempt: job.attemptsMade + 1,
   });
 
   try {
-    // ── Step 1: Read file ─────────────────────────────────────────────
     await job.updateProgress(10);
-    // TODO: Implement file reading (fs.readFile or stream)
-    logger.debug(`Step 1/5: File read — ${filePath}`);
-
-    // ── Step 2: Parse text ────────────────────────────────────────────
-    await job.updateProgress(30);
-    // TODO: Implement PDF/DOCX text extraction
-    logger.debug('Step 2/5: Text extraction');
-
-    // ── Step 3: Extract structured fields ─────────────────────────────
-    await job.updateProgress(50);
-    // TODO: Implement field extraction (regex + AI)
-    logger.debug('Step 3/5: Field extraction');
-
-    // ── Step 4: AI scoring ────────────────────────────────────────────
-    await job.updateProgress(70);
-    // TODO: Implement Gemini-based scoring
-    logger.debug('Step 4/5: AI scoring');
-
-    // ── Step 5: Database write ────────────────────────────────────────
-    await job.updateProgress(90);
-    // TODO: Upsert into rpa_cv
-    logger.debug('Step 5/5: Database write');
-
+    // Reuses the full extract → AI parse → dedup → DB write pipeline for one file.
+    await runBatchParsing(executionId, [file], user, source, attribution);
     await job.updateProgress(100);
 
-    const result = {
-      fileName,
-      batchId,
-      status: 'completed',
-      candidateId: null, // Will be set after DB write
-    };
-
-    logger.info(`✅ Resume processed successfully: ${fileName}`, {
-      jobId: job.id,
-      batchId,
-    });
-
-    return result;
+    logger.info(`✅ Resume processed: ${file?.originalname}`, { jobId: job.id, batchId: executionId });
+    return { fileName: file?.originalname, batchId: executionId, status: 'processed' };
   } catch (error) {
-    logger.error(`❌ Resume processing failed: ${fileName}`, {
+    logger.error(`❌ Resume processing failed: ${file?.originalname}`, {
       jobId: job.id,
-      batchId,
+      batchId: executionId,
       error: error.message,
-      stack: error.stack,
     });
-
-    throw error; // BullMQ will retry according to job options
+    throw error; // BullMQ retries per the queue's backoff policy
   }
 }
 

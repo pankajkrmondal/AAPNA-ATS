@@ -25,6 +25,7 @@ export async function findUserByUsername(username) {
         mode: 'insensitive', // case-insensitive lookup
       },
     },
+    include: { company: true },
   });
 }
 
@@ -74,6 +75,7 @@ export function generateJWT(user) {
       userId: user.id,
       username: user.username,
       role: user.role,
+      company_id: user.company_id ?? null,
     },
     config.jwt.secret,
     { expiresIn: config.jwt.expiresIn },
@@ -112,9 +114,10 @@ export function verifyJWT(token) {
  * @param {string} role
  * @param {string} token
  * @param {string} [refreshToken]
+ * @param {number|null} [companyId]
  * @returns {Promise<Object>} Created session
  */
-export async function createSession(userId, role, token, refreshToken = null) {
+export async function createSession(userId, role, token, refreshToken = null, companyId = null) {
   // Calculate expiry from JWT config
   const expiresIn = config.jwt.expiresIn;
   const expiresMs = parseExpiry(expiresIn);
@@ -125,6 +128,7 @@ export async function createSession(userId, role, token, refreshToken = null) {
       user_id: userId,
       token,
       role,
+      company_id: companyId ?? null,
       expires_at: expiresAt,
       created_at: new Date(),
     },
@@ -196,10 +200,14 @@ export async function login(username, password) {
   const refreshToken = generateRefreshToken(user);
 
   // 5) Persist session
-  await createSession(user.id, user.role, token, refreshToken);
+  await createSession(user.id, user.role, token, refreshToken, user.company_id ?? null);
 
   // 6) Strip sensitive fields before returning
-  const { password_hash, ...safeUser } = user;
+  const { password_hash, company, ...rest } = user;
+  const safeUser = {
+    ...rest,
+    company_name: company?.name ?? null,
+  };
 
   // Fetch enabled permissions
   const permissions = await prisma.rpa_module_permissions.findMany({

@@ -41,14 +41,35 @@ const upload = multer({
   },
 });
 
-// Protect all vendor routes
+// All vendor routes require authentication.
 router.use(authenticate);
-router.use(restrictTo('vendor', 'admin', 'hr'));
-// Gate the whole module behind the `vendor_upload` permission (admins/superadmins bypass).
-// Mirrors the n8n flow which returned 403 for users without the module enabled.
-router.use(checkModuleAccess('vendor_upload'));
 
-// ── Vendor APIs ───────────────────────────────────────────────────────
+// ── Dashboard & vendor list (vendors + internal staff) ─────────────────
+
+/**
+ * Vendor dashboard summary. Vendors see their own submissions (scoped to their
+ * email); internal staff (admin/superadmin/recruiter) pick a vendor to view via
+ * the `vendorEmail` query param. Defined before the upload-only guards so
+ * recruiters/superadmins (who can't upload) can still view the dashboard.
+ */
+router.get(
+  '/dashboard',
+  restrictTo('vendor', 'admin', 'superadmin', 'recruiter'),
+  vendorController.getVendorDashboard,
+);
+
+/** List registered vendors — powers the staff vendor-picker. */
+router.get(
+  '/vendors',
+  restrictTo('admin', 'superadmin', 'recruiter'),
+  vendorController.listVendors,
+);
+
+// ── Upload-related APIs (vendor + internal staff, gated by vendor_upload) ──
+// Staff (admin/superadmin/recruiter/hr) may upload on behalf of a vendor; the
+// vendor they're acting for is supplied per-request and validated server-side.
+router.use(restrictTo('vendor', 'admin', 'superadmin', 'recruiter', 'hr'));
+router.use(checkModuleAccess('vendor_upload'));
 
 /** Get candidates uploaded by the vendor */
 router.get('/candidates', vendorController.getVendorCandidates);
@@ -58,6 +79,17 @@ router.post('/upload', upload.array('resumes', 100), vendorController.uploadResu
 
 /** Get recent upload batches for this vendor */
 router.get('/batches', vendorController.getUploadBatches);
+
+/** Persistent upload/job-tracking dashboard feed (one row per resume) */
+router.get('/jobs', vendorController.getUploadJobs);
+
+/** Reprocess a failed upload job */
+router.post('/jobs/:id/reprocess', vendorController.reprocessJob);
+
+/** Recruiter review actions on the duplicate queue (staff only — never vendors) */
+router.post('/review/search', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewSearch);
+router.post('/review/merge', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewMerge);
+router.post('/review/cancel', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewCancel);
 
 /** Get batch summary details */
 router.get('/summary/:executionId', vendorController.getSummary);

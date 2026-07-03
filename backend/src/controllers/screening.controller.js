@@ -22,7 +22,8 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
     throw new AppError('Invalid MRF ID provided.', 400);
   }
 
-  const result = await screeningService.searchRoleCandidates(mrfId);
+  const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
+  const result = await screeningService.searchRoleCandidates(mrfId, force);
   return success(res, result, 'Role-matched candidates retrieved successfully');
 });
 
@@ -139,7 +140,7 @@ export const updateCandidateStatus = catchAsync(async (req, res) => {
     throw new AppError('Candidate ID and status are required.', 400);
   }
 
-  const result = await screeningService.updateCandidateStatus(candidateId, status);
+  const result = await screeningService.updateCandidateStatus(candidateId, status, req.user);
   return success(res, result, 'Candidate status updated successfully');
 });
 

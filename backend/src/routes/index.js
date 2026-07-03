@@ -4,6 +4,7 @@ import dashboardRoutes from './dashboard.routes.js';
 import candidateRoutes from './candidate.routes.js';
 import vendorRoutes from './vendor.routes.js';
 import adminRoutes from './admin.routes.js';
+import companyRoutes from './company.routes.js';
 import mrfRoutes from './mrf.routes.js';
 import settingsRoutes from './settings.routes.js';
 import hrUploadRoutes from './hrUpload.routes.js';
@@ -17,6 +18,8 @@ router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/candidates', candidateRoutes);
 router.use('/vendor', vendorRoutes);
+// Mount the more-specific /admin/companies before /admin so its prefix matches first.
+router.use('/admin/companies', companyRoutes);
 router.use('/admin', adminRoutes);
 router.use('/hr-upload', hrUploadRoutes);
 router.use('/screening', screeningRoutes);

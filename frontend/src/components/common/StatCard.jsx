@@ -1,13 +1,50 @@
 /**
- * StatCard — Animated dashboard stat card with icon, value, trend indicator.
- * Uses glassmorphism styling and entrance animation.
+ * StatCard — Premium dashboard stat card with gradient surface, glowing icon tile,
+ * animated count-up value, and hover lift. Uses glassmorphism styling.
  *
  * @param {{ icon: React.ReactNode, title: string, value: number|string, trend?: number, trendLabel?: string, color?: string, loading?: boolean, style?: object }} props
  */
-import { Card, Typography, Space } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import { Card, Typography } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
+import Sparkline from '../dashboard/Sparkline';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Animates a number from 0 → target with an ease-out curve (no dependency). */
+function useCountUp(target, duration = 1100) {
+  const isNumeric = typeof target === 'number' && Number.isFinite(target);
+  const [display, setDisplay] = useState(isNumeric ? 0 : target);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    if (!isNumeric) {
+      setDisplay(target);
+      return undefined;
+    }
+    if (prefersReducedMotion() || target === 0) {
+      setDisplay(target);
+      return undefined;
+    }
+
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      setDisplay(Math.round(target * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => rafRef.current && cancelAnimationFrame(rafRef.current);
+  }, [target, duration, isNumeric]);
+
+  return isNumeric ? display.toLocaleString() : display;
+}
 
 export default function StatCard({
   icon,
@@ -15,99 +52,91 @@ export default function StatCard({
   value,
   trend,
   trendLabel = 'vs last month',
-  color = '#005f56',
+  color = '#7a922e',
   loading = false,
   style,
+  sparklineData = null,
+  delta = null, // { value: number (percent), label?: string }
 }) {
   const isPositive = trend > 0;
   const isNegative = trend < 0;
   const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#5f6664';
+  const displayValue = useCountUp(value);
+
+  // Week-over-week delta badge (independent of the optional `trend` prop).
+  const hasDelta = delta && delta.value !== null && delta.value !== undefined;
+  const deltaUp = hasDelta && delta.value > 0;
+  const deltaDown = hasDelta && delta.value < 0;
+
+  const hasSpark = Array.isArray(sparklineData) && sparklineData.length > 1;
 
   return (
     <Card
       loading={loading}
       bordered={false}
-      className="glass-card"
+      className="premium-stat-card"
       style={{
-        overflow: 'hidden',
-        position: 'relative',
+        '--stat-color': color,
+        borderTop: `4px solid ${color}`,
+        background: `linear-gradient(160deg, var(--colorBgContainer) 0%, ${color}0a 100%)`,
         ...style,
       }}
       styles={{
-        body: { padding: '24px', position: 'relative', zIndex: 1 },
+        body: { padding: 0, position: 'relative', zIndex: 1, height: '100%' },
       }}
     >
-      {/* Background accent circle */}
-      <div
-        style={{
-          position: 'absolute',
-          top: -20,
-          right: -20,
-          width: 100,
-          height: 100,
-          borderRadius: '50%',
-          background: color,
-          opacity: 0.06,
-          zIndex: 0,
-        }}
+      {/* Soft corner aura — subtle, behind content */}
+      <span
+        className="premium-stat-aura"
+        aria-hidden
+        style={{ background: `radial-gradient(circle, ${color}26 0%, transparent 70%)` }}
       />
 
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {/* Icon row */}
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: `${color}14`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 22,
-            color,
-          }}
-        >
-          {icon}
+      <div className="premium-stat-inner">
+        {/* Header: icon tile + compact trend chip */}
+        <div className="premium-stat-head">
+          <div
+            className="premium-stat-icon"
+            style={{
+              background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+              boxShadow: `0 6px 16px ${color}55`,
+            }}
+          >
+            {icon}
+          </div>
+          {hasDelta && (
+            <span
+              className={`delta-chip ${deltaUp ? 'is-up' : deltaDown ? 'is-down' : 'is-flat'}`}
+              title={delta.label || 'vs last week'}
+            >
+              {deltaUp ? <ArrowUpOutlined /> : deltaDown ? <ArrowDownOutlined /> : <MinusOutlined />}
+              {Math.abs(delta.value)}%
+            </span>
+          )}
         </div>
 
-        {/* Label */}
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            opacity: 0.65,
-          }}
-        >
-          {title}
-        </Text>
+        {/* Label + value */}
+        <Text className="premium-stat-label">{title}</Text>
+        <div className="premium-stat-value">{displayValue}</div>
 
-        {/* Value */}
-        <Title
-          level={2}
-          style={{
-            margin: 0,
-            fontSize: 32,
-            fontWeight: 700,
-            lineHeight: 1.1,
-            fontFamily: "'DM Mono', monospace",
-          }}
-        >
-          {typeof value === 'number' ? value.toLocaleString() : value}
-        </Title>
-
-        {/* Trend */}
+        {/* Optional legacy trend line */}
         {trend !== undefined && trend !== null && (
-          <Space size={4} style={{ fontSize: 13 }}>
-            <span style={{ color: trendColor, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2 }}>
-              {isPositive ? <ArrowUpOutlined /> : isNegative ? <ArrowDownOutlined /> : <MinusOutlined />}
-              {Math.abs(trend)}%
-            </span>
-            <Text type="secondary" style={{ fontSize: 12 }}>{trendLabel}</Text>
-          </Space>
+          <span className="premium-stat-trend" style={{ color: trendColor }}>
+            {isPositive ? <ArrowUpOutlined /> : isNegative ? <ArrowDownOutlined /> : <MinusOutlined />}
+            {Math.abs(trend)}%
+            <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>{trendLabel}</Text>
+          </span>
         )}
-      </Space>
+
+        {/* Full-bleed bottom band — gradient wash on every card for a consistent,
+            rich finish; a live sparkline overlays where we have a real series. */}
+        <div
+          className="premium-stat-band"
+          style={{ background: `linear-gradient(180deg, transparent 0%, ${color}14 100%)` }}
+        >
+          {hasSpark && <Sparkline data={sparklineData} color={color} height={56} />}
+        </div>
+      </div>
     </Card>
   );
 }

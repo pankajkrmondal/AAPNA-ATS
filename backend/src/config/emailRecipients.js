@@ -39,6 +39,8 @@ import config from './index.js';
  * the dynamic/redirect rule rather than treating them as unknown.
  */
 const DEFAULTS = {
+  // Admin-initiated password/credential update. Prod -> target user.
+  userCredentialUpdate: { to: '', cc: '', dynamic: true },
   // Candidate-facing welcome email (1.1.1 / 1.1.4 welcome). Prod -> candidate.
   welcome: { to: '', cc: '', dynamic: true },
   // Missing JD/data collection email to the candidate. Prod -> candidate.
@@ -72,6 +74,10 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
+  // Screening status -> Rejected notification to candidate. Prod -> candidate.
+  rejection: { to: '', cc: '', dynamic: true },
+  // Screening status -> On Hold notification to candidate. Prod -> candidate.
+  onHold: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */

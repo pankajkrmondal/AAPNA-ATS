@@ -96,6 +96,7 @@ export function mapCandidate(c) {
     reasonForJobChange: c.ReasonForJobChange || '',
     cvFileUrl: c.cvFileUrl || '',
     vendorEmail: c.VendorEmail || '',
+    finalStatus: c.FinalStatus || '',
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
     resumeTextQuality: c.resume_text_quality || 'unknown',
@@ -269,17 +270,25 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
 }
 
 /**
- * Compute lifetime upload stats for a single vendor.
- * Mirrors the n8n "stats" CTE (total / with position / this month) scoped to VendorEmail.
- * @param {string} vendorEmail - The vendor's email (exact, case-insensitive match)
+ * Build the candidate scope for vendor stats. With a vendorEmail → that vendor;
+ * without one → ALL vendor-sourced candidates (VendorEmail set), for the recruiter's
+ * "all vendors" overview.
+ */
+function vendorScopeWhere(vendorEmail) {
+  if (vendorEmail) {
+    return { VendorEmail: { equals: vendorEmail, mode: 'insensitive' } };
+  }
+  return { AND: [{ VendorEmail: { not: null } }, { VendorEmail: { not: '' } }] };
+}
+
+/**
+ * Compute lifetime upload stats for a single vendor, or across all vendors when
+ * vendorEmail is omitted.
+ * @param {string} [vendorEmail] - Vendor email (exact, case-insensitive); omit for all vendors
  * @returns {Promise<{ total: number, withPosition: number, thisMonth: number }>}
  */
 export async function vendorStats(vendorEmail) {
-  if (!vendorEmail) {
-    return { total: 0, withPosition: 0, thisMonth: 0 };
-  }
-
-  const base = { VendorEmail: { equals: vendorEmail, mode: 'insensitive' } };
+  const base = vendorScopeWhere(vendorEmail);
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -287,14 +296,42 @@ export async function vendorStats(vendorEmail) {
   const [total, withPosition, thisMonth] = await Promise.all([
     prisma.rpa_cv.count({ where: base }),
     prisma.rpa_cv.count({
-      where: { ...base, PositionApplied: { not: null, notIn: [''] } },
+      where: { AND: [base, { PositionApplied: { not: null, notIn: [''] } }] },
     }),
     prisma.rpa_cv.count({
-      where: { ...base, createdAt: { gte: monthStart } },
+      where: { AND: [base, { createdAt: { gte: monthStart } }] },
     }),
   ]);
 
   return { total, withPosition, thisMonth };
+}
+
+/**
+ * Status summary for the vendor dashboard. Scoped to one vendor when vendorEmail is
+ * given, otherwise aggregated across all vendors (recruiter "all vendors" overview).
+ * @param {string} [vendorEmail]
+ * @returns {Promise<{ total: number, withPosition: number, thisMonth: number, byFinalStatus: Array<{ status: string, count: number }> }>}
+ */
+export async function vendorStatusSummary(vendorEmail) {
+  const base = vendorScopeWhere(vendorEmail);
+
+  const [stats, grouped] = await Promise.all([
+    vendorStats(vendorEmail),
+    prisma.rpa_cv.groupBy({
+      by: ['FinalStatus'],
+      where: base,
+      _count: { _all: true },
+    }),
+  ]);
+
+  const byFinalStatus = grouped
+    .map((g) => ({
+      status: g.FinalStatus && g.FinalStatus.trim() !== '' ? g.FinalStatus : 'Awaiting Screening',
+      count: g._count._all,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  return { ...stats, byFinalStatus };
 }
 
 /**
@@ -435,6 +472,15 @@ function buildWhereClause(filters) {
 
   if (filters.location) {
     where.CurrentLocation = { contains: filters.location, mode: 'insensitive' };
+  }
+
+  // Restrict to all vendor-sourced candidates (recruiter "all vendors" overview).
+  if (filters.vendorOnly) {
+    where.AND = [
+      ...(where.AND || []),
+      { VendorEmail: { not: null } },
+      { VendorEmail: { not: '' } },
+    ];
   }
 
   return where;

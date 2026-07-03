@@ -11,11 +11,13 @@ const adminService = {
   },
 
   /**
-   * List all users.
+   * List users in scope. Superadmin may optionally filter by company.
+   * @param {{ companyId?: number }} [opts]
    * @returns {Promise}
    */
-  listUsers() {
-    return api.get('/admin/users/list');
+  listUsers(opts = {}) {
+    const qs = opts.companyId ? `?company_id=${opts.companyId}` : '';
+    return api.get(`/admin/users/list${qs}`);
   },
 
   /**
@@ -86,6 +88,44 @@ const adminService = {
       module_key: moduleKey,
       is_enabled: isEnabled,
     });
+  },
+
+  // ── Company (tenant) management — superadmin only ──────────────────────
+
+  /**
+   * List all companies (with user counts).
+   * @returns {Promise}
+   */
+  listCompanies() {
+    return api.get('/admin/companies/list');
+  },
+
+  /**
+   * Create a new company.
+   * @param {{ name: string, slug?: string, domain?: string }} payload
+   * @returns {Promise}
+   */
+  createCompany(payload) {
+    return api.post('/admin/companies/create', payload);
+  },
+
+  /**
+   * Update a company.
+   * @param {{ id: number, name?: string, slug?: string, domain?: string }} payload
+   * @returns {Promise}
+   */
+  updateCompany(payload) {
+    return api.post('/admin/companies/update', payload);
+  },
+
+  /**
+   * Activate / deactivate a company.
+   * @param {number} id
+   * @param {boolean} is_active
+   * @returns {Promise}
+   */
+  toggleCompanyStatus(id, is_active) {
+    return api.post('/admin/companies/toggle-status', { id, is_active });
   },
 };
 

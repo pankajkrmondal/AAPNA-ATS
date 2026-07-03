@@ -10,10 +10,11 @@ const hrUploadService = {
    * @param {FormData} formData - FormData with files appended as 'resumes'
    * @returns {Promise} — { executionId, totalFiles, batchSummary }
    */
-  uploadResumes(formData) {
+  uploadResumes(formData, onUploadProgress) {
     return api.post('/hr-upload/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120000, // 2 min timeout for large uploads
+      onUploadProgress,
     });
   },
 
@@ -24,6 +25,24 @@ const hrUploadService = {
    */
   getSummary(executionId) {
     return api.get(`/hr-upload/summary/${executionId}`);
+  },
+
+  /**
+   * Persistent upload/job-tracking dashboard feed (one row per resume).
+   * @param {Object} [params] - { page, limit, status, actionRequired }
+   * @returns {Promise} — { data, stats, pagination }
+   */
+  getJobs(params = {}) {
+    return api.get('/hr-upload/jobs', { params });
+  },
+
+  /**
+   * Reprocess a failed upload job.
+   * @param {string|number} id
+   * @returns {Promise}
+   */
+  reprocessJob(id) {
+    return api.post(`/hr-upload/jobs/${id}/reprocess`);
   },
 
   /**

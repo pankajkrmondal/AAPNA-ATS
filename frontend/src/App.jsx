@@ -3,14 +3,18 @@
  * Sets up React Router, AntD ConfigProvider with theme, Auth context,
  * Theme context, and route definitions with protected/public guards.
  */
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
 import { lightTheme, darkTheme } from './theme/themeConfig';
+import screeningService from './services/screeningService';
+import { screeningKeys } from './hooks/useScreeningData';
 
 /* Layouts */
 import MainLayout from './layouts/MainLayout';
@@ -24,6 +28,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Candidates from './pages/Candidates';
 import CandidateDetail from './pages/CandidateDetail';
 import VendorPortal from './pages/VendorPortal';
+import VendorDashboard from './pages/VendorDashboard';
 import MRF from './pages/MRF';
 import Settings from './pages/Settings';
 import HRUpload from './pages/HRUpload';
@@ -38,11 +43,23 @@ import MrfApprovalAction from './pages/MrfApprovalAction';
 /* ---- Route Guards ---- */
 
 /**
+ * The home path an authenticated user should land on, derived from their role
+ * (not from the URL). Vendors go to their dedicated dashboard; everyone else
+ * to the standard dashboard. Admins reach the admin portal via its own button.
+ */
+function roleHomePath(user) {
+  const role = (user?.role || '').toLowerCase();
+  if (role === 'vendor') return '/vendor-dashboard';
+  return '/dashboard';
+}
+
+/**
  * ProtectedRoute — Redirects to /login if not authenticated.
  * Shows a loading spinner while auth state is being verified.
  */
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -59,7 +76,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    const isAdminPath = window.location.pathname.startsWith('/admin');
+    const isAdminPath = location.pathname.startsWith('/admin');
     return <Navigate to={isAdminPath ? "/admin/login" : "/login"} replace />;
   }
 
@@ -67,10 +84,14 @@ function ProtectedRoute({ children }) {
 }
 
 /**
- * PublicRoute — Redirects authenticated users away from login to dashboard.
+ * PublicRoute — Redirects authenticated users away from login pages.
+ * Destination is based on the user's ROLE, not the URL, so a non-admin can
+ * never be sent to (and flash) the admin dashboard. Only a user who both has
+ * admin rights AND arrived via the admin portal lands on /admin/dashboard.
  */
 function PublicRoute({ children }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -87,8 +108,11 @@ function PublicRoute({ children }) {
   }
 
   if (isAuthenticated) {
-    const isAdminPath = window.location.pathname.startsWith('/admin');
-    return <Navigate to={isAdminPath ? "/admin/dashboard" : "/dashboard"} replace />;
+    const role = (user?.role || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'superadmin';
+    const onAdminPath = location.pathname.startsWith('/admin');
+    const target = onAdminPath && isAdmin ? '/admin/dashboard' : roleHomePath(user);
+    return <Navigate to={target} replace />;
   }
 
   return children;
@@ -122,7 +146,7 @@ function AdminRoute({ children }) {
   }
 
   if (!hasAdminRole) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={roleHomePath(user)} replace />;
   }
 
   return children;
@@ -191,7 +215,25 @@ function ComingSoon({ title }) {
 
 function AppShell() {
   const { isDark } = useTheme();
+  const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const currentTheme = isDark ? darkTheme : lightTheme;
+
+  // Preload the Screening (JD Filtering) roles once at app load, so the dropdown is
+  // warm before the user navigates to /filtering. Gated on the same access rule as the
+  // route (admins bypass; others need the candidate_screening module) to avoid wasted calls.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const role = (user?.role || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'superadmin';
+    const hasModule = (user?.permissions || []).includes('candidate_screening');
+    if (!isAdmin && !hasModule) return;
+    queryClient.prefetchQuery({
+      queryKey: screeningKeys.roles,
+      queryFn: screeningService.getRoles,
+      staleTime: Infinity,
+    });
+  }, [isAuthenticated, user, queryClient]);
 
   return (
     <ConfigProvider theme={currentTheme}>
@@ -238,6 +280,11 @@ function AppShell() {
               <Route path="/candidates/:id" element={<CandidateDetail />} />
               <Route path="/hr-upload" element={<HRUpload />} />
               <Route path="/mrf" element={<MRF />} />
+              {/* Vendor's home base — must always render for a vendor so the
+                  MainLayout confinement redirect can't form a loop with a
+                  ModuleRoute fallback. Data access is still enforced by the
+                  backend `vendor_dashboard` module check. */}
+              <Route path="/vendor-dashboard" element={<VendorDashboard />} />
               <Route
                 path="/vendor"
                 element={

@@ -19,7 +19,7 @@ import { getAccessToken } from './onedrive.service.js';
  * @param {string} params.html - HTML email body content
  * @returns {Promise<boolean>}
  */
-async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
+export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
 
@@ -84,14 +84,29 @@ async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
 
     logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}...`);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    // Retry transient network failures (connect timeouts / resets). Graph itself
+    // does not throw — a non-ok HTTP status is a real rejection and is NOT retried.
+    const MAX_ATTEMPTS = 3;
+    let response;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        break;
+      } catch (netErr) {
+        if (attempt === MAX_ATTEMPTS) {
+          throw new Error(`Graph sendMail network error after ${MAX_ATTEMPTS} attempts: ${netErr.message}${netErr.cause ? ` (${netErr.cause.code || netErr.cause.message})` : ''}`);
+        }
+        logger.warn(`MS Graph Email: network error on attempt ${attempt}/${MAX_ATTEMPTS} (${netErr.cause?.code || netErr.message}); retrying...`);
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -101,6 +116,43 @@ async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
     logger.info(`MS Graph Email: Email successfully sent from ${activeSender}`);
     return true;
   }
+}
+
+/**
+ * Translates a raw email-send error (from sendGraphEmail / token / recipient
+ * resolution) into a short, user-readable reason for display in the UI.
+ * @param {Error|string} err
+ * @returns {string}
+ */
+export function describeEmailError(err) {
+  const msg = (typeof err === 'string' ? err : err?.message || '').trim();
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('und_err_connect_timeout') ||
+    lower.includes('connecttimeout') ||
+    lower.includes('network error') ||
+    lower.includes('fetch failed') ||
+    lower.includes('econnreset') ||
+    lower.includes('enotfound') ||
+    lower.includes('etimedout')
+  ) {
+    return 'Could not connect to the Microsoft email server (connection timed out). The server’s internet/VPN may be down — please try again.';
+  }
+  if (lower.includes('erroraccessdenied') || lower.includes('apponly') || lower.includes('accesspolicy')) {
+    return 'The sending mailbox is not authorized to send email (Microsoft access policy). Ask IT to grant send access for the recruitment mailbox.';
+  }
+  if (lower.includes('access token') || lower.includes('invalid_client') || lower.includes('unauthorized_client')) {
+    return 'Could not authenticate with Microsoft (token request failed). The app credentials may be invalid or expired.';
+  }
+  if (lower.includes('no valid recipients') || lower.includes('no recipient')) {
+    return 'No email address is on file for this candidate.';
+  }
+  if (lower.includes('template')) {
+    return msg; // e.g. "Shortlist email template not found." — already clear.
+  }
+  // Fall back to the raw message so something actionable is still shown.
+  return msg || 'Unknown email error.';
 }
 
 /**
@@ -141,7 +193,11 @@ export function compileTemplate(subject, bodyHtml, replacements) {
  */
 export async function sendWelcomeEmail(candidate, hrUserEmail) {
   try {
-    const sender = hrUserEmail || config.microsoft.defaultSender;
+    // Always send candidate-facing mail from the authorized shared mailbox
+    // (MS_DEFAULT_SENDER_EMAIL). Sending as the uploader's personal mailbox is
+    // rejected by the tenant AppOnly Application Access Policy with
+    // ErrorAccessDenied ("Blocked by tenant configured AppOnly AccessPolicy").
+    const sender = config.microsoft.defaultSender;
 
     // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
     const { to: toEmail } = resolveRecipients('welcome', candidate.EmailID);
@@ -190,9 +246,30 @@ export async function sendWelcomeEmail(candidate, hrUserEmail) {
  * Generates a base64 encoded token from the email for validation.
  */
 export async function sendMissingDataEmail(candidate, hrUserEmail) {
-  try {
-    const sender = hrUserEmail || config.microsoft.defaultSender;
+  // Always send candidate-facing mail from the authorized shared mailbox
+  // (MS_DEFAULT_SENDER_EMAIL); the uploader's personal mailbox is rejected by the
+  // tenant AppOnly Application Access Policy with ErrorAccessDenied.
+  const sender = config.microsoft.defaultSender;
 
+  // Generate the data-collection token from the candidate email (base64).
+  const token = Buffer.from(candidate.EmailID || '').toString('base64');
+
+  // Persist the token UP-FRONT, decoupled from the email send. The missing-data
+  // link must always exist (so the collection portal works and reminders can
+  // re-send) even if the Graph send later fails. Status starts PENDING and is
+  // flipped to SENT on success / FAILED on error below.
+  if (candidate.id) {
+    try {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingToken: token, cvMissingTokenStatus: 'PENDING' }
+      });
+    } catch (tokErr) {
+      logger.error(`Failed to persist missing-data token for candidate ID ${candidate?.id}: ${tokErr.message}`);
+    }
+  }
+
+  try {
     // Resolve recipients (prod -> candidate; non-prod -> internal test inbox)
     const { to: toEmail } = resolveRecipients('missingData', candidate.EmailID);
 
@@ -201,8 +278,6 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
       return false;
     }
 
-    // Generate token from email (base64)
-    const token = Buffer.from(candidate.EmailID || '').toString('base64');
     const weblink = `${config.cors.frontendUrl}/missing-jd-upload?token=${token}`;
 
     const template = await prisma.rpa_email_templates.findFirst({
@@ -233,19 +308,26 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
       }
     });
 
-    // 3) Update token in rpa_cv
-    await prisma.rpa_cv.update({
-      where: { id: BigInt(candidate.id) },
-      data: {
-        cvMissingToken: token,
-        cvMissingTokenStatus: 'SENT'
-      }
-    });
+    // 3) Mark the token SENT (it was already written above).
+    if (candidate.id) {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingTokenStatus: 'SENT' }
+      });
+    }
 
     logger.info(`Missing data email sent & logged for candidate ID ${candidate.id}`);
     return true;
   } catch (err) {
     logger.error(`Failed to send missing data email for candidate ID ${candidate?.id}: ${err.message}`);
+    // Token is already persisted; record that the email delivery failed so a
+    // retry/reminder can pick it up. The link itself remains usable.
+    if (candidate.id) {
+      await prisma.rpa_cv.update({
+        where: { id: BigInt(candidate.id) },
+        data: { cvMissingTokenStatus: 'FAILED' }
+      }).catch((e) => logger.error(`Failed to mark missing-data token FAILED for candidate ID ${candidate?.id}: ${e.message}`));
+    }
     return false;
   }
 }
@@ -876,5 +958,148 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
     return false;
   }
 }
+
+/**
+ * Sends login credentials or password change notifications to the user.
+ * In staging/dev environments, the email is redirected to staging overrides.
+ */
+export async function sendCredentialEmail({ user, plainTextPassword, isNewUser = false }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const recipientEmail = user.email || user.username;
+
+    // Resolve recipients (prod -> user; non-prod -> internal test inbox)
+    const { to: toEmail } = resolveRecipients('userCredentialUpdate', recipientEmail);
+
+    if (!toEmail) {
+      logger.warn(`Skipping credential email: No recipient email address available.`);
+      return false;
+    }
+
+    const actionText = isNewUser ? 'created' : 'updated';
+    const subject = isNewUser 
+      ? 'Your AAPNA ATS Account Credentials'
+      : 'Your AAPNA ATS Account Password Has Been Updated';
+
+    const loginUrl = config.cors.frontendUrl || 'https://ats.aapnainfotech.com';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #e8ede0;
+      border-radius: 5px;
+    }
+    .header {
+      background-color: #f7f9f6;
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid #7cb342;
+      margin-bottom: 20px;
+    }
+    .header h2 {
+      margin: 0;
+      color: #33691e;
+    }
+    .credential-box {
+      background-color: #f1f8e9;
+      border: 1px solid #c5e1a5;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .credential-row {
+      margin-bottom: 8px;
+    }
+    .credential-label {
+      font-weight: bold;
+      display: inline-block;
+      width: 120px;
+    }
+    .footer {
+      font-size: 12px;
+      color: #777;
+      margin-top: 30px;
+      border-top: 1px solid #e8ede0;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>AAPNA Recruitment Process Automation</h2>
+    </div>
+    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
+    <p>Your AAPNA ATS account credentials have been ${actionText} by the Administrator. Please find your login details below:</p>
+    
+    <div class="credential-box">
+      <div class="credential-row">
+        <span class="credential-label">Portal URL:</span>
+        <a href="${loginUrl}">${loginUrl}</a>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">Username:</span>
+        <code>${user.username}</code>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">Email:</span>
+        <code>${user.email}</code>
+      </div>
+      <div class="credential-row">
+        <span class="credential-label">New Password:</span>
+        <code>${plainTextPassword}</code>
+      </div>
+    </div>
+    
+    <p>For security reasons, we recommend that you log in and change your password as soon as possible.</p>
+    <p>If you did not request this change, please contact the IT administrator immediately.</p>
+    
+    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
+    
+    <div class="footer">
+      This is an automated notification. Please do not reply directly to this email.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    // 1) Send email
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    // 2) Log to rpa_email_log
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: isNewUser ? 'user_created' : 'user_password_changed',
+        recipient_email: toEmail,
+        recipient_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User',
+        subject,
+        body_html: html,
+        reference_id: user.id ? Number(user.id) : null,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`Credential email (${isNewUser ? 'creation' : 'update'}) sent & logged for user ID ${user.id}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send credential email for user ${user?.id || user?.email}: ${err.message}`);
+    return false;
+  }
+}
+
 
 

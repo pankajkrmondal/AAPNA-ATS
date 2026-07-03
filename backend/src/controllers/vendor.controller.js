@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip';
 import prisma from '../config/database.js';
 import * as candidateService from '../services/candidate.service.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
+import * as uploadJobService from '../services/uploadJob.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -36,9 +37,33 @@ export const getVendorCandidates = catchAsync(async (req, res) => {
     order = 'desc',
   } = req.query;
 
-  const vendorEmail = req.user.email;
-  if (!vendorEmail) {
+  // Vendors are locked to their own email; staff scope the list to the vendor
+  // they've selected (mirrors getVendorDashboard).
+  const isVendor = (req.user.role || '').toLowerCase() === 'vendor';
+  const vendorEmail = isVendor
+    ? req.user.email
+    : (req.query.vendorEmail || '').trim();
+
+  if (isVendor && !vendorEmail) {
     throw new AppError('Vendor email is required for listing candidates.', 400);
+  }
+
+  // Staff who haven't picked a vendor yet get an empty list (nothing to scope to).
+  if (!vendorEmail) {
+    return res.status(200).json({
+      status: 'success',
+      message: 'Select a vendor to view their candidates',
+      data: [],
+      stats: { total: 0, withPosition: 0, thisMonth: 0 },
+      pagination: {
+        page: 1,
+        limit: Math.min(100, Math.max(1, parseInt(limit, 10) || 20)),
+        total: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
+    });
   }
 
   const filters = { search, filterName, filterEmail, filterPosition, vendorEmail };
@@ -67,6 +92,84 @@ export const getVendorCandidates = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Vendor dashboard summary (candidate status overview)
+ * @route   GET /api/vendor/dashboard
+ * @access  Private — vendors see their own; staff pick a vendor via ?vendorEmail
+ */
+export const getVendorDashboard = catchAsync(async (req, res) => {
+  const role = (req.user.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+
+  // Vendors are locked to their own email; staff choose a vendor via the query.
+  const vendorEmail = isVendor
+    ? req.user.email
+    : (req.query.vendorEmail || '').trim();
+
+  if (isVendor && !vendorEmail) {
+    throw new AppError('Vendor email is required for the dashboard.', 400);
+  }
+
+  // Staff default to an all-vendors overview (vendorEmail empty); a chosen vendor
+  // (or a logged-in vendor) scopes everything to that vendor.
+  const recentFilter = vendorEmail ? { vendorEmail } : { vendorOnly: true };
+
+  // Count duplicates awaiting recruiter review (scoped or global). Best-effort —
+  // depends on the job-tracking table being provisioned.
+  let pendingReview = 0;
+  if (prisma.rpa_upload_jobs) {
+    pendingReview = await prisma.rpa_upload_jobs.count({
+      where: {
+        source: 'vendor_portal',
+        action_required: true,
+        ...(vendorEmail ? { vendor_email: { equals: vendorEmail, mode: 'insensitive' } } : {}),
+      },
+    }).catch(() => 0);
+  }
+
+  const [summary, recent] = await Promise.all([
+    candidateService.vendorStatusSummary(vendorEmail || undefined),
+    candidateService.search(recentFilter, 1, 5, 'createdAt', 'desc'),
+  ]);
+
+  return res.status(200).json({
+    status: 'success',
+    message: vendorEmail ? 'Vendor dashboard retrieved' : 'All-vendors dashboard retrieved',
+    data: {
+      stats: { ...summary, pendingReview },
+      recentCandidates: recent.data,
+      selectedVendorEmail: vendorEmail || null,
+      scope: vendorEmail ? 'vendor' : 'all',
+    },
+  });
+});
+
+/**
+ * @desc    List registered vendors (for the staff vendor-picker)
+ * @route   GET /api/vendor/vendors
+ * @access  Private (Admin, SuperAdmin, Recruiter)
+ */
+export const listVendors = catchAsync(async (req, res) => {
+  const vendors = await prisma.rpa_users.findMany({
+    where: { role: 'vendor' },
+    select: { id: true, email: true, first_name: true, last_name: true },
+    orderBy: [{ first_name: 'asc' }, { last_name: 'asc' }],
+  });
+
+  const data = vendors
+    .filter((v) => v.email)
+    .map((v) => ({
+      email: v.email,
+      name: `${v.first_name || ''} ${v.last_name || ''}`.trim() || v.email,
+    }));
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Vendors retrieved',
+    data,
+  });
+});
+
+/**
  * @desc    Handle resume uploads from vendor, unzip packages, and log batch details
  * @route   POST /api/vendor/upload
  * @access  Private (Vendor, HR, Admin)
@@ -77,14 +180,41 @@ export const uploadResumes = catchAsync(async (req, res) => {
     throw new AppError('No files uploaded.', 400);
   }
 
-  const vendorEmail = req.user.email || 'unknown@vendor.com';
   const username = req.user.username || 'vendor';
-  const firstName = req.user.first_name || '';
-  const lastName = req.user.last_name || '';
-  const vendorFullName = `${firstName} ${lastName}`.trim() || username;
   const executionId = uuidv4();
 
-  logger.info(`Vendor ${username} uploading ${files.length} files (Batch: ${executionId})`);
+  // Determine attribution: vendors upload for themselves; staff upload on behalf
+  // of a selected vendor (required, validated against a real vendor account).
+  const isVendor = (req.user.role || '').toLowerCase() === 'vendor';
+  let vendorEmail;
+  let vendorFullName;
+
+  if (isVendor) {
+    const firstName = req.user.first_name || '';
+    const lastName = req.user.last_name || '';
+    vendorEmail = req.user.email || 'unknown@vendor.com';
+    vendorFullName = `${firstName} ${lastName}`.trim() || username;
+  } else {
+    const selectedEmail = (req.body.vendorEmail || '').trim();
+    if (!selectedEmail) {
+      throw new AppError('Please select a vendor to upload on behalf of.', 400);
+    }
+    const vendor = await prisma.rpa_users.findFirst({
+      where: { email: selectedEmail, role: 'vendor' },
+      select: { email: true, first_name: true, last_name: true },
+    });
+    if (!vendor) {
+      throw new AppError('Selected vendor not found.', 400);
+    }
+    vendorEmail = vendor.email;
+    vendorFullName = `${vendor.first_name || ''} ${vendor.last_name || ''}`.trim() || vendor.email;
+  }
+
+  const attribution = { vendorEmail, vendorName: vendorFullName };
+
+  logger.info(
+    `${isVendor ? 'Vendor' : 'Staff'} ${username} uploading ${files.length} files on behalf of ${vendorEmail} (Batch: ${executionId})`,
+  );
 
   // Unpack any zip files to flatten the file list
   const uploadDir = path.resolve(config.upload.dir);
@@ -176,8 +306,17 @@ export const uploadResumes = catchAsync(async (req, res) => {
     )
   );
 
-  // 3) Trigger parsing asynchronously in background
-  await hrUploadService.startBackgroundParsing(executionId, flatFiles, req.user, 'vendor_portal');
+  // 2b) Create durable per-resume job rows (powers the persistent dashboard)
+  await uploadJobService.createJobsForBatch(executionId, flatFiles, {
+    uploadedBy: username,
+    uploadedById: req.user.id,
+    vendorEmail: attribution.vendorEmail,
+    vendorName: attribution.vendorName,
+    source: 'vendor_portal',
+  });
+
+  // 3) Dispatch parsing (durable queue when enabled, else in-process background)
+  await hrUploadService.dispatchBatchParsing(executionId, flatFiles, req.user, 'vendor_portal', attribution);
 
   return success(
     res,
@@ -220,4 +359,219 @@ export const getUploadBatches = catchAsync(async (req, res) => {
   });
 
   return success(res, batches, 'Vendor upload batches retrieved');
+});
+
+/**
+ * @desc    Persistent upload/job-tracking dashboard feed (one row per resume).
+ *          Vendors see their own jobs; staff see all (or a chosen vendor via ?vendorEmail).
+ * @route   GET /api/vendor/jobs
+ * @access  Private (Vendor + staff with vendor_upload)
+ */
+export const getUploadJobs = catchAsync(async (req, res) => {
+  // Graceful degradation when the job-tracking table isn't provisioned yet.
+  if (!prisma.rpa_upload_jobs) {
+    return res.status(200).json({
+      status: 'success',
+      message: 'Upload job tracking is not provisioned yet',
+      data: [],
+      stats: { actionRequired: 0 },
+      pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false, hasPrev: false },
+    });
+  }
+
+  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
+  // already complete (statusActive = ACTIVE). This keeps the dashboard correct no matter
+  // which path resolved the missing data (public form, recruiter edit, merge, re-upload),
+  // and covers candidates with multiple job rows. Cheap (filtered on status) and best-effort.
+  try {
+    await prisma.$executeRaw`
+      UPDATE rpa_upload_jobs AS j
+      SET status = 'Completed', action_required = false, updated_at = now()
+      FROM rpa_cv AS c
+      WHERE j.cv_id = c.id
+        AND j.status = 'Missing_Information'
+        AND c."statusActive" = 'ACTIVE'
+    `;
+  } catch (e) {
+    logger.warn(`Upload-job self-heal skipped: ${e.message}`);
+  }
+
+  const { page = 1, limit = 20, status, actionRequired } = req.query;
+  const role = (req.user.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+  const isAdmin = role === 'admin' || role === 'superadmin';
+
+  // `baseWhere` is "what this user is scoped to see" — vendor-portal uploads plus
+  // visibility scoping and the optional vendor drill-down. The KPI cards are computed
+  // against it so they stay accurate regardless of the transient status / action-required
+  // quick-filters. `where` layers those quick-filters on top for the table + pagination.
+  const baseWhere = { source: 'vendor_portal' };
+
+  // Visibility scoping:
+  //  • admin / superadmin → all vendor-portal uploads
+  //  • recruiter / hr     → only the records THEY uploaded (on behalf of a vendor), plus
+  //                         anything needing review (the review queue is shared across recruiters)
+  //  • vendor             → only their OWN self-uploads
+  if (!isAdmin) {
+    if (isVendor) {
+      baseWhere.uploaded_by_id = req.user.id;
+    } else {
+      baseWhere.OR = [
+        { uploaded_by_id: req.user.id },
+        { action_required: true },
+      ];
+    }
+  }
+
+  // Optional staff filter: drill into a specific vendor (part of the scope, kept in KPIs).
+  if (!isVendor) {
+    const vendorEmail = (req.query.vendorEmail || '').trim();
+    if (vendorEmail) baseWhere.vendor_email = { equals: vendorEmail, mode: 'insensitive' };
+  }
+
+  const where = { ...baseWhere };
+  if (status) where.status = status;
+  if (actionRequired === 'true') where.action_required = true;
+
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+
+  const [rows, filteredTotal, baseTotal, actionCount, grouped] = await Promise.all([
+    prisma.rpa_upload_jobs.findMany({
+      where,
+      orderBy: { updated_at: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    }),
+    prisma.rpa_upload_jobs.count({ where }),
+    prisma.rpa_upload_jobs.count({ where: baseWhere }),
+    prisma.rpa_upload_jobs.count({ where: { ...baseWhere, action_required: true } }),
+    prisma.rpa_upload_jobs.groupBy({ by: ['status'], where: baseWhere, _count: { _all: true } }),
+  ]);
+
+  // Status roll-up for the KPI cards (accurate across the whole scoped set, not just this
+  // page and unaffected by the active quick-filters).
+  const byStatus = {};
+  grouped.forEach((g) => { byStatus[g.status] = g._count._all; });
+  const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
+  const completed = byStatus.Completed || 0;
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Upload jobs retrieved',
+    data: rows.map(uploadJobService.serializeJob),
+    stats: { actionRequired: actionCount, total: baseTotal, processing, completed },
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: filteredTotal,
+      totalPages: Math.ceil(filteredTotal / limitNum),
+      hasNext: pageNum * limitNum < filteredTotal,
+      hasPrev: pageNum > 1,
+    },
+  });
+});
+
+/**
+ * @desc    Reprocess a failed upload job by re-running parsing on its stored file.
+ * @route   POST /api/vendor/jobs/:id/reprocess
+ * @access  Private (Vendor + staff with vendor_upload)
+ */
+export const reprocessJob = catchAsync(async (req, res) => {
+  if (!prisma.rpa_upload_jobs) {
+    throw new AppError('Upload job tracking is not provisioned yet.', 503);
+  }
+  const { id } = req.params;
+  const job = await prisma.rpa_upload_jobs.findUnique({ where: { id: BigInt(id) } });
+  if (!job) {
+    throw new AppError('Upload job not found.', 404);
+  }
+  if (job.status !== 'Failed') {
+    throw new AppError('Only failed jobs can be reprocessed.', 400);
+  }
+
+  // Locate the original file in the uploads directory (local fallback path).
+  const basename = (job.file_url || '').startsWith('/uploads/') ? path.basename(job.file_url) : null;
+  const uploadDir = path.resolve(config.upload.dir);
+  const diskPath = basename ? path.join(uploadDir, basename) : null;
+  if (!diskPath || !fs.existsSync(diskPath)) {
+    throw new AppError('The original resume file is no longer available on the server. Please re-upload it.', 422);
+  }
+
+  const fileObj = {
+    originalname: job.file_name,
+    path: diskPath,
+    filename: basename,
+    size: fs.statSync(diskPath).size,
+  };
+
+  await uploadJobService.updateJobById(id, {
+    status: 'Queued',
+    error_message: null,
+    attempts: (job.attempts || 0) + 1,
+  });
+  await prisma.rpa_processing_log.create({
+    data: {
+      fileName: job.file_name,
+      source: 'REPROCESS',
+      status: 'reprocess',
+      logMessage: `Recruiter triggered reprocess for upload job ${id}`,
+      createdAt: new Date(),
+    },
+  }).catch(() => {});
+
+  const attribution = job.vendor_email
+    ? { vendorEmail: job.vendor_email, vendorName: job.vendor_name }
+    : null;
+
+  await hrUploadService.dispatchBatchParsing(
+    job.execution_id,
+    [fileObj],
+    req.user,
+    job.source || 'vendor_portal',
+    attribution,
+  );
+
+  return success(res, { id }, 'Resume reprocessing started.');
+});
+
+/**
+ * @desc    Recruiter review action — MERGE selected duplicates into the main DB.
+ * @route   POST /api/vendor/review/merge
+ * @access  Private (staff: admin/superadmin/recruiter/hr)
+ */
+export const reviewMerge = catchAsync(async (req, res) => {
+  const { ids } = req.body;
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const result = await hrUploadService.mergeDuplicates(ids, token, req.user);
+  return success(res, result, 'Duplicate candidates merged successfully');
+});
+
+/**
+ * @desc    Recruiter review action — CANCEL/reject selected duplicates.
+ * @route   POST /api/vendor/review/cancel
+ * @access  Private (staff: admin/superadmin/recruiter/hr)
+ */
+export const reviewCancel = catchAsync(async (req, res) => {
+  const { ids } = req.body;
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const result = await hrUploadService.deleteDuplicates(ids, token);
+  return success(res, result, 'Duplicate candidates cancelled');
+});
+
+/**
+ * @desc    Search the duplicate review queue (staging) so recruiters can view the
+ *          full parsed CV while reviewing a vendor duplicate. Shares rpa_cv_tmp.
+ * @route   POST /api/vendor/review/search
+ * @access  Private (staff: admin/superadmin/recruiter/hr)
+ */
+export const reviewSearch = catchAsync(async (req, res) => {
+  const { filterName, filterEmail, page, perPage } = req.body;
+  const result = await hrUploadService.searchDuplicates({
+    filterName,
+    filterEmail,
+    page: parseInt(page, 10) || 1,
+    perPage: parseInt(perPage, 10) || 5,
+  });
+  return success(res, result, 'Duplicate candidates retrieved');
 });

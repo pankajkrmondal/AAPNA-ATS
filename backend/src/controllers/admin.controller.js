@@ -2,16 +2,54 @@ import crypto from 'crypto';
 import prisma from '../config/database.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { sendCredentialEmail } from '../services/emailNotification.service.js';
+import { restrictToCompanyScope } from '../middleware/auth.js';
+import {
+  ROLES,
+  ADMIN_ASSIGNABLE_ROLES,
+  isAdminTier,
+  isSuperadmin,
+  normalizeRole,
+} from '../config/roles.js';
+
+/**
+ * Flatten the `company` relation into a `company_name` field and drop the hash.
+ * @param {Object} user - rpa_users row, optionally with `company` included
+ * @returns {Object} sanitized user
+ */
+function toSafeUser(user) {
+  const { password_hash, company, ...rest } = user;
+  return { ...rest, company_name: company?.name ?? null };
+}
+
+/**
+ * Default module permissions seeded when a user is created, keyed by role.
+ * - vendor: only the vendor-facing surfaces.
+ * - recruiter: every module except the admin-portal gate (`hr_admin`).
+ * admin/superadmin need no rows — they bypass `checkModuleAccess` entirely.
+ * Keys must match the canonical module keys managed in the Admin Dashboard
+ * (see AdminDashboard MODULES_INFO) and checked by the routes/ModuleRoute.
+ */
+const DEFAULT_MODULES_BY_ROLE = {
+  vendor: ['vendor_dashboard', 'vendor_upload'],
+  recruiter: [
+    'new_mrf',
+    'search_candidates',
+    'hr_manual_upload',
+    'system_config',
+    'vendor_upload',
+    'candidate_screening',
+    'screening_analytics',
+    'vendor_dashboard',
+  ],
+};
 
 /**
  * Verify token and check if the user is authorized for HR Admin Portal.
  */
 export const verifyToken = catchAsync(async (req, res) => {
-  const userRole = (req.user.role || '').toLowerCase();
   // If the user's role is 'admin' or 'superadmin', they bypass checks
-  const isAdminRole = userRole === 'admin' || userRole === 'superadmin';
-
-  if (isAdminRole) {
+  if (isAdminTier(req.user.role)) {
     return res.status(200).json({
       authorized: true,
       username: req.user.username,
@@ -46,19 +84,31 @@ export const verifyToken = catchAsync(async (req, res) => {
 });
 
 /**
- * List all users.
+ * List users in scope.
+ * - superadmin: all users (optional ?company_id= filter)
+ * - admin:      only users in their own company
  */
 export const listUsers = catchAsync(async (req, res) => {
+  const where = {};
+
+  if (isSuperadmin(req.user.role)) {
+    if (req.query.company_id) {
+      where.company_id = parseInt(req.query.company_id, 10);
+    }
+  } else {
+    // Company admin — hard-scope to their own company, and never expose
+    // superadmin (global) accounts to them.
+    where.company_id = req.user.company_id;
+    where.NOT = { role: { equals: ROLES.SUPERADMIN, mode: 'insensitive' } };
+  }
+
   const users = await prisma.rpa_users.findMany({
-    orderBy: {
-      id: 'desc',
-    },
+    where,
+    orderBy: { id: 'desc' },
+    include: { company: true },
   });
 
-  // Strip hashes for security
-  const safeUsers = users.map(({ password_hash, ...user }) => user);
-
-  return res.status(200).json(safeUsers);
+  return res.status(200).json(users.map(toSafeUser));
 });
 
 /**
@@ -93,6 +143,37 @@ export const createUser = catchAsync(async (req, res) => {
     throw new AppError('Required fields: email, username, role, password', 400);
   }
 
+  const requesterIsSuper = isSuperadmin(req.user.role);
+  const targetRole = normalizeRole(role);
+
+  // Resolve the effective company + role based on the requester's tier.
+  let companyId;
+  if (requesterIsSuper) {
+    // Superadmin may assign any role. company_id is required for every role
+    // except superadmin (which is global).
+    if (targetRole === ROLES.SUPERADMIN) {
+      companyId = null;
+    } else {
+      companyId = req.body.company_id ? parseInt(req.body.company_id, 10) : null;
+      if (!companyId) {
+        throw new AppError('A company is required for this role.', 400);
+      }
+      const company = await prisma.rpa_companies.findUnique({ where: { id: companyId } });
+      if (!company) {
+        throw new AppError('Selected company does not exist.', 404);
+      }
+    }
+  } else {
+    // Company admin — can only create admin/recruiter/vendor inside their own company.
+    if (!ADMIN_ASSIGNABLE_ROLES.includes(targetRole)) {
+      throw new AppError('Admins cannot create SuperAdmin accounts.', 403);
+    }
+    if (!req.user.company_id) {
+      throw new AppError('Your account is not associated with a company.', 400);
+    }
+    companyId = req.user.company_id;
+  }
+
   // Check duplicates
   const existingUser = await prisma.rpa_users.findFirst({
     where: {
@@ -110,20 +191,15 @@ export const createUser = catchAsync(async (req, res) => {
     });
   }
 
-  // Single-instance SuperAdmin check
-  if (role && role.trim().toLowerCase() === 'superadmin') {
-    const superadminCount = await prisma.rpa_users.count({
-      where: { role: 'superadmin' }
-    });
-    if (superadminCount > 0) {
-      throw new AppError('Only one SuperAdmin account is permitted in the system.', 400);
-    }
-  }
+  // Multiple superadmins are allowed. Only a superadmin requester can create one
+  // (a company admin is restricted to ADMIN_ASSIGNABLE_ROLES above).
 
   // Generate Salt + Hash
   const salt = crypto.randomBytes(8).toString('hex');
   const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
   const password_hash = `${salt}:${hash}`;
+
+  const normalizedRole = role.trim().toLowerCase();
 
   const newUser = await prisma.rpa_users.create({
     data: {
@@ -131,15 +207,36 @@ export const createUser = catchAsync(async (req, res) => {
       last_name: last_name?.trim(),
       email: email.trim(),
       username: username.trim(),
-      role: role.trim().toLowerCase(),
+      role: targetRole,
+      company_id: companyId,
       password_hash,
       is_active: is_active ?? true,
-      is_approved: is_approved ?? false,
+      // is_approved is not enforced at login for any role; we set it true on
+      // creation for data consistency (admin-created accounts are implicitly approved).
+      is_approved: is_approved ?? true,
     },
+    include: { company: true },
   });
 
-  const { password_hash: _, ...safeUser } = newUser;
-  return res.status(201).json(safeUser);
+  // Seed default module permissions for the role so the user can use their
+  // surfaces immediately (e.g. vendors get vendor_dashboard + vendor_upload).
+  const defaultModules = DEFAULT_MODULES_BY_ROLE[normalizedRole] || [];
+  if (defaultModules.length > 0) {
+    await prisma.rpa_module_permissions.createMany({
+      data: defaultModules.map((module_key) => ({
+        user_id: newUser.id,
+        module_key,
+        is_enabled: true,
+        updated_at: new Date(),
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  // Send credentials email in the background
+  sendCredentialEmail({ user: newUser, plainTextPassword: password, isNewUser: true });
+
+  return res.status(201).json(toSafeUser(newUser));
 });
 
 /**
@@ -163,33 +260,45 @@ export const updateUser = catchAsync(async (req, res) => {
   }
 
   // Hierarchy check: Admins cannot modify SuperAdmin accounts
-  const targetUserRole = (existingUser.role || '').toLowerCase();
-  const requesterRole = (req.user.role || '').toLowerCase();
-  if (requesterRole === 'admin' && targetUserRole === 'superadmin') {
+  const targetUserRole = normalizeRole(existingUser.role);
+  if (!isSuperadmin(req.user.role) && targetUserRole === ROLES.SUPERADMIN) {
     throw new AppError('Admins are not permitted to modify SuperAdmin accounts.', 403);
   }
 
-  // Single-instance check if changing role to superadmin
-  if (role && role.trim().toLowerCase() === 'superadmin') {
-    const existingSuperadmin = await prisma.rpa_users.findFirst({
-      where: {
-        role: 'superadmin',
-        id: { not: userId }
-      }
-    });
-    if (existingSuperadmin) {
-      throw new AppError('Only one SuperAdmin account is permitted in the system.', 400);
-    }
+  // Tenant scope: company admins may only touch users in their own company.
+  restrictToCompanyScope(req.user, existingUser);
+
+  const requesterIsSuper = isSuperadmin(req.user.role);
+  const newRole = role ? normalizeRole(role) : undefined;
+
+  // A company admin may assign admin/recruiter/vendor, but never superadmin.
+  if (!requesterIsSuper && newRole && !ADMIN_ASSIGNABLE_ROLES.includes(newRole)) {
+    throw new AppError('Admins cannot grant the SuperAdmin role.', 403);
   }
+
+  // Multiple superadmins are allowed; only a superadmin requester may promote
+  // someone into the role (enforced by the admin-escalation check above).
 
   const updateData = {
     first_name: first_name?.trim(),
     last_name: last_name?.trim(),
     email: email?.trim(),
     username: username?.trim(),
-    role: role ? role.trim().toLowerCase() : undefined,
+    role: newRole,
     is_active: is_active ?? existingUser.is_active,
   };
+
+  // Only superadmin may reassign a user's company.
+  if (requesterIsSuper && req.body.company_id !== undefined) {
+    const targetCompanyId = req.body.company_id === null ? null : parseInt(req.body.company_id, 10);
+    if (targetCompanyId !== null) {
+      const company = await prisma.rpa_companies.findUnique({ where: { id: targetCompanyId } });
+      if (!company) {
+        throw new AppError('Selected company does not exist.', 404);
+      }
+    }
+    updateData.company_id = targetCompanyId;
+  }
 
   // If a new password is provided, rehash it
   if (password && password.trim() !== '') {
@@ -201,10 +310,15 @@ export const updateUser = catchAsync(async (req, res) => {
   const updatedUser = await prisma.rpa_users.update({
     where: { id: userId },
     data: updateData,
+    include: { company: true },
   });
 
-  const { password_hash: _, ...safeUser } = updatedUser;
-  return res.status(200).json(safeUser);
+  // If a new password was provided, send credentials update email in the background
+  if (password && password.trim() !== '') {
+    sendCredentialEmail({ user: updatedUser, plainTextPassword: password, isNewUser: false });
+  }
+
+  return res.status(200).json(toSafeUser(updatedUser));
 });
 
 /**
@@ -228,11 +342,12 @@ export const deleteUser = catchAsync(async (req, res) => {
   }
 
   // Hierarchy check: Admins cannot modify SuperAdmin accounts
-  const targetUserRole = (existingUser.role || '').toLowerCase();
-  const requesterRole = (req.user.role || '').toLowerCase();
-  if (requesterRole === 'admin' && targetUserRole === 'superadmin') {
+  if (!isSuperadmin(req.user.role) && normalizeRole(existingUser.role) === ROLES.SUPERADMIN) {
     throw new AppError('Admins are not permitted to modify SuperAdmin accounts.', 403);
   }
+
+  // Tenant scope: company admins may only delete users in their own company.
+  restrictToCompanyScope(req.user, existingUser);
 
   await prisma.rpa_users.delete({
     where: { id: userId },
@@ -262,11 +377,12 @@ export const toggleStatus = catchAsync(async (req, res) => {
   }
 
   // Hierarchy check: Admins cannot modify SuperAdmin accounts
-  const targetUserRole = (existingUser.role || '').toLowerCase();
-  const requesterRole = (req.user.role || '').toLowerCase();
-  if (requesterRole === 'admin' && targetUserRole === 'superadmin') {
+  if (!isSuperadmin(req.user.role) && normalizeRole(existingUser.role) === ROLES.SUPERADMIN) {
     throw new AppError('Admins are not permitted to modify SuperAdmin accounts.', 403);
   }
+
+  // Tenant scope: company admins may only toggle users in their own company.
+  restrictToCompanyScope(req.user, existingUser);
 
   await prisma.rpa_users.update({
     where: { id: userId },
@@ -289,6 +405,20 @@ export const getModulesAccess = catchAsync(async (req, res) => {
   }
 
   const userId = parseInt(userIdStr, 10);
+
+  // Load the target so we can enforce tenant scope before exposing anything.
+  const targetUser = await prisma.rpa_users.findUnique({ where: { id: userId } });
+  if (!targetUser) {
+    throw new AppError('Target user not found.', 404);
+  }
+
+  // Non-superadmins cannot read a superadmin's permissions.
+  if (!isSuperadmin(req.user.role) && normalizeRole(targetUser.role) === ROLES.SUPERADMIN) {
+    throw new AppError('You do not have permission to view this user.', 403);
+  }
+
+  // Tenant scope: company admins may only read users in their own company.
+  restrictToCompanyScope(req.user, targetUser);
 
   const permissions = await prisma.rpa_module_permissions.findMany({
     where: { user_id: userId },
@@ -320,11 +450,12 @@ export const setModulesAccess = catchAsync(async (req, res) => {
   }
 
   // Hierarchy check: Admins cannot modify SuperAdmin permissions
-  const targetUserRole = (userExists.role || '').toLowerCase();
-  const requesterRole = (req.user.role || '').toLowerCase();
-  if (requesterRole === 'admin' && targetUserRole === 'superadmin') {
+  if (!isSuperadmin(req.user.role) && normalizeRole(userExists.role) === ROLES.SUPERADMIN) {
     throw new AppError('Admins are not permitted to modify SuperAdmin permissions.', 403);
   }
+
+  // Tenant scope: company admins may only set permissions for users in their own company.
+  restrictToCompanyScope(req.user, userExists);
 
   const permission = await prisma.rpa_module_permissions.upsert({
     where: {

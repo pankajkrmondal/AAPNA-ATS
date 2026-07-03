@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
+import { isAdminTier, isSuperadmin } from '../config/roles.js';
 
 /**
  * JWT authentication middleware.
@@ -54,9 +55,10 @@ export const authenticate = catchAsync(async (req, _res, next) => {
     throw new AppError('Your session has expired. Please log in again.', 401);
   }
 
-  // 4) Fetch the user record
+  // 4) Fetch the user record (with company for tenant context)
   const user = await prisma.rpa_users.findUnique({
     where: { id: decoded.userId },
+    include: { company: true },
   });
 
   if (!user) {
@@ -67,8 +69,14 @@ export const authenticate = catchAsync(async (req, _res, next) => {
     throw new AppError('Your account has been deactivated. Contact an administrator.', 403);
   }
 
-  // 5) Attach user & token to the request
+  // A company-scoped user whose company has been deactivated is locked out.
+  if (user.company && user.company.is_active === false) {
+    throw new AppError('Your company account is inactive. Contact your administrator.', 403);
+  }
+
+  // 5) Attach user, tenant context & token to the request
   req.user = user;
+  req.company_id = user.company_id ?? null;
   req.token = token;
   req.session = session;
 
@@ -119,8 +127,7 @@ export const checkModuleAccess = (moduleName) => {
     }
 
     // Admins and SuperAdmins bypass module checks
-    const userRole = (req.user.role || '').toLowerCase();
-    if (userRole === 'admin' || userRole === 'superadmin') {
+    if (isAdminTier(req.user.role)) {
       return next();
     }
 
@@ -142,3 +149,25 @@ export const checkModuleAccess = (moduleName) => {
     next();
   });
 };
+
+/**
+ * Tenant-scope guard helper (not middleware — called inside controllers once the
+ * target record is loaded).
+ *
+ * A superadmin may act on any target. A company-scoped requester (admin) may act
+ * only on targets belonging to the same company.
+ *
+ * @param {Object} requester - The acting user (req.user)
+ * @param {{ company_id?: number|null }} target - The record being acted upon
+ * @throws {AppError} 403 if the requester is out of scope for the target
+ */
+export function restrictToCompanyScope(requester, target) {
+  if (isSuperadmin(requester?.role)) return; // global actor
+
+  const requesterCompany = requester?.company_id ?? null;
+  const targetCompany = target?.company_id ?? null;
+
+  if (requesterCompany === null || requesterCompany !== targetCompany) {
+    throw new AppError('You do not have permission to manage resources outside your company.', 403);
+  }
+}

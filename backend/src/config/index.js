@@ -92,8 +92,24 @@ const config = {
    * than reading these fields directly.
    */
   email: {
-    /** True when mail must be redirected to the internal test inbox. */
-    redirectInNonProd: env('NODE_ENV', 'development') !== 'production',
+    /**
+     * True when mail must be redirected to the internal test inbox instead of
+     * going to real candidates/vendors.
+     *
+     * By default this is derived from NODE_ENV (any non-production env redirects).
+     * It can be OVERRIDDEN independently with EMAIL_REDIRECT_TO_TEST so you can run
+     * the real production build/DB but keep staging-like email safety during a
+     * production smoke test:
+     *   EMAIL_REDIRECT_TO_TEST=true  -> force redirect to testRecipients even in prod
+     *   EMAIL_REDIRECT_TO_TEST=false -> force real recipients even in non-prod
+     *   (unset)                      -> fall back to NODE_ENV !== 'production'
+     */
+    redirectInNonProd: (() => {
+      const override = env('EMAIL_REDIRECT_TO_TEST', '').toLowerCase();
+      if (override === 'true') return true;
+      if (override === 'false') return false;
+      return env('NODE_ENV', 'development') !== 'production';
+    })(),
     /** Fixed inbox that receives all mail in non-production environments. */
     testRecipients: env('EMAIL_STAGING_RECIPIENTS', 'saukumar@aapnainfotech.com, hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com'),
 

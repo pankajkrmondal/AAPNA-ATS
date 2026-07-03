@@ -16,10 +16,11 @@ const screeningService = {
   /**
    * Match and rank candidates against selected MRF role.
    * @param {number} mrfId
+   * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh).
    * @returns {Promise<{ data: { role: Object, candidates: Array, summary: Object } }>}
    */
-  searchRoleCandidates(mrfId) {
-    return api.post(`/screening/roles/${mrfId}/search`);
+  searchRoleCandidates(mrfId, { force = false } = {}) {
+    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`);
   },
 
   /**

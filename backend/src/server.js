@@ -41,6 +41,14 @@ async function startServer() {
     // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
     startZekoSchedulerJob();
 
+    // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
+    // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
+    // the queue/Redis connection is never created when the flag is off.
+    if (process.env.USE_RESUME_QUEUE === 'true') {
+      await import('./workers/resumeWorker.js');
+      logger.info('🏭 Resume queue worker enabled (USE_RESUME_QUEUE=true)');
+    }
+
     // 4) Bind to port
     server.listen(config.port, () => {
       logger.info(`🚀 ATS Backend listening on port ${config.port} [${config.env}]`);

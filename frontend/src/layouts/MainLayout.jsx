@@ -1,9 +1,10 @@
 /**
- * MainLayout — Primary app shell with horizontal top navigation bar.
- * Replicates modern ATS layouts (like Workable, Greenhouse) by placing navigation in a clean top bar.
+ * MainLayout — Primary app shell with a left collapsible sidebar navigation.
+ * The sidebar holds the brand + nav menu (icon rail when collapsed); a slim top
+ * bar carries the page title, Admin Portal access, and the user menu.
  */
 import { useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import {
   Layout,
   Menu,
@@ -18,53 +19,84 @@ import {
 } from 'antd';
 import {
   DashboardOutlined,
-  TeamOutlined,
+  SolutionOutlined,
   FileTextOutlined,
   ShopOutlined,
   FilterOutlined,
   BarChartOutlined,
   MailOutlined,
-  SettingOutlined,
+  BellOutlined,
   SearchOutlined,
   UserOutlined,
   LogoutOutlined,
   SunOutlined,
   MoonOutlined,
   UploadOutlined,
-  CrownOutlined,
+  SettingOutlined,
+  AuditOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
 // import NotificationBell from '../components/common/NotificationBell';
 
-const { Header, Content } = Layout;
+const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
+
+const SIDEBAR_COLLAPSED_KEY = 'ats.sidebarCollapsed';
+
+/** Admin Portal glyph — a person with a small gear badge ("manage accounts").
+ *  AntD has no single person+gear icon, so we compose UserOutlined + a small
+ *  SettingOutlined. Inherits color/size (em-based) from the surrounding text. */
+function AdminPortalIcon() {
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}>
+      <UserOutlined />
+      <SettingOutlined style={{ position: 'absolute', right: '-0.32em', bottom: '-0.16em', fontSize: '0.62em' }} />
+    </span>
+  );
+}
 
 /** Navigation menu items */
 const MENU_ITEMS = [
   { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/candidates', icon: <TeamOutlined />,      label: 'Candidates' },
-  { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Upload' },
+  { key: '/candidates', icon: <SolutionOutlined />,  label: 'Search Candidate' },
+  { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Manual Upload' },
   { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
-  { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor' },
-  { key: '/filtering',  icon: <FilterOutlined />,    label: 'Screening' },
+  { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
+  { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Analytics' },
-  { key: '/email',      icon: <MailOutlined />,      label: 'Email' },
-  { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
+  { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
+  { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
 ];
+
+/** Navigation menu shown to vendors — restricted to their own surfaces. */
+const VENDOR_MENU_ITEMS = [
+  { key: '/vendor-dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '/vendor',           icon: <UploadOutlined />,    label: 'Upload Candidate' },
+];
+
+/** Path prefixes a vendor is allowed to visit; anything else redirects. */
+const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
+
+/** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
+const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
+const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <AuditOutlined />, label: 'Vendor Dashboard' };
 
 /** Map paths to breadcrumb labels */
 const BREADCRUMB_MAP = {
   dashboard: 'Dashboard',
-  candidates: 'Candidates',
-  'hr-upload': 'HR Upload',
+  'vendor-dashboard': 'Vendor Dashboard',
+  candidates: 'Search Candidate',
+  'hr-upload': 'HR Manual Upload',
   mrf: 'MRF',
-  vendor: 'Vendor',
-  filtering: 'Screening',
-  analytics: 'Analytics',
-  email: 'Email',
-  settings: 'Settings',
+  vendor: 'Vendor Manual Upload',
+  filtering: 'Candidate Screening',
+  analytics: 'Recruitment Screening Analytics',
+  email: 'Email Template Management',
+  settings: 'Reminder Settings',
 };
 
 export default function MainLayout() {
@@ -73,19 +105,19 @@ export default function MainLayout() {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
-  /** Build breadcrumb items from the current path. */
-  const pathSegments = location.pathname.split('/').filter(Boolean);
-  const breadcrumbItems = [
-    { title: 'Home' },
-    ...pathSegments.map((seg) => ({
-      title: BREADCRUMB_MAP[seg] || seg.charAt(0).toUpperCase() + seg.slice(1),
-    })),
-  ];
+  /** Sidebar collapse state — persisted across reloads. */
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  );
+  const handleCollapse = (value) => {
+    setCollapsed(value);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(value));
+  };
 
-  /** User dropdown menu */
+  const pathSegments = location.pathname.split('/').filter(Boolean);
+
+  /** User dropdown menu — only Logout (Reminder Settings lives in the sidebar). */
   const userMenuItems = [
-    { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
-    { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
   ];
 
@@ -93,132 +125,125 @@ export default function MainLayout() {
     if (key === 'logout') {
       await logout();
       navigate('/login');
-    } else if (key === 'settings') {
-      navigate('/settings');
     }
   };
 
   /** Get the currently active menu key */
-  const selectedKey = '/' + (pathSegments[0] || 'dashboard');
+  let selectedKey = '/' + (pathSegments[0] || 'dashboard');
+  if (pathSegments[0] === 'candidates' && pathSegments[1] && location.state?.from === 'analytics') {
+    selectedKey = '/analytics';
+  }
   const isAdminPath = location.pathname.startsWith('/admin');
-  const isDashboard = location.pathname === '/dashboard';
 
-  const hasAdminAccess =
-    ['admin', 'superadmin'].includes((user?.role || '').toLowerCase());
+  /** Title for the current page, shown in the top bar. Vendors get their own
+   *  labels (Upload Candidate / Dashboard) for their restricted surfaces. */
+  const pageTitle = (user?.role || '').toLowerCase() === 'vendor'
+    ? (selectedKey === '/vendor' ? 'Upload Candidate' : 'Dashboard')
+    : (BREADCRUMB_MAP[pathSegments[0]] || 'Dashboard');
 
-  // Filter and strip icons from menu items by user role
-  const menuItems = MENU_ITEMS.filter(item => {
-    const role = (user?.role || '').toLowerCase();
-    if (role === 'vendor') {
-      return item.key === '/dashboard' || item.key === '/vendor';
+  const role = (user?.role || '').toLowerCase();
+  const isVendor = role === 'vendor';
+  const hasAdminAccess = ['admin', 'superadmin'].includes(role);
+
+  // Vendors are confined to their own surfaces. Redirect any other path
+  // (including direct URL navigation) to the vendor dashboard. This is the
+  // single choke point for all protected routes (MainLayout wraps the Outlet).
+  if (isVendor) {
+    const allowed = VENDOR_ALLOWED_PATHS.some(
+      (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
+    );
+    if (!allowed) {
+      return <Navigate to="/vendor-dashboard" replace />;
     }
-    return true;
-  }).map(item => ({
-    key: item.key,
-    label: item.label,
-  }));
+  }
+
+  // Tenant badge: superadmin is global; everyone else shows their company.
+  const roleKey = (user?.role || '').toLowerCase();
+  const isSuperadmin = roleKey === 'superadmin';
+  const adminRoleLabel = isSuperadmin ? 'Super Admin' : roleKey === 'admin' ? 'Admin' : (user?.role || '');
+  const userInitials = (
+    `${(user?.first_name || '')[0] || ''}${(user?.last_name || '')[0] || ''}`.toUpperCase()
+    || (user?.username || 'A')[0].toUpperCase()
+  );
+
+  // Vendors get a restricted menu; staff additionally get the Vendor Dashboard
+  // item (inserted after the Vendor upload entry); everyone else sees the base nav.
+  let menuItems;
+  if (isVendor) {
+    menuItems = VENDOR_MENU_ITEMS;
+  } else if (VENDOR_DASHBOARD_ROLES.includes(role)) {
+    menuItems = [...MENU_ITEMS];
+    const idx = menuItems.findIndex((m) => m.key === '/vendor');
+    menuItems.splice(idx + 1, 0, VENDOR_DASHBOARD_MENU_ITEM);
+  } else {
+    menuItems = MENU_ITEMS;
+  }
 
   if (isAdminPath) {
     return (
       <Layout style={{ minHeight: '100vh', background: '#f2f4f0' }}>
-        <Header
-          style={{
-            background: '#ffffff',
-            borderBottom: '1px solid #dde2d0',
-            height: 60,
-            padding: '0 28px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 90,
-            boxShadow: '0 1px 0 #dde2d0',
-          }}
-        >
-          {/* Left: Logo + Sep + Title */}
+        <Header className="admin-topbar">
+          {/* Left: Logo + Sep + Title cluster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <img
               src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
               alt="AAPNA"
               style={{ height: 32, width: 85, objectFit: 'cover', objectPosition: 'left' }}
             />
-            <div style={{ width: 1, height: 26, background: '#dde2d0' }} />
-            <span
-              style={{
-                fontFamily: "'Lora', serif",
-                fontSize: 15,
-                color: '#005f56',
-                fontWeight: 700,
-                letterSpacing: '0.2px',
-              }}
-            >
-              HR Admin
-            </span>
+            <div style={{ width: 1, height: 30, background: '#dde2d0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <div className="admin-brand-icon"><AdminPortalIcon /></div>
+              <div style={{ lineHeight: 1.2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                    HR Admin
+                  </span>
+                  <span className={`role-badge role-badge--${isSuperadmin ? 'superadmin' : 'admin'}`}>
+                    {adminRoleLabel}
+                  </span>
+                </div>
+                <span style={{ fontSize: 11, color: '#8b938a', fontWeight: 500 }}>
+                  Users · Access · Companies
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Right: Badge + Logout */}
+          {/* Right: Portal switch + user chip + Logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Button
+              className="admin-top-btn"
               type="text"
               onClick={() => navigate('/dashboard')}
               icon={<DashboardOutlined />}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#005f56',
-                border: '1px solid #dde1df',
-                borderRadius: 6,
-                height: 30,
-                padding: '0 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
             >
               Recruitment Portal
             </Button>
-            <span
-              style={{
-                display: 'inline-block',
-                lineHeight: '24px',
-                background: '#e0f0ef',
-                color: '#005f56',
-                border: '1px solid #dde1df',
-                fontSize: 11,
-                fontWeight: 600,
-                padding: '0 12px',
-                borderRadius: 999,
-              }}
-            >
-              {user?.username || 'Admin'}
-            </span>
+            <div className="admin-user-chip">
+              <Avatar size={26} style={{ background: 'var(--gradient-primary)', fontSize: 11, fontWeight: 700 }}>
+                {userInitials}
+              </Avatar>
+              <span>{user?.username || 'Admin'}</span>
+            </div>
             <Button
+              className="admin-top-btn admin-top-btn--logout"
               type="text"
               onClick={async () => {
                 await logout();
                 navigate('/admin/login');
               }}
               icon={<LogoutOutlined />}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#6b7561',
-                border: '1px solid #dde2d0',
-                borderRadius: 6,
-                height: 30,
-                padding: '0 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
             >
               Logout
             </Button>
           </div>
         </Header>
-        <Content style={{ minHeight: 'calc(100vh - 60px)', background: '#f2f4f0' }}>
-          <Outlet />
+        <Content style={{ minHeight: 'calc(100vh - 64px)', background: '#f2f4f0' }}>
+          {/* Keyed by path so the entrance animation replays on every navigation
+              (a persistent wrapper would only animate on first mount). */}
+          <div className="page-enter" key={location.pathname}>
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     );
@@ -226,144 +251,156 @@ export default function MainLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh', background: 'var(--ink)' }}>
-      {/* ---- Top Header Menu Bar ---- */}
-      <Header
-        className="glass"
+      {/* ---- Left Sidebar Navigation ---- */}
+      <Sider
+        className="glass-sidebar"
+        theme="light"
+        width={248}
+        collapsedWidth={72}
+        collapsible
+        collapsed={collapsed}
+        onCollapse={handleCollapse}
+        trigger={null}
+        breakpoint="lg"
+        onBreakpoint={(broken) => handleCollapse(broken)}
         style={{
           position: 'sticky',
           top: 0,
-          zIndex: 100,
-          height: 64,
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: '1px solid var(--border-light)',
-          background: 'var(--colorBgContainer)',
+          height: '100vh',
+          overflow: 'auto',
+          borderRight: '1px solid var(--border-light)',
         }}
       >
-        {/* Left: Logo and Brand Title */}
-        <div 
-          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexShrink: 0 }} 
+        {/* Brand */}
+        <div
           onClick={() => navigate('/dashboard')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            height: 64,
+            padding: collapsed ? '0' : '0 18px',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            cursor: 'pointer',
+            borderBottom: '1px solid var(--border-light)',
+          }}
         >
           <img
             src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
             alt="AAPNA Logo"
             style={{
-              height: 30,
-              width: 79,
+              height: 28,
+              width: collapsed ? 32 : 74,
               objectFit: 'cover',
               objectPosition: 'left',
               filter: isDark ? 'invert(1) brightness(2)' : 'none',
-              transition: 'filter 0.3s ease',
+              transition: 'all 0.3s ease',
             }}
           />
-          <div style={{ lineHeight: 1.2 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, display: 'block', color: 'var(--text)', letterSpacing: '-0.02em' }}>
-              AAPNA
-            </span>
-            <span style={{ fontSize: 9, letterSpacing: '0.05em', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: 500 }}>
-              ATS Platform
-            </span>
-          </div>
-        </div>
-
-        {/* Middle: Horizontal Navigation Menu (hide on dashboard page) */}
-        {!isDashboard ? (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center', padding: '0 12px' }}>
-            <Menu
-              mode="horizontal"
-              selectedKeys={[selectedKey]}
-              items={menuItems}
-              onClick={({ key }) => navigate(key)}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                width: '100%',
-                maxWidth: 900,
-                justifyContent: 'center',
-                lineHeight: '64px',
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ flex: 1 }} />
-        )}
-
-        {/* Right: Dark Mode, Notifications, Avatar */}
-        <Space size={12} align="center" style={{ flexShrink: 0 }}>
-          {/* Admin Dashboard Access */}
-          {hasAdminAccess && (
-            <Button
-              type="text"
-              icon={<CrownOutlined style={{ color: 'var(--gold)', fontSize: 14 }} />}
-              onClick={() => navigate('/admin/dashboard')}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--gold)',
-                background: 'var(--gold-subtle)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                height: 32,
-                padding: '0 10px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              Admin Portal
-            </Button>
+          {!collapsed && (
+            <div style={{ lineHeight: 1.2 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, display: 'block', color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                AAPNA
+              </span>
+              <span style={{ fontSize: 9, letterSpacing: '0.05em', color: 'var(--text-2)', textTransform: 'uppercase', fontWeight: 500 }}>
+                ATS Platform
+              </span>
+            </div>
           )}
+        </div>
 
-          {/* Dark Mode Switcher - Hidden as requested */}
-          {/* <Tooltip title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+        {/* Navigation Menu */}
+        <Menu
+          mode="inline"
+          selectedKeys={[selectedKey]}
+          items={menuItems}
+          onClick={({ key }) => navigate(key)}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: '12px 8px',
+          }}
+        />
+      </Sider>
+
+      {/* ---- Right Side: Top Bar + Content ---- */}
+      <Layout style={{ background: 'var(--ink)' }}>
+        {/* ---- Top Bar ---- */}
+        <Header
+          className="glass"
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            height: 64,
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid var(--border-light)',
+            background: 'var(--colorBgContainer)',
+          }}
+        >
+          {/* Left: collapse toggle + page title */}
+          <Space size={14} align="center" style={{ minWidth: 0 }}>
             <Button
               type="text"
-              icon={isDark ? <SunOutlined style={{ fontSize: 16, color: '#f0b429' }} /> : <MoonOutlined style={{ fontSize: 16 }} />}
-              onClick={toggleTheme}
-              style={{ width: 36, height: 36, borderRadius: 8 }}
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => handleCollapse(!collapsed)}
+              style={{ width: 36, height: 36, borderRadius: 8, fontSize: 16 }}
             />
-          </Tooltip> */}
+            <Text style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }} className="text-truncate">
+              {pageTitle}
+            </Text>
+            {/* Company badge intentionally hidden for now (not required in the UI). */}
+          </Space>
 
-          {/* Real-time Notifications Bell - Hidden as requested */}
-          {/* <NotificationBell /> */}
+          {/* Right: Admin Portal + Avatar */}
+          <Space size={12} align="center" style={{ flexShrink: 0 }}>
+            {hasAdminAccess && (
+              <Button
+                className="admin-top-btn"
+                type="text"
+                icon={<AdminPortalIcon />}
+                onClick={() => navigate('/admin/dashboard')}
+              >
+                Admin Portal
+              </Button>
+            )}
 
-          {/* User Profile Dropdown Menu */}
-          <Dropdown
-            menu={{ items: userMenuItems, onClick: handleUserMenu }}
-            trigger={['click']}
-            placement="bottomRight"
-          >
-            <Space style={{ cursor: 'pointer', padding: '2px 4px', borderRadius: 8 }}>
-              <Avatar
-                size={32}
-                icon={<UserOutlined />}
-                style={{
-                  background: 'var(--gradient-primary)',
-                  cursor: 'pointer',
-                }}
-              />
-            </Space>
-          </Dropdown>
-        </Space>
-      </Header>
+            <Dropdown
+              menu={{ items: userMenuItems, onClick: handleUserMenu }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Space style={{ cursor: 'pointer', padding: '2px 4px', borderRadius: 8 }}>
+                <Avatar
+                  size={32}
+                  icon={<UserOutlined />}
+                  style={{
+                    background: 'var(--gradient-primary)',
+                    cursor: 'pointer',
+                  }}
+                />
+              </Space>
+            </Dropdown>
+          </Space>
+        </Header>
 
-      {/* ---- Main Content Area ---- */}
-      <Content
-        style={{
-          padding: '24px 28px 48px',
-          maxWidth: 1200,
-          width: '100%',
-          margin: '0 auto',
-        }}
-      >
-        {/* Child Routes Content Outlet */}
-        <div className="page-enter">
-          <Outlet />
-        </div>
-      </Content>
+        {/* ---- Main Content Area ---- */}
+        <Content
+          style={{
+            padding: '24px 28px 40px',
+            width: '100%',
+          }}
+        >
+          {/* Child Routes Content Outlet — keyed by path so the entrance
+              animation replays on every navigation, not just first mount. */}
+          <div className="page-enter" key={location.pathname}>
+            <Outlet />
+          </div>
+        </Content>
+      </Layout>
     </Layout>
   );
 }
