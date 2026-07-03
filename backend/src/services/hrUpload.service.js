@@ -15,6 +15,7 @@ import * as onedriveService from './onedrive.service.js';
 import { saveCandidateVector } from './vectorStore.service.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
+import { stripControlChars } from '../utils/textSanitize.js';
 import {
   sendWelcomeEmail,
   sendMissingDataEmail,
@@ -130,18 +131,18 @@ export async function extractTextFromFile(filePath, originalName) {
     
     if (typeof pdfFn === 'function') {
       const data = await pdfFn(dataBuffer);
-      return data.text || '';
+      return stripControlChars(data.text || '');
     } else if (pdf.PDFParse) {
       const pdfParseInstance = new pdf.PDFParse(uint8Array);
       const textResult = await pdfParseInstance.getText();
-      return textResult.text || '';
+      return stripControlChars(textResult.text || '');
     }
     throw new Error('PDF-parse package structure is unsupported.');
   }
-  
+
   if (ext === '.docx') {
     const result = await mammoth.extractRawText({ path: filePath });
-    return result.value || '';
+    return stripControlChars(result.value || '');
   }
   
   if (ext === '.doc') {
