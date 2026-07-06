@@ -128,9 +128,20 @@ export async function sendPendingReminders() {
         let finalBody = '';
 
         if (log.email_type === 'missing_jd') {
+          // Never build a portal link with an empty token — the portal rejects it
+          // ("Access token is missing"). Mark the row responded so it isn't retried.
+          if (!log.cvMissingToken) {
+            logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - candidate ID ${log.reference_id} has no cvMissingToken; cannot build a valid portal link.`);
+            await prisma.rpa_email_log.update({
+              where: { id: log.id },
+              data: { responded_at: new Date() }
+            });
+            continue;
+          }
+
           // Use frontend URL for the collection portal to remove external Aapna web dependency
           const frontendUrl = config.cors.frontendUrl || 'http://localhost:5173';
-          const formLink = `${frontendUrl}/missing-jd-upload?token=${log.cvMissingToken || ''}`;
+          const formLink = `${frontendUrl}/missing-jd-upload?token=${log.cvMissingToken}`;
           
           finalBody = `
 <div style="font-family:Inter,Arial,sans-serif; max-width:600px; margin:0 auto; padding:24px; color:#111827;">

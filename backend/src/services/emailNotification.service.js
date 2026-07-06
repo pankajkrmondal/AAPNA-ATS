@@ -251,8 +251,20 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
   // tenant AppOnly Application Access Policy with ErrorAccessDenied.
   const sender = config.microsoft.defaultSender;
 
+  // The token is base64 of the candidate email — without an email there is no
+  // valid link to send. Bail out BEFORE persisting anything so an empty token
+  // can never reach rpa_cv (and the reminder cron can never rebuild a broken
+  // `?token=` link from it). Alert HR instead of failing silently.
+  if (!candidate.EmailID?.trim()) {
+    logger.warn(`Skipping missing data email for candidate ID ${candidate?.id}: no email address on record.`);
+    sendEmailIdNullAlert(candidate.Name, hrUserEmail, hrUserEmail ? `Uploader — ${hrUserEmail}` : '').catch(mailErr => {
+      logger.error(`Failed to send EmailID NULL alert for candidate ID ${candidate?.id}: ${mailErr.message}`);
+    });
+    return false;
+  }
+
   // Generate the data-collection token from the candidate email (base64).
-  const token = Buffer.from(candidate.EmailID || '').toString('base64');
+  const token = Buffer.from(candidate.EmailID).toString('base64');
 
   // Persist the token UP-FRONT, decoupled from the email send. The missing-data
   // link must always exist (so the collection portal works and reminders can
@@ -334,8 +346,10 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
 
 /**
  * Alerts the HR team that a candidate's email ID was missing.
+ * @param {string} [uploadedBy] - Human-readable upload source, e.g.
+ *   "Vendor — Acme Staffing (acme@vendor.com)" or "HR Upload — Jane (jane@aapnainfotech.com)".
  */
-export async function sendEmailIdNullAlert(candidateName, hrUserEmail) {
+export async function sendEmailIdNullAlert(candidateName, hrUserEmail, uploadedBy = '') {
   try {
     const sender = hrUserEmail || config.microsoft.defaultSender;
     const { to: toEmail } = resolveRecipients('missingEmailAlert');
@@ -353,7 +367,8 @@ export async function sendEmailIdNullAlert(candidateName, hrUserEmail) {
     }
 
     const { subject, html } = compileTemplate(template.subject, template.body_html, {
-      candidate_name: candidateName || 'Candidate'
+      candidate_name: candidateName || 'Candidate',
+      uploaded_by: uploadedBy || 'Not available'
     });
 
     await sendGraphEmail({ sender, to: toEmail, subject, html });

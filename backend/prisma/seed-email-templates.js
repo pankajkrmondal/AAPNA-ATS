@@ -416,17 +416,13 @@ const MISSING_DATA_BODY = `<!DOCTYPE html>
 </body>
 </html>`;
 
-/** Internal HR alert when a parsed candidate has no email — n8n §1.3 (plain text). */
-const EMAIL_NULL_BODY = `Dear HR Team,
-
-This is to inform you that the email ID for one of the candidates is missing in the system.
-
-Due to this, the system is unable to generate and send the required form/link to the candidate. Kindly review the candidate’s record and update the email ID at the earliest to avoid any delays in the process.
-
-Candidate's Name: {{candidate_name}}
-
-Best regards,
-System Notification`;
+/** Internal HR alert when a parsed candidate has no email — resume rejected (sent as HTML). */
+const EMAIL_NULL_BODY = `<p>Dear HR Team,</p>
+<p>This is to inform you that the candidate's resume does not contain an email address. As the email ID is mandatory, the system could not process the resume and has rejected the CV.</p>
+<p><strong>Candidate Name:</strong> {{candidate_name}}<br>
+<strong>Uploaded By:</strong> {{uploaded_by}}</p>
+<p>Best regards,<br>
+System Notification</p>`;
 
 /** Branded internal duplicate-resume alert — n8n "Outlook Mail: Send Duplicate Alert to HR", §1.7. */
 const DUPLICATE_ALERT_BODY = `<!DOCTYPE html>
@@ -709,7 +705,7 @@ const TEMPLATES = [
       category: 'general',
       subject: 'Alert: Candidate Email ID Missing',
       body_html: EMAIL_NULL_BODY,
-      placeholders: ['candidate_name'],
+      placeholders: ['candidate_name', 'uploaded_by'],
       is_active: true,
     },
   },
