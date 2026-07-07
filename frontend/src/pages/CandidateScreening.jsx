@@ -597,12 +597,21 @@ export default function CandidateScreening() {
         message.success(`Successfully shortlisted ${shortlistedCount} candidate(s) and sent ${emailsSent} notification email(s).`);
       }
       setSelectedCandidateKeys([]);
-      
+
       // Refresh candidates list (force-bypass cache so updated shortlist status reflects)
       if (activeTab === 'jd') {
         await forceReloadRoleCandidates();
       } else {
-        form.submit();
+        // Keyword tab: update badges in place — re-running the whole semantic
+        // search just to refresh shortlist status is expensive and jarring.
+        const shortlistedIds = new Set(selectedList.map((c) => c.id));
+        setCandidates((prev) =>
+          prev.map((c) =>
+            shortlistedIds.has(c.id)
+              ? { ...c, FinalStatus: 'Stage 0 - Resume Shortlisted', shortlisted_status: 'Stage 0 - Resume Shortlisted' }
+              : c
+          )
+        );
       }
     } catch (err) {
       message.error(err.message || 'Failed to shortlist candidate list.');
