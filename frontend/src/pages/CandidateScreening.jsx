@@ -322,6 +322,8 @@ export default function CandidateScreening() {
   const [summary, setSummary] = useState(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateKeys, setSelectedCandidateKeys] = useState([]);
+  // Blocks the whole page while the bulk shortlist request (incl. email sends) is in flight.
+  const [isShortlisting, setIsShortlisting] = useState(false);
 
   // ── Pagination State (client-side; result sets are bounded server-side) ──
   const [currentPage, setCurrentPage] = useState(1);
@@ -568,7 +570,7 @@ export default function CandidateScreening() {
       role_name: roleName,
     };
 
-    const hide = message.loading('Shortlisting selected candidates...', 0);
+    setIsShortlisting(true);
     try {
       const res = await screeningService.shortlistCandidates(payload);
       const result = res.data?.data || res.data || {};
@@ -597,17 +599,36 @@ export default function CandidateScreening() {
         message.success(`Successfully shortlisted ${shortlistedCount} candidate(s) and sent ${emailsSent} notification email(s).`);
       }
       setSelectedCandidateKeys([]);
-      
-      // Refresh candidates list (force-bypass cache so updated shortlist status reflects)
+
+      // Update shortlist badges in place — re-running the search (JD force
+      // reload or keyword re-search) is expensive and kept the blocking
+      // overlay up long after the success toast.
+      const shortlistedIds = new Set(selectedList.map((c) => c.id));
+      const markShortlisted = (list) =>
+        (list || []).map((c) =>
+          shortlistedIds.has(c.id)
+            ? { ...c, FinalStatus: 'Stage 0 - Resume Shortlisted', shortlisted_status: 'Stage 0 - Resume Shortlisted' }
+            : c
+        );
       if (activeTab === 'jd') {
-        await forceReloadRoleCandidates();
+        // The JD list is sourced from the react-query cache (sync effect
+        // above), so patch the cached axios envelope; the effect then
+        // refreshes the local render state.
+        queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), (prev) => {
+          const payload = prev?.data?.data ?? prev?.data;
+          if (!payload?.candidates) return prev;
+          const updated = { ...payload, candidates: markShortlisted(payload.candidates) };
+          return prev.data?.data !== undefined
+            ? { ...prev, data: { ...prev.data, data: updated } }
+            : { ...prev, data: updated };
+        });
       } else {
-        form.submit();
+        setCandidates((prev) => markShortlisted(prev));
       }
     } catch (err) {
       message.error(err.message || 'Failed to shortlist candidate list.');
     } finally {
-      hide();
+      setIsShortlisting(false);
     }
   };
 
@@ -1692,6 +1713,47 @@ export default function CandidateScreening() {
               style={{ fontWeight: 600 }}
             />
           </Tooltip>
+        </div>,
+        document.body
+      )}
+
+      {/* Full-page blocker while the shortlist request (incl. email sends) runs.
+          Rendered via portal to <body> — antd's `fullscreen` Spin uses position:fixed
+          in place, which ancestor transforms clip to a sub-container. */}
+      {isShortlisting && createPortal(
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(255, 255, 255, 0.45)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 11000,
+        }}>
+          <Card
+            bordered={false}
+            style={{
+              background: 'rgba(255, 255, 255, 0.95)',
+              padding: '16px 32px',
+              borderRadius: '16px',
+              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
+              border: '1px solid rgba(122, 146, 46, 0.15)',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+              <Spin size="large" />
+              <Text strong style={{ color: 'var(--color-primary)', fontSize: 15 }}>
+                Shortlisting candidates and sending emails...
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                This may take a few seconds. Please wait.
+              </Text>
+            </div>
+          </Card>
         </div>,
         document.body
       )}
