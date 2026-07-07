@@ -75,6 +75,66 @@ Selected → badges flip to "shortlisted" instantly with no list reload; list
 order and scores unchanged. JD tab flow behaves as before.
 
 **Known behavior (unchanged):** shortlist emails are sent synchronously inside
-the shortlist API call, so the "Shortlisting selected candidates..." message
-still takes a few seconds per candidate. Moving the send to a background job
-would make the action return instantly — proposed, not implemented.
+the shortlist API call, so the shortlist action still takes a few seconds per
+candidate. Moving the send to a background job would make the action return
+instantly — proposed, not implemented.
+
+## 3. Block the page while shortlisting is in flight
+
+**Requirement:** while the bulk "Shortlist Selected" request runs (email sends
+take a few seconds per candidate), the user could still click buttons, change
+filters, or navigate mid-operation. The page should be blocked and visually
+blurred until the request finishes.
+
+**Fix** (`frontend/src/pages/CandidateScreening.jsx`):
+- New `isShortlisting` state; set `true` at the start of
+  `handleShortlistSelected()` (replacing the old `message.loading(...)` toast)
+  and reset in `finally`, so the overlay always clears on success or error.
+- While `isShortlisting`, a full-viewport overlay is rendered via
+  `createPortal(..., document.body)`: blurred translucent white backdrop
+  (`backdrop-filter: blur(4px)`) that swallows all clicks, with a centered card
+  ("Shortlisting candidates and sending emails...") styled identically to the
+  existing search-loading overlay ("Matching and scoring candidates...").
+- Applies to **both** tabs (JD and keyword share `handleShortlistSelected`).
+  On the JD tab the overlay also stays up through the awaited
+  `forceReloadRoleCandidates()` refresh.
+- z-index 11000 — above the floating shortlist dock (10000) and antd drawers,
+  so nothing on the page is reachable while in flight.
+
+**Gotcha (why not antd `<Spin fullscreen>`):** first attempt used antd 5's
+built-in `<Spin fullscreen>`. It renders in place with `position: fixed`, and
+ancestor elements with CSS `transform`/`filter` turn them into containing
+blocks — the "fullscreen" mask got clipped to a sub-container instead of the
+viewport, and the default dark mask clashed with the olive theme. Rendering
+through a body portal (the same pattern the floating shortlist dock and the
+search-loading overlay already use) avoids both problems.
+
+**Verification:** search in either tab → select candidates → Shortlist
+Selected → page blurs and blocks immediately (sidebar, filters, rows, dock all
+unclickable), overlay matches the search spinner styling, and it releases when
+the result toast appears.
+
+## 4. JD tab: spinner kept running long after the "shortlisted" toast
+
+**Symptom:** on the JD Filtering tab, the success toast appeared but the
+blocking overlay stayed up for a long time afterwards.
+
+**Root cause:** the JD branch of `handleShortlistSelected()` awaited
+`forceReloadRoleCandidates()` after the toast — a `force: true` server search
+that bypasses the backend Redis cache and re-ranks the entire role — before
+clearing `isShortlisting`.
+
+**Fix** (`frontend/src/pages/CandidateScreening.jsx`): the JD tab now gets the
+same in-place badge update as the keyword tab (section 2). Because the JD list
+is sourced from the react-query cache (`useRoleCandidates` in
+`hooks/useScreeningData.js`, synced to local state by an effect), the update
+patches the cached axios envelope via
+`queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), ...)`
+rather than only local state — otherwise the stale cache would restore the old
+badges on remount. `forceReloadRoleCandidates()` remains in use by the manual
+Refresh button, and the backend still invalidates its Redis cache on
+shortlist, so an explicit refresh fetches fresh data.
+
+**Verification:** shortlist from the JD tab → overlay clears at the same
+moment the toast appears, badges flip in place; navigate away and back — the
+badges persist (cache was patched); Refresh button still force-reloads.
