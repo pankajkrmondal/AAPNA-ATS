@@ -250,7 +250,6 @@ export default function Candidates() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       });
       return;
     }
@@ -358,47 +357,47 @@ export default function Candidates() {
       title: '#',
       key: 'index',
       width: 50,
-      render: (_, __, index) => <span style={{ color: '#6b7561', fontWeight: 600 }}>{(page - 1) * pageSize + index + 1}</span>,
+      render: (_, __, index) => <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>{(page - 1) * pageSize + index + 1}</span>,
     },
     {
       title: 'NAME ⇅',
       dataIndex: 'name',
       key: 'name',
       sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
-      render: (text) => <Text strong style={{ fontSize: 13, color: '#111827' }}>{text || '—'}</Text>,
+      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>,
     },
     {
       title: 'EMAIL ⇅',
       dataIndex: 'email',
       key: 'email',
       sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
-      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: '#374151' }}>{text || '—'}</span>,
+      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
     },
     {
       title: 'CONTACT',
       dataIndex: 'phone',
       key: 'phone',
-      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: '#374151' }}>{text || '—'}</span>,
+      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
     },
     {
       title: 'POSITION APPLIED ⇅',
       dataIndex: 'position',
       key: 'position',
       sorter: (a, b) => (a.position || '').localeCompare(b.position || ''),
-      render: (text) => <Text style={{ fontSize: 13, fontWeight: 500, color: '#1f2937' }}>{text || '—'}</Text>,
+      render: (text) => <Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{text || '—'}</Text>,
     },
     {
       title: 'GENDER',
       dataIndex: 'gender',
       key: 'gender',
-      render: (text) => <Text style={{ fontSize: 12.5, color: '#4b5563' }}>{text || '—'}</Text>,
+      render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
     },
     {
       title: 'LOCATION ⇅',
       dataIndex: 'location',
       key: 'location',
       sorter: (a, b) => (a.location || '').localeCompare(b.location || ''),
-      render: (text) => <Text style={{ fontSize: 12.5, color: '#4b5563' }}>{text || '—'}</Text>,
+      render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
     },
     {
       title: 'ACTION',
@@ -417,15 +416,15 @@ export default function Candidates() {
               onClick={() => handleDownloadResume(fileUrl)}
               style={{
                 borderRadius: 6,
-                background: hasCv ? '#7a922e' : '#f3f4f6',
-                borderColor: hasCv ? '#7a922e' : '#d1d5db',
-                color: hasCv ? '#fff' : '#9ca3af',
+                background: hasCv ? '#7a922e' : 'var(--ink-4)',
+                borderColor: hasCv ? '#7a922e' : 'var(--border)',
+                color: hasCv ? '#fff' : 'var(--text-3)',
               }}
             />
             <Button
               size="small"
               onClick={() => handleOpenView(record)}
-              style={{ borderRadius: 6, background: '#fff', borderColor: '#d1d5db', color: '#374151', fontWeight: 500 }}
+              style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)', fontWeight: 500 }}
             >
               View
             </Button>
@@ -443,8 +442,8 @@ export default function Candidates() {
               onClick={() => handleOpenEmails(record)}
               style={{
                 borderRadius: 6,
-                background: '#f3f4f6',
-                borderColor: '#d1d5db',
+                background: 'var(--ink-4)',
+                borderColor: 'var(--border)',
                 color: '#7c3aed',
               }}
             />
@@ -483,7 +482,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: '#4b5563' }}>Email ID</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email ID</span>}
                 name="email"
               >
                 <Input placeholder="candidate@example.com" style={{ height: 42, borderRadius: 8 }} />
@@ -491,7 +490,7 @@ export default function Candidates() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: '#4b5563' }}>Candidate Name</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Candidate Name</span>}
                 name="name"
               >
                 <Input placeholder="e.g. Rahul Sharma" style={{ height: 42, borderRadius: 8 }} />
@@ -499,7 +498,7 @@ export default function Candidates() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: '#4b5563' }}>Phone / Contact Number</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Phone / Contact Number</span>}
                 name="phone"
               >
                 <Input placeholder="+91 98765 43210" style={{ height: 42, borderRadius: 8 }} />
@@ -514,8 +513,6 @@ export default function Candidates() {
               icon={<SearchOutlined />}
               loading={loading}
               style={{
-                background: '#7a922e',
-                borderColor: '#7a922e',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,
@@ -562,7 +559,7 @@ export default function Candidates() {
           styles={{ body: { padding: 12 } }}
         >
           <div style={{ padding: '8px 12px 14px' }}>
-            <Text strong style={{ fontSize: 11, color: '#6b7561', textTransform: 'uppercase' }}>
+            <Text strong style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
               Showing {total} results
             </Text>
           </div>
@@ -614,26 +611,26 @@ export default function Candidates() {
         onOk={handleSaveEdit}
         onCancel={() => setEditOpen(false)}
         okText="Update Candidate"
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' }, loading: updating }}
+        okButtonProps={{ loading: updating }}
         width={750}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
         <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
           {/* Section 1: Personal Information */}
           <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE NAME</span>} name="name">
-                <Input readonly style={{ background: '#f3f4f6', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE NAME</span>} name="name">
+                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE EMAIL</span>} name="email">
-                <Input readonly style={{ background: '#f3f4f6', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
+                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
               </Form.Item>
             </Col>
           </Row>
@@ -641,17 +638,17 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE CONTACT NUMBER</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
                 name="phone"
                 rules={[{ validator: contactNumberValidator }]}
-                extra={<span style={{ fontSize: 10, color: '#6b7280' }}>Use commas to add multiple numbers (Supports international formats)</span>}
+                extra={<span style={{ fontSize: 10, color: 'var(--text-3)' }}>Use commas to add multiple numbers (Supports international formats)</span>}
               >
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HIGHEST QUALIFICATION</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HIGHEST QUALIFICATION</span>} 
                 name="education"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -663,7 +660,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TOTAL EXPERIENCE (YEARS)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOTAL EXPERIENCE (YEARS)</span>} 
                 name="experience"
                 rules={[{ validator: experienceValidator }]}
               >
@@ -672,7 +669,7 @@ export default function Candidates() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>LAST COMPANY EXPERIENCE (YEARS)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LAST COMPANY EXPERIENCE (YEARS)</span>} 
                 name="lastCompanyExperience"
                 dependencies={['experience']}
                 rules={[{ validator: lastCompanyExpValidator }]}
@@ -684,13 +681,13 @@ export default function Candidates() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CURRENT LOCATION</span>} name="location">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} name="location">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CTC (LPA)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CTC (LPA)</span>} 
                 name="currentCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
@@ -702,7 +699,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>EXPECTED CTC (LPA)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>EXPECTED CTC (LPA)</span>} 
                 name="expectedCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
@@ -711,7 +708,7 @@ export default function Candidates() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>NOTICE PERIOD (DAYS)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>NOTICE PERIOD (DAYS)</span>} 
                 name="noticePeriod"
                 rules={[{ validator: noticePeriodValidator }]}
               >
@@ -723,7 +720,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>POSITION APPLIED</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POSITION APPLIED</span>} 
                 name="position"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -731,7 +728,7 @@ export default function Candidates() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>JOB SOURCE</span>} name="jobSource">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>JOB SOURCE</span>} name="jobSource">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
@@ -740,7 +737,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>RECRUITER INFO (AAPNA)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>RECRUITER INFO (AAPNA)</span>} 
                 name="recruiterInfo"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -748,7 +745,7 @@ export default function Candidates() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>ENGLISH COMMUNICATION RATING</span>} name="englishCommunicationRating">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ENGLISH COMMUNICATION RATING</span>} name="englishCommunicationRating">
                 <Select placeholder="Select" style={{ height: 38 }}>
                   <Select.Option value="1">1</Select.Option>
                   <Select.Option value="2">2</Select.Option>
@@ -760,13 +757,13 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TOP 5 KEY SKILLS</span>} name="top5KeySkills">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOP 5 KEY SKILLS</span>} name="top5KeySkills">
             <Input.TextArea placeholder="React, Node.js, Python, AWS, Docker" style={{ borderRadius: 6 }} />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>GENDER</span>} name="gender">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GENDER</span>} name="gender">
                 <Select placeholder="Select" style={{ height: 38 }}>
                   <Select.Option value="Male">Male</Select.Option>
                   <Select.Option value="Female">Female</Select.Option>
@@ -775,7 +772,7 @@ export default function Candidates() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>PREFERRED SHIFT</span>} name="preferredShift">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>PREFERRED SHIFT</span>} name="preferredShift">
                 <Select placeholder="Select" style={{ height: 38 }}>
                   <Select.Option value="2pm - 11pm/3pm - 12am">2pm - 11pm/3pm - 12am</Select.Option>
                   <Select.Option value="4pm - 1am">4pm - 1am</Select.Option>
@@ -785,13 +782,13 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>REASON FOR JOB CHANGE</span>} name="reasonForJobChange">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>REASON FOR JOB CHANGE</span>} name="reasonForJobChange">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>WILLING TO TAKE ONLINE TEST?</span>} name="willingToTakeOnlineTest">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>WILLING TO TAKE ONLINE TEST?</span>} name="willingToTakeOnlineTest">
                 <Select placeholder="Select" style={{ height: 38 }}>
                   <Select.Option value="Yes">Yes</Select.Option>
                   <Select.Option value="No">No</Select.Option>
@@ -799,7 +796,7 @@ export default function Candidates() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HAS LAPTOP FOR INITIAL DAYS?</span>} name="hasLaptopForInitialDays">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HAS LAPTOP FOR INITIAL DAYS?</span>} name="hasLaptopForInitialDays">
                 <Select placeholder="Select" style={{ height: 38 }}>
                   <Select.Option value="Yes">Yes</Select.Option>
                   <Select.Option value="No">No</Select.Option>
@@ -808,16 +805,16 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <div style={{ background: '#f9fafb', padding: '14px 18px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Current Company</span>
+          <div style={{ background: 'var(--ink-4)', padding: '14px 18px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Current Company</span>
             <Row gutter={12}>
               <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: '#4b5563' }}>COMPANY NAME</span>} name={['currentCompany', 'Name']} style={{ marginBottom: 0 }}>
+                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>COMPANY NAME</span>} name={['currentCompany', 'Name']} style={{ marginBottom: 0 }}>
                   <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: '#4b5563' }}>WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
+                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
                   <Input placeholder="https://example.com" style={{ borderRadius: 6 }} />
                 </Form.Item>
               </Col>
@@ -826,18 +823,18 @@ export default function Candidates() {
 
           {/* Section 2: Education */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>10TH PERCENTAGE</span>} name="a10th">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>10TH PERCENTAGE</span>} name="a10th">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>12TH PERCENTAGE</span>} name="a12th">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>12TH PERCENTAGE</span>} name="a12th">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
@@ -845,12 +842,12 @@ export default function Candidates() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>GRADUATION PERCENTAGE</span>} name="graduation">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION PERCENTAGE</span>} name="graduation">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>POST GRADUATION PERCENTAGE</span>} name="postGraduation">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION PERCENTAGE</span>} name="postGraduation">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
@@ -859,7 +856,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>GRADUATION DEGREE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION DEGREE</span>} 
                 name="graduationdegree"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -868,7 +865,7 @@ export default function Candidates() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>GRADUATION SPECIALIZATION</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION SPECIALIZATION</span>} 
                 name="graduationspecialization"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -880,7 +877,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>POST GRADUATION DEGREE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION DEGREE</span>} 
                 name="postgraduationdegree"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -889,7 +886,7 @@ export default function Candidates() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>POST GRADUATION SPECIALIZATION</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION SPECIALIZATION</span>} 
                 name="postgraduationspecialization"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -898,21 +895,21 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>LINKEDIN PROFILE LINK</span>} name="LinkedInProfile">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LINKEDIN PROFILE LINK</span>} name="LinkedInProfile">
             <Input placeholder="https://linkedin.com/in/..." style={{ borderRadius: 6 }} />
           </Form.Item>
 
           {/* Section 3: Employment History */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Employment History</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Employment History</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Form.List name="employment_history_companies">
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }) => (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid #e5e7eb' }}>
                     <Form.Item
                       {...restField}
                       name={[name, 'CompanyName']}
@@ -961,31 +958,31 @@ export default function Candidates() {
 
           {/* Section 4: Assessment & Interview */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assessment & Interview</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assessment & Interview</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HEAT</span>} name="Heat">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HEAT</span>} name="Heat">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>FINAL STATUS</span>} name="FinalStatus">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>FINAL STATUS</span>} name="FinalStatus">
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HR QUICK COMMENTS</span>} name="HRQuickcomments">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR QUICK COMMENTS</span>} name="HRQuickcomments">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>IQ SCORE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>IQ SCORE</span>} 
                 name="IQScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
@@ -994,7 +991,7 @@ export default function Candidates() {
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TECH SCORE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH SCORE</span>} 
                 name="TechScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
@@ -1003,7 +1000,7 @@ export default function Candidates() {
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>ZEKO INTERVIEW SCORE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO INTERVIEW SCORE</span>} 
                 name="ZekoInterviewScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
@@ -1015,7 +1012,7 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>ZEKO CODING SCORE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO CODING SCORE</span>} 
                 name="ZekoCodingScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
@@ -1024,7 +1021,7 @@ export default function Candidates() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>ZEKO COMMUNICATION SCORE</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO COMMUNICATION SCORE</span>} 
                 name="ZekoCommunicationScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
@@ -1033,27 +1030,27 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TECH ROUND ONE FEEDBACK</span>} name="TechRoundOne">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND ONE FEEDBACK</span>} name="TechRoundOne">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TECH ROUND TWO FEEDBACK</span>} name="TechRoundTwo">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND TWO FEEDBACK</span>} name="TechRoundTwo">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TECH ROUND THREE FEEDBACK</span>} name="TechRoundThree">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND THREE FEEDBACK</span>} name="TechRoundThree">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>MANAGERIAL / CEO FEEDBACK</span>} name="ManagerialOrCEOFeedback">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>MANAGERIAL / CEO FEEDBACK</span>} name="ManagerialOrCEOFeedback">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HR INTERVIEW</span>} name="HRInterview">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR INTERVIEW</span>} name="HRInterview">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>APPLICATION STATUS</span>} name="status">
+          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>APPLICATION STATUS</span>} name="status">
             <Select style={{ height: 38 }}>
               <Select.Option value="new">New</Select.Option>
               <Select.Option value="screening">Screening</Select.Option>
@@ -1095,7 +1092,7 @@ export default function Candidates() {
         {emailsLoading ? (
           <div style={{ padding: '60px 0', textAlign: 'center' }}>
             <Spin size="large" />
-            <div style={{ marginTop: 12, color: '#6b7561' }}>Loading email thread…</div>
+            <div style={{ marginTop: 12, color: 'var(--text-3)' }}>Loading email thread…</div>
           </div>
         ) : emails.length > 0 ? (
           <div style={{ maxHeight: '55vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1108,7 +1105,7 @@ export default function Candidates() {
                     border: '1px solid #dde2d0',
                     borderRadius: 8,
                     padding: 12,
-                    background: isOutbound ? '#f9fafb' : '#fff',
+                    background: isOutbound ? 'var(--ink-4)' : 'var(--colorBgContainer)',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -1117,10 +1114,10 @@ export default function Candidates() {
                       {email.sent_at ? email.sent_at.split('T')[0] : ''}
                     </Text>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#6b7561', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>
                     <strong>From:</strong> {email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email}
                   </div>
-                  <Paragraph style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-line', color: '#374151' }}>
+                  <Paragraph style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-line', color: 'var(--text)' }}>
                     {email.body_preview || '(Empty preview)'}
                   </Paragraph>
                 </div>
@@ -1130,12 +1127,12 @@ export default function Candidates() {
         ) : (
           <div
             style={{
-              background: '#f8f9f5',
+              background: 'var(--ink-4)',
               border: '1px dashed #dde2d0',
               borderRadius: 8,
               padding: '44px 20px',
               textAlign: 'center',
-              color: '#6b7561',
+              color: 'var(--text-3)',
             }}
           >
             <HistoryOutlined style={{ fontSize: 32, opacity: 0.3, marginBottom: 12 }} />

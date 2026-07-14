@@ -3,7 +3,7 @@
  * Replicates the legacy Welcome Back layout with custom badges and icons.
  */
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Alert } from 'antd';
 import { LoginOutlined, UserOutlined, LockOutlined } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
@@ -53,14 +53,14 @@ export default function AdminLogin() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Username</span>}
+          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Username or Email</span>}
           name="username"
-          rules={[{ required: true, message: 'Please enter your username' }]}
+          rules={[{ required: true, message: 'Please enter your username or email' }]}
           style={{ marginBottom: 20 }}
         >
           <Input
             prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
-            placeholder="Enter your username"
+            placeholder="Enter your username or email"
             autoComplete="off"
             style={{ borderRadius: 10, height: 46 }}
           />
@@ -102,6 +102,12 @@ export default function AdminLogin() {
             Sign In
           </Button>
         </Form.Item>
+
+        <div style={{ textAlign: 'center', marginTop: 18 }}>
+          <Link to="/forgot-password" style={{ fontSize: 13.5, fontWeight: 600 }}>
+            Forgot password?
+          </Link>
+        </div>
       </Form>
     </div>
   );

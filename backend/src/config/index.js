@@ -222,9 +222,22 @@ const config = {
 
   /** Rate limiting */
   rateLimit: {
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // requests per window per IP
+    /** Global API limiter window (default 15 minutes). */
+    windowMs: parseInt(env('RATE_LIMIT_WINDOW_MS', String(15 * 60 * 1000)), 10),
+    /** Global API requests per window per IP (~2.2 req/s at defaults). */
+    max: parseInt(env('RATE_LIMIT_MAX', '2000'), 10),
+    /** Auth (brute-force) limiter window (default 15 minutes). */
+    authWindowMs: parseInt(env('RATE_LIMIT_AUTH_WINDOW_MS', String(15 * 60 * 1000)), 10),
+    /** Failed auth attempts allowed per window per IP. */
+    authMax: parseInt(env('RATE_LIMIT_AUTH_MAX', '20'), 10),
   },
+
+  /**
+   * Set TRUST_PROXY=true when running behind a reverse proxy (nginx/IIS/Azure)
+   * so Express derives the real client IP from X-Forwarded-For; otherwise the
+   * rate limiter keys every request on the proxy's own IP.
+   */
+  trustProxy: env('TRUST_PROXY', 'false') === 'true',
 };
 
 export default config;

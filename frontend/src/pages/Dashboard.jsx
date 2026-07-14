@@ -133,7 +133,6 @@ export default function Dashboard() {
       Modal.warning({
         title: '⚠️ Alert',
         content: 'Resume is not available for this candidate right now.',
-        okButtonProps: { style: { background: '#7a922e', borderColor: '#7a922e' } },
       });
       return;
     }
@@ -246,9 +245,9 @@ export default function Dashboard() {
             onClick={() => handleDownloadResume(fileUrl)}
             style={{
               borderRadius: 6,
-              background: isResumeOk ? '#eef3da' : '#f5f5f0',
+              background: isResumeOk ? 'var(--gold-bg)' : 'var(--ink-3)',
               color: isResumeOk ? '#7a922e' : '#a0aa84',
-              borderColor: isResumeOk ? '#b8cc6e' : '#dde1df',
+              borderColor: isResumeOk ? 'var(--gold-light)' : '#dde1df',
             }}
             title="Download Resume"
           />

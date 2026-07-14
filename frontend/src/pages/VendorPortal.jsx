@@ -442,8 +442,7 @@ export default function VendorPortal() {
         return (
           <Space size={6}>
             {canReview && (
-              <Button size="small" type="primary" onClick={() => setReviewJob(r)}
-                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+              <Button size="small" type="primary" onClick={() => setReviewJob(r)}>
                 Review
               </Button>
             )}
@@ -567,8 +566,8 @@ export default function VendorPortal() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
               <InboxOutlined className="upload-inbox-icon" style={{ color: '#7a922e', fontSize: 30 }} />
               <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: '#2b2b2b' }}>Click or drag files to upload</div>
-                <div style={{ color: '#8a9270', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>Click or drag files to upload</div>
+                <div style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
               </div>
             </div>
           </Dragger>
@@ -579,8 +578,8 @@ export default function VendorPortal() {
             loading={uploading} onClick={handleUpload}
             disabled={fileList.length === 0 || (isStaff && !selectedVendor)}
             style={{ height: 44, fontWeight: 600, borderRadius: 10,
-              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? '#8a9270' : '#7a922e',
-              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? '#8a9270' : '#7a922e' }}
+              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e',
+              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e' }}
           >
             Upload Resumes
           </Button>
@@ -705,8 +704,7 @@ export default function VendorPortal() {
               <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
                 Cancel / Reject
               </Button>
-              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}
-                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}>
                 Merge into Database
               </Button>
             </Space>
@@ -742,8 +740,7 @@ export default function VendorPortal() {
               <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
                 Cancel / Reject
               </Button>
-              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}
-                style={{ background: '#7a922e', borderColor: '#7a922e' }}>
+              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}>
                 Merge into Database
               </Button>
             </Space>
@@ -760,10 +757,10 @@ export default function VendorPortal() {
 
           return (
             <>
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
                 Personal Information
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                 <Descriptions.Item label="Candidate Name">{displayVal(c.Name)}</Descriptions.Item>
                 <Descriptions.Item label="Candidate Email">{displayVal(c.EmailID)}</Descriptions.Item>
                 <Descriptions.Item label="Contact Number">{displayVal(c.ContactNumber)}</Descriptions.Item>
@@ -786,20 +783,20 @@ export default function VendorPortal() {
                 <Descriptions.Item label="Has Laptop for Initial Days?">{displayVal(c.HasLaptopForInitialDays)}</Descriptions.Item>
               </Descriptions>
 
-              <div style={{ marginTop: 12, padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)' }}>
-                <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#8a9270', display: 'block', marginBottom: 10 }}>
+              <div style={{ marginTop: 12, padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)' }}>
+                <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)', display: 'block', marginBottom: 10 }}>
                   Current Company
                 </Text>
-                <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                   <Descriptions.Item label="Company Name">{displayVal(cc.Name)}</Descriptions.Item>
                   <Descriptions.Item label="Website">{displayVal(cc.Website)}</Descriptions.Item>
                 </Descriptions>
               </div>
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
                 Education
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                 <Descriptions.Item label="10th %">{displayVal(edu['10th'] || c.a10th)}</Descriptions.Item>
                 <Descriptions.Item label="12th %">{displayVal(edu['12th'] || c.a12th)}</Descriptions.Item>
                 <Descriptions.Item label="Graduation %">{displayVal(edu.Graduation || c.graduation)}</Descriptions.Item>
@@ -811,15 +808,15 @@ export default function VendorPortal() {
                 <Descriptions.Item label="LinkedIn Profile" span={2}>{displayVal(c.LinkedInProfile)}</Descriptions.Item>
               </Descriptions>
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
                 Employment History
               </Divider>
               {companies.length === 0 ? (
-                <Text style={{ fontSize: 13, color: '#8a9270' }}>No employment history recorded.</Text>
+                <Text style={{ fontSize: 13, color: 'var(--text-3)' }}>No employment history recorded.</Text>
               ) : (
                 companies.map((co, i) => (
-                  <div key={i} style={{ padding: 14, background: '#f5f5f0', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', marginBottom: 10 }}>
-                    <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+                  <div key={i} style={{ padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', marginBottom: 10 }}>
+                    <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                       <Descriptions.Item label="Company Name">{displayVal(co.CompanyName)}</Descriptions.Item>
                       <Descriptions.Item label="Start Date">{displayVal(co.StartDate)}</Descriptions.Item>
                       <Descriptions.Item label="End Date">{displayVal(co.EndDate)}</Descriptions.Item>
@@ -828,10 +825,10 @@ export default function VendorPortal() {
                 ))
               )}
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#8a9270' }}>
+              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
                 Upload Details
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: '#8a9270' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                 <Descriptions.Item label="Uploaded By">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
                 <Descriptions.Item label="Uploaded At">{formatDate(c.uploadedAt)}</Descriptions.Item>
                 <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>

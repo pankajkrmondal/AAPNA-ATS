@@ -23,6 +23,8 @@ import AuthLayout from './layouts/AuthLayout';
 /* Pages */
 import Login from './pages/Login';
 import AdminLogin from './pages/AdminLogin';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Candidates from './pages/Candidates';
@@ -213,6 +215,24 @@ function ComingSoon({ title }) {
 
 /* ---- Theme-Aware App Shell ---- */
 
+/**
+ * ForceLight — pins a subtree to the light theme regardless of the app theme.
+ * Used for public token-link pages (candidate/approver-facing forms opened
+ * from emails) that are designed light and offer no theme toggle. The
+ * data-theme="light" wrapper re-scopes the CSS variables (see the
+ * `:root, [data-theme='light']` selector in theme/index.css); the nested
+ * ConfigProvider pins AntD tokens.
+ */
+function ForceLight({ children }) {
+  return (
+    <ConfigProvider theme={lightTheme}>
+      <div data-theme="light" style={{ colorScheme: 'light', minHeight: '100vh' }}>
+        {children}
+      </div>
+    </ConfigProvider>
+  );
+}
+
 function AppShell() {
   const { isDark } = useTheme();
   const { user, isAuthenticated } = useAuth();
@@ -250,14 +270,16 @@ function AppShell() {
             >
               <Route path="/login" element={<Login />} />
               <Route path="/admin/login" element={<AdminLogin />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
             </Route>
 
-            {/* Public candidate missing data route */}
-            <Route path="/missing-jd-upload" element={<MissingJdUpload />} />
+            {/* Public candidate missing data route (always light — external users) */}
+            <Route path="/missing-jd-upload" element={<ForceLight><MissingJdUpload /></ForceLight>} />
 
-            {/* Public MRF submission & approval routes */}
-            <Route path="/mrf-submit" element={<MrfSubmit />} />
-            <Route path="/mrf/:id/approve" element={<MrfApprovalAction />} />
+            {/* Public MRF submission & approval routes (always light — external users) */}
+            <Route path="/mrf-submit" element={<ForceLight><MrfSubmit /></ForceLight>} />
+            <Route path="/mrf/:id/approve" element={<ForceLight><MrfApprovalAction /></ForceLight>} />
 
             {/* Protected (app) routes */}
             <Route

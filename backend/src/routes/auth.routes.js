@@ -1,9 +1,22 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.js';
 import validate from '../middleware/validate.js';
+import friendlyRateLimitHandler from '../utils/rateLimitHandler.js';
 
 const router = Router();
+
+// Strict limiter for forgot-password: the endpoint returns 200 on every call
+// (anti-enumeration), so the global auth limiter — which only counts FAILED
+// requests — never throttles it. This one counts everything.
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: friendlyRateLimitHandler('Too many password reset requests.'),
+});
 
 // ── Validation schemas ────────────────────────────────────────────────
 const loginSchema = {
@@ -16,6 +29,26 @@ const loginSchema = {
 const refreshTokenSchema = {
   body: {
     refreshToken: { type: 'string', required: true, min: 1 },
+  },
+};
+
+const changePasswordSchema = {
+  body: {
+    currentPassword: { type: 'string', required: true, min: 1 },
+    newPassword: { type: 'string', required: true, min: 8, max: 128 },
+  },
+};
+
+const forgotPasswordSchema = {
+  body: {
+    login: { type: 'string', required: true, min: 1, max: 255 },
+  },
+};
+
+const resetPasswordSchema = {
+  body: {
+    token: { type: 'string', required: true, min: 1 },
+    newPassword: { type: 'string', required: true, min: 8, max: 128 },
   },
 };
 
@@ -38,6 +71,24 @@ router.post('/logout', authenticate, authController.logout);
  * Private — get the current user's profile
  */
 router.get('/me', authenticate, authController.getCurrentUser);
+
+/**
+ * POST /api/auth/change-password
+ * Private (all roles) — change own password
+ */
+router.post('/change-password', authenticate, validate(changePasswordSchema), authController.changePassword);
+
+/**
+ * POST /api/auth/forgot-password
+ * Public — request a password reset link by username or email
+ */
+router.post('/forgot-password', forgotPasswordLimiter, validate(forgotPasswordSchema), authController.forgotPassword);
+
+/**
+ * POST /api/auth/reset-password
+ * Public — set a new password using an emailed reset token
+ */
+router.post('/reset-password', validate(resetPasswordSchema), authController.resetPassword);
 
 /**
  * POST /api/auth/refresh-token

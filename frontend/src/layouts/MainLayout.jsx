@@ -28,9 +28,8 @@ import {
   BellOutlined,
   SearchOutlined,
   UserOutlined,
+  KeyOutlined,
   LogoutOutlined,
-  SunOutlined,
-  MoonOutlined,
   UploadOutlined,
   SettingOutlined,
   AuditOutlined,
@@ -40,6 +39,8 @@ import {
 
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
+import ThemeToggle from '../components/common/ThemeToggle';
+import ChangePasswordModal from '../components/common/ChangePasswordModal';
 // import NotificationBell from '../components/common/NotificationBell';
 
 const { Header, Content, Sider } = Layout;
@@ -103,7 +104,7 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark } = useTheme();
 
   /** Sidebar collapse state — persisted across reloads. */
   const [collapsed, setCollapsed] = useState(
@@ -116,13 +117,20 @@ export default function MainLayout() {
 
   const pathSegments = location.pathname.split('/').filter(Boolean);
 
-  /** User dropdown menu — only Logout (Reminder Settings lives in the sidebar). */
+  /** Self-service change-password modal (available to every role). */
+  const [changePwOpen, setChangePwOpen] = useState(false);
+
+  /** User dropdown menu (Reminder Settings lives in the sidebar). */
   const userMenuItems = [
+    { key: 'change-password', icon: <KeyOutlined />, label: 'Change Password' },
+    { type: 'divider' },
     { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true },
   ];
 
   const handleUserMenu = async ({ key }) => {
-    if (key === 'logout') {
+    if (key === 'change-password') {
+      setChangePwOpen(true);
+    } else if (key === 'logout') {
       await logout();
       navigate('/login');
     }
@@ -181,16 +189,23 @@ export default function MainLayout() {
 
   if (isAdminPath) {
     return (
-      <Layout style={{ minHeight: '100vh', background: '#f2f4f0' }}>
+      <Layout style={{ minHeight: '100vh', background: 'var(--admin-bg)' }}>
         <Header className="admin-topbar">
           {/* Left: Logo + Sep + Title cluster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <img
               src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
               alt="AAPNA"
-              style={{ height: 32, width: 85, objectFit: 'cover', objectPosition: 'left' }}
+              style={{
+                height: 32,
+                width: 85,
+                objectFit: 'cover',
+                objectPosition: 'left',
+                filter: isDark ? 'invert(1) brightness(2)' : 'none',
+                transition: 'filter 0.3s ease',
+              }}
             />
-            <div style={{ width: 1, height: 30, background: '#dde2d0' }} />
+            <div style={{ width: 1, height: 30, background: 'var(--border)' }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
               <div className="admin-brand-icon"><AdminPortalIcon /></div>
               <div style={{ lineHeight: 1.2 }}>
@@ -202,15 +217,16 @@ export default function MainLayout() {
                     {adminRoleLabel}
                   </span>
                 </div>
-                <span style={{ fontSize: 11, color: '#8b938a', fontWeight: 500 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>
                   Users · Access · Companies
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Right: Portal switch + user chip + Logout */}
+          {/* Right: Theme toggle + Portal switch + user chip + Logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ThemeToggle />
             <Button
               className="admin-top-btn"
               type="text"
@@ -219,12 +235,21 @@ export default function MainLayout() {
             >
               Recruitment Portal
             </Button>
-            <div className="admin-user-chip">
-              <Avatar size={26} style={{ background: 'var(--gradient-primary)', fontSize: 11, fontWeight: 700 }}>
-                {userInitials}
-              </Avatar>
-              <span>{user?.username || 'Admin'}</span>
-            </div>
+            <Dropdown
+              menu={{
+                items: [{ key: 'change-password', icon: <KeyOutlined />, label: 'Change Password' }],
+                onClick: () => setChangePwOpen(true),
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <div className="admin-user-chip" style={{ cursor: 'pointer' }}>
+                <Avatar size={26} style={{ background: 'var(--gradient-primary)', fontSize: 11, fontWeight: 700 }}>
+                  {userInitials}
+                </Avatar>
+                <span>{user?.username || 'Admin'}</span>
+              </div>
+            </Dropdown>
             <Button
               className="admin-top-btn admin-top-btn--logout"
               type="text"
@@ -238,13 +263,14 @@ export default function MainLayout() {
             </Button>
           </div>
         </Header>
-        <Content style={{ minHeight: 'calc(100vh - 64px)', background: '#f2f4f0' }}>
+        <Content style={{ minHeight: 'calc(100vh - 64px)', background: 'var(--admin-bg)' }}>
           {/* Keyed by path so the entrance animation replays on every navigation
               (a persistent wrapper would only animate on first mount). */}
           <div className="page-enter" key={location.pathname}>
             <Outlet />
           </div>
         </Content>
+        <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
       </Layout>
     );
   }
@@ -254,7 +280,7 @@ export default function MainLayout() {
       {/* ---- Left Sidebar Navigation ---- */}
       <Sider
         className="glass-sidebar"
-        theme="light"
+        theme={isDark ? 'dark' : 'light'}
         width={248}
         collapsedWidth={72}
         collapsible
@@ -355,8 +381,9 @@ export default function MainLayout() {
             {/* Company badge intentionally hidden for now (not required in the UI). */}
           </Space>
 
-          {/* Right: Admin Portal + Avatar */}
+          {/* Right: Theme toggle + Admin Portal + Avatar */}
           <Space size={12} align="center" style={{ flexShrink: 0 }}>
+            <ThemeToggle />
             {hasAdminAccess && (
               <Button
                 className="admin-top-btn"
@@ -401,6 +428,7 @@ export default function MainLayout() {
           </div>
         </Content>
       </Layout>
+      <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
     </Layout>
   );
 }

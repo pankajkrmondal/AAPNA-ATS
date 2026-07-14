@@ -565,7 +565,7 @@ export default function MRF() {
       title: 'ROLE',
       dataIndex: 'role',
       key: 'role',
-      render: (text) => <Text strong style={{ fontSize: 13, color: '#374151' }}>{text}</Text>,
+      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text}</Text>,
     },
     {
       title: 'MIN BUDGET',
@@ -654,7 +654,7 @@ export default function MRF() {
           <Row gutter={16}>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>First Name *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>First Name *</span>}
                 name="first_name"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -663,7 +663,7 @@ export default function MRF() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Last Name *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Last Name *</span>}
                 name="last_name"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -672,7 +672,7 @@ export default function MRF() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Email *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email *</span>}
                 name="email"
                 rules={[{ required: true, message: 'Required' }, { pattern: EMAIL_PATTERN, message: 'Please enter a valid Email' }]}
               >
@@ -684,7 +684,7 @@ export default function MRF() {
           <Row gutter={16}>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>CC Email (Keep Comma Separated)</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>CC Email (Keep Comma Separated)</span>}
                 name="cc_email"
                 rules={[{ validator: validateCcEmail }]}
               >
@@ -693,7 +693,7 @@ export default function MRF() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Role *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Role *</span>}
                 name="role"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -702,7 +702,7 @@ export default function MRF() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>JD Link *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>JD Link *</span>}
                 name="jd_doc_link"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -714,7 +714,7 @@ export default function MRF() {
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Budget Min (Annual CTC) *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Min (Annual CTC) *</span>}
                 name="budget_min"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -728,7 +728,7 @@ export default function MRF() {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Budget Max (Annual CTC) *</span>}
+                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Max (Annual CTC) *</span>}
                 name="budget_max"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -743,7 +743,7 @@ export default function MRF() {
           </Row>
 
           <Form.Item
-            label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: '#4b5563' }}>Email Body</span>}
+            label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email Body</span>}
             name="email_body_content"
           >
             <Input.TextArea rows={5} style={{ borderRadius: 8 }} placeholder={DEFAULT_EMAIL_BODY} />
@@ -756,8 +756,6 @@ export default function MRF() {
               icon={<SendOutlined />}
               loading={submitting}
               style={{
-                background: '#7a922e',
-                borderColor: '#7a922e',
                 height: 42,
                 borderRadius: 8,
                 fontWeight: 600,
@@ -804,7 +802,7 @@ export default function MRF() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#6b7561' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
               Records
             </span>
             <Input
@@ -864,10 +862,10 @@ export default function MRF() {
         title={
           selectedRecord && (
             <div style={{ paddingBottom: 10, borderBottom: '1px solid #f3f4f6' }}>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#1f2937' }}>
+              <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--text)' }}>
                 {selectedRecord.first_name} {selectedRecord.last_name} — {selectedRecord.role}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#6b7280', marginTop: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)', marginTop: 2 }}>
                 Submitted {formatSubmittedDate(selectedRecord.created_at)} &bull; ID #{selectedRecord.id}
               </div>
             </div>
@@ -882,7 +880,7 @@ export default function MRF() {
               <Button onClick={handleCancelEdit} style={{ borderRadius: 6, fontWeight: 600 }}>
                 Cancel
               </Button>
-              <Button type="primary" onClick={handleSaveAll} loading={updating} style={{ background: '#7a922e', borderColor: '#7a922e', borderRadius: 6, fontWeight: 600 }}>
+              <Button type="primary" onClick={handleSaveAll} loading={updating} style={{ borderRadius: 6, fontWeight: 600 }}>
                 Save Changes
               </Button>
             </Space>
@@ -902,14 +900,14 @@ export default function MRF() {
         {selectedRecord && (
           <div>
             {/* Section 1: Workflow Summary */}
-            <div style={{ background: '#f9fafb', padding: '16px 24px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#9ca3af', marginBottom: 12 }}>
+            <div style={{ background: 'var(--ink-4)', padding: '16px 24px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
                 Workflow Summary
               </div>
               <Row gutter={16}>
                 <Col span={12}>
                   <Space>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase' }}>MRF Raise Status:</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Raise Status:</span>
                     <Tag color={getWorkflowSummaryTags(selectedRecord).raise.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
                       {getWorkflowSummaryTags(selectedRecord).raise.label}
                     </Tag>
@@ -917,7 +915,7 @@ export default function MRF() {
                 </Col>
                 <Col span={12} style={{ textAlign: 'right' }}>
                   <Space>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase' }}>MRF Approval Status:</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Approval Status:</span>
                     <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
                       {getWorkflowSummaryTags(selectedRecord).approval.label}
                     </Tag>
@@ -939,7 +937,7 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>First Name</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>First Name</span>}
                     name="first_name"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -948,7 +946,7 @@ export default function MRF() {
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Last Name</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Last Name</span>}
                     name="last_name"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -957,7 +955,7 @@ export default function MRF() {
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Manager Email</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Manager Email</span>}
                     name="email"
                     rules={[{ required: true, message: 'Required' }, { type: 'email', message: 'Invalid email' }]}
                   >
@@ -966,7 +964,7 @@ export default function MRF() {
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Budget Min</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Min</span>}
                     name="budget_min"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -982,7 +980,7 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Budget Max</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Max</span>}
                     name="budget_max"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -995,7 +993,7 @@ export default function MRF() {
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>JD Resource</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>JD Resource</span>}
                     name="jd_doc_link"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -1010,7 +1008,7 @@ export default function MRF() {
                           display: 'inline-flex',
                           alignItems: 'center',
                           height: 32,
-                          background: '#f3f4f6',
+                          background: 'var(--ink-4)',
                           border: '1px solid #d1d5db',
                           borderRadius: 6,
                           padding: '0 12px',
@@ -1031,7 +1029,7 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={24}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Position Title</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Position Title</span>}
                     name="role"
                     rules={[{ required: true, message: 'Required' }]}
                   >
@@ -1043,7 +1041,7 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={12}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>MRF Raise Status</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>MRF Raise Status</span>}
                     name="mrfstatus"
                   >
                     <Select style={{ width: '100%', borderRadius: 6 }} disabled>
@@ -1055,7 +1053,7 @@ export default function MRF() {
                 </Col>
                 <Col span={12}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Form Submission Date</span>}
+                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Form Submission Date</span>}
                   >
                     <Input
                       value={selectedRecord.created_at ? new Date(selectedRecord.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
@@ -1083,7 +1081,7 @@ export default function MRF() {
                   <Form form={mainForm} layout="vertical" disabled={!isEditing}>
                     {MAIN_MRF_FIELD_GROUPS.map((group) => (
                       <div key={group.title} style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: '#9ca3af', margin: '4px 0 10px' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--text-3)', margin: '4px 0 10px' }}>
                           {group.title}
                         </div>
                         <Row gutter={16}>
@@ -1098,7 +1096,7 @@ export default function MRF() {
                               {name === 'date_of_request' ? (
                                 // Read-only display only — never bound to mainForm, so it can
                                 // never be touched/submitted (submission dates stay non-editable).
-                                <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}>
+                                <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>{label}</span>}>
                                   <Input
                                     value={mainMrf.date_of_request ? new Date(mainMrf.date_of_request).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
                                     readOnly
@@ -1108,7 +1106,7 @@ export default function MRF() {
                                 </Form.Item>
                               ) : (
                                 <Form.Item
-                                  label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>{label}</span>}
+                                  label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>{label}</span>}
                                   name={name}
                                 >
                                   {renderMainMrfField(name, mainMrf?.[name])}
@@ -1123,12 +1121,12 @@ export default function MRF() {
 
                     {mainMrf.parsed_jd_json && (
                       <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px dashed #e5e7eb' }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: '#9ca3af', margin: '4px 0 10px' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--text-3)', margin: '4px 0 10px' }}>
                           AI-Parsed JD Summary
                         </div>
                         <Row gutter={16}>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Experience Range (AI)</span>}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Experience Range (AI)</span>}>
                               <Input
                                 readOnly
                                 disabled
@@ -1138,22 +1136,22 @@ export default function MRF() {
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Education (AI)</span>}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Education (AI)</span>}>
                               <Input readOnly disabled value={mainMrf.parsed_jd_json.education || '—'} style={{ borderRadius: 6 }} />
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Mandatory Skills (AI)</span>}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Mandatory Skills (AI)</span>}>
                               <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.mandatory_skills || '—'} style={{ borderRadius: 6 }} />
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Good to Have Skills (AI)</span>}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Good to Have Skills (AI)</span>}>
                               <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.good_to_have_skills || '—'} style={{ borderRadius: 6 }} />
                             </Form.Item>
                           </Col>
                           <Col span={24}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: '#4b5563' }}>Roles & Responsibilities (AI)</span>}>
+                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Roles & Responsibilities (AI)</span>}>
                               <TextArea readOnly disabled rows={3} value={mainMrf.parsed_jd_json.roles_and_responsibilities || '—'} style={{ borderRadius: 6 }} />
                             </Form.Item>
                           </Col>

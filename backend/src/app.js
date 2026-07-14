@@ -9,9 +9,16 @@ import config from './config/index.js';
 import logger, { morganStream } from './config/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import AppError from './utils/AppError.js';
+import friendlyRateLimitHandler from './utils/rateLimitHandler.js';
 import apiRouter from './routes/index.js';
 
 const app = express();
+
+// Behind a reverse proxy, derive the client IP from X-Forwarded-For so the
+// rate limiter keys on real clients instead of the proxy's IP.
+if (config.trustProxy) {
+  app.set('trust proxy', 1);
+}
 
 // Configure global BigInt JSON serialization safety
 app.set('json replacer', (key, value) => {
@@ -49,15 +56,25 @@ app.use(express.urlencoded({ extended: true, limit: config.upload.maxSize }));
 app.use(compression());
 
 // ── Rate limiting ─────────────────────────────────────────────────────
+// Two tiers: a strict brute-force limiter on /api/auth (only FAILED attempts
+// count) and a generous abuse-protection limiter on the rest of the API.
+const authLimiter = rateLimit({
+  windowMs: config.rateLimit.authWindowMs,
+  max: config.rateLimit.authMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: friendlyRateLimitHandler('Too many failed sign-in attempts. For your security, sign-in is temporarily paused.'),
+});
+app.use('/api/auth', authLimiter);
+
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    status: 'error',
-    message: 'Too many requests from this IP, please try again later.',
-  },
+  skip: (req) => req.path === '/health',
+  handler: friendlyRateLimitHandler("You've made too many requests in a short time."),
 });
 app.use('/api', limiter);
 

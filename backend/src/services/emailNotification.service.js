@@ -1116,5 +1116,138 @@ export async function sendCredentialEmail({ user, plainTextPassword, isNewUser =
   }
 }
 
+/**
+ * Sends a password-reset link to the user (forgot-password flow).
+ * The link is single-use and expires in 30 minutes. Never throws.
+ */
+export async function sendPasswordResetEmail({ user, resetUrl }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+
+    // Reset links must always reach the account owner (NEVER_REDIRECT flow).
+    const { to: toEmail } = resolveRecipients('passwordReset', user.email);
+
+    if (!toEmail) {
+      logger.warn(`Skipping password reset email: No recipient email address available.`);
+      return false;
+    }
+
+    const subject = 'Reset Your AAPNA ATS Password';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #e8ede0;
+      border-radius: 5px;
+    }
+    .header {
+      background-color: #f7f9f6;
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid #7cb342;
+      margin-bottom: 20px;
+    }
+    .header h2 {
+      margin: 0;
+      color: #33691e;
+    }
+    .reset-box {
+      background-color: #f1f8e9;
+      border: 1px solid #c5e1a5;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .reset-button {
+      display: inline-block;
+      background-color: #558b2f;
+      color: #ffffff !important;
+      text-decoration: none;
+      font-weight: bold;
+      padding: 12px 28px;
+      border-radius: 4px;
+    }
+    .reset-link {
+      word-break: break-all;
+      font-size: 12px;
+      color: #555;
+      margin-top: 15px;
+    }
+    .footer {
+      font-size: 12px;
+      color: #777;
+      margin-top: 30px;
+      border-top: 1px solid #e8ede0;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>AAPNA Recruitment Process Automation</h2>
+    </div>
+    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
+    <p>We received a request to reset the password for your AAPNA ATS account. Click the button below to choose a new password:</p>
+
+    <div class="reset-box">
+      <a class="reset-button" href="${resetUrl}">Reset Password</a>
+      <div class="reset-link">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <a href="${resetUrl}">${resetUrl}</a>
+      </div>
+    </div>
+
+    <p>This link expires in <strong>30 minutes</strong> and can only be used once.</p>
+    <p>If you did not request a password reset, you can safely ignore this email — your password will not change.</p>
+
+    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
+
+    <div class="footer">
+      This is an automated notification. Please do not reply directly to this email.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    // 1) Send email
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    // 2) Log to rpa_email_log
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'password_reset_request',
+        recipient_email: toEmail,
+        recipient_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User',
+        subject,
+        body_html: html,
+        reference_id: user.id ? Number(user.id) : null,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`Password reset email sent & logged for user ID ${user.id}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send password reset email for user ${user?.id || user?.email}: ${err.message}`);
+    return false;
+  }
+}
+
 
 

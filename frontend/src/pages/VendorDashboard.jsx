@@ -29,17 +29,18 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
+import useTheme from '../hooks/useTheme';
 import vendorService from '../services/vendorService';
 
 const { Title, Text } = Typography;
 
 /** Shared card chrome — matches the Vendor Upload (VendorPortal) screen. */
 const SECTION_CARD_STYLE = {
-  background: '#ffffff',
-  border: '1px solid rgba(0,0,0,0.07)',
+  background: 'var(--colorBgContainer)',
+  border: '1px solid var(--border-light)',
   borderRadius: 12,
   marginBottom: 24,
-  boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
+  boxShadow: 'var(--shadow-sm)',
   overflow: 'hidden',
 };
 
@@ -185,11 +186,12 @@ const PIPELINE_STAGES = [
   { key: 'inProcess', label: 'In Process', color: '#7a922e', icon: <SyncOutlined /> },
   { key: 'onHold', label: 'On Hold', color: '#b6883a', icon: <PauseCircleOutlined /> },
   { key: 'rejected', label: 'Rejected / Dropped', color: '#c0392b', icon: <CloseCircleOutlined /> },
-  { key: 'pending', label: 'Awaiting Screening', color: '#8a9270', icon: <ClockCircleOutlined /> },
+  { key: 'pending', label: 'Awaiting Screening', color: 'var(--text-3)', icon: <ClockCircleOutlined /> },
 ];
 
 export default function VendorDashboard() {
   const { user } = useAuth();
+  const { isDark } = useTheme();
   const role = (user?.role || '').toLowerCase();
   // Internal staff review a chosen vendor; vendors view their own submissions.
   const isStaff = ['admin', 'superadmin', 'recruiter'].includes(role);
@@ -369,10 +371,10 @@ export default function VendorDashboard() {
                       type="dashboard"
                       percent={selectionRate}
                       strokeColor="#4a7c59"
-                      trailColor="rgba(0,0,0,0.06)"
+                      trailColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
                       size={130}
                       format={(p) => (
-                        <span style={{ fontSize: 24, fontWeight: 700, color: '#3f3f3f' }}>{p}%</span>
+                        <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{p}%</span>
                       )}
                     />
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginTop: 6 }}>

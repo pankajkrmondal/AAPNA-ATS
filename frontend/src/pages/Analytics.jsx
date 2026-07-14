@@ -788,8 +788,8 @@ export default function Analytics() {
                 icon={<EyeOutlined style={{ color: '#27ae60' }} />}
                 onClick={() => setViewingCandidate(record)}
                 style={{
-                  borderColor: '#b8cc6e',
-                  backgroundColor: '#f9fbe7',
+                  borderColor: 'var(--gold-light)',
+                  backgroundColor: 'var(--gold-bg)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -874,8 +874,8 @@ export default function Analytics() {
                 setViewingCandidate(candidateObj || record);
               }}
               style={{
-                borderColor: '#b8cc6e',
-                backgroundColor: '#f9fbe7',
+                borderColor: 'var(--gold-light)',
+                backgroundColor: 'var(--gold-bg)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1355,7 +1355,7 @@ export default function Analytics() {
                 onClick={() => setCancellingPipeline(null)}
                 style={{
                   borderRadius: '8px',
-                  backgroundColor: '#f5f5f5',
+                  backgroundColor: 'var(--ink-3)',
                   border: '1px solid var(--border)',
                   color: 'var(--text-2)',
                   fontWeight: '600',
