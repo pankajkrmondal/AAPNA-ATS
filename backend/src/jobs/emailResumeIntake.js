@@ -58,8 +58,122 @@ async function setWatermark(iso) {
 }
 
 /**
- * One poll cycle: fetch messages-with-attachments since the watermark and
- * route their resume attachments through the parse pipeline.
+ * Process a batch of normalized inbox messages (already fetched): download
+ * resume attachments and feed them into the parse pipeline. Idempotent per
+ * message via the hashed execution id, so re-delivery (poller restarts, delta
+ * re-emits) is safe. Shared by the consolidated mailbox poller and the legacy
+ * runEmailResumeIntake watermark path.
+ * @param {Object[]} messages - normalized messages (see outlookReader.normalizeMessage)
+ */
+export async function processIntakeMessages(messages) {
+  const withAttachments = (messages || []).filter((m) => m.hasAttachments);
+  if (withAttachments.length === 0) return;
+
+  const uploadDir = path.resolve(config.upload.dir);
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+  for (const msg of withAttachments) {
+    // Deterministic execution id (hashed Graph id) keeps us under the
+    // execution_id VarChar(100) limit while staying stable across re-polls.
+    const executionId = executionIdFor(msg.graphMessageId);
+
+    // Idempotency: skip a message we've already turned into an upload batch.
+    const seen = await prisma.rpa_upload_log.findFirst({
+      where: { execution_id: executionId },
+      select: { id: true },
+    });
+    if (seen) continue;
+
+    let attachments;
+    try {
+      attachments = await downloadAttachments(msg.graphMessageId);
+    } catch (err) {
+      logger.error(`[Email Intake] Failed to download attachments for ${msg.graphMessageId}: ${err.message}`);
+      continue;
+    }
+
+    // Keep only resume-like attachments the parser supports.
+    const resumeAttachments = attachments.filter((a) =>
+      RESUME_EXTS.includes(path.extname(a.name).toLowerCase())
+    );
+    if (resumeAttachments.length === 0) continue;
+
+    // Write attachments to disk as multer-like file descriptors.
+    const flatFiles = [];
+    for (const att of resumeAttachments) {
+      const ext = path.extname(att.name);
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const filename = `email-intake-${uniqueSuffix}${ext}`;
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, Buffer.from(att.contentBytes, 'base64'));
+      flatFiles.push({
+        fieldname: 'resumes',
+        originalname: att.name,
+        mimetype: att.contentType,
+        destination: uploadDir,
+        filename,
+        path: filePath,
+        size: fs.statSync(filePath).size,
+      });
+    }
+
+    try {
+      // Mirror the controller's batch scaffolding that startBackgroundParsing expects.
+      await prisma.rpa_upload_batch_summary.create({
+        data: {
+          execution_id: executionId,
+          uploaded_by: 'email_intake',
+          uploaded_at: new Date(),
+          total_count: flatFiles.length,
+          success_count: 0,
+          failed_count: 0,
+          duplicate_count: 0,
+          update_count: 0,
+          details: {
+            source: 'email_intake',
+            from_email: msg.fromEmail,
+            subject: msg.subject,
+            graph_message_id: msg.graphMessageId,
+            files: flatFiles.map((f) => ({ name: f.originalname, size: f.size })),
+          },
+        },
+      });
+
+      await Promise.all(
+        flatFiles.map((f) =>
+          prisma.rpa_upload_log.create({
+            data: {
+              execution_id: executionId,
+              file_name: f.originalname,
+              status: 'pending',
+              source: 'email_intake',
+              processed_at: new Date(),
+            },
+          })
+        )
+      );
+
+      // Synthetic system user — the sender mailbox acts as the uploader identity.
+      const systemUser = {
+        email: msg.fromEmail || config.microsoft.defaultSender,
+        username: 'email_intake',
+        first_name: msg.fromName || 'Email',
+        last_name: 'Intake',
+      };
+
+      await startBackgroundParsing(executionId, flatFiles, systemUser, 'email_intake');
+      logger.info(`[Email Intake] Queued ${flatFiles.length} resume(s) from "${msg.fromEmail}" (batch ${executionId}).`);
+    } catch (err) {
+      logger.error(`[Email Intake] Failed to queue batch for ${msg.graphMessageId}: ${err.message}`);
+    }
+  }
+}
+
+/**
+ * One poll cycle (legacy timestamp-watermark path, kept for manual/scratch
+ * runs): fetch messages-with-attachments since the watermark and route their
+ * resume attachments through the parse pipeline. Scheduled polling now runs
+ * through jobs/mailboxPoller.js (delta queries) instead.
  */
 export async function runEmailResumeIntake() {
   if (running) {
@@ -76,110 +190,13 @@ export async function runEmailResumeIntake() {
     }
     logger.info(`[Email Intake] ${messages.length} new message(s) with attachments since ${sinceIso}`);
 
-    const uploadDir = path.resolve(config.upload.dir);
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
+    // Watermark always advances, even for messages whose attachments we skip.
     let newestReceived = sinceIso;
-
     for (const msg of messages) {
-      // Track the newest receivedDateTime so the watermark always advances,
-      // even for messages whose attachments we skip.
       if (msg.receivedAt > newestReceived) newestReceived = msg.receivedAt;
-
-      // Deterministic execution id (hashed Graph id) keeps us under the
-      // execution_id VarChar(100) limit while staying stable across re-polls.
-      const executionId = executionIdFor(msg.graphMessageId);
-
-      // Idempotency: skip a message we've already turned into an upload batch.
-      const seen = await prisma.rpa_upload_log.findFirst({
-        where: { execution_id: executionId },
-        select: { id: true },
-      });
-      if (seen) continue;
-
-      let attachments;
-      try {
-        attachments = await downloadAttachments(msg.graphMessageId);
-      } catch (err) {
-        logger.error(`[Email Intake] Failed to download attachments for ${msg.graphMessageId}: ${err.message}`);
-        continue;
-      }
-
-      // Keep only resume-like attachments the parser supports.
-      const resumeAttachments = attachments.filter((a) =>
-        RESUME_EXTS.includes(path.extname(a.name).toLowerCase())
-      );
-      if (resumeAttachments.length === 0) continue;
-
-      // Write attachments to disk as multer-like file descriptors.
-      const flatFiles = [];
-      for (const att of resumeAttachments) {
-        const ext = path.extname(att.name);
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const filename = `email-intake-${uniqueSuffix}${ext}`;
-        const filePath = path.join(uploadDir, filename);
-        fs.writeFileSync(filePath, Buffer.from(att.contentBytes, 'base64'));
-        flatFiles.push({
-          fieldname: 'resumes',
-          originalname: att.name,
-          mimetype: att.contentType,
-          destination: uploadDir,
-          filename,
-          path: filePath,
-          size: fs.statSync(filePath).size,
-        });
-      }
-
-      try {
-        // Mirror the controller's batch scaffolding that startBackgroundParsing expects.
-        await prisma.rpa_upload_batch_summary.create({
-          data: {
-            execution_id: executionId,
-            uploaded_by: 'email_intake',
-            uploaded_at: new Date(),
-            total_count: flatFiles.length,
-            success_count: 0,
-            failed_count: 0,
-            duplicate_count: 0,
-            update_count: 0,
-            details: {
-              source: 'email_intake',
-              from_email: msg.fromEmail,
-              subject: msg.subject,
-              graph_message_id: msg.graphMessageId,
-              files: flatFiles.map((f) => ({ name: f.originalname, size: f.size })),
-            },
-          },
-        });
-
-        await Promise.all(
-          flatFiles.map((f) =>
-            prisma.rpa_upload_log.create({
-              data: {
-                execution_id: executionId,
-                file_name: f.originalname,
-                status: 'pending',
-                source: 'email_intake',
-                processed_at: new Date(),
-              },
-            })
-          )
-        );
-
-        // Synthetic system user — the sender mailbox acts as the uploader identity.
-        const systemUser = {
-          email: msg.fromEmail || config.microsoft.defaultSender,
-          username: 'email_intake',
-          first_name: msg.fromName || 'Email',
-          last_name: 'Intake',
-        };
-
-        await startBackgroundParsing(executionId, flatFiles, systemUser, 'email_intake');
-        logger.info(`[Email Intake] Queued ${flatFiles.length} resume(s) from "${msg.fromEmail}" (batch ${executionId}).`);
-      } catch (err) {
-        logger.error(`[Email Intake] Failed to queue batch for ${msg.graphMessageId}: ${err.message}`);
-      }
     }
+
+    await processIntakeMessages(messages);
 
     await setWatermark(newestReceived);
   } catch (err) {

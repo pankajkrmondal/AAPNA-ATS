@@ -1,7 +1,7 @@
 # Proposal — Improving the Outlook Integration
 
 **Date:** 2026-07-03
-**Status:** Proposal (no code changes yet)
+**Status:** Mostly implemented 2026-07-08 — P1 (real Graph conversation ids via draft→send, with legacy sendMail fallback), P4 (`responded_at` auto-set on reply), failed-send persistence (`rpa_email_log.status`/`error_message`), **P2 (open-tracking pixel — `GET /api/track/open/:token`, requires `PUBLIC_BASE_URL`)** and **P3 (reply from ATS — `POST /api/screening/outlook/reply` + reply box in the Analytics conversation modal)** are live. See `docs/changelog/CHANGES-outlook-phase1-quickwins.md` and `docs/changelog/CHANGES-outlook-open-tracking-and-reply.md`. **P5-A (delta-query sync via the consolidated `jobs/mailboxPoller.js`), P6.1 (poller consolidation), P6.3 (conversation-based candidate-mapping fallback), Graph 429 handling, a delivery-monitoring panel (`GET /api/email/monitoring` + Email Management UI), and first unit tests landed 2026-07-09 (see `docs/changelog/CHANGES-outlook-delta-sync-and-monitoring.md`). Still open: P5-B webhooks (only if sub-minute latency is needed) and P6.2 `rpa_outlook_accounts` redesign.** Note: prod DB still needs `ALTER TABLE rpa_email_log ADD COLUMN status TEXT NOT NULL DEFAULT 'sent', ADD COLUMN error_message TEXT;` at deploy (applied to dev/staging DB already).
 **Companion doc:** `docs/test-plans/phase3-completed-items-test-plan.md`
 
 ## Current state (summary)

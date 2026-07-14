@@ -10,6 +10,7 @@ import settingsRoutes from './settings.routes.js';
 import hrUploadRoutes from './hrUpload.routes.js';
 import screeningRoutes from './screening.routes.js';
 import emailTemplateRoutes from './emailTemplate.routes.js';
+import trackingRoutes from './tracking.routes.js';
 
 const router = Router();
 
@@ -23,6 +24,8 @@ router.use('/admin/companies', companyRoutes);
 router.use('/admin', adminRoutes);
 router.use('/hr-upload', hrUploadRoutes);
 router.use('/screening', screeningRoutes);
+// Public email open-tracking pixel (no auth — see tracking.routes.js).
+router.use('/track', trackingRoutes);
 
 // ── Placeholder routes (to be implemented in later phases) ────────────
 // Each placeholder returns a friendly "coming soon" message so the

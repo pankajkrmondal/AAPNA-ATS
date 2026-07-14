@@ -27,6 +27,16 @@ const emailTemplateService = {
   updateEmailTemplate(id, payload) {
     return api.put(`/email/templates/${id}`, payload);
   },
+
+  /**
+   * Get email delivery monitoring data (send/tracking stats, recent failures,
+   * mailbox poller status).
+   * @param {number} [days=30] - reporting window in days
+   * @returns {Promise}
+   */
+  getEmailMonitoring(days = 30) {
+    return api.get('/email/monitoring', { params: { days } });
+  },
 };
 
 export default emailTemplateService;

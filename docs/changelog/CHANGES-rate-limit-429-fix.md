@@ -54,7 +54,7 @@ parentheses; no env change is needed for the fix, the defaults ARE the fix):
   (both are served behind a reverse proxy on their HTTPS domains) and documented
   the tuning vars as comments.
 - `backend/.env.development`: commented docs only — no behavior change locally.
-- `docs/BACKEND.md`: rate-limiter section rewritten for the two-tier scheme.
+- `docs/reference/BACKEND.md`: rate-limiter section rewritten for the two-tier scheme.
 
 ## 4. Verification performed
 

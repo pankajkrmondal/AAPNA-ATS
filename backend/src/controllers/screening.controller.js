@@ -131,6 +131,23 @@ export const getOutlookConversations = catchAsync(async (req, res) => {
 });
 
 /**
+ * POST /api/screening/outlook/reply
+ */
+export const replyToOutlookMessage = catchAsync(async (req, res) => {
+  const { message_id, body_html } = req.body;
+  const messageId = parseInt(message_id, 10);
+  if (isNaN(messageId)) {
+    throw new AppError('A valid message_id is required.', 400);
+  }
+  if (typeof body_html !== 'string' || body_html.trim() === '') {
+    throw new AppError('Reply body is required.', 400);
+  }
+
+  const result = await screeningService.replyToOutlookMessage(messageId, body_html.trim(), req.user);
+  return success(res, result, 'Reply sent successfully');
+});
+
+/**
  * POST /api/screening/analytics/status
  */
 export const updateCandidateStatus = catchAsync(async (req, res) => {

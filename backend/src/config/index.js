@@ -49,6 +49,14 @@ const config = {
   /** Server port */
   port: parseInt(env('PORT', '5000'), 10),
 
+  /**
+   * Public base URL of THIS backend (no trailing slash), used to build absolute
+   * URLs that external clients must reach — currently the email open-tracking
+   * pixel (`/api/track/open/:token`). Must be internet-reachable in staging/prod
+   * for pixels to load. When empty, pixel injection is skipped entirely.
+   */
+  publicBaseUrl: env('PUBLIC_BASE_URL', '').replace(/\/+$/, ''),
+
   /** Database */
   database: {
     url: env('DATABASE_URL', '', true),
@@ -140,6 +148,16 @@ const config = {
     inboundSync: {
       enabled: env('INBOUND_SYNC_ENABLED', 'false') === 'true',
       cron: env('INBOUND_SYNC_CRON', '*/5 * * * *'),
+    },
+
+    /**
+     * Consolidated mailbox poller (jobs/mailboxPoller.js): one Graph DELTA
+     * fetch per tick fanned out to intake + inbound sync (their enable flags
+     * above still gate each consumer). Delta queries are cheap and exact, so
+     * this can safely be tightened to e.g. every minute.
+     */
+    mailboxSync: {
+      cron: env('MAILBOX_SYNC_CRON', '*/5 * * * *'),
     },
   },
 

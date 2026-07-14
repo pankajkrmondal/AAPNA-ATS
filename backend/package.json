@@ -25,6 +25,7 @@
     "zeko:results:prod": "cross-env NODE_ENV=production node scratch/run_zeko_sync.js results",
     "queue:worker": "node src/workers/resumeWorker.js",
     "test": "jest --passWithNoTests",
+    "test:unit": "node --test \"src/tests/**/*.test.js\"",
     "test:watch": "jest --watch",
     "lint": "eslint src/"
   },

@@ -39,7 +39,7 @@ Each skill is classified into a **status**:
 Card and drawer show an explicit line for the key case:
 > ⓘ **Found in resume but not in declared skills:** Python (×4), …
 
-### Backend — [screening.service.js](../backend/src/services/screening.service.js)
+### Backend — [screening.service.js](../../backend/src/services/screening.service.js)
 Helpers added after `scoreJDMatch`:
 - `splitSkillPhrases(skillsStr)` — splits on `,`/`;`/newline/`/` while keeping multi-word phrases ("Machine Learning") intact.
 - `parseDeclaredSkills(top5)` — parses `Top5KeySkills` as JS array, Postgres `{..}` literal, or comma string.
@@ -55,7 +55,7 @@ Attached per candidate in `searchRoleCandidates`:
 > **Cache note:** results are Redis-cached under `screening:role:${mrfId}`; the field is computed before
 > caching, so already-cached roles won't show it until the key expires/refreshes.
 
-### Frontend — [CandidateScreening.jsx](../frontend/src/pages/CandidateScreening.jsx)
+### Frontend — [CandidateScreening.jsx](../../frontend/src/pages/CandidateScreening.jsx)
 - `JD_SKILL_STATUS` map — color/background/border + `explain(skill)` tooltip per status.
 - **`<JdSkillMatch signals variant label />`** has two presentations:
   - `variant="card"` (card) — compact **match meter + present-only chips** (calm, premium); no "missing" spam.
@@ -63,15 +63,15 @@ Attached per candidate in `searchRoleCandidates`:
     explicit "found in resume but not in declared skills" note.
 - The generic "Resume Signals" strip remains as a fallback when `jdSkillSignals` is absent (filter-only search).
 - Styling uses the scoped `.cand-*` / `.skill-chip` / `.match-meter` classes in
-  [theme/index.css](../frontend/src/theme/index.css) (see the 2026-06-30 UI refresh in
-  [CHANGELOG.md](./CHANGELOG.md)).
+  [theme/index.css](../../frontend/src/theme/index.css) (see the 2026-06-30 UI refresh in
+  [CHANGELOG.md](../CHANGELOG.md)).
 
 ### Known trade-off (accepted)
 Matching reuses the pre-extracted `resume_technical_terms` (max ~15, biased toward technical tools) rather
 than re-scanning `resume_full_text`. A JD skill the extractor didn't capture (e.g. "Marketing" on a
 non-technical JD) won't have a count — it falls back to the declared-skills check or shows "missing". If too
 limiting, the follow-up is to count JD skills directly against `resume_full_text` (the word-boundary counter
-already exists in [hrUpload.service.js](../backend/src/services/hrUpload.service.js#L1181)).
+already exists in [hrUpload.service.js](../../backend/src/services/hrUpload.service.js#L1181)).
 
 ---
 
@@ -81,7 +81,7 @@ already exists in [hrUpload.service.js](../backend/src/services/hrUpload.service
 Applies the same cross-referencing to the **Keyword Filtering** tab: the searched term(s) are matched against
 the candidate's declared skills + resume signals and shown with the same status tags. Display-only.
 
-### Backend — [searchKeywordCandidates](../backend/src/services/screening.service.js#L1040)
+### Backend — [searchKeywordCandidates](../../backend/src/services/screening.service.js#L1040)
 In the final `scoredCandidates.map` return, when a searched term is present, attach:
 ```js
 const searchedSkillsStr = [fKeyword, fDesignation].filter(Boolean).join(', ');
@@ -89,7 +89,7 @@ jdSkillSignals: buildJdSkillSignals(c, searchedSkillsStr, '')  // omitted entire
 ```
 Reuses the same `buildJdSkillSignals` helper from feature 1.
 
-### Frontend — [CandidateScreening.jsx](../frontend/src/pages/CandidateScreening.jsx)
+### Frontend — [CandidateScreening.jsx](../../frontend/src/pages/CandidateScreening.jsx)
 - `<JdSkillMatch>` gained a `label` prop (default `"Mandatory JD Skills"`).
 - In keyword mode (`activeTab === 'keyword'`), the card/drawer pass `label="Searched Skills"` and the drawer
   section title reads "Searched Skill Match".
@@ -103,7 +103,7 @@ Reuses the same `buildJdSkillSignals` helper from feature 1.
 Both endpoints return a **bounded** set (JD: post-filter top set; keyword: vector `LIMIT 50`, pure-filter
 `take: 200`), so client-side paging is lowest-risk — no endpoint changes, no Redis cache-key impact.
 
-### Frontend — [CandidateScreening.jsx](../frontend/src/pages/CandidateScreening.jsx)
+### Frontend — [CandidateScreening.jsx](../../frontend/src/pages/CandidateScreening.jsx)
 - State: `currentPage` (default 1), `pageSize` (default 10).
 - `setCurrentPage(1)` added at every list-reset point (JD search, keyword search, clear, tab switch).
 - The card list maps `candidates.slice((currentPage-1)*pageSize, currentPage*pageSize)`.
@@ -128,20 +128,20 @@ Server-side pagination (`page`/`pageSize` through routes → controller → serv
   candidates (bypassing the backend Redis cache). The Keyword tab's Refresh re-runs the active search.
 
 ### Frontend
-- New hooks [useScreeningData.js](../frontend/src/hooks/useScreeningData.js): `useApprovedRoles()`
+- New hooks [useScreeningData.js](../../frontend/src/hooks/useScreeningData.js): `useApprovedRoles()`
   (`['screening','roles']`) and `useRoleCandidates(roleId, enabled)` (`['screening','roleCandidates', roleId]`),
   both `staleTime: Infinity` (no auto-refetch; reloads are explicit).
-- App-load prefetch in `AppShell` ([App.jsx](../frontend/src/App.jsx)): `queryClient.prefetchQuery` for roles
+- App-load prefetch in `AppShell` ([App.jsx](../../frontend/src/App.jsx)): `queryClient.prefetchQuery` for roles
   once authenticated, **gated** on the same access rule as the route (admins bypass; others need the
   `candidate_screening` module) to avoid wasted calls.
-- [CandidateScreening.jsx](../frontend/src/pages/CandidateScreening.jsx): roles + candidates sourced from the
+- [CandidateScreening.jsx](../../frontend/src/pages/CandidateScreening.jsx): roles + candidates sourced from the
   hooks; a sync effect feeds the existing render state (candidates/summary/roleDetails + pagination); `selectedRoleId`
   and `activeTab` persisted in `localStorage`; the cosmetic "pre-loading" progress bar was removed.
 - Refresh writes a cache-bypassed (`force`) result via `queryClient.setQueryData`; the shortlist auto-refresh
   uses the same force-reload helper.
 
 ### Backend
-- [searchRoleCandidates](../backend/src/services/screening.service.js) takes a `force` flag that **skips the
+- [searchRoleCandidates](../../backend/src/services/screening.service.js) takes a `force` flag that **skips the
   Redis read** (still recomputes + overwrites cache). Threaded via the controller (`?force=1`) and the
   frontend service `searchRoleCandidates(mrfId, { force })`. Default false → existing cached fast-path unchanged.
 

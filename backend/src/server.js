@@ -7,8 +7,7 @@ import { disconnectRedis } from './config/redis.js';
 import { initializeSocket } from './socket/index.js';
 import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
-import { startEmailResumeIntakeJob, stopEmailResumeIntakeJob } from './jobs/emailResumeIntake.js';
-import { startInboundEmailSyncJob, stopInboundEmailSyncJob } from './jobs/inboundEmailSync.js';
+import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
@@ -34,9 +33,10 @@ async function startServer() {
     startSessionCleanupJob();
     await startReminderSchedulerJob();
 
-    // Outlook mailbox pollers (replace n8n "Outlook Trigger2" + "WF2"); self-gated by config flags
-    startEmailResumeIntakeJob();
-    startInboundEmailSyncJob();
+    // Consolidated Outlook mailbox poller — one delta fetch per tick fanned out
+    // to resume intake + inbound sync (replaces n8n "Outlook Trigger2" + "WF2");
+    // self-gated by EMAIL_INTAKE_ENABLED / INBOUND_SYNC_ENABLED.
+    startMailboxPollerJob();
 
     // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
     startZekoSchedulerJob();
@@ -70,8 +70,7 @@ async function gracefulShutdown(signal) {
 
   // Stop cron schedulers
   stopReminderSchedulerJob();
-  stopEmailResumeIntakeJob();
-  stopInboundEmailSyncJob();
+  stopMailboxPollerJob();
   stopZekoSchedulerJob();
 
   // Stop accepting new connections

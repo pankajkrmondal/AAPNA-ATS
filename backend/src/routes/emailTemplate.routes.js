@@ -11,4 +11,7 @@ router.get('/templates', emailTemplateController.getEmailTemplates);
 router.get('/templates/:id', emailTemplateController.getEmailTemplateById);
 router.put('/templates/:id', emailTemplateController.updateEmailTemplate);
 
+// Delivery monitoring (send/tracking stats, recent failures, poller status)
+router.get('/monitoring', emailTemplateController.getEmailMonitoring);
+
 export default router;

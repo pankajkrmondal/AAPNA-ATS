@@ -80,6 +80,10 @@ const DEFAULTS = {
   rejection: { to: '', cc: '', dynamic: true },
   // Screening status -> On Hold notification to candidate. Prod -> candidate.
   onHold: { to: '', cc: '', dynamic: true },
+  // Recruiter's manual reply from the ATS conversation view. Prod -> the
+  // original counterpart (candidate); non-prod -> test inbox like every other
+  // candidate-facing flow.
+  manualReply: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */

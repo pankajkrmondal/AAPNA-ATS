@@ -1,9 +1,9 @@
 # Role Rules
 
 One page per role: what each role can and cannot do, as currently enforced.
-Enforcement lives server-side in [`admin.controller.js`](../backend/src/controllers/admin.controller.js)
-(guards built on `outranks` / `isSuperadmin` from [`config/roles.js`](../backend/src/config/roles.js))
-and is mirrored in the Admin Portal UI ([`AdminDashboard.jsx`](../frontend/src/pages/AdminDashboard.jsx)).
+Enforcement lives server-side in [`admin.controller.js`](../../backend/src/controllers/admin.controller.js)
+(guards built on `outranks` / `isSuperadmin` from [`config/roles.js`](../../backend/src/config/roles.js))
+and is mirrored in the Admin Portal UI ([`AdminDashboard.jsx`](../../frontend/src/pages/AdminDashboard.jsx)).
 See [ADMIN_ACCESS_CONTROL.md](./ADMIN_ACCESS_CONTROL.md) for the multi-tenancy model and endpoint map.
 
 **Role hierarchy** (`ROLE_RANK`): `superadmin (40) > admin (30) > recruiter / hr (20) > vendor (10)`.
@@ -17,7 +17,7 @@ rank**. Equal ranks cannot act on each other — with one deliberate exception f
 - Nobody can **delete their own account**.
 - Credential / password-change emails always go to the **affected user's own inbox**, in every
   environment (`userCredentialUpdate` is in `NEVER_REDIRECT` — see
-  [`config/emailRecipients.js`](../backend/src/config/emailRecipients.js)).
+  [`config/emailRecipients.js`](../../backend/src/config/emailRecipients.js)).
 
 ---
 

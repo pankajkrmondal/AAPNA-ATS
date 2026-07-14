@@ -10,12 +10,12 @@ candidate database. It shares the **same parsing engine** as the Vendor flow (`h
 the durable job table, sockets, and the duplicate review queue all behave like the Vendor portal.
 
 Source of truth in code:
-- [`controllers/hrUpload.controller.js`](../backend/src/controllers/hrUpload.controller.js) — upload, jobs feed, reprocess, duplicates search/merge/delete
-- [`routes/hrUpload.routes.js`](../backend/src/routes/hrUpload.routes.js) — routes & guards (`checkModuleAccess('hr_manual_upload')`)
-- [`services/hrUpload.service.js`](../backend/src/services/hrUpload.service.js) — shared parsing/dedup/merge engine + 90-day lock + last-activity stamps
-- [`services/uploadJob.service.js`](../backend/src/services/uploadJob.service.js) — durable `rpa_upload_jobs` lifecycle + socket emits
-- [`pages/HRUpload.jsx`](../frontend/src/pages/HRUpload.jsx) — upload + live job dashboard + duplicate review
-- [`services/hrUploadService.js`](../frontend/src/services/hrUploadService.js) — API methods
+- [`controllers/hrUpload.controller.js`](../../backend/src/controllers/hrUpload.controller.js) — upload, jobs feed, reprocess, duplicates search/merge/delete
+- [`routes/hrUpload.routes.js`](../../backend/src/routes/hrUpload.routes.js) — routes & guards (`checkModuleAccess('hr_manual_upload')`)
+- [`services/hrUpload.service.js`](../../backend/src/services/hrUpload.service.js) — shared parsing/dedup/merge engine + 90-day lock + last-activity stamps
+- [`services/uploadJob.service.js`](../../backend/src/services/uploadJob.service.js) — durable `rpa_upload_jobs` lifecycle + socket emits
+- [`pages/HRUpload.jsx`](../../frontend/src/pages/HRUpload.jsx) — upload + live job dashboard + duplicate review
+- [`services/hrUploadService.js`](../../frontend/src/services/hrUploadService.js) — API methods
 
 ---
 
