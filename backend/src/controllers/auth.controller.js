@@ -61,6 +61,61 @@ export const getCurrentUser = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Change the current user's password
+ * @route   POST /api/auth/change-password
+ * @access  Private (all roles)
+ */
+export const changePassword = catchAsync(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!authService.verifyPassword(currentPassword, req.user.password_hash)) {
+    throw new AppError('Current password is incorrect.', 400);
+  }
+
+  await prisma.rpa_users.update({
+    where: { id: req.user.id },
+    data: { password_hash: authService.hashPassword(newPassword) },
+  });
+
+  // Invalidate every other session for this user, keeping the current one alive.
+  await prisma.rpa_sessions.deleteMany({
+    where: {
+      user_id: req.user.id,
+      NOT: { token: req.token },
+    },
+  });
+
+  return success(res, null, 'Password changed successfully');
+});
+
+/**
+ * @desc    Request a password reset link by username or email
+ * @route   POST /api/auth/forgot-password
+ * @access  Public
+ */
+export const forgotPassword = catchAsync(async (req, res) => {
+  const { login } = req.body;
+
+  await authService.requestPasswordReset(login);
+
+  // Always the same generic response — never reveal whether an account exists.
+  return success(res, null, 'If an account exists for that username or email, a password reset link has been sent.');
+});
+
+/**
+ * @desc    Reset a password using an emailed reset token
+ * @route   POST /api/auth/reset-password
+ * @access  Public (requires valid reset token in body)
+ */
+export const resetPassword = catchAsync(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  await authService.resetPasswordWithToken(token, newPassword);
+
+  return success(res, null, 'Password reset successfully. You can now sign in with your new password.');
+});
+
+/**
  * @desc    Refresh an expired access token using a valid refresh token
  * @route   POST /api/auth/refresh-token
  * @access  Public (requires valid refresh token in body)

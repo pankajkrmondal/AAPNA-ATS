@@ -17,9 +17,22 @@ const BRAND_HIGHLIGHTS = [
   'Real-time pipeline metrics & analytics',
 ];
 
+/** Contextual heading/subheading per auth page (fallback: login copy). */
+const PAGE_HEADINGS = {
+  '/forgot-password': {
+    title: 'Reset your password',
+    subtitle: "Enter your username or email and we'll send you a reset link",
+  },
+  '/reset-password': {
+    title: 'Choose a new password',
+    subtitle: 'Set a new password for your account to sign back in',
+  },
+};
+
 export default function AuthLayout() {
   const location = useLocation();
   const isAdmin = location.pathname.includes('/admin');
+  const pageHeading = PAGE_HEADINGS[location.pathname];
 
   return (
     <div className="auth-split">
@@ -121,12 +134,13 @@ export default function AuthLayout() {
                 letterSpacing: '-0.02em',
               }}
             >
-              {isAdmin ? 'Welcome back' : 'Sign in to your account'}
+              {pageHeading?.title || (isAdmin ? 'Welcome back' : 'Sign in to your account')}
             </h2>
             <Text type="secondary" style={{ fontSize: 14 }}>
-              {isAdmin
-                ? 'Sign in to manage users and system access'
-                : 'Enter your credentials to access the dashboard'}
+              {pageHeading?.subtitle
+                || (isAdmin
+                  ? 'Sign in to manage users and system access'
+                  : 'Enter your credentials to access the dashboard')}
             </Text>
           </div>
 

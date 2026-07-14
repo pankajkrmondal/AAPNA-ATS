@@ -41,6 +41,8 @@ import config from './index.js';
 const DEFAULTS = {
   // Admin-initiated password/credential update. Prod -> target user.
   userCredentialUpdate: { to: '', cc: '', dynamic: true },
+  // Forgot-password reset link. Always -> the account owner (never redirected).
+  passwordReset: { to: '', cc: '', dynamic: true },
   // Candidate-facing welcome email (1.1.1 / 1.1.4 welcome). Prod -> candidate.
   welcome: { to: '', cc: '', dynamic: true },
   // Missing JD/data collection email to the candidate. Prod -> candidate.
@@ -94,8 +96,10 @@ for (const [key, val] of Object.entries(DEFAULTS)) {
  *   - resumeErrorAlert: internal failure alert that ops must always see.
  *   - userCredentialUpdate: account credentials / password changes must go to
  *     the affected user's own inbox in every environment.
+ *   - passwordReset: forgot-password links are only useful in the account
+ *     owner's own inbox.
  */
-const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'userCredentialUpdate']);
+const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'userCredentialUpdate', 'passwordReset']);
 
 let loaded = false;
 

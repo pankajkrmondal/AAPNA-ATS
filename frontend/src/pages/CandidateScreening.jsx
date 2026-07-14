@@ -142,19 +142,19 @@ const parseTechnicalTerms = (techTerms) => {
 // Visual style + explanation per JD-skill match status (display-only).
 const JD_SKILL_STATUS = {
   evidenced: {
-    color: '#237804',
+    color: 'var(--success-text)',
     bg: 'rgba(82, 196, 26, 0.10)',
     border: 'rgba(82, 196, 26, 0.35)',
     explain: (s) => `Mentioned in resume (×${s.count}) and listed in skills section`,
   },
   signals_only: {
-    color: '#096dd9',
+    color: 'var(--info-strong)',
     bg: 'rgba(24, 144, 255, 0.10)',
     border: 'rgba(24, 144, 255, 0.35)',
     explain: (s) => `Found in resume (×${s.count}) but NOT in the candidate's declared skills section`,
   },
   listed_only: {
-    color: '#ad6800',
+    color: 'var(--warn-text)',
     bg: 'rgba(250, 173, 20, 0.12)',
     border: 'rgba(250, 173, 20, 0.40)',
     explain: () => `Listed in skills section but not surfaced in resume signals`,
@@ -283,7 +283,7 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
         </div>
       )}
       {signalsOnly.length > 0 && (
-        <div style={{ marginTop: 5, fontSize: '11px', color: '#096dd9', lineHeight: 1.4 }}>
+        <div style={{ marginTop: 5, fontSize: '11px', color: 'var(--info-strong)', lineHeight: 1.4 }}>
           ⓘ Found in resume but not in declared skills:{' '}
           <strong>{signalsOnly.map((s) => `${s.skill} (×${s.count})`).join(', ')}</strong>
         </div>
@@ -588,7 +588,7 @@ export default function CandidateScreening() {
               {reasons.map((r, i) => (
                 <div key={i} style={{ marginBottom: 4 }}>• {r}</div>
               ))}
-              <div style={{ marginTop: 6, color: '#888' }}>
+              <div style={{ marginTop: 6, color: 'var(--text-3)' }}>
                 Affected: {failures.map((f) => f.name).join(', ')}
               </div>
             </div>
@@ -1371,7 +1371,7 @@ export default function CandidateScreening() {
             left: 0,
             width: '100vw',
             height: '100vh',
-            background: 'rgba(255, 255, 255, 0.45)',
+            background: 'var(--overlay-scrim)',
             backdropFilter: 'blur(4px)',
             display: 'flex',
             justifyContent: 'center',
@@ -1381,11 +1381,11 @@ export default function CandidateScreening() {
             <Card
               bordered={false}
               style={{
-                background: 'rgba(255, 255, 255, 0.95)',
+                background: 'var(--colorBgElevated)',
                 padding: '16px 32px',
                 borderRadius: '16px',
                 boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-                border: '1px solid rgba(122, 146, 46, 0.15)',
+                border: '1px solid var(--color-primary-border)',
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -1727,7 +1727,7 @@ export default function CandidateScreening() {
           left: 0,
           width: '100vw',
           height: '100vh',
-          background: 'rgba(255, 255, 255, 0.45)',
+          background: 'var(--overlay-scrim)',
           backdropFilter: 'blur(4px)',
           display: 'flex',
           justifyContent: 'center',
@@ -1737,11 +1737,11 @@ export default function CandidateScreening() {
           <Card
             bordered={false}
             style={{
-              background: 'rgba(255, 255, 255, 0.95)',
+              background: 'var(--colorBgElevated)',
               padding: '16px 32px',
               borderRadius: '16px',
               boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-              border: '1px solid rgba(122, 146, 46, 0.15)',
+              border: '1px solid var(--color-primary-border)',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>

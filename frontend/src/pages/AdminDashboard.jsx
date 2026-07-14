@@ -295,17 +295,13 @@ export default function AdminDashboard() {
     for (let i = 0; i < 12; i++) {
       pw += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    const fn = (form.getFieldValue('first_name') || 'user').toLowerCase().trim();
-    const ln = (form.getFieldValue('last_name') || 'name').toLowerCase().trim();
-    const sfx = Math.floor(100 + Math.random() * 900);
-    const generatedUsername = `${fn}.${ln}${sfx}`;
 
     form.setFieldsValue({
       password: pw,
       confirmPassword: pw,
     });
 
-    setAutoGenCreds({ username: generatedUsername, password: pw });
+    setAutoGenCreds({ password: pw });
     message.info('Password auto-generated!');
   };
 
@@ -325,6 +321,7 @@ export default function AdminDashboard() {
         first_name: record.first_name,
         last_name: record.last_name,
         email: record.email,
+        username: record.username,
         role: record.role,
         company_id: record.company_id ?? undefined,
         is_active: record.is_active ? '1' : '0',
@@ -350,7 +347,7 @@ export default function AdminDashboard() {
           first_name: values.first_name,
           last_name: values.last_name,
           email: values.email,
-          username: autoGenCreds?.username || `${values.first_name.toLowerCase()}.${values.last_name.toLowerCase()}${Math.floor(100+Math.random()*900)}`,
+          username: values.username?.trim() || values.email.trim(),
           role: values.role,
           password: values.password,
           is_active: true,
@@ -387,6 +384,7 @@ export default function AdminDashboard() {
           first_name: values.first_name,
           last_name: values.last_name,
           email: values.email,
+          username: values.username?.trim() || values.email,
           role: values.role,
           is_active: values.is_active === '1',
         };
@@ -407,7 +405,10 @@ export default function AdminDashboard() {
     } catch (err) {
       if (err?.errorFields) return; // form validation error — inline messages already shown
       if (err?.data?.error === 'EMAIL_EXISTS') {
-        form.setFields([{ name: 'email', errors: [err.message] }]);
+        form.setFields([
+          { name: 'email', errors: [err.message] },
+          { name: 'username', errors: [err.message] },
+        ]);
       } else {
         message.error(err?.message || 'An error occurred while saving user.');
       }
@@ -459,7 +460,7 @@ export default function AdminDashboard() {
         const initials = `${(record.first_name || '')[0] || ''}${(record.last_name || '')[0] || ''}`.toUpperCase();
         return (
           <Space>
-            <Avatar style={{ background: '#eef3da', color: '#5c6f1f', border: '1px solid #b8cc6e', fontWeight: 700 }}>
+            <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)', fontWeight: 700 }}>
               {initials || '?'}
             </Avatar>
             <div>
@@ -558,7 +559,7 @@ export default function AdminDashboard() {
                   disabled={!canEdit}
                   icon={<EditOutlined />}
                   onClick={() => openUserModal(record)}
-                  style={{ color: !canEdit ? '#d9d9d9' : '#7a922e' }}
+                  style={{ color: !canEdit ? 'var(--border)' : 'var(--gold)' }}
                 />
               </span>
             </Tooltip>
@@ -570,7 +571,7 @@ export default function AdminDashboard() {
                   disabled={!canToggle}
                   icon={<PoweroffOutlined />}
                   onClick={() => openToggleModal(record)}
-                  style={{ color: !canToggle ? '#d9d9d9' : '#fa8c16' }}
+                  style={{ color: !canToggle ? 'var(--border)' : '#fa8c16' }}
                 />
               </span>
             </Tooltip>
@@ -582,7 +583,7 @@ export default function AdminDashboard() {
                   disabled={!canDelete}
                   icon={<DeleteOutlined />}
                   onClick={() => openDeleteModal(record)}
-                  style={{ color: !canDelete ? '#d9d9d9' : '#ff4d4f' }}
+                  style={{ color: !canDelete ? 'var(--border)' : '#ff4d4f' }}
                 />
               </span>
             </Tooltip>
@@ -649,7 +650,7 @@ export default function AdminDashboard() {
                     <Title level={2} className="admin-stat-num">{stats.total}</Title>
                     <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
                   </div>
-                  <div className="admin-stat-icon" style={{ color: '#7a922e', background: 'rgba(122,146,46,0.10)' }}>
+                  <div className="admin-stat-icon" style={{ color: 'var(--gold)', background: 'rgba(122,146,46,0.10)' }}>
                     <TeamOutlined />
                   </div>
                 </div>
@@ -660,10 +661,10 @@ export default function AdminDashboard() {
                 <div className="admin-stat-body">
                   <div>
                     <Text type="secondary" className="admin-stat-label">Active</Text>
-                    <Title level={2} className="admin-stat-num" style={{ color: '#166534' }}>{stats.active}</Title>
+                    <Title level={2} className="admin-stat-num" style={{ color: 'var(--success-text)' }}>{stats.active}</Title>
                     <Text type="secondary" style={{ fontSize: 11 }}>Can log in</Text>
                   </div>
-                  <div className="admin-stat-icon" style={{ color: '#166534', background: 'rgba(22,101,52,0.10)' }}>
+                  <div className="admin-stat-icon" style={{ color: 'var(--success-text)', background: 'rgba(22,101,52,0.10)' }}>
                     <CheckCircleOutlined />
                   </div>
                 </div>
@@ -674,10 +675,10 @@ export default function AdminDashboard() {
                 <div className="admin-stat-body">
                   <div>
                     <Text type="secondary" className="admin-stat-label">Inactive</Text>
-                    <Title level={2} className="admin-stat-num" style={{ color: '#c0392b' }}>{stats.inactive}</Title>
+                    <Title level={2} className="admin-stat-num" style={{ color: 'var(--red)' }}>{stats.inactive}</Title>
                     <Text type="secondary" style={{ fontSize: 11 }}>Access revoked</Text>
                   </div>
-                  <div className="admin-stat-icon" style={{ color: '#c0392b', background: 'rgba(192,57,43,0.10)' }}>
+                  <div className="admin-stat-icon" style={{ color: 'var(--red)', background: 'rgba(192,57,43,0.10)' }}>
                     <CloseCircleOutlined />
                   </div>
                 </div>
@@ -727,7 +728,7 @@ export default function AdminDashboard() {
               <Space wrap size={12}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>User Management</span>
                 <Input
-                  prefix={<SearchOutlined style={{ color: '#6b7561' }} />}
+                  prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />}
                   placeholder="Search name / email…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -776,7 +777,9 @@ export default function AdminDashboard() {
                     icon={<PlusOutlined />}
                     disabled={!isAuthorized}
                     onClick={() => openUserModal()}
-                    style={{ background: !isAuthorized ? '#d9d9d9' : '#7a922e', borderColor: !isAuthorized ? '#d9d9d9' : '#7a922e', borderRadius: 6, fontWeight: 600 }}
+                    style={!isAuthorized
+                      ? { borderRadius: 6, fontWeight: 600 }
+                      : { background: 'var(--gold)', borderColor: 'var(--gold)', borderRadius: 6, fontWeight: 600 }}
                   >
                     Add User
                   </Button>
@@ -807,7 +810,7 @@ export default function AdminDashboard() {
             {/* Left User Sider List */}
             <Col xs={24} md={8}>
               <Card
-                title={<span style={{ fontSize: 12, fontWeight: 700, color: '#6b7561', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Select User</span>}
+                title={<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Select User</span>}
                 bordered={false}
                 style={{
                   borderRadius: 12,
@@ -828,19 +831,19 @@ export default function AdminDashboard() {
                           padding: '12px 16px',
                           cursor: 'pointer',
                           borderBottom: '1px solid #f0f2eb',
-                          background: selected ? '#eef3da' : 'transparent',
-                          borderLeft: selected ? '3px solid #7a922e' : '3px solid transparent',
+                          background: selected ? 'var(--gold-bg)' : 'transparent',
+                          borderLeft: selected ? '3px solid var(--gold)' : '3px solid transparent',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 12,
                           transition: 'all 0.1s',
                         }}
                       >
-                        <Avatar style={{ background: '#eef3da', color: '#5c6f1f', border: '1px solid #b8cc6e', fontWeight: 700, width: 30, height: 30 }}>
+                        <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)', fontWeight: 700, width: 30, height: 30 }}>
                           {initials || '?'}
                         </Avatar>
                         <div>
-                          <Text strong style={{ fontSize: 13, color: selected ? '#5c6f1f' : 'var(--text)', display: 'block' }}>
+                          <Text strong style={{ fontSize: 13, color: selected ? 'var(--gold-dark)' : 'var(--text)', display: 'block' }}>
                             {u.first_name} {u.last_name}
                           </Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>{u.role}</Text>
@@ -861,12 +864,12 @@ export default function AdminDashboard() {
                       <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
                         {selectedModUser ? `${selectedModUser.first_name} ${selectedModUser.last_name}` : 'Select a user'}
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 400, color: '#6b7561', marginTop: 3 }}>
+                      <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-3)', marginTop: 3 }}>
                         {selectedModUser ? `Configure module access for ${selectedModUser.email}` : 'Choose a user from the left to manage their module access'}
                       </div>
                     </div>
                     {autoSaved && (
-                      <div style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Auto-saved</div>
+                      <div style={{ fontSize: 12, color: 'var(--success-text)', fontWeight: 600 }}>✓ Auto-saved</div>
                     )}
                   </div>
                 }
@@ -877,7 +880,7 @@ export default function AdminDashboard() {
                 }}
               >
                 {!selectedModUser ? (
-                  <div style={{ textAlign: 'center', padding: '60px 24px', color: '#6b7561' }}>
+                  <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--text-3)' }}>
                     <SolutionOutlined style={{ fontSize: 48, opacity: 0.3, marginBottom: 14 }} />
                     <Title level={4} style={{ fontSize: 14, margin: '0 0 5px 0' }}>No user selected</Title>
                     <Text type="secondary">Pick a user from the left panel to configure their module access.</Text>
@@ -895,10 +898,10 @@ export default function AdminDashboard() {
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '16px 18px',
-                            border: '1px solid #dde2d0',
+                            border: '1px solid var(--border)',
                             borderRadius: 8,
-                            background: enabled ? '#eef3da' : '#f8f9f5',
-                            borderColor: enabled ? '#b8cc6e' : '#dde2d0',
+                            background: enabled ? 'var(--gold-bg)' : 'var(--ink-4)',
+                            borderColor: enabled ? 'var(--gold-light)' : 'var(--border)',
                             transition: 'all 0.2s',
                           }}
                         >
@@ -908,20 +911,20 @@ export default function AdminDashboard() {
                                 width: 38,
                                 height: 38,
                                 borderRadius: 8,
-                                background: enabled ? '#ffffff' : 'rgba(0,0,0,0.04)',
+                                background: enabled ? 'var(--colorBgContainer)' : 'var(--ink-3)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 fontSize: 16,
                                 flexShrink: 0,
-                                border: enabled ? '1px solid #b8cc6e' : 'none',
+                                border: enabled ? '1px solid var(--gold-light)' : 'none',
                               }}
                             >
                               {mod.icon}
                             </div>
                             <div>
                               <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{mod.label}</Text>
-                              <div style={{ fontSize: 11.5, color: '#6b7561', marginTop: 2 }}>{mod.desc}</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{mod.desc}</div>
                               <span
                                 style={{
                                   display: 'inline-block',
@@ -930,8 +933,8 @@ export default function AdminDashboard() {
                                   padding: '2px 7px',
                                   borderRadius: 999,
                                   marginTop: 4,
-                                  background: enabled ? '#f0fdf4' : '#fdf2f0',
-                                  color: enabled ? '#166534' : '#c0392b',
+                                  background: enabled ? 'rgba(82, 196, 26, 0.14)' : 'rgba(192, 57, 43, 0.12)',
+                                  color: enabled ? 'var(--success-text)' : 'var(--red)',
                                 }}
                               >
                                 {enabled ? '● Enabled' : '● Restricted'}
@@ -942,7 +945,7 @@ export default function AdminDashboard() {
                             checked={enabled}
                             loading={permsLoading}
                             onChange={(checked) => handlePermissionToggle(mod.key, checked)}
-                            style={{ background: enabled ? '#7a922e' : '#d9d9d9' }}
+                            style={enabled ? { background: 'var(--gold)' } : undefined}
                           />
                         </div>
                       );
@@ -955,20 +958,20 @@ export default function AdminDashboard() {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '16px 18px',
-                        border: '1px dashed #dde2d0',
+                        border: '1px dashed var(--border)',
                         borderRadius: 8,
-                        background: userPermissions['hr_admin'] ? '#eef3da' : '#ffffff',
-                        borderColor: userPermissions['hr_admin'] ? '#b8cc6e' : '#dde2d0',
+                        background: userPermissions['hr_admin'] ? 'var(--gold-bg)' : 'var(--colorBgContainer)',
+                        borderColor: userPermissions['hr_admin'] ? 'var(--gold-light)' : 'var(--border)',
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={{ width: 38, height: 38, borderRadius: 8, background: '#ffffff', border: '1px solid #dde2d0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                        <div style={{ width: 38, height: 38, borderRadius: 8, background: 'var(--colorBgContainer)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
                           🛡️
                         </div>
                         <div>
                           <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>HR Admin Portal Access</Text>
-                          <div style={{ fontSize: 11.5, color: '#6b7561', marginTop: 2 }}>Grants permission to access this user and permission dashboard</div>
-                          <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, marginTop: 4, background: userPermissions['hr_admin'] ? '#f0fdf4' : '#fdf2f0', color: userPermissions['hr_admin'] ? '#166534' : '#c0392b' }}>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>Grants permission to access this user and permission dashboard</div>
+                          <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, marginTop: 4, background: userPermissions['hr_admin'] ? 'rgba(82, 196, 26, 0.14)' : 'rgba(192, 57, 43, 0.12)', color: userPermissions['hr_admin'] ? 'var(--success-text)' : 'var(--red)' }}>
                             {userPermissions['hr_admin'] ? '● Enabled' : '● Restricted'}
                           </span>
                         </div>
@@ -977,7 +980,7 @@ export default function AdminDashboard() {
                         checked={!!userPermissions['hr_admin']}
                         loading={permsLoading}
                         onChange={(checked) => handlePermissionToggle('hr_admin', checked)}
-                        style={{ background: userPermissions['hr_admin'] ? '#7a922e' : '#d9d9d9' }}
+                        style={userPermissions['hr_admin'] ? { background: 'var(--gold)' } : undefined}
                       />
                     </div>
                   </div>
@@ -1010,7 +1013,7 @@ export default function AdminDashboard() {
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => openCompanyModal()}
-                style={{ background: '#7a922e', borderColor: '#7a922e', borderRadius: 6, fontWeight: 600 }}
+                style={{ borderRadius: 6, fontWeight: 600 }}
               >
                 Add Company
               </Button>
@@ -1026,7 +1029,7 @@ export default function AdminDashboard() {
                   key: 'name',
                   render: (_, r) => (
                     <Space>
-                      <Avatar style={{ background: '#eef3da', color: '#5c6f1f', border: '1px solid #b8cc6e' }} icon={<BankOutlined />} />
+                      <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)' }} icon={<BankOutlined />} />
                       <div>
                         <Text strong style={{ fontSize: 13, display: 'block' }}>{r.name}</Text>
                         <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{r.slug}</Text>
@@ -1062,7 +1065,7 @@ export default function AdminDashboard() {
                   render: (_, r) => (
                     <Space>
                       <Tooltip title="Edit">
-                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} style={{ color: '#7a922e' }} />
+                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} style={{ color: 'var(--gold)' }} />
                       </Tooltip>
                       <Tooltip title={r.is_active ? 'Deactivate' : 'Activate'}>
                         <Button type="text" size="small" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} style={{ color: '#fa8c16' }} />
@@ -1087,11 +1090,10 @@ export default function AdminDashboard() {
         onOk={handleSaveUser}
         onCancel={() => setUserModalOpen(false)}
         okText={editingUser ? 'Save Changes' : 'Create User & Send Email'}
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
         width={540}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+          <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
             Personal Information
           </Text>
           <Row gutter={14}>
@@ -1116,10 +1118,18 @@ export default function AdminDashboard() {
           >
             <Input placeholder="priya.sharma@aapnainfotech.com" disabled={!!editingUser} />
           </Form.Item>
+          <Form.Item
+            label="Username (Optional)"
+            name="username"
+            rules={[{ pattern: /^\S+$/, message: 'Username cannot contain spaces' }]}
+            extra="Defaults to the email address. Users can log in with either their username or email."
+          >
+            <Input placeholder="Leave blank to use the email address" />
+          </Form.Item>
 
           <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
 
-          <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+          <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
             Account Settings
           </Text>
           <Form.Item
@@ -1159,7 +1169,7 @@ export default function AdminDashboard() {
           {!editingUser ? (
             <div>
               <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
-              <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Set Password
               </Text>
               <Row gutter={14}>
@@ -1182,22 +1192,17 @@ export default function AdminDashboard() {
                 >
                   Auto-Generate Password
                 </Button>
-                <span style={{ fontSize: 11.5, color: '#6b7561' }}>Generates a secure random password</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Generates a secure random password</span>
               </div>
 
               {autoGenCreds && (
-                <div style={{ background: '#eef3da', border: '1px solid #b8cc6e', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase' }}>Username</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{autoGenCreds.username}</span>
-                    <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => handleCopyText(autoGenCreds.username)}>Copy</Button>
-                  </div>
+                <div style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold-light)', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase' }}>Password</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase' }}>Password</span>
                     <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{autoGenCreds.password}</span>
                     <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
                   </div>
-                  <div style={{ fontSize: 11.5, color: '#6b7561', marginTop: 8 }}>✉️ These credentials will be emailed to the user upon account creation.</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>✉️ These credentials will be emailed to the user upon account creation.</div>
                 </div>
               )}
             </div>
@@ -1224,7 +1229,7 @@ export default function AdminDashboard() {
               ) : (
               <>
               <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
-              <Text style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Change Password (Optional)
               </Text>
               <Row gutter={14}>
@@ -1247,13 +1252,13 @@ export default function AdminDashboard() {
                 >
                   Auto-Generate Password
                 </Button>
-                <span style={{ fontSize: 11.5, color: '#6b7561' }}>Generates a secure random password</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Generates a secure random password</span>
               </div>
 
               {autoGenCreds && (
-                <div style={{ background: '#eef3da', border: '1px solid #b8cc6e', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
+                <div style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold-light)', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#5c6f1f', textTransform: 'uppercase' }}>Generated Password</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase' }}>Generated Password</span>
                     <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{autoGenCreds.password}</span>
                     <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
                   </div>
@@ -1281,13 +1286,13 @@ export default function AdminDashboard() {
         okButtonProps={
           userToToggle?.is_active
             ? { danger: true, type: 'primary' }
-            : { style: { background: '#7a922e', borderColor: '#7a922e' } }
+            : { type: 'primary' }
         }
         width={420}
       >
         <div style={{ padding: '10px 0' }}>
           {userToToggle?.is_active ? (
-            <div style={{ background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, padding: '12px 14px' }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid #ffd591', borderRadius: 6, padding: '12px 14px' }}>
               <Text style={{ fontSize: 13.5, color: '#d46b08', display: 'block', fontWeight: 600, marginBottom: 4 }}>
                 {userToToggle?.first_name} {userToToggle?.last_name} ({userToToggle?.email})
               </Text>
@@ -1337,7 +1342,6 @@ export default function AdminDashboard() {
         onOk={handleSaveCompany}
         onCancel={() => setCompanyModalOpen(false)}
         okText={editingCompany ? 'Save Changes' : 'Create Company'}
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' } }}
         width={460}
       >
         <Form form={companyForm} layout="vertical" style={{ marginTop: 16 }}>

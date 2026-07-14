@@ -45,6 +45,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import PageHeader from '../components/common/PageHeader';
 import emailTemplateService from '../services/emailTemplateService';
+import useTheme from '../hooks/useTheme';
 
 dayjs.extend(relativeTime);
 
@@ -120,6 +121,7 @@ const dummyReplacements = {
 };
 
 export default function EmailManagement() {
+  const { isDark } = useTheme();
   const [templates, setTemplates] = useState([]);
   const [filteredTemplates, setFilteredTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -637,6 +639,7 @@ export default function EmailManagement() {
           value={htmlView.text}
           onChange={handleHtmlChange}
           extensions={CM_EXTENSIONS}
+          theme={isDark ? 'dark' : 'light'}
           height="100%"
           basicSetup={{ foldGutter: true, highlightActiveLine: true, autocompletion: true }}
           aria-label="Raw email HTML source"
@@ -676,12 +679,15 @@ export default function EmailManagement() {
               New Message — Preview Mode
             </Text>
           </div>
+          {/* The mail-client shell is intentionally white in both themes, so
+              these labels pin slate instead of theme "secondary" (near-white
+              in dark). */}
           <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-            <Text type="secondary" style={{ width: 60 }}>Subject:</Text>
+            <Text style={{ width: 60, color: '#64748b' }}>Subject:</Text>
             <Text strong style={{ color: '#0f172a' }}>{preview.subject}</Text>
           </div>
           <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-            <Text type="secondary" style={{ width: 60 }}>To:</Text>
+            <Text style={{ width: 60, color: '#64748b' }}>To:</Text>
             <Text style={{ color: '#334155' }}>candidate@example.com</Text>
           </div>
         </div>

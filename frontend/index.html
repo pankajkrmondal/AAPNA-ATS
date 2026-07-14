@@ -9,6 +9,30 @@
     <meta name="author" content="AAPNA" />
     <meta name="theme-color" content="#7a922e" />
 
+    <!-- Anti-FOUC: apply the saved theme before first paint. Default is LIGHT;
+         the OS preference is honored only when the user explicitly chose "system". -->
+    <script>
+      (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem('ats_theme');
+        } catch (e) {
+          /* storage unavailable (private mode) — fall through to light */
+        }
+        var dark =
+          mode === 'dark' ||
+          (mode === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var theme = dark ? 'dark' : 'light';
+        var el = document.documentElement;
+        el.setAttribute('data-theme', theme);
+        el.style.colorScheme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0a0e0c' : '#7a922e');
+      })();
+    </script>
+
     <!-- Open Graph -->
     <meta property="og:title" content="AAPNA ATS - Recruitment Process Automation" />
     <meta property="og:description" content="Modern Applicant Tracking System for streamlined recruitment" />

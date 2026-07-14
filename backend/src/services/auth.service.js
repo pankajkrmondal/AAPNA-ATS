@@ -5,6 +5,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
+import { sendPasswordResetEmail } from './emailNotification.service.js';
 
 /**
  * Authentication service.
@@ -27,6 +28,35 @@ export async function findUserByUsername(username) {
     },
     include: { company: true },
   });
+}
+
+/**
+ * Find a user by login identifier — matches username OR email (case-insensitive).
+ * @param {string} login
+ * @returns {Promise<Object|null>}
+ */
+export async function findUserByLogin(login) {
+  return prisma.rpa_users.findFirst({
+    where: {
+      OR: [
+        { username: { equals: login, mode: 'insensitive' } },
+        { email: { equals: login, mode: 'insensitive' } },
+      ],
+    },
+    include: { company: true },
+  });
+}
+
+/**
+ * Hash a plain-text password with a random salt.
+ * Format matches verifyPassword: "salt:sha512(password + salt)".
+ * @param {string} password
+ * @returns {string} "salt:hash"
+ */
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(8).toString('hex');
+  const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
+  return `${salt}:${hash}`;
 }
 
 /**
@@ -76,6 +106,9 @@ export function generateJWT(user) {
       username: user.username,
       role: user.role,
       company_id: user.company_id ?? null,
+      // Unique token id — without it, two logins in the same second produce an
+      // identical JWT and violate the rpa_sessions.token unique constraint.
+      jti: uuidv4(),
     },
     config.jwt.secret,
     { expiresIn: config.jwt.expiresIn },
@@ -173,15 +206,15 @@ export async function cleanupExpiredSessions() {
 
 /**
  * Full login flow: find user → verify password → create JWT + session.
- * @param {string} username
+ * @param {string} username - Username or email address
  * @param {string} password
  * @returns {Promise<{ user: Object, token: string, refreshToken: string }>}
  */
 export async function login(username, password) {
-  // 1) Find user
-  const user = await findUserByUsername(username);
+  // 1) Find user (by username or email)
+  const user = await findUserByLogin(username);
   if (!user) {
-    throw new AppError('Invalid username or password.', 401);
+    throw new AppError('Invalid username/email or password.', 401);
   }
 
   // 2) Check active status
@@ -192,7 +225,7 @@ export async function login(username, password) {
   // 3) Verify password
   const isValid = verifyPassword(password, user.password_hash);
   if (!isValid) {
-    throw new AppError('Invalid username or password.', 401);
+    throw new AppError('Invalid username/email or password.', 401);
   }
 
   // 4) Generate tokens
@@ -222,6 +255,110 @@ export async function login(username, password) {
   safeUser.permissions = permissions.map((p) => p.module_key);
 
   return { user: safeUser, token, refreshToken };
+}
+
+// ── Password reset (forgot password) ──────────────────────────────────
+//
+// Stateless single-use reset tokens: a short-lived JWT carrying a fingerprint
+// of the CURRENT password hash. Resetting rotates the salt+hash, so the
+// fingerprint stops matching and the token cannot be replayed. No token table.
+
+const RESET_TOKEN_EXPIRY = '30m';
+
+/**
+ * Fingerprint of a stored password hash, embedded in reset tokens to make
+ * them single-use (any password change invalidates outstanding tokens).
+ * @param {string} passwordHash
+ * @returns {string} first 16 hex chars of sha256(passwordHash)
+ */
+function passwordFingerprint(passwordHash) {
+  return crypto.createHash('sha256').update(passwordHash || '').digest('hex').slice(0, 16);
+}
+
+/**
+ * Generate a password-reset token for a user.
+ * @param {Object} user - rpa_users row
+ * @returns {string} Signed JWT, expires in 30 minutes
+ */
+export function generatePasswordResetToken(user) {
+  return jwt.sign(
+    {
+      userId: user.id,
+      type: 'password-reset',
+      fp: passwordFingerprint(user.password_hash),
+    },
+    config.jwt.secret,
+    { expiresIn: RESET_TOKEN_EXPIRY },
+  );
+}
+
+/**
+ * Handle a forgot-password request. Deliberately silent about whether the
+ * account exists (anti-enumeration): callers always report generic success.
+ * @param {string} login - Username or email address
+ * @returns {Promise<void>}
+ */
+export async function requestPasswordReset(login) {
+  const user = await findUserByLogin(login);
+  if (!user || !user.is_active || !user.email) {
+    logger.info(`Password reset requested for unknown/ineligible login "${login}" — no email sent.`);
+    return;
+  }
+
+  const token = generatePasswordResetToken(user);
+  const base = (config.cors.frontendUrl || 'https://ats.aapnainfotech.com').replace(/\/+$/, '');
+  const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+  if (!config.isProduction) {
+    logger.info(`[dev] Password reset URL for user ${user.id}: ${resetUrl}`);
+  }
+
+  // Fire-and-forget (the mailer catches its own errors) so response timing
+  // stays near-constant regardless of whether an account matched.
+  sendPasswordResetEmail({ user, resetUrl });
+}
+
+/**
+ * Reset a password using a reset token. Errors are always 400 (never 401 —
+ * the frontend interceptor hard-redirects on 401 and the public reset page
+ * needs inline errors).
+ * @param {string} token
+ * @param {string} newPassword
+ * @returns {Promise<void>}
+ */
+export async function resetPasswordWithToken(token, newPassword) {
+  let decoded;
+  try {
+    decoded = jwt.verify(token, config.jwt.secret);
+  } catch (err) {
+    if (err?.name === 'TokenExpiredError') {
+      throw new AppError('This password reset link has expired. Please request a new one.', 400);
+    }
+    throw new AppError('This password reset link is invalid. Please request a new one.', 400);
+  }
+
+  if (decoded.type !== 'password-reset') {
+    throw new AppError('This password reset link is invalid. Please request a new one.', 400);
+  }
+
+  const user = await prisma.rpa_users.findUnique({ where: { id: decoded.userId } });
+  if (!user || !user.is_active) {
+    throw new AppError('This password reset link is invalid. Please request a new one.', 400);
+  }
+
+  if (decoded.fp !== passwordFingerprint(user.password_hash)) {
+    throw new AppError('This password reset link has already been used. Please request a new one.', 400);
+  }
+
+  await prisma.rpa_users.update({
+    where: { id: user.id },
+    data: { password_hash: hashPassword(newPassword) },
+  });
+
+  // Recovery flow: sign out every existing session for this account.
+  await prisma.rpa_sessions.deleteMany({ where: { user_id: user.id } });
+
+  logger.info(`Password reset completed for user ${user.id}; all sessions invalidated.`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
