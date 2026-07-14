@@ -1220,20 +1220,29 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               return digits.length > 0 && resumeDigits.includes(digits);
             });
 
-          // Reject rule: a resume with no valid email AND no phone cannot be identified
-          // or deduped — reject it as "Rejected by System" rather than guessing a match.
-          if (cleanEmails.length === 0 && cleanContactNumbers.length === 0) {
-            logger.warn(`Candidate has no valid email or phone for ${item.filename}. Rejecting...`);
-            sendEmailIdNullAlert(parsed.Name || item.filename, email).catch(mailErr => {
+          // Reject rule: a resume with no valid email cannot receive the missing-data
+          // collection link (its token is base64 of the email), so reject it as
+          // "Rejected by System" even when a phone number is present.
+          if (cleanEmails.length === 0) {
+            logger.warn(`Candidate has no valid email address for ${item.filename} (source: ${source}). Rejecting...`);
+            // Identify who submitted the rejected resume: vendor attribution wins
+            // (covers vendor self-uploads and staff uploading on behalf of a vendor),
+            // then the intake sender, then the HR uploader.
+            const uploadedBy = attr
+              ? `Vendor — ${attrName || 'Unknown vendor'}${attrEmail ? ` (${attrEmail})` : ''}`
+              : source === 'email_intake'
+                ? `Email Intake — received from ${email}`
+                : `HR Upload — ${fullName} (${email})`;
+            sendEmailIdNullAlert(parsed.Name || item.filename, email, uploadedBy).catch(mailErr => {
               logger.error(`Failed to send EmailID NULL alert: ${mailErr.message}`);
             });
-            rowRejected.push(`${item.filename}: No valid email or phone`);
+            rowRejected.push(`${item.filename}: No valid email address found in resume`);
             rejectedCount++;
             continue;
           }
 
-          // EmailID stored on the candidate uses only the validated emails (empty for a
-          // phone-only candidate, which the missing-data flow then follows up on).
+          // EmailID stored on the candidate uses only the validated emails (always
+          // non-empty here — email-less resumes were rejected above).
           const emailToSearch = cleanEmails.join(', ');
 
           let existingCandidate = null;

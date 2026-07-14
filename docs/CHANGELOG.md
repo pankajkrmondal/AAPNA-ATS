@@ -5,6 +5,33 @@ Feature-level detail lives in [docs/screening.md](./screening.md).
 
 ---
 
+## 2026-07-03 — Superadmin/Admin permission tightening + credential email routing
+**Why:** Any admin could delete users and edit/reset passwords of co-admins. New rules: Delete User is
+superadmin-only; an admin may edit details/passwords of **self** and of **recruiters/vendors** only (not
+co-admins); a superadmin may reset passwords of admins/recruiters/vendors. Credential/password emails must
+reach the affected user's own inbox even in staging (not the test-recipient redirect).
+
+- `backend/src/config/roles.js` — new `outranks(requesterRole, targetRole)` helper (strict `ROLE_RANK`
+  comparison; equal ranks do NOT outrank each other).
+- `backend/src/controllers/admin.controller.js`:
+  - `updateUser` (details + password reset) — target must be **self or a strictly lower role**; a
+    superadmin may additionally edit a peer superadmin's **details** (but a superadmin password can only
+    be changed by its owner); own role changes rejected; `is_active` ignored on self-edits (lockout
+    prevention).
+  - `deleteUser` — superadmin-only; self-deletion blocked server-side (was UI-only).
+  - `toggleStatus` — self-toggle blocked server-side; target must be a strictly lower role (admins can no
+    longer deactivate co-admins).
+- `backend/src/config/emailRecipients.js` — `userCredentialUpdate` added to `NEVER_REDIRECT`: credential /
+  password-change emails always resolve to the target user's own email in every environment; all other
+  flows still redirect to the staging test inbox.
+- `frontend/src/pages/AdminDashboard.jsx` — mirrors the rank rule: Edit enabled for self + lower roles,
+  Toggle for lower roles only, Delete for superadmins only, with explanatory tooltips; Role and Account
+  Status fields disabled when editing your own account. Deactivate confirmation restyled as a warning
+  (⚠️ title, amber consequence box, danger-styled "Deactivate" button); activation keeps the positive style.
+- `docs/ADMIN_ACCESS_CONTROL.md` — rules, capability matrix, and endpoint table updated.
+- `docs/ROLE_RULES.md` (new) — per-role can/cannot reference (Super Admin / Company Admin / Recruiter /
+  Vendor) incl. universal rules and a quick-reference matrix.
+
 ## 2026-06-30 — Candidate card enterprise refinement (pass 2)
 **Why:** Score block read too big; user wanted more enterprise polish but to keep the SKILLS tags multicolor.
 

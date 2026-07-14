@@ -10,6 +10,7 @@ import {
   isAdminTier,
   isSuperadmin,
   normalizeRole,
+  outranks,
 } from '../config/roles.js';
 
 /**
@@ -268,8 +269,24 @@ export const updateUser = catchAsync(async (req, res) => {
   // Tenant scope: company admins may only touch users in their own company.
   restrictToCompanyScope(req.user, existingUser);
 
+  // Hierarchy check: a requester may edit their own account or accounts of a
+  // strictly lower role. Superadmins may additionally edit peer superadmins'
+  // DETAILS (but not their passwords — guarded below). Admins can never edit
+  // co-admins.
+  const isSelf = existingUser.id === req.user.id;
   const requesterIsSuper = isSuperadmin(req.user.role);
-  const newRole = role ? normalizeRole(role) : undefined;
+  const targetIsPeerSuper = requesterIsSuper && targetUserRole === ROLES.SUPERADMIN;
+  if (!isSelf && !outranks(req.user.role, existingUser.role) && !targetIsPeerSuper) {
+    throw new AppError('You may only edit your own account or accounts of a lower role.', 403);
+  }
+
+  let newRole = role ? normalizeRole(role) : undefined;
+
+  // Nobody may change their own role (prevents self-demotion lockouts).
+  if (isSelf && newRole && newRole !== targetUserRole) {
+    throw new AppError('You cannot change your own role.', 403);
+  }
+  if (isSelf) newRole = undefined;
 
   // A company admin may assign admin/recruiter/vendor, but never superadmin.
   if (!requesterIsSuper && newRole && !ADMIN_ASSIGNABLE_ROLES.includes(newRole)) {
@@ -285,7 +302,8 @@ export const updateUser = catchAsync(async (req, res) => {
     email: email?.trim(),
     username: username?.trim(),
     role: newRole,
-    is_active: is_active ?? existingUser.is_active,
+    // Nobody may change their own active status (mirrors the toggleStatus guard).
+    is_active: isSelf ? existingUser.is_active : (is_active ?? existingUser.is_active),
   };
 
   // Only superadmin may reassign a user's company.
@@ -300,8 +318,13 @@ export const updateUser = catchAsync(async (req, res) => {
     updateData.company_id = targetCompanyId;
   }
 
-  // If a new password is provided, rehash it
+  // If a new password is provided, rehash it. Passwords may only be reset for
+  // yourself or for strictly lower roles — a superadmin may edit a peer
+  // superadmin's details above, but never their password.
   if (password && password.trim() !== '') {
+    if (!isSelf && !outranks(req.user.role, existingUser.role)) {
+      throw new AppError("You cannot change another SuperAdmin's password.", 403);
+    }
     const salt = crypto.randomBytes(8).toString('hex');
     const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
     updateData.password_hash = `${salt}:${hash}`;
@@ -341,9 +364,14 @@ export const deleteUser = catchAsync(async (req, res) => {
     throw new AppError('User not found.', 404);
   }
 
-  // Hierarchy check: Admins cannot modify SuperAdmin accounts
-  if (!isSuperadmin(req.user.role) && normalizeRole(existingUser.role) === ROLES.SUPERADMIN) {
-    throw new AppError('Admins are not permitted to modify SuperAdmin accounts.', 403);
+  // Only a superadmin may delete users.
+  if (!isSuperadmin(req.user.role)) {
+    throw new AppError('Only a SuperAdmin can delete users.', 403);
+  }
+
+  // No self-deletion, even for superadmins.
+  if (existingUser.id === req.user.id) {
+    throw new AppError('You cannot delete your own account.', 403);
   }
 
   // Tenant scope: company admins may only delete users in their own company.
@@ -376,9 +404,19 @@ export const toggleStatus = catchAsync(async (req, res) => {
     throw new AppError('User not found.', 404);
   }
 
-  // Hierarchy check: Admins cannot modify SuperAdmin accounts
-  if (!isSuperadmin(req.user.role) && normalizeRole(existingUser.role) === ROLES.SUPERADMIN) {
-    throw new AppError('Admins are not permitted to modify SuperAdmin accounts.', 403);
+  // Nobody may deactivate their own account.
+  if (existingUser.id === req.user.id) {
+    throw new AppError('You cannot change the status of your own account.', 403);
+  }
+
+  // Hierarchy check: only accounts of a strictly lower role may be toggled
+  // (admins cannot deactivate co-admins). Superadmins may also toggle peer
+  // superadmins — consistent with being allowed to edit their details.
+  if (
+    !outranks(req.user.role, existingUser.role) &&
+    !(isSuperadmin(req.user.role) && normalizeRole(existingUser.role) === ROLES.SUPERADMIN)
+  ) {
+    throw new AppError('You may only change the status of accounts of a lower role.', 403);
   }
 
   // Tenant scope: company admins may only toggle users in their own company.
