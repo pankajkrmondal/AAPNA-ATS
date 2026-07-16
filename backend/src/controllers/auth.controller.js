@@ -1,4 +1,5 @@
 import * as authService from '../services/auth.service.js';
+import { isTurnstileEnabled, verifyTurnstileToken } from '../services/turnstile.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -10,10 +11,22 @@ import prisma from '../config/database.js';
  * @access  Public
  */
 export const login = catchAsync(async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, captchaToken } = req.body;
 
   if (!username || !password) {
     throw new AppError('Please provide username and password.', 400);
+  }
+
+  // Bot protection: when Turnstile is configured, every login attempt must
+  // pass Cloudflare's verification BEFORE credentials are checked, so bots
+  // can't brute-force passwords or enumerate accounts.
+  if (isTurnstileEnabled()) {
+    if (!captchaToken) {
+      throw new AppError('Captcha verification is required. Please refresh the page and try again.', 400);
+    }
+    if (!(await verifyTurnstileToken(captchaToken, req.ip))) {
+      throw new AppError('Captcha verification failed. Please try again.', 403);
+    }
   }
 
   const result = await authService.login(username, password);
@@ -94,7 +107,18 @@ export const changePassword = catchAsync(async (req, res) => {
  * @access  Public
  */
 export const forgotPassword = catchAsync(async (req, res) => {
-  const { login } = req.body;
+  const { login, captchaToken } = req.body;
+
+  // Bot protection: reset requests trigger emails, so when Turnstile is
+  // configured they must pass verification before any work happens.
+  if (isTurnstileEnabled()) {
+    if (!captchaToken) {
+      throw new AppError('Captcha verification is required. Please refresh the page and try again.', 400);
+    }
+    if (!(await verifyTurnstileToken(captchaToken, req.ip))) {
+      throw new AppError('Captcha verification failed. Please try again.', 403);
+    }
+  }
 
   await authService.requestPasswordReset(login);
 
