@@ -3,27 +3,38 @@
  * Always shows the same generic success state regardless of whether the
  * account exists (anti-enumeration). Rendered inside AuthLayout.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Form, Input, Button, Alert, Result } from 'antd';
 import { UserOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import authService from '../services/authService';
+import TurnstileWidget from '../components/TurnstileWidget';
+
+// Empty site key = Turnstile disabled (widget hidden, no token sent).
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
 export default function ForgotPassword() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef(null);
+
+  const captchaPending = Boolean(TURNSTILE_SITE_KEY) && !captchaToken;
 
   const onFinish = async (values) => {
     setLoading(true);
     setError('');
 
     try {
-      await authService.forgotPassword(values.login.trim());
+      await authService.forgotPassword(values.login.trim(), captchaToken);
       setSubmitted(true);
     } catch (err) {
       // 429 (rate limit) or server errors; never account-existence info.
       setError(err?.message || 'Something went wrong. Please try again later.');
+      // Turnstile tokens are single-use: request a fresh challenge for the retry
+      setCaptchaToken('');
+      captchaRef.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -81,14 +92,34 @@ export default function ForgotPassword() {
           />
         </Form.Item>
 
+        {TURNSTILE_SITE_KEY && (
+          <Form.Item style={{ marginBottom: 20 }}>
+            <TurnstileWidget
+              ref={captchaRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onToken={setCaptchaToken}
+              action="forgot-password"
+            />
+          </Form.Item>
+        )}
+
         <Form.Item style={{ marginBottom: 0 }}>
           <Button
             type="primary"
             htmlType="submit"
             loading={loading}
+            disabled={captchaPending}
             block
             className="cta-primary"
-            style={{ height: 48, borderRadius: 10, fontWeight: 700, fontSize: 15 }}
+            style={{
+              height: 48,
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 15,
+              // .cta-primary forces the gradient with !important, so signal the
+              // disabled (captcha pending) state explicitly
+              opacity: captchaPending ? 0.55 : 1,
+            }}
           >
             Send Reset Link
           </Button>

@@ -52,10 +52,11 @@ export function AuthProvider({ children }) {
    * @param {string} username
    * @param {string} password
    * @param {boolean} [isAdminPortal=false]
+   * @param {string} [captchaToken=''] - Turnstile token (when bot protection is enabled)
    * @returns {Promise<object>} user data
    */
-  const login = useCallback(async (username, password, isAdminPortal = false) => {
-    const response = await authService.login(username, password);
+  const login = useCallback(async (username, password, isAdminPortal = false, captchaToken = '') => {
+    const response = await authService.login(username, password, captchaToken);
     const { token, user: userData } = response.data.data;
 
     if (isAdminPortal) {

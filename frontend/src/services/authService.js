@@ -9,10 +9,15 @@ const authService = {
    * Authenticate user with credentials.
    * @param {string} username
    * @param {string} password
+   * @param {string} [captchaToken] - Turnstile token (when bot protection is enabled)
    * @returns {Promise<{ data: { token: string, user: object } }>}
    */
-  login(username, password) {
-    return api.post('/auth/login', { username, password });
+  login(username, password, captchaToken = '') {
+    return api.post('/auth/login', {
+      username,
+      password,
+      ...(captchaToken ? { captchaToken } : {}),
+    });
   },
 
   /**
@@ -44,10 +49,14 @@ const authService = {
   /**
    * Request a password reset link (forgot password).
    * @param {string} login - Username or email address
+   * @param {string} [captchaToken] - Turnstile token (when bot protection is enabled)
    * @returns {Promise}
    */
-  forgotPassword(login) {
-    return api.post('/auth/forgot-password', { login });
+  forgotPassword(login, captchaToken = '') {
+    return api.post('/auth/forgot-password', {
+      login,
+      ...(captchaToken ? { captchaToken } : {}),
+    });
   },
 
   /**

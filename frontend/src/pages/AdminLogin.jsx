@@ -2,18 +2,26 @@
  * AdminLogin Page — Premium login form for HR Admin system access.
  * Replicates the legacy Welcome Back layout with custom badges and icons.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Alert } from 'antd';
 import { LoginOutlined, UserOutlined, LockOutlined } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import adminService from '../services/adminService';
+import TurnstileWidget from '../components/TurnstileWidget';
+
+// Empty site key = Turnstile disabled (widget hidden, no token sent).
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
 export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef(null);
   const { login, logout } = useAuth();
   const navigate = useNavigate();
+
+  const captchaPending = Boolean(TURNSTILE_SITE_KEY) && !captchaToken;
 
   const onFinish = async (values) => {
     setLoading(true);
@@ -21,13 +29,16 @@ export default function AdminLogin() {
 
     try {
       // Log in and verify admin portal permissions in one operation
-      await login(values.username, values.password, true);
+      await login(values.username, values.password, true, captchaToken);
       navigate('/admin/dashboard', { replace: true });
     } catch (err) {
       setError(err?.message || 'Invalid username or password. Please try again.');
       // Clean up session in case verification failed
       localStorage.removeItem('ats_token');
       localStorage.removeItem('ats_user');
+      // Turnstile tokens are single-use: request a fresh challenge for the retry
+      setCaptchaToken('');
+      captchaRef.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -80,11 +91,22 @@ export default function AdminLogin() {
           />
         </Form.Item>
 
+        {TURNSTILE_SITE_KEY && (
+          <Form.Item style={{ marginBottom: 20 }}>
+            <TurnstileWidget
+              ref={captchaRef}
+              siteKey={TURNSTILE_SITE_KEY}
+              onToken={setCaptchaToken}
+            />
+          </Form.Item>
+        )}
+
         <Form.Item style={{ marginBottom: 0 }}>
           <Button
             type="primary"
             htmlType="submit"
             loading={loading}
+            disabled={captchaPending}
             icon={<LoginOutlined />}
             block
             className="cta-primary"
@@ -97,6 +119,9 @@ export default function AdminLogin() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
+              // .cta-primary forces the gradient with !important, so signal the
+              // disabled (captcha pending) state explicitly
+              opacity: captchaPending ? 0.55 : 1,
             }}
           >
             Sign In
