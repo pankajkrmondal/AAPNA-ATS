@@ -68,6 +68,95 @@ export function isAdminSender(fromEmail) {
 }
 
 /**
+ * Graph GET with throttling awareness: on 429/503 waits the server-provided
+ * Retry-After (capped at 60s, default 5s) and retries up to 3 attempts.
+ * Other non-ok statuses are returned to the caller to handle (some, like the
+ * delta 410, carry meaning).
+ * @param {string} url
+ * @param {string} token
+ * @param {string} label - for log lines
+ * @returns {Promise<Response>}
+ */
+async function graphGet(url, token, label) {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Prefer: 'outlook.body-content-type="html"',
+      },
+    });
+    if ((res.status === 429 || res.status === 503) && attempt < MAX_ATTEMPTS) {
+      const retryAfter = Math.min(parseInt(res.headers.get('retry-after'), 10) || 5, 60);
+      logger.warn(`[Outlook Reader] Graph throttled ${label} (${res.status}); waiting ${retryAfter}s (attempt ${attempt}/${MAX_ATTEMPTS}).`);
+      await new Promise((r) => setTimeout(r, retryAfter * 1000));
+      continue;
+    }
+    return res;
+  }
+}
+
+/**
+ * Fetch inbox changes via a Graph delta query.
+ *
+ * Compared to the timestamp `$filter` in fetchMessagesSince, delta has no
+ * watermark-boundary miss/duplicate edge cases and returns only changes, so
+ * the poll interval can be tightened cheaply. Note delta also re-emits old
+ * messages whose properties changed (e.g. read flag) — downstream consumers
+ * are idempotent, so those are absorbed.
+ *
+ * @param {string|null} deltaLink - `@odata.deltaLink` from the previous cycle,
+ *   or null/undefined for an initial sync (24h lookback).
+ * @param {Object} [opts]
+ * @param {number} [opts.max=200] - safety cap on messages per poll
+ * @returns {Promise<{ messages: Object[], deltaLink: string|null }>}
+ * @throws {Error & { code?: 'DELTA_EXPIRED' }} on HTTP 410 (expired delta token)
+ */
+export async function fetchMessagesDelta(deltaLink, { max = 200 } = {}) {
+  const mailbox = config.microsoft.defaultSender;
+  if (!mailbox) {
+    throw new Error('config.microsoft.defaultSender is not set; cannot poll a mailbox.');
+  }
+  const token = await getAccessToken();
+
+  const select = 'id,conversationId,internetMessageId,from,sender,toRecipients,ccRecipients,subject,bodyPreview,body,hasAttachments,receivedDateTime';
+  let url = deltaLink;
+  if (!url) {
+    const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    url =
+      `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/mailFolders/inbox/messages/delta` +
+      `?$select=${encodeURIComponent(select)}` +
+      `&$filter=${encodeURIComponent(`receivedDateTime ge ${sinceIso}`)}`;
+  }
+
+  const collected = [];
+  let nextDeltaLink = null;
+  while (url) {
+    const res = await graphGet(url, token, 'messages delta');
+    if (res.status === 410) {
+      const err = new Error('Graph delta token expired (410 Gone); a fresh initial sync is required.');
+      err.code = 'DELTA_EXPIRED';
+      throw err;
+    }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Graph delta fetch failed (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    for (const msg of data.value || []) {
+      if (msg['@removed']) continue; // deletions are irrelevant to intake/sync
+      if (collected.length < max) collected.push(normalizeMessage(msg));
+    }
+    nextDeltaLink = data['@odata.deltaLink'] || nextDeltaLink;
+    url = data['@odata.nextLink'] || null;
+  }
+
+  // Oldest-first, matching fetchMessagesSince, so watermark-style consumers work.
+  collected.sort((a, b) => (a.receivedAt < b.receivedAt ? -1 : 1));
+  return { messages: collected, deltaLink: nextDeltaLink };
+}
+
+/**
  * Fetch inbox messages received after `sinceIso`, oldest-first, with paging.
  *
  * @param {string} sinceIso - ISO timestamp; only messages with receivedDateTime > this are returned
@@ -98,13 +187,7 @@ export async function fetchMessagesSince(sinceIso, { withAttachmentsOnly = false
 
   const collected = [];
   while (url && collected.length < max) {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        // Required for $filter+$orderby together on messages.
-        Prefer: 'outlook.body-content-type="html"',
-      },
-    });
+    const res = await graphGet(url, token, 'messages list');
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       throw new Error(`Graph messages fetch failed (${res.status}): ${errText}`);
@@ -129,7 +212,7 @@ export async function downloadAttachments(messageId) {
   const token = await getAccessToken();
   const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}/attachments`;
 
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await graphGet(url, token, 'attachments');
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`Graph attachments fetch failed (${res.status}): ${errText}`);
@@ -145,4 +228,4 @@ export async function downloadAttachments(messageId) {
     }));
 }
 
-export default { fetchMessagesSince, downloadAttachments, normalizeMessage, isAdminSender };
+export default { fetchMessagesSince, fetchMessagesDelta, downloadAttachments, normalizeMessage, isAdminSender };

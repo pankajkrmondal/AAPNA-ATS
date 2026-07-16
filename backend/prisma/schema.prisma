@@ -429,6 +429,8 @@ model rpa_email_log {
   responded_at     DateTime? @db.Timestamp(6)
   reminder_count   Int?      @default(0)
   last_reminder_at DateTime? @db.Timestamp(6)
+  status           String    @default("sent")
+  error_message    String?
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

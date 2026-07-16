@@ -4,10 +4,10 @@
 
 The platform already runs a mature **placement-vendor (Category A)** workflow on a *single shared engine*:
 
-- **Upload / parse / dedup / merge** — [hrUpload.service.js](../backend/src/services/hrUpload.service.js) → `runBatchParsing(executionId, files, user, source, attribution)` (1724 lines). It is **already parameterized by `source`** (`hr_manual_upload | vendor_portal | email_intake`), branching at line ~1260 on duplicate handling.
-- **Screening / scoring** — [screening.service.js](../backend/src/services/screening.service.js) (2266 lines), `searchRoleCandidates(mrfId)` / `searchKeywordCandidates(filters)`, tightly coupled to `rpa_cv` with weighted axes (skills, education, stability…).
-- **Durable job tracking + Socket.io** — [uploadJob.service.js](../backend/src/services/uploadJob.service.js) (`rpa_upload_jobs`, live `upload:job` / `review:new` events).
-- **MRFs** live in `rpa_mrf_jd_send` ([mrf.controller.js](../backend/src/controllers/mrf.controller.js)); **roles/modules** in [config/roles.js](../backend/src/config/roles.js).
+- **Upload / parse / dedup / merge** — [hrUpload.service.js](../../backend/src/services/hrUpload.service.js) → `runBatchParsing(executionId, files, user, source, attribution)` (1724 lines). It is **already parameterized by `source`** (`hr_manual_upload | vendor_portal | email_intake`), branching at line ~1260 on duplicate handling.
+- **Screening / scoring** — [screening.service.js](../../backend/src/services/screening.service.js) (2266 lines), `searchRoleCandidates(mrfId)` / `searchKeywordCandidates(filters)`, tightly coupled to `rpa_cv` with weighted axes (skills, education, stability…).
+- **Durable job tracking + Socket.io** — [uploadJob.service.js](../../backend/src/services/uploadJob.service.js) (`rpa_upload_jobs`, live `upload:job` / `review:new` events).
+- **MRFs** live in `rpa_mrf_jd_send` ([mrf.controller.js](../../backend/src/controllers/mrf.controller.js)); **roles/modules** in [config/roles.js](../../backend/src/config/roles.js).
 
 The flowchart adds **Category B — C2C vendor**, a parallel pipeline that differs on a handful of axes but **shares** the back half. The intent of this document is to (a) review the original draft, (b) lock the three architecture decisions, and (c) specify the build precisely enough to execute.
 
@@ -153,39 +153,39 @@ CREATE OR REPLACE VIEW rpa_candidates_all AS
 All additive, idempotent, non-destructive. Existing placement behaviour untouched.
 
 ### Phase 2 — Registration (Step 1)
-- [admin.controller.js](../backend/src/controllers/admin.controller.js): `createUser` / `updateUser` accept `vendor_type` (`placement|c2c`), `contact_number`, `vendor_skills` when `role = vendor`; missing ⇒ `placement`.
+- [admin.controller.js](../../backend/src/controllers/admin.controller.js): `createUser` / `updateUser` accept `vendor_type` (`placement|c2c`), `contact_number`, `vendor_skills` when `role = vendor`; missing ⇒ `placement`.
 - AdminDashboard frontend: Vendor Type select + Contact Number + Skills, shown only when Role = Vendor.
-- No change to [roles.js](../backend/src/config/roles.js) — `vendor_type` is a sub-attribute of the existing `vendor` role, not a new role (keeps the rank/module model intact).
+- No change to [roles.js](../../backend/src/config/roles.js) — `vendor_type` is a sub-attribute of the existing `vendor` role, not a new role (keeps the rank/module model intact).
 
 ### Phase 3 — Share JD to vendor (Step 2, net-new)
-- New `POST /api/mrf/:id/share-jd` in [mrf.controller.js](../backend/src/controllers/mrf.controller.js): body = `{ vendorEmails[], c2c_rate?, contract_duration? }`. Loads the `rpa_mrf_jd_send` row; sends simultaneous email + in-app (Socket.io `review:new`-style) notification to each selected vendor.
-- New `sendVendorJDEmail` in [emailNotification.service.js](../backend/src/services/emailNotification.service.js): **reuse** the existing `generateMrfEmailTable(...)` builder; append **Duration** and **Rate** blocks only when provided (required for C2C, optional for placement).
+- New `POST /api/mrf/:id/share-jd` in [mrf.controller.js](../../backend/src/controllers/mrf.controller.js): body = `{ vendorEmails[], c2c_rate?, contract_duration? }`. Loads the `rpa_mrf_jd_send` row; sends simultaneous email + in-app (Socket.io `review:new`-style) notification to each selected vendor.
+- New `sendVendorJDEmail` in [emailNotification.service.js](../../backend/src/services/emailNotification.service.js): **reuse** the existing `generateMrfEmailTable(...)` builder; append **Duration** and **Rate** blocks only when provided (required for C2C, optional for placement).
 - MRF detail view: "Share JD" button → modal (multi-select vendors, optional Duration + Rate).
 
 ### Phase 4 — Upload & dedup through the SHARED engine (Steps 3–4)
-- [hrUpload.service.js](../backend/src/services/hrUpload.service.js): introduce `SOURCE_PROFILE` (Decision 1) and add the `c2c_vendor` branch at the existing duplicate-routing site (~line 1260) and the insert site. Concretely:
+- [hrUpload.service.js](../../backend/src/services/hrUpload.service.js): introduce `SOURCE_PROFILE` (Decision 1) and add the `c2c_vendor` branch at the existing duplicate-routing site (~line 1260) and the insert site. Concretely:
   - dedup key: `profile.dedup === 'name+inMemoryPII'` → primary match `lower(Name)` against `rpa_cv_c2c`, secondary in-memory PII match against `rpa_cv` (Decision 3).
   - persistence: `profile.persistPII === false` → omit `EmailID`/`ContactNumber` from the `rpa_cv_c2c` insert.
   - lock: skip the `addDaysIso(90)` stamp when `applyLock === false`.
   - notify: `vendor_only` → send the vendor alert, suppress candidate welcome/missing-data emails.
-- [vendor.controller.js](../backend/src/controllers/vendor.controller.js) `uploadResumes`: select source from `req.user.vendor_type` — `c2c` ⇒ `dispatchBatchParsing(..., 'c2c_vendor', attribution)`, else existing `vendor_portal`. Job rows carry `vendor_type` so the existing dashboard feed/statuses work unchanged.
+- [vendor.controller.js](../../backend/src/controllers/vendor.controller.js) `uploadResumes`: select source from `req.user.vendor_type` — `c2c` ⇒ `dispatchBatchParsing(..., 'c2c_vendor', attribution)`, else existing `vendor_portal`. Job rows carry `vendor_type` so the existing dashboard feed/statuses work unchanged.
 
 ### Phase 5 — Pending review & "Accept as new" (Step 10)
 - New `c2cReview.controller.js` (parallels the vendor review actions in `vendor.controller.js`):
   - `POST /api/vendor/c2c-review/merge` — overwrite the matched `rpa_cv_c2c` row.
   - `POST /api/vendor/c2c-review/reject` — delete the staging row (+ audit).
   - `POST /api/vendor/c2c-review/accept-new` — promote staging → a **new** `rpa_cv_c2c` row alongside the existing (the expected-collision path).
-- Routes registered in [vendor.routes.js](../backend/src/routes/vendor.routes.js) under the **staff-only** guard (review is never vendor-accessible — matches the existing `/review/*` rule).
+- Routes registered in [vendor.routes.js](../../backend/src/routes/vendor.routes.js) under the **staff-only** guard (review is never vendor-accessible — matches the existing `/review/*` rule).
 - UI (review queue): **contextual tagging** (`Name | Vendor | MRF`), never mutate `Name`; surface `already_in_main_pool` as a warning chip. Reuse `NotificationBell` + `review:new` events.
 
 ### Phase 6 — Partial screening through the SHARED scorer (Step 6)
-- [screening.service.js](../backend/src/services/screening.service.js): add a `scoringProfile` parameter. C2C profile = 3 axes (**Skills**, **CTC alignment**, **Notice period**), education + stability **weights zeroed**, source table = `rpa_cv_c2c`, and the Gemini prompt limited to those axes. **Reuse** the existing scoring scaffold (`searchRoleCandidates` / `searchKeywordCandidates`) — only the lean source query (fewer columns) and the weight vector are C2C-specific.
-- [screening.controller.js](../backend/src/controllers/screening.controller.js): `GET /api/screening/c2c/search` invokes the scorer with the C2C profile.
+- [screening.service.js](../../backend/src/services/screening.service.js): add a `scoringProfile` parameter. C2C profile = 3 axes (**Skills**, **CTC alignment**, **Notice period**), education + stability **weights zeroed**, source table = `rpa_cv_c2c`, and the Gemini prompt limited to those axes. **Reuse** the existing scoring scaffold (`searchRoleCandidates` / `searchKeywordCandidates`) — only the lean source query (fewer columns) and the weight vector are C2C-specific.
+- [screening.controller.js](../../backend/src/controllers/screening.controller.js): `GET /api/screening/c2c/search` invokes the scorer with the C2C profile.
 
 ### Phase 7 — Frontend
 - New `frontend/src/pages/C2CVendorPortal.jsx`: tailored upload screen — no candidate email/phone fields; NDA banner ("C2C mode: candidate contact info is automatically stripped"). Reuses the existing premium upload components (`KpiCard`, `UploadCelebration`, Socket.io live rows).
-- [App.jsx](../frontend/src/App.jsx): on vendor login, render `<C2CVendorPortal />` when `vendor_type === 'c2c'`, else `<VendorPortal />`.
-- [VendorDashboard.jsx](../frontend/src/pages/VendorDashboard.jsx): C2C variant hides email/phone columns and reads the C2C candidate endpoint. The **shared tracking dashboard (Step 9)** reads `rpa_candidates_all` with a `candidate_type` filter, so both categories appear per-vendor with no UNION logic in the controller.
+- [App.jsx](../../frontend/src/App.jsx): on vendor login, render `<C2CVendorPortal />` when `vendor_type === 'c2c'`, else `<VendorPortal />`.
+- [VendorDashboard.jsx](../../frontend/src/pages/VendorDashboard.jsx): C2C variant hides email/phone columns and reads the C2C candidate endpoint. The **shared tracking dashboard (Step 9)** reads `rpa_candidates_all` with a `candidate_type` filter, so both categories appear per-vendor with no UNION logic in the controller.
 
 ### Steps 7–9 (shared) — explicit handling
 - **Step 7 status update** and **Step 9 tracking** read through `rpa_candidates_all`; writes go through a thin type-aware helper that targets `rpa_cv` or `rpa_cv_c2c`.

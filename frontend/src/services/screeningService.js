@@ -97,6 +97,19 @@ const screeningService = {
   },
 
   /**
+   * Send a threaded reply to a conversation message from inside the ATS.
+   * @param {number|string} messageId - rpa_email_messages row id being replied to
+   * @param {string} bodyHtml - Reply body HTML
+   * @returns {Promise<{ data: { data: Object } }>} the stored outbound message
+   */
+  replyToOutlookConversation(messageId, bodyHtml) {
+    return api.post('/screening/outlook/reply', {
+      message_id: messageId,
+      body_html: bodyHtml
+    });
+  },
+
+  /**
    * Update shortlisted candidate status.
    * @param {Object} payload - { candidate_id: number, status: string }
    * @returns {Promise<{ data: Object }>}

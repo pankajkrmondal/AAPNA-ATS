@@ -43,13 +43,17 @@ import {
   CompassOutlined,
   WarningOutlined,
   CloseOutlined,
-  EyeOutlined
+  EyeOutlined,
+  ApartmentOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
 import screeningService from '../services/screeningService';
 import StatusBadge from '../components/common/StatusBadge';
 import CandidateDetailCard from '../components/CandidateDetailCard';
+import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
+// Phase 3 walkthrough prototype tab — remove with the prototype page.
+import { PipelineAnalyticsPreview } from './PipelinePrototype';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -181,6 +185,9 @@ export default function Analytics() {
   const [outlookModalVisible, setOutlookModalVisible] = useState(false);
   const [outlookThreads, setOutlookThreads] = useState([]);
   const [outlookLoading, setOutlookLoading] = useState(false);
+  // Per-thread reply drafts keyed by thread.group_key; only one send at a time.
+  const [replyDrafts, setReplyDrafts] = useState({});
+  const [replySendingKey, setReplySendingKey] = useState(null);
 
   // --- Cancellation State ---
   const [cancellingPipeline, setCancellingPipeline] = useState(null);
@@ -382,6 +389,49 @@ export default function Analytics() {
       message.error('Failed to load email conversation threads');
     } finally {
       setOutlookLoading(false);
+    }
+  };
+
+  const handleSendReply = async (thread) => {
+    const draft = (replyDrafts[thread.group_key] || '').trim();
+    if (!draft) return;
+    // Reply to the newest message in the thread — Graph createReply keeps the
+    // real conversation threading on both sides.
+    const target = thread.messages[thread.messages.length - 1];
+    if (!target?.id) {
+      message.error('This thread cannot be replied to.');
+      return;
+    }
+
+    // Plain text from the textarea → safe HTML (escape, then newlines to <br/>).
+    const escaped = draft
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const bodyHtml = `<p>${escaped.replace(/\n/g, '<br/>')}</p>`;
+
+    setReplySendingKey(thread.group_key);
+    try {
+      const res = await screeningService.replyToOutlookConversation(target.id, bodyHtml);
+      const sentMsg = res.data?.data || res.data;
+      setOutlookThreads((prev) =>
+        prev.map((t) =>
+          t.group_key === thread.group_key
+            ? {
+                ...t,
+                messages: [...t.messages, sentMsg],
+                message_count: (t.message_count || t.messages.length) + 1,
+                last_activity: sentMsg?.sent_at || t.last_activity,
+              }
+            : t
+        )
+      );
+      setReplyDrafts((prev) => ({ ...prev, [thread.group_key]: '' }));
+      message.success('Reply sent');
+    } catch (err) {
+      message.error(err.response?.data?.message || 'Failed to send reply');
+    } finally {
+      setReplySendingKey(null);
     }
   };
 
@@ -1084,6 +1134,27 @@ export default function Analytics() {
                   locale={{ emptyText: <Empty description="No active scheduled interviews found" /> }}
                 />
               )
+            },
+            {
+              // Phase 3 walkthrough prototype tab (mock data) — remove with the prototype page.
+              key: 'pipeline',
+              label: (
+                <span>
+                  <ApartmentOutlined className="tab-ico" />
+                  Pipeline (Preview)
+                </span>
+              ),
+              children: <PipelineAnalyticsPreview />
+            },
+            {
+              key: 'emailDelivery',
+              label: (
+                <span>
+                  <MailOutlined className="tab-ico" />
+                  Email Delivery
+                </span>
+              ),
+              children: <DeliveryMonitoring />
             }
           ]}
         />
@@ -1165,6 +1236,28 @@ export default function Analytics() {
                   </div>
                 );
               })}
+
+              {/* Reply from the ATS — threads via Graph createReply */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', margin: '4px 0 16px' }}>
+                <Input.TextArea
+                  autoSize={{ minRows: 1, maxRows: 4 }}
+                  placeholder="Write a reply to this thread…"
+                  value={replyDrafts[thread.group_key] || ''}
+                  onChange={(e) =>
+                    setReplyDrafts((prev) => ({ ...prev, [thread.group_key]: e.target.value }))
+                  }
+                  disabled={replySendingKey === thread.group_key}
+                />
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={replySendingKey === thread.group_key}
+                  disabled={!(replyDrafts[thread.group_key] || '').trim() || (replySendingKey && replySendingKey !== thread.group_key)}
+                  onClick={() => handleSendReply(thread)}
+                >
+                  Reply
+                </Button>
+              </div>
             </div>
           ))}
         </div>

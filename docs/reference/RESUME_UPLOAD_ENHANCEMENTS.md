@@ -191,7 +191,7 @@ Recruiter review (staff only):                                       │
   survives page refresh, navigation, and server restarts.
 - **Contents:** file name, candidate name/email, uploaded_by, vendor, status, `is_duplicate`,
   `action_required`, links to `cv_id` / `cv_tmp_id`, timestamps.
-- **Managed by:** [`uploadJob.service.js`](../backend/src/services/uploadJob.service.js)
+- **Managed by:** [`uploadJob.service.js`](../../backend/src/services/uploadJob.service.js)
   (`createJobsForBatch`, `setJobStatus`, `updateJobByCvTmpId`, `serializeJob`).
 
 ### 3b. Socket.io — real-time updates
@@ -201,8 +201,8 @@ Recruiter review (staff only):                                       │
 - **Events:**
   - `upload:job` → a resume's status changed → dashboard row updates live.
   - `review:new` → a duplicate needs review → recruiter's NotificationBell updates live.
-- **Backend helpers:** [`socket/index.js`](../backend/src/socket/index.js) (`emitToUser`,
-  `emitToRole`). **Frontend client:** [`services/socket.js`](../frontend/src/services/socket.js).
+- **Backend helpers:** [`socket/index.js`](../../backend/src/socket/index.js) (`emitToUser`,
+  `emitToRole`). **Frontend client:** [`services/socket.js`](../../frontend/src/services/socket.js).
 - **Resilience:** if the socket can't connect, the dashboard still works — it reloads from the
   table on demand.
 
@@ -212,7 +212,7 @@ Recruiter review (staff only):                                       │
 - **Why:** at enterprise scale (30–50k+ resumes, concurrent uploads) processing should be
   durable across restarts, with retries and controlled concurrency.
 - **Status:** **OFF by default.** With `USE_RESUME_QUEUE=true`, each resume becomes a BullMQ job
-  processed by [`resumeWorker.js`](../backend/src/workers/resumeWorker.js); otherwise parsing
+  processed by [`resumeWorker.js`](../../backend/src/workers/resumeWorker.js); otherwise parsing
   runs in-process via `setImmediate` (unchanged behavior).
 - **Note:** "BullMQ job" (a unit of work in Redis) ≠ "`rpa_upload_jobs` row" (a status record in
   Postgres). They share the word *job* but are unrelated.
@@ -332,20 +332,20 @@ DB changes are applied **manually in PostgreSQL** (we do not auto-create schema)
 ## 8. File map
 
 **Backend**
-- [`services/uploadJob.service.js`](../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits *(new)*
-- [`services/hrUpload.service.js`](../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, `runBatchParsing` / `dispatchBatchParsing`
-- [`controllers/vendor.controller.js`](../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
-- [`controllers/hrUpload.controller.js`](../backend/src/controllers/hrUpload.controller.js) — HR upload + job creation
-- [`routes/vendor.routes.js`](../backend/src/routes/vendor.routes.js) — vendor + staff routes
-- [`queues/resumeQueue.js`](../backend/src/queues/resumeQueue.js) / [`workers/resumeWorker.js`](../backend/src/workers/resumeWorker.js) — durable queue (optional)
-- [`socket/index.js`](../backend/src/socket/index.js) — Socket.io server + emit helpers
-- [`server.js`](../backend/src/server.js) — conditional worker startup
+- [`services/uploadJob.service.js`](../../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits *(new)*
+- [`services/hrUpload.service.js`](../../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, `runBatchParsing` / `dispatchBatchParsing`
+- [`controllers/vendor.controller.js`](../../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
+- [`controllers/hrUpload.controller.js`](../../backend/src/controllers/hrUpload.controller.js) — HR upload + job creation
+- [`routes/vendor.routes.js`](../../backend/src/routes/vendor.routes.js) — vendor + staff routes
+- [`queues/resumeQueue.js`](../../backend/src/queues/resumeQueue.js) / [`workers/resumeWorker.js`](../../backend/src/workers/resumeWorker.js) — durable queue (optional)
+- [`socket/index.js`](../../backend/src/socket/index.js) — Socket.io server + emit helpers
+- [`server.js`](../../backend/src/server.js) — conditional worker startup
 
 **Frontend**
-- [`pages/VendorPortal.jsx`](../frontend/src/pages/VendorPortal.jsx) — upload + persistent job dashboard + review modal
-- [`services/socket.js`](../frontend/src/services/socket.js) — Socket.io client singleton *(new)*
-- [`services/vendorService.js`](../frontend/src/services/vendorService.js) — API methods
-- [`components/common/NotificationBell.jsx`](../frontend/src/components/common/NotificationBell.jsx) — live review notifications
+- [`pages/VendorPortal.jsx`](../../frontend/src/pages/VendorPortal.jsx) — upload + persistent job dashboard + review modal
+- [`services/socket.js`](../../frontend/src/services/socket.js) — Socket.io client singleton *(new)*
+- [`services/vendorService.js`](../../frontend/src/services/vendorService.js) — API methods
+- [`components/common/NotificationBell.jsx`](../../frontend/src/components/common/NotificationBell.jsx) — live review notifications
 
 ---
 

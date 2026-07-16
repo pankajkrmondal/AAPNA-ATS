@@ -76,4 +76,10 @@ router.post('/analytics/status', screeningController.updateCandidateStatus);
  */
 router.get('/outlook/conversations', screeningController.getOutlookConversations);
 
+/**
+ * POST /api/screening/outlook/reply
+ * Send a threaded reply (Graph createReply) to a conversation message
+ */
+router.post('/outlook/reply', screeningController.replyToOutlookMessage);
+
 export default router;

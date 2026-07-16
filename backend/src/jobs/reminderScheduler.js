@@ -2,7 +2,8 @@ import cron from 'node-cron';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
-import { getAccessToken } from '../services/onedrive.service.js';
+import { sendGraphEmail, injectTrackingPixel } from '../services/emailNotification.service.js';
+import { v4 as uuidv4 } from 'uuid';
 
 let job = null;
 let currentSchedule = null;
@@ -85,6 +86,7 @@ export async function sendPendingReminders() {
       LEFT JOIN rpa_cv c ON el.reference_id = c.id AND el.email_type = 'missing_jd'
       LEFT JOIN rpa_mrf m ON el.reference_id = m.id AND el.email_type != 'missing_jd'
       WHERE el.responded_at IS NULL
+        AND el.status = 'sent'
         AND el.reminder_count < $1
         AND (
           (el.last_reminder_at IS NULL AND el.sent_at <= NOW() - ($2 || ' days')::interval)
@@ -98,8 +100,6 @@ export async function sendPendingReminders() {
 
     if (pendingLogs.length === 0) return;
 
-    // Get Microsoft Graph API access token
-    const accessToken = await getAccessToken();
     const sender = config.microsoft.defaultSender;
 
     for (const log of pendingLogs) {
@@ -217,42 +217,23 @@ export async function sendPendingReminders() {
           logger.info(`[Reminder Scheduler] Non-prod: Redirected reminder for log ${log.id} to test inbox: "${toEmail}"`);
         }
 
-        const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`;
-        const toRecipients = toEmail.split(',')
-          .map(email => email.trim())
-          .filter(email => email.length > 0)
-          .map(email => ({ emailAddress: { address: email } }));
-
-        const mailPayload = {
-          message: {
-            subject,
-            body: {
-              contentType: 'HTML',
-              content: finalBody
-            },
-            toRecipients
-          },
-          saveToSentItems: 'true'
-        };
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(mailPayload)
+        // Shared send path: network retry, sender fallback, and real Graph id
+        // capture (draft → send) all live in sendGraphEmail. Pixel goes into
+        // the sent html only; the stored body_html stays clean.
+        const trackingToken = uuidv4();
+        const sendResult = await sendGraphEmail({
+          sender,
+          to: toEmail,
+          subject,
+          html: injectTrackingPixel(finalBody, trackingToken),
         });
-
-        if (!res.ok) {
-          const errorBody = await res.json().catch(() => ({}));
-          throw new Error(`Graph sendMail failed: ${res.statusText}. ${JSON.stringify(errorBody)}`);
-        }
 
         // Log outbound reminder to rpa_email_messages
         const emailMsg = await prisma.rpa_email_messages.create({
           data: {
-            conversation_id: `reminder-conv-${log.id}`,
+            graph_message_id: sendResult?.graphMessageId || null,
+            conversation_id: sendResult?.conversationId || `reminder-conv-${log.id}`,
+            internet_msg_id: sendResult?.internetMessageId || null,
             from_email: sender,
             from_name: 'HR Team',
             to_emails: toEmail.split(',').map(e => e.trim()),
@@ -269,6 +250,7 @@ export async function sendPendingReminders() {
         await prisma.rpa_email_tracking.create({
           data: {
             message_id: emailMsg.id,
+            tracking_token: trackingToken,
             delivered: true,
             delivered_at: new Date(),
           }

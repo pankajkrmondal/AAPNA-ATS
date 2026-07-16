@@ -1,7 +1,7 @@
 # V16 — Change Summary & Production Deployment Guide
 
 Consolidated reference for everything changed in the V16 workspace, plus what is needed to run it on
-the production server. Per-change detail lives in [CHANGELOG.md](./CHANGELOG.md) and the linked
+the production server. Per-change detail lives in [CHANGELOG.md](../CHANGELOG.md) and the linked
 `CHANGES-*.md` docs; this document is the one-stop overview.
 
 Last updated: 2026-07-13
@@ -73,7 +73,7 @@ user.
   strict auth limiter on `/api/auth` counts **failed attempts only** (20/15 min).
 - `TRUST_PROXY=true` in staging/production env files so limits key on the real client IP behind the
   reverse proxy. Limits tunable via `RATE_LIMIT_*` env vars.
-  Detail: [CHANGES-rate-limit-429-fix.md](./CHANGES-rate-limit-429-fix.md).
+  Detail: [CHANGES-rate-limit-429-fix.md](../changelog/CHANGES-rate-limit-429-fix.md).
 
 ### 4. Superadmin/Admin permission tightening + credential email routing (2026-07-03)
 
@@ -81,8 +81,8 @@ user.
   strictly lower roles (never co-admins); Delete User is superadmin-only; self-deactivation and
   self-role-change blocked server-side; a superadmin's password can only be changed by its owner.
 - Credential/password emails are on the `NEVER_REDIRECT` list — they always reach the affected user's
-  real inbox, even in staging. Rules reference: [ROLE_RULES.md](./ROLE_RULES.md),
-  [ADMIN_ACCESS_CONTROL.md](./ADMIN_ACCESS_CONTROL.md).
+  real inbox, even in staging. Rules reference: [ROLE_RULES.md](../reference/ROLE_RULES.md),
+  [ADMIN_ACCESS_CONTROL.md](../reference/ADMIN_ACCESS_CONTROL.md).
 
 ### 5. Candidate Screening enhancements (2026-06-30)
 
@@ -93,7 +93,7 @@ user.
   (`useScreeningData.js`); app-load prefetch; Refresh button force-bypasses the Redis cache.
 - **Client-side pagination** on both tabs (10/20/50 per page).
 - **Premium card refresh**: score tier accent rail, gradient-ring avatar, decluttered summary bar.
-  Feature doc: [screening.md](./screening.md).
+  Feature doc: [screening.md](../reference/screening.md).
 
 ---
 

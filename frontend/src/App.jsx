@@ -41,6 +41,7 @@ import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
 import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
+import PipelinePrototype from './pages/PipelinePrototype';
 
 /* ---- Route Guards ---- */
 
@@ -317,6 +318,10 @@ function AppShell() {
               />
               <Route path="/filtering" element={<CandidateScreening />} />
               <Route path="/analytics" element={<Analytics />} />
+              {/* Phase 3 walkthrough prototype (mock data only) — remove once
+                  the real Pipeline Tracker ships in Phase 3 Module 1. */}
+              <Route path="/pipeline-prototype" element={<PipelinePrototype />} />
+
               <Route path="/email" element={<EmailManagement />} />
               <Route path="/settings" element={<Settings />} />
             </Route>

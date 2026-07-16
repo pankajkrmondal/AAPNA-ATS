@@ -27,7 +27,7 @@ Scope decisions (agreed):
 
 ## 2. Roles & rules
 
-Canonical roles and helpers live in [`backend/src/config/roles.js`](../backend/src/config/roles.js):
+Canonical roles and helpers live in [`backend/src/config/roles.js`](../../backend/src/config/roles.js):
 `ROLES`, `ROLE_RANK`, `ADMIN_ASSIGNABLE_ROLES`, `MODULES`, `isAdminTier`, `isSuperadmin`,
 `normalizeRole`, `outranks`. Legacy `hr` is treated as recruiter-tier.
 
@@ -54,7 +54,7 @@ Hierarchy: `superadmin (global) > admin (one company) > recruiter / vendor (one 
    check is therefore global and returns only a boolean.
 8. **Credential/password emails always go to the affected user's own inbox** in every environment —
    the `userCredentialUpdate` flow is in `NEVER_REDIRECT`
-   ([`config/emailRecipients.js`](../backend/src/config/emailRecipients.js)), bypassing the staging
+   ([`config/emailRecipients.js`](../../backend/src/config/emailRecipients.js)), bypassing the staging
    test-inbox redirect.
 
 ### Capability matrix
@@ -86,11 +86,11 @@ Self-delete / self-deactivate / self-role-change are blocked **server-side** (an
 
 ## 3. Where it's enforced
 
-**Tenant context** — [`middleware/auth.js`](../backend/src/middleware/auth.js): `authenticate`
+**Tenant context** — [`middleware/auth.js`](../../backend/src/middleware/auth.js): `authenticate`
 loads the user *with* their company, sets `req.company_id`, and rejects login if the user's company
 is deactivated. JWT and `rpa_sessions` both carry `company_id`.
 
-**Scoping per endpoint** ([`controllers/admin.controller.js`](../backend/src/controllers/admin.controller.js)):
+**Scoping per endpoint** ([`controllers/admin.controller.js`](../../backend/src/controllers/admin.controller.js)):
 
 | Endpoint | Isolation |
 |---|---|
@@ -102,7 +102,7 @@ is deactivated. JWT and `rpa_sessions` both carry `company_id`.
 | `GET /admin/modules/get-access` | loads target + `restrictToCompanyScope` (no cross-tenant reads) |
 | `POST /admin/modules/set-access` | hierarchy guard + `restrictToCompanyScope` |
 | `GET /admin/users/check-email` | **global boolean** (email is globally unique) — only true/false, no data |
-| `/admin/companies/*` | superadmin-only route ([`company.routes.js`](../backend/src/routes/company.routes.js)) |
+| `/admin/companies/*` | superadmin-only route ([`company.routes.js`](../../backend/src/routes/company.routes.js)) |
 
 `restrictToCompanyScope(requester, target)` (in `middleware/auth.js`): no-op for super admin;
 otherwise throws 403 unless `requester.company_id === target.company_id`.
@@ -117,7 +117,7 @@ otherwise throws 403 unless `requester.company_id === target.company_id`.
 | `rpa_users` | `+ company_id Int?` (FK → `rpa_companies`, `onDelete: Restrict`, indexed). **NULL only for super admins.** |
 | `rpa_sessions` | `+ company_id Int?` (denormalized tenant context) |
 
-Schema: [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma).
+Schema: [`backend/prisma/schema.prisma`](../../backend/prisma/schema.prisma).
 
 ### Migration SQL (run once per database)
 This project applies schema via raw SQL (not `prisma migrate`); after running it, regenerate the

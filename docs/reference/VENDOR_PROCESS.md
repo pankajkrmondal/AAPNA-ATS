@@ -7,12 +7,12 @@
 > hasn't seen the code.
 
 Source of truth in code:
-- [`controllers/vendor.controller.js`](../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
-- [`routes/vendor.routes.js`](../backend/src/routes/vendor.routes.js) — vendor + staff routes & guards
-- [`services/hrUpload.service.js`](../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, 90-day lock (shared engine; vendor uploads run through it)
-- [`services/uploadJob.service.js`](../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits
-- [`services/emailNotification.service.js`](../backend/src/services/emailNotification.service.js) — duplicate/vendor alert emails
-- [`config/roles.js`](../backend/src/config/roles.js) — roles & the `vendor_upload` module key
+- [`controllers/vendor.controller.js`](../../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
+- [`routes/vendor.routes.js`](../../backend/src/routes/vendor.routes.js) — vendor + staff routes & guards
+- [`services/hrUpload.service.js`](../../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, 90-day lock (shared engine; vendor uploads run through it)
+- [`services/uploadJob.service.js`](../../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits
+- [`services/emailNotification.service.js`](../../backend/src/services/emailNotification.service.js) — duplicate/vendor alert emails
+- [`config/roles.js`](../../backend/src/config/roles.js) — roles & the `vendor_upload` module key
 
 ---
 
@@ -539,21 +539,21 @@ DB changes are applied **manually in PostgreSQL** (we do not auto-create schema)
 ### 16. File map
 
 **Backend**
-- [`services/uploadJob.service.js`](../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits
-- [`services/hrUpload.service.js`](../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, 90-day lock, `runBatchParsing` / `dispatchBatchParsing` (shared engine)
-- [`controllers/vendor.controller.js`](../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
-- [`routes/vendor.routes.js`](../backend/src/routes/vendor.routes.js) — vendor + staff routes & guards
-- [`services/emailNotification.service.js`](../backend/src/services/emailNotification.service.js) — duplicate / same-vendor / different-vendor alert emails
-- [`queues/resumeQueue.js`](../backend/src/queues/resumeQueue.js) / [`workers/resumeWorker.js`](../backend/src/workers/resumeWorker.js) — durable queue (optional)
-- [`socket/index.js`](../backend/src/socket/index.js) — Socket.io server + emit helpers
-- [`server.js`](../backend/src/server.js) — conditional worker startup
+- [`services/uploadJob.service.js`](../../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits
+- [`services/hrUpload.service.js`](../../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, 90-day lock, `runBatchParsing` / `dispatchBatchParsing` (shared engine)
+- [`controllers/vendor.controller.js`](../../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
+- [`routes/vendor.routes.js`](../../backend/src/routes/vendor.routes.js) — vendor + staff routes & guards
+- [`services/emailNotification.service.js`](../../backend/src/services/emailNotification.service.js) — duplicate / same-vendor / different-vendor alert emails
+- [`queues/resumeQueue.js`](../../backend/src/queues/resumeQueue.js) / [`workers/resumeWorker.js`](../../backend/src/workers/resumeWorker.js) — durable queue (optional)
+- [`socket/index.js`](../../backend/src/socket/index.js) — Socket.io server + emit helpers
+- [`server.js`](../../backend/src/server.js) — conditional worker startup
 
 **Frontend**
-- [`pages/VendorPortal.jsx`](../frontend/src/pages/VendorPortal.jsx) — upload + persistent job dashboard + review modal
-- [`pages/VendorDashboard.jsx`](../frontend/src/pages/VendorDashboard.jsx) — vendor stats + hiring pipeline
-- [`services/socket.js`](../frontend/src/services/socket.js) — Socket.io client singleton
-- [`services/vendorService.js`](../frontend/src/services/vendorService.js) — API methods
-- [`components/common/NotificationBell.jsx`](../frontend/src/components/common/NotificationBell.jsx) — live review notifications
+- [`pages/VendorPortal.jsx`](../../frontend/src/pages/VendorPortal.jsx) — upload + persistent job dashboard + review modal
+- [`pages/VendorDashboard.jsx`](../../frontend/src/pages/VendorDashboard.jsx) — vendor stats + hiring pipeline
+- [`services/socket.js`](../../frontend/src/services/socket.js) — Socket.io client singleton
+- [`services/vendorService.js`](../../frontend/src/services/vendorService.js) — API methods
+- [`components/common/NotificationBell.jsx`](../../frontend/src/components/common/NotificationBell.jsx) — live review notifications
 
 ---
 

@@ -1,9 +1,25 @@
 # Changelog
 
 Reverse-chronological log of changes. One entry per change set, listing files touched and the what/why.
-Feature-level detail lives in [docs/screening.md](./screening.md).
+Feature-level detail lives in [docs/reference/screening.md](./reference/screening.md).
 
 ---
+
+## 2026-07-14 — Docs reorganization (`docs/reference/`, `docs/changelog/`, `docs/deployment/`)
+**Why:** the doc set had grown past 30 files flat under `docs/`, making it hard to tell living
+reference docs apart from dated session worklogs. Full detail in
+[docs/changelog/CHANGES-docs-reorganization.md](./changelog/CHANGES-docs-reorganization.md).
+
+- Moved 13 architecture/how-it-works docs into `docs/reference/` (`BACKEND.md`, `FRONTEND.md`,
+  `VENDOR_PROCESS.md`, `screening.md`, etc.), 10 dated worklogs into `docs/changelog/` (all
+  `CHANGES-*.md` + `UI_FIXES.md`), and `V16-CHANGES-AND-DEPLOYMENT.md` into `docs/deployment/`.
+  `docs/CHANGELOG.md`, `docs/phase3/`, `docs/proposals/`, `docs/test-plans/`, and
+  `frontend/UI-CHANGELOG.md` were left in place. No files deleted or content rewritten — pure
+  regrouping, done with `git mv` to preserve history.
+- Fixed every relative link broken by the move: markdown cross-links, `../backend` / `../frontend`
+  source-code links inside the relocated reference docs, and plain-text `docs/Foo.md` path mentions
+  in changelog prose and one backend comment (`seed-email-templates.js`). Verified with a scripted
+  link-resolution pass — 0 broken links across 74 checked.
 
 ## 2026-07-13 — Friendly 429 messages with wait time
 **Why:** Rate-limit responses said only "please try again later" — users had no idea how long to wait.
@@ -52,7 +68,7 @@ reset. Completes the account-management work from 2026-07-10.
 **Why:** Login accepted username only; the admin UI auto-generated usernames (`first.last123`) with no
 way to set or change them; and non-admin roles (recruiter/vendor) had no way to change their own
 password — the only password path was the admin portal. Overview + deploy notes in
-[docs/V16-CHANGES-AND-DEPLOYMENT.md](./V16-CHANGES-AND-DEPLOYMENT.md).
+[docs/deployment/V16-CHANGES-AND-DEPLOYMENT.md](./deployment/V16-CHANGES-AND-DEPLOYMENT.md).
 
 - `backend/src/services/auth.service.js` — new `findUserByLogin()` (case-insensitive `username` OR
   `email`); `login()` uses it. New shared `hashPassword()` (same `salt:sha512` format). JWTs now carry
@@ -112,7 +128,7 @@ contrast bugs (light-on-light / dark-on-dark text) across screens.
 user (let alone a whole office behind one NAT IP, or everyone behind the un-trusted reverse proxy)
 exhausted it in minutes during normal use. Replaced with a two-tier scheme: generous global abuse
 protection + strict brute-force limiting on login only. Full detail in
-[docs/CHANGES-rate-limit-429-fix.md](./CHANGES-rate-limit-429-fix.md).
+[docs/changelog/CHANGES-rate-limit-429-fix.md](./changelog/CHANGES-rate-limit-429-fix.md).
 
 - `backend/src/app.js` — global limiter raised to 2000 req/15 min per IP (`/api/health` exempt); new
   auth limiter on `/api/auth` (20 per 15 min, **failed attempts only** via `skipSuccessfulRequests`);
@@ -122,7 +138,7 @@ protection + strict brute-force limiting on login only. Full detail in
   change required).
 - `backend/.env.staging`, `backend/.env.production` — `TRUST_PROXY=true` (both sit behind a reverse
   proxy); tuning vars documented. `.env.development` — commented docs only.
-- `docs/BACKEND.md` — rate-limiter section rewritten for the two-tier scheme.
+- `docs/reference/BACKEND.md` — rate-limiter section rewritten for the two-tier scheme.
 - Requires a restart of staging/production to take effect.
 
 ## 2026-07-03 — Superadmin/Admin permission tightening + credential email routing
@@ -148,8 +164,8 @@ reach the affected user's own inbox even in staging (not the test-recipient redi
   Toggle for lower roles only, Delete for superadmins only, with explanatory tooltips; Role and Account
   Status fields disabled when editing your own account. Deactivate confirmation restyled as a warning
   (⚠️ title, amber consequence box, danger-styled "Deactivate" button); activation keeps the positive style.
-- `docs/ADMIN_ACCESS_CONTROL.md` — rules, capability matrix, and endpoint table updated.
-- `docs/ROLE_RULES.md` (new) — per-role can/cannot reference (Super Admin / Company Admin / Recruiter /
+- `docs/reference/ADMIN_ACCESS_CONTROL.md` — rules, capability matrix, and endpoint table updated.
+- `docs/reference/ROLE_RULES.md` (new) — per-role can/cannot reference (Super Admin / Company Admin / Recruiter /
   Vendor) incl. universal rules and a quick-reference matrix.
 
 ## 2026-06-30 — Candidate card enterprise refinement (pass 2)
@@ -175,7 +191,7 @@ premium look. Display-only.
   - Candidate card restructured: gradient-ring avatar, `.cand-name`, qualification folded into the meta-pill row,
     a single "Skills" row, the compact match meter, and an elegant right-side `.cand-score` scorecard.
   - Summary bar decluttered: primary count + muted detail; star buckets stay as stat chips.
-- `docs/screening.md` — noted the card uses the compact meter; drawer keeps the full breakdown.
+- `docs/reference/screening.md` — noted the card uses the compact meter; drawer keeps the full breakdown.
 
 ## 2026-06-30 — App-load roles preload + Refresh button
 **Why:** Roles/candidates re-fetched on every page visit and were lost on navigation; no manual reload.
@@ -214,4 +230,4 @@ which mandatory skills are actually evidenced. Display-only (scoring unchanged).
   `parseDeclaredSkills`, `parseTechnicalTerms`, `skillMatchesTerm`); attaches `jdSkillSignals` per candidate in
   `searchRoleCandidates`.
 - `frontend/src/pages/CandidateScreening.jsx` — `JD_SKILL_STATUS` map + `<JdSkillMatch>` component on card + drawer.
-- `docs/screening.md` (new, consolidated) — feature documentation.
+- `docs/reference/screening.md` (new, consolidated) — feature documentation.

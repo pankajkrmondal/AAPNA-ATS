@@ -16,7 +16,7 @@
  *   - Zeko Interview Cancelled Alert    (by name)
  *   - MRF Approval Request              (by name) — intro paragraphs only; greeting/buttons are built in the service
  *
- * Legacy source of truth for the branded bodies: docs/Email-Templates-Summary.md
+ * Legacy source of truth for the branded bodies: docs/reference/Email-Templates-Summary.md
  * (the n8n flow exports). Safe to run multiple times.
  *
  *   node prisma/seed-email-templates.js
@@ -108,7 +108,7 @@ const REJECTED_PARAS = `<p>After careful consideration of your profile, we regre
 
 const ONHOLD_PARAS = `<p>Thank you for your continued interest in the <strong>{position}</strong> position at AAPNA Infotech.</p><p>Your application is currently on hold while we complete our initial screening. We will reach out with an update as soon as possible.</p><p>We appreciate your patience.</p>`;
 
-/** Branded candidate welcome — n8n "Send a message" (Resume 1.1.1 Intake), §1.1 of docs/Email-Templates-Summary.md. */
+/** Branded candidate welcome — n8n "Send a message" (Resume 1.1.1 Intake), §1.1 of docs/reference/Email-Templates-Summary.md. */
 const WELCOME_BODY = `<!DOCTYPE html>
 <html lang="en">
 <head>

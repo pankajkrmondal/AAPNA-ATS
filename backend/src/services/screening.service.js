@@ -3,7 +3,8 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
-import { compileTemplate, sendGraphEmail, describeEmailError } from './emailNotification.service.js';
+import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, logFailedEmail, injectTrackingPixel } from './emailNotification.service.js';
+import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
@@ -1718,20 +1719,29 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
         // AppOnly Application Access Policy with ErrorAccessDenied. sendGraphEmail
         // throws (with the Graph error body) on any non-ok response, so failures
         // surface in the logs below instead of being silently dropped.
-        await sendGraphEmail({
+        // Open-tracking token: pixel goes into the SENT html only — the stored
+        // body_html stays clean so viewing the conversation modal can't count
+        // as an "open".
+        const trackingToken = uuidv4();
+
+        const sendResult = await sendGraphEmail({
           sender: config.microsoft.defaultSender,
           to: toEmail,
           cc: ccEmail,
           subject,
-          html: bodyHtml,
+          html: injectTrackingPixel(bodyHtml, trackingToken),
         });
 
         emailsSent++;
 
-        // Log mail message to db
+        // Log mail message to db. Real Graph ids let inboundEmailSync correlate
+        // candidate replies/bounces; the synthetic id is only a fallback when
+        // the tenant blocks id capture (legacy sendMail path).
         const emailMsg = await prisma.rpa_email_messages.create({
           data: {
-            conversation_id: `shortlist-conv-${shortlist.id}`,
+            graph_message_id: sendResult?.graphMessageId || null,
+            conversation_id: sendResult?.conversationId || `shortlist-conv-${shortlist.id}`,
+            internet_msg_id: sendResult?.internetMessageId || null,
             from_email: config.microsoft.defaultSender,
             to_emails: toEmail.split(','),
             subject,
@@ -1748,6 +1758,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
         await prisma.rpa_email_tracking.create({
           data: {
             message_id: emailMsg.id,
+            tracking_token: trackingToken,
             delivered: true,
             delivered_at: new Date(),
           },
@@ -1769,6 +1780,15 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
           name: c.Name || 'Candidate',
           email: c.EmailID || '',
           reason: describeEmailError(err),
+        });
+        // Persist the failure so it is queryable after the HTTP response is gone.
+        await logFailedEmail({
+          emailType: 'shortlist',
+          recipientEmail: c.EmailID,
+          recipientName: c.Name,
+          subject,
+          referenceId: shortlist.id,
+          err,
         });
       }
     }
@@ -2398,19 +2418,26 @@ export async function updateCandidateStatus(candidateId, status, user) {
             job_title: updated.position_applied || 'the role',
           });
 
-          await sendGraphEmail({
+          // Pixel only in the sent html; stored body_html stays clean (see shortlist).
+          const trackingToken = uuidv4();
+
+          const sendResult = await sendGraphEmail({
             sender: config.microsoft.defaultSender,
             to: toEmail,
             cc: ccEmail,
             subject,
-            html: bodyHtml,
+            html: injectTrackingPixel(bodyHtml, trackingToken),
           });
           emailSent = true;
 
-          // Record the outbound message for the conversation/audit view
-          await prisma.rpa_email_messages.create({
+          // Record the outbound message for the conversation/audit view.
+          // Real Graph ids enable reply/bounce correlation; synthetic fallback
+          // only when id capture is unavailable.
+          const statusMsg = await prisma.rpa_email_messages.create({
             data: {
-              conversation_id: `status-${status}-conv-${updated.id}`,
+              graph_message_id: sendResult?.graphMessageId || null,
+              conversation_id: sendResult?.conversationId || `status-${status}-conv-${updated.id}`,
+              internet_msg_id: sendResult?.internetMessageId || null,
               from_email: config.microsoft.defaultSender,
               to_emails: toEmail.split(','),
               subject,
@@ -2420,6 +2447,15 @@ export async function updateCandidateStatus(candidateId, status, user) {
               mrf_id: updated.mrf_id ? BigInt(updated.mrf_id) : null,
               shortlist_id: updated.id,
               sent_at: new Date(),
+            },
+          });
+
+          await prisma.rpa_email_tracking.create({
+            data: {
+              message_id: statusMsg.id,
+              tracking_token: trackingToken,
+              delivered: true,
+              delivered_at: new Date(),
             },
           });
         }
@@ -2437,6 +2473,114 @@ export async function updateCandidateStatus(candidateId, status, user) {
     mrf_id: updated.mrf_id ? Number(updated.mrf_id) : null,
     email_sent: emailSent,
     email_error: emailError,
+  };
+}
+
+/**
+ * POST /api/screening/outlook/reply
+ * Sends a threaded reply (Graph createReply) to a message shown in the
+ * conversation view. The reply inherits the real conversationId, so it threads
+ * correctly in the candidate's mail client AND in our conversation view.
+ *
+ * @param {number} messageId - rpa_email_messages row id being replied to
+ * @param {string} bodyHtml - Reply body HTML written by the recruiter
+ * @param {Object} user - Authenticated user (req.user)
+ */
+export async function replyToOutlookMessage(messageId, bodyHtml, user) {
+  const original = await prisma.rpa_email_messages.findUnique({
+    where: { id: messageId },
+  });
+  if (!original) {
+    throw new AppError('Message not found.', 404);
+  }
+  if (!original.graph_message_id) {
+    throw new AppError(
+      'This message has no Outlook reference (sent before Graph id capture was enabled) and cannot be replied to from the ATS.',
+      400
+    );
+  }
+
+  // The counterpart we are answering: the sender for inbound mail, the original
+  // recipient for outbound mail. resolveRecipients redirects to the test inbox
+  // in non-prod so test replies never reach real candidates.
+  const counterpart =
+    original.direction === 'inbound'
+      ? original.from_email
+      : (original.to_emails && original.to_emails[0]) || '';
+  const { to: toEmail } = resolveRecipients('manualReply', counterpart);
+  if (!toEmail) {
+    throw new AppError('No recipient address available for this reply.', 400);
+  }
+
+  // Pixel only in the sent html; stored body_html stays clean (see shortlist).
+  const trackingToken = uuidv4();
+
+  let replyResult;
+  try {
+    replyResult = await sendGraphReply({
+      mailbox: config.microsoft.defaultSender,
+      graphMessageId: original.graph_message_id,
+      html: injectTrackingPixel(bodyHtml, trackingToken),
+      toOverride: toEmail,
+    });
+  } catch (err) {
+    logger.error(`Failed to send ATS reply for message ${messageId}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'manual_reply',
+      recipientEmail: toEmail,
+      subject: original.subject ? `RE: ${original.subject}` : null,
+      referenceId: messageId,
+      err,
+    });
+    throw new AppError(describeEmailError(err), 502);
+  }
+
+  const replyMsg = await prisma.rpa_email_messages.create({
+    data: {
+      graph_message_id: replyResult.graphMessageId,
+      conversation_id: replyResult.conversationId || original.conversation_id,
+      internet_msg_id: replyResult.internetMessageId,
+      in_reply_to: original.internet_msg_id || null,
+      from_email: config.microsoft.defaultSender,
+      from_name: `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'HR Team',
+      to_emails: replyResult.toEmails.length > 0 ? replyResult.toEmails : toEmail.split(',').map((e) => e.trim()),
+      subject: replyResult.subject || (original.subject ? `RE: ${original.subject}` : null),
+      body_html: bodyHtml,
+      body_preview: bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 255),
+      direction: 'outbound',
+      folder: 'sentitems',
+      candidate_id: original.candidate_id,
+      mrf_id: original.mrf_id,
+      shortlist_id: original.shortlist_id,
+      sent_by_user_id: user?.id ? Number(user.id) : null,
+      sent_at: new Date(),
+    },
+  });
+
+  await prisma.rpa_email_tracking.create({
+    data: {
+      message_id: replyMsg.id,
+      tracking_token: trackingToken,
+      delivered: true,
+      delivered_at: new Date(),
+    },
+  });
+
+  logger.info(`ATS reply sent for message ${messageId} (conversation ${replyMsg.conversation_id}).`);
+
+  // Same shape as getOutlookConversations message objects so the UI can append it.
+  return {
+    id: replyMsg.id.toString(),
+    conversation_id: replyMsg.conversation_id,
+    direction: 'outbound',
+    from_email: replyMsg.from_email,
+    from_name: replyMsg.from_name,
+    to_emails: replyMsg.to_emails,
+    subject: replyMsg.subject,
+    body_preview: replyMsg.body_preview,
+    body_html: replyMsg.body_html,
+    sent_at: replyMsg.sent_at,
+    tracking: { delivered: true, opened: false, open_count: 0, first_opened_at: null },
   };
 }
 

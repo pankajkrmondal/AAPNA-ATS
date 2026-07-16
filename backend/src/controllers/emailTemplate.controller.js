@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -98,4 +99,99 @@ export const updateEmailTemplate = catchAsync(async (req, res) => {
   });
 
   return success(res, updatedTemplate, 'Email template updated successfully');
+});
+
+/**
+ * @desc    Email delivery monitoring: send/tracking stats, per-type breakdown,
+ *          recent failures, and mailbox poller status
+ * @route   GET /api/email/monitoring?days=30
+ * @access  Private (Recruiter/Admin)
+ */
+export const getEmailMonitoring = catchAsync(async (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const [logCounts, trackingRows, byTypeCounts, recentFailures, deltaRow, account] = await Promise.all([
+    prisma.rpa_email_log.groupBy({
+      by: ['status'],
+      where: { sent_at: { gte: since } },
+      _count: { _all: true },
+    }),
+    prisma.$queryRaw`
+      SELECT
+        COUNT(*)                          AS tracked,
+        COUNT(*) FILTER (WHERE t.opened)  AS opened,
+        COUNT(*) FILTER (WHERE t.replied) AS replied,
+        COUNT(*) FILTER (WHERE t.bounced) AS bounced
+      FROM rpa_email_tracking t
+      JOIN rpa_email_messages m ON m.id = t.message_id
+      WHERE COALESCE(m.sent_at, m.created_at) >= ${since}
+    `,
+    prisma.rpa_email_log.groupBy({
+      by: ['email_type', 'status'],
+      where: { sent_at: { gte: since } },
+      _count: { _all: true },
+    }),
+    prisma.rpa_email_log.findMany({
+      where: { status: 'failed', sent_at: { gte: since } },
+      orderBy: { sent_at: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        email_type: true,
+        recipient_email: true,
+        subject: true,
+        error_message: true,
+        sent_at: true,
+      },
+    }),
+    prisma.rpa_settings.findUnique({ where: { key: 'mailbox_delta_link' } }),
+    prisma.rpa_outlook_accounts.findFirst({
+      where: { outlook_email: config.microsoft.defaultSender },
+      select: { last_sync_at: true },
+    }),
+  ]);
+
+  const statusTotal = (status) =>
+    logCounts.find((r) => r.status === status)?._count._all || 0;
+  const tracking = trackingRows[0] || {};
+
+  // Fold the type×status groupBy into one row per email type.
+  const byTypeMap = {};
+  for (const row of byTypeCounts) {
+    const entry = (byTypeMap[row.email_type] ??= { email_type: row.email_type, sent: 0, failed: 0 });
+    if (row.status === 'failed') entry.failed += row._count._all;
+    else entry.sent += row._count._all;
+  }
+  const byType = Object.values(byTypeMap).sort(
+    (a, b) => b.sent + b.failed - (a.sent + a.failed)
+  );
+
+  return success(
+    res,
+    {
+      window_days: days,
+      summary: {
+        sent: statusTotal('sent'),
+        failed: statusTotal('failed'),
+        // Tracking is per outbound conversation message (shortlist/status/
+        // reminder/reply sends), a subset of all rpa_email_log rows.
+        tracked: Number(tracking.tracked || 0),
+        opened: Number(tracking.opened || 0),
+        replied: Number(tracking.replied || 0),
+        bounced: Number(tracking.bounced || 0),
+      },
+      by_type: byType,
+      recent_failures: recentFailures,
+      poller_status: {
+        intake_enabled: config.email.intake.enabled,
+        inbound_sync_enabled: config.email.inboundSync.enabled,
+        cron: config.email.mailboxSync.cron,
+        delta_link_present: Boolean(deltaRow?.value),
+        last_sync_at: account?.last_sync_at || null,
+        mailbox: config.microsoft.defaultSender,
+      },
+    },
+    'Email monitoring data retrieved successfully'
+  );
 });
