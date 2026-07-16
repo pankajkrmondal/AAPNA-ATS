@@ -23,6 +23,8 @@ const loginSchema = {
   body: {
     username: { type: 'string', required: true, min: 1 },
     password: { type: 'string', required: true, min: 1 },
+    // Turnstile widget token; enforced by the controller when TURNSTILE_SECRET_KEY is set
+    captchaToken: { type: 'string', required: false, max: 4096 },
   },
 };
 
@@ -42,6 +44,8 @@ const changePasswordSchema = {
 const forgotPasswordSchema = {
   body: {
     login: { type: 'string', required: true, min: 1, max: 255 },
+    // Turnstile widget token; enforced by the controller when TURNSTILE_SECRET_KEY is set
+    captchaToken: { type: 'string', required: false, max: 4096 },
   },
 };
 

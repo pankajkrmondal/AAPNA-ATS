@@ -238,6 +238,17 @@ const config = {
   /** n8n Webhook base prefix */
   n8nWebhookUrlPrefix: env('N8N_WEBHOOK_URL_PREFIX', ''),
 
+  /**
+   * Cloudflare Turnstile bot protection for the login endpoint.
+   * Empty secret = verification disabled (environments without keys keep
+   * working unchanged). The matching PUBLIC site key is a frontend var
+   * (VITE_TURNSTILE_SITE_KEY); this secret must stay server-side only.
+   * Keys: https://dash.cloudflare.com -> Turnstile.
+   */
+  turnstile: {
+    secretKey: env('TURNSTILE_SECRET_KEY', ''),
+  },
+
   /** Rate limiting */
   rateLimit: {
     /** Global API limiter window (default 15 minutes). */
