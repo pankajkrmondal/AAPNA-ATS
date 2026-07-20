@@ -16,8 +16,8 @@
 | # | Task | Owner | ETA | Blocks |
 |---|------|-------|-----|--------|
 | A1 | 🚨 **Zeko API capability validation spike** — confirm whether the API actually returns score, cheat probability, full report, recording | Dev (pull from Track B for ~3 days) | **2026-07-15 → 2026-07-17** | M3b scope entirely; today this is the single biggest schedule risk in Phase 3 and was unassigned |
-| A2 | Verify received Evalground sample CSVs (bulk + single-result) against the Section 1/2/3 design | Harish | **2026-07-15** | M2 build start |
-| A3 | Decide bulk-CSV section→skill mapping approach | Harish + Dev | **2026-07-16** (after A2) | M2 bulk importer UI |
+| A2 | ~~Verify received Evalground sample CSVs (bulk + single-result) against the Section 1/2/3 design~~ ✅ **Done 2026-07-15** — see [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md) §1 | Harish | ✅ 2026-07-15 | M2 build start — unblocked |
+| A3 | ~~Decide bulk-CSV section→skill mapping approach~~ ✅ **Done 2026-07-15** (a day early) — AI-suggested mapping, RT confirms once per batch — see [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md) §2 | Harish + Dev | ✅ 2026-07-15 | M2 bulk importer UI — unblocked |
 | A4 | Request Graph `Calendars.ReadWrite` (App) + `Schedule.Read.All`/`Calendars.Read` from IT | Harish | Request sent **2026-07-15**; target grant by **2026-07-22** | M3a build start |
 | A5 | Send M1 **written** sign-off request to RT (consolidated summary email) | Harish | Sent **2026-07-15**; target RT reply by **2026-07-20** | Formal M1 go-ahead (build proceeds in parallel, at risk — see assumptions) |
 | A6 | Server/storage capacity check with Pankaj + IT | Harish | **2026-07-15 → 2026-07-17** | M4 upload scope (may force resumes-only fallback) |
@@ -32,7 +32,7 @@
 |---|---|---|---|---|
 | M0 | Phase 2.1 (Zeko + email engine) go-live | ✅ **Done** — live since 2026-07-14 | — | — |
 | **M1** | Stage engine + Pipeline Tracker UI + outcome emails (vendor dual-send) | **2026-07-15 → 2026-07-30** (12 bd, ~2.5 wk) | Both devs (schema/backend + Tracker UI in parallel) | Largest module: 5 new tables, admin config CRUD, kanban + drawer, dispatcher. Written sign-off (A5) should land inside this window — chase it if not |
-| **M2** | Evalground import — bulk CSV + single-result (Outlook) | **2026-07-31 → 2026-08-06** (5 bd) | Dev B | Needs A2/A3 closed first (they will be) |
+| **M2** | Evalground import — bulk CSV + single-result (Outlook) | **2026-07-31 → 2026-08-06** (5 bd) | Dev B | A2/A3 closed 2026-07-15 — build plan ready in [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md) |
 | **M3a** | Teams/Outlook scheduling + reminders + interviewer scorecards (2 card layouts) | **2026-07-31 → 2026-08-13** (10 bd) | Dev A | Needs Graph grant (A4) landed by start date — slips 1:1 if IT is late |
 | **M4** | Document collection (request → upload → verify) | **2026-08-07 → 2026-08-14** (6 bd) | Dev B (after M2) | Scope may shrink to resumes-only pending A6 capacity answer — don't over-build the multi-doc UI until then |
 | **M5** | Offer management + closure (record-only) | **2026-08-17 → 2026-08-19** (3 bd) | Dev B (after M4) | Smallest module, fully unblocked, no external dependency |

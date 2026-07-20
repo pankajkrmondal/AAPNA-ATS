@@ -13,7 +13,7 @@ Delivery model: **one module at a time**, each independently shippable and verif
 |---|--------|----------------------------------------|------------------------------------------------|
 | M0 | **Phase 2.1 completion pass** — Zeko + email engine go-live | RT UAT slot + must-haves (**Q17**) | ✅ **COMPLETE — Phase 2.1 is live (confirmed 2026-07-14)**; Q17 closed, no UAT gate needed |
 | M1 | Stage engine + Pipeline Tracker UI + outcome emails (vendor dual-send built in) | — | **All policy inputs answered — gated only on a real written sign-off** (the 2026-07-14 sign-off claim was retracted; a written request is now an action item — see [04-QUESTIONS.md](04-QUESTIONS.md) §E) |
-| M2 | Evalground CSV import — **now two mechanisms: bulk CSV + single-result via Outlook** | Sample CSV from RT (**Q1**) | Import mechanics fully specified 2026-07-14 (email key, retake/overwrite rule, Section labels) — **✅ sample files received 2026-07-14 (bulk CSV + single result report), Harish still owes format verification**; bulk-upload section→skill mapping approach also owed by Harish |
+| M2 | Evalground CSV import — **now two mechanisms: bulk CSV + single-result via Outlook** | Sample CSV from RT (**Q1**) | **✅ Unblocked 2026-07-15** — format verified and section→skill mapping decided, see [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md); build plan ready, starts 2026-07-31 per [05-TASK-LIST-ETA.md](05-TASK-LIST-ETA.md) |
 | M3 | Teams/Outlook scheduling + reminders + interviewer scorecards | Graph `Calendars.ReadWrite` grant (**Q16**) + scheduling-mode answer (**Q6**) | Q6 answered (both modes + free/busy) — **gated on Q16 (IT) only** for the scheduling/reminder/scorecard build; scorecard template received 2026-07-14. **🚨 But the Zeko auto-advance/cheat-probability/full-report design is a SEPARATE, unvalidated dependency — nobody has confirmed the Zeko API actually exposes this data, and no one is assigned to check** |
 | M4 | Document collection | Document checklist (**Q8**) | Q8 retention answered 2026-07-14 (never delete; archive threshold TBD) — **build can start**; go-live needs the checklist template + the archive threshold + storage-capacity confirmation (may force a resumes-only fallback) |
 | M5 | Offer management + closure | Offer-scope answer (**Q3**) | **Unblocked, and simplified further 2026-07-14** — letters confirmed to stay fully outside the ATS (status/stage only, no file) |
@@ -112,24 +112,26 @@ Changed files:
 
 ## M2 — Evalground Import (inside the IQ / Tech Assessment round)
 
-**No Evalground API — import only, via TWO mechanisms, both to be supported (RT, 2026-07-14):**
-1. **Bulk CSV upload** — the original design. **✅ Sample file received 2026-07-14** (Naveen, shared in chat) — Harish still needs to verify it matches the Section 1/2/3 design above before building against it.
-2. **Single-candidate result report received on Outlook** — a new mechanism: RT gets one result at a time via email; the ATS needs an upload/entry path for a single candidate's result, reusing the same matching/scoring logic as the bulk path.
+**✅ Fully specified and unblocked as of 2026-07-15 — full plan in [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md).** Summary below; see doc 07 for the data model, backend/frontend build plan, and verification plan.
 
-**Import mechanics, fully specified 2026-07-14:**
+**No Evalground API — import only, via TWO mechanisms, both to be supported (RT, 2026-07-14):**
+1. **Bulk CSV upload** — the original design. Format verified 2026-07-15 against the real sample.
+2. **Single-candidate result report received on Outlook** — RT gets one result at a time via email; ingested automatically via the shared-mailbox poller (see doc 07 §4), with a manual-upload fallback.
+
+**Import mechanics, fully specified 2026-07-14, format-verified 2026-07-15:**
 - **Unique key = candidate email; names may repeat** (confirms Q1).
-- **CSV columns are generic** (GA, Section 2, Section 3 — no test name or role attached). Decision: **import the columns as-is under Section 1/2/3 labels; RT renames/edits the section labels afterward** — no manual pre-tagging required from RT. For the **single-candidate** path, the system can prompt to map section→skill at entry time. For the **bulk** path, **the mapping approach is not yet decided — open item, owed by Harish** (build the bulk importer generic/section-based first; the mapping UI can follow once Harish decides).
+- **CSV columns are generic** (GA, Section 2, Section 3 — no test name or role attached). Decision: **import the columns as-is under Section 1/2/3 labels; RT renames/edits the section labels afterward** — no manual pre-tagging required from RT. **Section→skill mapping approach decided 2026-07-15 (doc 07 §2): an AI step suggests the mapping from the test title, RT confirms once per import batch, with per-candidate correction afterward** — for both the bulk and single-candidate paths alike.
 - **Re-import / retake behavior (RT-confirmed, closes the earlier "latest vs best" open item):** a row already in the DB is **skipped**; if the candidate retook the test and the **score changed**, **only the score is overwritten** — no other candidate fields touched. This is now an RT-confirmed rule, not our default assumption.
 - **Untested candidates show "Evalground test pending" indefinitely and are never deleted** — no expiry/cleanup job for this state.
 - **Pass mark 50% for both GA and Technical (Q4)** drives the Passed/Failed auto-suggestion.
 - **UI placement (RT decision, 2026-07-10, unchanged):** the import is an action on the Assessment round (board column + round panel in the Tracker), never a standalone screen — results map by candidate email to candidates currently in that round, filling IQ (GA) and Technical scores (`rpa_cv.IQScore`/`TechScore` — IQ = General Aptitude, Technical = Evalground Technical).
 
-Build:
-- New table `rpa_assessment_imports` (file name, uploaded_by/at, row counts matched/unmatched/error, raw file reference, `mechanism` = `bulk_csv|single_outlook`) + result columns/rows linked to the candidate + Stage 2 event.
-- Backend: `assessmentImport.service.js` — parse CSV (existing `xlsx` dep handles CSV) for bulk; a lighter single-result entry path for the Outlook mechanism; **Section 1/2/3 label handling** (admin-renameable, not hard-coded to GA/Technical); skip-unless-score-changed logic; match candidates by email (fallback: name+phone review list); validation preview, commit + import log.
-- Frontend: import action inside the Assessment round panel — upload (or single-entry form) → Section-label preview (rename inline) → validation report (matched / unmatched / malformed) → commit; import history list; "Evalground test pending" badge for untested candidates.
+Build (full detail in [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md)):
+- New tables `rpa_assessment_imports` + `rpa_assessment_results` (doc 07 §3).
+- Backend: `assessmentImport.service.js` — parse CSV (existing `xlsx` dep handles CSV) for bulk; a shared-mailbox poller (`evalgroundResultIntake.js`) plus manual-upload fallback for the Outlook mechanism; AI-suggested Section→skill mapping; skip-unless-score-changed logic; match candidates by email; validation preview, commit + import log (doc 07 §4).
+- Frontend: import action inside the Assessment round panel — upload (or auto-detected queue) → section-mapping confirm (AI-suggested, editable) → validation report (matched / unmatched / malformed) → commit; import history list; "Evalground test pending" badge for untested candidates (doc 07 §5).
 - HR sets Test Passed/Failed/Hold in the Tracker (auto-suggested at the 50% pass mark); outcome email via the M1 dispatcher.
-- Verification: import a crafted CSV with matched/unmatched/duplicate/retake/malformed rows → counts correct, retake overwrites only the score, no partial writes; re-import same file → idempotent (rows already present are skipped, not duplicated); single-result entry path produces the same downstream state as a one-row bulk import.
+- Verification plan in doc 07 §6, using the real sample files as fixtures.
 
 ## M3 — Teams/Outlook Scheduling + Reminders + Interviewer Scorecards
 

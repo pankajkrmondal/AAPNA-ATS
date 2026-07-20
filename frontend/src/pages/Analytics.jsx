@@ -53,7 +53,7 @@ import StatusBadge from '../components/common/StatusBadge';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 // Phase 3 walkthrough prototype tab — remove with the prototype page.
-import { PipelineAnalyticsPreview } from './PipelinePrototype';
+import { CandidatePipelineAnalyticsPreview } from './CandidatePipelinePrototype';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -1141,10 +1141,10 @@ export default function Analytics() {
               label: (
                 <span>
                   <ApartmentOutlined className="tab-ico" />
-                  Pipeline (Preview)
+                  Candidate Pipeline (Preview)
                 </span>
               ),
-              children: <PipelineAnalyticsPreview />
+              children: <CandidatePipelineAnalyticsPreview />
             },
             {
               key: 'emailDelivery',

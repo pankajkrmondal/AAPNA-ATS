@@ -70,7 +70,7 @@ const MENU_ITEMS = [
   { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
   { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
   // Phase 3 walkthrough prototype — remove with the prototype page/route.
-  { key: '/pipeline-prototype', icon: <ApartmentOutlined />, label: 'Pipeline Tracker' },
+  { key: '/candidate-pipeline-prototype', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Analytics' },
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
   { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
@@ -98,7 +98,7 @@ const BREADCRUMB_MAP = {
   mrf: 'MRF',
   vendor: 'Vendor Manual Upload',
   filtering: 'Candidate Screening',
-  'pipeline-prototype': 'Interview Pipeline Tracker (Preview)',
+  'candidate-pipeline-prototype': 'Candidate Pipeline (Preview)',
   analytics: 'Recruitment Screening Analytics',
   email: 'Email Template Management',
   settings: 'Reminder Settings',
