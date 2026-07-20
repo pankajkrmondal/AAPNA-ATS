@@ -70,8 +70,10 @@ const MENU_ITEMS = [
   { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
   { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
   // Phase 3 walkthrough prototype — remove with the prototype page/route.
-  { key: '/pipeline-prototype', icon: <ApartmentOutlined />, label: 'Pipeline Tracker' },
-  { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Analytics' },
+  { key: '/candidate-pipeline-prototype', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
+  { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
+  // Preserved pre-rebrand page — operational fallback, not a primary surface.
+  { key: '/analytics-legacy', icon: <BarChartOutlined />, label: 'Recruitment Analytics (Legacy)' },
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
   { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
 ];
@@ -98,8 +100,9 @@ const BREADCRUMB_MAP = {
   mrf: 'MRF',
   vendor: 'Vendor Manual Upload',
   filtering: 'Candidate Screening',
-  'pipeline-prototype': 'Interview Pipeline Tracker (Preview)',
-  analytics: 'Recruitment Screening Analytics',
+  'candidate-pipeline-prototype': 'Candidate Pipeline (Preview)',
+  analytics: 'Recruitment Analytics',
+  'analytics-legacy': 'Recruitment Screening Analytics (Legacy)',
   email: 'Email Template Management',
   settings: 'Reminder Settings',
 };
