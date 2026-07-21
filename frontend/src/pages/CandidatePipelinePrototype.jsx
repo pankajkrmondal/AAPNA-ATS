@@ -172,7 +172,7 @@
  */
 import { useMemo, useState } from 'react';
 import {
-  Alert, App as AntApp, Badge, Button, Card, Checkbox, Col, DatePicker, Descriptions,
+  Alert, App as AntApp, Badge, Button, Card, Checkbox, Col, DatePicker,
   Drawer, Empty, Input, Modal, Radio, Rate, Row, Select, Space, Statistic,
   Steps, Table, Tag, Timeline, Tooltip, Typography,
 } from 'antd';
@@ -374,13 +374,13 @@ const INITIAL_CANDIDATES = [
     id: 9, name: 'Rohit Kulkarni', role: 'QA Engineer', src: 'Email', stage: 'zeko_hr', chip: 'invited', age: 0,
     email: 'rohit.k@gmail.com',
     screening: { jdMatch: 72, when: '19 Jul' },
-    rounds: { zeko_hr: { status: 'invited', emails: ['Zeko HR screening invite → candidate'] } },
+    rounds: { zeko_hr: { status: 'invited', zekoWindow: { start: '2026-07-22T10:00:00', end: '2026-07-22T12:00:00' }, emails: ['Zeko HR screening invite → candidate · self-schedule window 22 Jul, 10:00–12:00'] } },
   },
   {
     id: 10, name: 'Ananya Singh', role: 'React Developer', src: 'HR', stage: 'zeko_hr', chip: 'invited', age: 0,
     email: 'ananya.s@gmail.com', also: 'UI Developer (MRF-2044)',
     screening: { jdMatch: 81, when: '18 Jul', note: 'Also running a second journey for UI Developer (MRF-2044) — concurrent MRFs allowed (Q13); a rejection there would not stop this journey.' },
-    rounds: { zeko_hr: { status: 'invited', emails: ['Zeko HR screening invite → candidate'] } },
+    rounds: { zeko_hr: { status: 'invited', zekoWindow: { start: '2026-07-23T14:00:00', end: '2026-07-23T16:00:00' }, emails: ['Zeko HR screening invite → candidate · self-schedule window 23 Jul, 14:00–16:00'] } },
   },
   {
     id: 11, name: 'Vishal Gupta', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'Talent Hive',
@@ -389,7 +389,7 @@ const INITIAL_CANDIDATES = [
     rounds: {
       zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 76, communication: 74 }, emails: ['Outcome email → candidate + vendor'] },
       assessment: { outcome: 'approved', when: '03 Jul', by: 'Priya', iq: 80, tech: 78, testDate: '02 Jul', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
-      zeko_fn: { status: 'invited', emails: ['Zeko functional screening invite → candidate + vendor'] },
+      zeko_fn: { status: 'invited', zekoWindow: { start: '2026-07-05T15:00:00', end: '2026-07-05T17:00:00' }, emails: ['Zeko functional screening invite → candidate + vendor · self-schedule window 05 Jul, 15:00–17:00'] },
     },
   },
   {
@@ -626,7 +626,7 @@ const INITIAL_CANDIDATES = [
     screening: { jdMatch: 75, when: '16 Jul', by: 'Anita' },
     rounds: {
       zeko_hr: { outcome: 'approved', when: '18 Jul', by: 'Priya', zeko: { interview: 76, communication: 74 }, emails: ['Outcome email — delivered'] },
-      assessment: { status: 'invited', emails: ['Assessment invite (GA + Technical) → candidate'] },
+      assessment: { status: 'invited', deadline: '25 Jul 2026', emails: ['Assessment invite (GA + Technical) → candidate · deadline 25 Jul 2026'] },
     },
   },
   // v9 — 19 more candidates so every round (HR Screening through Offer) shows
@@ -1032,92 +1032,143 @@ const CHIP_ACCENT = {
 const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
 const initials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
+const fmtWindow = (w) => (w ? `${dayjs(w.start).format('DD MMM, HH:mm')}–${dayjs(w.end).format('HH:mm')}` : '');
+const scoreTier = (v) => (v >= 70 ? 'good' : v >= 50 ? 'mid' : 'low');
+
+/** v11 — the pipeline the recruiter actually sees: same shape for every
+ * round type (RT's own words), worded for what really happens in that
+ * round kind rather than one generic vocabulary forced onto all of them. */
+const PIPELINE_LABELS = {
+  zeko: ['Invite Sent', 'Awaiting Interview', 'Awaiting Results', 'Approve / Reject'],
+  assessment: ['Invite Sent', 'Awaiting Test', 'Awaiting Results', 'Approve / Reject'],
+  interview: ['Invite Sent', 'Awaiting Interview', 'Awaiting Results', 'Approve / Reject'],
+  docs: ['Request Sent', 'Awaiting Upload', 'Awaiting Verification', 'Approve / Reject'],
+  offer: ['Offer Prepared', 'Offer Sent', 'Awaiting Response', 'Accepted / Declined'],
+};
+const STATE_WORD = { pending: 'Not started yet', active: 'In progress', done: 'Done', hold: 'On Hold', rejected: 'Rejected' };
 
 /**
- * v9 — derives the 4-category progress-stepper state for a candidate's
- * CURRENT round: Entry (always done — they arrived via approval from the
- * previous round, or via Candidate Screening) · Schedule/Invite · Outcome
- * (scores/feedback/result) · Decision. Rendered as a compact 4-segment bar
- * on the board card (renderCard) instead of more text tags.
+ * v11 — derives the 4-stage pipeline for a round: Invite Sent / Awaiting
+ * Interview (or Test/Upload/Response) / Awaiting Results (or Verification)
+ * / Approve-Reject (or Accepted/Declined for Offer) — RT's own naming for
+ * "the crucial part of the app." Each stage carries a `detail` sentence
+ * that is never trimmed (used verbatim, always visible — no click needed)
+ * and, where relevant, `chips` (score numbers) or a `note` (free-text
+ * context that would otherwise be dropped). Previously (v9/v10) this was
+ * Entry/Schedule/Outcome/Decision — Entry (how the candidate arrived) is
+ * no longer its own stage; that context is one click away in the previous
+ * round's own Decision stage instead of repeating in every round.
  */
 function roundProgressSegments(c, stageKey = c.stage) {
   const stage = STAGES[stageIdx(stageKey)];
   const round = c.rounds[stageKey] || {};
-  let scheduleState = 'pending';
-  let outcomeState = 'pending';
-  let decisionState = 'pending';
-  let scheduleLabel = 'Schedule';
-  let outcomeLabel = 'Feedback';
-  let scheduleDetail = 'Not scheduled yet';
-  let outcomeDetail = '—';
+  const labels = PIPELINE_LABELS[stage.type];
+  let s1 = { state: 'pending', detail: 'Not sent yet' };
+  let s2 = { state: 'pending', detail: 'Not started yet' };
+  let s3 = { state: 'pending', detail: 'Not started yet' };
+  let s4 = { state: 'pending', detail: 'Not yet' };
 
   if (stage.type === 'zeko' || stage.type === 'assessment') {
-    scheduleLabel = 'Invite';
-    outcomeLabel = stage.type === 'zeko' ? 'Score' : 'Result';
-    // Scores/results can't exist without the invite having gone out, even on
-    // mock rows that only set the downstream field and skip `status`.
-    if (round.status === 'invited' || round.status === 'in_progress' || round.zeko || round.importedFrom || round.testDate) { scheduleState = 'done'; scheduleDetail = 'Invite sent'; }
-    else scheduleDetail = 'Not sent yet';
-    if (round.status === 'in_progress' || round.testDate) { outcomeState = 'active'; outcomeDetail = stage.type === 'zeko' ? 'Test in progress' : (round.testDate ? `Taken ${round.testDate} — awaiting import` : 'In progress'); }
-    if (round.zeko) { outcomeState = 'done'; outcomeDetail = `Score ${round.zeko.interview}/${round.zeko.communication}`; }
-    if (round.importedFrom) { outcomeState = 'done'; outcomeDetail = `IQ ${round.iq}% · Tech ${round.tech}%`; }
-  } else if (stage.type === 'interview') {
-    if (round.schedule) {
-      scheduleState = 'done';
-      scheduleDetail = `${round.schedule.mode === 'Client call' ? 'Client call' : 'Teams'} · ${round.schedule.when}`;
-    } else if (round.status === 'invited') {
-      scheduleState = 'done';
-      scheduleDetail = 'Self-scheduling slots published';
+    const isZeko = stage.type === 'zeko';
+    const invited = round.status === 'invited' || round.status === 'in_progress' || round.zeko || round.importedFrom || round.testDate;
+    if (invited) {
+      s1 = { state: 'done', detail: isZeko ? `Zeko ${stage.key === 'zeko_fn' ? 'functional' : 'HR'} screening invite emailed to ${mailAudience(c)}` : `Assessment invite (GA + Technical) emailed to ${mailAudience(c)}` };
     }
-    if (round.status === 'await') { outcomeState = 'active'; outcomeDetail = 'Awaiting interviewer feedback'; }
-    if (round.feedback) { outcomeState = 'done'; outcomeDetail = `${round.feedback.rec} · ${round.feedback.avg}/5`; }
-  } else if (stage.type === 'docs') {
-    scheduleLabel = 'Request'; outcomeLabel = 'Uploads';
-    if (round.requested) { scheduleState = 'done'; scheduleDetail = 'Request sent'; } else scheduleDetail = 'Not sent yet';
-    const checklist = round.checklist || [];
-    const anyUploaded = checklist.some((d) => d.status !== 'pending');
-    const allVerified = checklist.length > 0 && checklist.every((d) => d.status === 'verified');
-    if (anyUploaded) { outcomeState = 'active'; outcomeDetail = 'Partial uploads'; } else outcomeDetail = round.requested ? 'No uploads yet' : '—';
-    if (allVerified) { outcomeState = 'done'; outcomeDetail = 'All verified'; }
-  } else if (stage.type === 'offer') {
-    scheduleLabel = 'Approval'; outcomeLabel = 'Shared';
-    const off = round.offer;
-    if (off) {
-      scheduleState = off.approvalStatus === 'pending' ? 'active' : 'done';
-      scheduleDetail = off.approvalStatus === 'pending' ? 'Requested — awaiting sign-off' : 'Approved';
+    if (isZeko) {
+      if (round.zeko) s2 = { state: 'done', detail: 'Completed — score synced automatically from Zeko' };
+      else if (round.status === 'in_progress') s2 = { state: 'active', detail: round.note || 'Candidate has started the test — in progress' };
+      else if (round.zekoWindow) s2 = { state: 'active', detail: `Self-schedule window · ${fmtWindow(round.zekoWindow)}` };
+      else if (invited) s2 = { state: 'active', detail: 'Awaiting candidate to start the test' };
     } else {
-      scheduleDetail = 'Not requested';
+      if (round.testDate) s2 = { state: 'done', detail: `Taken ${round.testDate}` };
+      else if (round.deadline) s2 = { state: 'active', detail: `Awaiting candidate — deadline ${round.deadline}` };
+      else if (invited) s2 = { state: 'active', detail: 'Awaiting candidate to take the test' };
     }
+    if (isZeko && round.zeko) {
+      s3 = {
+        state: 'done',
+        detail: `Interview ${round.zeko.interview} · Communication ${round.zeko.communication}`,
+        chips: [{ value: round.zeko.interview, label: 'Interview' }, { value: round.zeko.communication, label: 'Comms' }],
+      };
+    } else if (!isZeko && round.importedFrom) {
+      s3 = {
+        state: 'done',
+        detail: `IQ ${round.iq}% · Technical ${round.tech}%${round.note ? ` — ${round.note}` : ''}`,
+        chips: [{ value: round.iq, label: 'IQ' }, { value: round.tech, label: 'Technical' }],
+      };
+    } else if (!isZeko && round.testDate) {
+      s3 = { state: 'active', detail: round.note || 'Test attempted — result awaited in the next Evalground import' };
+    } else if (s2.state !== 'pending') {
+      s3 = { state: 'active', detail: isZeko ? 'Awaiting Zeko to sync the score' : 'Awaiting the candidate to take the test' };
+    }
+  } else if (stage.type === 'interview') {
+    const selfSchedule = round.status === 'invited' && !round.schedule;
+    if (round.schedule) s1 = { state: 'done', detail: `${round.schedule.mode === 'Client call' ? 'Client call' : 'Teams'} invite sent for ${round.schedule.when}` };
+    else if (selfSchedule) s1 = { state: 'done', detail: 'Self-scheduling link emailed to candidate' };
+    if (round.schedule) s2 = { state: 'done', detail: `${round.schedule.mode === 'Client call' ? 'Client call' : 'Teams'} · ${round.schedule.when} with ${round.schedule.who}` };
+    else if (selfSchedule) s2 = { state: 'active', detail: '3 slots published — awaiting candidate to pick one' };
+    if (round.feedback) {
+      s3 = { state: 'done', detail: `${round.feedback.rec} · ${round.feedback.avg}/5 — "${round.feedback.note}"` };
+    } else if (round.status === 'await') {
+      s3 = { state: 'active', detail: `Awaiting interviewer feedback${round.remindersSent ? ` — ${round.remindersSent} reminder(s) sent` : ''}` };
+    } else if (round.schedule) {
+      // Any scheduled-but-not-yet-await status (e.g. mock rows just marked
+      // 'scheduled') still means feedback is the thing pending — the
+      // scorecard action below keys off `round.schedule`, not this exact
+      // status string, so it must stay available here too.
+      s3 = { state: 'active', detail: 'Interview scheduled — awaiting interviewer feedback' };
+    }
+    if (round.note && !round.outcome) {
+      if (s1.state === 'pending') s1 = { ...s1, note: round.note };
+      else s2 = { ...s2, note: round.note };
+    }
+  } else if (stage.type === 'docs') {
+    if (round.requested) s1 = { state: 'done', detail: `Document request emailed to ${c.src === 'Vendor' ? 'candidate (vendor not copied — PII)' : 'candidate'}` };
+    const checklist = round.checklist || [];
+    const uploadedCount = checklist.filter((d) => d.status !== 'pending').length;
+    const verifiedCount = checklist.filter((d) => d.status === 'verified').length;
+    const anyRejected = checklist.some((d) => d.status === 'rejected');
+    if (round.requested) {
+      s2 = uploadedCount === 0
+        ? { state: 'active', detail: 'No uploads yet' }
+        : { state: 'done', detail: `${uploadedCount} of ${checklist.length} documents uploaded` };
+    }
+    if (uploadedCount > 0) {
+      s3 = verifiedCount === checklist.length
+        ? { state: 'done', detail: 'All documents verified' }
+        : { state: 'active', detail: `${verifiedCount} of ${checklist.length} verified${anyRejected ? ' — 1 rejected, re-requested' : ''}` };
+    }
+  } else if (stage.type === 'offer') {
+    const off = round.offer;
+    if (off) s1 = { state: off.approvalStatus === 'pending' ? 'active' : 'done', detail: off.approvalStatus === 'pending' ? 'Requested — awaiting recruiter sign-off' : `Approved internally${off.approval ? ` — ${off.approval}` : ''}` };
     if (off && off.approvalStatus !== 'pending') {
-      outcomeState = off.shared ? 'done' : 'active';
-      outcomeDetail = off.shared ? `Shared ${off.shared}` : 'Approved — not yet shared';
+      s2 = off.shared ? { state: 'done', detail: `Shared ${off.shared} — proposed joining ${off.join}` } : { state: 'active', detail: 'Approved — not yet shared with candidate' };
+    }
+    if (off?.shared) {
+      s3 = off.decision === 'Awaiting decision' ? { state: 'active', detail: 'Awaiting candidate decision' } : { state: 'done', detail: `Response received: ${off.decision}` };
     }
   }
 
-  let decisionDetail = 'Not yet';
   if (stage.type === 'offer') {
     const off = round.offer;
-    decisionState = off?.decision === 'Accepted' ? 'done' : off?.decision === 'Awaiting decision' ? 'active' : 'pending';
-    decisionDetail = off?.decision === 'Accepted' ? 'Accepted' : off?.decision === 'Awaiting decision' ? 'Awaiting candidate decision' : 'No decision yet';
+    if (off?.decision === 'Accepted') s4 = { state: 'done', detail: 'Accepted — candidate confirmed joining' };
+    else if (off?.decision && off.decision !== 'Awaiting decision') s4 = { state: 'rejected', detail: `Declined — ${off.decision}` };
+    else if (off?.shared) s4 = { state: 'active', detail: 'Awaiting candidate response' };
   } else if (round.outcome === 'approved') {
-    decisionState = 'done'; decisionDetail = 'Approved';
+    s4 = { state: 'done', detail: `Approved${round.by ? ` by ${round.by}` : ''}${round.when ? ` · ${round.when}` : ''}` };
+    if (round.note && stage.type !== 'assessment') s4.note = round.note;
   } else if (round.outcome === 'hold') {
-    decisionState = 'active'; decisionDetail = `On Hold${round.reason ? ` — ${round.reason}` : ''}`;
-  } else if (outcomeState === 'done') {
-    decisionDetail = 'Awaiting your decision';
+    s4 = { state: 'hold', detail: `${round.reason || 'On Hold'}${round.by ? ` · flagged by ${round.by}` : ''}${round.when ? ` · ${round.when}` : ''}` };
+    if (round.note && stage.type !== 'assessment') s4.note = round.note;
+  } else if (s3.state === 'done') {
+    s4 = { state: 'active', detail: 'Awaiting your decision' };
   }
 
-  const prevStage = STAGES[stageIdx(stageKey) - 1];
-  const prevRound = prevStage ? c.rounds[prevStage.key] : null;
-  const entryDetail = !prevStage
-    ? (c.screening ? `Shortlisted · JD match ${c.screening.jdMatch}%` : 'Shortlisted from Candidate Screening')
-    : (prevRound?.when ? `Approved from ${prevStage.name} · ${prevRound.when}` : `Entered from ${prevStage.name}`);
-
   return [
-    { key: 'entry', state: 'done', label: 'Entry', detail: entryDetail },
-    { key: 'schedule', state: scheduleState, label: scheduleLabel, detail: scheduleDetail },
-    { key: 'outcome', state: outcomeState, label: outcomeLabel, detail: outcomeDetail },
-    { key: 'decision', state: decisionState, label: 'Decision', detail: decisionDetail },
+    { key: 'invite', label: labels[0], ...s1 },
+    { key: 'wait', label: labels[1], ...s2 },
+    { key: 'results', label: labels[2], ...s3 },
+    { key: 'decision', label: labels[3], ...s4 },
   ];
 }
 
@@ -1238,6 +1289,10 @@ export default function CandidatePipelinePrototype() {
   const [schedOpen, setSchedOpen] = useState(false);
   const [schedMode, setSchedMode] = useState('fixed');
   const [prepBriefOn, setPrepBriefOn] = useState(true);
+  const [zekoSchedOpen, setZekoSchedOpen] = useState(false);
+  const [zekoRange, setZekoRange] = useState(null);
+  const [assessSchedOpen, setAssessSchedOpen] = useState(false);
+  const [assessDeadline, setAssessDeadline] = useState(null);
   const [cardOpen, setCardOpen] = useState(false);
   const [cardRec, setCardRec] = useState('Approve');
   const [importOpen, setImportOpen] = useState(false);
@@ -1351,27 +1406,46 @@ export default function CandidatePipelinePrototype() {
     message.success('Feedback submitted — RT can now record the round outcome');
   };
 
+  /* §5 — Zeko invite now schedules a real interview window (mirrors
+     AnalyticsLegacy's "Schedule Zeko Interview" modal) instead of firing
+     a bare invite with no scheduling data. */
   const sendZekoInvite = () => {
     if (!current) return;
+    setZekoRange(null);
+    setZekoSchedOpen(true);
+  };
+
+  const confirmZekoSchedule = () => {
+    if (!current || !zekoRange || !zekoRange[0] || !zekoRange[1]) return;
     const stage = STAGES[currentIdx];
     const round = current.rounds[stage.key] || {};
     const zekoLabel = stage.key === 'zeko_fn' ? 'functional' : 'HR';
+    const zekoWindow = { start: zekoRange[0].toISOString(), end: zekoRange[1].toISOString() };
     patchCurrent({
       chip: 'invited',
-      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', emails: [...(round.emails || []), `Zeko ${zekoLabel} screening invite → ${mailAudience(current)}`] } },
+      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', zekoWindow, emails: [...(round.emails || []), `Zeko ${zekoLabel} screening invite → ${mailAudience(current)} · self-schedule window ${fmtWindow(zekoWindow)}`] } },
     });
-    message.success('Zeko invite sent — candidate notified');
+    setZekoSchedOpen(false);
+    message.success('Zeko interview scheduled — invite emailed with the self-schedule window');
   };
 
   const sendAssessmentInvite = () => {
     if (!current) return;
+    setAssessDeadline(null);
+    setAssessSchedOpen(true);
+  };
+
+  const confirmAssessmentInvite = () => {
+    if (!current || !assessDeadline) return;
     const stage = STAGES[currentIdx];
     const round = current.rounds[stage.key] || {};
+    const deadline = assessDeadline.format('DD MMM YYYY');
     patchCurrent({
       chip: 'invited',
-      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', emails: [...(round.emails || []), `Assessment invite (GA + Technical) → ${mailAudience(current)}`] } },
+      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', deadline, emails: [...(round.emails || []), `Assessment invite (GA + Technical) → ${mailAudience(current)} · deadline ${deadline}`] } },
     });
-    message.success('Assessment invite sent — candidate notified');
+    setAssessSchedOpen(false);
+    message.success('Assessment invite sent — candidate notified with the completion deadline');
   };
 
   const sendDocumentRequest = () => {
@@ -1543,264 +1617,202 @@ export default function CandidatePipelinePrototype() {
     const outcomeInfo = round?.outcome ? OUTCOME_TAG[round.outcome] : (isCurrent ? OUTCOME_TAG.in_progress : null);
     const segs = roundProgressSegments(current, stage.key);
 
+    /* §1 — one badge, not four competing tags; reason + timestamp collapse
+       into a single muted line under the title. */
     const head = (
-      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Space size={8}>
-          <Text strong style={{ fontSize: 15 }}>{stage.name}</Text>
-          {stage.optional && <Tag>optional</Tag>}
-          {outcomeInfo && <Tag color={outcomeInfo.color}>{outcomeInfo.label}</Tag>}
-          {round?.reason && <Tag color="gold">{round.reason}</Tag>}
-        </Space>
-        {round?.when && <Text type="secondary" style={{ fontSize: 12 }}>{round.outcome ? 'Decided' : 'Updated'} {round.when}{round.by ? ` · by ${round.by}` : ''}</Text>}
-      </Space>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Space size={8}>
+            <Text strong style={{ fontSize: 16 }}>{stage.name}</Text>
+            {stage.optional && <Tag style={{ fontSize: 10.5 }}>optional</Tag>}
+          </Space>
+          {outcomeInfo && <Tag color={outcomeInfo.color} style={{ fontSize: 12, marginInlineEnd: 0 }}>{outcomeInfo.label}</Tag>}
+        </div>
+        {round?.when && (
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
+            {round.reason ? `${round.reason} · ` : ''}{round.outcome ? 'Decided' : 'Updated'} {round.when}{round.by ? ` · by ${round.by}` : ''}
+          </Text>
+        )}
+      </div>
     );
 
-    let body = null;
-    if (!round) {
-      body = <Empty description="No activity in this round yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
-    } else if (stage.type === 'zeko') {
-      const zekoLabel = stage.key === 'zeko_fn' ? 'functional' : 'HR';
-      if (round.zeko) {
-        body = (
-          <Row gutter={[8, 8]}>
-            <Col span={12}><Card size="small"><Statistic title="Zeko interview score" value={round.zeko.interview} /></Card></Col>
-            <Col span={12}><Card size="small"><Statistic title="Zeko communication" value={round.zeko.communication} /></Card></Col>
-            {round.note && <Col span={24}><Alert type="info" showIcon message={round.note} /></Col>}
-          </Row>
-        );
-      } else if (round.status === 'in_progress') {
-        body = (
-          <Alert type="warning" showIcon icon={<ClockCircleOutlined />} message="Zeko test in progress"
-            description={round.note || 'Candidate has started the test — the score appears here automatically once they finish and Zeko syncs the result.'} />
-        );
-      } else if (round.status === 'invited') {
-        body = (
-          <Alert type="info" showIcon icon={<ClockCircleOutlined />} message="Zeko invite sent — awaiting candidate to start"
-            description="Scores appear here automatically once the candidate completes the test and Zeko syncs the result." />
-        );
-      } else {
-        body = (
-          <>
-            <Alert type="warning" showIcon message="Zeko invite not sent yet" style={{ marginBottom: 10 }}
-              description={`Candidate has entered this round — send the Zeko ${zekoLabel} screening invite to start it.`} />
-            {isCurrent && (
-              <Button type="primary" icon={<MailOutlined />} onClick={sendZekoInvite}>Send Zeko invite</Button>
-            )}
-          </>
-        );
+    /* §2 — per-stage interactive content (buttons/tables), keyed to the
+       stage index it belongs to. Everything display-only lives in `segs`
+       itself (label/state/detail/chips/note) and needs no extra JSX. */
+    const extras = [null, null, null, null];
+    if (round) {
+      if (stage.type === 'zeko') {
+        if (!round.status && !round.zeko) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendZekoInvite}>Send Zeko invite</Button>;
+        } else if (round.status === 'invited' && isCurrent) {
+          extras[1] = <Button size="small" icon={<CalendarOutlined />} onClick={sendZekoInvite}>Change window</Button>;
+        }
+      } else if (stage.type === 'assessment') {
+        if (!round.status && !round.testDate && !round.importedFrom) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendAssessmentInvite}>Send assessment invite</Button>;
+        }
+        if (isCurrent) {
+          extras[2] = <Button size="small" icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>Import Evalground results (CSV)</Button>;
+        }
+      } else if (stage.type === 'interview') {
+        if (isCurrent && !round.feedback) {
+          // Primary action until scheduled (matches every other round type's
+          // "first action" button); once scheduled, the primary path moves to
+          // opening the scorecard below, so Reschedule steps back to secondary.
+          extras[1] = (
+            <Button size="small" type={round.schedule ? undefined : 'primary'} icon={<CalendarOutlined />} onClick={() => setSchedOpen(true)}>
+              {round.schedule ? 'Reschedule' : 'Schedule interview'}
+            </Button>
+          );
+        }
+        if (round.feedback) {
+          extras[2] = (
+            <Alert type="info" showIcon icon={<RobotOutlined />} style={{ marginTop: 6 }}
+              message="AI feedback summary"
+              description={`Skill ratings and remarks read as consistent with the recommendation (${round.feedback.rec}); no contradictions flagged between the scores and the written note. Advisory only — RT still decides Approve / Hold / Reject.`} />
+          );
+        } else if (round.schedule && isCurrent) {
+          // Was gated on status === 'await' only — missed every candidate
+          // whose mock status is 'scheduled'/undefined, leaving no way to
+          // open the scorecard at all once the interview is booked.
+          extras[2] = <Button size="small" type="primary" onClick={() => setCardOpen(true)}>Open scorecard — tokenized link (no ATS login)</Button>;
+        }
+      } else if (stage.type === 'docs') {
+        if (!round.requested) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendDocumentRequest}>Send document request</Button>;
+        } else {
+          const checklist = round.checklist || [];
+          extras[2] = (
+            <>
+              <Table size="small" pagination={false} rowKey="name" style={{ marginTop: 6, marginBottom: 8 }}
+                columns={[
+                  { title: 'Document', dataIndex: 'name', render: (v) => <Space><FileTextOutlined /><Text strong style={{ fontSize: 12.5 }}>{v}</Text></Space> },
+                  { title: 'Status', dataIndex: 'status', width: 170, render: (v) => <Tag color={DOC_TAG[v].color}>{DOC_TAG[v].label}</Tag> },
+                  {
+                    title: '', dataIndex: 'status', key: 'a', width: 140,
+                    render: (v) => isCurrent && v === 'uploaded' && (
+                      <Space size={4}>
+                        <Button size="small" onClick={() => message.success('Document verified')}>Verify</Button>
+                        <Button size="small" danger onClick={() => message.warning('Rejected — re-request sent with reason')}>Reject…</Button>
+                      </Space>
+                    ),
+                  },
+                ]}
+                dataSource={checklist} />
+              {isCurrent && <Button size="small" onClick={() => message.info('Reminder sent — will repeat until documents arrive')}>Send reminder</Button>}
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 6 }}>
+                Candidate uploads via a secure link — no login. Vendors never see documents or these emails (Q5).
+              </Text>
+            </>
+          );
+        }
+      } else if (stage.type === 'offer') {
+        const off = round.offer;
+        if (!off) {
+          extras[0] = (
+            <>
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6 }}>
+                Record-only (Q3): HR shares the letter from its own mailbox — request in-app approval first.
+              </Text>
+              {isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={requestOfferApproval}>Request internal approval</Button>}
+            </>
+          );
+        } else if (off.approvalStatus !== 'pending' && !off.shared) {
+          extras[1] = isCurrent && <Button type="primary" size="small" icon={<FileTextOutlined />} onClick={recordOfferShared}>Record offer shared</Button>;
+        } else if (off.shared && off.decision === 'Awaiting decision' && isCurrent) {
+          extras[2] = (
+            <Space size={6}>
+              <Button size="small" style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
+                onClick={() => message.success('Offer marked Accepted — closure options unlocked; record auto-closes 90 days after Joined (Q12)')}>Mark Accepted</Button>
+              <Button size="small" danger onClick={() => message.warning('Offer marked Rejected — reason captured')}>Mark Rejected</Button>
+            </Space>
+          );
+        }
+        if (isCurrent) {
+          extras[3] = (
+            <Space wrap size={8} style={{ marginTop: 4 }}>
+              <Select size="small" value={closeStatus} onChange={setCloseStatus} style={{ minWidth: 200 }}
+                options={['Joined', 'Candidate Withdrawn', 'Did Not Join', 'Backed Out', 'Joined and Left', 'Rejected', 'On Hold'].map((v) => ({ value: v, label: v }))} />
+              <Button size="small" danger onClick={() => {
+                const draft = closureEmailDraft(current, closeStatus);
+                setCloseSubject(draft.subject);
+                setCloseBody(draft.body);
+                setCloseOpen(true);
+              }}>Close candidate record</Button>
+            </Space>
+          );
+        }
       }
-    } else if (stage.type === 'assessment') {
-      body = (
-        <>
-          <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
-            <Col span={8}><Card size="small"><Statistic title="IQ (GA) score" value={round.iq ?? '—'} suffix={round.iq != null ? '%' : ''} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Technical score" value={round.tech ?? '—'} suffix={round.tech != null ? '%' : ''} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Test date" value={round.testDate || '—'} /></Card></Col>
-          </Row>
-          {round.importedFrom ? (
-            <Alert type="success" showIcon message={`Imported from ${round.importedFrom}`} style={{ marginBottom: 10 }} />
-          ) : round.testDate ? (
-            <Alert type="warning" showIcon message={round.note || 'Test attempted — result awaited in the next Evalground import'} style={{ marginBottom: 10 }} />
-          ) : round.status === 'invited' ? (
-            <Alert type="info" showIcon icon={<ClockCircleOutlined />} message="Assessment invite sent — awaiting candidate to take the test"
-              description="A test date appears here once the candidate starts." style={{ marginBottom: 10 }} />
-          ) : (
-            <Alert type="warning" showIcon message="Assessment invite not sent yet"
-              description="Candidate has entered this round — send the Evalground invite (GA + Technical) to start it." style={{ marginBottom: 10 }} />
-          )}
-          {round.note && round.importedFrom && <Alert type="warning" showIcon message={round.note} style={{ marginBottom: 10 }} />}
-          {isCurrent && !round.importedFrom && !round.testDate && round.status !== 'invited' && (
-            <Button type="primary" icon={<MailOutlined />} onClick={sendAssessmentInvite} style={{ marginBottom: 10 }}>Send assessment invite</Button>
-          )}
-          {isCurrent && (
-            <div>
-              <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>Import Evalground results (CSV)</Button>
-            </div>
-          )}
-        </>
-      );
-    } else if (stage.type === 'interview') {
-      body = (
-        <>
-          {round.schedule ? (
-            <Descriptions size="small" column={2} bordered style={{ marginBottom: 10 }} items={[
-              { key: '1', label: 'When', children: round.schedule.when },
-              { key: '2', label: round.schedule.mode === 'Client call' ? 'Client contact' : 'Interviewer', children: round.schedule.who },
-              { key: '3', label: 'Mode', children: round.schedule.mode === 'Client call' ? 'Client call (manual)' : 'Microsoft Teams (Outlook invite auto-sent)' },
-              { key: '4', label: 'Reminders', children: round.remindersSent ? `${round.remindersSent} daily feedback reminder(s) sent — repeats until submitted (no escalation, Q7)` : 'Candidate 30 min before · interviewer 30 min before · feedback daily until submitted' },
-            ]} />
-          ) : round.status === 'invited' ? (
-            <Alert type="info" showIcon icon={<ClockCircleOutlined />} message="Self-scheduling slots published — awaiting candidate to pick a slot"
-              description="3 slots were published from the interviewer's Outlook free/busy; the Teams invite is created automatically once the candidate picks one." style={{ marginBottom: 10 }} />
-          ) : (
-            <Alert type="info" showIcon message="Not scheduled yet" description="Use “Schedule interview” below — fixed time or candidate self-scheduling; the Outlook invite with Teams link is sent automatically." style={{ marginBottom: 10 }} />
-          )}
-          {round.feedback ? (
-            <>
-              <Alert type="success" showIcon icon={<CheckCircleOutlined />}
-                message={<Space wrap><Text strong>{round.feedback.by}</Text><Tag color="green">{round.feedback.rec}</Tag>{round.feedback.avg && <Tag>{round.feedback.avg}/5</Tag>}</Space>}
-                description={`${round.feedback.note} — RT records the official round outcome below.`} style={{ marginBottom: 8 }} />
-              <Alert type="info" showIcon icon={<RobotOutlined />} style={{ marginBottom: 10 }}
-                message="AI feedback summary"
-                description={`Skill ratings and remarks read as consistent with the recommendation (${round.feedback.rec}); no contradictions flagged between the scores and the written note. Advisory only — RT still decides Approve / Hold / Reject.`} />
-            </>
-          ) : round.status === 'await' ? (
-            <Alert type="warning" showIcon icon={<ClockCircleOutlined />} message="Awaiting interviewer feedback"
-              description={<span>The interviewer got a tokenized scorecard link — no ATS login. <Button size="small" onClick={() => setCardOpen(true)}>Open scorecard</Button></span>} style={{ marginBottom: 10 }} />
-          ) : null}
-          {round.note && <Alert type="info" showIcon message={round.note} style={{ marginBottom: 10 }} />}
-        </>
-      );
-    } else if (stage.type === 'docs') {
-      if (!round.requested) {
-        body = (
-          <>
-            <Alert type="warning" showIcon message="Document request not sent yet" style={{ marginBottom: 10 }}
-              description="Candidate has cleared the final interview round — send the document request to start collection." />
-            {isCurrent && (
-              <Button type="primary" icon={<MailOutlined />} onClick={sendDocumentRequest}>Send document request</Button>
-            )}
-          </>
-        );
-      } else {
-        const checklist = round.checklist || [];
-        const allVerified = checklist.length > 0 && checklist.every((d) => d.status === 'verified');
-        body = (
-          <>
-            <Table size="small" pagination={false} rowKey="name" style={{ marginBottom: 10 }}
-              columns={[
-                { title: 'Document', dataIndex: 'name', render: (v) => <Space><FileTextOutlined /><Text strong>{v}</Text></Space> },
-                { title: 'Status', dataIndex: 'status', width: 190, render: (v) => <Tag color={DOC_TAG[v].color}>{DOC_TAG[v].label}</Tag> },
-                {
-                  title: '', dataIndex: 'status', key: 'a', width: 150,
-                  render: (v) => isCurrent && v === 'uploaded' && (
-                    <Space size={4}>
-                      <Button size="small" onClick={() => message.success('Document verified')}>Verify</Button>
-                      <Button size="small" danger onClick={() => message.warning('Rejected — re-request sent with reason')}>Reject…</Button>
-                    </Space>
-                  ),
-                },
-              ]}
-              dataSource={checklist} />
-            {allVerified && (
-              <Alert type="success" showIcon icon={<CheckCircleOutlined />} style={{ marginBottom: 10 }}
-                message="All documents verified — ready to approve and move to Offer" />
-            )}
-            {isCurrent && (
-              <Space wrap style={{ marginBottom: 10 }}>
-                <Button onClick={() => message.info('Reminder sent — will repeat until documents arrive')}>Send reminder</Button>
-              </Space>
-            )}
-            <Alert type="info" showIcon message="Candidate uploads via a secure link — no login. Vendors never see documents or these emails (Q5). Completeness is automatic; authenticity stays with RT." />
-          </>
-        );
-      }
-    } else if (stage.type === 'offer') {
-      const off = round.offer;
-      body = (
-        <>
-          {!off ? (
-            <>
-              <Alert type="info" showIcon style={{ marginBottom: 16 }} message="No offer recorded yet"
-                description="Record-only (Q3): HR shares the letter from its own mailbox. Request in-app approval first (recruiter; daily nudge), then record the shared date once HR sends it. No validity timer, no version tracking — revisions are handled manually." />
-              {isCurrent && (
-                <Button type="primary" icon={<MailOutlined />} onClick={requestOfferApproval}>Request internal approval</Button>
-              )}
-            </>
-          ) : off.approvalStatus === 'pending' ? (
-            <Alert type="warning" showIcon icon={<ClockCircleOutlined />} style={{ marginBottom: 16 }}
-              message="Approval requested — awaiting recruiter sign-off"
-              description="Daily nudge active until approved (Q3/Q26); the offer can be recorded as shared once it clears. Skippable in exceptional cases." />
-          ) : !off.shared ? (
-            <>
-              <Alert type="success" showIcon icon={<CheckCircleOutlined />} style={{ marginBottom: 10 }}
-                message={`Internal approval: ${off.approval}`}
-                description="Approved — HR can now share the offer letter offline. Record the shared date here once it's sent." />
-              {isCurrent && (
-                <Button type="primary" icon={<FileTextOutlined />} onClick={recordOfferShared}>Record offer shared</Button>
-              )}
-            </>
-          ) : (
-            <>
-              {off.approval && (
-                <Alert type="success" showIcon icon={<CheckCircleOutlined />} style={{ marginBottom: 10 }}
-                  message={`Internal approval: ${off.approval}`}
-                  description="Approval is recorded in-app by the recruiter, with a daily nudge until done — skippable in exceptional cases (Q3/Q26)." />
-              )}
-              <Alert type="info" showIcon icon={<FileTextOutlined />} style={{ marginBottom: 10 }}
-                message={<Space wrap><Text strong>{off.file}</Text><Tag color="blue">{off.decision}</Tag></Space>}
-                description={`Shared offline by HR ${off.shared} — recorded here · proposed joining ${off.join}`} />
-              {isCurrent && (
-                <Space wrap style={{ marginBottom: 16 }}>
-                  <Button style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
-                    onClick={() => message.success('Offer marked Accepted — closure options unlocked; record auto-closes 90 days after Joined (Q12)')}>Mark Accepted</Button>
-                  <Button danger onClick={() => message.warning('Offer marked Rejected — reason captured')}>Mark Rejected</Button>
-                </Space>
-              )}
-            </>
-          )}
-          {isCurrent && (
-            <>
-              <Title level={5} style={{ fontSize: 13 }}>Close candidate</Title>
-              <Space wrap>
-                <Select value={closeStatus} onChange={setCloseStatus} style={{ minWidth: 240 }}
-                  options={['Joined', 'Candidate Withdrawn', 'Did Not Join', 'Backed Out', 'Joined and Left', 'Rejected', 'On Hold'].map((v) => ({ value: v, label: v }))} />
-                <Button danger onClick={() => {
-                  const draft = closureEmailDraft(current, closeStatus);
-                  setCloseSubject(draft.subject);
-                  setCloseBody(draft.body);
-                  setCloseOpen(true);
-                }}>Close candidate record</Button>
-              </Space>
-            </>
-          )}
-        </>
-      );
     }
+
+    /* §2 — the unified, always-expanded vertical pipeline: one connected
+       stepper, top to bottom, every stage showing its real content inline
+       (no click-to-expand — that mechanism produced the original "trimmed"
+       complaint). Chips and notes come straight off `segs` (data-only, see
+       roundProgressSegments); `extras` supplies the interactive bits. */
+    const pipeline = (
+      <div className="cp-pipeline">
+        {segs.map((s, i) => (
+          <div key={s.key} className={`cp-pipeline-step cp-pipeline-step--${s.state}`}>
+            <div className="cp-pipeline-step__rail">
+              <span className={`cp-pipeline-node cp-pipeline-node--${s.state}`}>
+                {s.state === 'done' && <CheckOutlined />}
+                {s.state === 'hold' && <PauseCircleOutlined />}
+                {s.state === 'rejected' && <CloseOutlined />}
+              </span>
+              {i < segs.length - 1 && <span className={`cp-pipeline-step__connector${s.state === 'done' ? ' cp-pipeline-step__connector--done' : ''}`} />}
+            </div>
+            <div className="cp-pipeline-step__body">
+              <div className="cp-pipeline-step__head">
+                <Text className="cp-pipeline-step__label">{s.label}</Text>
+                <Text className={`cp-pipeline-step__state cp-pipeline-step__state--${s.state}`}>{STATE_WORD[s.state]}</Text>
+              </div>
+              <div className="cp-pipeline-step__detail">{s.detail}</div>
+              {s.note && <div className="cp-pipeline-step__detail" style={{ marginTop: 2, color: 'var(--text-3)' }}>{s.note}</div>}
+              {s.chips && (
+                <div className="cp-stat-chip-row">
+                  {s.chips.map((chip) => (
+                    <div key={chip.label} className={`cp-stat-chip cp-stat-chip--${scoreTier(chip.value)}`}>
+                      <span className="cp-stat-chip__value">{chip.value}</span>
+                      <span className="cp-stat-chip__label">{chip.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {extras[i] && <div className="cp-pipeline-step__extra">{extras[i]}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
 
     return (
       <Card size="small" title={head} className="cp-round-panel" style={{ marginTop: 4, position: 'relative' }}>
         {isCurrent && <UploadCelebration show={celebrate} />}
         <div style={{ height: 3, margin: '-1px -1px 14px', background: STAGE_ACCENT[stage.type] }} />
-        <div className="cp-category-bar">
-          {segs.map((s) => (
-            <div key={s.key} className={`cp-category-item cp-category-item--${s.state}`}>
-              <div className="cp-category-item__label">
-                <span className={`cp-category-item__dot cp-category-item__dot--${s.state}`} />
-                {s.label}
-              </div>
-              <Tooltip title={s.detail}>
-                <div className="cp-category-item__detail">{s.detail}</div>
-              </Tooltip>
-            </div>
-          ))}
-        </div>
-        {body}
+        {!round ? <Empty description="No activity in this round yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : pipeline}
         {round?.emails?.length > 0 && (
           <>
-            <Title level={5} style={{ fontSize: 12.5, marginTop: 14 }}>Emails in this round</Title>
-            <Timeline items={round.emails.map((e) => ({ dot: <MailOutlined style={{ fontSize: 12 }} />, color: 'blue', children: <Text style={{ fontSize: 12.5 }}>{e}</Text> }))} />
+            <div className="cp-section-label">Emails in this round</div>
+            <div className="cp-emails-surface">
+              <Timeline items={round.emails.map((e) => ({ dot: <MailOutlined style={{ fontSize: 12 }} />, color: 'blue', children: <Text style={{ fontSize: 12.5 }}>{e}</Text> }))} />
+            </div>
           </>
         )}
         {isCurrent && stage.type !== 'offer' && (
-          <>
-            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
-              <Space wrap>
-                <Button icon={<CheckOutlined />} className="btn-sheen" style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
-                  onClick={() => openOutcomeModal('approved')}>Approve round</Button>
-                <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
-                  onClick={() => openOutcomeModal('hold')}>Hold</Button>
-                <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
-                {stage.type === 'interview' && !round?.feedback && (
-                  <Button icon={<CalendarOutlined />} onClick={() => setSchedOpen(true)}>{round?.schedule ? 'Reschedule' : 'Schedule interview'}</Button>
-                )}
-              </Space>
-              <Alert type="info" showIcon icon={<MailOutlined />} style={{ marginTop: 10 }}
-                message={current.src === 'Vendor'
-                  ? `Outcome emails go to the candidate AND ${current.vendor} automatically (placement-vendor rule). Sensitive rounds send the vendor a status-only note.`
-                  : 'Outcome emails go to the candidate automatically, from the recruitment mailbox, with open tracking.'} />
-            </div>
-          </>
+          <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
+            <Space wrap>
+              <Button type="primary" icon={<CheckOutlined />} className="cta-primary btn-sheen"
+                onClick={() => openOutcomeModal('approved')}>Approve round</Button>
+              <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
+                onClick={() => openOutcomeModal('hold')}>Hold</Button>
+              <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
+            </Space>
+            <Alert type="info" showIcon icon={<MailOutlined />} style={{ marginTop: 10 }}
+              message={current.src === 'Vendor'
+                ? `Outcome emails go to the candidate AND ${current.vendor} automatically (placement-vendor rule). Sensitive rounds send the vendor a status-only note.`
+                : 'Outcome emails go to the candidate automatically, from the recruitment mailbox, with open tracking.'} />
+          </div>
         )}
       </Card>
     );
@@ -2040,6 +2052,62 @@ export default function CandidatePipelinePrototype() {
                 feeds back into the official outcome.
               </Text>
             </Card>
+          </Space>
+        )}
+      </Modal>
+
+      {/* ---------- Zeko interview scheduling modal (v11 — mirrors AnalyticsLegacy's
+          "Schedule Zeko Interview": candidate card → Interview Date & Time Range) ---------- */}
+      <Modal open={zekoSchedOpen} onCancel={() => setZekoSchedOpen(false)} onOk={confirmZekoSchedule}
+        okText="Confirm & Invite" width={520}
+        okButtonProps={{ disabled: !zekoRange || !zekoRange[0] || !zekoRange[1] }}
+        title={<Space><CalendarOutlined style={{ color: 'var(--gold)' }} />Schedule Zeko Interview</Space>}>
+        {current && (
+          <Space direction="vertical" size={14} style={{ width: '100%', marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--ink-3)', borderRadius: 10 }}>
+              <div className="cp-avatar" style={{ background: avatarColor(current.name), width: 36, height: 36, fontSize: 13 }}>{initials(current.name)}</div>
+              <div style={{ minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13.5, display: 'block' }}>{current.name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{current.email}</Text>
+              </div>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Zeko {STAGES[currentIdx]?.key === 'zeko_fn' ? 'Functional' : 'HR'} Screening test</Text>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{STAGES[currentIdx]?.name} · {current.role}</Text>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Interview Date & Time Range (IST) <Text type="danger">*</Text></Text>
+              <DatePicker.RangePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" style={{ width: '100%', marginTop: 4 }}
+                value={zekoRange} onChange={setZekoRange}
+                disabledDate={(cur) => cur && cur < dayjs().startOf('day')} />
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                Candidate self-schedules within this window via the Zeko link; times round to 30-minute slots automatically.
+              </Text>
+            </div>
+          </Space>
+        )}
+      </Modal>
+
+      {/* ---------- Assessment invite modal (v11 — simpler than Zeko's: a single
+          completion deadline, no equivalent Evalground scheduling UI to mirror) ---------- */}
+      <Modal open={assessSchedOpen} onCancel={() => setAssessSchedOpen(false)} onOk={confirmAssessmentInvite}
+        okText="Confirm & Invite" width={460} okButtonProps={{ disabled: !assessDeadline }}
+        title={<Space><CalendarOutlined style={{ color: 'var(--gold)' }} />Send Assessment Invite</Space>}>
+        {current && (
+          <Space direction="vertical" size={14} style={{ width: '100%', marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--ink-3)', borderRadius: 10 }}>
+              <div className="cp-avatar" style={{ background: avatarColor(current.name), width: 36, height: 36, fontSize: 13 }}>{initials(current.name)}</div>
+              <div style={{ minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13.5, display: 'block' }}>{current.name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{current.email}</Text>
+              </div>
+            </div>
+            <Text type="secondary" style={{ fontSize: 12.5 }}>Evalground assessment (GA + Technical) · {current.role}</Text>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Completion deadline <Text type="danger">*</Text></Text>
+              <DatePicker style={{ width: '100%', marginTop: 4 }} format="DD MMM YYYY" value={assessDeadline} onChange={setAssessDeadline}
+                disabledDate={(cur) => cur && cur < dayjs().startOf('day')} />
+            </div>
           </Space>
         )}
       </Modal>
