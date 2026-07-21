@@ -1,10 +1,12 @@
 /**
- * PipelinePrototype.jsx — Phase 3 Interview Pipeline Tracker PROTOTYPE (v2).
+ * CandidatePipelinePrototype.jsx — Phase 3 Candidate Pipeline PROTOTYPE (v2).
  *
  * ⚠️ Walkthrough demo for the Recruitment Team only:
  *   - 100% mock data, kept in component state — no API calls, nothing saved.
  *   - No emails are sent; every "email sent" message is simulated.
- *   - Route: /pipeline-prototype (not in the sidebar menu on purpose).
+ *   - Route: /candidate-pipeline-prototype — linked from the sidebar as
+ *     "Candidate Pipeline" (the earlier "not in the sidebar menu on purpose"
+ *     note is stale; it has had a sidebar entry since RT started reviewing it).
  *   - Delete this file + its route once Phase 3 Module 1 ships the real Tracker.
  *
  * v2 — RT feedback applied:
@@ -32,6 +34,43 @@
  *   - Scheduling: interviewer-fixed AND candidate self-scheduling from published
  *     slots; interviewer resolves slot conflicts by editing slots (Q6/Q31).
  *   - Vendors: status-only notes, never offer letters or document mails (Q5).
+ *
+ * v5 — AI features (see docs/changelog/CHANGES-pipeline-prototype-v5-ai.md):
+ *   - Stuck-candidate AI insight: a robot-icon one-liner under each "Blocked on"
+ *     tag in the analytics tab's Stuck candidates table.
+ *   - Natural-language board search: a text box that resolves to the existing
+ *     Role/Source/Hold/Stuck filters via mocked keyword parsing, with a
+ *     "Read as: …" line explaining what it matched.
+ *   - Evalground import: dropped the rigid "Map columns" step — the importer
+ *     now reads each row's raw text with AI regardless of column layout,
+ *     mirroring the schema-free row-reading pattern in
+ *     backend/src/services/hrUpload.service.js (~lines 1083–1100).
+ *   - Schedule Interview: an AI interviewer prep brief is attached to the
+ *     invite by default (toggleable).
+ *   - Interviewer feedback: an AI feedback summary is shown next to the
+ *     submitted scorecard — advisory only; RT still decides Approve/Hold/Reject.
+ *
+ * v6 — invite/outcome/decision + editable outcome emails
+ *   (see docs/changelog/CHANGES-pipeline-prototype-v6-email-templates.md):
+ *   - Approve/Hold/Reject opens a decision modal with a real, editable
+ *     outcome email (Subject + Body) instead of a generic "email will be
+ *     sent" notice. Hold drafts from the real "Application On Hold"
+ *     template (id 18); Reject from "Rejection — Post Interview" (id 4) —
+ *     both shown as a tag on the modal.
+ *   - Flagged gap: no template exists yet for "approved / moving to next
+ *     stage" — shows an editable draft tagged "Draft — no template yet".
+ *   - Offer stage's "Close candidate record" now opens a confirm modal with
+ *     the same editable-email pattern (also "Draft — no template yet").
+ *
+ * v7 — renamed to "Candidate Pipeline"
+ *   (see docs/changelog/CHANGES-pipeline-prototype-v7-rename.md):
+ *   - File PipelinePrototype.jsx → CandidatePipelinePrototype.jsx; component
+ *     PipelinePrototype → CandidatePipelinePrototype; PipelineAnalyticsPreview
+ *     → CandidatePipelineAnalyticsPreview.
+ *   - Route /pipeline-prototype → /candidate-pipeline-prototype; sidebar
+ *     label "Pipeline Tracker" → "Candidate Pipeline"; breadcrumb "Interview
+ *     Pipeline Tracker (Preview)" → "Candidate Pipeline (Preview)"; Analytics
+ *     tab "Pipeline (Preview)" → "Candidate Pipeline (Preview)".
  */
 import { useMemo, useState } from 'react';
 import {
@@ -42,7 +81,8 @@ import {
 import {
   CalendarOutlined, CheckCircleOutlined, CheckOutlined, ClockCircleOutlined,
   CloseOutlined, FileTextOutlined, ImportOutlined, MailOutlined,
-  PauseCircleOutlined, TeamOutlined, UserOutlined, WarningOutlined,
+  PauseCircleOutlined, RobotOutlined, SearchOutlined, TeamOutlined,
+  UserOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
@@ -269,12 +309,12 @@ const FUNNEL = [
 ];
 
 /**
- * PipelineAnalyticsPreview — the pipeline analytics tab content (mock data).
+ * CandidatePipelineAnalyticsPreview — the pipeline analytics tab content (mock data).
  * Rendered inside the EXISTING Analytics page (single analytics page — RT
  * decision 2026-07-10). Exported separately so Analytics.jsx can mount it as
  * a tab; delete together with this prototype when the real Tracker ships.
  */
-export function PipelineAnalyticsPreview() {
+export function CandidatePipelineAnalyticsPreview() {
   return (
     <>
       <Alert type="warning" showIcon style={{ marginBottom: 14 }}
@@ -307,12 +347,21 @@ export function PipelineAnalyticsPreview() {
               columns={[
                 { title: 'Candidate', dataIndex: 'n' }, { title: 'Round', dataIndex: 's' },
                 { title: 'Days', dataIndex: 'd', width: 60 },
-                { title: 'Blocked on', dataIndex: 'b', render: (b) => <Tag color="gold">{b}</Tag> },
+                {
+                  title: 'Blocked on', dataIndex: 'b', render: (b, row) => (
+                    <Space direction="vertical" size={2}>
+                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>{b}</Tag>
+                      <Text type="secondary" style={{ fontSize: 11.5 }}>
+                        <RobotOutlined style={{ marginInlineEnd: 4 }} />{row.ai}
+                      </Text>
+                    </Space>
+                  ),
+                },
               ]}
               dataSource={[
-                { k: 1, n: 'Ravi Shankar', s: 'Tech Round 1', d: 12, b: 'Awaiting feedback — Suresh M.' },
-                { k: 2, n: 'Meena Iyer', s: 'IQ / Tech Assessment', d: 11, b: 'Evalground result not imported' },
-                { k: 3, n: 'Farhan Ali', s: 'On Hold (Zeko HR)', d: 34, b: 'Manual hold review' },
+                { k: 1, n: 'Ravi Shankar', s: 'Tech Round 1', d: 12, b: 'Awaiting feedback — Suresh M.', ai: 'Suresh usually replies in 2 days — 6× over his norm; try a direct nudge instead of the daily reminder.' },
+                { k: 2, n: 'Meena Iyer', s: 'IQ / Tech Assessment', d: 11, b: 'Evalground result not imported', ai: 'No CSV import has landed since the test date — check whether Evalground actually has a result yet.' },
+                { k: 3, n: 'Farhan Ali', s: 'On Hold (Zeko HR)', d: 34, b: 'Manual hold review', ai: 'Longest-held candidate on the board (34d, 3× the median hold) — due for a manual review.' },
               ]} />
           </Card>
         </Col>
@@ -342,6 +391,74 @@ export function PipelineAnalyticsPreview() {
 const ageColor = (d) => (d <= 5 ? 'green' : d <= 10 ? 'gold' : 'red');
 const mailAudience = (c) => (c.src === 'Vendor' ? `candidate + ${c.vendor}` : 'candidate');
 
+/**
+ * Mocked NL → filter resolver for the board search box (v5). Keyword-matches
+ * against the same Role/Source/Hold/Stuck filters the dropdowns already set —
+ * there is no real model call here, just enough pattern matching to make the
+ * "Read as: …" line honest about what it did.
+ */
+const ROLE_LIST = [...new Set(INITIAL_CANDIDATES.map((c) => c.role))];
+const SRC_LABEL = { Vendor: 'Placement vendor', HR: 'HR upload', Email: 'Email intake' };
+function parseNlQuery(text) {
+  const lower = text.toLowerCase();
+  let role;
+  for (const r of ROLE_LIST) {
+    const words = r.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+    if (lower.includes(r.toLowerCase()) || words.some((w) => lower.includes(w))) { role = r; break; }
+  }
+  let src;
+  if (/\bvendor\b/.test(lower)) src = 'Vendor';
+  else if (/\bhr\b/.test(lower)) src = 'HR';
+  else if (/\bemail\b/.test(lower)) src = 'Email';
+  const hold = /\bhold\b/.test(lower);
+  const stuck = /\bstuck\b|\bblocked\b|\boverdue\b|\baging\b|\blong\b/.test(lower);
+  const read = [
+    role && `Position = "${role}"`,
+    src && `Source = ${SRC_LABEL[src]}`,
+    hold && 'On Hold only',
+    stuck && 'Stuck > 10 days',
+  ].filter(Boolean);
+  return { role, src, hold, stuck, read: read.length ? read.join(' · ') : 'No filters matched — showing all candidates' };
+}
+
+/**
+ * v6 — editable outcome-email drafts for the decision modal. Hold/Reject map
+ * to real templates in seed-email-templates.js; Approve has no template yet
+ * (flagged gap — an editable draft is shown instead, tagged accordingly).
+ */
+function emailDraftFor(outcomeVal, cand, stage) {
+  if (!cand) return { subject: '', body: '', tpl: null };
+  const position = cand.role;
+  if (outcomeVal === 'hold') {
+    return {
+      subject: 'Application on Hold - AAPNA Infotech',
+      body: `Dear ${cand.name},\n\nThank you for your continued interest in the ${position} position at AAPNA Infotech.\n\nYour application is currently on hold while we complete our ${stage.name} review. We will reach out with an update as soon as possible.\n\nWe appreciate your patience.\n\nRegards,\nAAPNA Recruitment Team`,
+      tpl: { id: 18, name: 'Application On Hold' },
+    };
+  }
+  if (outcomeVal === 'rejected') {
+    return {
+      subject: 'Update on Your Application - AAPNA Infotech',
+      body: `Dear ${cand.name},\n\nAfter careful consideration of your profile, we regret to inform you that we are unable to move forward with your application for ${position} at this time.\n\nWe truly appreciate the time and effort you invested in our process. We will keep your profile on file and encourage you to apply for future opportunities.\n\nWe wish you all the best in your career journey.\n\nRegards,\nAAPNA Recruitment Team`,
+      tpl: { id: 4, name: 'Rejection — Post Interview' },
+    };
+  }
+  const next = STAGES[Math.min(stageIdx(stage.key) + 1, STAGES.length - 1)];
+  return {
+    subject: `You're moving forward — ${position} at AAPNA Infotech`,
+    body: `Dear ${cand.name},\n\nGreat news — you've cleared ${stage.name}. We're moving your application forward to ${next.name}.\n\nWe'll be in touch shortly with next steps.\n\nRegards,\nAAPNA Recruitment Team`,
+    tpl: null,
+  };
+}
+
+function closureEmailDraft(cand, status) {
+  if (!cand) return { subject: '', body: '' };
+  return {
+    subject: `Your candidature update — ${cand.role} at AAPNA Infotech`,
+    body: `Dear ${cand.name},\n\nThis is to confirm your candidature status for ${cand.role} has been recorded as: ${status}.\n\nThank you for the time you invested throughout our process.\n\nRegards,\nAAPNA Recruitment Team`,
+  };
+}
+
 function SourceTag({ c }) {
   if (c.src === 'Vendor') return <Tag color="green">V · {c.vendor}</Tag>;
   return <Tag>{c.src === 'HR' ? 'HR upload' : 'Email intake'}</Tag>;
@@ -368,7 +485,7 @@ const DOC_TAG = {
 
 /* ----------------------------------------------------------------- page */
 
-export default function PipelinePrototype() {
+export default function CandidatePipelinePrototype() {
   const { message } = AntApp.useApp();
   const [candidates, setCandidates] = useState(INITIAL_CANDIDATES);
   const [openId, setOpenId] = useState(null);
@@ -378,18 +495,40 @@ export default function PipelinePrototype() {
   const [fSrc, setFSrc] = useState();
   const [fHold, setFHold] = useState(false);
   const [fStuck, setFStuck] = useState(false);
+  const [nlQuery, setNlQuery] = useState('');
+  const [nlRead, setNlRead] = useState(null);
 
   const [outcomeOpen, setOutcomeOpen] = useState(false);
   const [outcome, setOutcome] = useState('approved');
   const [reason, setReason] = useState();
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [emailTpl, setEmailTpl] = useState(null);
   const [schedOpen, setSchedOpen] = useState(false);
   const [schedMode, setSchedMode] = useState('fixed');
+  const [prepBriefOn, setPrepBriefOn] = useState(true);
   const [cardOpen, setCardOpen] = useState(false);
   const [cardRec, setCardRec] = useState('Approve');
   const [importOpen, setImportOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeStatus, setCloseStatus] = useState('Joined');
+  const [closeSubject, setCloseSubject] = useState('');
+  const [closeBody, setCloseBody] = useState('');
 
   const current = candidates.find((c) => c.id === openId) || null;
   const currentIdx = current ? stageIdx(current.stage) : 0;
+
+  const openOutcomeModal = (val) => {
+    setOutcome(val);
+    setReason(undefined);
+    if (current) {
+      const draft = emailDraftFor(val, current, STAGES[currentIdx]);
+      setEmailSubject(draft.subject);
+      setEmailBody(draft.body);
+      setEmailTpl(draft.tpl);
+    }
+    setOutcomeOpen(true);
+  };
 
   const filtered = useMemo(
     () => candidates.filter((c) =>
@@ -416,13 +555,14 @@ export default function PipelinePrototype() {
     const stage = STAGES[currentIdx];
     const mailTo = mailAudience(current);
     const round = current.rounds[stage.key] || {};
+    const emailLog = `"${emailSubject}" → ${mailTo}${emailTpl ? ` (template: ${emailTpl.name} #${emailTpl.id}, edited before send)` : ' (draft — no template yet, edited before send)'}`;
     if (outcome === 'approved') {
       const next = STAGES[Math.min(currentIdx + 1, STAGES.length - 1)];
       patchCurrent({
         stage: next.key, chip: 'review', age: 0,
         rounds: {
           ...current.rounds,
-          [stage.key]: { ...round, status: undefined, outcome: 'approved', when: 'just now', by: 'You', emails: [...(round.emails || []), `Outcome email → ${mailTo}`] },
+          [stage.key]: { ...round, status: undefined, outcome: 'approved', when: 'just now', by: 'You', emails: [...(round.emails || []), `Outcome email ${emailLog}`] },
           [next.key]: current.rounds[next.key] || { status: 'review' },
         },
       });
@@ -431,7 +571,7 @@ export default function PipelinePrototype() {
     } else if (outcome === 'hold') {
       patchCurrent({
         chip: 'hold',
-        rounds: { ...current.rounds, [stage.key]: { ...round, status: undefined, outcome: 'hold', reason, when: 'just now', by: 'You', emails: [...(round.emails || []), `On-hold email → ${mailTo}`] } },
+        rounds: { ...current.rounds, [stage.key]: { ...round, status: undefined, outcome: 'hold', reason, when: 'just now', by: 'You', emails: [...(round.emails || []), `On-hold email ${emailLog}`] } },
       });
       message.warning(`Put on hold — reason captured; email sent to ${mailTo}`);
     } else {
@@ -447,21 +587,22 @@ export default function PipelinePrototype() {
     if (!current) return;
     const stage = STAGES[currentIdx];
     const round = current.rounds[stage.key] || {};
+    const briefEmail = prepBriefOn ? ['AI interviewer prep brief attached — candidate summary + scores so far + suggested questions'] : [];
     if (schedMode === 'slots') {
       patchCurrent({
         chip: 'invited',
-        rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', emails: [...(round.emails || []), 'Self-scheduling link (3 published slots) → candidate'] } },
+        rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', emails: [...(round.emails || []), 'Self-scheduling link (3 published slots) → candidate', ...briefEmail] } },
       });
       setSchedOpen(false);
-      message.success('Slots published — the candidate picks one from the emailed link; the Teams invite goes out automatically on pick');
+      message.success(`Slots published — the candidate picks one from the emailed link; the Teams invite goes out automatically on pick${prepBriefOn ? '; prep brief will attach once picked' : ''}`);
       return;
     }
     patchCurrent({
       chip: 'scheduled',
-      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'scheduled', schedule: { when: '13 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, emails: [...(round.emails || []), 'Outlook invite (Teams) — sent; reminders armed'] } },
+      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'scheduled', schedule: { when: '13 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, emails: [...(round.emails || []), 'Outlook invite (Teams) — sent; reminders armed', ...briefEmail] } },
     });
     setSchedOpen(false);
-    message.success('Teams invite created — candidate & interviewer notified; reminders scheduled');
+    message.success(`Teams invite created — candidate & interviewer notified; reminders scheduled${prepBriefOn ? '; AI prep brief attached for the interviewer' : ''}`);
   };
 
   const submitScorecard = () => {
@@ -495,8 +636,31 @@ export default function PipelinePrototype() {
     </Card>
   );
 
+  const handleNlSearch = (text) => {
+    setNlQuery(text);
+    if (!text.trim()) { setNlRead(null); setFRole(undefined); setFSrc(undefined); setFHold(false); setFStuck(false); return; }
+    const parsed = parseNlQuery(text);
+    setFRole(parsed.role);
+    setFSrc(parsed.src);
+    setFHold(parsed.hold);
+    setFStuck(parsed.stuck);
+    setNlRead(parsed.read);
+  };
+
   const board = (
     <>
+      <Input.Search allowClear placeholder='Ask the board — e.g. "vendor candidates stuck on hold" (mocked keyword matching)'
+        prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
+        style={{ maxWidth: 520, marginBottom: 8 }} value={nlQuery}
+        onChange={(e) => { setNlQuery(e.target.value); if (!e.target.value.trim()) handleNlSearch(''); }}
+        onSearch={handleNlSearch} enterButton={<SearchOutlined />} />
+      {nlRead && (
+        <div style={{ marginBottom: 10 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            <RobotOutlined style={{ marginInlineEnd: 4 }} />Read as: {nlRead}
+          </Text>
+        </div>
+      )}
       <Space wrap style={{ marginBottom: 14 }}>
         <Select allowClear placeholder="Position" style={{ minWidth: 200 }} value={fRole}
           onChange={setFRole} options={roles.map((r) => ({ value: r, label: r }))} />
@@ -615,9 +779,14 @@ export default function PipelinePrototype() {
             <Alert type="info" showIcon message="Not scheduled yet" description="Use “Schedule interview” below — fixed time or candidate self-scheduling; the Outlook invite with Teams link is sent automatically." style={{ marginBottom: 10 }} />
           )}
           {round.feedback ? (
-            <Alert type="success" showIcon icon={<CheckCircleOutlined />}
-              message={<Space wrap><Text strong>{round.feedback.by}</Text><Tag color="green">{round.feedback.rec}</Tag>{round.feedback.avg && <Tag>{round.feedback.avg}/5</Tag>}</Space>}
-              description={`${round.feedback.note} — RT records the official round outcome below.`} style={{ marginBottom: 10 }} />
+            <>
+              <Alert type="success" showIcon icon={<CheckCircleOutlined />}
+                message={<Space wrap><Text strong>{round.feedback.by}</Text><Tag color="green">{round.feedback.rec}</Tag>{round.feedback.avg && <Tag>{round.feedback.avg}/5</Tag>}</Space>}
+                description={`${round.feedback.note} — RT records the official round outcome below.`} style={{ marginBottom: 8 }} />
+              <Alert type="info" showIcon icon={<RobotOutlined />} style={{ marginBottom: 10 }}
+                message="AI feedback summary"
+                description={`Skill ratings and remarks read as consistent with the recommendation (${round.feedback.rec}); no contradictions flagged between the scores and the written note. Advisory only — RT still decides Approve / Hold / Reject.`} />
+            </>
           ) : round.status === 'await' ? (
             <Alert type="warning" showIcon icon={<ClockCircleOutlined />} message="Awaiting interviewer feedback"
               description={<span>The interviewer got a tokenized scorecard link — no ATS login. <Button size="small" onClick={() => setCardOpen(true)}>Open scorecard</Button></span>} style={{ marginBottom: 10 }} />
@@ -687,12 +856,13 @@ export default function PipelinePrototype() {
             <>
               <Title level={5} style={{ fontSize: 13 }}>Close candidate</Title>
               <Space wrap>
-                <Select defaultValue="Joined" style={{ minWidth: 240 }}
+                <Select value={closeStatus} onChange={setCloseStatus} style={{ minWidth: 240 }}
                   options={['Joined', 'Candidate Withdrawn', 'Did Not Join', 'Backed Out', 'Joined and Left', 'Rejected', 'On Hold'].map((v) => ({ value: v, label: v }))} />
                 <Button danger onClick={() => {
-                  message.info(`Record closed — closure email sent to ${mailAudience(current)}`);
-                  setCandidates((prev) => prev.filter((c) => c.id !== current.id));
-                  setOpenId(null);
+                  const draft = closureEmailDraft(current, closeStatus);
+                  setCloseSubject(draft.subject);
+                  setCloseBody(draft.body);
+                  setCloseOpen(true);
                 }}>Close candidate record</Button>
               </Space>
             </>
@@ -715,10 +885,10 @@ export default function PipelinePrototype() {
             <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
               <Space wrap>
                 <Button icon={<CheckOutlined />} style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
-                  onClick={() => { setOutcome('approved'); setOutcomeOpen(true); }}>Approve round</Button>
+                  onClick={() => openOutcomeModal('approved')}>Approve round</Button>
                 <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
-                  onClick={() => { setOutcome('hold'); setOutcomeOpen(true); }}>Hold</Button>
-                <Button danger icon={<CloseOutlined />} onClick={() => { setOutcome('rejected'); setOutcomeOpen(true); }}>Reject</Button>
+                  onClick={() => openOutcomeModal('hold')}>Hold</Button>
+                <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
                 {stage.type === 'interview' && !round?.feedback && (
                   <Button icon={<CalendarOutlined />} onClick={() => setSchedOpen(true)}>{round?.schedule ? 'Reschedule' : 'Schedule interview'}</Button>
                 )}
@@ -744,11 +914,11 @@ export default function PipelinePrototype() {
         candidates currently in this round, filling their IQ (GA) and Technical scores. Duplicate attempts use the <Text strong>latest row</Text>.
         Pass mark <Text strong>50%</Text> for both tests drives the Passed/Failed suggestion (Q4). Nothing is written until you confirm.
       </Paragraph>
-      <Steps size="small" current={2} style={{ maxWidth: 620, marginBottom: 16 }}
-        items={[{ title: 'Upload file' }, { title: 'Map columns' }, { title: 'Validate' }, { title: 'Import' }]} />
-      <Alert type="info" showIcon icon={<FileTextOutlined />} style={{ marginBottom: 12 }}
+      <Steps size="small" current={1} style={{ maxWidth: 620, marginBottom: 16 }}
+        items={[{ title: 'Upload file' }, { title: 'AI reads rows' }, { title: 'Import' }]} />
+      <Alert type="success" showIcon icon={<RobotOutlined />} style={{ marginBottom: 12 }}
         message="Evalground_Results_08Jul2026.csv"
-        description="38 rows · uploaded by Priya (RT) · column mapping remembered from the first sample file" />
+        description="38 rows · uploaded by Priya (RT) · no column mapping step — AI read every row's raw text regardless of column order/headers and picked out email, GA score and Technical score (same schema-free row-reading pattern as the HR bulk resume upload)." />
       <Row gutter={[10, 10]} style={{ marginBottom: 12 }}>
         <Col span={6}><Card size="small"><Statistic title="Matched" value={34} valueStyle={{ color: 'var(--green, #4a7c59)', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Unmatched" value={3} valueStyle={{ color: '#d4a017', fontSize: 20 }} /></Card></Col>
@@ -787,7 +957,7 @@ export default function PipelinePrototype() {
     <div className="page-enter">
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }} wrap>
         <div>
-          <Title level={3} style={{ margin: 0 }}>Interview Pipeline Tracker</Title>
+          <Title level={3} style={{ margin: 0 }}>Candidate Pipeline</Title>
           <Text type="secondary">Phase 3 walkthrough prototype — mock data, nothing is saved, no emails are sent</Text>
         </div>
       </Space>
@@ -832,14 +1002,14 @@ export default function PipelinePrototype() {
         )}
       </Drawer>
 
-      {/* ---------- outcome modal ---------- */}
-      <Modal open={outcomeOpen} onCancel={() => setOutcomeOpen(false)} onOk={saveOutcome}
+      {/* ---------- decision modal (v6): outcome + real, editable outcome email ---------- */}
+      <Modal open={outcomeOpen} onCancel={() => setOutcomeOpen(false)} onOk={saveOutcome} width={620}
         okText="Save & send email" title="Record round outcome"
         okButtonProps={{ disabled: outcome !== 'approved' && !reason }}>
         {current && (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Text type="secondary">{current.name} · {STAGES[currentIdx]?.name}</Text>
-            <Radio.Group value={outcome} onChange={(e) => { setOutcome(e.target.value); setReason(undefined); }}
+            <Radio.Group value={outcome} onChange={(e) => openOutcomeModal(e.target.value)}
               optionType="button" buttonStyle="solid"
               options={[
                 { value: 'approved', label: '✓ Approved' },
@@ -853,8 +1023,53 @@ export default function PipelinePrototype() {
                 options={(REASONS[outcome] || []).map((r) => ({ value: r, label: r }))} />
             </div>
             <Input.TextArea rows={2} placeholder="Notes — internal, shown on the round; not sent to the candidate" />
-            <Alert type="info" showIcon icon={<MailOutlined />}
-              message={`Automated outcome email → ${mailAudience(current)}. Logged with open tracking.`} />
+            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
+              <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Outcome email → {mailAudience(current)}</Text>
+                {emailTpl
+                  ? <Tag color="blue">Template — {emailTpl.name} (#{emailTpl.id})</Tag>
+                  : <Tag color="orange">Draft — no template yet</Tag>}
+              </Space>
+              {!emailTpl && (
+                <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+                  message="No email template exists yet for “approved / moving to next stage” — this is an editable draft, not a saved template." />
+              )}
+              <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Subject" style={{ marginBottom: 8 }} />
+              <Input.TextArea rows={7} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} placeholder="Body" />
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                Editable before send — the exact text above goes out; logged with open tracking once sent.
+              </Text>
+            </div>
+          </Space>
+        )}
+      </Modal>
+
+      {/* ---------- close-candidate-record confirm modal (v6) ---------- */}
+      <Modal open={closeOpen} onCancel={() => setCloseOpen(false)} width={620}
+        okText="Confirm & send email" okButtonProps={{ danger: true }} title="Close candidate record"
+        onOk={() => {
+          message.info(`Record closed (${closeStatus}) — closure email sent to ${mailAudience(current)}`);
+          setCandidates((prev) => prev.filter((c) => c.id !== current.id));
+          setOpenId(null);
+          setCloseOpen(false);
+        }}>
+        {current && (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Text type="secondary">{current.name} · closing as <Text strong>{closeStatus}</Text></Text>
+            <Alert type="warning" showIcon message="This removes the candidate from the active board — reversible only by re-adding them (prototype has no undo)." />
+            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
+              <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Closure email → {mailAudience(current)}</Text>
+                <Tag color="orange">Draft — no template yet</Tag>
+              </Space>
+              <Input value={closeSubject} onChange={(e) => setCloseSubject(e.target.value)}
+                placeholder="Subject" style={{ marginBottom: 8 }} />
+              <Input.TextArea rows={6} value={closeBody} onChange={(e) => setCloseBody(e.target.value)} placeholder="Body" />
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                Editable before send — same pattern as the round-outcome decision modal.
+              </Text>
+            </div>
           </Space>
         )}
       </Modal>
@@ -894,6 +1109,16 @@ export default function PipelinePrototype() {
             <Alert type="info" showIcon icon={<CalendarOutlined />}
               message="On save: Outlook invite with Microsoft Teams link goes to candidate + interviewer from the recruitment mailbox."
               description="Automated reminders (Q7) — candidate 30 min before · interviewer 30 min before · feedback form link right after the interview, then one reminder per day until submitted." />
+            <Card size="small" style={{ background: 'var(--surface-2, #f7f8f4)' }}>
+              <Checkbox checked={prepBriefOn} onChange={(e) => setPrepBriefOn(e.target.checked)}>
+                <Space size={6}><RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} /><Text strong style={{ fontSize: 13 }}>Attach AI interviewer prep brief</Text></Space>
+              </Checkbox>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginInlineStart: 24 }}>
+                On by default — a one-page summary sent to the interviewer alongside the invite: candidate snapshot, scores so far
+                (JD match, Zeko, Evalground), and 3–4 suggested questions for this round. Interviewer can ignore it; nothing here
+                feeds back into the official outcome.
+              </Text>
+            </Card>
           </Space>
         )}
       </Modal>

@@ -25,7 +25,7 @@ const NAV_COMMANDS = [
   { key: 'search_candidates', label: 'Search Candidates', icon: <SearchOutlined />, url: '/candidates', module: 'search_candidates' },
   { key: 'candidate_screening', label: 'Candidate Screening', icon: <FilterOutlined />, url: '/filtering', module: 'candidate_screening' },
   { key: 'new_mrf', label: 'New MRF Request', icon: <FileTextOutlined />, url: '/mrf', module: 'new_mrf' },
-  { key: 'screening_analytics', label: 'Screening Analytics', icon: <BarChartOutlined />, url: '/analytics', module: 'screening_analytics' },
+  { key: 'screening_analytics', label: 'Recruitment Analytics', icon: <BarChartOutlined />, url: '/analytics', module: 'screening_analytics' },
   { key: 'hr_manual_upload', label: 'HR Manual Upload', icon: <UploadOutlined />, url: '/hr-upload', module: 'hr_manual_upload' },
   { key: 'vendor_upload', label: 'Vendor Upload', icon: <CloudUploadOutlined />, url: '/vendor', module: 'vendor_upload' },
   { key: 'email', label: 'Email Templates', icon: <MailOutlined />, url: '/email' },

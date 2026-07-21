@@ -52,7 +52,7 @@ const MODULES_INFO = [
   { key: 'vendor_upload',       label: 'Vendor Manual Upload',             desc: 'Upload vendor-sourced candidate resumes',           icon: '🏢', color: '#fa8c16' },
   { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: '#2f54eb' },
   { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: '#13c2c2' },
-  { key: 'screening_analytics', label: 'Recruitment Screening Analytics',  desc: 'Track recruitment performance and analytics',       icon: '📊', color: '#eb2f96' },
+  { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: '#eb2f96' },
 ];
 
 // Per-role badge metadata — distinct, on-brand colors so the hierarchy reads at a glance.
