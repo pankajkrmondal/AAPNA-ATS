@@ -71,10 +71,108 @@
  *     label "Pipeline Tracker" → "Candidate Pipeline"; breadcrumb "Interview
  *     Pipeline Tracker (Preview)" → "Candidate Pipeline (Preview)"; Analytics
  *     tab "Pipeline (Preview)" → "Candidate Pipeline (Preview)".
+ *
+ * v8 — round lifecycle depth + no more redundant "Shortlisted" stage +
+ *   visual refresh to match the rest of the app:
+ *   - Removed the "Shortlisted" column — shortlisting already happens on
+ *     the Candidate Screening page, so having a column here that implies
+ *     it happens again was confusing. Candidates now enter the pipeline
+ *     directly at "HR Screening (Zeko)"; the JD-match/date context that
+ *     used to live in a "Shortlisted" round is now a persistent read-only
+ *     line in the drawer header (`candidate.screening`), not a stage.
+ *   - Every round — not just interviews — now models and demonstrates its
+ *     full lifecycle: invite pending → invited → in progress (interview
+ *     upcoming/happened, Zeko test started, or assessment taken) → ready
+ *     for decision (feedback/score/result in, new "Ready for decision"
+ *     chip, generalizes the old "Feedback ready"/"Result imported" chips)
+ *     → approve/hold/reject. The `zeko` and `assessment` round renderers
+ *     used to collapse "not started" and "in progress" into one generic
+ *     message (`round.zeko`/`round.importedFrom` truthy/falsy only) — now
+ *     branch on `round.status` (`pending`/`invited`/`in_progress`) with a
+ *     "Send Zeko invite"/"Send assessment invite" action button for the
+ *     pending case, same pattern as the interview round's "Schedule
+ *     interview" button. Example candidates cover every state on every
+ *     round (HR Screening, Assessment, Functional, Tech 1–3, HR, CEO,
+ *     Client), including a genuine "On Hold" on an interview round
+ *     (previously only Zeko HR had one).
+ *   - Candidate cards redesigned — the old layout crammed 3–4 same-weight
+ *     pill tags together. Now: an initials avatar, a left-border accent
+ *     coloured by status, source folded into secondary text instead of its
+ *     own pill, and the age indicator is quiet text unless it's actually a
+ *     problem (>10 days → pulsing red tag) — one dominant tag per card.
+ *   - Visual pass reusing the app's existing design system instead of
+ *     plain boxes: the shared `KpiCard` (animated count-up, glow, hover
+ *     lift) for the analytics tiles, `UploadCelebration`'s quiet check
+ *     animation on a successful Approve, a staggered fade-in board, a
+ *     colour-coded accent bar per stage type, and a hover-lift on
+ *     candidate cards (`.cp-candidate-card`/`.cp-avatar` in theme/index.css).
+ *
+ * v9 — full-lifecycle coverage on every round (HR Screening → Offer) +
+ *   4-category card redesign (see docs/changelog/CHANGES-pipeline-
+ *   prototype-v9-full-coverage-and-card-redesign.md):
+ *   - Two more real render-bugs fixed (same class as v8's zeko/assessment
+ *     fix — a state silently rendering as a different, wrong state):
+ *     interview rounds now distinguish "self-scheduling slots published,
+ *     not yet picked" from "not scheduled at all" (`round.status ===
+ *     'invited'` was previously falling through to the generic message);
+ *     Documents now distinguishes "request not sent" from "sent, no
+ *     uploads yet" (`round.requested`, new field) instead of showing an
+ *     identical all-pending checklist either way; Offer now models
+ *     `round.offer.approvalStatus` (`pending`/`approved`) so "not
+ *     requested" / "awaiting recruiter sign-off" / "approved, not yet
+ *     shared" / "shared, awaiting candidate decision" are each their own
+ *     message with the matching action button ("Request internal
+ *     approval" / "Record offer shared"), not a single all-or-nothing
+ *     `round.offer` object.
+ *   - Roster grown 33 → 52 candidates so every round — not just the
+ *     interview rounds — demonstrates its full lifecycle: entry → schedule/
+ *     invite → outcome (score/feedback/result) → decision. Documents and
+ *     Offer, which had exactly one example each before this pass, now have
+ *     5 each covering their real sub-states.
+ *   - Card redesign: a compact 4-segment progress-stepper bar
+ *     (`roundProgressSegments`, `.cp-progress-seg` in theme/index.css)
+ *     added beneath the existing status chip — one segment per category
+ *     (Entry/Schedule/Outcome/Decision), colour-filled by state, with a
+ *     tooltip spelling out all 4 in text. Direction chosen after checking
+ *     how established ATS/kanban tools handle this: real ATS pipeline
+ *     cards (Lever) favour one minimal dominant status line; the
+ *     "show N sub-states compactly" pattern is better precedented by
+ *     general kanban tools (Trello's checklist badge, Linear's progress
+ *     ring) — so the chip stays as the primary readable label and the
+ *     stepper is the secondary at-a-glance signal, rather than another
+ *     row of same-weight tags.
+ *
+ * v10 — candidate drawer redesign (see docs/changelog/CHANGES-pipeline-
+ *   prototype-v10-drawer-redesign.md): the board card got the v8/v9
+ *   treatment, but the drawer's round-detail panel was still a plain,
+ *   cramped, cluttered box. Three fixes:
+ *   - **4-category bar**: `roundProgressSegments` extended with a
+ *     human-readable `detail` per segment (e.g. "Score 66/61", "On Hold —
+ *     Weak communication"), rendered as a 4-tile grid (`.cp-category-bar`)
+ *     at the top of every round panel — the same Entry/Schedule/Outcome/
+ *     Decision structure as the card, spelled out for the round the drawer
+ *     is currently showing (which may be a past round, not the candidate's
+ *     current one — the function now takes an explicit `stageKey`).
+ *   - **Visual polish**: the round panel is now `.cp-round-panel` (real
+ *     shadow, radius, fade-in) with the same stage-type accent bar the
+ *     board column uses, instead of a flat default-styled `Card`.
+ *   - **Stepper replaced**: the 11-item antd `<Steps>` (small numbered
+ *     circles + abbreviated labels) read as cramped — swapped for a
+ *     horizontal row of `.cp-stage-pill` buttons (done/current/future
+ *     states, current pill uses the brand gradient).
+ *   - Building the 4-category bar surfaced a **real pre-existing data
+ *     bug**: 14 candidates' HR-round outcome (and one Documents outcome)
+ *     was recorded with no underlying schedule/feedback (or checklist)
+ *     ever set, so their category bar showed "Decision: done" while
+ *     "Schedule"/"Outcome" still read "not started" — fixed at the data
+ *     level (added the missing `schedule`/`feedback` — matching every
+ *     other interview round's shape — not a logic band-aid). Verified with
+ *     a Node harness checking segment-state monotonicity across all 245
+ *     round-instances (current + historical) for all 52 candidates.
  */
 import { useMemo, useState } from 'react';
 import {
-  Alert, App as AntApp, Badge, Button, Card, Checkbox, Col, DatePicker, Descriptions,
+  Alert, App as AntApp, Badge, Button, Card, Checkbox, Col, DatePicker,
   Drawer, Empty, Input, Modal, Radio, Rate, Row, Select, Space, Statistic,
   Steps, Table, Tag, Timeline, Tooltip, Typography,
 } from 'antd';
@@ -85,13 +183,14 @@ import {
   UserOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import KpiCard from '../components/common/KpiCard';
+import UploadCelebration from '../components/common/UploadCelebration';
 
 const { Text, Title, Paragraph } = Typography;
 
 /* ------------------------------------------------------------------ config */
 
 const STAGES = [
-  { key: 'shortlist', name: 'Shortlisted', short: 'Shortlisted', type: 'shortlist' },
   { key: 'zeko_hr', name: 'HR Screening (Zeko)', short: 'Zeko HR', type: 'zeko' },
   { key: 'assessment', name: 'IQ / Tech Assessment', short: 'Assessment', type: 'assessment' },
   { key: 'zeko_fn', name: 'Functional (Zeko)', short: 'Zeko Fn', type: 'zeko' },
@@ -106,6 +205,17 @@ const STAGES = [
 ];
 const stageIdx = (key) => STAGES.findIndex((s) => s.key === key);
 
+/** Column accent colour by stage type — a quick visual read of what kind of
+ * round you're looking at, reusing hues already used elsewhere in the app
+ * (AdminDashboard's module colours) rather than inventing a new palette. */
+const STAGE_ACCENT = {
+  zeko: 'linear-gradient(90deg, #2f54eb, #5b7ff0)',
+  assessment: 'linear-gradient(90deg, #13c2c2, #36d6d6)',
+  interview: 'linear-gradient(90deg, #7a922e, #92a63c)',
+  docs: 'linear-gradient(90deg, #eb2f96, #f062b4)',
+  offer: 'linear-gradient(90deg, #4a7c59, #6ba57d)',
+};
+
 const REASONS = {
   rejected: [
     'Skills mismatch', 'High salary expectation', 'High notice period',
@@ -119,14 +229,22 @@ const REASONS = {
 };
 
 const CHIP = {
+  // Round entered, nothing sent yet — needs recruiter/system action.
+  pending: { label: 'Invite pending', color: 'default' },
   review: { label: 'In review', color: 'default' },
   invited: { label: 'Invited', color: 'blue' },
   scheduled: { label: 'Scheduled', color: 'blue' },
-  await: { label: 'Awaiting feedback', color: 'gold' },
+  // Invite/schedule sent and the candidate side is in motion — interview
+  // meeting upcoming or just happened, Zeko test started, Evalground test
+  // taken but not yet imported. One label covers all of those.
+  await: { label: 'In progress', color: 'gold' },
+  // Scores/results are in (interview feedback, Zeko score, Evalground
+  // import) but no outcome recorded yet — same "needs your decision" signal
+  // regardless of round type, so this one chip covers all of them.
+  feedback: { label: 'Ready for decision', color: 'green' },
   hold: { label: 'On Hold', color: 'gold' },
   docs: { label: 'Uploading docs', color: 'blue' },
   offer_sent: { label: 'Offer shared', color: 'blue' },
-  imported: { label: 'Result imported', color: 'default' },
 };
 
 const OUTCOME_TAG = {
@@ -138,14 +256,22 @@ const OUTCOME_TAG = {
 /* ------------------------------------------------------------------- data
  * Each candidate carries per-round detail in `rounds[stageKey]` — the drawer
  * shows exactly one round at a time (RT feedback #2). Only traversed rounds
- * have entries; the current round may be partially filled.
+ * have entries; the current round may be partially filled. `screening` is
+ * NOT a round — it's read-only context from Candidate Screening (JD match,
+ * date, who shortlisted them), shown persistently in the drawer header
+ * rather than as a pipeline stage (v8 — see header comment).
+ *
+ * Deliberately covers, for every interview round (tech1/tech2/tech3/hr/ceo/
+ * client): a "just entered, not scheduled" example, a "scheduled/awaiting
+ * feedback" example, and a "feedback submitted, awaiting your decision"
+ * example — plus one genuine On Hold example on an interview round.
  */
 const INITIAL_CANDIDATES = [
   {
     id: 1, name: 'Arjun Mehta', role: 'Senior .NET Developer', src: 'HR', stage: 'tech1',
     chip: 'scheduled', age: 3, email: 'arjun.mehta@gmail.com',
+    screening: { jdMatch: 84, when: '02 Jul', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '02 Jul', by: 'Priya', jdMatch: 84, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '05 Jul', by: 'Anita', zeko: { interview: 82, communication: 78 }, emails: ['Zeko invite — opened', 'Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '08 Jul', by: 'Priya', iq: 78, tech: 74, testDate: '07 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Assessment invite — opened', 'Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '09 Jul', by: 'Anita', zeko: { interview: 80, communication: 77 }, emails: ['Outcome email — delivered'] },
@@ -155,8 +281,8 @@ const INITIAL_CANDIDATES = [
   {
     id: 2, name: 'Kavya Nair', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'TechBridge Solutions',
     stage: 'tech2', chip: 'await', age: 2, email: 'kavya.nair@outlook.com',
+    screening: { jdMatch: 88, when: '28 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '28 Jun', by: 'Priya', jdMatch: 88, emails: ['Welcome + process email → candidate + vendor'] },
       zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 88, communication: 85 }, emails: ['Outcome email → candidate + vendor'] },
       assessment: { outcome: 'approved', when: '01 Jul', by: 'Priya', iq: 84, tech: 86, testDate: '30 Jun', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
       zeko_fn: { outcome: 'approved', when: '01 Jul', by: 'Anita', zeko: { interview: 86, communication: 84 }, emails: ['Outcome email → candidate + vendor'] },
@@ -167,8 +293,8 @@ const INITIAL_CANDIDATES = [
   {
     id: 3, name: 'Ravi Shankar', role: 'QA Engineer', src: 'HR', stage: 'tech1', chip: 'await', age: 12,
     email: 'ravi.shankar@gmail.com',
+    screening: { jdMatch: 74, when: '20 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '20 Jun', by: 'Priya', jdMatch: 74, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '23 Jun', by: 'Anita', zeko: { interview: 74, communication: 70 }, emails: ['Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '25 Jun', by: 'Priya', iq: 71, tech: 69, testDate: '24 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '26 Jun', by: 'Anita', zeko: { interview: 72, communication: 71 }, emails: ['Outcome email — delivered'] },
@@ -178,8 +304,8 @@ const INITIAL_CANDIDATES = [
   {
     id: 4, name: 'Meena Iyer', role: 'Business Analyst', src: 'Email', stage: 'assessment', chip: 'review', age: 11,
     email: 'meena.iyer@yahoo.in',
+    screening: { jdMatch: 79, when: '24 Jun', by: 'Anita' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '24 Jun', by: 'Anita', jdMatch: 79, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '26 Jun', by: 'Priya', zeko: { interview: 79, communication: 82 }, emails: ['Outcome email — delivered'] },
       assessment: { status: 'review', testDate: '30 Jun', note: 'Test attempted — result awaited in next CSV import', emails: ['Assessment invite (GA + Technical) — opened'] },
     },
@@ -187,16 +313,16 @@ const INITIAL_CANDIDATES = [
   {
     id: 5, name: 'Farhan Ali', role: 'React Developer', src: 'Vendor', vendor: 'Talent Hive', stage: 'zeko_hr',
     chip: 'hold', age: 34, email: 'farhan.ali@gmail.com',
+    screening: { jdMatch: 70, when: '01 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '01 Jun', by: 'Priya', jdMatch: 70, emails: ['Welcome + process email → candidate + vendor'] },
       zeko_hr: { outcome: 'hold', reason: 'Weak communication', when: '05 Jun', by: 'Anita', zeko: { interview: 66, communication: 61 }, note: 'On Hold 34 days — manual review only (no auto-reminder/auto-close, Q10); aging badge keeps it visible', emails: ['On-hold email → candidate + vendor (status-only)'] },
     },
   },
   {
     id: 6, name: 'Sanya Kapoor', role: 'Power BI Developer', src: 'HR', stage: 'hr', chip: 'scheduled', age: 1,
     email: 'sanya.kapoor@gmail.com',
+    screening: { jdMatch: 85, when: '25 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '25 Jun', by: 'Priya', jdMatch: 85, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '26 Jun', by: 'Anita', zeko: { interview: 85, communication: 88 }, emails: ['Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '27 Jun', by: 'Priya', iq: 81, tech: 83, testDate: '26 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '27 Jun', by: 'Anita', zeko: { interview: 84, communication: 86 }, emails: ['Outcome email — delivered'] },
@@ -208,17 +334,17 @@ const INITIAL_CANDIDATES = [
   {
     id: 7, name: 'Dev Patel', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'TechBridge Solutions',
     stage: 'docs', chip: 'docs', age: 4, email: 'dev.patel@outlook.com',
+    screening: { jdMatch: 90, when: '15 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '15 Jun', by: 'Priya', jdMatch: 90, emails: ['Welcome + process email → candidate + vendor'] },
       zeko_hr: { outcome: 'approved', when: '17 Jun', by: 'Anita', zeko: { interview: 90, communication: 86 }, emails: ['Outcome email → candidate + vendor'] },
       assessment: { outcome: 'approved', when: '19 Jun', by: 'Priya', iq: 88, tech: 91, testDate: '18 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email → candidate + vendor'] },
       zeko_fn: { outcome: 'approved', when: '20 Jun', by: 'Anita', zeko: { interview: 89, communication: 87 }, emails: ['Outcome email → candidate + vendor'] },
       tech1: { outcome: 'approved', when: '23 Jun', by: 'Priya', schedule: { when: '22 Jun, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.6, note: 'Excellent depth.' }, emails: ['Outcome email → candidate + vendor'] },
       tech2: { outcome: 'approved', when: '26 Jun', by: 'Anita', schedule: { when: '25 Jun, 14:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.7, note: 'Best candidate this quarter.' }, emails: ['Outcome email → candidate + vendor'] },
-      hr: { outcome: 'approved', when: '29 Jun', by: 'Nisha (RT)', note: 'CTC within band; 30-day notice; WFH 2 days OK', emails: ['Outcome email → candidate + vendor'] },
+      hr: { outcome: 'approved', when: '29 Jun', by: 'Nisha (RT)', schedule: { when: '28 Jun, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.4, note: 'Great communication, aligned on expectations.' }, note: 'CTC within band; 30-day notice; WFH 2 days OK', emails: ['Outcome email → candidate + vendor'] },
       ceo: { outcome: 'approved', when: '01 Jul', by: 'Priya', schedule: { when: '30 Jun, 16:00', who: 'CEO', mode: 'Teams' }, feedback: { by: 'CEO', rec: 'Approve', avg: 4.5, note: 'Go ahead.' }, emails: ['Outcome email → candidate + vendor'] },
       docs: {
-        status: 'docs',
+        status: 'docs', requested: true,
         checklist: [
           { name: 'Govt ID (Aadhaar/PAN)', status: 'uploaded' },
           { name: 'Education certificates', status: 'verified' },
@@ -232,57 +358,59 @@ const INITIAL_CANDIDATES = [
   {
     id: 8, name: 'Ishita Bose', role: 'Business Analyst', src: 'HR', stage: 'offer', chip: 'offer_sent', age: 2,
     email: 'ishita.bose@gmail.com',
+    screening: { jdMatch: 87, when: '10 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '10 Jun', by: 'Priya', jdMatch: 87, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '12 Jun', by: 'Anita', zeko: { interview: 87, communication: 90 }, emails: ['Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '14 Jun', by: 'Priya', iq: 83, tech: 80, testDate: '13 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '16 Jun', by: 'Anita', zeko: { interview: 85, communication: 89 }, emails: ['Outcome email — delivered'] },
       tech1: { outcome: 'approved', when: '20 Jun', by: 'Priya', schedule: { when: '19 Jun, 11:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.2, note: 'Strong requirements elicitation.' }, emails: ['Outcome email — delivered'] },
       tech2: { outcome: 'approved', when: '25 Jun', by: 'Anita', schedule: { when: '24 Jun, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.4, note: 'Excellent case handling.' }, emails: ['Outcome email — delivered'] },
-      hr: { outcome: 'approved', when: '01 Jul', by: 'Nisha (RT)', emails: ['Outcome email — delivered'] },
-      docs: { outcome: 'approved', when: '05 Jul', by: 'Anita', note: 'All documents verified', emails: ['Document request — completed'] },
-      offer: { status: 'offer_sent', offer: { file: 'Offer_IshitaBose_BA.pdf', shared: '07 Jul 2026', join: '04 Aug 2026', decision: 'Awaiting decision', approval: 'Approved in-app by Priya (recruiter) · 06 Jul' }, emails: ['Approval nudge (daily) → Priya — approved 06 Jul', 'Offer shared offline by HR — recorded in ATS 07 Jul'] },
+      hr: { outcome: 'approved', when: '01 Jul', by: 'Nisha (RT)', schedule: { when: '30 Jun, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.2, note: 'Clear on role expectations, good culture fit.' }, emails: ['Outcome email — delivered'] },
+      docs: { outcome: 'approved', when: '05 Jul', by: 'Anita', note: 'All documents verified', requested: true, checklist: [{ name: 'Govt ID (Aadhaar/PAN)', status: 'verified' }, { name: 'Education certificates', status: 'verified' }, { name: 'Experience / relieving letters', status: 'verified' }, { name: 'Last 3 payslips', status: 'verified' }], emails: ['Document request — completed'] },
+      offer: { status: 'offer_sent', offer: { approvalStatus: 'approved', file: 'Offer_IshitaBose_BA.pdf', shared: '07 Jul 2026', join: '04 Aug 2026', decision: 'Awaiting decision', approval: 'Approved in-app by Priya (recruiter) · 06 Jul' }, emails: ['Approval nudge (daily) → Priya — approved 06 Jul', 'Offer shared offline by HR — recorded in ATS 07 Jul'] },
     },
   },
   {
-    id: 9, name: 'Rohit Kulkarni', role: 'QA Engineer', src: 'Email', stage: 'shortlist', chip: 'review', age: 1,
+    id: 9, name: 'Rohit Kulkarni', role: 'QA Engineer', src: 'Email', stage: 'zeko_hr', chip: 'invited', age: 0,
     email: 'rohit.k@gmail.com',
-    rounds: { shortlist: { status: 'review', jdMatch: 72, when: 'yesterday', note: 'Shortlisted from Candidate Screening (email intake) — awaiting move to Zeko HR', emails: ['Welcome + process email — sent'] } },
+    screening: { jdMatch: 72, when: '19 Jul' },
+    rounds: { zeko_hr: { status: 'invited', zekoWindow: { start: '2026-07-22T10:00:00', end: '2026-07-22T12:00:00' }, emails: ['Zeko HR screening invite → candidate · self-schedule window 22 Jul, 10:00–12:00'] } },
   },
   {
-    id: 10, name: 'Ananya Singh', role: 'React Developer', src: 'HR', stage: 'shortlist', chip: 'review', age: 2,
+    id: 10, name: 'Ananya Singh', role: 'React Developer', src: 'HR', stage: 'zeko_hr', chip: 'invited', age: 0,
     email: 'ananya.s@gmail.com', also: 'UI Developer (MRF-2044)',
-    rounds: { shortlist: { status: 'review', jdMatch: 81, when: '2 days ago', note: 'Shortlisted from Candidate Screening (JD match 81%) — awaiting move to Zeko HR. Also running a second journey for UI Developer (MRF-2044) — concurrent MRFs allowed (Q13); a rejection there would not stop this journey.', emails: ['Welcome + process email — opened'] } },
+    screening: { jdMatch: 81, when: '18 Jul', note: 'Also running a second journey for UI Developer (MRF-2044) — concurrent MRFs allowed (Q13); a rejection there would not stop this journey.' },
+    rounds: { zeko_hr: { status: 'invited', zekoWindow: { start: '2026-07-23T14:00:00', end: '2026-07-23T16:00:00' }, emails: ['Zeko HR screening invite → candidate · self-schedule window 23 Jul, 14:00–16:00'] } },
   },
   {
     id: 11, name: 'Vishal Gupta', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'Talent Hive',
     stage: 'zeko_fn', chip: 'invited', age: 5, email: 'vishal.g@outlook.com',
+    screening: { jdMatch: 76, when: '27 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '27 Jun', by: 'Priya', jdMatch: 76, emails: ['Welcome + process email → candidate + vendor'] },
       zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 76, communication: 74 }, emails: ['Outcome email → candidate + vendor'] },
       assessment: { outcome: 'approved', when: '03 Jul', by: 'Priya', iq: 80, tech: 78, testDate: '02 Jul', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
-      zeko_fn: { status: 'invited', emails: ['Zeko functional screening invite → candidate + vendor'] },
+      zeko_fn: { status: 'invited', zekoWindow: { start: '2026-07-05T15:00:00', end: '2026-07-05T17:00:00' }, emails: ['Zeko functional screening invite → candidate + vendor · self-schedule window 05 Jul, 15:00–17:00'] },
     },
   },
   {
     id: 12, name: 'Priyanka Das', role: 'Power BI Developer', src: 'HR', stage: 'ceo', chip: 'scheduled', age: 2,
     email: 'priyanka.das@gmail.com',
+    screening: { jdMatch: 84, when: '18 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '18 Jun', by: 'Priya', jdMatch: 84, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '20 Jun', by: 'Anita', zeko: { interview: 84, communication: 82 }, emails: ['Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '23 Jun', by: 'Priya', iq: 79, tech: 82, testDate: '22 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '24 Jun', by: 'Anita', zeko: { interview: 83, communication: 81 }, emails: ['Outcome email — delivered'] },
       tech1: { outcome: 'approved', when: '27 Jun', by: 'Priya', schedule: { when: '26 Jun, 10:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.0, note: 'Good.' }, emails: ['Outcome email — delivered'] },
       tech2: { outcome: 'approved', when: '02 Jul', by: 'Anita', schedule: { when: '01 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.2, note: 'Ready for final.' }, emails: ['Outcome email — delivered'] },
-      hr: { outcome: 'approved', when: '06 Jul', by: 'Nisha (RT)', emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '06 Jul', by: 'Nisha (RT)', schedule: { when: '05 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.1, note: 'Notice period and CTC both within band.' }, emails: ['Outcome email — delivered'] },
       ceo: { status: 'scheduled', schedule: { when: '12 Jul, 16:00', who: 'CEO', mode: 'Teams' }, emails: ['Outlook invite (Teams) — sent today'] },
     },
   },
   {
     id: 13, name: 'Karthik Reddy', role: 'Business Analyst', src: 'HR', stage: 'client', chip: 'scheduled', age: 6,
     email: 'karthik.r@gmail.com',
+    screening: { jdMatch: 80, when: '12 Jun', by: 'Priya' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '12 Jun', by: 'Priya', jdMatch: 80, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '15 Jun', by: 'Anita', zeko: { interview: 80, communication: 84 }, emails: ['Outcome email — delivered'] },
       assessment: { outcome: 'approved', when: '18 Jun', by: 'Priya', iq: 77, tech: 75, testDate: '17 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
       zeko_fn: { outcome: 'approved', when: '20 Jun', by: 'Anita', zeko: { interview: 81, communication: 83 }, emails: ['Outcome email — delivered'] },
@@ -292,20 +420,520 @@ const INITIAL_CANDIDATES = [
     },
   },
   {
-    id: 14, name: 'Neha Sharma', role: 'QA Engineer', src: 'HR', stage: 'assessment', chip: 'imported', age: 3,
+    id: 14, name: 'Neha Sharma', role: 'QA Engineer', src: 'HR', stage: 'assessment', chip: 'feedback', age: 3,
     email: 'neha.sharma@gmail.com',
+    screening: { jdMatch: 77, when: '02 Jul', by: 'Anita' },
     rounds: {
-      shortlist: { outcome: 'approved', when: '02 Jul', by: 'Anita', jdMatch: 77, emails: ['Welcome + process email — opened'] },
       zeko_hr: { outcome: 'approved', when: '05 Jul', by: 'Priya', zeko: { interview: 77, communication: 75 }, emails: ['Outcome email — delivered'] },
       assessment: { status: 'imported', iq: 46, tech: 70, testDate: '07 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', note: 'IQ 46% — below the 50% pass mark (Q4); auto-suggests Failed, RT decides', emails: ['Assessment invite — opened'] },
+    },
+  },
+  {
+    id: 15, name: 'Meera Krishnan', role: 'Senior .NET Developer', src: 'HR', stage: 'tech1', chip: 'review', age: 0,
+    email: 'meera.krishnan@gmail.com',
+    screening: { jdMatch: 82, when: '10 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jul', by: 'Anita', zeko: { interview: 83, communication: 79 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '14 Jul', by: 'Priya', iq: 81, tech: 79, testDate: '13 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '15 Jul', by: 'Anita', zeko: { interview: 82, communication: 80 }, emails: ['Outcome email — delivered'] },
+      tech1: { status: 'review' },
+    },
+  },
+  {
+    id: 16, name: 'Aditya Verma', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'TechBridge Solutions',
+    stage: 'tech1', chip: 'feedback', age: 1, email: 'aditya.verma@outlook.com',
+    screening: { jdMatch: 89, when: '05 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '07 Jul', by: 'Priya', zeko: { interview: 88, communication: 85 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '09 Jul', by: 'Anita', iq: 85, tech: 87, testDate: '08 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '10 Jul', by: 'Priya', zeko: { interview: 86, communication: 84 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { schedule: { when: '19 Jul, 10:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.4, note: 'Very strong on distributed systems design.' }, emails: ['Outlook invite (Teams) — candidate opened', 'Feedback submitted via tokenized link'] },
+    },
+  },
+  {
+    id: 17, name: 'Divya Menon', role: 'QA Engineer', src: 'Email', stage: 'tech2', chip: 'review', age: 0,
+    email: 'divya.menon@yahoo.in',
+    screening: { jdMatch: 75, when: '09 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '11 Jul', by: 'Priya', zeko: { interview: 76, communication: 73 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '13 Jul', by: 'Anita', iq: 73, tech: 71, testDate: '12 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '14 Jul', by: 'Priya', zeko: { interview: 75, communication: 74 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '16 Jul', by: 'Anita', schedule: { when: '15 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 3.9, note: 'Solid manual + automation basics.' }, emails: ['Outcome email — delivered'] },
+      tech2: { status: 'review' },
+    },
+  },
+  {
+    id: 18, name: 'Rahul Bhatt', role: 'Business Analyst', src: 'HR', stage: 'tech2', chip: 'feedback', age: 2,
+    email: 'rahul.bhatt@gmail.com',
+    screening: { jdMatch: 83, when: '02 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '04 Jul', by: 'Anita', zeko: { interview: 82, communication: 85 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '06 Jul', by: 'Priya', iq: 80, tech: 77, testDate: '05 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '07 Jul', by: 'Anita', zeko: { interview: 81, communication: 83 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '10 Jul', by: 'Priya', schedule: { when: '09 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.1, note: 'Good stakeholder analysis skills.' }, emails: ['Outcome email — delivered'] },
+      tech2: { schedule: { when: '17 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.3, note: 'Excellent case study walkthrough.' }, emails: ['Outlook invite (Teams) — both accepted', 'Feedback submitted via tokenized link'] },
+    },
+  },
+  {
+    id: 19, name: 'Farah Sheikh', role: 'Power BI Developer', src: 'Vendor', vendor: 'Talent Hive',
+    stage: 'tech2', chip: 'hold', age: 9, email: 'farah.sheikh@outlook.com',
+    screening: { jdMatch: 78, when: '20 Jun', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '22 Jun', by: 'Priya', zeko: { interview: 79, communication: 76 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '24 Jun', by: 'Anita', iq: 76, tech: 74, testDate: '23 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '25 Jun', by: 'Priya', zeko: { interview: 78, communication: 77 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '28 Jun', by: 'Anita', schedule: { when: '27 Jun, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Hold', avg: 3.4, note: 'Decent SQL, DAX needs more depth.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'hold', reason: 'Awaiting comparison with other candidates', when: '12 Jul', by: 'Priya', schedule: { when: '11 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Hold', avg: 3.3, note: 'Good fundamentals but the panel wants to see one more candidate before deciding.' }, note: 'On Hold 9 days — manual review only (no auto-close, Q10)', emails: ['On-hold email → candidate + vendor (status-only)'] },
+    },
+  },
+  {
+    id: 20, name: 'Sameer Joshi', role: 'Senior .NET Developer', src: 'HR', stage: 'tech3', chip: 'review', age: 0,
+    email: 'sameer.joshi@gmail.com',
+    screening: { jdMatch: 91, when: '01 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '03 Jul', by: 'Anita', zeko: { interview: 90, communication: 86 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '05 Jul', by: 'Priya', iq: 89, tech: 92, testDate: '04 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '06 Jul', by: 'Anita', zeko: { interview: 91, communication: 87 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '09 Jul', by: 'Priya', schedule: { when: '08 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.7, note: 'Exceptional architecture instincts.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '14 Jul', by: 'Anita', schedule: { when: '13 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.6, note: 'Top-tier candidate — flagged for an extra round given the seniority of the role.' }, emails: ['Outcome email — delivered'] },
+      tech3: { status: 'review', note: 'Optional third technical round — client asked for an extra architecture-focused round for senior candidates' },
+    },
+  },
+  {
+    id: 21, name: 'Pooja Nair', role: 'Power BI Developer', src: 'Email', stage: 'hr', chip: 'review', age: 0,
+    email: 'pooja.nair@yahoo.in',
+    screening: { jdMatch: 80, when: '06 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '08 Jul', by: 'Priya', zeko: { interview: 81, communication: 83 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '10 Jul', by: 'Anita', iq: 78, tech: 80, testDate: '09 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '11 Jul', by: 'Priya', zeko: { interview: 80, communication: 82 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '14 Jul', by: 'Anita', schedule: { when: '13 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.0, note: 'Good DAX + data modelling.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '18 Jul', by: 'Priya', schedule: { when: '17 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.2, note: 'Ready for HR round.' }, emails: ['Outcome email — delivered'] },
+      hr: { status: 'review' },
+    },
+  },
+  {
+    id: 22, name: 'Vikas Kumar', role: 'React Developer', src: 'HR', stage: 'hr', chip: 'feedback', age: 1,
+    email: 'vikas.kumar@gmail.com',
+    screening: { jdMatch: 86, when: '25 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '27 Jun', by: 'Anita', zeko: { interview: 85, communication: 88 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '29 Jun', by: 'Priya', iq: 82, tech: 85, testDate: '28 Jun', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 84, communication: 87 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '03 Jul', by: 'Priya', schedule: { when: '02 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.3, note: 'Strong React + TypeScript depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '08 Jul', by: 'Anita', schedule: { when: '07 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.4, note: 'Clean component architecture thinking.' }, emails: ['Outcome email — delivered'] },
+      hr: { schedule: { when: '16 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.2, note: 'CTC within band; 20-day notice; hybrid OK.' }, emails: ['Outlook invite (Teams) — candidate opened', 'Feedback submitted via tokenized link'] },
+    },
+  },
+  {
+    id: 23, name: 'Anjali Rao', role: 'Business Analyst', src: 'Vendor', vendor: 'TechBridge Solutions',
+    stage: 'ceo', chip: 'feedback', age: 1, email: 'anjali.rao@outlook.com',
+    screening: { jdMatch: 88, when: '15 Jun', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '17 Jun', by: 'Priya', zeko: { interview: 87, communication: 89 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '19 Jun', by: 'Anita', iq: 84, tech: 81, testDate: '18 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '20 Jun', by: 'Priya', zeko: { interview: 86, communication: 88 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '23 Jun', by: 'Anita', schedule: { when: '22 Jun, 11:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.3, note: 'Excellent BRD authoring.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'approved', when: '28 Jun', by: 'Priya', schedule: { when: '27 Jun, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.5, note: 'Best case study this cycle.' }, emails: ['Outcome email → candidate + vendor'] },
+      hr: { outcome: 'approved', when: '03 Jul', by: 'Nisha (RT)', schedule: { when: '02 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.3, note: 'Confident, clear on relocation and joining timeline.' }, note: 'CTC within band; 15-day notice', emails: ['Outcome email → candidate + vendor'] },
+      ceo: { schedule: { when: '20 Jul, 16:00', who: 'CEO', mode: 'Teams' }, feedback: { by: 'CEO', rec: 'Approve', avg: 4.6, note: 'Confident, sharp business judgement. Go ahead.' }, emails: ['Outlook invite (Teams) — sent', 'Feedback submitted via tokenized link'] },
+    },
+  },
+  {
+    id: 24, name: 'Rohan Desai', role: 'Business Analyst', src: 'HR', stage: 'client', chip: 'review', age: 0,
+    email: 'rohan.desai@gmail.com',
+    screening: { jdMatch: 79, when: '28 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 80, communication: 78 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '02 Jul', by: 'Priya', iq: 77, tech: 75, testDate: '01 Jul', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '03 Jul', by: 'Anita', zeko: { interview: 79, communication: 77 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '07 Jul', by: 'Priya', schedule: { when: '06 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 3.9, note: 'Good BA fundamentals.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '12 Jul', by: 'Anita', schedule: { when: '11 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.0, note: 'Solid.' }, emails: ['Outcome email — delivered'] },
+      client: { status: 'review', note: 'Client contact added at MRF (R. Fernandes — Northwind Corp) — scheduling pending' },
+    },
+  },
+  {
+    id: 25, name: 'Karan Mehta', role: 'React Developer', src: 'HR', stage: 'zeko_hr', chip: 'feedback', age: 1,
+    email: 'karan.mehta@gmail.com',
+    screening: { jdMatch: 78, when: '16 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { zeko: { interview: 80, communication: 76 }, emails: ['Zeko HR screening invite → candidate', 'Zeko result synced — awaiting RT decision'] },
+    },
+  },
+  {
+    id: 26, name: 'Sneha Pillai', role: 'Business Analyst', src: 'Vendor', vendor: 'TechBridge Solutions',
+    stage: 'zeko_fn', chip: 'feedback', age: 1, email: 'sneha.pillai@yahoo.co.in',
+    screening: { jdMatch: 82, when: '10 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jul', by: 'Anita', zeko: { interview: 83, communication: 80 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '14 Jul', by: 'Priya', iq: 79, tech: 82, testDate: '13 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { zeko: { interview: 79, communication: 81 }, emails: ['Zeko functional screening invite → candidate + vendor', 'Zeko result synced — awaiting RT decision'] },
+    },
+  },
+  {
+    id: 27, name: 'Arnav Shah', role: 'Senior .NET Developer', src: 'HR', stage: 'assessment', chip: 'feedback', age: 0,
+    email: 'arnav.shah@gmail.com',
+    screening: { jdMatch: 81, when: '17 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '19 Jul', by: 'Anita', zeko: { interview: 82, communication: 79 }, emails: ['Outcome email — delivered'] },
+      assessment: { iq: 74, tech: 79, testDate: '20 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', note: 'IQ 74% / Technical 79% — both above the 50% pass mark (Q4); auto-suggests Passed, RT decides', emails: ['Assessment invite (GA + Technical) — opened'] },
+    },
+  },
+  {
+    id: 28, name: 'Tanvi Joshi', role: 'Power BI Developer', src: 'Email', stage: 'zeko_hr', chip: 'pending', age: 0,
+    email: 'tanvi.joshi@yahoo.in',
+    screening: { jdMatch: 76, when: '20 Jul', by: 'Anita' },
+    rounds: { zeko_hr: { status: 'pending' } },
+  },
+  {
+    id: 29, name: 'Devansh Rao', role: 'QA Engineer', src: 'HR', stage: 'zeko_hr', chip: 'await', age: 2,
+    email: 'devansh.rao@gmail.com',
+    screening: { jdMatch: 73, when: '17 Jul', by: 'Priya' },
+    rounds: { zeko_hr: { status: 'in_progress', note: 'Candidate started the Zeko HR screening 2 days ago — link expires in 3 days', emails: ['Zeko HR screening invite → candidate'] } },
+  },
+  {
+    id: 30, name: 'Ishaan Kapoor', role: 'Senior .NET Developer', src: 'HR', stage: 'zeko_fn', chip: 'pending', age: 0,
+    email: 'ishaan.kapoor@gmail.com',
+    screening: { jdMatch: 85, when: '10 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jul', by: 'Anita', zeko: { interview: 86, communication: 83 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '14 Jul', by: 'Priya', iq: 82, tech: 85, testDate: '13 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { status: 'pending' },
+    },
+  },
+  {
+    id: 31, name: 'Naina Chopra', role: 'Business Analyst', src: 'Vendor', vendor: 'Talent Hive', stage: 'zeko_fn',
+    chip: 'await', age: 1, email: 'naina.chopra@outlook.com',
+    screening: { jdMatch: 80, when: '15 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '17 Jul', by: 'Priya', zeko: { interview: 81, communication: 79 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '19 Jul', by: 'Anita', iq: 78, tech: 80, testDate: '18 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { status: 'in_progress', note: 'Candidate started the Zeko functional screening this morning', emails: ['Zeko functional screening invite → candidate + vendor'] },
+    },
+  },
+  {
+    id: 32, name: 'Yash Malhotra', role: 'React Developer', src: 'HR', stage: 'assessment', chip: 'pending', age: 0,
+    email: 'yash.malhotra@gmail.com',
+    screening: { jdMatch: 77, when: '19 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '21 Jul', by: 'Anita', zeko: { interview: 78, communication: 75 }, emails: ['Outcome email — delivered'] },
+      assessment: { status: 'pending' },
+    },
+  },
+  {
+    id: 33, name: 'Ritika Sood', role: 'QA Engineer', src: 'Email', stage: 'assessment', chip: 'invited', age: 1,
+    email: 'ritika.sood@yahoo.in',
+    screening: { jdMatch: 75, when: '16 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '18 Jul', by: 'Priya', zeko: { interview: 76, communication: 74 }, emails: ['Outcome email — delivered'] },
+      assessment: { status: 'invited', deadline: '25 Jul 2026', emails: ['Assessment invite (GA + Technical) → candidate · deadline 25 Jul 2026'] },
+    },
+  },
+  // v9 — 19 more candidates so every round (HR Screening through Offer) shows
+  // the full lifecycle: entry → schedule/invite → outcome → decision.
+  {
+    id: 34, name: 'Zoya Ahmed', role: 'QA Engineer', src: 'Email', stage: 'zeko_hr', chip: 'feedback', age: 1,
+    email: 'zoya.ahmed@yahoo.in',
+    screening: { jdMatch: 71, when: '19 Jul', by: 'Anita' },
+    rounds: { zeko_hr: { zeko: { interview: 62, communication: 58 }, emails: ['Zeko HR screening invite → candidate', 'Zeko result synced — awaiting RT decision'] } },
+  },
+  {
+    id: 35, name: 'Kabir Malhotra', role: 'React Developer', src: 'HR', stage: 'assessment', chip: 'hold', age: 8,
+    email: 'kabir.malhotra@gmail.com',
+    screening: { jdMatch: 73, when: '10 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jul', by: 'Anita', zeko: { interview: 74, communication: 70 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'hold', reason: 'Awaiting comparison with other candidates', when: '13 Jul', by: 'Priya', iq: 68, tech: 55, testDate: '12 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', note: 'Borderline technical score — RT wants to compare against 2 more candidates before deciding', emails: ['Assessment invite (GA + Technical) — opened', 'On-hold email — delivered'] },
+    },
+  },
+  {
+    id: 36, name: 'Isha Trivedi', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'Talent Hive', stage: 'zeko_fn',
+    chip: 'feedback', age: 1, email: 'isha.trivedi@outlook.com',
+    screening: { jdMatch: 74, when: '14 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '16 Jul', by: 'Priya', zeko: { interview: 72, communication: 69 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '18 Jul', by: 'Anita', iq: 70, tech: 68, testDate: '17 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { zeko: { interview: 60, communication: 57 }, emails: ['Zeko functional screening invite → candidate + vendor', 'Zeko result synced — awaiting RT decision'] },
+    },
+  },
+  {
+    id: 37, name: 'Nikhil Bansal', role: 'Senior .NET Developer', src: 'HR', stage: 'tech1', chip: 'invited', age: 0,
+    email: 'nikhil.bansal@gmail.com',
+    screening: { jdMatch: 83, when: '13 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '15 Jul', by: 'Anita', zeko: { interview: 84, communication: 80 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '17 Jul', by: 'Priya', iq: 80, tech: 83, testDate: '16 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '18 Jul', by: 'Anita', zeko: { interview: 82, communication: 81 }, emails: ['Outcome email — delivered'] },
+      tech1: { status: 'invited', emails: ['Self-scheduling link (3 published slots) → candidate'] },
+    },
+  },
+  {
+    id: 38, name: 'Advait Rao', role: 'Senior .NET Developer', src: 'HR', stage: 'tech3', chip: 'scheduled', age: 1,
+    email: 'advait.rao@gmail.com',
+    screening: { jdMatch: 87, when: '30 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '02 Jul', by: 'Anita', zeko: { interview: 86, communication: 83 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '04 Jul', by: 'Priya', iq: 84, tech: 87, testDate: '03 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '05 Jul', by: 'Anita', zeko: { interview: 85, communication: 84 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '08 Jul', by: 'Priya', schedule: { when: '07 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.5, note: 'Excellent systems depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '13 Jul', by: 'Anita', schedule: { when: '12 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.6, note: 'Top-tier — extra round warranted.' }, emails: ['Outcome email — delivered'] },
+      tech3: { status: 'scheduled', schedule: { when: '21 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, note: 'Optional third technical round — extra architecture-focused round for senior candidates', emails: ['Outlook invite (Teams) — candidate opened'] },
+    },
+  },
+  {
+    id: 39, name: 'Simran Kaur', role: 'Senior .NET Developer', src: 'Vendor', vendor: 'TechBridge Solutions', stage: 'tech3',
+    chip: 'feedback', age: 1, email: 'simran.kaur@outlook.com',
+    screening: { jdMatch: 90, when: '25 Jun', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '27 Jun', by: 'Priya', zeko: { interview: 89, communication: 85 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '29 Jun', by: 'Anita', iq: 87, tech: 90, testDate: '28 Jun', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '30 Jun', by: 'Priya', zeko: { interview: 88, communication: 86 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '03 Jul', by: 'Anita', schedule: { when: '02 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.8, note: 'Outstanding.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'approved', when: '08 Jul', by: 'Priya', schedule: { when: '07 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.7, note: 'Ready for final review.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech3: { schedule: { when: '16 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.6, note: 'Confirms the earlier rounds — clear approve.' }, note: 'Optional third technical round — extra architecture-focused round for senior candidates', emails: ['Outlook invite (Teams) — candidate opened', 'Feedback submitted via tokenized link'] },
+    },
+  },
+  {
+    id: 40, name: 'Omkar Patil', role: 'Power BI Developer', src: 'Email', stage: 'hr', chip: 'invited', age: 0,
+    email: 'omkar.patil@yahoo.in',
+    screening: { jdMatch: 79, when: '14 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '16 Jul', by: 'Priya', zeko: { interview: 80, communication: 78 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '18 Jul', by: 'Anita', iq: 77, tech: 79, testDate: '17 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '19 Jul', by: 'Priya', zeko: { interview: 79, communication: 80 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '20 Jul', by: 'Anita', schedule: { when: '19 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 3.9, note: 'Good DAX skills.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '21 Jul', by: 'Priya', schedule: { when: '20 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.0, note: 'Ready for HR round.' }, emails: ['Outcome email — delivered'] },
+      hr: { status: 'invited', emails: ['Self-scheduling link (3 published slots) → candidate'] },
+    },
+  },
+  {
+    id: 41, name: 'Reema Iyer', role: 'React Developer', src: 'Vendor', vendor: 'Talent Hive', stage: 'hr',
+    chip: 'hold', age: 4, email: 'reema.iyer@outlook.com',
+    screening: { jdMatch: 82, when: '28 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 83, communication: 81 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '02 Jul', by: 'Priya', iq: 80, tech: 82, testDate: '01 Jul', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '03 Jul', by: 'Anita', zeko: { interview: 81, communication: 83 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '07 Jul', by: 'Priya', schedule: { when: '06 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.2, note: 'Strong React depth.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'approved', when: '12 Jul', by: 'Anita', schedule: { when: '11 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.3, note: 'Clean architecture instincts.' }, emails: ['Outcome email → candidate + vendor'] },
+      hr: { outcome: 'hold', reason: 'Candidate asked for time', when: '16 Jul', by: 'Priya', schedule: { when: '15 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Hold', avg: 3.6, note: 'Needs another week to decide on relocation.' }, note: 'On Hold 4 days — manual review only (no auto-close, Q10)', emails: ['On-hold email → candidate + vendor (status-only)'] },
+    },
+  },
+  {
+    id: 42, name: 'Aarav Singh', role: 'Business Analyst', src: 'HR', stage: 'ceo', chip: 'review', age: 0,
+    email: 'aarav.singh@gmail.com',
+    screening: { jdMatch: 81, when: '10 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jul', by: 'Priya', zeko: { interview: 82, communication: 84 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '14 Jul', by: 'Anita', iq: 78, tech: 76, testDate: '13 Jul', importedFrom: 'Evalground_Results_14Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '15 Jul', by: 'Priya', zeko: { interview: 80, communication: 82 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '18 Jul', by: 'Anita', schedule: { when: '17 Jul, 11:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.0, note: 'Solid BA fundamentals.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '19 Jul', by: 'Priya', schedule: { when: '18 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.1, note: 'Good case handling.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '20 Jul', by: 'Nisha (RT)', schedule: { when: '19 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.0, note: 'Good fit, notice period within range.' }, emails: ['Outcome email — delivered'] },
+      ceo: { status: 'review' },
+    },
+  },
+  {
+    id: 43, name: 'Diya Kapoor', role: 'Power BI Developer', src: 'HR', stage: 'ceo', chip: 'hold', age: 3,
+    email: 'diya.kapoor@gmail.com',
+    screening: { jdMatch: 86, when: '20 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '22 Jun', by: 'Anita', zeko: { interview: 87, communication: 85 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '24 Jun', by: 'Priya', iq: 83, tech: 85, testDate: '23 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '25 Jun', by: 'Anita', zeko: { interview: 86, communication: 87 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '28 Jun', by: 'Priya', schedule: { when: '27 Jun, 10:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.4, note: 'Strong data modelling.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '03 Jul', by: 'Anita', schedule: { when: '02 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.5, note: 'Ready for final.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '07 Jul', by: 'Nisha (RT)', schedule: { when: '06 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.2, note: 'Strong communication, clear on CTC expectations.' }, emails: ['Outcome email — delivered'] },
+      ceo: { outcome: 'hold', reason: 'Position on hold', when: '17 Jul', by: 'Priya', schedule: { when: '16 Jul, 16:00', who: 'CEO', mode: 'Teams' }, feedback: { by: 'CEO', rec: 'Hold', avg: 3.9, note: 'Strong candidate — budget sign-off pending before final go-ahead.' }, note: 'On Hold 3 days — manual review only (no auto-close, Q10)', emails: ['On-hold email — delivered'] },
+    },
+  },
+  {
+    id: 44, name: 'Rajesh Nambiar', role: 'Business Analyst', src: 'HR', stage: 'client', chip: 'feedback', age: 1,
+    email: 'rajesh.nambiar@gmail.com',
+    screening: { jdMatch: 78, when: '01 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '03 Jul', by: 'Priya', zeko: { interview: 79, communication: 81 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '05 Jul', by: 'Anita', iq: 76, tech: 74, testDate: '04 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '06 Jul', by: 'Priya', zeko: { interview: 78, communication: 80 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '09 Jul', by: 'Anita', schedule: { when: '08 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 3.9, note: 'Good BA depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '14 Jul', by: 'Priya', schedule: { when: '13 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.0, note: 'Fine.' }, emails: ['Outcome email — delivered'] },
+      client: { schedule: { when: '18 Jul, 17:30', who: 'R. Fernandes — Northwind Corp', mode: 'Client call' }, feedback: { by: 'R. Fernandes (Client)', rec: 'Approve', avg: 4.3, note: 'Client happy with the candidate — proceed.' }, note: 'Client contact added at MRF; custom client-interview template used', emails: ['Client interview email (custom template) — sent', 'Client feedback received by phone, transcribed by RT'] },
+    },
+  },
+  {
+    id: 45, name: 'Manav Chatterjee', role: 'Senior .NET Developer', src: 'HR', stage: 'docs', chip: 'pending', age: 0,
+    email: 'manav.chatterjee@gmail.com',
+    screening: { jdMatch: 85, when: '25 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '27 Jun', by: 'Anita', zeko: { interview: 86, communication: 82 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '29 Jun', by: 'Priya', iq: 82, tech: 85, testDate: '28 Jun', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '30 Jun', by: 'Anita', zeko: { interview: 84, communication: 83 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '03 Jul', by: 'Priya', schedule: { when: '02 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.3, note: 'Strong systems depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '08 Jul', by: 'Anita', schedule: { when: '07 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.4, note: 'Ready for HR.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '13 Jul', by: 'Nisha (RT)', schedule: { when: '12 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.3, note: 'Good culture fit, notice period confirmed.' }, emails: ['Outcome email — delivered'] },
+      ceo: { outcome: 'approved', when: '18 Jul', by: 'Priya', schedule: { when: '17 Jul, 16:00', who: 'CEO', mode: 'Teams' }, feedback: { by: 'CEO', rec: 'Approve', avg: 4.5, note: 'Go ahead.' }, emails: ['Outcome email — delivered'] },
+      docs: {},
+    },
+  },
+  {
+    id: 46, name: 'Priyansh Oberoi', role: 'QA Engineer', src: 'Email', stage: 'docs', chip: 'docs', age: 1,
+    email: 'priyansh.oberoi@yahoo.in',
+    screening: { jdMatch: 76, when: '12 Jul', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '14 Jul', by: 'Priya', zeko: { interview: 77, communication: 75 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '16 Jul', by: 'Anita', iq: 74, tech: 72, testDate: '15 Jul', importedFrom: 'Evalground_Results_20Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '17 Jul', by: 'Priya', zeko: { interview: 76, communication: 74 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '18 Jul', by: 'Anita', schedule: { when: '17 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 3.8, note: 'Solid QA fundamentals.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '19 Jul', by: 'Priya', schedule: { when: '18 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 3.9, note: 'Good automation coverage.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '20 Jul', by: 'Nisha (RT)', schedule: { when: '19 Jul, 15:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 3.9, note: 'Solid communication, clear expectations.' }, emails: ['Outcome email — delivered'] },
+      docs: {
+        requested: true,
+        checklist: [
+          { name: 'Govt ID (Aadhaar/PAN)', status: 'pending' },
+          { name: 'Education certificates', status: 'pending' },
+          { name: 'Experience / relieving letters', status: 'pending' },
+          { name: 'Last 3 payslips', status: 'pending' },
+        ],
+        emails: ['Document request sent — secure upload link emailed to the candidate (vendor not copied)'],
+      },
+    },
+  },
+  {
+    id: 47, name: 'Tanya Bhalla', role: 'Business Analyst', src: 'HR', stage: 'docs', chip: 'docs', age: 2,
+    email: 'tanya.bhalla@gmail.com',
+    screening: { jdMatch: 84, when: '05 Jul', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '07 Jul', by: 'Anita', zeko: { interview: 85, communication: 83 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '09 Jul', by: 'Priya', iq: 81, tech: 79, testDate: '08 Jul', importedFrom: 'Evalground_Results_08Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '10 Jul', by: 'Anita', zeko: { interview: 83, communication: 82 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '13 Jul', by: 'Priya', schedule: { when: '12 Jul, 11:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.1, note: 'Good requirements depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '15 Jul', by: 'Anita', schedule: { when: '14 Jul, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.2, note: 'Ready for HR.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '17 Jul', by: 'Nisha (RT)', schedule: { when: '16 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.2, note: 'Good fit, aligned on role scope.' }, emails: ['Outcome email — delivered'] },
+      docs: {
+        requested: true,
+        checklist: [
+          { name: 'Govt ID (Aadhaar/PAN)', status: 'uploaded' },
+          { name: 'Education certificates', status: 'uploaded' },
+          { name: 'Experience / relieving letters', status: 'pending' },
+          { name: 'Last 3 payslips', status: 'pending' },
+        ],
+        emails: ['Document request sent — secure upload link emailed to the candidate (vendor not copied)', 'Candidate uploaded 2 of 4 documents'],
+      },
+    },
+  },
+  {
+    id: 48, name: 'Kunal Rastogi', role: 'React Developer', src: 'Vendor', vendor: 'TechBridge Solutions', stage: 'docs',
+    chip: 'feedback', age: 1, email: 'kunal.rastogi@outlook.com',
+    screening: { jdMatch: 88, when: '28 Jun', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '30 Jun', by: 'Priya', zeko: { interview: 89, communication: 86 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '02 Jul', by: 'Anita', iq: 85, tech: 88, testDate: '01 Jul', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '03 Jul', by: 'Priya', zeko: { interview: 87, communication: 85 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '06 Jul', by: 'Anita', schedule: { when: '05 Jul, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.5, note: 'Excellent React depth.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'approved', when: '11 Jul', by: 'Priya', schedule: { when: '10 Jul, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.6, note: 'Best candidate this cycle.' }, emails: ['Outcome email → candidate + vendor'] },
+      hr: { outcome: 'approved', when: '13 Jul', by: 'Nisha (RT)', schedule: { when: '12 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.4, note: 'Excellent communication, strong culture fit.' }, emails: ['Outcome email → candidate + vendor'] },
+      docs: {
+        requested: true,
+        checklist: [
+          { name: 'Govt ID (Aadhaar/PAN)', status: 'verified' },
+          { name: 'Education certificates', status: 'verified' },
+          { name: 'Experience / relieving letters', status: 'verified' },
+          { name: 'Last 3 payslips', status: 'verified' },
+        ],
+        emails: ['Document request → candidate only (vendor not copied — PII, Q5)', 'All 4 documents verified'],
+      },
+    },
+  },
+  {
+    id: 49, name: 'Ayaan Siddiqui', role: 'Senior .NET Developer', src: 'HR', stage: 'offer', chip: 'pending', age: 0,
+    email: 'ayaan.siddiqui@gmail.com',
+    screening: { jdMatch: 89, when: '18 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '20 Jun', by: 'Anita', zeko: { interview: 90, communication: 87 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '22 Jun', by: 'Priya', iq: 86, tech: 89, testDate: '21 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '23 Jun', by: 'Anita', zeko: { interview: 88, communication: 86 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '26 Jun', by: 'Priya', schedule: { when: '25 Jun, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.6, note: 'Exceptional.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '01 Jul', by: 'Anita', schedule: { when: '30 Jun, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.7, note: 'Best of the quarter.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '06 Jul', by: 'Nisha (RT)', schedule: { when: '05 Jul, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.5, note: 'Exceptional — clear on everything.' }, emails: ['Outcome email — delivered'] },
+      docs: { outcome: 'approved', when: '13 Jul', by: 'Anita', note: 'All documents verified', requested: true, checklist: [
+        { name: 'Govt ID (Aadhaar/PAN)', status: 'verified' }, { name: 'Education certificates', status: 'verified' },
+        { name: 'Experience / relieving letters', status: 'verified' }, { name: 'Last 3 payslips', status: 'verified' },
+      ], emails: ['Document request — completed'] },
+      offer: {},
+    },
+  },
+  {
+    id: 50, name: 'Meher Chawla', role: 'Business Analyst', src: 'Email', stage: 'offer', chip: 'await', age: 2,
+    email: 'meher.chawla@yahoo.in',
+    screening: { jdMatch: 82, when: '10 Jun', by: 'Anita' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '12 Jun', by: 'Priya', zeko: { interview: 83, communication: 85 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '14 Jun', by: 'Anita', iq: 79, tech: 77, testDate: '13 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '16 Jun', by: 'Priya', zeko: { interview: 81, communication: 83 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '19 Jun', by: 'Anita', schedule: { when: '18 Jun, 11:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.1, note: 'Good BA depth.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '24 Jun', by: 'Priya', schedule: { when: '23 Jun, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.2, note: 'Excellent case handling.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '29 Jun', by: 'Nisha (RT)', schedule: { when: '28 Jun, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.1, note: 'Good fit, notice period confirmed.' }, emails: ['Outcome email — delivered'] },
+      docs: { outcome: 'approved', when: '06 Jul', by: 'Anita', note: 'All documents verified', requested: true, checklist: [
+        { name: 'Govt ID (Aadhaar/PAN)', status: 'verified' }, { name: 'Education certificates', status: 'verified' },
+        { name: 'Experience / relieving letters', status: 'verified' }, { name: 'Last 3 payslips', status: 'verified' },
+      ], emails: ['Document request — completed'] },
+      offer: { offer: { approvalStatus: 'pending' }, emails: ['Approval request → Priya (recruiter) — daily nudge armed'] },
+    },
+  },
+  {
+    id: 51, name: 'Vivaan Kohli', role: 'React Developer', src: 'Vendor', vendor: 'Talent Hive', stage: 'offer',
+    chip: 'await', age: 1, email: 'vivaan.kohli@outlook.com',
+    screening: { jdMatch: 85, when: '05 Jun', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '07 Jun', by: 'Anita', zeko: { interview: 86, communication: 84 }, emails: ['Outcome email → candidate + vendor'] },
+      assessment: { outcome: 'approved', when: '09 Jun', by: 'Priya', iq: 82, tech: 85, testDate: '08 Jun', importedFrom: 'Evalground_Results_24Jun2026.csv', emails: ['Outcome email → candidate + vendor'] },
+      zeko_fn: { outcome: 'approved', when: '11 Jun', by: 'Anita', zeko: { interview: 84, communication: 83 }, emails: ['Outcome email → candidate + vendor'] },
+      tech1: { outcome: 'approved', when: '14 Jun', by: 'Priya', schedule: { when: '13 Jun, 11:00', who: 'Suresh Menon', mode: 'Teams' }, feedback: { by: 'Suresh Menon', rec: 'Approve', avg: 4.3, note: 'Strong React depth.' }, emails: ['Outcome email → candidate + vendor'] },
+      tech2: { outcome: 'approved', when: '19 Jun', by: 'Anita', schedule: { when: '18 Jun, 15:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.4, note: 'Clean component design.' }, emails: ['Outcome email → candidate + vendor'] },
+      hr: { outcome: 'approved', when: '24 Jun', by: 'Nisha (RT)', schedule: { when: '23 Jun, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.3, note: 'Strong communication, clear on relocation.' }, emails: ['Outcome email → candidate + vendor'] },
+      docs: { outcome: 'approved', when: '01 Jul', by: 'Anita', note: 'All documents verified', requested: true, checklist: [
+        { name: 'Govt ID (Aadhaar/PAN)', status: 'verified' }, { name: 'Education certificates', status: 'verified' },
+        { name: 'Experience / relieving letters', status: 'verified' }, { name: 'Last 3 payslips', status: 'verified' },
+      ], emails: ['Document request → candidate only (vendor not copied — PII, Q5)'] },
+      offer: { offer: { approvalStatus: 'approved', approval: 'Approved in-app by Priya (recruiter) · 18 Jul' }, emails: ['Approval request → Priya (recruiter) — daily nudge armed', 'Approved in-app by Priya (recruiter) · 18 Jul'] },
+    },
+  },
+  {
+    id: 52, name: 'Aisha Fernandes', role: 'Power BI Developer', src: 'HR', stage: 'offer', chip: 'offer_sent', age: 3,
+    email: 'aisha.fernandes@gmail.com',
+    screening: { jdMatch: 83, when: '25 May', by: 'Priya' },
+    rounds: {
+      zeko_hr: { outcome: 'approved', when: '27 May', by: 'Anita', zeko: { interview: 84, communication: 86 }, emails: ['Outcome email — delivered'] },
+      assessment: { outcome: 'approved', when: '29 May', by: 'Priya', iq: 80, tech: 82, testDate: '28 May', importedFrom: 'Evalground_Results_01Jul2026.csv', emails: ['Outcome email — delivered'] },
+      zeko_fn: { outcome: 'approved', when: '30 May', by: 'Anita', zeko: { interview: 82, communication: 84 }, emails: ['Outcome email — delivered'] },
+      tech1: { outcome: 'approved', when: '02 Jun', by: 'Priya', schedule: { when: '01 Jun, 10:00', who: 'Vikram Joshi', mode: 'Teams' }, feedback: { by: 'Vikram Joshi', rec: 'Approve', avg: 4.2, note: 'Strong DAX + modelling.' }, emails: ['Outcome email — delivered'] },
+      tech2: { outcome: 'approved', when: '07 Jun', by: 'Anita', schedule: { when: '06 Jun, 15:00', who: 'Deepa Rao', mode: 'Teams' }, feedback: { by: 'Deepa Rao', rec: 'Approve', avg: 4.3, note: 'Ready for HR.' }, emails: ['Outcome email — delivered'] },
+      hr: { outcome: 'approved', when: '12 Jun', by: 'Nisha (RT)', schedule: { when: '11 Jun, 10:00', who: 'Nisha (RT)', mode: 'Teams' }, feedback: { by: 'Nisha (RT)', rec: 'Approve', avg: 4.2, note: 'Good fit, aligned on expectations.' }, emails: ['Outcome email — delivered'] },
+      docs: { outcome: 'approved', when: '19 Jun', by: 'Anita', note: 'All documents verified', requested: true, checklist: [
+        { name: 'Govt ID (Aadhaar/PAN)', status: 'verified' }, { name: 'Education certificates', status: 'verified' },
+        { name: 'Experience / relieving letters', status: 'verified' }, { name: 'Last 3 payslips', status: 'verified' },
+      ], emails: ['Document request — completed'] },
+      offer: { status: 'offer_sent', offer: { approvalStatus: 'approved', approval: 'Approved in-app by Priya (recruiter) · 10 Jul', file: 'Offer_AishaFernandes_PBI.pdf', shared: '12 Jul 2026', join: '10 Aug 2026', decision: 'Accepted' }, emails: ['Approval request → Priya (recruiter) — daily nudge armed', 'Approved in-app by Priya (recruiter) · 10 Jul', 'Offer shared offline by HR — recorded in ATS 12 Jul', 'Candidate accepted the offer — 15 Jul'] },
     },
   },
 ];
 
 const FUNNEL = [
-  ['Shortlisted', 26], ['HR Screening (Zeko)', 22], ['IQ / Tech Assessment', 19],
-  ['Functional (Zeko)', 14], ['Tech Round 1', 9], ['Tech Round 2', 5],
-  ['HR Round', 3], ['CEO / Final', 2], ['Offer', 1],
+  ['HR Screening (Zeko)', 40], ['IQ / Tech Assessment', 34], ['Functional (Zeko)', 29],
+  ['Tech Round 1', 21], ['Tech Round 2', 14], ['HR Round', 8],
+  ['CEO / Final', 5], ['Offer', 3],
+];
+
+/** Analytics-tile config for CandidatePipelineAnalyticsPreview — shared
+ * KpiCard styling (animated count-up, glow, hover lift), same as
+ * Dashboard.jsx / VendorDashboard.jsx, instead of plain Statistic boxes. */
+const PIPELINE_TILES = [
+  { key: 'active', label: 'Active in pipeline', value: 52, icon: <TeamOutlined />, color: 'var(--gold, #7a922e)', tint: 'rgba(122, 146, 46, 0.12)', accent: 'linear-gradient(90deg, #7a922e, #92a63c)' },
+  { key: 'pending', label: 'Invite pending', value: 5, icon: <MailOutlined />, color: '#6b7280', tint: 'rgba(107, 114, 128, 0.12)', accent: 'linear-gradient(90deg, #6b7280, #9198a3)' },
+  { key: 'awaiting', label: 'In progress (interview / Zeko / test)', value: 6, icon: <ClockCircleOutlined />, color: '#d4a017', tint: 'rgba(212, 160, 23, 0.12)', accent: 'linear-gradient(90deg, #d4a017, #e8b93a)' },
+  { key: 'ready', label: 'Ready for decision (feedback / score / result in)', value: 13, icon: <CheckCircleOutlined />, color: '#27ae60', tint: 'rgba(39, 174, 96, 0.12)', accent: 'linear-gradient(90deg, #27ae60, #4a7c59)' },
+  { key: 'hold', label: 'On hold', value: 5, icon: <PauseCircleOutlined />, color: '#8b938a', tint: 'rgba(139, 147, 138, 0.14)', accent: 'linear-gradient(90deg, #8b938a, #aeb5ab)' },
+  { key: 'offers', label: 'Offers awaiting candidate decision', value: 1, icon: <FileTextOutlined />, color: '#185fa5', tint: 'rgba(24, 95, 165, 0.12)', accent: 'linear-gradient(90deg, #185fa5, #2f78c9)' },
 ];
 
 /**
@@ -320,10 +948,11 @@ export function CandidatePipelineAnalyticsPreview() {
       <Alert type="warning" showIcon style={{ marginBottom: 14 }}
         message="Preview — mock data from the Pipeline Tracker prototype; becomes live pipeline analytics in Phase 3 Module 1." />
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} lg={6}><Card><Statistic title="Active in pipeline" value={14} /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="Awaiting feedback" value={2} suffix={<Text type="warning" style={{ fontSize: 13 }}> 1 overdue 12d</Text>} /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="On hold > 30 days" value={1} suffix={<Text type="secondary" style={{ fontSize: 13 }}> manual review</Text>} /></Card></Col>
-        <Col xs={12} lg={6}><Card><Statistic title="Offers pending" value={1} /></Card></Col>
+        {PIPELINE_TILES.map((t, i) => (
+          <Col xs={12} sm={12} md={8} lg={PIPELINE_TILES.length >= 4 ? 6 : 8} key={t.key}>
+            <KpiCard index={i} icon={t.icon} label={t.label} value={t.value} color={t.color} tint={t.tint} accent={t.accent} />
+          </Col>
+        ))}
       </Row>
       <Card title="Stage funnel — Senior .NET Developer (MRF-2031)" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={7} style={{ width: '100%' }}>
@@ -350,7 +979,7 @@ export function CandidatePipelineAnalyticsPreview() {
                 {
                   title: 'Blocked on', dataIndex: 'b', render: (b, row) => (
                     <Space direction="vertical" size={2}>
-                      <Tag color="gold" style={{ marginInlineEnd: 0 }}>{b}</Tag>
+                      <Tag color="gold" className="tag-attention" style={{ marginInlineEnd: 0 }}>{b}</Tag>
                       <Text type="secondary" style={{ fontSize: 11.5 }}>
                         <RobotOutlined style={{ marginInlineEnd: 4 }} />{row.ai}
                       </Text>
@@ -373,7 +1002,7 @@ export function CandidatePipelineAnalyticsPreview() {
                 { title: 'Most common round', dataIndex: 's' },
               ]}
               dataSource={[
-                { r: 'Skills mismatch', c: 9, s: 'Shortlisted (review)' },
+                { r: 'Skills mismatch', c: 9, s: 'HR Screening (Zeko)' },
                 { r: 'High salary expectation', c: 6, s: 'HR Round' },
                 { r: 'Weak communication', c: 4, s: 'HR Screening (Zeko)' },
                 { r: 'Failed assessment threshold', c: 3, s: 'IQ / Tech Assessment' },
@@ -390,6 +1019,158 @@ export function CandidatePipelineAnalyticsPreview() {
 
 const ageColor = (d) => (d <= 5 ? 'green' : d <= 10 ? 'gold' : 'red');
 const mailAudience = (c) => (c.src === 'Vendor' ? `candidate + ${c.vendor}` : 'candidate');
+const sourceLabel = (c) => (c.src === 'Vendor' ? c.vendor : c.src === 'HR' ? 'HR upload' : 'Email intake');
+
+/** Left-border accent per chip — a colour a recruiter can scan for without
+ * reading the tag text (green = act now, gold = in motion, grey = not
+ * started, blue = booked). */
+const CHIP_ACCENT = {
+  pending: '#c9cdc7', review: '#c9cdc7', invited: '#5b7ff0', scheduled: '#5b7ff0',
+  await: '#d4a017', feedback: '#27ae60', hold: '#d4a017', docs: '#5b7ff0', offer_sent: '#5b7ff0',
+};
+
+const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
+const initials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const avatarColor = (name) => AVATAR_PALETTE[[...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
+const fmtWindow = (w) => (w ? `${dayjs(w.start).format('DD MMM, HH:mm')}–${dayjs(w.end).format('HH:mm')}` : '');
+const scoreTier = (v) => (v >= 70 ? 'good' : v >= 50 ? 'mid' : 'low');
+
+/** v11 — the pipeline the recruiter actually sees: same shape for every
+ * round type (RT's own words), worded for what really happens in that
+ * round kind rather than one generic vocabulary forced onto all of them. */
+const PIPELINE_LABELS = {
+  zeko: ['Invite Sent', 'Awaiting Interview', 'Awaiting Results', 'Approve / Reject'],
+  assessment: ['Invite Sent', 'Awaiting Test', 'Awaiting Results', 'Approve / Reject'],
+  interview: ['Invite Sent', 'Awaiting Interview', 'Awaiting Results', 'Approve / Reject'],
+  docs: ['Request Sent', 'Awaiting Upload', 'Awaiting Verification', 'Approve / Reject'],
+  offer: ['Offer Prepared', 'Offer Sent', 'Awaiting Response', 'Accepted / Declined'],
+};
+const STATE_WORD = { pending: 'Not started yet', active: 'In progress', done: 'Done', hold: 'On Hold', rejected: 'Rejected' };
+
+/**
+ * v11 — derives the 4-stage pipeline for a round: Invite Sent / Awaiting
+ * Interview (or Test/Upload/Response) / Awaiting Results (or Verification)
+ * / Approve-Reject (or Accepted/Declined for Offer) — RT's own naming for
+ * "the crucial part of the app." Each stage carries a `detail` sentence
+ * that is never trimmed (used verbatim, always visible — no click needed)
+ * and, where relevant, `chips` (score numbers) or a `note` (free-text
+ * context that would otherwise be dropped). Previously (v9/v10) this was
+ * Entry/Schedule/Outcome/Decision — Entry (how the candidate arrived) is
+ * no longer its own stage; that context is one click away in the previous
+ * round's own Decision stage instead of repeating in every round.
+ */
+function roundProgressSegments(c, stageKey = c.stage) {
+  const stage = STAGES[stageIdx(stageKey)];
+  const round = c.rounds[stageKey] || {};
+  const labels = PIPELINE_LABELS[stage.type];
+  let s1 = { state: 'pending', detail: 'Not sent yet' };
+  let s2 = { state: 'pending', detail: 'Not started yet' };
+  let s3 = { state: 'pending', detail: 'Not started yet' };
+  let s4 = { state: 'pending', detail: 'Not yet' };
+
+  if (stage.type === 'zeko' || stage.type === 'assessment') {
+    const isZeko = stage.type === 'zeko';
+    const invited = round.status === 'invited' || round.status === 'in_progress' || round.zeko || round.importedFrom || round.testDate;
+    if (invited) {
+      s1 = { state: 'done', detail: isZeko ? `Zeko ${stage.key === 'zeko_fn' ? 'functional' : 'HR'} screening invite emailed to ${mailAudience(c)}` : `Assessment invite (GA + Technical) emailed to ${mailAudience(c)}` };
+    }
+    if (isZeko) {
+      if (round.zeko) s2 = { state: 'done', detail: 'Completed — score synced automatically from Zeko' };
+      else if (round.status === 'in_progress') s2 = { state: 'active', detail: round.note || 'Candidate has started the test — in progress' };
+      else if (round.zekoWindow) s2 = { state: 'active', detail: `Self-schedule window · ${fmtWindow(round.zekoWindow)}` };
+      else if (invited) s2 = { state: 'active', detail: 'Awaiting candidate to start the test' };
+    } else {
+      if (round.testDate) s2 = { state: 'done', detail: `Taken ${round.testDate}` };
+      else if (round.deadline) s2 = { state: 'active', detail: `Awaiting candidate — deadline ${round.deadline}` };
+      else if (invited) s2 = { state: 'active', detail: 'Awaiting candidate to take the test' };
+    }
+    if (isZeko && round.zeko) {
+      s3 = {
+        state: 'done',
+        detail: `Interview ${round.zeko.interview} · Communication ${round.zeko.communication}`,
+        chips: [{ value: round.zeko.interview, label: 'Interview' }, { value: round.zeko.communication, label: 'Comms' }],
+      };
+    } else if (!isZeko && round.importedFrom) {
+      s3 = {
+        state: 'done',
+        detail: `IQ ${round.iq}% · Technical ${round.tech}%${round.note ? ` — ${round.note}` : ''}`,
+        chips: [{ value: round.iq, label: 'IQ' }, { value: round.tech, label: 'Technical' }],
+      };
+    } else if (!isZeko && round.testDate) {
+      s3 = { state: 'active', detail: round.note || 'Test attempted — result awaited in the next Evalground import' };
+    } else if (s2.state !== 'pending') {
+      s3 = { state: 'active', detail: isZeko ? 'Awaiting Zeko to sync the score' : 'Awaiting the candidate to take the test' };
+    }
+  } else if (stage.type === 'interview') {
+    const selfSchedule = round.status === 'invited' && !round.schedule;
+    if (round.schedule) s1 = { state: 'done', detail: `${round.schedule.mode === 'Client call' ? 'Client call' : 'Teams'} invite sent for ${round.schedule.when}` };
+    else if (selfSchedule) s1 = { state: 'done', detail: 'Self-scheduling link emailed to candidate' };
+    if (round.schedule) s2 = { state: 'done', detail: `${round.schedule.mode === 'Client call' ? 'Client call' : 'Teams'} · ${round.schedule.when} with ${round.schedule.who}` };
+    else if (selfSchedule) s2 = { state: 'active', detail: '3 slots published — awaiting candidate to pick one' };
+    if (round.feedback) {
+      s3 = { state: 'done', detail: `${round.feedback.rec} · ${round.feedback.avg}/5 — "${round.feedback.note}"` };
+    } else if (round.status === 'await') {
+      s3 = { state: 'active', detail: `Awaiting interviewer feedback${round.remindersSent ? ` — ${round.remindersSent} reminder(s) sent` : ''}` };
+    } else if (round.schedule) {
+      // Any scheduled-but-not-yet-await status (e.g. mock rows just marked
+      // 'scheduled') still means feedback is the thing pending — the
+      // scorecard action below keys off `round.schedule`, not this exact
+      // status string, so it must stay available here too.
+      s3 = { state: 'active', detail: 'Interview scheduled — awaiting interviewer feedback' };
+    }
+    if (round.note && !round.outcome) {
+      if (s1.state === 'pending') s1 = { ...s1, note: round.note };
+      else s2 = { ...s2, note: round.note };
+    }
+  } else if (stage.type === 'docs') {
+    if (round.requested) s1 = { state: 'done', detail: `Document request emailed to ${c.src === 'Vendor' ? 'candidate (vendor not copied — PII)' : 'candidate'}` };
+    const checklist = round.checklist || [];
+    const uploadedCount = checklist.filter((d) => d.status !== 'pending').length;
+    const verifiedCount = checklist.filter((d) => d.status === 'verified').length;
+    const anyRejected = checklist.some((d) => d.status === 'rejected');
+    if (round.requested) {
+      s2 = uploadedCount === 0
+        ? { state: 'active', detail: 'No uploads yet' }
+        : { state: 'done', detail: `${uploadedCount} of ${checklist.length} documents uploaded` };
+    }
+    if (uploadedCount > 0) {
+      s3 = verifiedCount === checklist.length
+        ? { state: 'done', detail: 'All documents verified' }
+        : { state: 'active', detail: `${verifiedCount} of ${checklist.length} verified${anyRejected ? ' — 1 rejected, re-requested' : ''}` };
+    }
+  } else if (stage.type === 'offer') {
+    const off = round.offer;
+    if (off) s1 = { state: off.approvalStatus === 'pending' ? 'active' : 'done', detail: off.approvalStatus === 'pending' ? 'Requested — awaiting recruiter sign-off' : `Approved internally${off.approval ? ` — ${off.approval}` : ''}` };
+    if (off && off.approvalStatus !== 'pending') {
+      s2 = off.shared ? { state: 'done', detail: `Shared ${off.shared} — proposed joining ${off.join}` } : { state: 'active', detail: 'Approved — not yet shared with candidate' };
+    }
+    if (off?.shared) {
+      s3 = off.decision === 'Awaiting decision' ? { state: 'active', detail: 'Awaiting candidate decision' } : { state: 'done', detail: `Response received: ${off.decision}` };
+    }
+  }
+
+  if (stage.type === 'offer') {
+    const off = round.offer;
+    if (off?.decision === 'Accepted') s4 = { state: 'done', detail: 'Accepted — candidate confirmed joining' };
+    else if (off?.decision && off.decision !== 'Awaiting decision') s4 = { state: 'rejected', detail: `Declined — ${off.decision}` };
+    else if (off?.shared) s4 = { state: 'active', detail: 'Awaiting candidate response' };
+  } else if (round.outcome === 'approved') {
+    s4 = { state: 'done', detail: `Approved${round.by ? ` by ${round.by}` : ''}${round.when ? ` · ${round.when}` : ''}` };
+    if (round.note && stage.type !== 'assessment') s4.note = round.note;
+  } else if (round.outcome === 'hold') {
+    s4 = { state: 'hold', detail: `${round.reason || 'On Hold'}${round.by ? ` · flagged by ${round.by}` : ''}${round.when ? ` · ${round.when}` : ''}` };
+    if (round.note && stage.type !== 'assessment') s4.note = round.note;
+  } else if (s3.state === 'done') {
+    s4 = { state: 'active', detail: 'Awaiting your decision' };
+  }
+
+  return [
+    { key: 'invite', label: labels[0], ...s1 },
+    { key: 'wait', label: labels[1], ...s2 },
+    { key: 'results', label: labels[2], ...s3 },
+    { key: 'decision', label: labels[3], ...s4 },
+  ];
+}
 
 /**
  * Mocked NL → filter resolver for the board search box (v5). Keyword-matches
@@ -490,6 +1271,7 @@ export default function CandidatePipelinePrototype() {
   const [candidates, setCandidates] = useState(INITIAL_CANDIDATES);
   const [openId, setOpenId] = useState(null);
   const [selectedRound, setSelectedRound] = useState(0);
+  const [celebrate, setCelebrate] = useState(false);
 
   const [fRole, setFRole] = useState();
   const [fSrc, setFSrc] = useState();
@@ -507,6 +1289,10 @@ export default function CandidatePipelinePrototype() {
   const [schedOpen, setSchedOpen] = useState(false);
   const [schedMode, setSchedMode] = useState('fixed');
   const [prepBriefOn, setPrepBriefOn] = useState(true);
+  const [zekoSchedOpen, setZekoSchedOpen] = useState(false);
+  const [zekoRange, setZekoRange] = useState(null);
+  const [assessSchedOpen, setAssessSchedOpen] = useState(false);
+  const [assessDeadline, setAssessDeadline] = useState(null);
   const [cardOpen, setCardOpen] = useState(false);
   const [cardRec, setCardRec] = useState('Approve');
   const [importOpen, setImportOpen] = useState(false);
@@ -568,6 +1354,8 @@ export default function CandidatePipelinePrototype() {
       });
       setSelectedRound(Math.min(currentIdx + 1, STAGES.length - 1));
       message.success(`${stage.name} approved — email sent to ${mailTo}; candidate moved to ${next.name}`);
+      setCelebrate(true);
+      setTimeout(() => setCelebrate(false), 900);
     } else if (outcome === 'hold') {
       patchCurrent({
         chip: 'hold',
@@ -610,7 +1398,7 @@ export default function CandidatePipelinePrototype() {
       const stage = STAGES[currentIdx];
       const round = current.rounds[stage.key] || {};
       patchCurrent({
-        chip: 'review',
+        chip: 'feedback',
         rounds: { ...current.rounds, [stage.key]: { ...round, status: 'review', feedback: { by: round.schedule?.who || 'Interviewer', rec: cardRec, avg: 3.7, note: 'Submitted via tokenized link — no ATS login.' } } },
       });
     }
@@ -618,23 +1406,136 @@ export default function CandidatePipelinePrototype() {
     message.success('Feedback submitted — RT can now record the round outcome');
   };
 
+  /* §5 — Zeko invite now schedules a real interview window (mirrors
+     AnalyticsLegacy's "Schedule Zeko Interview" modal) instead of firing
+     a bare invite with no scheduling data. */
+  const sendZekoInvite = () => {
+    if (!current) return;
+    setZekoRange(null);
+    setZekoSchedOpen(true);
+  };
+
+  const confirmZekoSchedule = () => {
+    if (!current || !zekoRange || !zekoRange[0] || !zekoRange[1]) return;
+    const stage = STAGES[currentIdx];
+    const round = current.rounds[stage.key] || {};
+    const zekoLabel = stage.key === 'zeko_fn' ? 'functional' : 'HR';
+    const zekoWindow = { start: zekoRange[0].toISOString(), end: zekoRange[1].toISOString() };
+    patchCurrent({
+      chip: 'invited',
+      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', zekoWindow, emails: [...(round.emails || []), `Zeko ${zekoLabel} screening invite → ${mailAudience(current)} · self-schedule window ${fmtWindow(zekoWindow)}`] } },
+    });
+    setZekoSchedOpen(false);
+    message.success('Zeko interview scheduled — invite emailed with the self-schedule window');
+  };
+
+  const sendAssessmentInvite = () => {
+    if (!current) return;
+    setAssessDeadline(null);
+    setAssessSchedOpen(true);
+  };
+
+  const confirmAssessmentInvite = () => {
+    if (!current || !assessDeadline) return;
+    const stage = STAGES[currentIdx];
+    const round = current.rounds[stage.key] || {};
+    const deadline = assessDeadline.format('DD MMM YYYY');
+    patchCurrent({
+      chip: 'invited',
+      rounds: { ...current.rounds, [stage.key]: { ...round, status: 'invited', deadline, emails: [...(round.emails || []), `Assessment invite (GA + Technical) → ${mailAudience(current)} · deadline ${deadline}`] } },
+    });
+    setAssessSchedOpen(false);
+    message.success('Assessment invite sent — candidate notified with the completion deadline');
+  };
+
+  const sendDocumentRequest = () => {
+    if (!current) return;
+    const round = current.rounds.docs || {};
+    patchCurrent({
+      chip: 'docs',
+      rounds: {
+        ...current.rounds,
+        docs: {
+          ...round, requested: true,
+          checklist: [
+            { name: 'Govt ID (Aadhaar/PAN)', status: 'pending' },
+            { name: 'Education certificates', status: 'pending' },
+            { name: 'Experience / relieving letters', status: 'pending' },
+            { name: 'Last 3 payslips', status: 'pending' },
+          ],
+          emails: [...(round.emails || []), 'Document request sent — secure upload link emailed to the candidate (vendor not copied)'],
+        },
+      },
+    });
+    message.success('Document request sent — secure upload link emailed to the candidate (vendor not copied)');
+  };
+
+  const requestOfferApproval = () => {
+    if (!current) return;
+    const round = current.rounds.offer || {};
+    patchCurrent({
+      chip: 'await',
+      rounds: { ...current.rounds, offer: { ...round, offer: { approvalStatus: 'pending' }, emails: [...(round.emails || []), 'Approval request → Priya (recruiter) — daily nudge armed'] } },
+    });
+    message.success('Approval requested — daily nudge armed until approved');
+  };
+
+  const recordOfferShared = () => {
+    if (!current) return;
+    const round = current.rounds.offer || {};
+    patchCurrent({
+      chip: 'offer_sent',
+      rounds: {
+        ...current.rounds,
+        offer: {
+          ...round,
+          offer: { ...round.offer, shared: dayjs().format('DD MMM YYYY'), join: dayjs().add(28, 'day').format('DD MMM YYYY'), decision: 'Awaiting decision' },
+          emails: [...(round.emails || []), 'Offer shared offline by HR — recorded in ATS'],
+        },
+      },
+    });
+    message.success('Offer shared recorded — candidate decision tracking begins');
+  };
+
   /* ---- board ---- */
 
-  const renderCard = (c) => (
-    <Card key={c.id} size="small" hoverable onClick={() => openCandidate(c.id)}
-      styles={{ body: { padding: '10px 12px' } }} style={{ marginBottom: 8 }}>
-      <Space direction="vertical" size={4} style={{ width: '100%' }}>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Text strong>{c.name}</Text>
-          <Tooltip title="Days in current round">
-            <Tag color={ageColor(c.age)} style={{ marginInlineEnd: 0 }}>{c.age}d</Tag>
-          </Tooltip>
-        </Space>
-        <Text type="secondary" style={{ fontSize: 12 }}>{c.role}</Text>
-        <Space size={4} wrap><SourceTag c={c} /><ChipTag chip={c.chip} /><AlsoActiveTag c={c} /></Space>
-      </Space>
-    </Card>
-  );
+  const renderCard = (c) => {
+    const chipMeta = CHIP[c.chip];
+    const segs = roundProgressSegments(c);
+    const segTooltip = segs.map((s) => `${s.label}: ${s.detail}`).join(' · ');
+    return (
+      <Card key={c.id} size="small" hoverable onClick={() => openCandidate(c.id)}
+        className="cp-candidate-card"
+        styles={{ body: { padding: '9px 11px' } }}
+        style={{ marginBottom: 8, borderInlineStart: `3px solid ${CHIP_ACCENT[c.chip] || 'var(--border)'}` }}>
+        <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+          <div className="cp-avatar" style={{ background: avatarColor(c.name) }}>{initials(c.name)}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+              <Text strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</Text>
+              <Tooltip title="Days in current round">
+                {c.age > 10
+                  ? <Tag color="red" className="tag-attention" style={{ marginInlineEnd: 0, fontSize: 10.5, lineHeight: '16px' }}>{c.age}d</Tag>
+                  : <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{c.age}d</Text>}
+              </Tooltip>
+            </div>
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {c.role} · {sourceLabel(c)}
+            </Text>
+            <Space size={4} wrap style={{ marginBottom: 7 }}>
+              {chipMeta && <Tag color={chipMeta.color} style={{ fontSize: 11, marginInlineEnd: 0 }}>{chipMeta.label}</Tag>}
+              <AlsoActiveTag c={c} />
+            </Space>
+            <Tooltip title={segTooltip}>
+              <div style={{ display: 'flex', gap: 3 }} aria-label={segTooltip}>
+                {segs.map((s) => <div key={s.key} className={`cp-progress-seg cp-progress-seg--${s.state}`} />)}
+              </div>
+            </Tooltip>
+          </div>
+        </div>
+      </Card>
+    );
+  };
 
   const handleNlSearch = (text) => {
     setNlQuery(text);
@@ -671,7 +1572,7 @@ export default function CandidatePipelinePrototype() {
         <Checkbox checked={fStuck} onChange={(e) => setFStuck(e.target.checked)}>Stuck &gt; 10 days</Checkbox>
         <Text type="secondary">{filtered.length} of {candidates.length} candidates</Text>
       </Space>
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
+      <div className="stagger-children" style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
         {STAGES.map((st) => {
           const list = filtered.filter((c) => c.stage === st.key);
           return (
@@ -693,7 +1594,10 @@ export default function CandidatePipelinePrototype() {
                     <Badge count={list.length} showZero color="var(--gold, #7a922e)" />
                   </Space>
                 )}
-                styles={{ body: { padding: 10, background: 'transparent' } }}>
+                styles={{ body: { padding: 10, background: 'transparent' } }}
+                style={{ borderTop: 0, overflow: 'hidden' }}
+                >
+                <div style={{ height: 3, margin: '-1px -1px 10px', background: STAGE_ACCENT[st.type] }} />
                 {list.length ? list.map(renderCard) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="" style={{ margin: '4px 0' }} />}
               </Card>
             </div>
@@ -711,194 +1615,204 @@ export default function CandidatePipelinePrototype() {
     const round = current.rounds[stage.key];
     const isCurrent = selectedRound === currentIdx;
     const outcomeInfo = round?.outcome ? OUTCOME_TAG[round.outcome] : (isCurrent ? OUTCOME_TAG.in_progress : null);
+    const segs = roundProgressSegments(current, stage.key);
 
+    /* §1 — one badge, not four competing tags; reason + timestamp collapse
+       into a single muted line under the title. */
     const head = (
-      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Space size={8}>
-          <Text strong style={{ fontSize: 15 }}>{stage.name}</Text>
-          {stage.optional && <Tag>optional</Tag>}
-          {outcomeInfo && <Tag color={outcomeInfo.color}>{outcomeInfo.label}</Tag>}
-          {round?.reason && <Tag color="gold">{round.reason}</Tag>}
-        </Space>
-        {round?.when && <Text type="secondary" style={{ fontSize: 12 }}>{round.outcome ? 'Decided' : 'Updated'} {round.when}{round.by ? ` · by ${round.by}` : ''}</Text>}
-      </Space>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Space size={8}>
+            <Text strong style={{ fontSize: 16 }}>{stage.name}</Text>
+            {stage.optional && <Tag style={{ fontSize: 10.5 }}>optional</Tag>}
+          </Space>
+          {outcomeInfo && <Tag color={outcomeInfo.color} style={{ fontSize: 12, marginInlineEnd: 0 }}>{outcomeInfo.label}</Tag>}
+        </div>
+        {round?.when && (
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
+            {round.reason ? `${round.reason} · ` : ''}{round.outcome ? 'Decided' : 'Updated'} {round.when}{round.by ? ` · by ${round.by}` : ''}
+          </Text>
+        )}
+      </div>
     );
 
-    let body = null;
-    if (!round) {
-      body = <Empty description="No activity in this round yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
-    } else if (stage.type === 'shortlist') {
-      body = (
-        <Descriptions size="small" column={2} bordered items={[
-          { key: '1', label: 'JD match', children: `${round.jdMatch}%` },
-          { key: '2', label: 'Source', children: current.src === 'Vendor' ? `Vendor — ${current.vendor}` : (current.src === 'HR' ? 'HR upload' : 'Email intake') },
-          { key: '3', label: 'Shortlisted', children: `${round.when}${round.by ? ` · by ${round.by}` : ''}` },
-          { key: '4', label: 'Resume', children: <Button size="small" type="link" style={{ padding: 0 }}>View resume</Button> },
-          ...(round.note ? [{ key: '5', label: 'Note', children: round.note, span: 2 }] : []),
-        ]} />
-      );
-    } else if (stage.type === 'zeko') {
-      body = round.zeko ? (
-        <Row gutter={[8, 8]}>
-          <Col span={12}><Card size="small"><Statistic title="Zeko interview score" value={round.zeko.interview} /></Card></Col>
-          <Col span={12}><Card size="small"><Statistic title="Zeko communication" value={round.zeko.communication} /></Card></Col>
-          {round.note && <Col span={24}><Alert type="warning" showIcon message={round.note} /></Col>}
-        </Row>
-      ) : (
-        <Alert type="info" showIcon icon={<ClockCircleOutlined />} message="Zeko invite sent — awaiting interview"
-          description="Scores appear here automatically once Zeko results sync." />
-      );
-    } else if (stage.type === 'assessment') {
-      body = (
-        <>
-          <Row gutter={[8, 8]} style={{ marginBottom: 10 }}>
-            <Col span={8}><Card size="small"><Statistic title="IQ (GA) score" value={round.iq ?? '—'} suffix={round.iq != null ? '%' : ''} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Technical score" value={round.tech ?? '—'} suffix={round.tech != null ? '%' : ''} /></Card></Col>
-            <Col span={8}><Card size="small"><Statistic title="Test date" value={round.testDate || '—'} /></Card></Col>
-          </Row>
-          {round.importedFrom
-            ? <Alert type="success" showIcon message={`Imported from ${round.importedFrom}`} style={{ marginBottom: 10 }} />
-            : <Alert type="warning" showIcon message={round.note || 'Result awaited — import the Evalground CSV to fill scores'} style={{ marginBottom: 10 }} />}
-          {round.note && round.importedFrom && <Alert type="warning" showIcon message={round.note} style={{ marginBottom: 10 }} />}
-          {isCurrent && (
-            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>Import Evalground results (CSV)</Button>
-          )}
-        </>
-      );
-    } else if (stage.type === 'interview') {
-      body = (
-        <>
-          {round.schedule ? (
-            <Descriptions size="small" column={2} bordered style={{ marginBottom: 10 }} items={[
-              { key: '1', label: 'When', children: round.schedule.when },
-              { key: '2', label: round.schedule.mode === 'Client call' ? 'Client contact' : 'Interviewer', children: round.schedule.who },
-              { key: '3', label: 'Mode', children: round.schedule.mode === 'Client call' ? 'Client call (manual)' : 'Microsoft Teams (Outlook invite auto-sent)' },
-              { key: '4', label: 'Reminders', children: round.remindersSent ? `${round.remindersSent} daily feedback reminder(s) sent — repeats until submitted (no escalation, Q7)` : 'Candidate 30 min before · interviewer 30 min before · feedback daily until submitted' },
-            ]} />
-          ) : (
-            <Alert type="info" showIcon message="Not scheduled yet" description="Use “Schedule interview” below — fixed time or candidate self-scheduling; the Outlook invite with Teams link is sent automatically." style={{ marginBottom: 10 }} />
-          )}
-          {round.feedback ? (
+    /* §2 — per-stage interactive content (buttons/tables), keyed to the
+       stage index it belongs to. Everything display-only lives in `segs`
+       itself (label/state/detail/chips/note) and needs no extra JSX. */
+    const extras = [null, null, null, null];
+    if (round) {
+      if (stage.type === 'zeko') {
+        if (!round.status && !round.zeko) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendZekoInvite}>Send Zeko invite</Button>;
+        } else if (round.status === 'invited' && isCurrent) {
+          extras[1] = <Button size="small" icon={<CalendarOutlined />} onClick={sendZekoInvite}>Change window</Button>;
+        }
+      } else if (stage.type === 'assessment') {
+        if (!round.status && !round.testDate && !round.importedFrom) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendAssessmentInvite}>Send assessment invite</Button>;
+        }
+        if (isCurrent) {
+          extras[2] = <Button size="small" icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>Import Evalground results (CSV)</Button>;
+        }
+      } else if (stage.type === 'interview') {
+        if (isCurrent && !round.feedback) {
+          // Primary action until scheduled (matches every other round type's
+          // "first action" button); once scheduled, the primary path moves to
+          // opening the scorecard below, so Reschedule steps back to secondary.
+          extras[1] = (
+            <Button size="small" type={round.schedule ? undefined : 'primary'} icon={<CalendarOutlined />} onClick={() => setSchedOpen(true)}>
+              {round.schedule ? 'Reschedule' : 'Schedule interview'}
+            </Button>
+          );
+        }
+        if (round.feedback) {
+          extras[2] = (
+            <Alert type="info" showIcon icon={<RobotOutlined />} style={{ marginTop: 6 }}
+              message="AI feedback summary"
+              description={`Skill ratings and remarks read as consistent with the recommendation (${round.feedback.rec}); no contradictions flagged between the scores and the written note. Advisory only — RT still decides Approve / Hold / Reject.`} />
+          );
+        } else if (round.schedule && isCurrent) {
+          // Was gated on status === 'await' only — missed every candidate
+          // whose mock status is 'scheduled'/undefined, leaving no way to
+          // open the scorecard at all once the interview is booked.
+          extras[2] = <Button size="small" type="primary" onClick={() => setCardOpen(true)}>Open scorecard — tokenized link (no ATS login)</Button>;
+        }
+      } else if (stage.type === 'docs') {
+        if (!round.requested) {
+          extras[0] = isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={sendDocumentRequest}>Send document request</Button>;
+        } else {
+          const checklist = round.checklist || [];
+          extras[2] = (
             <>
-              <Alert type="success" showIcon icon={<CheckCircleOutlined />}
-                message={<Space wrap><Text strong>{round.feedback.by}</Text><Tag color="green">{round.feedback.rec}</Tag>{round.feedback.avg && <Tag>{round.feedback.avg}/5</Tag>}</Space>}
-                description={`${round.feedback.note} — RT records the official round outcome below.`} style={{ marginBottom: 8 }} />
-              <Alert type="info" showIcon icon={<RobotOutlined />} style={{ marginBottom: 10 }}
-                message="AI feedback summary"
-                description={`Skill ratings and remarks read as consistent with the recommendation (${round.feedback.rec}); no contradictions flagged between the scores and the written note. Advisory only — RT still decides Approve / Hold / Reject.`} />
+              <Table size="small" pagination={false} rowKey="name" style={{ marginTop: 6, marginBottom: 8 }}
+                columns={[
+                  { title: 'Document', dataIndex: 'name', render: (v) => <Space><FileTextOutlined /><Text strong style={{ fontSize: 12.5 }}>{v}</Text></Space> },
+                  { title: 'Status', dataIndex: 'status', width: 170, render: (v) => <Tag color={DOC_TAG[v].color}>{DOC_TAG[v].label}</Tag> },
+                  {
+                    title: '', dataIndex: 'status', key: 'a', width: 140,
+                    render: (v) => isCurrent && v === 'uploaded' && (
+                      <Space size={4}>
+                        <Button size="small" onClick={() => message.success('Document verified')}>Verify</Button>
+                        <Button size="small" danger onClick={() => message.warning('Rejected — re-request sent with reason')}>Reject…</Button>
+                      </Space>
+                    ),
+                  },
+                ]}
+                dataSource={checklist} />
+              {isCurrent && <Button size="small" onClick={() => message.info('Reminder sent — will repeat until documents arrive')}>Send reminder</Button>}
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 6 }}>
+                Candidate uploads via a secure link — no login. Vendors never see documents or these emails (Q5).
+              </Text>
             </>
-          ) : round.status === 'await' ? (
-            <Alert type="warning" showIcon icon={<ClockCircleOutlined />} message="Awaiting interviewer feedback"
-              description={<span>The interviewer got a tokenized scorecard link — no ATS login. <Button size="small" onClick={() => setCardOpen(true)}>Open scorecard</Button></span>} style={{ marginBottom: 10 }} />
-          ) : null}
-          {round.note && <Alert type="info" showIcon message={round.note} style={{ marginBottom: 10 }} />}
-        </>
-      );
-    } else if (stage.type === 'docs') {
-      const checklist = round.checklist || [
-        { name: 'Govt ID (Aadhaar/PAN)', status: 'pending' },
-        { name: 'Education certificates', status: 'pending' },
-        { name: 'Experience / relieving letters', status: 'pending' },
-        { name: 'Last 3 payslips', status: 'pending' },
-      ];
-      body = (
-        <>
-          <Table size="small" pagination={false} rowKey="name" style={{ marginBottom: 10 }}
-            columns={[
-              { title: 'Document', dataIndex: 'name', render: (v) => <Space><FileTextOutlined /><Text strong>{v}</Text></Space> },
-              { title: 'Status', dataIndex: 'status', width: 190, render: (v) => <Tag color={DOC_TAG[v].color}>{DOC_TAG[v].label}</Tag> },
-              {
-                title: '', dataIndex: 'status', key: 'a', width: 150,
-                render: (v) => isCurrent && v === 'uploaded' && (
-                  <Space size={4}>
-                    <Button size="small" onClick={() => message.success('Document verified')}>Verify</Button>
-                    <Button size="small" danger onClick={() => message.warning('Rejected — re-request sent with reason')}>Reject…</Button>
-                  </Space>
-                ),
-              },
-            ]}
-            dataSource={checklist} />
-          {isCurrent && (
-            <Space wrap style={{ marginBottom: 10 }}>
-              <Button type="primary" onClick={() => message.success('Document request sent — secure upload link emailed to the candidate (vendor not copied)')}>Send document request</Button>
-              <Button onClick={() => message.info('Reminder sent — will repeat until documents arrive')}>Send reminder</Button>
+          );
+        }
+      } else if (stage.type === 'offer') {
+        const off = round.offer;
+        if (!off) {
+          extras[0] = (
+            <>
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6 }}>
+                Record-only (Q3): HR shares the letter from its own mailbox — request in-app approval first.
+              </Text>
+              {isCurrent && <Button type="primary" size="small" icon={<MailOutlined />} onClick={requestOfferApproval}>Request internal approval</Button>}
+            </>
+          );
+        } else if (off.approvalStatus !== 'pending' && !off.shared) {
+          extras[1] = isCurrent && <Button type="primary" size="small" icon={<FileTextOutlined />} onClick={recordOfferShared}>Record offer shared</Button>;
+        } else if (off.shared && off.decision === 'Awaiting decision' && isCurrent) {
+          extras[2] = (
+            <Space size={6}>
+              <Button size="small" style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
+                onClick={() => message.success('Offer marked Accepted — closure options unlocked; record auto-closes 90 days after Joined (Q12)')}>Mark Accepted</Button>
+              <Button size="small" danger onClick={() => message.warning('Offer marked Rejected — reason captured')}>Mark Rejected</Button>
             </Space>
-          )}
-          <Alert type="info" showIcon message="Candidate uploads via a secure link — no login. Vendors never see documents or these emails (Q5). Completeness is automatic; authenticity stays with RT." />
-        </>
-      );
-    } else if (stage.type === 'offer') {
-      body = (
-        <>
-          {round.offer ? (
-            <>
-              {round.offer.approval && (
-                <Alert type="success" showIcon icon={<CheckCircleOutlined />} style={{ marginBottom: 10 }}
-                  message={`Internal approval: ${round.offer.approval}`}
-                  description="Approval is recorded in-app by the recruiter, with a daily nudge until done — skippable in exceptional cases (Q3/Q26)." />
-              )}
-              <Alert type="info" showIcon icon={<FileTextOutlined />} style={{ marginBottom: 10 }}
-                message={<Space wrap><Text strong>{round.offer.file}</Text><Tag color="blue">{round.offer.decision}</Tag></Space>}
-                description={`Shared offline by HR ${round.offer.shared} — recorded here · proposed joining ${round.offer.join}`} />
-              {isCurrent && (
-                <Space wrap style={{ marginBottom: 16 }}>
-                  <Button style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
-                    onClick={() => message.success('Offer marked Accepted — closure options unlocked; record auto-closes 90 days after Joined (Q12)')}>Mark Accepted</Button>
-                  <Button danger onClick={() => message.warning('Offer marked Rejected — reason captured')}>Mark Rejected</Button>
-                </Space>
-              )}
-            </>
-          ) : (
-            <Alert type="info" showIcon style={{ marginBottom: 16 }} message="No offer recorded yet"
-              description="Record-only (Q3): HR shares the letter from its own mailbox. Here you request in-app approval (recruiter; daily nudge), then record the shared date, letter file and the candidate's decision. No validity timer, no version tracking — revisions are handled manually." />
-          )}
-          {isCurrent && (
-            <>
-              <Title level={5} style={{ fontSize: 13 }}>Close candidate</Title>
-              <Space wrap>
-                <Select value={closeStatus} onChange={setCloseStatus} style={{ minWidth: 240 }}
-                  options={['Joined', 'Candidate Withdrawn', 'Did Not Join', 'Backed Out', 'Joined and Left', 'Rejected', 'On Hold'].map((v) => ({ value: v, label: v }))} />
-                <Button danger onClick={() => {
-                  const draft = closureEmailDraft(current, closeStatus);
-                  setCloseSubject(draft.subject);
-                  setCloseBody(draft.body);
-                  setCloseOpen(true);
-                }}>Close candidate record</Button>
-              </Space>
-            </>
-          )}
-        </>
-      );
+          );
+        }
+        if (isCurrent) {
+          extras[3] = (
+            <Space wrap size={8} style={{ marginTop: 4 }}>
+              <Select size="small" value={closeStatus} onChange={setCloseStatus} style={{ minWidth: 200 }}
+                options={['Joined', 'Candidate Withdrawn', 'Did Not Join', 'Backed Out', 'Joined and Left', 'Rejected', 'On Hold'].map((v) => ({ value: v, label: v }))} />
+              <Button size="small" danger onClick={() => {
+                const draft = closureEmailDraft(current, closeStatus);
+                setCloseSubject(draft.subject);
+                setCloseBody(draft.body);
+                setCloseOpen(true);
+              }}>Close candidate record</Button>
+            </Space>
+          );
+        }
+      }
     }
 
+    /* §2 — the unified, always-expanded vertical pipeline: one connected
+       stepper, top to bottom, every stage showing its real content inline
+       (no click-to-expand — that mechanism produced the original "trimmed"
+       complaint). Chips and notes come straight off `segs` (data-only, see
+       roundProgressSegments); `extras` supplies the interactive bits. */
+    const pipeline = (
+      <div className="cp-pipeline">
+        {segs.map((s, i) => (
+          <div key={s.key} className={`cp-pipeline-step cp-pipeline-step--${s.state}`}>
+            <div className="cp-pipeline-step__rail">
+              <span className={`cp-pipeline-node cp-pipeline-node--${s.state}`}>
+                {s.state === 'done' && <CheckOutlined />}
+                {s.state === 'hold' && <PauseCircleOutlined />}
+                {s.state === 'rejected' && <CloseOutlined />}
+              </span>
+              {i < segs.length - 1 && <span className={`cp-pipeline-step__connector${s.state === 'done' ? ' cp-pipeline-step__connector--done' : ''}`} />}
+            </div>
+            <div className="cp-pipeline-step__body">
+              <div className="cp-pipeline-step__head">
+                <Text className="cp-pipeline-step__label">{s.label}</Text>
+                <Text className={`cp-pipeline-step__state cp-pipeline-step__state--${s.state}`}>{STATE_WORD[s.state]}</Text>
+              </div>
+              <div className="cp-pipeline-step__detail">{s.detail}</div>
+              {s.note && <div className="cp-pipeline-step__detail" style={{ marginTop: 2, color: 'var(--text-3)' }}>{s.note}</div>}
+              {s.chips && (
+                <div className="cp-stat-chip-row">
+                  {s.chips.map((chip) => (
+                    <div key={chip.label} className={`cp-stat-chip cp-stat-chip--${scoreTier(chip.value)}`}>
+                      <span className="cp-stat-chip__value">{chip.value}</span>
+                      <span className="cp-stat-chip__label">{chip.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {extras[i] && <div className="cp-pipeline-step__extra">{extras[i]}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+
     return (
-      <Card size="small" title={head} style={{ marginTop: 4 }}>
-        {body}
+      <Card size="small" title={head} className="cp-round-panel" style={{ marginTop: 4, position: 'relative' }}>
+        {isCurrent && <UploadCelebration show={celebrate} />}
+        <div style={{ height: 3, margin: '-1px -1px 14px', background: STAGE_ACCENT[stage.type] }} />
+        {!round ? <Empty description="No activity in this round yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : pipeline}
         {round?.emails?.length > 0 && (
           <>
-            <Title level={5} style={{ fontSize: 12.5, marginTop: 14 }}>Emails in this round</Title>
-            <Timeline items={round.emails.map((e) => ({ dot: <MailOutlined style={{ fontSize: 12 }} />, color: 'blue', children: <Text style={{ fontSize: 12.5 }}>{e}</Text> }))} />
+            <div className="cp-section-label">Emails in this round</div>
+            <div className="cp-emails-surface">
+              <Timeline items={round.emails.map((e) => ({ dot: <MailOutlined style={{ fontSize: 12 }} />, color: 'blue', children: <Text style={{ fontSize: 12.5 }}>{e}</Text> }))} />
+            </div>
           </>
         )}
         {isCurrent && stage.type !== 'offer' && (
-          <>
-            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
-              <Space wrap>
-                <Button icon={<CheckOutlined />} style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
-                  onClick={() => openOutcomeModal('approved')}>Approve round</Button>
-                <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
-                  onClick={() => openOutcomeModal('hold')}>Hold</Button>
-                <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
-                {stage.type === 'interview' && !round?.feedback && (
-                  <Button icon={<CalendarOutlined />} onClick={() => setSchedOpen(true)}>{round?.schedule ? 'Reschedule' : 'Schedule interview'}</Button>
-                )}
-              </Space>
-              <Alert type="info" showIcon icon={<MailOutlined />} style={{ marginTop: 10 }}
-                message={current.src === 'Vendor'
-                  ? `Outcome emails go to the candidate AND ${current.vendor} automatically (placement-vendor rule). Sensitive rounds send the vendor a status-only note.`
-                  : 'Outcome emails go to the candidate automatically, from the recruitment mailbox, with open tracking.'} />
-            </div>
-          </>
+          <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
+            <Space wrap>
+              <Button type="primary" icon={<CheckOutlined />} className="cta-primary btn-sheen"
+                onClick={() => openOutcomeModal('approved')}>Approve round</Button>
+              <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
+                onClick={() => openOutcomeModal('hold')}>Hold</Button>
+              <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
+            </Space>
+            <Alert type="info" showIcon icon={<MailOutlined />} style={{ marginTop: 10 }}
+              message={current.src === 'Vendor'
+                ? `Outcome emails go to the candidate AND ${current.vendor} automatically (placement-vendor rule). Sensitive rounds send the vendor a status-only note.`
+                : 'Outcome emails go to the candidate automatically, from the recruitment mailbox, with open tracking.'} />
+          </div>
         )}
       </Card>
     );
@@ -963,7 +1877,7 @@ export default function CandidatePipelinePrototype() {
       </Space>
       <Alert type="warning" showIcon closable style={{ marginBottom: 14 }}
         message="Prototype for the RT walkthrough — v3, your answers of 2026-07-13 applied"
-        description="Candidates enter here when shortlisted from Candidate Screening (vendor submissions included, carrying their vendor tag). Click a candidate, then click any completed round in the stepper to see that round's details — future rounds are locked. Pipeline analytics lives as a tab in the Analytics page. Applied answers: 30-min reminders + daily feedback reminder (no escalation), manual-only Hold, record-only offer with in-app approval, Evalground 50% pass mark with latest-attempt rule, concurrent MRF journeys (see the '2 MRFs' badge), both scheduling modes, and your interview evaluation scorecard format." />
+        description="Candidates enter here already shortlisted from Candidate Screening — the pipeline starts at HR Screening (Zeko), not a second shortlist step (vendor submissions included, carrying their vendor tag). Click a candidate, then click any completed round in the stepper to see that round's details — future rounds are locked. Pipeline analytics lives as a tab in the Analytics page. Applied answers: 30-min reminders + daily feedback reminder (no escalation), manual-only Hold, record-only offer with in-app approval, Evalground 50% pass mark with latest-attempt rule, concurrent MRF journeys (see the '2 MRFs' badge), both scheduling modes, and your interview evaluation scorecard format." />
       {board}
 
       {/* ---------- candidate drawer (per-round) ---------- */}
@@ -978,21 +1892,40 @@ export default function CandidatePipelinePrototype() {
         )}>
         {current && (
           <>
-            <Space size={4} wrap style={{ marginBottom: 14 }}>
+            <Space size={4} wrap style={{ marginBottom: 10 }}>
               <SourceTag c={current} />
               <ChipTag chip={current.chip} />
               <AlsoActiveTag c={current} />
               <Tag>{current.age} days in round</Tag>
             </Space>
-            <div style={{ overflowX: 'auto', paddingBottom: 6, marginBottom: 4 }}>
-              <Steps size="small" current={selectedRound} onChange={(i) => setSelectedRound(i)}
-                status={current.chip === 'hold' && selectedRound === currentIdx ? 'error' : 'process'}
-                style={{ minWidth: 980 }}
-                items={STAGES.map((s, i) => ({
-                  title: <span style={{ fontSize: 11 }}>{s.short}</span>,
-                  disabled: i > currentIdx,
-                  status: i < currentIdx ? 'finish' : i === currentIdx ? undefined : 'wait',
-                }))} />
+            {current.screening && (
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+                background: 'var(--ink-3)', borderRadius: 10, padding: '9px 14px', marginBottom: 10,
+              }}>
+                <Text style={{ fontSize: 12.5 }}>
+                  <Text type="secondary">Shortlisted from Candidate Screening</Text> · JD match <Text strong>{current.screening.jdMatch}%</Text> · {current.screening.when}{current.screening.by ? ` · by ${current.screening.by}` : ''}
+                </Text>
+                <Button size="small" type="link" style={{ padding: 0 }}>View resume</Button>
+              </div>
+            )}
+            {current.screening?.note && (
+              <Alert type="info" showIcon message={current.screening.note} style={{ marginBottom: 10, fontSize: 12.5 }} />
+            )}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 4 }}>
+              {STAGES.map((s, i) => {
+                const past = i < currentIdx;
+                const isCurrentStage = i === currentIdx;
+                const disabled = i > currentIdx;
+                const kind = past ? 'done' : isCurrentStage ? 'current' : 'future';
+                return (
+                  <button key={s.key} type="button" disabled={disabled}
+                    onClick={() => setSelectedRound(i)}
+                    className={`cp-stage-pill cp-stage-pill--${kind}${selectedRound === i ? ' cp-stage-pill--selected' : ''}`}>
+                    {s.short}
+                  </button>
+                );
+              })}
             </div>
             <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 8 }}>
               Click a round to see its details — rounds after <Text strong style={{ fontSize: 11.5 }}>{STAGES[currentIdx].name}</Text> are locked until the candidate gets there.
@@ -1109,7 +2042,7 @@ export default function CandidatePipelinePrototype() {
             <Alert type="info" showIcon icon={<CalendarOutlined />}
               message="On save: Outlook invite with Microsoft Teams link goes to candidate + interviewer from the recruitment mailbox."
               description="Automated reminders (Q7) — candidate 30 min before · interviewer 30 min before · feedback form link right after the interview, then one reminder per day until submitted." />
-            <Card size="small" style={{ background: 'var(--surface-2, #f7f8f4)' }}>
+            <Card size="small" style={{ background: 'var(--ink-3)' }}>
               <Checkbox checked={prepBriefOn} onChange={(e) => setPrepBriefOn(e.target.checked)}>
                 <Space size={6}><RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} /><Text strong style={{ fontSize: 13 }}>Attach AI interviewer prep brief</Text></Space>
               </Checkbox>
@@ -1119,6 +2052,62 @@ export default function CandidatePipelinePrototype() {
                 feeds back into the official outcome.
               </Text>
             </Card>
+          </Space>
+        )}
+      </Modal>
+
+      {/* ---------- Zeko interview scheduling modal (v11 — mirrors AnalyticsLegacy's
+          "Schedule Zeko Interview": candidate card → Interview Date & Time Range) ---------- */}
+      <Modal open={zekoSchedOpen} onCancel={() => setZekoSchedOpen(false)} onOk={confirmZekoSchedule}
+        okText="Confirm & Invite" width={520}
+        okButtonProps={{ disabled: !zekoRange || !zekoRange[0] || !zekoRange[1] }}
+        title={<Space><CalendarOutlined style={{ color: 'var(--gold)' }} />Schedule Zeko Interview</Space>}>
+        {current && (
+          <Space direction="vertical" size={14} style={{ width: '100%', marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--ink-3)', borderRadius: 10 }}>
+              <div className="cp-avatar" style={{ background: avatarColor(current.name), width: 36, height: 36, fontSize: 13 }}>{initials(current.name)}</div>
+              <div style={{ minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13.5, display: 'block' }}>{current.name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{current.email}</Text>
+              </div>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Zeko {STAGES[currentIdx]?.key === 'zeko_fn' ? 'Functional' : 'HR'} Screening test</Text>
+              <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{STAGES[currentIdx]?.name} · {current.role}</Text>
+            </div>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Interview Date & Time Range (IST) <Text type="danger">*</Text></Text>
+              <DatePicker.RangePicker showTime={{ format: 'HH:mm' }} format="YYYY-MM-DD HH:mm" style={{ width: '100%', marginTop: 4 }}
+                value={zekoRange} onChange={setZekoRange}
+                disabledDate={(cur) => cur && cur < dayjs().startOf('day')} />
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                Candidate self-schedules within this window via the Zeko link; times round to 30-minute slots automatically.
+              </Text>
+            </div>
+          </Space>
+        )}
+      </Modal>
+
+      {/* ---------- Assessment invite modal (v11 — simpler than Zeko's: a single
+          completion deadline, no equivalent Evalground scheduling UI to mirror) ---------- */}
+      <Modal open={assessSchedOpen} onCancel={() => setAssessSchedOpen(false)} onOk={confirmAssessmentInvite}
+        okText="Confirm & Invite" width={460} okButtonProps={{ disabled: !assessDeadline }}
+        title={<Space><CalendarOutlined style={{ color: 'var(--gold)' }} />Send Assessment Invite</Space>}>
+        {current && (
+          <Space direction="vertical" size={14} style={{ width: '100%', marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--ink-3)', borderRadius: 10 }}>
+              <div className="cp-avatar" style={{ background: avatarColor(current.name), width: 36, height: 36, fontSize: 13 }}>{initials(current.name)}</div>
+              <div style={{ minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13.5, display: 'block' }}>{current.name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{current.email}</Text>
+              </div>
+            </div>
+            <Text type="secondary" style={{ fontSize: 12.5 }}>Evalground assessment (GA + Technical) · {current.role}</Text>
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Completion deadline <Text type="danger">*</Text></Text>
+              <DatePicker style={{ width: '100%', marginTop: 4 }} format="DD MMM YYYY" value={assessDeadline} onChange={setAssessDeadline}
+                disabledDate={(cur) => cur && cur < dayjs().startOf('day')} />
+            </div>
           </Space>
         )}
       </Modal>

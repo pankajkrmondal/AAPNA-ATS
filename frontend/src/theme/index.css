@@ -2772,4 +2772,162 @@ html.theme-transition *::after {
   }
 }
 
+/* ----- Candidate Pipeline prototype (Phase 3) — remove alongside
+   CandidatePipelinePrototype.jsx once the real Tracker ships. ----- */
+.cp-candidate-card {
+  transition: transform 0.25s var(--ease-out-quint),
+    box-shadow 0.25s var(--ease-out-quint),
+    border-color 0.25s var(--ease-out-quint);
+  animation: fadeInUp 0.4s var(--ease-out-quint) both;
+}
+.cp-candidate-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--gold-light) !important;
+}
+.cp-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+/* 4-segment round-progress stepper (Entry / Schedule / Outcome / Decision)
+   on each candidate card — compact alternative to four separate tags. */
+.cp-progress-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  transition: background 0.3s var(--ease-out-quint);
+}
+.cp-progress-seg--done { background: #27ae60; }
+.cp-progress-seg--active { background: #d4a017; }
+.cp-progress-seg--pending { background: var(--border-light); }
+.cp-progress-seg--hold { background: #d4a017; }
+.cp-progress-seg--rejected { background: var(--red); }
+
+/* Round-detail panel (drawer) — elevated card matching the board card's
+   polish instead of a plain flat box. */
+.cp-round-panel {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-md) !important;
+  border: 1px solid var(--border-light) !important;
+  overflow: hidden;
+  animation: fadeInUp 0.35s var(--ease-out-quint) both;
+}
+.cp-round-panel .ant-card-head {
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Stage navigator pills (drawer) — replaces the small numbered-circle Steps,
+   which read as cramped at 11 stages wide. */
+.cp-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--border-light);
+  background: var(--ink-2);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-out-quint), box-shadow 0.2s var(--ease-out-quint), border-color 0.2s var(--ease-out-quint);
+}
+.cp-stage-pill:disabled { cursor: not-allowed; opacity: 0.5; }
+.cp-stage-pill--done { background: rgba(39, 174, 96, 0.12); border-color: rgba(39, 174, 96, 0.35); color: #1e8449; }
+.cp-stage-pill--current { background: var(--gradient-primary); border-color: transparent; color: #fff; box-shadow: var(--glow-accent); }
+.cp-stage-pill--future { background: var(--ink-3); color: var(--text-3); }
+.cp-stage-pill--selected { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--gold); }
+.cp-stage-pill:not(:disabled):hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+
+/* v11 — unified vertical pipeline (drawer): replaces the horizontal
+   4-tile category bar. One connected stepper, top to bottom, every stage
+   always fully expanded (no click-to-expand — see CandidatePipeline
+   Prototype.jsx's roundProgressSegments comment for why). */
+.cp-pipeline { margin-bottom: 16px; }
+.cp-pipeline-step { display: flex; gap: 12px; }
+.cp-pipeline-step__rail { display: flex; flex-direction: column; align-items: center; width: 22px; flex-shrink: 0; }
+.cp-pipeline-node {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  flex-shrink: 0;
+  border: 2px solid var(--border-light);
+  background: var(--ink-2);
+  transition: background 0.3s var(--ease-out-quint), border-color 0.3s var(--ease-out-quint);
+}
+.cp-pipeline-node--active { background: var(--gradient-primary); border-color: transparent; box-shadow: var(--glow-accent); animation: cpPipelinePulse 1.8s ease-in-out infinite; }
+.cp-pipeline-node--done { background: #27ae60; border-color: transparent; }
+.cp-pipeline-node--hold { background: #d4a017; border-color: transparent; }
+.cp-pipeline-node--rejected { background: var(--red); border-color: transparent; }
+@keyframes cpPipelinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(122, 146, 46, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(122, 146, 46, 0); }
+}
+.cp-pipeline-step__connector { width: 2px; flex: 1; min-height: 22px; background: var(--border-light); margin: 2px 0; transition: background 0.3s var(--ease-out-quint); }
+.cp-pipeline-step__connector--done { background: #27ae60; }
+.cp-pipeline-step__body { flex: 1; min-width: 0; padding-bottom: 18px; }
+.cp-pipeline-step:last-child .cp-pipeline-step__body { padding-bottom: 2px; }
+.cp-pipeline-step__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cp-pipeline-step__label { font-size: 13px; font-weight: 700; color: var(--text); }
+.cp-pipeline-step--pending .cp-pipeline-step__label { color: var(--text-3); }
+.cp-pipeline-step__state { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.cp-pipeline-step__state--pending { color: var(--text-3); }
+.cp-pipeline-step__state--active { color: #d4a017; }
+.cp-pipeline-step__state--done { color: #27ae60; }
+.cp-pipeline-step__state--hold { color: #d4a017; }
+.cp-pipeline-step__state--rejected { color: var(--red); }
+.cp-pipeline-step__detail { font-size: 12.5px; color: var(--text-2); margin-top: 2px; line-height: 1.5; }
+.cp-pipeline-step__extra { margin-top: 8px; }
+
+/* Compact colour-coded stat chip — replaces the old flat, near-empty
+   Statistic cards for Zeko/Assessment scores. Colour is driven by the
+   score itself (>=70 green / 50-69 amber / <50 red) so it carries real
+   information, not just decoration. */
+.cp-stat-chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cp-stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 84px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+}
+.cp-stat-chip__value { font-size: 17px; font-weight: 800; line-height: 1.1; }
+.cp-stat-chip__label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; }
+.cp-stat-chip--good { background: rgba(39, 174, 96, 0.1); border-color: rgba(39, 174, 96, 0.3); color: #1e8449; }
+.cp-stat-chip--mid { background: rgba(212, 160, 23, 0.1); border-color: rgba(212, 160, 23, 0.3); color: #96760f; }
+.cp-stat-chip--low { background: rgba(192, 57, 43, 0.1); border-color: rgba(192, 57, 43, 0.3); color: var(--red); }
+
+/* Section micro-label (e.g. "Emails in this round") — uppercase, muted,
+   thin rule; the emails timeline sits on a muted surface to recede
+   behind the pipeline above it. */
+.cp-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 6px;
+  margin: 18px 0 10px;
+}
+.cp-emails-surface { background: var(--ink-3); border-radius: var(--radius-md); padding: 10px 14px 2px; }
 
