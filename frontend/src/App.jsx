@@ -36,12 +36,14 @@ import Settings from './pages/Settings';
 import HRUpload from './pages/HRUpload';
 import CandidateScreening from './pages/CandidateScreening';
 import Analytics from './pages/Analytics';
+import AnalyticsLegacy from './pages/AnalyticsLegacy';
 import EmailManagement from './pages/EmailManagement';
 import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
 import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
-import PipelinePrototype from './pages/PipelinePrototype';
+import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
+import Pipeline from './pages/Pipeline';
 
 /* ---- Route Guards ---- */
 
@@ -318,9 +320,22 @@ function AppShell() {
               />
               <Route path="/filtering" element={<CandidateScreening />} />
               <Route path="/analytics" element={<Analytics />} />
+              {/* Preserved pre-rebrand page — operational fallback, sidebar-only. */}
+              <Route path="/analytics-legacy" element={<AnalyticsLegacy />} />
               {/* Phase 3 walkthrough prototype (mock data only) — remove once
                   the real Pipeline Tracker ships in Phase 3 Module 1. */}
-              <Route path="/pipeline-prototype" element={<PipelinePrototype />} />
+              <Route path="/candidate-pipeline-prototype" element={<CandidatePipelinePrototype />} />
+              {/* Real Pipeline Tracker (Module 1) — persists to /api/pipeline,
+                  sends real outcome emails. Kept alongside the prototype above
+                  until RT signs off and this is verified end-to-end. */}
+              <Route
+                path="/pipeline"
+                element={
+                  <ModuleRoute moduleKey="recruitment_pipeline">
+                    <Pipeline />
+                  </ModuleRoute>
+                }
+              />
 
               <Route path="/email" element={<EmailManagement />} />
               <Route path="/settings" element={<Settings />} />

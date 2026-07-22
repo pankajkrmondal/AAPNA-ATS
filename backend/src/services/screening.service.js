@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
+import { createPipelineJourney } from './pipeline.service.js';
 
 /**
  * GET /api/screening/roles
@@ -1687,6 +1688,22 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
         modifiedAt: new Date(),
       },
     });
+
+    // Phase 3 Module 1: shortlisting IS Stage 0 approval — create (or reuse)
+    // the candidate-per-MRF pipeline journey so it appears on the Tracker.
+    // Best-effort: a failure here must never block the legacy shortlist flow
+    // that predates the stage engine.
+    try {
+      await createPipelineJourney({
+        cvId: candidateId,
+        mrfId: mrfRef,
+        shortlistId: shortlist.id,
+        source: 'screening_shortlist',
+        vendorEmail: c.VendorEmail || null,
+      });
+    } catch (err) {
+      logger.error(`Pipeline journey creation failed for shortlist ${shortlist.id}: ${err.message}`);
+    }
 
     // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
     const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);

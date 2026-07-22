@@ -1,7 +1,7 @@
 # Phase 3 — Development Plan (Module by Module)
 
 **Document 3 of 4** · Status: **⚠️ CORRECTION (2026-07-14 meeting): the "signed off" claim below was wrong** — a provisional discussion was mistakenly recorded as a formal go-ahead; see [01-PROCESS-UNDERSTANDING.md](01-PROCESS-UNDERSTANDING.md) header and [MEETING-NOTES-2026-07-14.md](MEETING-NOTES-2026-07-14.md) Gap #2. **M1 reverts to gated pending a real written sign-off** (all its policy inputs are still answered — see the table below — only the sign-off itself is missing). RT answers applied 2026-07-13 and substantially refined on the 2026-07-14 call; **🚨 top schedule risk: the Zeko API's actual capabilities (score, cheat probability, full report, recording) are unvalidated and no one is currently assigned to verify them** — see M3.
-Companion docs: [01-PROCESS-UNDERSTANDING.md](01-PROCESS-UNDERSTANDING.md) · [02-BUSINESS-DESIGN.md](02-BUSINESS-DESIGN.md) · [04-QUESTIONS.md](04-QUESTIONS.md)
+Companion docs: [01-PROCESS-UNDERSTANDING.md](01-PROCESS-UNDERSTANDING.md) · [02-BUSINESS-DESIGN.md](02-BUSINESS-DESIGN.md) · [04-QUESTIONS.md](04-QUESTIONS.md) · [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md)
 
 Delivery model: **one module at a time**, each independently shippable and verified on staging before the next begins.
 
@@ -13,7 +13,7 @@ Delivery model: **one module at a time**, each independently shippable and verif
 |---|--------|----------------------------------------|------------------------------------------------|
 | M0 | **Phase 2.1 completion pass** — Zeko + email engine go-live | RT UAT slot + must-haves (**Q17**) | ✅ **COMPLETE — Phase 2.1 is live (confirmed 2026-07-14)**; Q17 closed, no UAT gate needed |
 | M1 | Stage engine + Pipeline Tracker UI + outcome emails (vendor dual-send built in) | — | **All policy inputs answered — gated only on a real written sign-off** (the 2026-07-14 sign-off claim was retracted; a written request is now an action item — see [04-QUESTIONS.md](04-QUESTIONS.md) §E) |
-| M2 | Evalground CSV import — **now two mechanisms: bulk CSV + single-result via Outlook** | Sample CSV from RT (**Q1**) | Import mechanics fully specified 2026-07-14 (email key, retake/overwrite rule, Section labels) — **✅ sample files received 2026-07-14 (bulk CSV + single result report), Harish still owes format verification**; bulk-upload section→skill mapping approach also owed by Harish |
+| M2 | Evalground import — **bulk CSV + single-result, the latter now automatic shared-mailbox polling, not manual upload** | Sample CSV from RT (**Q1**) — ✅ cleared | Import mechanics fully specified 2026-07-14 (email key, retake/overwrite rule, Section labels); **✅ format verification + mapping decision closed 2026-07-20 — fully unblocked, build plan in [07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md)** (AI-suggested section→skill mapping from test title, RT confirms once per batch; single-result path rides the existing `mailboxPoller.js` Graph delta poll via a new `assessmentResultIntake.js` processor) |
 | M3 | Teams/Outlook scheduling + reminders + interviewer scorecards | Graph `Calendars.ReadWrite` grant (**Q16**) + scheduling-mode answer (**Q6**) | Q6 answered (both modes + free/busy) — **gated on Q16 (IT) only** for the scheduling/reminder/scorecard build; scorecard template received 2026-07-14. **🚨 But the Zeko auto-advance/cheat-probability/full-report design is a SEPARATE, unvalidated dependency — nobody has confirmed the Zeko API actually exposes this data, and no one is assigned to check** |
 | M4 | Document collection | Document checklist (**Q8**) | Q8 retention answered 2026-07-14 (never delete; archive threshold TBD) — **build can start**; go-live needs the checklist template + the archive threshold + storage-capacity confirmation (may force a resumes-only fallback) |
 | M5 | Offer management + closure | Offer-scope answer (**Q3**) | **Unblocked, and simplified further 2026-07-14** — letters confirmed to stay fully outside the ATS (status/stage only, no file) |
@@ -112,24 +112,29 @@ Changed files:
 
 ## M2 — Evalground Import (inside the IQ / Tech Assessment round)
 
-**No Evalground API — import only, via TWO mechanisms, both to be supported (RT, 2026-07-14):**
-1. **Bulk CSV upload** — the original design. **✅ Sample file received 2026-07-14** (Naveen, shared in chat) — Harish still needs to verify it matches the Section 1/2/3 design above before building against it.
-2. **Single-candidate result report received on Outlook** — a new mechanism: RT gets one result at a time via email; the ATS needs an upload/entry path for a single candidate's result, reusing the same matching/scoring logic as the bulk path.
+**Full design, format verification, and build plan now live in
+[07-EVALGROUND-IMPORT-PLAN.md](07-EVALGROUND-IMPORT-PLAN.md)** — this section
+is a condensed pointer, not the source of truth; see doc 07 for the details
+behind every bullet below.
 
-**Import mechanics, fully specified 2026-07-14:**
+**No Evalground API — import only, via TWO mechanisms, both supported (RT, 2026-07-14), both now fully unblocked (2026-07-20):**
+1. **Bulk CSV upload** — the original design. Sample file verified against the Section 1/2/3 design (doc 07 §1.1).
+2. **Single-candidate result report received on Outlook** — **redesigned as of 2026-07-20: automatic shared-mailbox polling, not a manual upload/entry screen.** Evalground's own result email lands in the same shared mailbox the ATS already polls via `outlookReader.service.js`; a new fan-out processor on the existing `mailboxPoller.js` Graph delta tick (`assessmentResultIntake.js`) ingests it directly (doc 07 §3).
+
+**Import mechanics, fully specified 2026-07-14, mapping decided 2026-07-20:**
 - **Unique key = candidate email; names may repeat** (confirms Q1).
-- **CSV columns are generic** (GA, Section 2, Section 3 — no test name or role attached). Decision: **import the columns as-is under Section 1/2/3 labels; RT renames/edits the section labels afterward** — no manual pre-tagging required from RT. For the **single-candidate** path, the system can prompt to map section→skill at entry time. For the **bulk** path, **the mapping approach is not yet decided — open item, owed by Harish** (build the bulk importer generic/section-based first; the mapping UI can follow once Harish decides).
+- **CSV columns are generic** (GA, Section 2, Section 3 — no test name or role attached), but the file carries a free-text **Test Name** column. Decision: **section→skill mapping is AI-suggested from that test-name text; RT confirms once per import batch (per distinct test-name cluster), never per row** — both mechanisms share the same batch-confirmed mapping table (doc 07 §2).
 - **Re-import / retake behavior (RT-confirmed, closes the earlier "latest vs best" open item):** a row already in the DB is **skipped**; if the candidate retook the test and the **score changed**, **only the score is overwritten** — no other candidate fields touched. This is now an RT-confirmed rule, not our default assumption.
 - **Untested candidates show "Evalground test pending" indefinitely and are never deleted** — no expiry/cleanup job for this state.
 - **Pass mark 50% for both GA and Technical (Q4)** drives the Passed/Failed auto-suggestion.
 - **UI placement (RT decision, 2026-07-10, unchanged):** the import is an action on the Assessment round (board column + round panel in the Tracker), never a standalone screen — results map by candidate email to candidates currently in that round, filling IQ (GA) and Technical scores (`rpa_cv.IQScore`/`TechScore` — IQ = General Aptitude, Technical = Evalground Technical).
 
-Build:
-- New table `rpa_assessment_imports` (file name, uploaded_by/at, row counts matched/unmatched/error, raw file reference, `mechanism` = `bulk_csv|single_outlook`) + result columns/rows linked to the candidate + Stage 2 event.
-- Backend: `assessmentImport.service.js` — parse CSV (existing `xlsx` dep handles CSV) for bulk; a lighter single-result entry path for the Outlook mechanism; **Section 1/2/3 label handling** (admin-renameable, not hard-coded to GA/Technical); skip-unless-score-changed logic; match candidates by email (fallback: name+phone review list); validation preview, commit + import log.
-- Frontend: import action inside the Assessment round panel — upload (or single-entry form) → Section-label preview (rename inline) → validation report (matched / unmatched / malformed) → commit; import history list; "Evalground test pending" badge for untested candidates.
+Build (see doc 07 §5–6 for the full spec):
+- New tables `rpa_assessment_imports` (file/message reference, `mechanism` = `bulk_csv|single_outlook`, `source_message_id` for mailbox idempotency, row counts matched/unmatched/error) + `rpa_assessment_results` (one row per candidate-per-test-cycle, `test_name`, `section_label_map`, per-section scores, match status).
+- Backend: `assessmentImport.service.js` — schema-free row extraction shared by both mechanisms (mirrors `hrUpload.service.js` ~lines 1083–1100, no column-position mapping); batch mapping-cluster suggestion + confirm; skip-unless-score-changed logic; match candidates by email (fallback: name+phone review list); validation preview, commit + import log. New `assessmentResultIntake.js` job wired into `mailboxPoller.js`'s fan-out.
+- Frontend: import action inside the Assessment round panel — upload → AI-suggested mapping review (one confirm per batch) → validation report (matched / unmatched / malformed) → commit; import history list with a `mechanism` column; "Evalground test pending" badge for untested candidates.
 - HR sets Test Passed/Failed/Hold in the Tracker (auto-suggested at the 50% pass mark); outcome email via the M1 dispatcher.
-- Verification: import a crafted CSV with matched/unmatched/duplicate/retake/malformed rows → counts correct, retake overwrites only the score, no partial writes; re-import same file → idempotent (rows already present are skipped, not duplicated); single-result entry path produces the same downstream state as a one-row bulk import.
+- Verification: see doc 07 §6 (mapping clustering, remembered-mapping reuse, mailbox idempotency, retake overwrite, dual-mechanism import history).
 
 ## M3 — Teams/Outlook Scheduling + Reminders + Interviewer Scorecards
 
@@ -188,6 +193,8 @@ Build:
 | Reminder engine pattern (`rpa_email_log`) | `backend/src/jobs/reminderScheduler.js` | M3, M4 |
 | Token-gated public form pattern | `rpa_cv.cvMissingToken` + `MissingJdUpload.jsx` + `candidate.routes.js:45-47` | M3 scorecards, M4 uploads, M5 offer link |
 | Graph auth (client credentials) | `onedrive.service.js getAccessToken()` | M3 calendar |
+| Shared-mailbox Graph delta poll + fan-out | `outlookReader.service.js`, `jobs/mailboxPoller.js` | M2 single-result Evalground ingestion (new `assessmentResultIntake.js` processor, see doc 07 §3) |
+| Schema-free "AI reads rows" pattern | `hrUpload.service.js` ~lines 1083–1100 | M2 bulk + single-result row extraction (doc 07 §4) |
 | Zeko pipeline/status semantics | `rpa_zeko_candidate_pipeline`, `zeko.service.js` | Tracker chips |
 | Cron job pattern (env-gated) | `backend/src/jobs/zekoScheduler.js` | M3 reminder job, M5 auto-close job |
 | Manual DDL → `prisma db pull` workflow | `docs/reference/VENDOR_PROCESS.md` §13 | all schema work |

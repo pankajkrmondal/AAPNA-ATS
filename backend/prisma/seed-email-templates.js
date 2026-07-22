@@ -775,6 +775,53 @@ const TEMPLATES = [
       is_active: true,
     },
   },
+  // Phase 3 Module 1 — generic stage-outcome fallbacks. Used by
+  // stageNotification.service.js whenever no specific rpa_stage_email_templates
+  // mapping exists for a given stage×outcome pair. {{stage_label}} is
+  // interpolated by the dispatcher (e.g. "Zeko HR Screening", "Technical Round 1").
+  // Requires the category CHECK constraint to include 'stage_outcome' —
+  // see backend/prisma/ddl/2026-07-21-pipeline-stage-engine.sql.
+  {
+    find: { name: 'Stage Outcome — Approved (Generic)' },
+    data: {
+      name: 'Stage Outcome — Approved (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Good news — you have successfully cleared the <strong>{{stage_label}}</strong> stage for the {{position}} role.</p>
+<p>Our recruitment team will be in touch shortly with the next steps.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Stage Outcome — Rejected (Generic)' },
+    data: {
+      name: 'Stage Outcome — Rejected (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your time and effort through the <strong>{{stage_label}}</strong> stage for the {{position}} role.</p>
+<p>After careful review, we will not be moving forward with your candidacy at this time. We appreciate your interest in AAPNA Infotech and encourage you to apply for future openings that match your profile.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Stage Outcome — Hold (Generic)' },
+    data: {
+      name: 'Stage Outcome — Hold (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Your application for {{position}} is currently <strong>on hold</strong> following the {{stage_label}} stage. This is not a rejection — our recruitment team will reach out once there is an update.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
 ];
 
 async function main() {
