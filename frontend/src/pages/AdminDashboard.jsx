@@ -53,6 +53,7 @@ const MODULES_INFO = [
   { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: '#2f54eb' },
   { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: '#13c2c2' },
   { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: '#eb2f96' },
+  { key: 'recruitment_pipeline', label: 'Pipeline Tracker',                desc: 'Track candidates through the interview pipeline (Phase 3)', icon: '🧭', color: '#08979c' },
 ];
 
 // Per-role badge metadata — distinct, on-brand colors so the hierarchy reads at a glance.

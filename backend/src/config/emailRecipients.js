@@ -84,6 +84,11 @@ const DEFAULTS = {
   // original counterpart (candidate); non-prod -> test inbox like every other
   // candidate-facing flow.
   manualReply: { to: '', cc: '', dynamic: true },
+  // Phase 3 stage engine (Module 1): every stage×outcome notification and the
+  // ad-hoc per-candidate override, dispatched by stageNotification.service.js.
+  // Prod -> candidate; vendor cc (status-only, Q5) is attached by the caller,
+  // not resolved here.
+  stageOutcome: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */

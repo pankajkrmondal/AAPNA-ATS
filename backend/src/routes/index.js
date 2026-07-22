@@ -11,6 +11,7 @@ import hrUploadRoutes from './hrUpload.routes.js';
 import screeningRoutes from './screening.routes.js';
 import emailTemplateRoutes from './emailTemplate.routes.js';
 import trackingRoutes from './tracking.routes.js';
+import pipelineRoutes from './pipeline.routes.js';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use('/admin/companies', companyRoutes);
 router.use('/admin', adminRoutes);
 router.use('/hr-upload', hrUploadRoutes);
 router.use('/screening', screeningRoutes);
+router.use('/pipeline', pipelineRoutes);
 // Public email open-tracking pixel (no auth — see tracking.routes.js).
 router.use('/track', trackingRoutes);
 

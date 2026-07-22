@@ -1,0 +1,903 @@
+import prisma from '../config/database.js';
+import logger from '../config/logger.js';
+import AppError from '../utils/AppError.js';
+import {
+  STAGE_KEYS,
+  STAGE_OUTCOMES,
+  finalStatusLabelFor,
+  shortlistStatusFor,
+} from '../config/pipelineStages.js';
+import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
+
+/**
+ * pipeline.service.js — Phase 3 Module 1 stage engine.
+ *
+ * One row per candidate-per-MRF journey (rpa_candidate_pipeline), driven by
+ * the admin-configurable rpa_pipeline_stages / rpa_stage_outcomes tables.
+ * See docs/phase3/03-DEVELOPMENT-PLAN.md §M1 and docs/phase3/ZEKO-GAP-ANALYSIS.md.
+ *
+ * Concurrent-MRF note (Q24, resolved 2026-07-21: "once per journey"): each
+ * journey already gets its own rpa_shortlisted_candidates row (unique on
+ * cv_id+mrf_id — see shortlistCandidates in screening.service.js), and Zeko
+ * assignment (assignCandidateToZekoJob) keys off that shortlist row's id, not
+ * the raw candidate. So a candidate active on two MRFs naturally gets two
+ * independent Zeko pipeline rows, two invites, two results — no extra
+ * "shared vs. per-journey" branching is needed in THIS service; the existing
+ * per-shortlist-row design already implements "once per journey".
+ */
+
+const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? Number(v) : v)));
+
+/**
+ * The Q5 status-only vendor cc applies to VENDOR-SOURCED journeys only. The
+ * `vendor_email` column alone is not sufficient proof of that: rows created by
+ * other intake paths can carry a stale/non-null vendor_email, which previously
+ * leaked a cc onto screening_shortlist candidates (RT, 2026-07-22). Gate on
+ * `source` so a non-vendor journey never cc's anyone, whatever the column says.
+ * @param {{ source?: string, vendor_email?: string|null }} pipelineRow
+ * @returns {string|null}
+ */
+function vendorCcFor(pipelineRow) {
+  return pipelineRow?.source === 'vendor' ? (pipelineRow.vendor_email || null) : null;
+}
+
+/**
+ * Board data for the Pipeline Tracker: one row per journey, grouped by stage,
+ * with the filters the UI needs (position/MRF, stage, status, source/vendor,
+ * aging, on-hold only).
+ * @param {object} filters - { positionId, source, onHoldOnly, stuckDays }
+ * @returns {Promise<{ stages: object[], columns: object[] }>}
+ */
+export async function listPipeline(filters = {}) {
+  const stages = await prisma.rpa_pipeline_stages.findMany({
+    where: { is_active: true },
+    orderBy: { sort_order: 'asc' },
+  });
+
+  const where = {};
+  if (filters.source) where.source = filters.source;
+  if (filters.onHoldOnly) where.current_stage_status = 'hold';
+  if (filters.mrfId) where.mrf_id = BigInt(filters.mrfId);
+
+  const journeys = await prisma.rpa_candidate_pipeline.findMany({
+    where,
+    include: {
+      rpa_shortlisted_candidates: { include: { mrf: true } },
+      rpa_pipeline_stage_events: { orderBy: { created_at: 'desc' }, take: 1 },
+    },
+    orderBy: { modified_at: 'desc' },
+  });
+
+  // "2 MRFs" concurrency badge (Q13): group active journeys by cv_id.
+  const activeByCv = new Map();
+  for (const j of journeys) {
+    if (j.current_stage_status === 'in_progress' || j.current_stage_status === 'hold') {
+      const key = String(j.cv_id);
+      activeByCv.set(key, (activeByCv.get(key) || 0) + 1);
+    }
+  }
+
+  // Real Zeko-score presence for in-progress Zeko-stage cards only — drives
+  // the "ready for decision" vs. "awaiting interview" card chip honestly,
+  // without fabricating a richer lifecycle than the data actually supports.
+  const zekoCvIds = journeys
+    .filter((j) => (j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn') && j.current_stage_status === 'in_progress' && j.cv_id)
+    .map((j) => j.cv_id);
+  const zekoScoredCvIds = new Set();
+  if (zekoCvIds.length > 0) {
+    const scored = await prisma.rpa_cv.findMany({
+      where: {
+        id: { in: zekoCvIds },
+        OR: [{ ZekoInterviewScore: { not: null } }, { ZekoCodingScore: { not: null } }, { ZekoCommunicationScore: { not: null } }],
+      },
+      select: { id: true },
+    });
+    scored.forEach((cv) => zekoScoredCvIds.add(String(cv.id)));
+  }
+
+  // Real "invited" state for in-progress zeko_hr cards — from the existing
+  // assignCandidateToZekoJob/scheduleInterview flow (Candidate Screening),
+  // keyed by shortlist_id (rpa_zeko_candidate_pipeline.candidate_id). No
+  // equivalent for zeko_fn — that table's `stage` is hard-coded 'hr' every­
+  // where it's written, so there's no real data source for it yet.
+  const zekoHrShortlistIds = journeys
+    .filter((j) => j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && j.shortlist_id)
+    .map((j) => j.shortlist_id);
+  const invitedShortlistIds = new Set();
+  if (zekoHrShortlistIds.length > 0) {
+    const invited = await prisma.rpa_zeko_candidate_pipeline.findMany({
+      where: { candidate_id: { in: zekoHrShortlistIds }, stage: 'hr', status: { not: 'cancelled' }, link_sent_at: { not: null } },
+      select: { candidate_id: true },
+    });
+    invited.forEach((row) => invitedShortlistIds.add(row.candidate_id));
+  }
+
+  const now = Date.now();
+  const cards = journeys.map((j) => {
+    const lastEvent = j.rpa_pipeline_stage_events[0];
+    const daysInStage = lastEvent
+      ? Math.floor((now - new Date(lastEvent.created_at).getTime()) / (1000 * 60 * 60 * 24))
+      : Math.floor((now - new Date(j.modified_at).getTime()) / (1000 * 60 * 60 * 24));
+
+    const isZekoStage = j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn';
+    const readyForDecision = isZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
+    const invited = j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && invitedShortlistIds.has(j.shortlist_id);
+
+    return {
+      id: Number(j.id),
+      cv_id: j.cv_id ? Number(j.cv_id) : null,
+      mrf_id: j.mrf_id ? Number(j.mrf_id) : null,
+      candidate_name: j.rpa_shortlisted_candidates?.candidate_name || null,
+      candidate_email: j.rpa_shortlisted_candidates?.candidate_email || null,
+      position: j.rpa_shortlisted_candidates?.mrf?.position_hiring_for
+        || j.rpa_shortlisted_candidates?.position_applied
+        || null,
+      current_stage_key: j.current_stage_key,
+      current_stage_status: j.current_stage_status,
+      ready_for_decision: readyForDecision,
+      invited,
+      final_outcome: j.final_outcome,
+      source: j.source,
+      vendor_email: j.vendor_email,
+      is_paused: j.is_paused,
+      days_in_stage: daysInStage,
+      concurrent_journeys: activeByCv.get(String(j.cv_id)) || 1,
+      last_event_at: lastEvent?.created_at || j.modified_at,
+    };
+  });
+
+  let filtered = filters.stuckDays
+    ? cards.filter((c) => c.days_in_stage >= Number(filters.stuckDays))
+    : cards;
+  if (filters.position) {
+    filtered = filtered.filter((c) => c.position === filters.position);
+  }
+
+  const columns = stages.map((s) => ({
+    stage_key: s.stage_key,
+    label: s.label,
+    is_optional: s.is_optional,
+    stage_type: s.stage_type,
+    cards: filtered.filter((c) => c.current_stage_key === s.stage_key),
+  }));
+
+  const positions = [...new Set(cards.map((c) => c.position).filter(Boolean))].sort();
+
+  return {
+    stages: serializeBigInts(stages),
+    columns: serializeBigInts(columns),
+    positions,
+    total: cards.length,
+    filteredTotal: filtered.length,
+  };
+}
+
+/**
+ * Full detail for one journey: the row, its outcome sets for the current
+ * stage, its event timeline, and its emails — feeds the per-round drawer.
+ * @param {number} pipelineId
+ */
+export async function getPipelineDetail(pipelineId) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: {
+      rpa_shortlisted_candidates: { include: { mrf: true } },
+      rpa_pipeline_stage_events: {
+        orderBy: { created_at: 'asc' },
+        include: { rpa_outcome_reasons: true, rpa_users: { select: { id: true, username: true } } },
+      },
+    },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const outcomes = await prisma.rpa_stage_outcomes.findMany({
+    where: { stage_key: pipeline.current_stage_key, is_active: true },
+    orderBy: { sort_order: 'asc' },
+  });
+
+  const reasons = await prisma.rpa_outcome_reasons.findMany({
+    where: {
+      is_active: true,
+      OR: [{ stage_key: pipeline.current_stage_key }, { stage_key: null }],
+    },
+    orderBy: { sort_order: 'asc' },
+  });
+
+  // Real Zeko scores + resume link (no mock) — one lookup when there's a cv_id.
+  let zekoScores = null;
+  let cvFileUrl = null;
+  if (pipeline.cv_id) {
+    const cv = await prisma.rpa_cv.findUnique({
+      where: { id: pipeline.cv_id },
+      select: { ZekoInterviewScore: true, ZekoCodingScore: true, ZekoCommunicationScore: true, cvFileUrl: true },
+    });
+    if (cv?.ZekoInterviewScore != null || cv?.ZekoCodingScore != null || cv?.ZekoCommunicationScore != null) {
+      zekoScores = cv;
+    }
+    cvFileUrl = cv?.cvFileUrl || null;
+  }
+
+  // Screening context (v8+ prototype direction): shortlisting happens on
+  // Candidate Screening, not as a pipeline stage — shown as a persistent,
+  // read-only header line in the drawer instead of a stage-1 "Shortlisted"
+  // column. Only real fields — no invented JD-match score (no such field
+  // exists anywhere in the schema; the prototype's jdMatch is mock-only).
+  const screening = pipeline.rpa_shortlisted_candidates
+    ? {
+        shortlistedAt: pipeline.rpa_shortlisted_candidates.shortlisted_at,
+        shortlistedBy: pipeline.rpa_shortlisted_candidates.shortlisted_by,
+        notes: pipeline.rpa_shortlisted_candidates.recruiter_notes,
+        noticeEmailSent: !!pipeline.rpa_shortlisted_candidates.email_sent,
+        noticeEmailSentAt: pipeline.rpa_shortlisted_candidates.email_sent_at,
+      }
+    : null;
+
+  // Real Zeko HR-screening invite/schedule status — from the existing
+  // assignCandidateToZekoJob/scheduleInterview flow on Candidate Screening
+  // (screening.service.js), surfaced read-only here rather than duplicating
+  // that job-picker UI in the Tracker. Only wired for zeko_hr: "functional"
+  // screening has no equivalent row today — rpa_zeko_candidate_pipeline.stage
+  // is hard-coded 'hr' everywhere it's written in the codebase, so zeko_fn
+  // honestly has no real invite/schedule data source yet.
+  let zekoHrPipeline = null;
+  if (pipeline.current_stage_key === 'zeko_hr' && pipeline.shortlist_id) {
+    zekoHrPipeline = await prisma.rpa_zeko_candidate_pipeline.findFirst({
+      where: { candidate_id: pipeline.shortlist_id, stage: 'hr', status: { not: 'cancelled' } },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  return serializeBigInts({
+    pipeline,
+    currentStageOutcomes: outcomes,
+    reasons,
+    zekoScores,
+    cvFileUrl,
+    screening,
+    zekoHrPipeline,
+  });
+}
+
+/**
+ * Compiles (without sending) the outcome email a given outcome on the
+ * candidate's CURRENT stage would produce — feeds the drawer's "Record
+ * round outcome" modal so the recruiter edits the exact text before send,
+ * matching CandidatePipelinePrototype.jsx's decision-modal pattern.
+ * @param {number} pipelineId
+ * @param {string} outcomeKey
+ * @returns {Promise<{ subject: string, body: string, templateId: number|null, templateName: string|null }>}
+ */
+export async function getOutcomePreview(pipelineId, outcomeKey) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+  const stageRow = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: pipeline.current_stage_key } });
+  return previewOutcomeEmail({
+    stageKey: pipeline.current_stage_key,
+    outcomeKey,
+    stageLabel: stageRow?.label || pipeline.current_stage_key,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    positionLabel: pipeline.rpa_shortlisted_candidates?.mrf?.position_hiring_for
+      || pipeline.rpa_shortlisted_candidates?.position_applied
+      || 'the role',
+  });
+}
+
+/**
+ * Records an outcome on the candidate's CURRENT stage: writes the event,
+ * writes back to the legacy rpa_cv.FinalStatus / rpa_shortlisted_candidates.
+ * pipeline_status columns for backward compatibility, then dispatches the
+ * outcome email AFTER commit (send failure never rolls back state — result
+ * is recorded on the event after the fact via a best-effort update).
+ *
+ * Approve auto-advances to the next active stage in the SAME transaction —
+ * matches CandidatePipelinePrototype.jsx's "Approve round" button, which
+ * both records the decision and moves the candidate forward in one action;
+ * there is no separate "Advance to next stage" step anymore. Approving on
+ * the terminal stage (no next stage) just marks 'approved' with nothing to
+ * advance to — not an error.
+ *
+ * Reject/Hold require a reason (mandatory — L5/Q19); "Other" reasons store
+ * the typed text and the UI must render that text, never the literal word
+ * "Other" (Q19, RT 2026-07-14).
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string} params.outcomeKey - a rpa_stage_outcomes.outcome_key for the current stage
+ * @param {number|null} [params.reasonId] - required for reject/hold unless otherText given
+ * @param {string|null} [params.otherText] - free-text reason when "Other reasons" is picked
+ * @param {string|null} [params.notes]
+ * @param {string|null} [params.emailSubject] - recruiter-edited subject from the preview step; falls back to server compile if omitted
+ * @param {string|null} [params.emailBody] - recruiter-edited body from the preview step; falls back to server compile if omitted
+ * @param {number} params.actedBy - rpa_users.id
+ * @returns {Promise<object>} the updated pipeline row + event
+ */
+export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, actedBy }) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const outcome = await prisma.rpa_stage_outcomes.findUnique({
+    where: { stage_key_outcome_key: { stage_key: pipeline.current_stage_key, outcome_key: outcomeKey } },
+  });
+  if (!outcome || !outcome.is_active) {
+    throw new AppError(`Outcome "${outcomeKey}" is not configured for stage "${pipeline.current_stage_key}".`, 400);
+  }
+
+  const isRejectOrHold = outcomeKey === STAGE_OUTCOMES.REJECTED || outcomeKey === STAGE_OUTCOMES.HOLD;
+  if (isRejectOrHold && !reasonId && !otherText) {
+    throw new AppError('A reason is required for Reject/Hold outcomes.', 400);
+  }
+
+  let reasonRow = null;
+  if (reasonId) {
+    reasonRow = await prisma.rpa_outcome_reasons.findUnique({ where: { id: BigInt(reasonId) } });
+    if (reasonRow?.is_other && !otherText) {
+      throw new AppError('Free-text reason is required when "Other reasons" is selected.', 400);
+    }
+  }
+
+  const statusLabel = finalStatusLabelFor(pipeline.current_stage_key, outcomeKey);
+  const nextStageStatus = outcomeKey === STAGE_OUTCOMES.APPROVED
+    ? 'approved'
+    : outcomeKey === STAGE_OUTCOMES.REJECTED
+      ? 'rejected'
+      : outcomeKey === STAGE_OUTCOMES.HOLD
+        ? 'hold'
+        : 'in_progress'; // future_prospect and similar non-terminal-non-advance outcomes
+
+  // Approve auto-advances: resolve the next active stage now so the outcome
+  // event and the stage move commit together.
+  let nextStage = null;
+  if (outcomeKey === STAGE_OUTCOMES.APPROVED) {
+    const stages = await prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } });
+    const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
+    if (currentIdx !== -1 && currentIdx < stages.length - 1) {
+      nextStage = stages[currentIdx + 1];
+    }
+  }
+
+  const pipelineUpdateData = nextStage
+    ? { current_stage_key: nextStage.stage_key, current_stage_status: 'in_progress', modified_at: new Date() }
+    : { current_stage_status: nextStageStatus, modified_at: new Date() };
+
+  // Single transaction: update pipeline row + insert outcome event (+ the
+  // "entered next stage" event, if approve auto-advanced) + legacy write-backs.
+  const txSteps = [
+    prisma.rpa_candidate_pipeline.update({ where: { id: pipeline.id }, data: pipelineUpdateData }),
+    prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: pipeline.current_stage_key,
+        event_type: 'outcome',
+        outcome: outcomeKey,
+        reason_id: reasonId ? BigInt(reasonId) : null,
+        reason_text: reasonRow?.is_other ? otherText : null,
+        status_label: statusLabel,
+        notes,
+        acted_by: actedBy || null,
+      },
+    }),
+  ];
+  if (nextStage) {
+    txSteps.push(
+      prisma.rpa_pipeline_stage_events.create({
+        data: { pipeline_id: pipeline.id, stage_key: nextStage.stage_key, event_type: 'entered', acted_by: actedBy || null },
+      })
+    );
+  }
+  const [updatedPipeline, event] = await prisma.$transaction(txSteps);
+
+  // Legacy write-back — best effort, never blocks the transaction above.
+  try {
+    if (pipeline.cv_id) {
+      await prisma.$executeRaw`UPDATE rpa_cv SET "FinalStatus" = ${statusLabel} WHERE id = ${pipeline.cv_id};`;
+    }
+    if (pipeline.shortlist_id) {
+      const legacyStatus = shortlistStatusFor(outcomeKey);
+      if (legacyStatus) {
+        await prisma.rpa_shortlisted_candidates.update({
+          where: { id: pipeline.shortlist_id },
+          data: { pipeline_status: legacyStatus },
+        });
+      }
+    }
+  } catch (err) {
+    logger.error(`Legacy write-back failed for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  // Email dispatched AFTER commit — failure never rolls back the state above.
+  // Sends the recruiter-edited subject/body from the preview step verbatim
+  // when provided; falls back to a fresh server-side compile otherwise.
+  const stageRow = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: pipeline.current_stage_key } });
+  const emailResult = await sendStageOutcomeEmail({
+    pipelineRow: updatedPipeline,
+    stageKey: pipeline.current_stage_key,
+    outcomeKey,
+    stageLabel: stageRow?.label || pipeline.current_stage_key,
+    candidate: {
+      name: pipeline.rpa_shortlisted_candidates?.candidate_name,
+      email: pipeline.rpa_shortlisted_candidates?.candidate_email,
+    },
+    vendorEmail: vendorCcFor(pipeline), // Q5: status-only cc, vendor-sourced only
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+    subjectOverride: emailSubject,
+    bodyOverride: emailBody,
+  });
+
+  await prisma.rpa_pipeline_stage_events.update({
+    where: { id: event.id },
+    data: { email_sent: emailResult.sent, email_error: emailResult.error },
+  });
+
+  if (nextStage) {
+    logger.info(`Pipeline ${pipelineId} approved and auto-advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key}.`);
+  }
+
+  return serializeBigInts({ pipeline: updatedPipeline, event: { ...event, email_sent: emailResult.sent, email_error: emailResult.error } });
+}
+
+/**
+ * Moves an "advance" outcome's journey to the next active stage in sort order.
+ * Optional stages (Tech 3, Client Interview) can be skipped explicitly — the
+ * skip is logged with who/when (02-BUSINESS-DESIGN.md §2 rule 2).
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {boolean} [params.skip] - true if advancing past an optional stage without running it
+ * @param {number} params.actedBy
+ */
+export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(pipelineId) } });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const stages = await prisma.rpa_pipeline_stages.findMany({
+    where: { is_active: true },
+    orderBy: { sort_order: 'asc' },
+  });
+  const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
+  if (currentIdx === -1 || currentIdx === stages.length - 1) {
+    throw new AppError('No next stage available (already at the final stage).', 400);
+  }
+
+  const nextStage = stages[currentIdx + 1];
+
+  const [updatedPipeline] = await prisma.$transaction([
+    prisma.rpa_candidate_pipeline.update({
+      where: { id: pipeline.id },
+      data: { current_stage_key: nextStage.stage_key, current_stage_status: 'in_progress', modified_at: new Date() },
+    }),
+    prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: nextStage.stage_key,
+        event_type: skip ? 'skip' : 'entered',
+        notes: skip ? `Skipped optional stage from ${pipeline.current_stage_key}` : null,
+        acted_by: actedBy || null,
+      },
+    }),
+  ]);
+
+  logger.info(`Pipeline ${pipelineId} advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key} (skip=${skip}).`);
+  return serializeBigInts(updatedPipeline);
+}
+
+/**
+ * Sets the closure/final outcome (Q12 — 8 closure statuses) and closes the
+ * journey. Auto-close 90 days after Joined (unless Joined-and-Left first) is
+ * a separate cron job (M5), not this function.
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string} params.finalOutcomeKey - one of FINAL_OUTCOMES
+ * @param {string|null} [params.notes]
+ * @param {number} params.actedBy
+ */
+export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = null, actedBy }) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const statusLabel = finalStatusLabelFor(pipeline.current_stage_key, finalOutcomeKey);
+
+  const [updatedPipeline, event] = await prisma.$transaction([
+    prisma.rpa_candidate_pipeline.update({
+      where: { id: pipeline.id },
+      data: { final_outcome: finalOutcomeKey, closed_at: new Date(), modified_at: new Date() },
+    }),
+    prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: pipeline.current_stage_key,
+        event_type: 'outcome',
+        outcome: finalOutcomeKey,
+        status_label: statusLabel,
+        notes,
+        acted_by: actedBy || null,
+      },
+    }),
+  ]);
+
+  try {
+    if (pipeline.cv_id) {
+      await prisma.$executeRaw`UPDATE rpa_cv SET "FinalStatus" = ${statusLabel} WHERE id = ${pipeline.cv_id};`;
+    }
+  } catch (err) {
+    logger.error(`Legacy FinalStatus write-back failed for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  const emailResult = await sendStageOutcomeEmail({
+    pipelineRow: updatedPipeline,
+    stageKey: pipeline.current_stage_key,
+    outcomeKey: finalOutcomeKey,
+    stageLabel: 'Closure',
+    candidate: {
+      name: pipeline.rpa_shortlisted_candidates?.candidate_name,
+      email: pipeline.rpa_shortlisted_candidates?.candidate_email,
+    },
+    vendorEmail: vendorCcFor(pipeline),
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+  });
+
+  await prisma.rpa_pipeline_stage_events.update({
+    where: { id: event.id },
+    data: { email_sent: emailResult.sent, email_error: emailResult.error },
+  });
+
+  return serializeBigInts(updatedPipeline);
+}
+
+/**
+ * Ad-hoc per-candidate email (RT ask, 2026-07-14): send-time override, either
+ * templated as-is or fully recruiter-edited.
+ * @param {number} pipelineId
+ * @param {{ subject: string, body: string }} params
+ */
+export async function sendAdHocEmail(pipelineId, { subject, body }) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const result = await sendAdHocCandidateEmail({
+    pipelineRow: pipeline,
+    candidate: {
+      name: pipeline.rpa_shortlisted_candidates?.candidate_name,
+      email: pipeline.rpa_shortlisted_candidates?.candidate_email,
+    },
+    subject,
+    body,
+    vendorEmail: vendorCcFor(pipeline),
+  });
+
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: pipeline.current_stage_key,
+      event_type: 'note',
+      notes: `Ad-hoc email sent: "${subject}"`,
+      email_sent: result.sent,
+      email_error: result.error,
+    },
+  });
+
+  return result;
+}
+
+/**
+ * Creates a new candidate-per-MRF journey. Called from screening.service.js's
+ * shortlistCandidates (source='screening_shortlist') and vendor.controller.js's
+ * upload path (source='vendor'). Enforces the cooling-off guard (Q11/Q23):
+ * blocks/warns if this cv_id was rejected at Stage 1+ within the configured
+ * window, but never touches an existing active journey for the same candidate.
+ *
+ * @param {object} params
+ * @param {bigint|number|null} params.cvId
+ * @param {bigint|number|null} params.mrfId
+ * @param {number|null} params.shortlistId
+ * @param {string} params.source - recruiter | bulk_excel | vendor | screening_shortlist | email_intake
+ * @param {string|null} [params.vendorEmail]
+ * @param {number} [params.coolingOffMonths] - default 6 (Q11)
+ * @returns {Promise<object>} the created (or existing) pipeline row
+ */
+export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, vendorEmail = null, coolingOffMonths = 6 }) {
+  if (!cvId) {
+    throw new AppError('cvId is required to create a pipeline journey.', 400);
+  }
+  const cvIdBig = BigInt(cvId);
+  const mrfIdBig = mrfId ? BigInt(mrfId) : null;
+
+  // Cooling-off guard (Q11): any pipeline rejection within the window blocks a
+  // NEW journey (shortlisting itself happens on Candidate Screening, not in
+  // this pipeline, so there's no "Stage 0" exemption anymore — every journey
+  // here starts at HR Screening); it never touches an existing active one (Q23).
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - coolingOffMonths);
+  const priorRejection = await prisma.rpa_candidate_pipeline.findFirst({
+    where: {
+      cv_id: cvIdBig,
+      current_stage_status: 'rejected',
+      modified_at: { gt: cutoff },
+    },
+  });
+  if (priorRejection) {
+    throw new AppError(
+      `Candidate is in a ${coolingOffMonths}-month re-application cooling-off period (rejected at "${priorRejection.current_stage_key}" on ${priorRejection.modified_at.toISOString().slice(0, 10)}).`,
+      409
+    );
+  }
+
+  const existing = await prisma.rpa_candidate_pipeline.findFirst({
+    where: mrfIdBig ? { cv_id: cvIdBig, mrf_id: mrfIdBig } : { cv_id: cvIdBig, mrf_id: null },
+  });
+  if (existing) {
+    return serializeBigInts(existing);
+  }
+
+  const created = await prisma.rpa_candidate_pipeline.create({
+    data: {
+      cv_id: cvIdBig,
+      mrf_id: mrfIdBig,
+      shortlist_id: shortlistId || null,
+      current_stage_key: STAGE_KEYS.ZEKO_HR,
+      current_stage_status: 'in_progress',
+      source,
+      vendor_email: vendorEmail,
+    },
+  });
+
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: created.id,
+      stage_key: STAGE_KEYS.ZEKO_HR,
+      event_type: 'entered',
+      notes: 'Entered pipeline — already shortlisted on Candidate Screening.',
+    },
+  });
+
+  return serializeBigInts(created);
+}
+
+/**
+ * Real pipeline analytics — replaces the hardcoded mock data in
+ * CandidatePipelineAnalyticsPreview (Pipeline Insights) and
+ * RecruiterInsightsPreview (Recruiter Insights) on the Analytics page.
+ *
+ * @param {object} [params]
+ * @param {number|null} [params.mrfId] - scope the stage funnel to one MRF; otherwise the MRF with the most journeys is used
+ * @param {number} [params.rejectionWindowDays] - default 30, for the rejection-reasons breakdown
+ * @param {number} [params.stuckThresholdDays] - default 10, for the "stuck" tile/table
+ * @param {number} [params.holdThresholdDays] - default 30, for the "on hold > N days" tile
+ */
+export async function getPipelineAnalytics({
+  mrfId = null,
+  rejectionWindowDays = 30,
+  stuckThresholdDays = 10,
+  holdThresholdDays = 30,
+} = {}) {
+  const stages = await prisma.rpa_pipeline_stages.findMany({
+    where: { is_active: true },
+    orderBy: { sort_order: 'asc' },
+  });
+
+  const allJourneys = await prisma.rpa_candidate_pipeline.findMany({
+    include: {
+      rpa_shortlisted_candidates: true,
+      rpa_pipeline_stage_events: { orderBy: { created_at: 'asc' } },
+    },
+  });
+
+  const now = Date.now();
+  const daysSince = (d) => Math.floor((now - new Date(d).getTime()) / (1000 * 60 * 60 * 24));
+  const lastEventOf = (j) => j.rpa_pipeline_stage_events[j.rpa_pipeline_stage_events.length - 1];
+
+  // ── Top tiles: active in pipeline, awaiting feedback, on-hold > N days, offers pending ──
+  const activeInPipeline = allJourneys.filter((j) => !j.final_outcome).length;
+  // "Awaiting feedback" needs rpa_interview_schedules/rpa_interview_feedback
+  // (Module 3 — Teams/Outlook scheduling + scorecards), which isn't built yet.
+  // Honestly 0 until M3 ships rather than approximating from event data that
+  // can't actually distinguish "scheduled, feedback pending" from other states.
+  const awaitingFeedback = 0;
+  const onHoldOverThreshold = allJourneys.filter((j) => {
+    if (j.current_stage_status !== 'hold') return false;
+    const ev = lastEventOf(j);
+    return daysSince(ev?.created_at || j.modified_at) > holdThresholdDays;
+  }).length;
+  const offersPending = allJourneys.filter(
+    (j) => j.current_stage_key === STAGE_KEYS.OFFER && !j.final_outcome
+  ).length;
+
+  // ── Stage funnel: counts of journeys that have EVER entered each stage, for one MRF ──
+  // Pick the requested MRF, or (if not given) the MRF with the most journeys — mirrors
+  // the mock's single-MRF funnel ("Stage funnel — Senior .NET Developer (MRF-2031)").
+  let funnelMrfId = mrfId;
+  if (!funnelMrfId) {
+    const counts = new Map();
+    for (const j of allJourneys) {
+      if (!j.mrf_id) continue;
+      const key = String(j.mrf_id);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    let best = null;
+    for (const [key, count] of counts) {
+      if (!best || count > best.count) best = { key, count };
+    }
+    funnelMrfId = best ? Number(best.key) : null;
+  }
+
+  let funnelMrfLabel = null;
+  let funnel = [];
+  if (funnelMrfId) {
+    const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(funnelMrfId) } });
+    funnelMrfLabel = mrf ? `${mrf.position_hiring_for || 'Role'} (MRF-${funnelMrfId})` : `MRF-${funnelMrfId}`;
+
+    const mrfJourneys = allJourneys.filter((j) => j.mrf_id && Number(j.mrf_id) === funnelMrfId);
+    funnel = stages.map((s) => ({
+      stage_key: s.stage_key,
+      label: s.label,
+      // A journey "reached" a stage if it has any event at that stage, OR it is
+      // currently sitting past it (current_stage sort_order >= this stage's).
+      count: mrfJourneys.filter((j) => {
+        const reachedViaEvent = j.rpa_pipeline_stage_events.some((ev) => ev.stage_key === s.stage_key);
+        if (reachedViaEvent) return true;
+        const currentStage = stages.find((st) => st.stage_key === j.current_stage_key);
+        return currentStage && currentStage.sort_order >= s.sort_order;
+      }).length,
+    })).filter((f) => f.count > 0 || stages.findIndex((s) => s.stage_key === f.stage_key) === 0);
+  }
+
+  // ── Stuck candidates: journeys sitting in their current stage past the threshold ──
+  const stuckCandidates = allJourneys
+    .filter((j) => !j.final_outcome)
+    .map((j) => {
+      const ev = lastEventOf(j);
+      const days = daysSince(ev?.created_at || j.modified_at);
+      const stageLabel = stages.find((s) => s.stage_key === j.current_stage_key)?.label || j.current_stage_key;
+      return {
+        pipeline_id: Number(j.id),
+        candidate_name: j.rpa_shortlisted_candidates?.candidate_name || 'Unknown',
+        stage: stageLabel,
+        days,
+        blocked_on: j.current_stage_status === 'hold' ? 'On Hold — manual review' : 'In progress',
+      };
+    })
+    .filter((row) => row.days >= stuckThresholdDays)
+    .sort((a, b) => b.days - a.days)
+    .slice(0, 10);
+
+  // ── Rejection reasons — last N days ──
+  const rejectionCutoff = new Date(now - rejectionWindowDays * 24 * 60 * 60 * 1000);
+  const rejectionEvents = await prisma.rpa_pipeline_stage_events.findMany({
+    where: { outcome: STAGE_OUTCOMES.REJECTED, created_at: { gt: rejectionCutoff } },
+    include: { rpa_outcome_reasons: true },
+  });
+  const reasonCounts = new Map();
+  for (const ev of rejectionEvents) {
+    const label = ev.rpa_outcome_reasons?.is_other ? (ev.reason_text || 'Other reasons') : (ev.rpa_outcome_reasons?.reason_label || 'Unspecified');
+    const stageLabel = stages.find((s) => s.stage_key === ev.stage_key)?.label || ev.stage_key;
+    const key = label;
+    if (!reasonCounts.has(key)) {
+      reasonCounts.set(key, { reason: label, count: 0, stageCounts: new Map() });
+    }
+    const entry = reasonCounts.get(key);
+    entry.count += 1;
+    entry.stageCounts.set(stageLabel, (entry.stageCounts.get(stageLabel) || 0) + 1);
+  }
+  const rejectionReasons = [...reasonCounts.values()]
+    .map((entry) => {
+      let mostCommonStage = null;
+      let max = 0;
+      for (const [stage, count] of entry.stageCounts) {
+        if (count > max) { max = count; mostCommonStage = stage; }
+      }
+      return { reason: entry.reason, count: entry.count, most_common_stage: mostCommonStage };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // ── Time-to-hire: average days spent in each stage, across CLOSED (final_outcome) journeys ──
+  const closedJourneys = allJourneys.filter((j) => j.final_outcome);
+  const stageDurationTotals = new Map(); // stage_key -> { totalDays, count }
+  for (const j of closedJourneys) {
+    const events = j.rpa_pipeline_stage_events;
+    for (let i = 0; i < events.length; i += 1) {
+      const ev = events[i];
+      if (ev.event_type !== 'entered' && i !== 0) continue;
+      const next = events[i + 1];
+      const start = new Date(ev.created_at).getTime();
+      const end = next ? new Date(next.created_at).getTime() : new Date(j.closed_at || j.modified_at).getTime();
+      const days = Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
+      const key = ev.stage_key;
+      if (!stageDurationTotals.has(key)) stageDurationTotals.set(key, { totalDays: 0, count: 0 });
+      const agg = stageDurationTotals.get(key);
+      agg.totalDays += days;
+      agg.count += 1;
+    }
+  }
+  const timeToHire = stages
+    .map((s) => {
+      const agg = stageDurationTotals.get(s.stage_key);
+      const avgDays = agg && agg.count > 0 ? Math.round((agg.totalDays / agg.count) * 10) / 10 : 0;
+      return { stage_key: s.stage_key, label: s.label, avg_days: avgDays };
+    })
+    .filter((row) => row.avg_days > 0);
+  const totalTimeToHire = Math.round(timeToHire.reduce((sum, r) => sum + r.avg_days, 0));
+
+  // ── Vendor performance: submitted vs. shortlisted (= journey created) per vendor ──
+  const vendorJourneys = allJourneys.filter((j) => j.source === 'vendor' && j.vendor_email);
+  const vendorCounts = new Map();
+  for (const j of vendorJourneys) {
+    const key = j.vendor_email;
+    if (!vendorCounts.has(key)) vendorCounts.set(key, { vendor_email: key, submitted: 0, shortlisted: 0 });
+    const entry = vendorCounts.get(key);
+    entry.shortlisted += 1; // every pipeline row IS a shortlist (Stage 0 approved) by construction
+    entry.submitted += 1;
+  }
+  const vendorPerformance = [...vendorCounts.values()]
+    .map((v) => ({ ...v, shortlist_rate: v.submitted > 0 ? Math.round((v.shortlisted / v.submitted) * 100) : 0 }))
+    .sort((a, b) => b.submitted - a.submitted)
+    .slice(0, 10);
+
+  // ── Source of hire: submitted/shortlisted/rejected/on-hold by source ──
+  const sourceGroups = new Map();
+  for (const j of allJourneys) {
+    const key = j.source;
+    if (!sourceGroups.has(key)) {
+      sourceGroups.set(key, { source: key, submitted: 0, shortlisted: 0, rejected: 0, on_hold: 0 });
+    }
+    const entry = sourceGroups.get(key);
+    entry.submitted += 1;
+    if (j.current_stage_status === 'approved' || !j.final_outcome) entry.shortlisted += 1;
+    if (j.current_stage_status === 'rejected' || j.final_outcome === 'closure_rejected') entry.rejected += 1;
+    if (j.current_stage_status === 'hold') entry.on_hold += 1;
+  }
+  const sourceOfHire = [...sourceGroups.values()].map((s) => ({
+    ...s,
+    shortlist_rate: s.submitted > 0 ? Math.round((s.shortlisted / s.submitted) * 100) : 0,
+  }));
+
+  return {
+    tiles: {
+      active_in_pipeline: activeInPipeline,
+      awaiting_feedback: awaitingFeedback,
+      on_hold_over_threshold: onHoldOverThreshold,
+      hold_threshold_days: holdThresholdDays,
+      offers_pending: offersPending,
+    },
+    funnel: { mrf_id: funnelMrfId, mrf_label: funnelMrfLabel, stages: funnel },
+    stuckCandidates,
+    rejectionReasons,
+    rejectionWindowDays,
+    timeToHire: { total_days: totalTimeToHire, stages: timeToHire },
+    vendorPerformance,
+    sourceOfHire,
+  };
+}
+
+export default {
+  listPipeline,
+  getPipelineDetail,
+  getOutcomePreview,
+  setStageOutcome,
+  advanceStage,
+  setFinalOutcome,
+  sendAdHocEmail,
+  createPipelineJourney,
+};

@@ -27,9 +27,8 @@ import {
   RiseOutlined
 } from '@ant-design/icons';
 import screeningService from '../services/screeningService';
+import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
-// Phase 3 walkthrough prototype tab — remove with the prototype page.
-import { CandidatePipelineAnalyticsPreview } from './CandidatePipelinePrototype';
 
 const { Title, Text } = Typography;
 
@@ -40,98 +39,218 @@ const { Title, Text } = Typography;
  * still reachable at /analytics-legacy) by dropping everything operational
  * — candidate search/status editing, Zeko interview scheduling/cancelling,
  * the Outlook conversation viewer — and keeping only what's genuinely
- * analytics, plus a new mock "Recruiter Insights (Preview)" tab.
+ * analytics.
  *
- * This page is interim, not a final destination: it's expected to be
- * deprecated once Phase 3 Module 1 ships the real Pipeline Tracker and
- * pipeline analytics becomes a live tab here instead of a mock preview
- * (see docs/phase3/03-DEVELOPMENT-PLAN.md).
+ * "Pipeline Insights" and "Recruiter Insights" below are wired to the real
+ * Phase 3 Module 1 backend (/api/pipeline/analytics, pipeline.service.js's
+ * getPipelineAnalytics) — they replaced the hardcoded mock data that lived
+ * here before Module 1 shipped.
  */
 
-const RECRUITER_STAGE_DAYS = [
-  { stage: 'Shortlisted', days: 3 },
-  { stage: 'HR Screening (Zeko)', days: 4 },
-  { stage: 'IQ / Tech Assessment', days: 5 },
-  { stage: 'Functional (Zeko)', days: 3 },
-  { stage: 'Interview Rounds', days: 8 },
-  { stage: 'Offer', days: 4 },
-];
-const TOTAL_TIME_TO_HIRE = RECRUITER_STAGE_DAYS.reduce((sum, s) => sum + s.days, 0);
-const MAX_STAGE_DAYS = Math.max(...RECRUITER_STAGE_DAYS.map((s) => s.days));
-
-const SOURCE_BREAKDOWN = [
-  { key: 'hr', source: 'HR upload', submitted: 64, shortlisted: 26, rejected: 30, onHold: 8 },
-  { key: 'vendor', source: 'Placement vendor', submitted: 41, shortlisted: 14, rejected: 22, onHold: 5 },
-  { key: 'email', source: 'Email intake', submitted: 22, shortlisted: 6, rejected: 13, onHold: 3 },
-];
-
-const VENDOR_LEADERBOARD = [
-  { key: 'v1', vendor: 'TechBridge Solutions', submitted: 27, shortlisted: 11 },
-  { key: 'v2', vendor: 'Talent Hive', submitted: 19, shortlisted: 6 },
-  { key: 'v3', vendor: 'Prime Staffing Co.', submitted: 14, shortlisted: 3 },
-];
+const SHARED_SOURCE = <Text type="secondary" style={{ fontSize: 12 }}>from the Pipeline Tracker</Text>;
 
 /**
- * RecruiterInsightsPreview — new mock/illustrative panels (time-to-hire,
- * source-of-hire, vendor performance). 100% static sample data, same spirit
- * as CandidatePipelineAnalyticsPreview — not wired to real records yet.
+ * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
+ * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
  */
-function RecruiterInsightsPreview() {
+function PipelineInsights() {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await pipelineService.getAnalytics();
+        if (!cancelled) setData(res.data?.data || res.data);
+      } catch (err) {
+        if (!cancelled) setErrored(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (errored) {
+    return <Alert type="error" showIcon message="Failed to load pipeline analytics." />;
+  }
+
+  const tiles = data?.tiles || {};
+  const funnel = data?.funnel || { stages: [], mrf_label: null };
+  const maxFunnel = Math.max(1, ...(funnel.stages.map((f) => f.count)));
+
   return (
     <>
-      <Alert type="warning" showIcon style={{ marginBottom: 14 }}
-        message="Preview — mock data illustrating what recruiter-facing hiring-trend analytics could show; not wired to live records yet." />
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} lg={6}><Card loading={loading}><Statistic title="Active in pipeline" value={tiles.active_in_pipeline ?? 0} /></Card></Col>
+        <Col xs={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="Awaiting feedback" value={tiles.awaiting_feedback ?? 0} />
+            <Text type="secondary" style={{ fontSize: 11.5 }}>Needs Module 3 (scorecards) to populate</Text>
+          </Card>
+        </Col>
+        <Col xs={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title={`On hold > ${tiles.hold_threshold_days ?? 30} days`} value={tiles.on_hold_over_threshold ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={12} lg={6}><Card loading={loading}><Statistic title="Offers pending" value={tiles.offers_pending ?? 0} /></Card></Col>
+      </Row>
+
+      <Card
+        title={funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+        loading={loading}
+        style={{ marginBottom: 16 }}
+      >
+        {funnel.stages.length === 0 ? (
+          <Empty description="No candidates in the pipeline yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Space direction="vertical" size={7} style={{ width: '100%' }}>
+            {funnel.stages.map((f, i) => (
+              <Row key={f.stage_key} gutter={10} align="middle" wrap={false}>
+                <Col flex="180px" style={{ textAlign: 'right' }}>
+                  <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
+                </Col>
+                <Col flex="auto">
+                  <div style={{ height: 20, width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.88 }} />
+                </Col>
+                <Col flex="110px">
+                  <Text strong>{f.count}</Text>
+                  {i > 0 && funnel.stages[i - 1].count > 0 && (
+                    <Text type="secondary" style={{ fontSize: 12 }}> · {Math.round((f.count / funnel.stages[i - 1].count) * 100)}%</Text>
+                  )}
+                </Col>
+              </Row>
+            ))}
+          </Space>
+        )}
+      </Card>
+
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="Time-to-hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage</Text>}
-            style={{ marginBottom: 16 }}>
-            <Statistic title="Average days, shortlist to offer" value={TOTAL_TIME_TO_HIRE} suffix="days" style={{ marginBottom: 16 }} />
-            <Space direction="vertical" size={7} style={{ width: '100%' }}>
-              {RECRUITER_STAGE_DAYS.map(({ stage, days }) => (
-                <Row key={stage} gutter={10} align="middle" wrap={false}>
-                  <Col flex="170px" style={{ textAlign: 'right' }}>
-                    <Text type="secondary" style={{ fontSize: 12.5 }}>{stage}</Text>
-                  </Col>
-                  <Col flex="auto">
-                    <div style={{ height: 18, width: `${Math.max((days / MAX_STAGE_DAYS) * 100, 4)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.85 }} />
-                  </Col>
-                  <Col flex="60px"><Text strong>{days}d</Text></Col>
-                </Row>
-              ))}
-            </Space>
+          <Card title="Stuck candidates" extra={SHARED_SOURCE} loading={loading}>
+            <Table size="small" pagination={false} rowKey="pipeline_id"
+              columns={[
+                { title: 'Candidate', dataIndex: 'candidate_name' },
+                { title: 'Stage', dataIndex: 'stage' },
+                { title: 'Days', dataIndex: 'days', width: 60 },
+                { title: 'Status', dataIndex: 'blocked_on', render: (b) => <Tag color="gold">{b}</Tag> },
+              ]}
+              dataSource={data?.stuckCandidates || []}
+              locale={{ emptyText: <Empty description="No stuck candidates" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title={`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`} extra={SHARED_SOURCE} loading={loading}>
+            <Table size="small" pagination={false} rowKey="reason"
+              columns={[
+                { title: 'Reason', dataIndex: 'reason' },
+                { title: 'Count', dataIndex: 'count', width: 70 },
+                { title: 'Most common stage', dataIndex: 'most_common_stage' },
+              ]}
+              dataSource={data?.rejectionReasons || []}
+              locale={{ emptyText: <Empty description="No rejections in this window" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+}
+
+/**
+ * RecruiterInsights — time-to-hire, vendor performance, source-of-hire.
+ * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
+ */
+function RecruiterInsights() {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await pipelineService.getAnalytics();
+        if (!cancelled) setData(res.data?.data || res.data);
+      } catch (err) {
+        if (!cancelled) setErrored(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (errored) {
+    return <Alert type="error" showIcon message="Failed to load recruiter insights." />;
+  }
+
+  const timeToHire = data?.timeToHire || { total_days: 0, stages: [] };
+  const maxStageDays = Math.max(1, ...timeToHire.stages.map((s) => s.avg_days));
+  const vendorPerformance = data?.vendorPerformance || [];
+  const sourceOfHire = data?.sourceOfHire || [];
+
+  return (
+    <>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <Card title="Time-to-hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
+            loading={loading} style={{ marginBottom: 16 }}>
+            <Statistic title="Average days, shortlist to offer" value={timeToHire.total_days} suffix="days" style={{ marginBottom: 16 }} />
+            {timeToHire.stages.length === 0 ? (
+              <Empty description="No closed journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Space direction="vertical" size={7} style={{ width: '100%' }}>
+                {timeToHire.stages.map(({ stage_key, label, avg_days }) => (
+                  <Row key={stage_key} gutter={10} align="middle" wrap={false}>
+                    <Col flex="170px" style={{ textAlign: 'right' }}>
+                      <Text type="secondary" style={{ fontSize: 12.5 }}>{label}</Text>
+                    </Col>
+                    <Col flex="auto">
+                      <div style={{ height: 18, width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.85 }} />
+                    </Col>
+                    <Col flex="60px"><Text strong>{avg_days}d</Text></Col>
+                  </Row>
+                ))}
+              </Space>
+            )}
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="Vendor performance" extra={<Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>}
-            style={{ marginBottom: 16 }}>
-            <Table size="small" pagination={false} rowKey="key"
+            loading={loading} style={{ marginBottom: 16 }}>
+            <Table size="small" pagination={false} rowKey="vendor_email"
               columns={[
-                { title: 'Vendor', dataIndex: 'vendor' },
+                { title: 'Vendor', dataIndex: 'vendor_email' },
                 { title: 'Submitted', dataIndex: 'submitted', align: 'center', width: 100 },
                 { title: 'Shortlisted', dataIndex: 'shortlisted', align: 'center', width: 100 },
                 {
-                  title: 'Shortlist rate', key: 'rate', align: 'center', width: 120,
-                  render: (_, r) => <Tag color="green">{Math.round((r.shortlisted / r.submitted) * 100)}%</Tag>,
+                  title: 'Shortlist rate', dataIndex: 'shortlist_rate', align: 'center', width: 120,
+                  render: (rate) => <Tag color="green">{rate}%</Tag>,
                 },
               ]}
-              dataSource={VENDOR_LEADERBOARD} />
+              dataSource={vendorPerformance}
+              locale={{ emptyText: <Empty description="No vendor-sourced journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
           </Card>
         </Col>
       </Row>
-      <Card title="Source of hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>}>
-        <Table size="small" pagination={false} rowKey="key"
+      <Card title="Source of hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>} loading={loading}>
+        <Table size="small" pagination={false} rowKey="source"
           columns={[
             { title: 'Source', dataIndex: 'source' },
             { title: 'Submitted', dataIndex: 'submitted', align: 'center' },
             { title: 'Shortlisted', dataIndex: 'shortlisted', align: 'center' },
             { title: 'Rejected', dataIndex: 'rejected', align: 'center' },
-            { title: 'On Hold', dataIndex: 'onHold', align: 'center' },
+            { title: 'On Hold', dataIndex: 'on_hold', align: 'center' },
             {
-              title: 'Shortlist rate', key: 'rate', align: 'center',
-              render: (_, r) => <Tag color="blue">{Math.round((r.shortlisted / r.submitted) * 100)}%</Tag>,
+              title: 'Shortlist rate', dataIndex: 'shortlist_rate', align: 'center',
+              render: (rate) => <Tag color="blue">{rate}%</Tag>,
             },
           ]}
-          dataSource={SOURCE_BREAKDOWN} />
+          dataSource={sourceOfHire}
+          locale={{ emptyText: <Empty description="No journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
       </Card>
     </>
   );
@@ -331,25 +450,25 @@ export default function Analytics() {
               )
             },
             {
-              // Phase 3 walkthrough prototype tab (mock data) — remove with the prototype page.
+              // Phase 3 Module 1 — real pipeline analytics (GET /api/pipeline/analytics).
               key: 'pipeline',
               label: (
                 <span>
                   <ApartmentOutlined className="tab-ico" />
-                  Pipeline Insights (Preview)
+                  Pipeline Insights
                 </span>
               ),
-              children: <CandidatePipelineAnalyticsPreview />
+              children: <PipelineInsights />
             },
             {
               key: 'recruiterInsights',
               label: (
                 <span>
                   <RiseOutlined className="tab-ico" />
-                  Recruiter Insights (Preview)
+                  Recruiter Insights
                 </span>
               ),
-              children: <RecruiterInsightsPreview />
+              children: <RecruiterInsights />
             },
             {
               key: 'emailDelivery',

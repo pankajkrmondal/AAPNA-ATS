@@ -43,6 +43,7 @@ import MissingJdUpload from './pages/MissingJdUpload';
 import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
 import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
+import Pipeline from './pages/Pipeline';
 
 /* ---- Route Guards ---- */
 
@@ -324,6 +325,17 @@ function AppShell() {
               {/* Phase 3 walkthrough prototype (mock data only) — remove once
                   the real Pipeline Tracker ships in Phase 3 Module 1. */}
               <Route path="/candidate-pipeline-prototype" element={<CandidatePipelinePrototype />} />
+              {/* Real Pipeline Tracker (Module 1) — persists to /api/pipeline,
+                  sends real outcome emails. Kept alongside the prototype above
+                  until RT signs off and this is verified end-to-end. */}
+              <Route
+                path="/pipeline"
+                element={
+                  <ModuleRoute moduleKey="recruitment_pipeline">
+                    <Pipeline />
+                  </ModuleRoute>
+                }
+              />
 
               <Route path="/email" element={<EmailManagement />} />
               <Route path="/settings" element={<Settings />} />

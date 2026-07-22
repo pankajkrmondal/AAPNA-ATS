@@ -20,24 +20,25 @@ model rpa_companies {
 }
 
 model rpa_users {
-  id                   Int                      @id @default(autoincrement())
-  username             String                   @unique @db.VarChar(100)
-  password_hash        String
-  role                 String?                  @default("recruiter") @db.VarChar(50)
-  is_active            Boolean?                 @default(true)
-  created_at           DateTime?                @default(now()) @db.Timestamp(6)
-  first_name           String?                  @db.VarChar(100)
-  last_name            String?                  @db.VarChar(100)
-  email                String?                  @unique(map: "idx_rpa_users_email") @db.VarChar(255)
-  is_approved          Boolean?                 @default(false)
-  department           String?                  @default("HR") @db.VarChar(100)
-  company_id           Int?
-  rpa_email_messages   rpa_email_messages[]
-  rpa_email_templates  rpa_email_templates[]
-  module_permissions   rpa_module_permissions[]
-  rpa_outlook_accounts rpa_outlook_accounts[]
-  sessions             rpa_sessions[]
-  company              rpa_companies?           @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  id                        Int                         @id @default(autoincrement())
+  username                  String                      @unique @db.VarChar(100)
+  password_hash             String
+  role                      String?                     @default("recruiter") @db.VarChar(50)
+  is_active                 Boolean?                    @default(true)
+  created_at                DateTime?                   @default(now()) @db.Timestamp(6)
+  first_name                String?                     @db.VarChar(100)
+  last_name                 String?                     @db.VarChar(100)
+  email                     String?                     @unique(map: "idx_rpa_users_email") @db.VarChar(255)
+  is_approved               Boolean?                    @default(false)
+  department                String?                     @default("HR") @db.VarChar(100)
+  company_id                Int?
+  rpa_email_messages        rpa_email_messages[]
+  rpa_email_templates       rpa_email_templates[]
+  module_permissions        rpa_module_permissions[]
+  rpa_outlook_accounts      rpa_outlook_accounts[]
+  rpa_pipeline_stage_events rpa_pipeline_stage_events[]
+  sessions                  rpa_sessions[]
+  company                   rpa_companies?              @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([company_id], map: "idx_rpa_users_company")
   @@map("rpa_users")
@@ -232,6 +233,7 @@ model rpa_shortlisted_candidates {
   created_at                  DateTime?                     @default(now()) @db.Timestamp(6)
   modified_at                 DateTime?                     @default(now()) @db.Timestamp(6)
   candidate_email_all         String?
+  rpa_candidate_pipeline      rpa_candidate_pipeline[]
   emails                      rpa_email_messages[]
   cv                          rpa_cv?                       @relation(fields: [cv_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   mrf                         rpa_mrf?                      @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
@@ -436,18 +438,19 @@ model rpa_email_log {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model rpa_email_templates {
-  id                 Int                  @id @default(autoincrement())
-  name               String
-  category           String?              @default("general")
-  subject            String
-  body_html          String
-  placeholders       String[]
-  created_by         Int?
-  is_active          Boolean?             @default(true)
-  created_at         DateTime?            @default(now()) @db.Timestamp(6)
-  modified_at        DateTime?            @default(now()) @db.Timestamp(6)
-  rpa_email_messages rpa_email_messages[]
-  rpa_users          rpa_users?           @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                        Int                         @id @default(autoincrement())
+  name                      String
+  category                  String?                     @default("general")
+  subject                   String
+  body_html                 String
+  placeholders              String[]
+  created_by                Int?
+  is_active                 Boolean?                    @default(true)
+  created_at                DateTime?                   @default(now()) @db.Timestamp(6)
+  modified_at               DateTime?                   @default(now()) @db.Timestamp(6)
+  rpa_email_messages        rpa_email_messages[]
+  rpa_users                 rpa_users?                  @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rpa_stage_email_templates rpa_stage_email_templates[]
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -504,12 +507,14 @@ model rpa_outlook_accounts {
 }
 
 model rpa_processing_log {
-  id         Int       @id @default(autoincrement())
-  fileName   String?
-  source     String?
-  status     String?
-  logMessage String?
-  createdAt  DateTime? @default(now()) @db.Timestamptz(6)
+  id            Int       @id @default(autoincrement())
+  fileName      String?
+  source        String?
+  status        String?
+  logMessage    String?
+  createdAt     DateTime? @default(now()) @db.Timestamptz(6)
+  actor_email   String?
+  actor_context String?
 }
 
 model rpa_zeko_auth_cookie {
@@ -646,12 +651,123 @@ model rpa_upload_jobs {
   attempts        Int      @default(0)
   created_at      DateTime @default(now()) @db.Timestamptz(6)
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  reviewed_by     String?
+  review_action   String?
 
   @@index([action_required], map: "idx_upload_jobs_action")
   @@index([execution_id], map: "idx_upload_jobs_exec")
   @@index([status], map: "idx_upload_jobs_status")
   @@index([updated_at(sort: Desc)], map: "idx_upload_jobs_updated")
   @@index([vendor_email], map: "idx_upload_jobs_vendor")
+}
+
+model rpa_candidate_pipeline {
+  id                         BigInt                      @id @default(autoincrement())
+  cv_id                      BigInt?
+  mrf_id                     BigInt?
+  shortlist_id               Int?
+  current_stage_key          String                      @db.VarChar(50)
+  current_stage_status       String                      @default("in_progress") @db.VarChar(20)
+  final_outcome              String?                     @db.VarChar(50)
+  source                     String                      @default("recruiter") @db.VarChar(30)
+  vendor_email               String?                     @db.VarChar(255)
+  is_paused                  Boolean                     @default(false)
+  created_at                 DateTime                    @default(now()) @db.Timestamptz(6)
+  modified_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  closed_at                  DateTime?                   @db.Timestamptz(6)
+  rpa_pipeline_stages        rpa_pipeline_stages         @relation(fields: [current_stage_key], references: [stage_key], onDelete: NoAction)
+  rpa_shortlisted_candidates rpa_shortlisted_candidates? @relation(fields: [shortlist_id], references: [id], onUpdate: NoAction)
+  rpa_pipeline_stage_events  rpa_pipeline_stage_events[]
+
+  @@index([cv_id], map: "idx_candidate_pipeline_cv")
+  @@index([mrf_id], map: "idx_candidate_pipeline_mrf")
+  @@index([shortlist_id], map: "idx_candidate_pipeline_shortlist")
+  @@index([current_stage_key], map: "idx_candidate_pipeline_stage")
+  @@index([vendor_email], map: "idx_candidate_pipeline_vendor")
+}
+
+model rpa_outcome_reasons {
+  id                        BigInt                      @id @default(autoincrement())
+  stage_key                 String?                     @db.VarChar(50)
+  outcome_key               String                      @default("rejected") @db.VarChar(50)
+  reason_label              String                      @db.VarChar(255)
+  is_other                  Boolean                     @default(false)
+  sort_order                Int                         @default(0)
+  is_active                 Boolean                     @default(true)
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  rpa_pipeline_stages       rpa_pipeline_stages?        @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
+  rpa_pipeline_stage_events rpa_pipeline_stage_events[]
+
+  @@index([stage_key], map: "idx_outcome_reasons_stage")
+}
+
+model rpa_pipeline_stage_events {
+  id                     BigInt                 @id @default(autoincrement())
+  pipeline_id            BigInt
+  stage_key              String                 @db.VarChar(50)
+  event_type             String                 @db.VarChar(20)
+  outcome                String?                @db.VarChar(50)
+  reason_id              BigInt?
+  reason_text            String?
+  status_label           String?                @db.VarChar(255)
+  notes                  String?
+  email_sent             Boolean                @default(false)
+  email_error            String?
+  acted_by               Int?
+  created_at             DateTime               @default(now()) @db.Timestamptz(6)
+  rpa_users              rpa_users?             @relation(fields: [acted_by], references: [id], onUpdate: NoAction)
+  rpa_candidate_pipeline rpa_candidate_pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rpa_outcome_reasons    rpa_outcome_reasons?   @relation(fields: [reason_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_stage_events_created")
+  @@index([pipeline_id], map: "idx_stage_events_pipeline")
+}
+
+model rpa_pipeline_stages {
+  id                        BigInt                      @id @default(autoincrement())
+  stage_key                 String                      @unique @db.VarChar(50)
+  label                     String                      @db.VarChar(150)
+  sort_order                Int                         @default(0)
+  is_optional               Boolean                     @default(false)
+  is_active                 Boolean                     @default(true)
+  stage_type                String                      @default("manual") @db.VarChar(30)
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  modified_at               DateTime                    @default(now()) @db.Timestamptz(6)
+  rpa_candidate_pipeline    rpa_candidate_pipeline[]
+  rpa_outcome_reasons       rpa_outcome_reasons[]
+  rpa_stage_email_templates rpa_stage_email_templates[]
+  rpa_stage_outcomes        rpa_stage_outcomes[]
+
+  @@index([sort_order], map: "idx_pipeline_stages_sort")
+}
+
+model rpa_stage_email_templates {
+  id                  BigInt              @id @default(autoincrement())
+  stage_key           String              @db.VarChar(50)
+  outcome_key         String              @db.VarChar(50)
+  template_id         Int
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  rpa_pipeline_stages rpa_pipeline_stages @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
+  rpa_email_templates rpa_email_templates @relation(fields: [template_id], references: [id], onDelete: NoAction)
+
+  @@unique([stage_key, outcome_key])
+}
+
+model rpa_stage_outcomes {
+  id                  BigInt              @id @default(autoincrement())
+  stage_key           String              @db.VarChar(50)
+  outcome_key         String              @db.VarChar(50)
+  label               String              @db.VarChar(150)
+  is_advance          Boolean             @default(false)
+  is_final            Boolean             @default(false)
+  sort_order          Int                 @default(0)
+  is_active           Boolean             @default(true)
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime            @default(now()) @db.Timestamptz(6)
+  rpa_pipeline_stages rpa_pipeline_stages @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
+
+  @@unique([stage_key, outcome_key])
+  @@index([stage_key], map: "idx_stage_outcomes_stage")
 }
 
 enum approval_status {
