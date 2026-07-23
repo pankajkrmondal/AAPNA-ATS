@@ -35,6 +35,12 @@ router.post('/keyword-search', screeningController.searchKeywordCandidates);
 router.post('/shortlist', screeningController.shortlistCandidates);
 
 /**
+ * POST /api/screening/reject
+ * Reject candidates directly from screening results, update status, notify (optional)
+ */
+router.post('/reject', screeningController.rejectCandidates);
+
+/**
  * GET /api/screening/analytics/jobs
  * List active Zeko jobs for assignment dropdown
  */

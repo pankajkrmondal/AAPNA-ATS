@@ -19,4 +19,10 @@ router.get('/stats', dashboardController.getStats);
  */
 router.get('/recent-uploads', dashboardController.getRecentUploads);
 
+/**
+ * GET /api/dashboard/recruiter-breakdown
+ * Per-recruiter Added vs Tagged candidate counts — optional ?limit=N (default 10)
+ */
+router.get('/recruiter-breakdown', dashboardController.getRecruiterBreakdown);
+
 export default router;

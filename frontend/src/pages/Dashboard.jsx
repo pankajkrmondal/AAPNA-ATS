@@ -41,6 +41,7 @@ import DashboardHero from '../components/dashboard/DashboardHero';
 import HiringTrendsCard from '../components/dashboard/HiringTrendsCard';
 import ConversionFunnelCard from '../components/dashboard/ConversionFunnelCard';
 import TopRolesSkillsCard from '../components/dashboard/TopRolesSkillsCard';
+import RecruiterBreakdownCard from '../components/dashboard/RecruiterBreakdownCard';
 import ActionCenterCard from '../components/dashboard/ActionCenterCard';
 import LiveActivityFeed from '../components/dashboard/LiveActivityFeed';
 import UpcomingInterviews from '../components/dashboard/UpcomingInterviews';
@@ -73,7 +74,8 @@ export default function Dashboard() {
 
   // ── Advanced data (existing endpoints, parallel) + live socket feed ──
   const {
-    stats, funnel, candidates: aggCandidates, pendingMrfs, pipeline, roles, loading: statsLoading,
+    stats, funnel, candidates: aggCandidates, pendingMrfs, pipeline, roles,
+    recruiterBreakdown, loading: statsLoading,
   } = useDashboardData();
   const { events: liveEvents, reviewCount } = useLiveActivity();
 
@@ -323,6 +325,13 @@ export default function Dashboard() {
           {hasUpcoming || pipeline.length > 0
             ? <UpcomingInterviews pipeline={pipeline} onNavigate={navigate} />
             : <LiveActivityFeed events={liveEvents} />}
+        </Col>
+      </Row>
+
+      {/* ---- Recruiter Activity ---- */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
+        <Col xs={24}>
+          <RecruiterBreakdownCard data={recruiterBreakdown} />
         </Col>
       </Row>
 
