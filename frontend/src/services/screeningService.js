@@ -34,11 +34,20 @@ const screeningService = {
 
   /**
    * Shortlist selected candidates (insert records, send notification draft emails, update vectors).
-   * @param {Object} payload - { candidates: Array, mrf_id: number, role_name: string }
+   * @param {Object} payload - { candidates: Array, mrf_id: number, role_name: string, send_email?: boolean, email_override?: { subject, body } }
    * @returns {Promise<{ data: { success: boolean, emails_sent: number } }>}
    */
   shortlistCandidates(payload) {
     return api.post('/screening/shortlist', payload);
+  },
+
+  /**
+   * Reject selected candidates directly from screening results.
+   * @param {Object} payload - { candidates: Array, mrf_id: number, role_name: string, reason: string, send_email?: boolean, email_override?: { subject, body } }
+   * @returns {Promise<{ data: { success: boolean, emails_sent: number } }>}
+   */
+  rejectCandidates(payload) {
+    return api.post('/screening/reject', payload);
   },
 
   /**

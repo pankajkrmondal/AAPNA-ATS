@@ -666,6 +666,73 @@ export async function sendResumeErrorAlert({ executionId, failedCount, totalCoun
 }
 
 /**
+ * Sends an internal alert when the Cohere Rerank API fails during a screening
+ * search, so the candidate list can gracefully fall back to a bounded,
+ * base-relevance-ordered list instead of erroring out for the recruiter.
+ * @param {{ query: string, candidateCount: number, errorMessage: string, rateLimited?: boolean }} params
+ * @returns {Promise<boolean>}
+ */
+export async function sendRerankApiAlert({ query, candidateCount, errorMessage, rateLimited = false }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('rerankApiAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping rerank API alert: no recipient configured.');
+      return false;
+    }
+
+    const subject = rateLimited
+      ? `⏳ Candidate Ranking (Cohere) Rate Limit Hit — Screening Search`
+      : `🚨 Candidate Ranking (Cohere) API Failure — Screening Search`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:${rateLimited ? '#b8860b' : '#b71c1c'};color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    ${rateLimited ? 'Candidate Ranking API Rate Limit Hit' : 'Candidate Ranking API Failure'}
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>${rateLimited
+      ? 'The Cohere Rerank API returned a 429 (rate limit) during a Candidate Screening search — likely the candidate pool for this search produced more concurrent batches than the current Cohere plan allows per minute (the candidate pool is no longer capped before reranking). If this recurs often, consider lowering RERANK_MAX_CONCURRENT_BATCHES in vectorStore.service.js or upgrading the Cohere plan.'
+      : 'The Cohere Rerank API failed during a Candidate Screening search.'
+    } The recruiter was shown a bounded fallback list (base vector relevance, no rerank) instead of an error.</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Search query:</td><td>${query || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Candidate pool size:</td><td>${candidateCount}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Error:</p>
+    <p style="font-family:monospace;">${String(errorMessage || 'Unknown error')}</p>
+  </div>
+</body>
+</html>
+    `;
+
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'rerank_api_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev / Admin',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info('Rerank API alert sent.');
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send rerank API alert: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Sends duplicate resume detection alert to HR and administrator.
  */
 export async function sendDuplicateAlertEmail(candidate, hrUserEmail) {
