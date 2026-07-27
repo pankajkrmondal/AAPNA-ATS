@@ -1,6 +1,7 @@
 import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import { sendBackendErrorAlert } from '../services/emailNotification.service.js';
 
 // ── Prisma error mappers ──────────────────────────────────────────────
 
@@ -17,7 +18,8 @@ function handlePrismaError(err) {
     err.code === 'P1001' || // can't reach database server
     err.code === 'P1002' || // database server timed out
     err.code === 'P1008' || // operation timed out
-    err.code === 'P1017'    // server closed the connection
+    err.code === 'P1017' || // server closed the connection
+    err.code === 'P2024'    // timed out fetching a connection from the pool
   ) {
     return new AppError('Service temporarily unavailable. Please try again later.', 503);
   }
@@ -35,6 +37,19 @@ function handlePrismaError(err) {
   }
   if (err.code === 'P2014') {
     return new AppError('This change would violate a required relation.', 400);
+  }
+  if (err.code === 'P2000') {
+    return new AppError('One of the values entered is too long. Please shorten it and try again.', 400);
+  }
+  if (err.code === 'P2010') {
+    return new AppError('A database query failed. Please try again or contact support.', 500);
+  }
+  if (err.code === 'P2028' || err.code === 'P2034') {
+    return new AppError("This action couldn't be completed due to a temporary conflict. Please try again.", 409);
+  }
+  // Catch-all for any other known-request-error code we haven't special-cased above.
+  if (/^P2\d{3}$/.test(err.code || '')) {
+    return new AppError('Something went wrong processing your request. Please try again.', 400);
   }
   return null;
 }
@@ -121,33 +136,32 @@ const errorHandler = (err, req, res, _next) => {
     ...(config.isProduction ? {} : { stack: err.stack }),
   });
 
-  // Try to convert known library errors into AppErrors
-  const prismaErr = handlePrismaError(err);
-  if (prismaErr) return sendResponse(prismaErr, req, res);
+  // Try to convert known library errors into AppErrors — first match wins.
+  const finalErr =
+    handlePrismaError(err) ||
+    handleJWTError(err) ||
+    handleMulterError(err) ||
+    (err.name === 'ValidationError' ? new AppError(err.message, 400) : null) ||
+    (err instanceof SyntaxError && err.status === 400 && 'body' in err
+      ? new AppError('Invalid JSON in request body.', 400)
+      : null) ||
+    err;
 
-  const jwtErr = handleJWTError(err);
-  if (jwtErr) return sendResponse(jwtErr, req, res);
-
-  const multerErr = handleMulterError(err);
-  if (multerErr) return sendResponse(multerErr, req, res);
-
-  // Validation errors (from our validate middleware)
-  if (err.name === 'ValidationError') {
-    const validationErr = new AppError(err.message, 400);
-    return sendResponse(validationErr, req, res);
+  // Fire-and-forget: alert a developer on any 5xx (never on routine 4xx like a
+  // wrong password or a validation failure). Never awaited — must not affect
+  // the response, and never allowed to throw into this middleware.
+  if (finalErr.status === 'error') {
+    sendBackendErrorAlert({ err, finalErr, req }).catch(() => {});
   }
 
-  // SyntaxError from bad JSON body
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    const syntaxErr = new AppError('Invalid JSON in request body.', 400);
-    return sendResponse(syntaxErr, req, res);
-  }
-
-  return sendResponse(err, req, res);
+  return sendResponse(finalErr, req, res);
 };
 
 function sendResponse(err, _req, res) {
-  if (config.isProduction) {
+  // Verbose (raw error + stack) output requires an explicit NODE_ENV=development
+  // opt-in; every other environment — staging, production, anything else —
+  // defaults to the sanitized response.
+  if (!config.isDevelopment) {
     sendProdError(err, res);
   } else {
     sendDevError(err, res);

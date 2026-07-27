@@ -4,6 +4,7 @@ import { authenticate, checkModuleAccess } from '../middleware/auth.js';
 import { isAdminTier } from '../config/roles.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
+import assessmentImportRoutes from './assessmentImport.routes.js';
 
 const router = Router();
 
@@ -43,6 +44,10 @@ router.get('/reasons', pipelineController.listReasons);
 router.post('/reasons', requireAdmin, pipelineController.createReason);
 /** PUT /api/pipeline/reasons/:id — edit a reason (admin only). */
 router.put('/reasons/:id', requireAdmin, pipelineController.updateReason);
+
+/** /api/pipeline/assessment-import/* — Phase 3 M2, Evalground bulk-CSV import.
+ * Registered before "/:id" so "assessment-import" is never captured as a pipeline id. */
+router.use('/assessment-import', assessmentImportRoutes);
 
 /** GET /api/pipeline/:id — full journey detail (feeds the per-round drawer). */
 router.get('/:id', pipelineController.getPipelineDetail);

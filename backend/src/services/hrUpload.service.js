@@ -319,7 +319,8 @@ ${text}
     const jsonStr = rawText.slice(startIdx, endIdx + 1);
     return JSON.parse(jsonStr);
   } catch (err) {
-    throw new AIModelError(err.message);
+    logger.error('Failed to parse LLM output as JSON:', { error: err.message });
+    throw new AIModelError('AI processing failed. Please try again or contact support.');
   }
 }
 
@@ -797,7 +798,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
     };
   } catch (err) {
     logger.error('Error during candidate merge transaction:', { error: err.message });
-    throw new AppError(`Merge operation failed: ${err.message}`, 500);
+    throw new AppError('Merge operation failed. Please try again or contact support.', 500);
   }
 }
 
@@ -863,7 +864,7 @@ export async function deleteDuplicates(ids, token) {
     };
   } catch (err) {
     logger.error('Error during candidate deletion:', { error: err.message });
-    throw new AppError(`Delete operation failed: ${err.message}`, 500);
+    throw new AppError('Delete operation failed. Please try again or contact support.', 500);
   }
 }
 
