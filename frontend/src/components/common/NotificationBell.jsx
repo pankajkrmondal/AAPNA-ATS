@@ -36,7 +36,40 @@ export default function NotificationBell({ style }) {
     };
 
     socket.on('review:new', onReview);
-    return () => socket.off('review:new', onReview);
+
+    // Phase 3 M2 — the backend emits 'assessment:import_done' to the
+    // recruiter room whenever an Evalground bulk-CSV import commits, as a
+    // distinct event from the resume-review one above (doc 02 §5).
+    const onAssessmentImport = (summary) => {
+      setNotifications((prev) => [{
+        id: `assessment-import-${summary?.importId || Date.now()}`,
+        title: 'Evalground results imported',
+        description: `${summary?.matched ?? 0} matched${summary?.unmatched ? `, ${summary.unmatched} unmatched` : ''}${summary?.duplicateSkipped ? `, ${summary.duplicateSkipped} unchanged` : ''}`,
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      }, ...prev].slice(0, 50));
+    };
+    socket.on('assessment:import_done', onAssessmentImport);
+
+    // Phase 3 M2 extension — the assessment deadline checker emits this,
+    // in-app only (no email), when an Evalground invite's deadline passes
+    // with no result landed yet.
+    const onDeadlineExpired = (payload) => {
+      setNotifications((prev) => [{
+        id: `assessment-deadline-${payload?.inviteId || Date.now()}`,
+        title: 'Evalground invite deadline passed',
+        description: `${payload?.candidateName || 'A candidate'}${payload?.position ? ` — ${payload.position}` : ''} — re-invite or upload the CSV.`,
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        read: false,
+      }, ...prev].slice(0, 50));
+    };
+    socket.on('assessment:deadline_expired', onDeadlineExpired);
+
+    return () => {
+      socket.off('review:new', onReview);
+      socket.off('assessment:import_done', onAssessmentImport);
+      socket.off('assessment:deadline_expired', onDeadlineExpired);
+    };
   }, []);
 
   const markAllRead = () => {
