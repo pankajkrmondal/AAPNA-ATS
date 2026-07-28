@@ -6,6 +6,7 @@ import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vect
 import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, logFailedEmail, injectTrackingPixel } from './emailNotification.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients } from '../config/emailRecipients.js';
+import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage } from '../config/pipelineStages.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney } from './pipeline.service.js';
@@ -1947,8 +1948,16 @@ export async function getZekoPipeline() {
 
 /**
  * POST /api/screening/analytics/assign
+ *
+ * `stage` distinguishes the HR screening round from the later functional
+ * screening round. Both reuse the SAME Zeko job catalog — functional screening
+ * is simply a second interview against the same job — which is why the table's
+ * unique key is (candidate_id, zeko_job_id, stage): one row per round.
+ * Defaults to 'hr' so existing Candidate Screening callers are unaffected.
  */
-export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
+export async function assignCandidateToZekoJob(candidateId, zekoJobId, stage = ZEKO_ROUND_STAGES.HR) {
+  const roundStage = normalizeZekoRoundStage(stage);
+
   const shortlist = await prisma.rpa_shortlisted_candidates.findUnique({
     where: { id: candidateId },
   });
@@ -1962,7 +1971,7 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
       candidate_id_zeko_job_id_stage: {
         candidate_id: candidateId,
         zeko_job_id: String(zekoJobId),
-        stage: 'hr',
+        stage: roundStage,
       },
     },
     update: {
@@ -1973,7 +1982,7 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
       candidate_id: candidateId,
       zeko_job_id: String(zekoJobId),
       pipeline_id: String(zekoJobId), // Defaults to job ID if not specified yet
-      stage: 'hr',
+      stage: roundStage,
       status: 'pending',
       candidate_email: shortlist.candidate_email,
       created_at: new Date(),
@@ -1992,8 +2001,13 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId) {
 
 /**
  * POST /api/screening/analytics/schedule
+ *
+ * `stage` selects which Zeko round's row to schedule (see
+ * assignCandidateToZekoJob). Defaults to 'hr' for existing callers.
  */
-export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user) {
+export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTime, user, stage = ZEKO_ROUND_STAGES.HR) {
+  const roundStage = normalizeZekoRoundStage(stage);
+
   // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
   //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
   const settingClientIdRow = await prisma.rpa_settings.findUnique({
@@ -2093,11 +2107,14 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     throw new AppError(`Zeko Schedule API failed: ${zekoRes.statusText}. ${JSON.stringify(errorBody)}`, 502);
   }
 
-  // Update pipeline status
+  // Update pipeline status. Scoped to this round's row: a candidate can hold
+  // both an 'hr' and a 'functional' row against the same job, and scheduling
+  // one round must not overwrite the other's window.
   const pipeline = await prisma.rpa_zeko_candidate_pipeline.updateMany({
     where: {
       candidate_id: shortlistId,
       zeko_job_id: String(zekoJobId),
+      stage: roundStage,
     },
     data: {
       interview_start_at: roundedStart,
