@@ -5,6 +5,16 @@ import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 
 /**
+ * Structural placeholders that the sending service injects as HTML fragments
+ * (a Teams-join button, a cancellation-reason paragraph) rather than content a
+ * recruiter edits. They are declared on a template's `placeholders` array so
+ * the compiler knows about them, but must NOT be enforced as "required" when a
+ * recruiter edits the template — removing them from the body is legitimate.
+ * Kept in sync with the same constant in frontend/src/pages/EmailManagement.jsx.
+ */
+const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
+
+/**
  * @desc    Get all email templates
  * @route   GET /api/email/templates
  * @access  Private (Recruiter/Admin)
@@ -62,7 +72,10 @@ export const updateEmailTemplate = catchAsync(async (req, res) => {
   for (const placeholder of template.placeholders) {
     // Clean brackets: e.g. "{candidate_name}" -> "candidate_name", "candidate_name" -> "candidate_name"
     const cleanPlaceholder = placeholder.replace(/[{}]/g, '').toLowerCase();
-    
+
+    // Inject-only structural fragments are optional — never report them missing.
+    if (OPTIONAL_PLACEHOLDERS.has(cleanPlaceholder)) continue;
+
     // Check for both double and single curly braces: e.g. {{candidate_name}} and {candidate_name}
     const hasDouble = contentToValidate.includes(`{{${cleanPlaceholder}}}`);
     const hasSingle = contentToValidate.includes(`{${cleanPlaceholder}}`);

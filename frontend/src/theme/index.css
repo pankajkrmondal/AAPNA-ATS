@@ -2780,6 +2780,19 @@ html.theme-transition *::after {
     border-color 0.25s var(--ease-out-quint);
   animation: fadeInUp 0.4s var(--ease-out-quint) both;
 }
+
+/* Floating left/right scrollers for the Pipeline board (Pipeline.jsx).
+   Brand-green gradient pill (see arrowStyle in Pipeline.jsx). */
+.board-scroll-arrow {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.board-scroll-arrow:hover {
+  transform: translateY(-50%) scale(1.12);
+  filter: brightness(1.06);
+  box-shadow: 0 8px 22px rgba(122, 146, 46, 0.5), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+.board-scroll-arrow:active { transform: translateY(-50%) scale(0.96); }
+.board-scroll-arrow:focus-visible { outline: 3px solid var(--gold-light, #92a63c); outline-offset: 3px; }
 .cp-candidate-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lg);

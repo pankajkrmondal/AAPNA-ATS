@@ -38,3 +38,7 @@ build
 
 # Testing
 coverage
+
+dump.rdb
+Excel/*
+.claude/*

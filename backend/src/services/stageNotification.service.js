@@ -8,6 +8,7 @@ import {
   injectTrackingPixel,
   describeEmailError,
 } from './emailNotification.service.js';
+import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
 
@@ -40,6 +41,16 @@ const GENERIC_FALLBACK_BY_OUTCOME = {
   rejected: 'Stage Outcome — Rejected (Generic)',
   hold: 'Stage Outcome — Hold (Generic)',
 };
+
+/**
+ * The branded-shell options for a stage-outcome email.
+ *
+ * The header headline IS the email subject (RT decision, 2026-07-25), matching
+ * the legacy branded templates where "Application on Hold" appears in both.
+ * Pass the FINAL subject — i.e. after any recruiter edit in the outcome modal —
+ * so the band can never disagree with what the mail client shows.
+ */
+const outcomeWrapOpts = (subject) => ({ title: subject || '' });
 
 /**
  * Resolves the template to use for a stage×outcome pair: specific mapping
@@ -77,12 +88,15 @@ async function resolveTemplate(stageKey, outcomeKey) {
  * @param {string} params.stageLabel
  * @param {{name: string}} params.candidate
  * @param {string} [params.positionLabel]
- * @returns {Promise<{ subject: string, body: string, templateId: number|null, templateName: string|null }>}
+ * @returns {Promise<{ subject: string, body: string, wrapper: object, templateId: number|null, templateName: string|null }>}
+ *   `body` is the editable FRAGMENT; `wrapper` carries the branded header/footer
+ *   the drawer renders around it, so the popup shows the real outgoing email
+ *   while the recruiter still only edits the body (plan §4).
  */
 export async function previewOutcomeEmail({ stageKey, outcomeKey, stageLabel, candidate, positionLabel = 'the role' }) {
   const template = await resolveTemplate(stageKey, outcomeKey);
   if (!template) {
-    return { subject: '', body: '', templateId: null, templateName: null };
+    return { subject: '', body: '', wrapper: brandedWrapperParts(outcomeWrapOpts('')), templateId: null, templateName: null };
   }
   const { subject, html: body } = compileTemplate(template.subject, template.body_html, {
     candidate_name: candidate?.name || 'Candidate',
@@ -90,7 +104,16 @@ export async function previewOutcomeEmail({ stageKey, outcomeKey, stageLabel, ca
     job_title: positionLabel,
     stage_label: stageLabel,
   });
-  return { subject, body, templateId: template.id, templateName: template.name };
+  // Header headline = the subject, so the wrapper is built from the compiled
+  // subject. The drawer re-renders it client-side as the recruiter edits the
+  // subject field, so the preview stays truthful without a refetch.
+  return {
+    subject,
+    body,
+    wrapper: brandedWrapperParts(outcomeWrapOpts(subject)),
+    templateId: template.id,
+    templateName: template.name,
+  };
 }
 
 /**
@@ -162,12 +185,17 @@ export async function sendStageOutcomeEmail({
     }
 
     const trackingToken = uuidv4();
+    // Brand the fragment, THEN inject the pixel: injectTrackingPixel inserts
+    // before </body>, which only exists once the shell is applied. bodyHtml
+    // itself stays a fragment — that is what gets stored (plan §3.3), so the
+    // reminder scheduler can keep prepending its banner to it.
+    const brandedHtml = wrapBrandedEmail(bodyHtml, outcomeWrapOpts(subject));
     const sendResult = await sendGraphEmail({
       sender: config.microsoft.defaultSender,
       to: toEmail,
       cc: ccEmail,
       subject,
-      html: injectTrackingPixel(bodyHtml, trackingToken),
+      html: injectTrackingPixel(brandedHtml, trackingToken),
     });
 
     const statusLabel = finalStatusLabelFor(stageKey, outcomeKey);
@@ -237,12 +265,15 @@ export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject,
     }
 
     const trackingToken = uuidv4();
+    // Same wrap-then-pixel ordering as sendStageOutcomeEmail; `body` stays the
+    // stored fragment.
+    const brandedHtml = wrapBrandedEmail(body, outcomeWrapOpts(subject));
     const sendResult = await sendGraphEmail({
       sender: config.microsoft.defaultSender,
       to: toEmail,
       cc: vendorEmail || '',
       subject,
-      html: injectTrackingPixel(body, trackingToken),
+      html: injectTrackingPixel(brandedHtml, trackingToken),
     });
 
     const message = await prisma.rpa_email_messages.create({
