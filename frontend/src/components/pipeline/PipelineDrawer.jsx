@@ -33,13 +33,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, FileTextOutlined,
-  ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, SendOutlined, UnderlineOutlined, UserOutlined,
+  BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
+  FileTextOutlined, ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
+  SendOutlined, UnderlineOutlined, UserOutlined,
 } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
+import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
 import screeningService from '../../services/screeningService';
 import assessmentImportService from '../../services/assessmentImportService';
@@ -53,33 +55,81 @@ const { RangePicker } = DatePicker;
 const SANITIZE_OPTS = { WHOLE_DOCUMENT: true, ADD_ATTR: ['target'] };
 const EDITOR_CONTENT_CSS = `
   html, body { margin: 0; }
-  body { padding: 12px 14px; font-family: inherit; font-size: 13.5px; -webkit-font-smoothing: antialiased; }
   body:focus { outline: none; }
+  /* Degraded (no-wrapper) mode only — the branded shell supplies its own padding. */
+  body:not(:has([data-editable-body])) { padding: 12px 14px; font-family: inherit; font-size: 13.5px; }
+  /* Make the editable region visibly the only editable part. */
+  [data-editable-body] { outline: 1px dashed rgba(122,146,46,0.55); outline-offset: 6px; border-radius: 2px; min-height: 60px; }
+  [data-editable-body]:focus { outline: 2px solid rgba(122,146,46,0.85); }
 `;
 
 /**
- * Lightweight WYSIWYG for the outcome-email body — the same designMode
- * iframe + DOMPurify sanitization pattern EmailManagement.jsx uses for full
- * template authoring, scaled down to just what a "review before send" step
- * needs: a small Bold/Italic/Underline/Link toolbar, no CodeMirror source
- * tab or placeholder-insertion tooling (the template is already compiled by
- * the time this renders — there are no placeholders left to insert).
+ * WYSIWYG for the outcome-email body, shown inside the real branded shell.
+ *
+ * The iframe renders the FULL email the recipient will get — green AAPNA
+ * header, logo, card, footer — but only the body slot is contenteditable, so
+ * the recruiter reviews the true outgoing format while editing just the copy
+ * (docs/phase3/PIPELINE-TRACKER-BRANDED-EMAIL-PLAN.md §4.1).
+ *
+ * That split matters: the previous version put designMode on the whole
+ * document and round-tripped documentElement.outerHTML, so any chrome inside
+ * the value could be deleted or broken by a stray edit and shipped that way.
+ * Here `onChange` only ever emits the body fragment — exactly what the backend
+ * stores and re-wraps at send time.
+ *
+ * `wrapper` is {headerHtml, footerHtml} from the preview endpoint, produced by
+ * the same backend module the send path uses, so preview and delivery cannot
+ * drift. Without it the editor degrades to the bare fragment.
  */
-function SimpleHtmlEditor({ value, onChange }) {
+function BrandedBodyEditor({ value, onChange, wrapper, subject }) {
   const iframeRef = useRef(null);
   const savedSelRef = useRef(null);
   // srcDoc only needs to reset when a *different* preview loads, not on every
   // keystroke — otherwise the iframe would reload (and lose the caret) as the
-  // recruiter types. valueKey below tracks that.
+  // recruiter types.
   const srcDoc = useMemo(
-    () => DOMPurify.sanitize(value || '<p>Empty.</p>', SANITIZE_OPTS),
+    () => {
+      const body = DOMPurify.sanitize(value || '<p>Empty.</p>', SANITIZE_OPTS);
+      if (!wrapper?.headerHtml) return body;
+      // Mirrors wrapBrandedEmail()'s table skeleton so the preview matches the
+      // delivered mail; only the body slot carries data-editable-body.
+      return `<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif">`
+        + `<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:20px 8px"><tr><td align="center">`
+        + `<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.08)">`
+        + wrapper.headerHtml
+        + `<tr><td style="padding:32px 40px 24px 40px;font-size:15px;color:#374151;line-height:1.8">`
+        + `<div data-editable-body contenteditable="true">${body}</div>`
+        + `</td></tr>`
+        + (wrapper.footerHtml || '')
+        + `</table></td></tr></table></body>`;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
+  // The header headline IS the subject, so keep the band in step as the
+  // recruiter edits the subject field. Patched into the live iframe DOM rather
+  // than rebuilt into srcDoc, which would reload the frame and drop the caret.
+  // textContent assignment escapes the value, matching the backend's escaping.
+  useEffect(() => {
+    const doc = iframeRef.current?.contentDocument;
+    const h1 = doc?.querySelector('h1');
+    if (!h1) return;
+    const next = (subject || '').trim();
+    if (h1.textContent !== next) h1.textContent = next;
+  }, [subject]);
+
+  /** Reads back ONLY the editable slot, never the surrounding chrome. */
   const syncFromEditor = () => {
     const doc = iframeRef.current?.contentDocument;
-    if (doc && doc.designMode === 'on') {
+    if (!doc) return;
+    const slot = doc.querySelector('[data-editable-body]');
+    if (slot) {
+      onChange(slot.innerHTML);
+      return;
+    }
+    // No wrapper (degraded mode): the whole document is the body.
+    if (doc.designMode === 'on') {
       const clone = doc.documentElement.cloneNode(true);
       clone.querySelectorAll('style[data-editor-css]').forEach((el) => el.remove());
       onChange(clone.outerHTML);
@@ -89,7 +139,13 @@ function SimpleHtmlEditor({ value, onChange }) {
   const handleLoad = () => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    doc.designMode = 'on';
+    const slot = doc.querySelector('[data-editable-body]');
+    if (slot) {
+      // Chrome stays read-only; only the body slot accepts input.
+      slot.setAttribute('contenteditable', 'true');
+    } else {
+      doc.designMode = 'on';
+    }
     const style = doc.createElement('style');
     style.textContent = EDITOR_CONTENT_CSS;
     style.setAttribute('data-editor-css', '1');
@@ -99,7 +155,10 @@ function SimpleHtmlEditor({ value, onChange }) {
       const sel = doc.getSelection?.();
       if (sel && sel.rangeCount > 0) {
         const range = sel.getRangeAt(0);
-        if (doc.body?.contains(range.commonAncestorContainer)) {
+        // Only remember selections inside the editable region, so the toolbar
+        // can never apply formatting to the header or footer.
+        const scope = slot || doc.body;
+        if (scope?.contains(range.commonAncestorContainer)) {
           savedSelRef.current = range.cloneRange();
         }
       }
@@ -110,6 +169,9 @@ function SimpleHtmlEditor({ value, onChange }) {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
     iframeRef.current.contentWindow?.focus();
+    // Focus the editable slot so execCommand has a valid target even before
+    // the recruiter has clicked into the body.
+    doc.querySelector('[data-editable-body]')?.focus?.();
     const sel = doc.getSelection?.();
     if (sel && savedSelRef.current) {
       try { sel.removeAllRanges(); sel.addRange(savedSelRef.current); } catch { /* stale range */ }
@@ -140,9 +202,71 @@ function SimpleHtmlEditor({ value, onChange }) {
         title="Outcome email body"
         srcDoc={srcDoc}
         onLoad={handleLoad}
-        style={{ width: '100%', height: 220, border: 'none', background: 'var(--ant-color-bg-container, #fff)' }}
+        // Taller when the branded shell renders, so the header, body and footer
+        // are all visible without scrolling inside the modal.
+        style={{ width: '100%', height: wrapper?.headerHtml ? 420 : 220, border: 'none', background: 'var(--ant-color-bg-container, #fff)' }}
       />
     </div>
+  );
+}
+
+/**
+ * Two collapsible editable emails (candidate + panel) for the Schedule/Cancel
+ * modals. Same edit-before-send idea as the "Record round outcome" modal, but
+ * the two recipients get separate copy. `state` is the {candidateSubject,
+ * candidateBody, panelSubject, panelBody, touched} object; `onChange(patch)`
+ * merges a patch and marks it touched so a later preview refetch won't clobber
+ * the recruiter's edits.
+ */
+function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, candidateWrapper, panelWrapper, ready = true }) {
+  const field = (key, value) => onChange({ [key]: value, touched: true });
+
+  // BrandedBodyEditor freezes its srcDoc on first mount (to protect the caret
+  // while typing), so it must not mount before the preview text and wrapper
+  // have arrived — otherwise it would render an empty, unbranded shell.
+  if (!ready) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+        <Spin />
+      </div>
+    );
+  }
+  return (
+    <Collapse
+      size="small"
+      items={[
+        {
+          key: 'candidate',
+          label: <span><MailOutlined style={{ marginInlineEnd: 6 }} />{candidateLabel}</span>,
+          children: (
+            <>
+              <Input
+                value={state.candidateSubject}
+                onChange={(e) => field('candidateSubject', e.target.value)}
+                placeholder="Subject"
+                style={{ marginBottom: 8 }}
+              />
+              <BrandedBodyEditor value={state.candidateBody} onChange={(v) => field('candidateBody', v)} wrapper={candidateWrapper} subject={state.candidateSubject} />
+            </>
+          ),
+        },
+        {
+          key: 'panel',
+          label: <span><MailOutlined style={{ marginInlineEnd: 6 }} />{panelLabel}</span>,
+          children: (
+            <>
+              <Input
+                value={state.panelSubject}
+                onChange={(e) => field('panelSubject', e.target.value)}
+                placeholder="Subject"
+                style={{ marginBottom: 8 }}
+              />
+              <BrandedBodyEditor value={state.panelBody} onChange={(v) => field('panelBody', v)} wrapper={panelWrapper} subject={state.panelSubject} />
+            </>
+          ),
+        },
+      ]}
+    />
   );
 }
 
@@ -164,6 +288,35 @@ const STATE_WORD = { pending: 'Not started yet', active: 'In progress', done: 'D
 
 function isZekoStageKey(key) {
   return key === 'zeko_hr' || key === 'zeko_fn';
+}
+
+/** Rounds the recruiter books directly (interviewer comes from the MRF).
+ * Mirrors SCHEDULABLE_STAGES in backend/src/services/interviewSchedule.service.js. */
+function isSchedulableStageKey(key) {
+  return key === 'tech1' || key === 'tech2';
+}
+
+/**
+ * Validates the interviewer field, which accepts a panel of one or more
+ * addresses separated by commas. Mirrors parseInterviewerEmails() in
+ * backend/src/services/interviewSchedule.service.js so the form fails fast.
+ *
+ * @returns {{ emails: string[], invalid: string[] }}
+ */
+function parseInterviewerEmails(value) {
+  const parts = String(value || '').split(/[,;]/).map((p) => p.trim()).filter(Boolean);
+  const emails = [];
+  const invalid = [];
+  const seen = new Set();
+  for (const part of parts) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part)) {
+      invalid.push(part);
+    } else if (!seen.has(part.toLowerCase())) {
+      seen.add(part.toLowerCase());
+      emails.push(part);
+    }
+  }
+  return { emails, invalid };
 }
 
 /** Zeko score → chip colour band (RT, 2026-07-22): 80–100 green, 50–79 amber,
@@ -231,7 +384,9 @@ function assessmentScoreSegment(result) {
 const PIPELINE_LABELS = {
   zeko: ['Invite Sent', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
   manual: ['Invite Sent', 'Awaiting Test', 'Awaiting Results', 'Approve / Reject'],
-  scheduled_interview: ['Invite Sent', 'Awaiting Interview', 'Awaiting Results', 'Approve / Reject'],
+  // Stage 2 reads "Schedule Interview" for the same reason zeko's does: this is
+  // where the recruiter ACTS, so the label names the action, not a passive wait.
+  scheduled_interview: ['Invite Sent', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
   document: ['Request Sent', 'Awaiting Upload', 'Awaiting Verification', 'Approve / Reject'],
   offer: ['Offer Prepared', 'Offer Sent', 'Awaiting Response', 'Accepted / Declined'],
 };
@@ -272,7 +427,7 @@ function fmtDateTime(d) {
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, assessmentResult, assessmentInvite }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite }) {
   const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
@@ -343,15 +498,80 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
       s3 = { state: 'active', detail: 'Awaiting Zeko to sync the score' };
     }
   } else if (stage.stage_key === 'zeko_fn') {
-    // No real backing table for functional-screening invites/scheduling yet
-    // (see function header) — stay honest rather than reusing zeko_hr's row.
-    if (zekoScores) {
-      s2 = { state: 'done', detail: 'Interview completed' };
-      s3 = { state: 'done', ...zekoScoreSegment(zekoScores) };
+    // Functional screening runs the same assign+schedule flow as zeko_hr
+    // against the same Zeko job catalog; the backend keeps the two rounds
+    // apart via rpa_zeko_candidate_pipeline.stage ('hr' vs 'functional'), so
+    // `zekoHrPipeline` here is this round's own row, never the HR one.
+    if (zekoHrPipeline) {
+      const statusWord = ZEKO_HR_STATUS_WORD[zekoHrPipeline.status] || zekoHrPipeline.status;
+      if (zekoHrPipeline.interview_start_at) {
+        s2 = {
+          state: zekoScores ? 'done' : 'active',
+          detail: `Scheduled window · ${fmtDateTime(zekoHrPipeline.interview_start_at)}–${fmtDateTime(zekoHrPipeline.interview_end_at)?.split(', ')[1] || ''}`,
+        };
+        emails.push(`Zeko functional screening invite → candidate · ${fmtDateTime(zekoHrPipeline.link_sent_at)}`);
+      } else if (zekoHrPipeline.link_sent_at) {
+        s2 = { state: 'active', detail: 'Awaiting the candidate to self-schedule a slot' };
+        emails.push(`Zeko functional screening invite → candidate · ${fmtDateTime(zekoHrPipeline.link_sent_at)}`);
+      } else {
+        s2 = { state: 'active', detail: `Assigned to a Zeko job — ${statusWord}` };
+      }
     } else if (enteredEvent) {
-      s2 = { state: 'pending', detail: 'Not available yet — functional-screening invite/scheduling has no real data source today' };
+      s2 = { state: 'pending', detail: 'Not yet assigned to a Zeko job' };
+    }
+    // Same "round is genuinely open" rule as zeko_hr.
+    showScheduleButton = isCurrent && !zekoScores && !outcomeEvent;
+
+    if (zekoScores) {
+      // Unlike HR screening, the functional round shows all three scores —
+      // coding included, since that is what this round actually assesses.
+      s3 = { state: 'done', ...zekoScoreSegment(zekoScores) };
+    } else if (zekoHrPipeline?.link_sent_at) {
+      s3 = { state: 'active', detail: 'Awaiting Zeko to sync the score' };
+    } else if (enteredEvent) {
       s3 = { state: 'pending', detail: 'Awaiting Zeko to sync the score, once invited' };
     }
+  } else if (isSchedulableStageKey(stage.stage_key)) {
+    // Technical Rounds 1 & 2 — real booking via rpa_interview_schedule. WHO
+    // interviews comes from the MRF (first/second_technical_round); the
+    // recruiter supplies the mailbox when booking.
+    if (interviewSchedule) {
+      s2 = {
+        state: 'done',
+        detail: `Scheduled · ${fmtDateTime(interviewSchedule.scheduled_start_at)}${interviewSchedule.interviewer_name ? ` with ${interviewSchedule.interviewer_name}` : ''}`,
+      };
+      if (interviewSchedule.invite_sent_at) {
+        const panelSize = (interviewSchedule.interviewer_email || '').split(',').filter((s) => s.trim()).length;
+        const panelLabel = panelSize > 1 ? ` + ${panelSize} interviewers` : panelSize === 1 ? ' + interviewer' : '';
+        emails.push(`Interview invite → candidate${panelLabel} · ${fmtDateTime(interviewSchedule.invite_sent_at)}`);
+      }
+      // The "results" line reflects the real post-interview state:
+      //   no-show      → the interview did not happen; reschedule/reject
+      //   feedback in  → the interviewer submitted their scorecard
+      //   held, no card yet → link sent, waiting on the interviewer
+      //   otherwise    → the interview hasn't happened yet
+      if (interviewSchedule.occurrence_status === 'no_show') {
+        s3 = { state: 'rejected', detail: `No-show${interviewSchedule.no_show_party ? ` (${interviewSchedule.no_show_party})` : ''} — reschedule or reject` };
+      } else if (scorecardSubmitted) {
+        s3 = { state: 'done', detail: 'Feedback received — interviewer submitted the scorecard' };
+      } else if (interviewSchedule.occurrence_status === 'held') {
+        s3 = { state: 'active', detail: 'Interview held — scorecard link sent, awaiting the interviewer’s feedback' };
+      } else {
+        s3 = { state: 'active', detail: 'Awaiting the interview & feedback' };
+      }
+    } else if (enteredEvent) {
+      const owner = mrfInterviewHints?.interviewerName;
+      const slot = mrfInterviewHints?.preferredSlot;
+      s2 = {
+        state: 'active',
+        detail: owner
+          ? `Not scheduled yet · MRF interviewer: ${owner}${slot ? ` · preferred ${slot}` : ''}`
+          : 'Not scheduled yet — no interviewer named on the MRF for this round',
+      };
+      s3 = { state: 'pending', detail: 'Awaiting the interview, once scheduled' };
+    }
+    // Scheduling stays available while the round is genuinely open.
+    showScheduleButton = isCurrent && !outcomeEvent;
   } else if (stage.stage_key === 'assessment') {
     // Phase 3 M2 — bulk-CSV Evalground import (results already land here even
     // though the round is still "manual"; there is no scheduling sub-state
@@ -382,7 +602,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
       showInviteButton = isCurrent;
     }
   } else if (enteredEvent) {
-    // Non-Zeko stage types have no real scheduling/scorecard/docs/offer data
+    // Remaining stage types have no real scheduling/scorecard/docs/offer data
     // model yet — honestly say so rather than fabricating a state.
     s2 = { state: 'pending', detail: 'Not available yet — needs Module 2/3 (scheduling/scorecards)' };
     s3 = { state: 'pending', detail: 'Not available yet — needs Module 2/3 (scheduling/scorecards)' };
@@ -420,7 +640,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
 }
 
 export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
   const [decisionOutcome, setDecisionOutcome] = useState(null);
@@ -435,6 +655,38 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const [scheduleDates, setScheduleDates] = useState(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  // Technical round booking (tech1/tech2) — separate from the Zeko modal above.
+  const [interviewOpen, setInterviewOpen] = useState(false);
+  // 'schedule' (fresh booking) | 'reschedule' (cancel old + rebook). The same
+  // modal serves both; mode switches the title, preview endpoint, and submit.
+  const [interviewMode, setInterviewMode] = useState('schedule');
+  const [interviewAt, setInterviewAt] = useState(null);
+  const [interviewDuration, setInterviewDuration] = useState(60);
+  const [interviewerEmail, setInterviewerEmail] = useState('');
+  // Only surface the "required" error once the field has been visited or a
+  // submit attempted — an error on a pristine, never-touched field reads as broken.
+  const [interviewerEmailTouched, setInterviewerEmailTouched] = useState(false);
+  const [interviewCancelOpen, setInterviewCancelOpen] = useState(false);
+  // No-show modal (which side missed + reason) for the occurrence gate.
+  const [noShowOpen, setNoShowOpen] = useState(false);
+  const [noShowParty, setNoShowParty] = useState('candidate');
+  const [noShowReason, setNoShowReason] = useState('');
+  // Scorecard report panel (per-round scores + overall avg/sum).
+  const [reportOpen, setReportOpen] = useState(false);
+  // Editable emails for the schedule/cancel modals (candidate + panel), each
+  // prefilled from the server preview. `touched` = recruiter edited it, so we
+  // stop overwriting it when the preview refetches (e.g. after a date change).
+  const [schedEmail, setSchedEmail] = useState({
+    candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false,
+  });
+  const [cxlEmail, setCxlEmail] = useState({
+    candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false,
+  });
+  // Which preview payload schedEmail/cxlEmail currently reflect. The body
+  // editors freeze their srcDoc on mount, so they must wait for the adopting
+  // effect below to land — same guard as emailStateForKey in the outcome modal.
+  const [schedEmailForKey, setSchedEmailForKey] = useState(null);
+  const [cxlEmailForKey, setCxlEmailForKey] = useState(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   const open = !!pipelineId;
@@ -458,6 +710,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Drives the "Scorecard report" button: it only appears once at least one
+  // interviewer has SUBMITTED a scorecard for this candidate.
+  const { data: scorecardReport } = useQuery({
+    queryKey: ['scorecard-report', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getScorecardReport(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: open && !!pipelineId,
+  });
+  const hasScorecards = (scorecardReport?.overall?.count || 0) > 0;
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -530,6 +793,71 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   }, [previewData]);
 
   const pipeline = data?.pipeline;
+  // Live interview booking for the current round (used by the cancel preview
+  // query below and the modals); also re-read at the render site further down.
+  const interviewSchedule = data?.interviewSchedule;
+  // True once the scheduled window has passed — gates the "did it happen?"
+  // controls so occurrence is only asked about after the interview time.
+  const interviewEnded = interviewSchedule?.scheduled_end_at
+    ? dayjs(interviewSchedule.scheduled_end_at).isBefore(dayjs())
+    : false;
+
+  // Schedule/reschedule-email preview: the candidate + panel templates compiled
+  // with the date/duration the recruiter is entering. Uses the reschedule
+  // endpoint in reschedule mode so the preview shows the old → new time.
+  const { data: schedPreview } = useQuery({
+    queryKey: ['schedule-preview', interviewMode, pipelineId, pipeline?.current_stage_key, interviewAt?.toISOString(), interviewDuration],
+    queryFn: async () => {
+      const params = {
+        stage_key: pipeline?.current_stage_key,
+        start_at: interviewAt ? interviewAt.toISOString() : undefined,
+        duration_minutes: interviewDuration,
+      };
+      const res = interviewMode === 'reschedule'
+        ? await pipelineService.getReschedulePreview(pipelineId, params)
+        : await pipelineService.getSchedulePreview(pipelineId, params);
+      return res.data?.data || res.data;
+    },
+    enabled: interviewOpen && !!pipeline?.current_stage_key,
+  });
+  useEffect(() => {
+    // Adopt fresh template text only while the recruiter hasn't edited it.
+    if (schedPreview && !schedEmail.touched) {
+      setSchedEmail((s) => ({
+        ...s,
+        candidateSubject: schedPreview.candidate?.subject || '',
+        candidateBody: schedPreview.candidate?.body || '',
+        panelSubject: schedPreview.panel?.subject || '',
+        panelBody: schedPreview.panel?.body || '',
+      }));
+      setSchedEmailForKey(schedPreview);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedPreview]);
+
+  // Cancel-email preview: candidate + panel cancellation templates for the
+  // live booking (interviewSchedule.id), loaded when the cancel modal opens.
+  const { data: cxlPreview } = useQuery({
+    queryKey: ['cancel-preview', interviewSchedule?.id],
+    queryFn: async () => {
+      const res = await pipelineService.getCancelPreview(interviewSchedule.id);
+      return res.data?.data || res.data;
+    },
+    enabled: interviewCancelOpen && !!interviewSchedule?.id,
+  });
+  useEffect(() => {
+    if (cxlPreview && !cxlEmail.touched) {
+      setCxlEmail((s) => ({
+        ...s,
+        candidateSubject: cxlPreview.candidate?.subject || '',
+        candidateBody: cxlPreview.candidate?.body || '',
+        panelSubject: cxlPreview.panel?.subject || '',
+        panelBody: cxlPreview.panel?.body || '',
+      }));
+      setCxlEmailForKey(cxlPreview);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cxlPreview]);
 
   useEffect(() => {
     setDecisionOutcome(null);
@@ -561,13 +889,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   // just invoked from the Tracker instead of duplicating a second recruiter
   // workflow. Assign is a no-op (upsert) if already assigned to this job.
   const scheduleMutation = useMutation({
-    mutationFn: async ({ shortlistId, zekoJobId, start, end }) => {
-      await screeningService.assignZekoJob({ candidate_id: shortlistId, zeko_job_id: zekoJobId });
+    mutationFn: async ({ shortlistId, zekoJobId, start, end, stageKey }) => {
+      // `stage` tells the backend which Zeko round this is — HR screening and
+      // functional screening share the job catalog but get their own row.
+      await screeningService.assignZekoJob({ candidate_id: shortlistId, zeko_job_id: zekoJobId, stage: stageKey });
       return screeningService.scheduleZekoInterview({
         shortlist_id: shortlistId,
         zeko_job_id: zekoJobId,
         interview_start_at: start.toISOString(),
         interview_end_at: end.toISOString(),
+        stage: stageKey,
       });
     },
     onSuccess: () => {
@@ -618,12 +949,138 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     },
   });
 
+  // Technical-round booking. The MRF names the interviewer; their mailbox is
+  // entered per booking, so the invite can actually be delivered. Serves both
+  // fresh scheduling and rescheduling (cancel old + rebook) based on `mode`.
+  const interviewMutation = useMutation({
+    mutationFn: ({ stageKey, startAt, duration, email, mode }) => {
+      const payload = {
+        stage_key: stageKey,
+        start_at: startAt,
+        duration_minutes: duration,
+        interviewer_email: email,
+        // The editable candidate + panel copy from the modal.
+        candidate_subject: schedEmail.candidateSubject,
+        candidate_body: schedEmail.candidateBody,
+        panel_subject: schedEmail.panelSubject,
+        panel_body: schedEmail.panelBody,
+      };
+      return mode === 'reschedule'
+        ? pipelineService.rescheduleInterview(pipelineId, payload)
+        : pipelineService.scheduleInterview(pipelineId, payload);
+    },
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      message.success(vars.mode === 'reschedule' ? 'Interview rescheduled — both parties emailed.' : 'Interview scheduled — invitation emailed.');
+      setInterviewOpen(false);
+      setInterviewAt(null);
+      setInterviewerEmail('');
+      setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
+      setSchedEmailForKey(null);
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.message || 'Failed to save the interview.');
+    },
+  });
+
+  const interviewCancelMutation = useMutation({
+    mutationFn: () => pipelineService.cancelInterview(interviewSchedule.id, {
+      candidate_subject: cxlEmail.candidateSubject,
+      candidate_body: cxlEmail.candidateBody,
+      panel_subject: cxlEmail.panelSubject,
+      panel_body: cxlEmail.panelBody,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      message.success('Interview cancelled — candidate notified.');
+      setInterviewCancelOpen(false);
+      setCxlEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
+      setCxlEmailForKey(null);
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.message || 'Failed to cancel the interview.');
+    },
+  });
+
+  // Occurrence gate: mark the interview held (releases the scorecard link) or a
+  // no-show (records it; no scorecard). Idempotent server-side.
+  const occurrenceMutation = useMutation({
+    mutationFn: ({ scheduleId, outcome, party, reason }) =>
+      pipelineService.recordInterviewOccurrence(scheduleId, { outcome, party, reason }),
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      if (vars.outcome === 'held') {
+        message.success('Interview marked as held — scorecard link sent to the interviewer(s).');
+      } else {
+        message.success('No-show recorded — reschedule or reject this round below.');
+      }
+      setNoShowOpen(false);
+      setNoShowReason('');
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to record the interview outcome.');
+    },
+  });
+
+  /**
+   * "Mark as Held" emails a scorecard link and cannot be undone, so a misclick
+   * is expensive — confirm first, spelling out exactly what happens on OK and
+   * naming the interviewer(s) who will be emailed.
+   */
+  const confirmMarkHeld = (stageLabel) => {
+    if (!interviewSchedule) return;
+    const who = interviewSchedule.interviewer_email || 'the interviewer';
+    const candidateName = data?.pipeline?.rpa_shortlisted_candidates?.candidate_name || 'this candidate';
+    modal.confirm({
+      title: 'Confirm this interview took place?',
+      icon: <ExclamationCircleOutlined />,
+      width: 480,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          <p style={{ marginTop: 0 }}>
+            You are confirming that <strong>{stageLabel || 'this round'}</strong> with{' '}
+            <strong>{candidateName}</strong> actually happened.
+          </p>
+          <p style={{ marginBottom: 4 }}><strong>Clicking “Yes, it was held” will:</strong></p>
+          <ul style={{ margin: '0 0 8px 18px', paddingLeft: 0 }}>
+            <li>Email a secure scorecard link to <strong>{who}</strong></li>
+            <li>Move this round to “Awaiting Results”</li>
+          </ul>
+          <p style={{ margin: 0, color: 'var(--danger, #cf1322)' }}>
+            This cannot be undone. If the interview did not happen, choose “Mark No-show” instead.
+          </p>
+        </div>
+      ),
+      okText: 'Yes, it was held',
+      cancelText: 'Cancel',
+      onOk: () => occurrenceMutation.mutateAsync({ scheduleId: interviewSchedule.id, outcome: 'held' }),
+    });
+  };
+
+  // Manual re-send / send of the scorecard link (only meaningful once held).
+  const sendScorecardMutation = useMutation({
+    mutationFn: (scheduleId) => pipelineService.sendScorecard(scheduleId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      const data = res?.data || res;
+      if (data?.alreadySent) message.info('Scorecard link was already sent for this interview.');
+      else message.success('Scorecard link sent.');
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to send the scorecard link.');
+    },
+  });
+
   if (!open) return null;
 
   const currentStageOutcomes = data?.currentStageOutcomes || [];
   const reasons = data?.reasons || [];
   const zekoScores = data?.zekoScores;
   const zekoHrPipeline = data?.zekoHrPipeline;
+  const mrfInterviewHints = data?.mrfInterviewHints;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
   const zekoJobs = zekoJobsData || [];
@@ -655,12 +1112,73 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       zekoJobId: scheduleJobId,
       start: scheduleDates[0].toDate(),
       end: scheduleDates[1].toDate(),
+      // Scheduling always acts on the round the candidate is currently in.
+      stageKey: pipeline.current_stage_key,
     });
   };
 
   const openCancelModal = () => {
     setCancelReason('');
     setCancelOpen(true);
+  };
+
+  const parsedInterviewers = parseInterviewerEmails(interviewerEmail);
+  const interviewerEmailOk = parsedInterviewers.emails.length > 0 && parsedInterviewers.invalid.length === 0;
+
+  const openInterviewModal = () => {
+    setInterviewMode('schedule');
+    setInterviewAt(null);
+    setInterviewDuration(60);
+    setInterviewerEmail('');
+    setInterviewerEmailTouched(false);
+    setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
+    setSchedEmailForKey(null);
+    setInterviewOpen(true);
+  };
+
+  // Reschedule = the same form, prefilled from the live booking (interviewer,
+  // duration), with the date left blank so the recruiter picks a new one.
+  const openRescheduleModal = () => {
+    setInterviewMode('reschedule');
+    setInterviewAt(null);
+    const mins = interviewSchedule
+      ? Math.round((new Date(interviewSchedule.scheduled_end_at) - new Date(interviewSchedule.scheduled_start_at)) / 60000)
+      : 60;
+    setInterviewDuration([30, 45, 60, 90].includes(mins) ? mins : 60);
+    setInterviewerEmail(interviewSchedule?.interviewer_email || '');
+    setInterviewerEmailTouched(false);
+    setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
+    setSchedEmailForKey(null);
+    setInterviewOpen(true);
+  };
+
+  const submitInterview = () => {
+    if (!interviewAt) {
+      message.error(`Please pick the ${interviewMode === 'reschedule' ? 'new ' : ''}interview date & time.`);
+      return;
+    }
+    if (!interviewerEmailOk) {
+      setInterviewerEmailTouched(true);
+      message.error(
+        parsedInterviewers.invalid.length > 0
+          ? `Not a valid email address: ${parsedInterviewers.invalid.join(', ')}`
+          : "At least one interviewer's email is required so they receive the invite."
+      );
+      return;
+    }
+    interviewMutation.mutate({
+      stageKey: pipeline.current_stage_key,
+      startAt: interviewAt.toDate().toISOString(),
+      duration: interviewDuration,
+      email: interviewerEmail.trim(),
+      mode: interviewMode,
+    });
+  };
+
+  const openInterviewCancelModal = () => {
+    setCxlEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
+    setCxlEmailForKey(null);
+    setInterviewCancelOpen(true);
   };
 
   const submitCancel = () => {
@@ -729,8 +1247,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       stageEvents,
       isCurrent,
       zekoScores: isZekoStageKey(stage.stage_key) ? zekoScores : null,
-      zekoHrPipeline: stage.stage_key === 'zeko_hr' ? zekoHrPipeline : null,
+      // The backend returns the row for the CURRENT stage's round only, so it
+      // must not leak onto the other Zeko stage's card when browsing history.
+      zekoHrPipeline: stage.stage_key === pipeline.current_stage_key ? zekoHrPipeline : null,
       screening,
+      // Same rule for the interview booking + MRF hints.
+      interviewSchedule: stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null,
+      mrfInterviewHints: stage.stage_key === pipeline.current_stage_key ? mrfInterviewHints : null,
+      // Whether an interviewer has submitted a scorecard for THIS stage — flips
+      // the "Awaiting Results" line to "Feedback received".
+      scorecardSubmitted: (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key),
       assessmentResult: stage.stage_key === 'assessment' ? assessmentResultData?.result : null,
       assessmentInvite: stage.stage_key === 'assessment' ? assessmentInviteData : null,
     });
@@ -812,6 +1338,101 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                       </Button>
                     ) : (
                       <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openScheduleModal}>
+                        Schedule Interview
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {/* The Teams card is only useful while the meeting can still be
+                    joined. Once the occurrence is resolved — held or no-show —
+                    the link is stale (it would open an empty call), so the card
+                    is hidden and the outcome tag below tells the story instead.
+                    A reschedule clears occurrence_status and issues a fresh
+                    join URL, which brings the card back. */}
+                {i === 1 && isSchedulableStageKey(stage.stage_key) && interviewSchedule?.teams_join_url
+                  && !interviewSchedule.occurrence_status && (
+                  <div className="cp-pipeline-step__extra">
+                    <TeamsDetails schedule={interviewSchedule} />
+                  </div>
+                )}
+                {i === 1 && showScheduleButton && isSchedulableStageKey(stage.stage_key) && (
+                  <div className="cp-pipeline-step__extra" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {interviewSchedule ? (
+                      // Once the interview window has ended and its occurrence is
+                      // still unresolved, the recruiter confirms held/no-show —
+                      // the gate that releases (or blocks) the scorecard link.
+                      interviewEnded && !interviewSchedule.occurrence_status ? (
+                        // Each button triggers an irreversible action that sends
+                        // real email, so the tooltip spells out what happens
+                        // BEFORE the click rather than after.
+                        <>
+                          <Tooltip title="Confirms the interview took place. Emails the interviewer a secure scorecard link to rate this candidate, and moves the round to “Awaiting Results”. This cannot be undone.">
+                            <Button size="small" type="primary" icon={<CheckOutlined />}
+                              loading={occurrenceMutation.isPending && occurrenceMutation.variables?.outcome === 'held'}
+                              onClick={() => confirmMarkHeld(stage.label)}>
+                              Mark as Held
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title="Records that the interview did not happen. Asks which side was absent, then marks the round as a no-show. No scorecard is sent to the interviewer — reschedule or reject the candidate afterwards.">
+                            <Button size="small" danger icon={<CloseOutlined />} onClick={() => setNoShowOpen(true)}>
+                              Mark No-show
+                            </Button>
+                          </Tooltip>
+                          <Tooltip title="Books a new date & time for this round. Cancels the current Teams meeting, creates a new one, and emails the candidate and interviewer the updated time. No scorecard is sent.">
+                            <Button size="small" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                              Reschedule
+                            </Button>
+                          </Tooltip>
+                        </>
+                      ) : interviewSchedule.occurrence_status === 'held' ? (
+                        (() => {
+                          // Has an interviewer already SUBMITTED a scorecard for this round?
+                          const submitted = (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key);
+                          const label = submitted
+                            ? 'Held · scorecard received'
+                            : interviewSchedule.scorecard_dispatched_at ? 'Held · scorecard sent' : 'Held';
+                          const tip = submitted
+                            ? 'The interview took place and the interviewer has submitted their scorecard. Open “Scorecard report” to see the score.'
+                            : interviewSchedule.scorecard_dispatched_at
+                              ? 'The interview took place (confirmed as held). The scorecard link has been emailed to the interviewer — the candidate’s score will appear once they submit it.'
+                              : 'The interview took place (confirmed as held). Send the scorecard link so the interviewer can submit their feedback.';
+                          return (
+                            <>
+                              <Tooltip title={tip}>
+                                <Tag color="green" style={{ cursor: 'help' }}>{label}</Tag>
+                              </Tooltip>
+                              {!interviewSchedule.scorecard_dispatched_at && !submitted && (
+                                <Button size="small" type="primary"
+                                  loading={sendScorecardMutation.isPending}
+                                  onClick={() => sendScorecardMutation.mutate(interviewSchedule.id)}>
+                                  Send scorecard link
+                                </Button>
+                              )}
+                            </>
+                          );
+                        })()
+                      ) : interviewSchedule.occurrence_status === 'no_show' ? (
+                        <>
+                          <Tooltip title={`The interview did not take place${interviewSchedule.no_show_party ? ` (${interviewSchedule.no_show_party} did not attend)` : ''}${interviewSchedule.no_show_reason ? ` — ${interviewSchedule.no_show_reason}` : ''}. No scorecard is sent for a no-show; reschedule the round or reject the candidate.`}>
+                            <Tag color="red" style={{ cursor: 'help' }}>No-show{interviewSchedule.no_show_party ? ` · ${interviewSchedule.no_show_party}` : ''}</Tag>
+                          </Tooltip>
+                          <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                            Reschedule
+                          </Button>
+                        </>
+                      ) : (
+                        // Still upcoming (or within the window) — normal actions.
+                        <>
+                          <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                            Reschedule
+                          </Button>
+                          <Button size="small" danger icon={<CloseOutlined />} onClick={openInterviewCancelModal}>
+                            Cancel Interview
+                          </Button>
+                        </>
+                      )
+                    ) : (
+                      <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openInterviewModal}>
                         Schedule Interview
                       </Button>
                     )}
@@ -905,6 +1526,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                 ? <Button size="small" type="link" icon={<FileTextOutlined />} style={{ padding: 0 }} href={cvFileUrl} target="_blank" rel="noopener noreferrer">View resume</Button>
                 : <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>}
             </div>
+          )}
+          {hasScorecards && (
+            <Button
+              size="small"
+              type="primary"
+              className="cta-primary btn-sheen"
+              icon={<FileTextOutlined />}
+              style={{ marginBottom: 10 }}
+              onClick={() => setReportOpen(true)}
+            >
+              Scorecard report
+            </Button>
           )}
           {screening?.notes && (
             <Alert type="info" showIcon message={screening.notes} style={{ marginBottom: 10, fontSize: 12.5 }} />
@@ -1046,7 +1679,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
             ) : (
               <>
                 <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject" style={{ marginBottom: 8 }} />
-                <SimpleHtmlEditor value={emailBody} onChange={setEmailBody} />
+                <BrandedBodyEditor value={emailBody} onChange={setEmailBody} wrapper={previewData?.wrapper} subject={emailSubject} />
               </>
             )}
             <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
@@ -1151,6 +1784,230 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       )}
     </Modal>
 
+    {/* Technical round booking (tech1/tech2). Fixed time only — there is no
+        candidate-self-service slot picker for these rounds. */}
+    <Modal
+      open={interviewOpen}
+      onCancel={() => setInterviewOpen(false)}
+      title={interviewMode === 'reschedule' ? 'Reschedule interview' : 'Schedule interview'}
+      width={560}
+      footer={[
+        <Button key="cancel" onClick={() => setInterviewOpen(false)}>Cancel</Button>,
+        <Button key="confirm" type="primary" icon={<CalendarOutlined />} onClick={submitInterview} loading={interviewMutation.isPending}>
+          {interviewMode === 'reschedule' ? 'Reschedule & notify' : 'Create invite'}
+        </Button>,
+      ]}
+    >
+      {pipeline && (
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <Text type="secondary">
+            {pipeline.rpa_shortlisted_candidates?.candidate_name} · {allStages[currentIdx]?.label} · {interviewDuration}-minute interview
+          </Text>
+
+          {/* Reschedule: make it explicit that the existing slot is being cancelled. */}
+          {interviewMode === 'reschedule' && interviewSchedule && (
+            <Alert
+              type="warning"
+              showIcon
+              message={(
+                <span>
+                  Currently scheduled for <Text strong>{fmtDateTime(interviewSchedule.scheduled_start_at)}</Text>.
+                  Picking a new time below cancels this slot and books the new one — both parties are emailed the change.
+                </span>
+              )}
+            />
+          )}
+
+          {/* Who interviews is defined on the MRF — shown read-only, since the
+              column is free text and cannot be resolved to a mailbox. */}
+          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
+            <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.4 }}>FROM THE MRF</Text>
+            <div style={{ marginTop: 4 }}>
+              <Text style={{ fontSize: 12.5 }}>
+                Interviewer: <Text strong>{mrfInterviewHints?.interviewerName || 'not specified'}</Text>
+              </Text>
+              <br />
+              <Text style={{ fontSize: 12.5 }}>
+                Preferred slot: <Text strong>{mrfInterviewHints?.preferredSlot || 'not specified'}</Text>
+              </Text>
+            </div>
+          </div>
+
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>{interviewMode === 'reschedule' ? 'New date' : 'Date'} &amp; time (IST) <Text type="danger">*</Text></Text>
+            <DatePicker
+              showTime={{ format: 'HH:mm', minuteStep: 15 }}
+              format="DD MMM YYYY, HH:mm"
+              style={{ width: '100%', marginTop: 4 }}
+              value={interviewAt}
+              onChange={setInterviewAt}
+              disabledDate={(cur) => cur && cur < dayjs().startOf('day')}
+            />
+          </div>
+
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Duration</Text>
+            <Select
+              style={{ width: '100%', marginTop: 4 }}
+              value={interviewDuration}
+              onChange={setInterviewDuration}
+              options={[30, 45, 60, 90].map((m) => ({ value: m, label: `${m} minutes` }))}
+            />
+          </div>
+
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Interviewer email(s) <Text type="danger">*</Text></Text>
+            <TextArea
+              autoSize={{ minRows: 1, maxRows: 3 }}
+              placeholder="name@aapnainfotech.com, second@aapnainfotech.com"
+              value={interviewerEmail}
+              onChange={(e) => setInterviewerEmail(e.target.value)}
+              onBlur={() => setInterviewerEmailTouched(true)}
+              status={interviewerEmailTouched && !interviewerEmailOk ? 'error' : undefined}
+              style={{ marginTop: 4 }}
+            />
+            {interviewerEmailTouched && !interviewerEmailOk ? (
+              <Text type="danger" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                {parsedInterviewers.invalid.length > 0
+                  ? `Not a valid email address: ${parsedInterviewers.invalid.join(', ')}`
+                  : "At least one interviewer's email is required so they receive the invite."}
+              </Text>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                {parsedInterviewers.emails.length > 1
+                  ? `${parsedInterviewers.emails.length} interviewers will be invited.`
+                  : 'The MRF stores the interviewer’s name only, so enter their mailbox. Separate multiple interviewers with commas.'}
+              </Text>
+            )}
+          </div>
+
+          {/* Editable emails — prefilled from the seeded templates, tweakable
+              before send, exactly like the Approve outcome flow. */}
+          <div>
+            <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
+              Emails to send <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
+            </Text>
+            <InterviewEmailEditors
+              state={schedEmail}
+              onChange={(patch) => setSchedEmail((s) => ({ ...s, ...patch }))}
+              candidateLabel={interviewMode === 'reschedule' ? 'Reschedule notice → candidate' : 'Invitation → candidate'}
+              panelLabel={interviewMode === 'reschedule' ? 'Reschedule notice → interviewer(s)' : 'Invitation → interviewer(s)'}
+              candidateWrapper={schedPreview?.candidate?.wrapper}
+              panelWrapper={schedPreview?.panel?.wrapper}
+              ready={!!schedPreview && (schedEmail.touched || schedEmailForKey === schedPreview)}
+              key={`sched-${schedEmailForKey === schedPreview ? 'ready' : 'loading'}`}
+            />
+          </div>
+
+          <Alert
+            type="info"
+            showIcon
+            icon={<MailOutlined />}
+            message={interviewMode === 'reschedule'
+              ? 'Both parties are emailed the new time when you reschedule.'
+              : 'Both emails are sent from the recruitment mailbox when you create the invite.'}
+          />
+        </Space>
+      )}
+    </Modal>
+
+    <Modal
+      open={interviewCancelOpen}
+      onCancel={() => setInterviewCancelOpen(false)}
+      title="Confirm Cancel Interview"
+      width={560}
+      footer={[
+        <Button key="back" onClick={() => setInterviewCancelOpen(false)}>Back</Button>,
+        <Button
+          key="confirm"
+          danger
+          type="primary"
+          icon={<CloseOutlined />}
+          onClick={() => interviewCancelMutation.mutate()}
+          loading={interviewCancelMutation.isPending}
+        >
+          Yes, Cancel Interview
+        </Button>,
+      ]}
+    >
+      {pipeline && interviewSchedule && (
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>CANDIDATE</Text>
+            <Text strong>{pipeline.rpa_shortlisted_candidates?.candidate_name}</Text>
+            <Text type="secondary" style={{ fontSize: 12.5, display: 'block' }}>{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
+          </div>
+          <div>
+            <Text type="secondary" style={{ fontSize: 11 }}>SCHEDULED TIME</Text>
+            <Text strong style={{ display: 'block' }}>
+              {fmtDateTime(interviewSchedule.scheduled_start_at)} → {fmtDateTime(interviewSchedule.scheduled_end_at)}
+            </Text>
+            {interviewSchedule.interviewer_name && (
+              <Text type="secondary" style={{ fontSize: 12.5 }}>with {interviewSchedule.interviewer_name}</Text>
+            )}
+          </div>
+          <div>
+            <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
+              Cancellation emails <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
+            </Text>
+            <InterviewEmailEditors
+              state={cxlEmail}
+              onChange={(patch) => setCxlEmail((s) => ({ ...s, ...patch }))}
+              candidateLabel="Cancellation → candidate"
+              panelLabel="Cancellation → interviewer(s)"
+              candidateWrapper={cxlPreview?.candidate?.wrapper}
+              panelWrapper={cxlPreview?.panel?.wrapper}
+              ready={!!cxlPreview && (cxlEmail.touched || cxlEmailForKey === cxlPreview)}
+              key={`cxl-${cxlEmailForKey === cxlPreview ? 'ready' : 'loading'}`}
+            />
+          </div>
+
+          <Alert
+            type="error"
+            showIcon
+            message="Both cancellation emails are sent immediately. The round can then be rebooked."
+          />
+        </Space>
+      )}
+    </Modal>
+
+    {/* No-show: which side missed + reason. No scorecard is sent. */}
+    <Modal
+      open={noShowOpen}
+      onCancel={() => setNoShowOpen(false)}
+      title="Mark interview as no-show"
+      width={480}
+      footer={[
+        <Button key="back" onClick={() => setNoShowOpen(false)}>Back</Button>,
+        <Button key="confirm" danger type="primary"
+          loading={occurrenceMutation.isPending && occurrenceMutation.variables?.outcome === 'no_show'}
+          onClick={() => occurrenceMutation.mutate({ scheduleId: interviewSchedule?.id, outcome: 'no_show', party: noShowParty, reason: noShowReason.trim() })}>
+          Record no-show
+        </Button>,
+      ]}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert type="warning" showIcon message="No scorecard link is sent for a no-show. You can reschedule or reject the round afterwards." />
+        <div>
+          <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 4 }}>Who did not attend?</Text>
+          <Select
+            value={noShowParty}
+            onChange={setNoShowParty}
+            style={{ width: '100%' }}
+            options={[
+              { value: 'candidate', label: 'Candidate did not join' },
+              { value: 'panel', label: 'Interviewer / panel did not join' },
+              { value: 'both', label: 'Neither side joined' },
+              { value: 'technical', label: 'Technical / network failure' },
+            ]}
+          />
+        </div>
+        <TextArea rows={2} placeholder="Reason (optional)" value={noShowReason} onChange={(e) => setNoShowReason(e.target.value)} />
+      </Space>
+    </Modal>
+
+    {/* Per-candidate scorecard report — submitted round scores + overall avg/sum. */}
+    <ScorecardReportModal open={reportOpen} onClose={() => setReportOpen(false)} pipelineId={pipelineId} />
     <AssessmentInviteModal
       open={inviteModalOpen}
       onClose={() => setInviteModalOpen(false)}
@@ -1161,5 +2018,88 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       onSend={(payload) => inviteMutation.mutate(payload)}
     />
     </>
+  );
+}
+
+/**
+ * TeamsDetails — in-app view of the Teams meeting a booking carries: the Join
+ * link plus the dial-in Meeting ID / Passcode (the same block the invite email
+ * shows). Meeting ID / Passcode appear only when the tenant returned them.
+ */
+function TeamsDetails({ schedule }) {
+  const { message } = AntApp.useApp();
+  const copy = (label, value) => {
+    if (!value) return;
+    navigator.clipboard?.writeText(value).then(
+      () => message.success(`${label} copied`),
+      () => message.error('Could not copy'),
+    );
+  };
+  return (
+    <div style={{ border: '1px solid var(--ink-3)', borderRadius: 8, padding: '8px 12px', marginTop: 4 }}>
+      <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 4 }}>Microsoft Teams meeting</Text>
+      <Space size={8} wrap>
+        <Button size="small" type="primary" icon={<LinkOutlined />} href={schedule.teams_join_url} target="_blank" rel="noopener noreferrer">
+          Join
+        </Button>
+        {schedule.teams_meeting_id && (
+          <Tooltip title="Click to copy">
+            <Tag style={{ cursor: 'pointer' }} onClick={() => copy('Meeting ID', schedule.teams_meeting_id)}>
+              ID: {schedule.teams_meeting_id}
+            </Tag>
+          </Tooltip>
+        )}
+        {schedule.teams_passcode && (
+          <Tooltip title="Click to copy">
+            <Tag style={{ cursor: 'pointer' }} onClick={() => copy('Passcode', schedule.teams_passcode)}>
+              Passcode: {schedule.teams_passcode}
+            </Tag>
+          </Tooltip>
+        )}
+      </Space>
+    </div>
+  );
+}
+
+/**
+ * ScorecardReportModal — lazy-loads GET /pipeline/:id/scorecard-report when
+ * opened and renders each submitted round's score plus the overall average/sum.
+ */
+function ScorecardReportModal({ open, onClose, pipelineId }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['scorecard-report', pipelineId],
+    // API envelope is { status, message, data: <report> }; unwrap to the report.
+    queryFn: () => pipelineService.getScorecardReport(pipelineId).then((r) => r?.data?.data ?? r?.data ?? r),
+    enabled: open && !!pipelineId,
+  });
+
+  return (
+    <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={620} footer={<Button onClick={onClose}>Close</Button>}>
+      {isLoading ? (
+        <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+      ) : !data || (data.rounds || []).length === 0 ? (
+        <Empty description="No submitted scorecards yet." />
+      ) : (
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Tag color="green" style={{ fontSize: 13, padding: '4px 10px' }}>Average: {data.overall?.average ?? '—'}</Tag>
+            <Tag color="blue" style={{ fontSize: 13, padding: '4px 10px' }}>Sum: {data.overall?.sum ?? '—'}</Tag>
+            <Tag style={{ fontSize: 13, padding: '4px 10px' }}>Rounds scored: {data.overall?.count ?? 0}</Tag>
+          </div>
+          {(data.rounds || []).map((r) => (
+            <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
+              extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Text><strong>Avg:</strong> {r.avg_score ?? '—'} · <strong>Comms:</strong> {r.communication ?? '—'} · <strong>Attitude:</strong> {r.attitude ?? '—'} · <strong>Final:</strong> {r.final_rating ?? '—'}</Text>
+                {(r.skills || []).map((s, i) => (
+                  <Text key={i} type="secondary" style={{ fontSize: 12.5 }}>{s.label}: {s.rating ?? '—'}{s.remark ? ` — ${s.remark}` : ''}</Text>
+                ))}
+                {r.comments ? <Text type="secondary" style={{ fontSize: 12.5 }}>“{r.comments}”</Text> : null}
+              </Space>
+            </Card>
+          ))}
+        </Space>
+      )}
+    </Modal>
   );
 }

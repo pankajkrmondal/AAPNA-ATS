@@ -22,12 +22,13 @@
  * The mock prototype at /candidate-pipeline-prototype stays live alongside
  * this page until RT signs off and the real Tracker is verified end-to-end.
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ImportOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { ImportOutlined, LeftOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
@@ -77,6 +78,9 @@ function cardStatus(card) {
   if (card.current_stage_status === 'hold') return { label: 'On Hold', color: 'gold', accent: '#d4a017' };
   if (card.current_stage_status === 'approved') return { label: 'Approved', color: 'green', accent: '#27ae60' };
   if (card.ready_for_decision) return { label: 'Ready for decision', color: 'green', accent: '#27ae60' };
+  // Technical rounds: a booked interview reads as "Scheduled" (distinct from the
+  // Zeko "Invited"). Both use the same blue accent as the active-but-not-done look.
+  if (card.scheduled) return { label: 'Scheduled', color: 'blue', accent: '#5b7ff0' };
   if (card.invited) return { label: 'Invited', color: 'blue', accent: '#5b7ff0' };
   // Phase 3 M2 — Evalground bulk-CSV import: no result has landed for this
   // journey yet. Never expires/clears itself; only an import (or a decision)
@@ -90,12 +94,14 @@ function cardStatus(card) {
  * results, Decision — mirroring the drawer's own 4-stage pipeline states
  * (minus "Entry", which is always done by the time a card exists). Derived
  * only from the same real fields the drawer uses: current_stage_status,
- * invited/ready_for_decision, final_outcome — no invented lifecycle.
+ * invited/scheduled/ready_for_decision, final_outcome — no invented lifecycle.
  */
 function cardProgressSegments(card) {
   const decided = card.current_stage_status === 'approved' || card.current_stage_status === 'rejected' || card.current_stage_status === 'hold' || !!card.final_outcome;
   const inviteState = 'done'; // the card exists, so the journey has entered this stage
-  const waitState = decided ? 'done' : (card.invited || card.ready_for_decision) ? 'active' : 'pending';
+  // "Awaiting" segment is active once the candidate is invited (Zeko),
+  // scheduled (tech rounds), or ready for a decision.
+  const waitState = decided ? 'done' : (card.invited || card.scheduled || card.ready_for_decision) ? 'active' : 'pending';
   const resultsState = decided ? 'done' : card.ready_for_decision ? 'active' : 'pending';
   const decisionState = card.current_stage_status === 'rejected'
     ? 'rejected'
@@ -186,6 +192,130 @@ function parseNlQuery(text, positions) {
     stuck && 'Stuck > 10 days',
   ].filter(Boolean);
   return { position, source, hold, stuck, read: read.length ? read.join(' · ') : 'No filters matched — showing all candidates' };
+}
+
+/** One column width (260px card + 12px gap) — how far one arrow click scrolls. */
+const COLUMN_STEP = 272;
+
+/**
+ * Horizontally scrollable board with floating left/right arrow buttons pinned
+ * to the vertical center of the VIEWPORT (position: fixed), so they stay
+ * reachable no matter how far down the page has scrolled — the whole point of
+ * this over relying on the browser's bottom scrollbar. Each arrow auto-hides
+ * when the board is already at that edge, and both hide when nothing overflows.
+ */
+function BoardScroller({ children }) {
+  const scrollRef = useRef(null);
+  const [edges, setEdges] = useState({ canLeft: false, canRight: false });
+  // Left/right pixel positions to anchor the fixed arrows to the board's edges
+  // rather than the raw viewport corners (so they sit just inside the columns).
+  const [bounds, setBounds] = useState({ left: 0, right: 0 });
+
+  const measure = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const overflowing = scrollWidth - clientWidth > 4;
+    const canLeft = overflowing && scrollLeft > 4;
+    const canRight = overflowing && scrollLeft < scrollWidth - clientWidth - 4;
+    // Only set state when a value actually changed — measure() runs on every
+    // scroll/resize/layout, so unconditional setState would loop (React #185).
+    setEdges((prev) => (prev.canLeft === canLeft && prev.canRight === canRight ? prev : { canLeft, canRight }));
+
+    const rect = el.getBoundingClientRect();
+    const left = Math.round(rect.left);
+    const right = Math.round(window.innerWidth - rect.right);
+    setBounds((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
+  // Re-measure after each render (column count / width can change), but the
+  // change-guarded setters above keep this from looping.
+  useLayoutEffect(() => {
+    measure();
+  });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    el.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+    };
+  }, [measure]);
+
+  const scrollBy = (dir) => {
+    scrollRef.current?.scrollBy({ left: dir * COLUMN_STEP, behavior: 'smooth' });
+  };
+
+  const arrowStyle = (side) => ({
+    position: 'fixed',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    [side]: `${Math.max(bounds[side] + 4, 8)}px`,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    borderRadius: '50%',
+    // Brand green gradient + glow (same treatment as the primary buttons), with
+    // a white icon so it reads as an action and stands out over the cards.
+    border: '2px solid #fff',
+    background: 'var(--gradient-primary, linear-gradient(135deg, #7a922e, #92a63c))',
+    boxShadow: 'var(--glow-accent, 0 4px 14px rgba(122,146,46,0.30)), 0 2px 8px rgba(0,0,0,0.18)',
+    color: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    fontSize: 18,
+    fontWeight: 700,
+  });
+
+  // The arrows are portaled to <body> so their position:fixed is anchored to
+  // the true viewport — an ancestor with a `transform` (page-enter animation,
+  // MainLayout) would otherwise become their containing block and drop them
+  // from the viewport middle.
+  const arrows = createPortal(
+    <>
+      {edges.canLeft && (
+        <button
+          type="button"
+          aria-label="Scroll pipeline stages left"
+          onClick={() => scrollBy(-1)}
+          style={arrowStyle('left')}
+          className="board-scroll-arrow"
+        >
+          <LeftOutlined />
+        </button>
+      )}
+      {edges.canRight && (
+        <button
+          type="button"
+          aria-label="Scroll pipeline stages right"
+          onClick={() => scrollBy(1)}
+          style={arrowStyle('right')}
+          className="board-scroll-arrow"
+        >
+          <RightOutlined />
+        </button>
+      )}
+    </>,
+    document.body,
+  );
+
+  return (
+    <>
+      {arrows}
+      <div
+        ref={scrollRef}
+        className="stagger-children"
+        style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}
+      >
+        {children}
+      </div>
+    </>
+  );
 }
 
 export default function Pipeline() {
@@ -308,7 +438,7 @@ export default function Pipeline() {
         <Text type="secondary">{filteredTotal} of {total} candidates</Text>
       </Space>
 
-      <div className="stagger-children" style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}>
+      <BoardScroller>
         {columns.map((col) => (
           <div key={col.stage_key} style={{ flex: '0 0 260px' }}>
             <Card
@@ -348,7 +478,7 @@ export default function Pipeline() {
             </Card>
           </div>
         ))}
-      </div>
+      </BoardScroller>
 
       <PipelineDrawer
         pipelineId={openPipelineId}
