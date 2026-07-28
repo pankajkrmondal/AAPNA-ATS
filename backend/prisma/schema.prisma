@@ -780,48 +780,6 @@ model rpa_stage_outcomes {
   @@index([stage_key], map: "idx_stage_outcomes_stage")
 }
 
-model rpa_interview_schedule {
-  id                      BigInt                    @id @default(autoincrement())
-  pipeline_id             BigInt
-  stage_key               String                    @db.VarChar(50)
-  interviewer_name        String?                   @db.VarChar(150)
-  interviewer_email       String?
-  scheduled_start_at      DateTime                  @db.Timestamptz(6)
-  scheduled_end_at        DateTime                  @db.Timestamptz(6)
-  status                  String                    @default("scheduled") @db.VarChar(30)
-  notes                   String?
-  graph_event_id          String?                   @db.VarChar(512)
-  teams_join_url          String?
-  invite_sent_at          DateTime?                 @db.Timestamptz(6)
-  candidate_reminded_at   DateTime?                 @db.Timestamptz(6)
-  interviewer_reminded_at DateTime?                 @db.Timestamptz(6)
-  cancelled_at            DateTime?                 @db.Timestamptz(6)
-  cancel_reason           String?
-  created_by              Int?
-  created_at              DateTime                  @default(now()) @db.Timestamptz(6)
-  modified_at             DateTime                  @default(now()) @db.Timestamptz(6)
-  online_meeting_id       String?                   @db.VarChar(512)
-  occurrence_status       String?                   @db.VarChar(20)
-  occurrence_source       String?                   @db.VarChar(20)
-  occurrence_confirmed_by String?                   @db.VarChar(255)
-  occurrence_confirmed_at DateTime?                 @db.Timestamptz(6)
-  no_show_party           String?                   @db.VarChar(20)
-  no_show_reason          String?
-  occurrence_nudge_at     DateTime?                 @db.Timestamptz(6)
-  attendance_checked_at   DateTime?                 @db.Timestamptz(6)
-  scorecard_dispatched_at DateTime?                 @db.Timestamptz(6)
-  teams_meeting_id        String?                   @db.VarChar(64)
-  teams_passcode          String?                   @db.VarChar(64)
-  rpa_users               rpa_users?                @relation(fields: [created_by], references: [id])
-  rpa_candidate_pipeline  rpa_candidate_pipeline    @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
-  rpa_pipeline_stages     rpa_pipeline_stages       @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
-  rpa_interview_scorecard rpa_interview_scorecard[]
-
-  @@index([pipeline_id], map: "idx_interview_schedule_pipeline")
-  @@index([pipeline_id, stage_key], map: "idx_interview_schedule_stage")
-  @@index([status], map: "idx_interview_schedule_status")
-}
-
 model rpa_assessment_imports {
   id                           BigInt                         @id @default(autoincrement())
   mechanism                    String                         @default("bulk_csv") @db.VarChar(20)
@@ -887,6 +845,46 @@ model rpa_assessment_test_mappings {
   modified_at            DateTime                @default(now()) @db.Timestamptz(6)
   rpa_users              rpa_users?              @relation(fields: [confirmed_by_id], references: [id], onUpdate: NoAction)
   rpa_assessment_imports rpa_assessment_imports? @relation(fields: [first_import_id], references: [id], onUpdate: NoAction)
+}
+
+model rpa_interview_schedule {
+  id                      BigInt                    @id @default(autoincrement())
+  pipeline_id             BigInt
+  stage_key               String                    @db.VarChar(50)
+  interviewer_name        String?                   @db.VarChar(150)
+  interviewer_email       String?
+  scheduled_start_at      DateTime                  @db.Timestamptz(6)
+  scheduled_end_at        DateTime                  @db.Timestamptz(6)
+  status                  String                    @default("scheduled") @db.VarChar(30)
+  notes                   String?
+  graph_event_id          String?                   @db.VarChar(512)
+  teams_join_url          String?
+  invite_sent_at          DateTime?                 @db.Timestamptz(6)
+  candidate_reminded_at   DateTime?                 @db.Timestamptz(6)
+  interviewer_reminded_at DateTime?                 @db.Timestamptz(6)
+  cancelled_at            DateTime?                 @db.Timestamptz(6)
+  cancel_reason           String?
+  created_by              Int?
+  created_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  modified_at             DateTime                  @default(now()) @db.Timestamptz(6)
+  online_meeting_id       String?                   @db.VarChar(512)
+  occurrence_status       String?                   @db.VarChar(20)
+  occurrence_source       String?                   @db.VarChar(20)
+  occurrence_confirmed_by String?                   @db.VarChar(255)
+  occurrence_confirmed_at DateTime?                 @db.Timestamptz(6)
+  no_show_party           String?                   @db.VarChar(20)
+  no_show_reason          String?
+  occurrence_nudge_at     DateTime?                 @db.Timestamptz(6)
+  attendance_checked_at   DateTime?                 @db.Timestamptz(6)
+  scorecard_dispatched_at DateTime?                 @db.Timestamptz(6)
+  rpa_users               rpa_users?                @relation(fields: [created_by], references: [id])
+  rpa_candidate_pipeline  rpa_candidate_pipeline    @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  rpa_pipeline_stages     rpa_pipeline_stages       @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
+  rpa_interview_scorecard rpa_interview_scorecard[]
+
+  @@index([pipeline_id], map: "idx_interview_schedule_pipeline")
+  @@index([pipeline_id, stage_key], map: "idx_interview_schedule_stage")
+  @@index([status], map: "idx_interview_schedule_status")
 }
 
 model rpa_interview_scorecard {

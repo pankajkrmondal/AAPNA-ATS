@@ -3,8 +3,8 @@
  * Settings (automated email reminder behaviour and an Email Coverage guide).
  */
 import { useState, useEffect, useRef } from 'react';
-import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
-import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined } from '@ant-design/icons';
+import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch } from 'antd';
+import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
@@ -18,10 +18,6 @@ const APPEARANCE_OPTIONS = [
   { label: 'System', value: 'system', icon: <DesktopOutlined /> },
 ];
 
-// Poll intervals (minutes) offered for the interview-reminder check. Must match
-// ALLOWED_INTERVALS in backend/src/jobs/interviewReminder.js.
-const INTERVIEW_CHECK_INTERVALS = [1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
-
 export default function Settings() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -34,11 +30,6 @@ export default function Settings() {
   const [assessmentForm] = Form.useForm();
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentSaving, setAssessmentSaving] = useState(false);
-
-  // Interview reminder scheduler — saved on change, applied without a restart.
-  const [interviewCfg, setInterviewCfg] = useState({ enabled: false, interval_minutes: 30, lead_minutes: 30 });
-  const [interviewLoading, setInterviewLoading] = useState(true);
-  const [interviewSaving, setInterviewSaving] = useState(false);
 
   // Load existing settings on mount
   useEffect(() => {
@@ -74,56 +65,37 @@ export default function Settings() {
     fetchSettings();
   }, [form]);
 
-  // Load the interview reminder scheduler config
+  // Load Assessment automation settings on mount
   useEffect(() => {
-    const fetchInterviewCfg = async () => {
+    const fetchAssessmentSettings = async () => {
+      setAssessmentLoading(true);
       try {
-        const res = await settingsService.getInterviewReminderConfig();
-        const data = res.data?.data;
-        if (data) setInterviewCfg(data);
-      } catch {
-        message.error('Failed to load interview reminder settings.');
+        const res = await settingsService.getAssessmentAutomation();
+        if (res.data && res.data.data) {
+          const { assessment_deadline_days, assessment_auto_advance_enabled } = res.data.data;
+          assessmentForm.setFieldsValue({ assessment_deadline_days, assessment_auto_advance_enabled });
+        }
+      } catch (err) {
+        message.error('Failed to load assessment automation settings.');
       } finally {
-        setInterviewLoading(false);
+        setAssessmentLoading(false);
       }
     };
-    fetchInterviewCfg();
-  }, []);
+    fetchAssessmentSettings();
+  }, [assessmentForm]);
 
-  /**
-   * Persists a scheduler change straight away — a toggle that needed a separate
-   * Save press reads as broken, and the backend restarts the cron on write.
-   */
-  const saveInterviewCfg = async (patch) => {
-    const next = { ...interviewCfg, ...patch };
-    setInterviewCfg(next);
-    setInterviewSaving(true);
+  const onFinishAssessment = async (values) => {
+    setAssessmentSaving(true);
     try {
-      const res = await settingsService.saveInterviewReminderConfig({
-        enabled: next.enabled,
-        interval_minutes: next.interval_minutes,
-        lead_minutes: next.lead_minutes,
+      await settingsService.saveAssessmentAutomation({
+        assessment_deadline_days: values.assessment_deadline_days,
+        assessment_auto_advance_enabled: !!values.assessment_auto_advance_enabled,
       });
-      // The server may raise the lead time to keep it >= the check interval;
-      // adopt what it actually saved so the inputs never show a stale value.
-      const saved = res.data?.data;
-      if (saved) {
-        setInterviewCfg({
-          enabled: saved.enabled,
-          interval_minutes: saved.interval_minutes,
-          lead_minutes: saved.lead_minutes,
-        });
-      }
-      if (saved?.lead_adjusted) {
-        message.warning(res.data?.message || 'Reminder lead time was raised to match the check interval.');
-      } else {
-        message.success(res.data?.message || 'Interview reminders updated.');
-      }
+      message.success('Assessment automation settings updated successfully!');
     } catch (err) {
-      message.error(err?.response?.data?.message || 'Failed to update interview reminders.');
-      setInterviewCfg(interviewCfg); // roll back the optimistic change
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update assessment automation settings.');
     } finally {
-      setInterviewSaving(false);
+      setAssessmentSaving(false);
     }
   };
 
@@ -157,17 +129,6 @@ export default function Settings() {
       rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined,
     );
   };
-
-  // A lead time shorter than the check interval means the job can step over the
-  // reminder window without ever landing inside it.
-  const leadTooShort = interviewCfg.enabled && interviewCfg.lead_minutes < interviewCfg.interval_minutes;
-
-  /** "3:00 PM minus the lead time" — makes the abstract number concrete. */
-  const exampleTime = dayjs()
-    .hour(15)
-    .minute(0)
-    .subtract(interviewCfg.lead_minutes || 0, 'minute')
-    .format('h:mm A');
 
   const emailCoverageColumns = [
     {
@@ -229,127 +190,6 @@ export default function Settings() {
             onChange={handleAppearanceChange}
             options={APPEARANCE_OPTIONS}
           />
-        </div>
-      </Card>
-
-      {/* Interview reminder scheduler — on/off + how often the job checks */}
-      <Card
-        bordered={false}
-        style={{ borderRadius: 12, boxShadow: 'var(--shadow-md)', marginBottom: 24 }}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
-              <CalendarOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
-              <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
-                Interview Reminders
-              </Title>
-              <Tag color={interviewCfg.enabled ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
-                {interviewCfg.enabled ? 'ON' : 'OFF'}
-              </Tag>
-            </div>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Automatically emails the candidate and the interviewer a reminder before their scheduled
-              Technical Round, so nobody misses it. Each person is emailed once per interview.
-            </Text>
-          </div>
-          <Spin spinning={interviewLoading || interviewSaving}>
-            <Switch
-              checked={interviewCfg.enabled}
-              onChange={(checked) => saveInterviewCfg({ enabled: checked })}
-              disabled={interviewLoading}
-              checkedChildren="ON"
-              unCheckedChildren="OFF"
-              style={{ marginTop: 4 }}
-            />
-          </Spin>
-        </div>
-
-        <div
-          style={{
-            marginTop: 20,
-            opacity: interviewCfg.enabled ? 1 : 0.45,
-            pointerEvents: interviewCfg.enabled ? 'auto' : 'none',
-            transition: 'opacity 0.2s',
-          }}
-        >
-          {/* The setting people actually care about comes first: when the email lands. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-              Email them
-            </span>
-            <InputNumber
-              min={5}
-              max={1440}
-              step={5}
-              value={interviewCfg.lead_minutes}
-              onChange={(val) => val && saveInterviewCfg({ lead_minutes: val })}
-              addonAfter="minutes"
-              style={{ width: 160 }}
-            />
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-              before the interview starts
-            </span>
-          </div>
-
-          <div style={{ marginTop: 22, marginBottom: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-              How often the system checks for interviews coming up
-            </span>
-            <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginTop: 2 }}>
-              A background check that usually finds nothing — it only decides how precisely the timing above is hit.
-              Shorter is more accurate.
-            </Text>
-          </div>
-          <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 2 }}>
-            <Segmented
-              value={interviewCfg.interval_minutes}
-              onChange={(val) => saveInterviewCfg({ interval_minutes: val })}
-              options={INTERVIEW_CHECK_INTERVALS.map((m) => ({
-                label: m === 60 ? '1 hour' : `${m} min`,
-                value: m,
-              }))}
-            />
-          </div>
-
-          {/* Worked example — the clearest way to show what the two numbers do together. */}
-          <div
-            style={{
-              marginTop: 18,
-              background: 'var(--info-bg)',
-              border: '1px solid var(--info-border)',
-              borderRadius: 8,
-              padding: '12px 16px',
-              color: 'var(--info-text)',
-              fontSize: 13,
-              lineHeight: 1.6,
-            }}
-          >
-            <strong>What this means:</strong> for an interview at 3:00 PM, the candidate and interviewer
-            are emailed at about <strong>{exampleTime}</strong>
-            {` (within ${interviewCfg.interval_minutes} minute${interviewCfg.interval_minutes === 1 ? '' : 's'} of that).`}
-            {' '}Everyone gets one reminder per interview.
-          </div>
-
-          {leadTooShort && (
-            <div
-              style={{
-                marginTop: 12,
-                background: 'var(--warn-bg)',
-                border: '1px solid var(--warn-border)',
-                borderRadius: 8,
-                padding: '12px 16px',
-                color: 'var(--warn-text)',
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
-              <strong>Reminders may be missed.</strong> The check runs every {interviewCfg.interval_minutes} minutes
-              but reminders are set to go out only {interviewCfg.lead_minutes} minutes ahead, so the system can skip
-              past that window entirely. Raise the lead time to at least {interviewCfg.interval_minutes} minutes,
-              or check more often.
-            </div>
-          )}
         </div>
       </Card>
 

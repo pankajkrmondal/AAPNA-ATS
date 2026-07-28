@@ -31,41 +31,6 @@ export const STAGE_KEYS = Object.freeze({
 /** Stage keys whose stage_type is 'zeko' — used to detect "is this a Zeko stage?" without a DB round-trip. */
 export const ZEKO_STAGE_KEYS = Object.freeze([STAGE_KEYS.ZEKO_HR, STAGE_KEYS.ZEKO_FUNCTIONAL]);
 
-/**
- * Values stored in rpa_zeko_candidate_pipeline.stage — which Zeko interview
- * ROUND a row belongs to. Distinct from STAGE_KEYS (the pipeline board's stage
- * keys): 'hr' predates the stage engine and is the column default, so it is
- * kept verbatim rather than renamed to 'zeko_hr'.
- *
- * Both rounds draw on the same Zeko job catalog; the round is what separates
- * the two rows for one candidate (unique key: candidate_id + zeko_job_id + stage).
- */
-export const ZEKO_ROUND_STAGES = Object.freeze({
-  HR: 'hr',
-  FUNCTIONAL: 'functional',
-});
-
-/** Maps a pipeline board stage key onto the Zeko round value stored on the row. */
-const BOARD_KEY_TO_ROUND = Object.freeze({
-  [STAGE_KEYS.ZEKO_HR]: ZEKO_ROUND_STAGES.HR,
-  [STAGE_KEYS.ZEKO_FUNCTIONAL]: ZEKO_ROUND_STAGES.FUNCTIONAL,
-});
-
-/**
- * Coerces any accepted spelling of a Zeko round onto a canonical stored value.
- * Accepts both the board stage key ('zeko_hr'/'zeko_fn') and the stored round
- * value ('hr'/'functional'), so callers on either side of the boundary work.
- *
- * @param {string} [stage] - board stage key or stored round value
- * @returns {string} 'hr' | 'functional' (defaults to 'hr')
- */
-export function normalizeZekoRoundStage(stage) {
-  if (!stage) return ZEKO_ROUND_STAGES.HR;
-  const raw = String(stage).toLowerCase();
-  if (BOARD_KEY_TO_ROUND[raw]) return BOARD_KEY_TO_ROUND[raw];
-  return Object.values(ZEKO_ROUND_STAGES).includes(raw) ? raw : ZEKO_ROUND_STAGES.HR;
-}
-
 export const STAGE_OUTCOMES = Object.freeze({
   APPROVED: 'approved',
   REJECTED: 'rejected',

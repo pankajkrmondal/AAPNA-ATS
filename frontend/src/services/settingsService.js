@@ -19,20 +19,21 @@ const settingsService = {
   },
 
   /**
-   * Get the interview reminder scheduler config (on/off, poll interval, lead time).
+   * Get Evalground Assessment automation settings (invite deadline days +
+   * the global auto-advance/auto-reject toggle).
    * @returns {Promise}
    */
-  getInterviewReminderConfig() {
-    return api.get('/settings/interview-reminder');
+  getAssessmentAutomation() {
+    return api.get('/settings/assessment-automation');
   },
 
   /**
-   * Update the interview reminder scheduler. Applies immediately — no restart.
-   * @param {object} payload — { enabled, interval_minutes?, lead_minutes? }
+   * Save Evalground Assessment automation settings. Admin-tier only server-side.
+   * @param {object} payload — { assessment_deadline_days, assessment_auto_advance_enabled }
    * @returns {Promise}
    */
-  saveInterviewReminderConfig(payload) {
-    return api.post('/settings/interview-reminder', payload);
+  saveAssessmentAutomation(payload) {
+    return api.post('/settings/assessment-automation', payload);
   },
 };
 

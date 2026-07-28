@@ -44,7 +44,6 @@ import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
 import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
 import Pipeline from './pages/Pipeline';
-import InterviewScorecard from './pages/InterviewScorecard';
 
 /* ---- Route Guards ---- */
 
@@ -284,9 +283,6 @@ function AppShell() {
             {/* Public MRF submission & approval routes (always light — external users) */}
             <Route path="/mrf-submit" element={<ForceLight><MrfSubmit /></ForceLight>} />
             <Route path="/mrf/:id/approve" element={<ForceLight><MrfApprovalAction /></ForceLight>} />
-
-            {/* Public interviewer scorecard (no login — opened from an emailed link) */}
-            <Route path="/scorecard/:token" element={<ForceLight><InterviewScorecard /></ForceLight>} />
 
             {/* Protected (app) routes */}
             <Route

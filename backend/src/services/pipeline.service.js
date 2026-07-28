@@ -6,30 +6,8 @@ import {
   STAGE_OUTCOMES,
   finalStatusLabelFor,
   shortlistStatusFor,
-  isZekoStage,
-  normalizeZekoRoundStage,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule } from './interviewSchedule.service.js';
-
-// Interview booking lives in its own service; re-exported so the pipeline
-// controller keeps a single service import for everything on this route.
-export {
-  scheduleInterviewRound,
-  cancelInterviewRound,
-  rescheduleInterviewRound,
-  previewScheduleEmails,
-  previewCancelEmails,
-  previewRescheduleEmails,
-  markInterviewOccurrence,
-} from './interviewSchedule.service.js';
-
-// Interviewer scorecard (Module 3) — dispatch + per-candidate report, re-exported
-// for the same single-import convention on the pipeline route.
-export {
-  dispatchScorecards,
-  getCandidateScorecardReport,
-} from './interviewScorecard.service.js';
 
 /**
  * pipeline.service.js — Phase 3 Module 1 stage engine.
@@ -117,46 +95,21 @@ export async function listPipeline(filters = {}) {
     scored.forEach((cv) => zekoScoredCvIds.add(String(cv.id)));
   }
 
-  // Real "invited" state for in-progress Zeko cards — from the existing
+  // Real "invited" state for in-progress zeko_hr cards — from the existing
   // assignCandidateToZekoJob/scheduleInterview flow (Candidate Screening),
-  // keyed by shortlist_id (rpa_zeko_candidate_pipeline.candidate_id).
-  // Matched per ROUND ('hr' vs 'functional'): a candidate invited for HR
-  // screening must not read as already invited once they reach functional.
-  const zekoJourneys = journeys.filter(
-    (j) => isZekoStage(j.current_stage_key) && j.current_stage_status === 'in_progress' && j.shortlist_id
-  );
-  // Set of `${shortlist_id}:${round}` pairs that have a real invite sent.
-  const invitedRoundKeys = new Set();
-  if (zekoJourneys.length > 0) {
+  // keyed by shortlist_id (rpa_zeko_candidate_pipeline.candidate_id). No
+  // equivalent for zeko_fn — that table's `stage` is hard-coded 'hr' every­
+  // where it's written, so there's no real data source for it yet.
+  const zekoHrShortlistIds = journeys
+    .filter((j) => j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && j.shortlist_id)
+    .map((j) => j.shortlist_id);
+  const invitedShortlistIds = new Set();
+  if (zekoHrShortlistIds.length > 0) {
     const invited = await prisma.rpa_zeko_candidate_pipeline.findMany({
-      where: {
-        candidate_id: { in: zekoJourneys.map((j) => j.shortlist_id) },
-        stage: { in: [...new Set(zekoJourneys.map((j) => normalizeZekoRoundStage(j.current_stage_key)))] },
-        status: { not: 'cancelled' },
-        link_sent_at: { not: null },
-      },
-      select: { candidate_id: true, stage: true },
+      where: { candidate_id: { in: zekoHrShortlistIds }, stage: 'hr', status: { not: 'cancelled' }, link_sent_at: { not: null } },
+      select: { candidate_id: true },
     });
-    invited.forEach((row) => invitedRoundKeys.add(`${row.candidate_id}:${row.stage}`));
-  }
-
-  // Real "scheduled" state for in-progress technical-round cards (tech1/tech2) —
-  // a live booking in rpa_interview_schedule for the candidate's current stage.
-  // Keyed by pipeline id + stage_key since that table references the pipeline
-  // journey directly (unlike the Zeko table, keyed by shortlist_id).
-  const scheduledJourneys = journeys.filter(
-    (j) => isSchedulableStage(j.current_stage_key) && j.current_stage_status === 'in_progress'
-  );
-  const scheduledKeys = new Set();
-  if (scheduledJourneys.length > 0) {
-    const booked = await prisma.rpa_interview_schedule.findMany({
-      where: {
-        pipeline_id: { in: scheduledJourneys.map((j) => j.id) },
-        status: { not: 'cancelled' },
-      },
-      select: { pipeline_id: true, stage_key: true },
-    });
-    booked.forEach((row) => scheduledKeys.add(`${row.pipeline_id}:${row.stage_key}`));
+    invited.forEach((row) => invitedShortlistIds.add(row.candidate_id));
   }
 
   // Real Evalground-result presence for in-progress Assessment-stage cards
@@ -183,15 +136,10 @@ export async function listPipeline(filters = {}) {
       ? Math.floor((now - new Date(lastEvent.created_at).getTime()) / (1000 * 60 * 60 * 24))
       : Math.floor((now - new Date(j.modified_at).getTime()) / (1000 * 60 * 60 * 24));
 
-    const onZekoStage = isZekoStage(j.current_stage_key);
-    const readyForDecision = onZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
-    const invited = onZekoStage
-      && j.current_stage_status === 'in_progress'
-      && invitedRoundKeys.has(`${j.shortlist_id}:${normalizeZekoRoundStage(j.current_stage_key)}`);
-    // Technical rounds: a live booking means the card is "Scheduled".
-    const scheduled = isSchedulableStage(j.current_stage_key)
-      && j.current_stage_status === 'in_progress'
-      && scheduledKeys.has(`${j.id}:${j.current_stage_key}`);
+    const isZekoStage = j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn';
+    const readyForDecision = isZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
+    const invited = j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && invitedShortlistIds.has(j.shortlist_id);
+    const assessmentPending = j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress' && !assessmentResultPipelineIds.has(String(j.id));
 
     return {
       id: Number(j.id),
@@ -206,7 +154,7 @@ export async function listPipeline(filters = {}) {
       current_stage_status: j.current_stage_status,
       ready_for_decision: readyForDecision,
       invited,
-      scheduled,
+      assessment_pending: assessmentPending,
       final_outcome: j.final_outcome,
       source: j.source,
       vendor_email: j.vendor_email,
@@ -305,32 +253,19 @@ export async function getPipelineDetail(pipelineId) {
       }
     : null;
 
-  // Real Zeko invite/schedule status for whichever Zeko round the candidate is
-  // currently on — from the same assignCandidateToZekoJob/scheduleInterview
-  // flow Candidate Screening uses (screening.service.js). Both rounds draw on
-  // the same Zeko job catalog and are told apart by the row's `stage`
-  // ('hr' vs 'functional'), so functional screening reads its own row and can
-  // never pick up the HR round's schedule.
+  // Real Zeko HR-screening invite/schedule status — from the existing
+  // assignCandidateToZekoJob/scheduleInterview flow on Candidate Screening
+  // (screening.service.js), surfaced read-only here rather than duplicating
+  // that job-picker UI in the Tracker. Only wired for zeko_hr: "functional"
+  // screening has no equivalent row today — rpa_zeko_candidate_pipeline.stage
+  // is hard-coded 'hr' everywhere it's written in the codebase, so zeko_fn
+  // honestly has no real invite/schedule data source yet.
   let zekoHrPipeline = null;
-  if (isZekoStage(pipeline.current_stage_key) && pipeline.shortlist_id) {
+  if (pipeline.current_stage_key === 'zeko_hr' && pipeline.shortlist_id) {
     zekoHrPipeline = await prisma.rpa_zeko_candidate_pipeline.findFirst({
-      where: {
-        candidate_id: pipeline.shortlist_id,
-        stage: normalizeZekoRoundStage(pipeline.current_stage_key),
-        status: { not: 'cancelled' },
-      },
+      where: { candidate_id: pipeline.shortlist_id, stage: 'hr', status: { not: 'cancelled' } },
       orderBy: { created_at: 'desc' },
     });
-  }
-
-  // Scheduled interview rounds (tech1/tech2): the MRF names who interviews and
-  // their preferred window — free text shown to the recruiter as hints — plus
-  // the live booking, if one exists.
-  let interviewSchedule = null;
-  let mrfInterviewHints = null;
-  if (isSchedulableStage(pipeline.current_stage_key)) {
-    mrfInterviewHints = mrfRoundHints(pipeline.rpa_shortlisted_candidates?.mrf, pipeline.current_stage_key);
-    interviewSchedule = await getLiveSchedule(pipeline.id, pipeline.current_stage_key);
   }
 
   return serializeBigInts({
@@ -341,8 +276,6 @@ export async function getPipelineDetail(pipelineId) {
     cvFileUrl,
     screening,
     zekoHrPipeline,
-    interviewSchedule,
-    mrfInterviewHints,
   });
 }
 
@@ -353,9 +286,7 @@ export async function getPipelineDetail(pipelineId) {
  * matching CandidatePipelinePrototype.jsx's decision-modal pattern.
  * @param {number} pipelineId
  * @param {string} outcomeKey
- * @returns {Promise<{ subject: string, body: string, wrapper: object, templateId: number|null, templateName: string|null }>}
- *   `body` is the editable fragment; `wrapper` is the branded header/footer the
- *   modal renders around it (see emailLayout.service.js).
+ * @returns {Promise<{ subject: string, body: string, templateId: number|null, templateName: string|null }>}
  */
 export async function getOutcomePreview(pipelineId, outcomeKey) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
