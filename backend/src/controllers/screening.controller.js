@@ -40,7 +40,7 @@ export const searchKeywordCandidates = catchAsync(async (req, res) => {
  * POST /api/screening/shortlist
  */
 export const shortlistCandidates = catchAsync(async (req, res) => {
-  const { candidates, mrf_id, role_name } = req.body;
+  const { candidates, mrf_id, role_name, send_email, email_override } = req.body;
   if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
     throw new AppError('Candidates array is required.', 400);
   }
@@ -49,8 +49,32 @@ export const shortlistCandidates = catchAsync(async (req, res) => {
     throw new AppError('Invalid MRF ID.', 400);
   }
 
-  const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user);
+  const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user, {
+    sendEmail: send_email !== false,
+    emailOverride: email_override || null,
+  });
   return success(res, result, 'Candidates shortlisted successfully');
+});
+
+/**
+ * POST /api/screening/reject
+ */
+export const rejectCandidates = catchAsync(async (req, res) => {
+  const { candidates, mrf_id, role_name, reason, send_email, email_override } = req.body;
+  if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+    throw new AppError('Candidates array is required.', 400);
+  }
+  if (!reason) {
+    throw new AppError('A rejection reason is required.', 400);
+  }
+  const mrfId = parseInt(mrf_id, 10) || 0;
+
+  const result = await screeningService.rejectCandidates(candidates, mrfId, role_name, req.user, {
+    reason,
+    sendEmail: send_email !== false,
+    emailOverride: email_override || null,
+  });
+  return success(res, result, 'Candidates rejected successfully');
 });
 
 /**

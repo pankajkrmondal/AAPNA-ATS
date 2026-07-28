@@ -44,6 +44,9 @@ import DOMPurify from 'dompurify';
 import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
 import screeningService from '../../services/screeningService';
+import assessmentImportService from '../../services/assessmentImportService';
+import settingsService from '../../services/settingsService';
+import AssessmentInviteModal from './AssessmentInviteModal';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -349,6 +352,31 @@ function zekoScoreSegment(zekoScores, { coding = true } = {}) {
   };
 }
 
+/**
+ * Builds the "Awaiting Results" detail line + score chips from an Evalground
+ * import result (Phase 3 M2). Section scores are raw marks (not percentages —
+ * verified against the real sample export), so they're shown as plain
+ * numbers rather than run through Zeko's 0–100 scoreBand() coloring, which
+ * doesn't apply here.
+ */
+function assessmentScoreSegment(result) {
+  const map = result.section_label_map || {};
+  const sections = [
+    { key: 'section_1', value: result.section_1_score },
+    { key: 'section_2', value: result.section_2_score },
+    { key: 'section_3', value: result.section_3_score },
+  ].filter((s) => s.value !== null && s.value !== undefined);
+
+  const chips = sections.map((s) => ({ value: s.value, label: map[s.key]?.skill_label || s.key.replace('section_', 'Section ') }));
+
+  return {
+    detail: (result.overall_result
+      ? `Evalground result: ${result.overall_result}${result.overall_percentage != null ? ` (${result.overall_percentage}%)` : ''}`
+      : chips.length > 0 ? chips.map((c) => `${c.label} ${c.value}`).join(' · ') : 'Result imported — no numeric scores returned'
+    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : ''),
+  };
+}
+
 /** Same 4-stage wording per stage kind as the prototype's PIPELINE_LABELS.
  * zeko_hr's stage 2 reads "Schedule Interview" (not "Awaiting Interview") —
  * per RT feedback, this stage is where HR actually schedules the Zeko
@@ -405,13 +433,17 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
   const emails = [];
   let showScheduleButton = false;
+  let showInviteButton = false;
 
   let s1 = { state: 'pending', detail: 'Not sent yet' };
   let s2 = { state: 'pending', detail: 'Not started yet' };
   let s3 = { state: 'pending', detail: 'Not started yet' };
   let s4 = { state: 'pending', detail: 'Not yet' };
 
-  if (enteredEvent) {
+  // Assessment's "Invite Sent" is a real recruiter action (send/mark-manual),
+  // not automatic — derived below from assessmentInvite instead of the
+  // generic "candidate entered this stage" baseline every other stage uses.
+  if (enteredEvent && stage.stage_key !== 'assessment') {
     s1 = { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
   }
 
@@ -574,6 +606,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
     ],
     emails,
     showScheduleButton,
+    showInviteButton,
   };
 }
 
@@ -784,7 +817,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setOutcomeModalOpen(false);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to record outcome.');
+      message.error(err?.message || 'Failed to record outcome.');
     },
   });
 
@@ -814,7 +847,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setScheduleDates(null);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to schedule the Zeko interview.');
+      message.error(err?.message || 'Failed to schedule the Zeko interview.');
     },
   });
 
@@ -834,7 +867,22 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setCancelReason('');
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to cancel the Zeko interview.');
+      message.error(err?.message || 'Failed to cancel the Zeko interview.');
+    },
+  });
+
+  // Send (email) or record (manual) an Evalground invite — starts the
+  // deadline clock on the backend (assessmentInvite.service.js).
+  const inviteMutation = useMutation({
+    mutationFn: (payload) => assessmentImportService.sendInvite({ pipeline_id: pipelineId, ...payload }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assessment-invite', pipelineId] });
+      onChanged?.();
+      message.success('Invite recorded.');
+      setInviteModalOpen(false);
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to record the invite.');
     },
   });
 
@@ -1131,7 +1179,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     }
 
     const isCurrent = stage.stage_key === pipeline.current_stage_key;
-    const { segments: segs, emails, showScheduleButton } = buildPipelineSegments({
+    const { segments: segs, emails, showScheduleButton, showInviteButton } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
@@ -1438,6 +1486,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           {isCurrentStageSelected && !pipeline.final_outcome && (
             <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
               <Title level={5} style={{ fontSize: 14 }}>Record outcome — current stage</Title>
+              {selectedStageKey === 'assessment' && assessmentResultData?.result?.overall_result && (
+                <Tag
+                  color={assessmentResultData.suggestedOutcome === 'approved' ? 'green' : assessmentResultData.suggestedOutcome === 'rejected' ? 'red' : 'default'}
+                  style={{ marginBottom: 10 }}
+                >
+                  Evalground suggests: {assessmentResultData.result.overall_result}
+                </Tag>
+              )}
               <Space wrap style={{ marginBottom: 12 }}>
                 {OUTCOME_BUTTONS.map((btn) => (
                   <Button

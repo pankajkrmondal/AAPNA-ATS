@@ -10,6 +10,7 @@ import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage } from '../config/pipelineSt
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney } from './pipeline.service.js';
+import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
 
 /**
  * GET /api/screening/roles
@@ -694,7 +695,7 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
     return parsed.candidates || [];
   } catch (err) {
     logger.error('Failed to generate profile insights via Gemini:', { error: err.message });
-    throw new AIModelError(err.message);
+    throw new AIModelError('AI processing failed. Please try again or contact support.');
   }
 }
 
@@ -827,25 +828,47 @@ export async function searchRoleCandidates(mrfId, force = false) {
   const embedding = await generateEmbedding(searchQuery);
   const vectorStr = `[${embedding.join(',')}]`;
 
-  // Query vector DB for top 50 (joined with rpa_cv to apply hard pre-filtering matching n8n logic)
+  // Candidates rejected for THIS MRF within the cooldown window stay excluded
+  // below; the cutoff is flat across all MRFs for now (see rejectionCooldown.js).
+  const rejectionCutoff = getCooldownCutoff();
+
+  // Query vector DB (joined with rpa_cv to apply hard pre-filtering matching n8n logic).
+  // No match cap at all — every WHERE-matching candidate is fetched and reranked
+  // (rerankCandidates batches + bounds Cohere concurrency, not candidate count),
+  // so a real deterministic score threshold decides what "matches", not a row limit.
   const dbCandidates = await prisma.$queryRawUnsafe(
-    `SELECT 
-        c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification", 
-        c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA", 
-        c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills", 
-        c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange", 
-        c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage", 
-        c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken", 
-        c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays", 
-        c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat", 
-        c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo", 
-        c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore", 
-        c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization, 
-        c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", 
-        c."cvFileUrl", c.resume_technical_terms, c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance
+    `SELECT
+        c.id, c."Name", c."NoticePeriod", c."ContactNumber", c."EmailID", c."HighestQualification",
+        c."TotalExperienceYears", c."LastCompanyExperienceYears", c."CurrentLocation", c."CTC_LPA",
+        c."ExpectedCTC_LPA", c."JobSource", c."RecruiterInfoAAPNA", c."PositionApplied", c."Top5KeySkills",
+        c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange",
+        c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage",
+        c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken",
+        c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays",
+        c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat",
+        c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo",
+        c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
+        c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization,
+        c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock",
+        c."cvFileUrl", c.resume_technical_terms, c.ai_profile_insights, v.text, v.embedding <=> $1::vector as distance,
+        sl.shortlisted_by, sl.shortlisted_at, rj.rejected_by, rj.rejected_at
      FROM public.rpa_cv_vectors v
      JOIN public.rpa_cv c ON c.id = v.candidate_id
-     WHERE 
+     LEFT JOIN LATERAL (
+         SELECT rsc.shortlisted_by, rsc.shortlisted_at
+         FROM public.rpa_shortlisted_candidates rsc
+         WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status = 'shortlisted'
+         ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
+         LIMIT 1
+     ) sl ON true
+     LEFT JOIN LATERAL (
+         SELECT rsc.shortlisted_by AS rejected_by, rsc.shortlisted_at AS rejected_at
+         FROM public.rpa_shortlisted_candidates rsc
+         WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status = 'rejected'
+         ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
+         LIMIT 1
+     ) rj ON true
+     WHERE
          (
              $2::numeric = 0
              OR c."TotalExperienceYearsNumeric" IS NULL
@@ -856,15 +879,23 @@ export async function searchRoleCandidates(mrfId, force = false) {
              OR c."ExpectedCTCNumeric" IS NULL
              OR c."ExpectedCTCNumeric" <= $3::numeric
          )
-     ORDER BY distance ASC
-     LIMIT 50`,
+         AND NOT EXISTS (
+             SELECT 1 FROM public.rpa_shortlisted_candidates rsc
+             WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status = 'rejected'
+               AND rsc.modified_at > $5::timestamp
+         )
+     ORDER BY distance ASC`,
     vectorStr,
     roleTotalYearsVal,
-    budgetMax
+    budgetMax,
+    BigInt(mrfId),
+    rejectionCutoff
   );
 
-  // Rerank candidates using Cohere Reranker
-  const hardFiltered = await rerankCandidates(searchQuery, dbCandidates);
+  // Rerank the full candidate pool using Cohere (batched under the hood if needed).
+  // Gracefully degrades to a bounded, unranked (base vector-distance) list if the
+  // Rerank API fails — see rerankCandidates() for the alerting/fallback behavior.
+  const { candidates: hardFiltered, degraded, degradedReason } = await rerankCandidates(searchQuery, dbCandidates);
 
   if (hardFiltered.length === 0) {
     const totalCandidates = await prisma.rpa_cv.count();
@@ -876,6 +907,8 @@ export async function searchRoleCandidates(mrfId, force = false) {
         hardFilteredOut: totalCandidates,
         shown: 0,
         summaryText: `0 matched (${totalCandidates} removed by exp/CTC filter)`,
+        degraded,
+        degradedReason,
       },
     };
   }
@@ -1083,6 +1116,8 @@ export async function searchRoleCandidates(mrfId, force = false) {
     twoStar: countByStars[2],
     oneStar: countByStars[1],
     summaryText: `${filtered.length} matched (${hardFilteredOut} removed by exp/CTC filter, ${filteredOutCount} hidden by low score or skill mismatch) · ★★★★★ ${countByStars[5]} · ★★★★ ${countByStars[4]} · ★★★ ${countByStars[3]}`,
+    degraded,
+    degradedReason,
   };
 
   const responsePayload = {
@@ -1109,6 +1144,21 @@ export async function searchRoleCandidates(mrfId, force = false) {
 /**
  * POST /api/screening/keyword-search
  */
+/**
+ * Keyword tab isn't scoped to one MRF, so a candidate rejected under ANY MRF
+ * (JD-tab or Keyword-tab reject — Keyword-tab reject now also requires tagging
+ * a role) should stay excluded from Keyword results too, within the same flat
+ * cooldown window used by the JD tab.
+ * @returns {Promise<Set<string>>} cv_id values (as strings) still cooling down.
+ */
+async function getRejectionCooldownExcludedCvIds() {
+  const rows = await prisma.rpa_shortlisted_candidates.findMany({
+    where: { pipeline_status: 'rejected', cv_id: { not: null }, modified_at: { gt: getCooldownCutoff() } },
+    select: { cv_id: true },
+  });
+  return new Set(rows.map((r) => r.cv_id.toString()));
+}
+
 export async function searchKeywordCandidates(filters) {
   const fKeyword = (filters.keyword || '').toLowerCase().trim();
   const fDesignation = (filters.designation || '').toLowerCase().trim();
@@ -1123,10 +1173,16 @@ export async function searchKeywordCandidates(filters) {
     filters.noticePeriod != null && filters.noticePeriod !== '' ? parseFloat(filters.noticePeriod) : null;
 
   let candidates = [];
+  let keywordDegraded = false;
+  let keywordDegradedReason = null;
 
   // Split the keyword box into individual terms so multiple skills are matched
   // per-term (not as one opaque string). Kept for both retrieval and scoring.
   const keywordTerms = splitSkillPhrases(fKeyword);
+
+  // Rejection cooldown — same flat window as the JD tab, but not scoped to one
+  // MRF (see getRejectionCooldownExcludedCvIds doc comment above).
+  const excludedIds = await getRejectionCooldownExcludedCvIds();
 
   if (fKeyword) {
     const embedding = await generateEmbedding(fKeyword);
@@ -1146,6 +1202,10 @@ export async function searchKeywordCandidates(filters) {
                OR c.resume_tsvector @@ plainto_tsquery('english', $6)
                ${termClause ? `OR ${termClause}` : `OR c."Top5KeySkills" ILIKE CONCAT('%', $6, '%')`}`;
 
+    // Every id here comes from our own BigInt cv_id column (never user input) —
+    // safe to inline directly, same treatment as the dynamically-built termClause/textGate above.
+    const excludedIdsClause = excludedIds.size > 0 ? `AND c.id NOT IN (${[...excludedIds].join(',')})` : '';
+
     // 1) Combined SQL Pre-filtered Vector Search (exp/CTC range + full-text + per-term match in DB to avoid candidate starvation)
     candidates = await prisma.$queryRawUnsafe(
       `SELECT
@@ -1161,9 +1221,24 @@ export async function searchKeywordCandidates(filters) {
           c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
           c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization,
           c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock",
-          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, c.resume_full_text, v.text, v.embedding <=> $1::vector as distance
+          c."cvFileUrl", c.ai_profile_insights, c.resume_technical_terms, c.resume_full_text, v.text, v.embedding <=> $1::vector as distance,
+          sl.shortlisted_by, sl.shortlisted_at, rj.rejected_by, rj.rejected_at
        FROM public.rpa_cv_vectors v
        JOIN public.rpa_cv c ON c.id = v.candidate_id
+       LEFT JOIN LATERAL (
+           SELECT rsc.shortlisted_by, rsc.shortlisted_at
+           FROM public.rpa_shortlisted_candidates rsc
+           WHERE rsc.cv_id = c.id AND rsc.pipeline_status = 'shortlisted'
+           ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
+           LIMIT 1
+       ) sl ON true
+       LEFT JOIN LATERAL (
+           SELECT rsc.shortlisted_by AS rejected_by, rsc.shortlisted_at AS rejected_at
+           FROM public.rpa_shortlisted_candidates rsc
+           WHERE rsc.cv_id = c.id AND rsc.pipeline_status = 'rejected'
+           ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
+           LIMIT 1
+       ) rj ON true
        WHERE
            (
                $2::numeric = 0
@@ -1188,8 +1263,8 @@ export async function searchKeywordCandidates(filters) {
            AND (
                ${textGate}
            )
-       ORDER BY distance ASC
-       LIMIT 50`,
+           ${excludedIdsClause}
+       ORDER BY distance ASC`,
       vectorStr,
       fExpMin || 0,
       fExpMax || 0,
@@ -1199,8 +1274,12 @@ export async function searchKeywordCandidates(filters) {
       ...termParams
     );
 
-    // Rerank candidates using Cohere Reranker
-    candidates = await rerankCandidates(fKeyword, candidates);
+    // Rerank the full candidate pool using Cohere (batched under the hood if needed).
+    // Gracefully degrades to a bounded, unranked list if the Rerank API fails.
+    const rerankResult = await rerankCandidates(fKeyword, candidates);
+    candidates = rerankResult.candidates;
+    keywordDegraded = rerankResult.degraded;
+    keywordDegradedReason = rerankResult.degradedReason;
   } else {
     // Standard database query filters (no keyword) - Optimized database-side filter to prevent Out-Of-Memory/slow queries with 60,000+ candidates
     const where = {};
@@ -1249,15 +1328,48 @@ export async function searchKeywordCandidates(filters) {
       }
     }
 
-    candidates = await prisma.rpa_cv.findMany({ 
+    if (excludedIds.size > 0) {
+      where.id = { notIn: [...excludedIds].map((id) => BigInt(id)) };
+    }
+
+    candidates = await prisma.rpa_cv.findMany({
       where,
       orderBy: { id: 'desc' },
-      take: 200 // Safe cap for UI list to display candidates matching basic filters without keyword
+      // No cap — every filter-matching candidate is returned. No Cohere/AI cost
+      // on this path (no keyword = no reranking), so the only tradeoff is a
+      // larger HTTP payload on a very broad/no-filter search.
     });
+
+    // No correlated-join equivalent in Prisma's fluent API for this path — batch
+    // lookup the most recent 'shortlisted' and 'rejected' row per candidate and attach both.
+    if (candidates.length > 0) {
+      const statusRows = await prisma.rpa_shortlisted_candidates.findMany({
+        where: { cv_id: { in: candidates.map((c) => c.id) }, pipeline_status: { in: ['shortlisted', 'rejected'] } },
+        orderBy: { shortlisted_at: 'desc' },
+        select: { cv_id: true, pipeline_status: true, shortlisted_by: true, shortlisted_at: true },
+      });
+      const latestShortlistByCv = new Map();
+      const latestRejectByCv = new Map();
+      for (const row of statusRows) {
+        const key = row.cv_id.toString();
+        const target = row.pipeline_status === 'shortlisted' ? latestShortlistByCv : latestRejectByCv;
+        if (!target.has(key)) target.set(key, row); // orderBy desc → first hit is most recent
+      }
+      candidates = candidates.map((c) => {
+        const key = c.id.toString();
+        const shortlistHit = latestShortlistByCv.get(key);
+        const rejectHit = latestRejectByCv.get(key);
+        return {
+          ...c,
+          ...(shortlistHit ? { shortlisted_by: shortlistHit.shortlisted_by, shortlisted_at: shortlistHit.shortlisted_at } : {}),
+          ...(rejectHit ? { rejected_by: rejectHit.shortlisted_by, rejected_at: rejectHit.shortlisted_at } : {}),
+        };
+      });
+    }
   }
 
   if (candidates.length === 0) {
-    return { candidates: [], summary: { total: 0, shown: 0, summaryText: '0 matched' } };
+    return { candidates: [], summary: { total: 0, shown: 0, summaryText: '0 matched', degraded: keywordDegraded, degradedReason: keywordDegradedReason } };
   }
 
   // 3) Pre-Score Candidates against Advanced Filters
@@ -1561,6 +1673,8 @@ export async function searchKeywordCandidates(filters) {
     medium,
     low,
     summaryText: `${filtered.length} matched (${scoreFilteredOut} hidden by low score) · ★★★★★ ${high} strong · ★★★ ${medium} moderate · ★ ${low} low`,
+    degraded: keywordDegraded,
+    degradedReason: keywordDegradedReason,
   };
 
   return {
@@ -1627,9 +1741,11 @@ async function refreshCandidateVector(candidateId) {
 /**
  * POST /api/screening/shortlist
  */
-export async function shortlistCandidates(candidates, mrfId, roleName, user) {
+export async function shortlistCandidates(candidates, mrfId, roleName, user, options = {}) {
+  const { sendEmail = true, emailOverride = null } = options;
   let emailsSent = 0;
   let shortlistedCount = 0;
+  let skippedCount = 0;
   const emailFailures = [];
 
   // A keyword search is not tied to an MRF role. mrf_id is a nullable FK to
@@ -1638,15 +1754,19 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
   const mrfRef = mrfId > 0 ? BigInt(mrfId) : null;
   const searchType = mrfId > 0 ? 'jd' : 'keyword';
 
-  // 1) Fetch template
-  const template = await prisma.rpa_email_templates.findFirst({
-    where: {
-      category: 'shortlist',
-      is_active: true,
-    },
-  });
-  if (!template) {
-    throw new AppError('Shortlist email template not found.', 500);
+  // 1) Fetch template — skipped when the recruiter's edited draft (emailOverride)
+  // fully replaces it, or when the email is being skipped entirely.
+  let template = null;
+  if (sendEmail && !emailOverride) {
+    template = await prisma.rpa_email_templates.findFirst({
+      where: {
+        category: 'shortlist',
+        is_active: true,
+      },
+    });
+    if (!template) {
+      throw new AppError('Shortlist email template not found.', 500);
+    }
   }
 
   // 2) Loop over candidates
@@ -1661,24 +1781,56 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
       },
     });
 
-    if (exists) {
-      logger.info(`Candidate ${c.Name} already shortlisted for MRF ${mrfId}, skipping DB insert.`);
+    if (exists?.pipeline_status === 'shortlisted') {
+      logger.info(`Candidate ${c.Name} already shortlisted for MRF ${mrfId}, skipping.`);
+      skippedCount++;
+      continue;
+    }
+    if (exists && exists.pipeline_status !== 'rejected') {
+      // Candidate has progressed beyond shortlisting (on_hold, hired, joined,
+      // selected, etc. — set from the separate Candidate Pipeline page).
+      // Re-shortlisting from a Screening search must never regress that stage.
+      logger.info(`Candidate ${c.Name} has an existing '${exists.pipeline_status}' record for MRF ${mrfId} — leaving untouched, skipping.`);
+      skippedCount++;
       continue;
     }
 
-    // Insert shortlist record
-    const shortlist = await prisma.rpa_shortlisted_candidates.create({
-      data: {
-        cv_id: candidateId,
-        mrf_id: mrfRef,
-        candidate_name: c.Name || 'Candidate',
-        candidate_email: c.EmailID || '',
-        position_applied: roleName,
-        shortlisted_by: user.username || 'recruiter',
-        shortlisted_at: new Date(),
-        pipeline_status: 'shortlisted',
-      },
-    });
+    let shortlist;
+    if (exists) {
+      // exists.pipeline_status === 'rejected' — undo the reject. Reset fields
+      // mirror what a fresh create() would implicitly get from schema defaults,
+      // so a stale prior rejection/email doesn't misrepresent this new shortlist.
+      shortlist = await prisma.rpa_shortlisted_candidates.update({
+        where: { id: exists.id },
+        data: {
+          candidate_name: c.Name || 'Candidate',
+          candidate_email: c.EmailID || '',
+          position_applied: roleName,
+          shortlisted_by: user.username || 'recruiter',
+          shortlisted_at: new Date(),
+          pipeline_status: 'shortlisted',
+          recruiter_notes: null,
+          email_sent: false,
+          email_sent_at: null,
+          email_subject: null,
+          email_body_snapshot: null,
+          modified_at: new Date(),
+        },
+      });
+    } else {
+      shortlist = await prisma.rpa_shortlisted_candidates.create({
+        data: {
+          cv_id: candidateId,
+          mrf_id: mrfRef,
+          candidate_name: c.Name || 'Candidate',
+          candidate_email: c.EmailID || '',
+          position_applied: roleName,
+          shortlisted_by: user.username || 'recruiter',
+          shortlisted_at: new Date(),
+          pipeline_status: 'shortlisted',
+        },
+      });
+    }
     shortlistedCount++;
 
     // Update candidate status
@@ -1709,7 +1861,10 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
     // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
     const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
 
-    if (!toEmail) {
+    if (!sendEmail) {
+      // Recruiter opted out of sending a notification for this batch — the
+      // shortlist record and status update above already happened.
+    } else if (!toEmail) {
       emailFailures.push({
         name: c.Name || 'Candidate',
         email: c.EmailID || '',
@@ -1724,8 +1879,13 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
           ? `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
           : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
 
-      // Replace placeholders
-      const { subject, html: bodyHtml } = compileTemplate(template.subject, template.body_html, {
+      // Replace placeholders. When the recruiter edited the draft (emailOverride),
+      // it takes the place of the DB template as the compile base — placeholder
+      // tokens left in the edited text (e.g. {{candidate_name}}) still resolve
+      // per-candidate below, so one edited draft works correctly across a batch.
+      const baseSubject = emailOverride?.subject ?? template.subject;
+      const baseBody = emailOverride?.body ?? template.body_html;
+      const { subject, html: bodyHtml } = compileTemplate(baseSubject, baseBody, {
         candidate_name: c.Name || 'Candidate',
         position: roleName,
         role_paragraph: roleParagraph,
@@ -1829,6 +1989,194 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user) {
   return {
     success: true,
     shortlisted: shortlistedCount,
+    skipped: skippedCount,
+    emails_sent: emailsSent,
+    email_failures: emailFailures,
+  };
+}
+
+/**
+ * POST /api/screening/reject
+ *
+ * Records a Reject decision straight from the Screening result list (candidates
+ * here have not necessarily been shortlisted yet — they're raw search results).
+ * Mirrors shortlistCandidates() structurally: same dedup-by-(cv_id, mrf_id) record
+ * in rpa_shortlisted_candidates, same optional editable-email pattern, but with
+ * pipeline_status 'rejected' and a mandatory reason stored in recruiter_notes.
+ * If the candidate already has a record for this role (e.g. previously
+ * shortlisted), that record is updated to 'rejected' rather than skipped.
+ */
+export async function rejectCandidates(candidates, mrfId, roleName, user, options = {}) {
+  const { reason, sendEmail = true, emailOverride = null } = options;
+  if (!reason) {
+    throw new AppError('A rejection reason is required.', 400);
+  }
+
+  let emailsSent = 0;
+  let rejectedCount = 0;
+  const emailFailures = [];
+
+  const mrfRef = mrfId > 0 ? BigInt(mrfId) : null;
+
+  let template = null;
+  if (sendEmail && !emailOverride) {
+    template = await prisma.rpa_email_templates.findFirst({
+      where: { category: 'rejection', is_active: true },
+    });
+    if (!template) {
+      throw new AppError('Rejection email template not found.', 500);
+    }
+  }
+
+  for (const c of candidates) {
+    const candidateId = BigInt(c.id);
+
+    const existing = await prisma.rpa_shortlisted_candidates.findFirst({
+      where: { cv_id: candidateId, mrf_id: mrfRef },
+    });
+
+    let rejection;
+    if (existing) {
+      rejection = await prisma.rpa_shortlisted_candidates.update({
+        where: { id: existing.id },
+        data: {
+          pipeline_status: 'rejected',
+          recruiter_notes: reason,
+          modified_at: new Date(),
+          // Refresh who/when for THIS action — without this, a candidate who
+          // was shortlisted then later rejected would keep showing the
+          // original shortlister's name/date under "rejected by", since these
+          // columns double as the generic "who/when the last decision was made"
+          // fields for both shortlist and reject.
+          shortlisted_by: user.username || 'recruiter',
+          shortlisted_at: new Date(),
+        },
+      });
+    } else {
+      rejection = await prisma.rpa_shortlisted_candidates.create({
+        data: {
+          cv_id: candidateId,
+          mrf_id: mrfRef,
+          candidate_name: c.Name || 'Candidate',
+          candidate_email: c.EmailID || '',
+          position_applied: roleName,
+          shortlisted_by: user.username || 'recruiter',
+          shortlisted_at: new Date(),
+          pipeline_status: 'rejected',
+          recruiter_notes: reason,
+        },
+      });
+    }
+    rejectedCount++;
+
+    await prisma.rpa_cv.update({
+      where: { id: candidateId },
+      data: {
+        FinalStatus: 'Rejected',
+        modifiedAt: new Date(),
+      },
+    });
+
+    const { to: toEmail, cc: ccEmail } = resolveRecipients('rejection', c.EmailID);
+
+    if (!sendEmail) {
+      // Recruiter opted out — status/reason above are still recorded.
+    } else if (!toEmail) {
+      emailFailures.push({
+        name: c.Name || 'Candidate',
+        email: c.EmailID || '',
+        reason: describeEmailError('No valid recipients'),
+      });
+    } else {
+      const baseSubject = emailOverride?.subject ?? template.subject;
+      const baseBody = emailOverride?.body ?? template.body_html;
+      const { subject, html: bodyHtml } = compileTemplate(baseSubject, baseBody, {
+        candidate_name: c.Name || 'Candidate',
+        position: roleName || 'the role',
+        job_title: roleName || 'the role',
+      });
+
+      try {
+        const trackingToken = uuidv4();
+
+        const sendResult = await sendGraphEmail({
+          sender: config.microsoft.defaultSender,
+          to: toEmail,
+          cc: ccEmail,
+          subject,
+          html: injectTrackingPixel(bodyHtml, trackingToken),
+        });
+
+        emailsSent++;
+
+        const emailMsg = await prisma.rpa_email_messages.create({
+          data: {
+            graph_message_id: sendResult?.graphMessageId || null,
+            conversation_id: sendResult?.conversationId || `reject-conv-${rejection.id}`,
+            internet_msg_id: sendResult?.internetMessageId || null,
+            from_email: config.microsoft.defaultSender,
+            to_emails: toEmail.split(','),
+            subject,
+            body_html: bodyHtml,
+            direction: 'outbound',
+            candidate_id: candidateId,
+            mrf_id: mrfRef,
+            shortlist_id: rejection.id,
+            sent_at: new Date(),
+          },
+        });
+
+        await prisma.rpa_email_tracking.create({
+          data: {
+            message_id: emailMsg.id,
+            tracking_token: trackingToken,
+            delivered: true,
+            delivered_at: new Date(),
+          },
+        });
+
+        await prisma.rpa_shortlisted_candidates.update({
+          where: { id: rejection.id },
+          data: {
+            email_sent: true,
+            email_sent_at: new Date(),
+            email_subject: subject,
+            email_body_snapshot: bodyHtml,
+          },
+        });
+      } catch (err) {
+        logger.error(`Failed to send rejection email to ${toEmail}:`, { error: err.message });
+        emailFailures.push({
+          name: c.Name || 'Candidate',
+          email: c.EmailID || '',
+          reason: describeEmailError(err),
+        });
+        await logFailedEmail({
+          emailType: 'rejection',
+          recipientEmail: c.EmailID,
+          recipientName: c.Name,
+          subject,
+          referenceId: rejection.id,
+          err,
+        });
+      }
+    }
+
+    refreshCandidateVector(c.id);
+  }
+
+  try {
+    const keys = await redis.keys('screening:role:*');
+    if (keys.length > 0) {
+      await redis.del(keys);
+    }
+  } catch (err) {
+    logger.warn('Failed to invalidate Redis cache:', { error: err.message });
+  }
+
+  return {
+    success: true,
+    rejected: rejectedCount,
     emails_sent: emailsSent,
     email_failures: emailFailures,
   };
@@ -2104,7 +2452,8 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   if (!zekoRes.ok) {
     const errorBody = await zekoRes.json().catch(() => ({}));
-    throw new AppError(`Zeko Schedule API failed: ${zekoRes.statusText}. ${JSON.stringify(errorBody)}`, 502);
+    logger.error('Zeko Schedule API failed:', { status: zekoRes.statusText, body: errorBody });
+    throw new AppError('Unable to schedule with the interview platform right now. Please try again later.', 502);
   }
 
   // Update pipeline status. Scoped to this round's row: a candidate can hold
@@ -2425,7 +2774,12 @@ const STATUS_EMAIL_MAP = {
 export async function updateCandidateStatus(candidateId, status, user) {
   const updated = await prisma.rpa_shortlisted_candidates.update({
     where: { id: candidateId },
-    data: { pipeline_status: status }
+    // modified_at isn't a Prisma @updatedAt field — it must be set explicitly
+    // here, or a status flipped to 'rejected' via this path keeps whatever
+    // stale timestamp the row already had (e.g. from its original shortlist),
+    // which silently breaks the rejection-cooldown exclusion in the JD/Keyword
+    // tab searches (they check modified_at, not pipeline_status, for recency).
+    data: { pipeline_status: status, modified_at: new Date() }
   });
 
   // Notify the candidate when their status changes to a notifiable state

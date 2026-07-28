@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Card, Typography } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, ArrowDownOutlined, MinusOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import Sparkline from '../dashboard/Sparkline';
 
 const { Text } = Typography;
@@ -115,8 +115,12 @@ export default function StatCard({
           )}
         </div>
 
-        {/* Label + value */}
-        <Text className="premium-stat-label">{title}</Text>
+        {/* Label + value. The InfoCircleOutlined hint signals the card itself is
+            hoverable for a definition — the tooltip is provided by the caller
+            (see Dashboard.jsx KPI_TOOLTIPS), this is just the visual affordance. */}
+        <Text className="premium-stat-label">
+          {title} <InfoCircleOutlined style={{ fontSize: 10, opacity: 0.55, marginLeft: 2 }} />
+        </Text>
         <div className="premium-stat-value">{displayValue}</div>
 
         {/* Optional legacy trend line */}

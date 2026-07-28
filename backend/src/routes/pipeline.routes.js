@@ -4,6 +4,7 @@ import { authenticate, checkModuleAccess } from '../middleware/auth.js';
 import { isAdminTier } from '../config/roles.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
+import assessmentImportRoutes from './assessmentImport.routes.js';
 
 const router = Router();
 

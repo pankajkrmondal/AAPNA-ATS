@@ -3,7 +3,8 @@
  * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
  */
 import { useMemo, useState } from 'react';
-import { Card, Typography, Segmented, Empty } from 'antd';
+import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { topByField, topSkills } from '../../utils/dashboardAggregations';
 
@@ -38,7 +39,12 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Talent Insights</Title>
+          <Title level={5} style={{ margin: 0 }}>
+            Talent Insights{' '}
+            <Tooltip title="Frequency count of applied roles / listed skills, computed from the 200 most-recently-added candidate profiles — not the full database.">
+              <InfoCircleOutlined style={{ fontSize: 12, color: 'var(--text-3)' }} />
+            </Tooltip>
+          </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'}
           </Text>
@@ -50,6 +56,9 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           options={[{ label: 'Roles', value: 'roles' }, { label: 'Skills', value: 'skills' }]}
         />
       </div>
+      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: -6, marginBottom: 4 }}>
+        Based on the 200 most recently added candidate profiles, not the full database.
+      </Text>
 
       <div style={{ height: 250, marginTop: 12 }}>
         {data.length === 0 ? (

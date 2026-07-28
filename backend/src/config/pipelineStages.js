@@ -118,6 +118,25 @@ const STAGE_LABELS = Object.freeze({
 export function finalStatusLabelFor(stageKey, outcomeKey) {
   const stageLabel = STAGE_LABELS[stageKey] || stageKey;
 
+  // Assessment (Evalground) is a deliberate exception to the otherwise-uniform
+  // "{stage label} {outcome}" convention above: "Evalground Test Failed" is
+  // already a pre-existing legacy status string this codebase anticipates
+  // (see frontend/src/pages/VendorDashboard.jsx's classifyStatus() comment) —
+  // this keeps the M2 import feature's writeback consistent with that legacy
+  // vocabulary instead of introducing "IQ / Tech Assessment Rejected".
+  if (stageKey === STAGE_KEYS.ASSESSMENT) {
+    switch (outcomeKey) {
+      case STAGE_OUTCOMES.APPROVED:
+        return 'Evalground Test Passed';
+      case STAGE_OUTCOMES.REJECTED:
+        return 'Evalground Test Failed';
+      case STAGE_OUTCOMES.HOLD:
+        return 'Evalground Test on Hold';
+      default:
+        break;
+    }
+  }
+
   switch (outcomeKey) {
     case STAGE_OUTCOMES.APPROVED:
       return `${stageLabel} Approved`;

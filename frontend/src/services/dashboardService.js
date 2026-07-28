@@ -21,6 +21,15 @@ const dashboardService = {
   getRecentUploads(limit = 10) {
     return api.get('/dashboard/recent-uploads', { params: { limit } });
   },
+
+  /**
+   * Get per-recruiter candidate breakdown (Added vs Tagged).
+   * @param {number} [limit=10]
+   * @returns {Promise<{ data: { added: Array<{recruiter:string,count:number}>, tagged: Array<{recruiter:string,count:number}> } }>}
+   */
+  getRecruiterBreakdown(limit = 10) {
+    return api.get('/dashboard/recruiter-breakdown', { params: { limit } });
+  },
 };
 
 export default dashboardService;

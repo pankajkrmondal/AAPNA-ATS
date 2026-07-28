@@ -159,6 +159,23 @@ export async function listPipeline(filters = {}) {
     booked.forEach((row) => scheduledKeys.add(`${row.pipeline_id}:${row.stage_key}`));
   }
 
+  // Real Evalground-result presence for in-progress Assessment-stage cards
+  // (Phase 3 M2) — drives the "Evalground test pending" board badge honestly,
+  // same pattern as zekoScoredCvIds above. Keyed by pipeline_id (not cv_id):
+  // a candidate with two concurrent journeys only clears "pending" on the
+  // journey the import actually matched (Q24 concurrent-journey rule).
+  const assessmentPipelineIds = journeys
+    .filter((j) => j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress')
+    .map((j) => j.id);
+  const assessmentResultPipelineIds = new Set();
+  if (assessmentPipelineIds.length > 0) {
+    const results = await prisma.rpa_assessment_results.findMany({
+      where: { pipeline_id: { in: assessmentPipelineIds }, status: { in: ['matched', 'score_overwritten'] } },
+      select: { pipeline_id: true },
+    });
+    results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
+  }
+
   const now = Date.now();
   const cards = journeys.map((j) => {
     const lastEvent = j.rpa_pipeline_stage_events[0];

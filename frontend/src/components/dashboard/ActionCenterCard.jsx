@@ -26,10 +26,10 @@ export default function ActionCenterCard({
   onNavigate,
 }) {
   const items = [
-    { key: 'mrf', label: 'MRFs pending approval', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
-    { key: 'dup', label: 'Duplicates to review', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
-    { key: 'screen', label: 'Awaiting screening', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
-    { key: 'interview', label: 'Interviews today', count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
+    { key: 'mrf', label: 'MRFs pending approval', desc: 'Requisitions submitted but not yet approved or declined.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
+    { key: 'dup', label: 'Duplicates to review', desc: 'Resumes flagged as possible duplicates, detected live.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
+    { key: 'screen', label: 'Awaiting screening', desc: 'Sourced candidates not yet run through AI screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
+    { key: 'interview', label: 'Interviews today', desc: "Zeko-scheduled interviews with a start time today.", count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
   ];
 
   const allClear = items.every((i) => !i.count);
@@ -51,7 +51,7 @@ export default function ActionCenterCard({
           </div>
         ) : (
           items.map((it) => (
-            <Tooltip key={it.key} title={`Open ${it.label.toLowerCase()}`} placement="left">
+            <Tooltip key={it.key} title={`${it.desc} Click to open.`} placement="left">
               <div
                 className={`dash-action-row ${it.count ? 'has-count' : 'is-empty'}`}
                 onClick={() => onNavigate?.(it.url)}
