@@ -281,6 +281,9 @@ export const saveInterviewOccurrenceConfig = catchAsync(async (req, res) => {
     interval_minutes: saved.intervalMin,
     grace_minutes: saved.graceMin,
   }, `Interview occurrence sweep ${saved.enabled ? 'enabled' : 'disabled'}`);
+});
+
+/**
  * @desc    Get Evalground Assessment automation settings (invite deadline
  *          window + the global auto-advance/auto-reject toggle)
  * @route   GET /api/settings/assessment-automation

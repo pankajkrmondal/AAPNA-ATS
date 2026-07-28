@@ -33,17 +33,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
   FileTextOutlined, ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  UnderlineOutlined, UserOutlined,
-  Alert, App as AntApp, Avatar, Button, Card, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
-} from 'antd';
-import {
-  BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, FileTextOutlined,
-  ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, SendOutlined, UnderlineOutlined, UserOutlined,
+  SendOutlined, UnderlineOutlined, UserOutlined,
 } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
 import dayjs from 'dayjs';
@@ -432,8 +427,7 @@ function fmtDateTime(d) {
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted }) {
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, assessmentResult, assessmentInvite }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite }) {
   const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
@@ -1311,7 +1305,6 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                     ))}
                   </div>
                 )}
-                {i === 1 && showScheduleButton && isZekoStageKey(stage.stage_key) && (
                 {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
                   <div className="cp-pipeline-step__extra">
                     {assessmentInviteData?.isOverdue && (

@@ -192,9 +192,6 @@ export async function listPipeline(filters = {}) {
     const scheduled = isSchedulableStage(j.current_stage_key)
       && j.current_stage_status === 'in_progress'
       && scheduledKeys.has(`${j.id}:${j.current_stage_key}`);
-    const isZekoStage = j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn';
-    const readyForDecision = isZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
-    const invited = j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && invitedShortlistIds.has(j.shortlist_id);
     const assessmentPending = j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress' && !assessmentResultPipelineIds.has(String(j.id));
 
     return {

@@ -5,8 +5,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
 import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined } from '@ant-design/icons';
-import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch } from 'antd';
-import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
@@ -126,6 +124,9 @@ export default function Settings() {
       setInterviewCfg(interviewCfg); // roll back the optimistic change
     } finally {
       setInterviewSaving(false);
+    }
+  };
+
   // Load Assessment automation settings on mount
   useEffect(() => {
     const fetchAssessmentSettings = async () => {

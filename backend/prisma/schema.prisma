@@ -889,7 +889,6 @@ model rpa_assessment_test_mappings {
   rpa_assessment_imports rpa_assessment_imports? @relation(fields: [first_import_id], references: [id], onUpdate: NoAction)
 }
 
-
 model rpa_interview_scorecard {
   id                            BigInt                          @id @default(autoincrement())
   schedule_id                   BigInt
