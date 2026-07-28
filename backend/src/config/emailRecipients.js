@@ -49,6 +49,10 @@ const DEFAULTS = {
   missingData: { to: '', cc: '', dynamic: true },
   // Internal alert: resume processing failure ("Error Alert — Resume Processing").
   resumeErrorAlert: { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '', dynamic: false },
+  // Internal alert: any 5xx backend error reaching the global error handler.
+  backendErrorAlert: { to: 'hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '', dynamic: false },
+  // Internal alert: candidate-ranking (Cohere Rerank) API failure during screening search.
+  rerankApiAlert: { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal alert: candidate email id was null/missing ("Email ID Null Alert").
   missingEmailAlert: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal duplicate-resume alert to HR/admin.
@@ -103,12 +107,16 @@ for (const [key, val] of Object.entries(DEFAULTS)) {
  * and resolve exactly as in production (static `to`/`cc`, or the runtime
  * recipient for dynamic flows):
  *   - resumeErrorAlert: internal failure alert that ops must always see.
+ *   - rerankApiAlert: internal failure alert for Cohere Rerank API errors.
+ *   - backendErrorAlert: internal failure alert for 5xx backend errors —
+ *     must always reach real developer inboxes, including on staging, since
+ *     that's precisely where this class of bug is caught.
  *   - userCredentialUpdate: account credentials / password changes must go to
  *     the affected user's own inbox in every environment.
  *   - passwordReset: forgot-password links are only useful in the account
  *     owner's own inbox.
  */
-const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'userCredentialUpdate', 'passwordReset']);
+const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'rerankApiAlert', 'backendErrorAlert', 'userCredentialUpdate', 'passwordReset']);
 
 let loaded = false;
 

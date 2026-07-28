@@ -48,13 +48,16 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
             New candidates added · last {rangeDays} days
           </Text>
         </div>
-        <Tooltip title="Daily count of candidates entering the system over the selected range.">
+        <Tooltip title="Daily count of candidates entering the system over the selected range, computed from the 200 most-recently-added profiles. If that range extends further back than the 200-profile window covers, earlier days may under-count.">
           <div className="dash-card-metric">
             <span className="dash-card-metric__num">{total.toLocaleString()}</span>
             <span className="dash-card-metric__cap">total <InfoCircleOutlined /></span>
           </div>
         </Tooltip>
       </div>
+      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
+        Based on the 200 most recently added candidate profiles, not the full database.
+      </Text>
 
       <div style={{ height: 240, marginTop: 8 }}>
         {!loading && total === 0 ? (

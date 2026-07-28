@@ -33,15 +33,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, DatePicker, Drawer, Empty, Input, Modal, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, FileTextOutlined,
-  ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, UnderlineOutlined, UserOutlined,
+  ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, SendOutlined, UnderlineOutlined, UserOutlined,
 } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
 import pipelineService from '../../services/pipeline';
 import screeningService from '../../services/screeningService';
+import assessmentImportService from '../../services/assessmentImportService';
+import settingsService from '../../services/settingsService';
+import AssessmentInviteModal from './AssessmentInviteModal';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -196,6 +199,31 @@ function zekoScoreSegment(zekoScores, { coding = true } = {}) {
   };
 }
 
+/**
+ * Builds the "Awaiting Results" detail line + score chips from an Evalground
+ * import result (Phase 3 M2). Section scores are raw marks (not percentages —
+ * verified against the real sample export), so they're shown as plain
+ * numbers rather than run through Zeko's 0–100 scoreBand() coloring, which
+ * doesn't apply here.
+ */
+function assessmentScoreSegment(result) {
+  const map = result.section_label_map || {};
+  const sections = [
+    { key: 'section_1', value: result.section_1_score },
+    { key: 'section_2', value: result.section_2_score },
+    { key: 'section_3', value: result.section_3_score },
+  ].filter((s) => s.value !== null && s.value !== undefined);
+
+  const chips = sections.map((s) => ({ value: s.value, label: map[s.key]?.skill_label || s.key.replace('section_', 'Section ') }));
+
+  return {
+    detail: (result.overall_result
+      ? `Evalground result: ${result.overall_result}${result.overall_percentage != null ? ` (${result.overall_percentage}%)` : ''}`
+      : chips.length > 0 ? chips.map((c) => `${c.label} ${c.value}`).join(' · ') : 'Result imported — no numeric scores returned'
+    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : ''),
+  };
+}
+
 /** Same 4-stage wording per stage kind as the prototype's PIPELINE_LABELS.
  * zeko_hr's stage 2 reads "Schedule Interview" (not "Awaiting Interview") —
  * per RT feedback, this stage is where HR actually schedules the Zeko
@@ -244,19 +272,23 @@ function fmtDateTime(d) {
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, assessmentResult, assessmentInvite }) {
   const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
   const emails = [];
   let showScheduleButton = false;
+  let showInviteButton = false;
 
   let s1 = { state: 'pending', detail: 'Not sent yet' };
   let s2 = { state: 'pending', detail: 'Not started yet' };
   let s3 = { state: 'pending', detail: 'Not started yet' };
   let s4 = { state: 'pending', detail: 'Not yet' };
 
-  if (enteredEvent) {
+  // Assessment's "Invite Sent" is a real recruiter action (send/mark-manual),
+  // not automatic — derived below from assessmentInvite instead of the
+  // generic "candidate entered this stage" baseline every other stage uses.
+  if (enteredEvent && stage.stage_key !== 'assessment') {
     s1 = { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
   }
 
@@ -320,6 +352,35 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
       s2 = { state: 'pending', detail: 'Not available yet — functional-screening invite/scheduling has no real data source today' };
       s3 = { state: 'pending', detail: 'Awaiting Zeko to sync the score, once invited' };
     }
+  } else if (stage.stage_key === 'assessment') {
+    // Phase 3 M2 — bulk-CSV Evalground import (results already land here even
+    // though the round is still "manual"; there is no scheduling sub-state
+    // for this stage type, results just arrive via import). "Invite Sent" is
+    // a real recruiter action (send email / mark sent manually), with a
+    // deadline that starts the moment an invite is recorded.
+    const invite = assessmentInvite?.invite;
+    if (assessmentResult) {
+      // Result landed — invite history shown matter-of-factly, no action needed.
+      if (invite) {
+        s1 = { state: 'done', detail: `Invite ${invite.method === 'email' ? 'emailed' : 'marked sent manually'} · ${fmtDateTime(invite.sent_at)}` };
+      }
+      s2 = { state: 'done', detail: 'Result received (bulk CSV import)' };
+      s3 = { state: 'done', ...assessmentScoreSegment(assessmentResult) };
+    } else if (invite) {
+      const overdue = assessmentInvite?.isOverdue;
+      const daysLeft = Math.ceil((new Date(invite.deadline_at) - Date.now()) / (1000 * 60 * 60 * 24));
+      s1 = overdue
+        ? { state: 'active', detail: `Deadline passed ${Math.abs(daysLeft)} day(s) ago (was due ${fmtDateTime(invite.deadline_at)})` }
+        : { state: 'done', detail: `Invite ${invite.method === 'email' ? 'emailed' : 'marked sent manually'} · ${fmtDateTime(invite.sent_at)} · deadline in ${daysLeft} day(s)` };
+      s2 = { state: 'active', detail: 'Evalground test pending' };
+      s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
+      showInviteButton = isCurrent; // re-invite always available once one exists and no result yet
+    } else if (enteredEvent) {
+      s1 = { state: 'active', detail: 'Not sent yet' };
+      s2 = { state: 'pending', detail: 'Send the Evalground invite to start the test window' };
+      s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
+      showInviteButton = isCurrent;
+    }
   } else if (enteredEvent) {
     // Non-Zeko stage types have no real scheduling/scorecard/docs/offer data
     // model yet — honestly say so rather than fabricating a state.
@@ -354,6 +415,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
     ],
     emails,
     showScheduleButton,
+    showInviteButton,
   };
 }
 
@@ -373,6 +435,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const [scheduleDates, setScheduleDates] = useState(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
 
   const open = !!pipelineId;
 
@@ -389,6 +452,40 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     queryKey: ['pipeline-stages'],
     queryFn: async () => {
       const res = await pipelineService.listStages();
+      return res.data?.data || res.data;
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
+  // journey, if it's on the Assessment stage. Fetched once per open journey
+  // (not re-fetched on every stage-pill click) — cheap enough at this scale.
+  const { data: assessmentResultData } = useQuery({
+    queryKey: ['assessment-result', pipelineId],
+    queryFn: async () => {
+      const res = await assessmentImportService.getCandidateResult(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: open,
+  });
+
+  // Phase 3 M2 extension — latest Evalground invite (+ overdue state) for
+  // this journey, if it's on the Assessment stage.
+  const { data: assessmentInviteData } = useQuery({
+    queryKey: ['assessment-invite', pipelineId],
+    queryFn: async () => {
+      const res = await assessmentImportService.getInviteState(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: open,
+  });
+
+  // Deadline-days default, for the invite compose modal's template text.
+  const { data: automationSettingsData } = useQuery({
+    queryKey: ['assessment-automation-settings'],
+    queryFn: async () => {
+      const res = await settingsService.getAssessmentAutomation();
       return res.data?.data || res.data;
     },
     enabled: open,
@@ -455,7 +552,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setOutcomeModalOpen(false);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to record outcome.');
+      message.error(err?.message || 'Failed to record outcome.');
     },
   });
 
@@ -482,7 +579,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setScheduleDates(null);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to schedule the Zeko interview.');
+      message.error(err?.message || 'Failed to schedule the Zeko interview.');
     },
   });
 
@@ -502,7 +599,22 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setCancelReason('');
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to cancel the Zeko interview.');
+      message.error(err?.message || 'Failed to cancel the Zeko interview.');
+    },
+  });
+
+  // Send (email) or record (manual) an Evalground invite — starts the
+  // deadline clock on the backend (assessmentInvite.service.js).
+  const inviteMutation = useMutation({
+    mutationFn: (payload) => assessmentImportService.sendInvite({ pipeline_id: pipelineId, ...payload }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assessment-invite', pipelineId] });
+      onChanged?.();
+      message.success('Invite recorded.');
+      setInviteModalOpen(false);
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to record the invite.');
     },
   });
 
@@ -612,13 +724,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     }
 
     const isCurrent = stage.stage_key === pipeline.current_stage_key;
-    const { segments: segs, emails, showScheduleButton } = buildPipelineSegments({
+    const { segments: segs, emails, showScheduleButton, showInviteButton } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
       zekoScores: isZekoStageKey(stage.stage_key) ? zekoScores : null,
       zekoHrPipeline: stage.stage_key === 'zeko_hr' ? zekoHrPipeline : null,
       screening,
+      assessmentResult: stage.stage_key === 'assessment' ? assessmentResultData?.result : null,
+      assessmentInvite: stage.stage_key === 'assessment' ? assessmentInviteData : null,
     });
     const lastStageEvent = stageEvents[stageEvents.length - 1];
 
@@ -663,6 +777,31 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                         <span className="cp-stat-chip__label">{chip.label}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+                {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
+                  <div className="cp-pipeline-step__extra">
+                    {assessmentInviteData?.isOverdue && (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 8, fontSize: 12 }}
+                        message="Deadline passed with no result yet — re-invite or upload the CSV."
+                      />
+                    )}
+                    <Space size={8} wrap>
+                      <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setInviteModalOpen(true)}>
+                        {assessmentInviteData?.invite ? 'Re-invite' : 'Send Evalground Invite'}
+                      </Button>
+                      <Popconfirm
+                        title="Mark as sent manually?"
+                        description="Use this only if you already emailed the Evalground link outside the app."
+                        onConfirm={() => inviteMutation.mutate({ method: 'manual' })}
+                        okText="Yes, mark as sent"
+                      >
+                        <Button size="small" type="link" loading={inviteMutation.isPending}>Mark as sent manually</Button>
+                      </Popconfirm>
+                    </Space>
                   </div>
                 )}
                 {i === 1 && showScheduleButton && stage.stage_key === 'zeko_hr' && (
@@ -804,6 +943,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           {isCurrentStageSelected && !pipeline.final_outcome && (
             <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
               <Title level={5} style={{ fontSize: 14 }}>Record outcome — current stage</Title>
+              {selectedStageKey === 'assessment' && assessmentResultData?.result?.overall_result && (
+                <Tag
+                  color={assessmentResultData.suggestedOutcome === 'approved' ? 'green' : assessmentResultData.suggestedOutcome === 'rejected' ? 'red' : 'default'}
+                  style={{ marginBottom: 10 }}
+                >
+                  Evalground suggests: {assessmentResultData.result.overall_result}
+                </Tag>
+              )}
               <Space wrap style={{ marginBottom: 12 }}>
                 {OUTCOME_BUTTONS.map((btn) => (
                   <Button
@@ -1003,6 +1150,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
         </Space>
       )}
     </Modal>
+
+    <AssessmentInviteModal
+      open={inviteModalOpen}
+      onClose={() => setInviteModalOpen(false)}
+      candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
+      position={pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline?.rpa_shortlisted_candidates?.position_applied}
+      deadlineDays={automationSettingsData?.assessment_deadline_days}
+      sending={inviteMutation.isPending}
+      onSend={(payload) => inviteMutation.mutate(payload)}
+    />
     </>
   );
 }

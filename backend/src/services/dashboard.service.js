@@ -143,6 +143,77 @@ export async function getRecentUploads(limit = 10) {
   }
 }
 
+/**
+ * Per-recruiter breakdown: how many candidates each recruiter ADDED (uploaded —
+ * rpa_cv.last_action_by, an email) vs SHORTLISTED to a role —
+ * rpa_shortlisted_candidates.shortlisted_by, a username), merged into ONE row
+ * per person instead of two separate rankings. (Named "Shortlisted", not
+ * "Tagged" — "Tag to Open JD" refers to picking a role during both Shortlist
+ * *and* Reject, so "Tagged" would misleadingly imply rejects count too; this
+ * metric is scoped to pipeline_status = 'shortlisted' only.)
+ *
+ * last_action_by and shortlisted_by use different identity formats (email vs.
+ * username) for what's often the same person, so each raw value is resolved
+ * against rpa_users (matching email → last_action_by, username → shortlisted_by)
+ * to get a real display name and a stable join key — that's what lets the two
+ * counts land on the same row instead of reading as unrelated people. Values
+ * that don't match any user account (e.g. "Self Applied", or a blank/legacy
+ * last_action_by) fall back to that raw label as both the name and the key.
+ *
+ * @param {number} [limit=10]
+ * @returns {Promise<Array<{ recruiter: string, added: number, shortlisted: number }>>}
+ */
+export async function getRecruiterBreakdown(limit = 10) {
+  try {
+    const [addedGrouped, shortlistedGrouped, users] = await Promise.all([
+      prisma.rpa_cv.groupBy({
+        by: ['last_action_by'],
+        _count: { _all: true },
+      }),
+      prisma.rpa_shortlisted_candidates.groupBy({
+        by: ['shortlisted_by'],
+        where: { pipeline_status: 'shortlisted' }, // exclude rows that only exist due to a reject() stamp
+        _count: { _all: true },
+      }),
+      prisma.rpa_users.findMany({
+        select: { id: true, username: true, email: true, first_name: true, last_name: true },
+      }),
+    ]);
+
+    const byEmail = new Map(users.filter((u) => u.email).map((u) => [u.email.toLowerCase(), u]));
+    const byUsername = new Map(users.filter((u) => u.username).map((u) => [u.username.toLowerCase(), u]));
+    const displayName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.username || u.email;
+
+    const combined = new Map(); // key -> { recruiter, added, shortlisted }
+    const resolve = (raw, lookup) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return { key: 'raw:Unattributed', name: 'Unattributed' };
+      const user = lookup.get(trimmed.toLowerCase());
+      return user ? { key: `user:${user.id}`, name: displayName(user) } : { key: `raw:${trimmed}`, name: trimmed };
+    };
+
+    for (const r of addedGrouped) {
+      const { key, name } = resolve(r.last_action_by, byEmail);
+      const entry = combined.get(key) || { recruiter: name, added: 0, shortlisted: 0 };
+      entry.added += r._count._all;
+      combined.set(key, entry);
+    }
+    for (const r of shortlistedGrouped) {
+      const { key, name } = resolve(r.shortlisted_by, byUsername);
+      const entry = combined.get(key) || { recruiter: name, added: 0, shortlisted: 0 };
+      entry.shortlisted += r._count._all;
+      combined.set(key, entry);
+    }
+
+    return [...combined.values()]
+      .sort((a, b) => (b.added + b.shortlisted) - (a.added + a.shortlisted))
+      .slice(0, limit);
+  } catch (error) {
+    logger.error('Dashboard recruiter breakdown query failed', { error: error.message });
+    return [];
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**

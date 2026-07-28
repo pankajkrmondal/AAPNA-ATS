@@ -112,6 +112,23 @@ export async function listPipeline(filters = {}) {
     invited.forEach((row) => invitedShortlistIds.add(row.candidate_id));
   }
 
+  // Real Evalground-result presence for in-progress Assessment-stage cards
+  // (Phase 3 M2) — drives the "Evalground test pending" board badge honestly,
+  // same pattern as zekoScoredCvIds above. Keyed by pipeline_id (not cv_id):
+  // a candidate with two concurrent journeys only clears "pending" on the
+  // journey the import actually matched (Q24 concurrent-journey rule).
+  const assessmentPipelineIds = journeys
+    .filter((j) => j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress')
+    .map((j) => j.id);
+  const assessmentResultPipelineIds = new Set();
+  if (assessmentPipelineIds.length > 0) {
+    const results = await prisma.rpa_assessment_results.findMany({
+      where: { pipeline_id: { in: assessmentPipelineIds }, status: { in: ['matched', 'score_overwritten'] } },
+      select: { pipeline_id: true },
+    });
+    results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
+  }
+
   const now = Date.now();
   const cards = journeys.map((j) => {
     const lastEvent = j.rpa_pipeline_stage_events[0];
@@ -122,6 +139,7 @@ export async function listPipeline(filters = {}) {
     const isZekoStage = j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn';
     const readyForDecision = isZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
     const invited = j.current_stage_key === 'zeko_hr' && j.current_stage_status === 'in_progress' && invitedShortlistIds.has(j.shortlist_id);
+    const assessmentPending = j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress' && !assessmentResultPipelineIds.has(String(j.id));
 
     return {
       id: Number(j.id),
@@ -136,6 +154,7 @@ export async function listPipeline(filters = {}) {
       current_stage_status: j.current_stage_status,
       ready_for_decision: readyForDecision,
       invited,
+      assessment_pending: assessmentPending,
       final_outcome: j.final_outcome,
       source: j.source,
       vendor_email: j.vendor_email,

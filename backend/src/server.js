@@ -9,6 +9,7 @@ import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
 import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
+import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
@@ -41,6 +42,9 @@ async function startServer() {
     // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
     startZekoSchedulerJob();
 
+    // Evalground invite deadline checker — pure DB polling, no external API, always runs.
+    startAssessmentDeadlineJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -72,6 +76,7 @@ async function gracefulShutdown(signal) {
   stopReminderSchedulerJob();
   stopMailboxPollerJob();
   stopZekoSchedulerJob();
+  stopAssessmentDeadlineJob();
 
   // Stop accepting new connections
   server.close(async () => {
