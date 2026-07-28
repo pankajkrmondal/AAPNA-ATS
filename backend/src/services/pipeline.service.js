@@ -210,11 +210,8 @@ export async function listPipeline(filters = {}) {
       current_stage_status: j.current_stage_status,
       ready_for_decision: readyForDecision,
       invited,
-<<<<<<< HEAD
       scheduled,
-=======
       assessment_pending: assessmentPending,
->>>>>>> 87cf3fb843b27df24b148a76518b43e532a90e44
       final_outcome: j.final_outcome,
       source: j.source,
       vendor_email: j.vendor_email,
