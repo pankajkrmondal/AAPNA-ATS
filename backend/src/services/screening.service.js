@@ -694,7 +694,7 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
     return parsed.candidates || [];
   } catch (err) {
     logger.error('Failed to generate profile insights via Gemini:', { error: err.message });
-    throw new AIModelError(err.message);
+    throw new AIModelError('AI processing failed. Please try again or contact support.');
   }
 }
 
@@ -2438,7 +2438,8 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   if (!zekoRes.ok) {
     const errorBody = await zekoRes.json().catch(() => ({}));
-    throw new AppError(`Zeko Schedule API failed: ${zekoRes.statusText}. ${JSON.stringify(errorBody)}`, 502);
+    logger.error('Zeko Schedule API failed:', { status: zekoRes.statusText, body: errorBody });
+    throw new AppError('Unable to schedule with the interview platform right now. Please try again later.', 502);
   }
 
   // Update pipeline status

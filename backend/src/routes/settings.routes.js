@@ -10,4 +10,8 @@ router.use(authenticate);
 router.get('/reminder', settingsController.getReminderSettings);
 router.post('/reminder', settingsController.saveReminderSettings);
 
+/** Evalground Assessment automation — deadline days + auto-advance/reject toggle. */
+router.get('/assessment-automation', settingsController.getAssessmentAutomation);
+router.post('/assessment-automation', settingsController.saveAssessmentAutomation);
+
 export default router;

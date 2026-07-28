@@ -46,6 +46,15 @@ const config = {
   /** Whether we're running in production */
   isProduction: env('NODE_ENV', 'development') === 'production',
 
+  /**
+   * Whether we're running with an explicit `NODE_ENV=development`. Used to gate
+   * verbose HTTP error responses (see errorHandler.js): unlike `isProduction`
+   * (an exact allowlist match), this makes the SAFE response the default for
+   * every environment — staging, production, anything else — and only opts
+   * into verbose output when development is explicitly set.
+   */
+  isDevelopment: env('NODE_ENV', 'development') === 'development',
+
   /** Server port */
   port: parseInt(env('PORT', '5000'), 10),
 
@@ -216,6 +225,12 @@ const config = {
       /** Interview-results fetch cron (hourly, offset by default). */
       resultsCron: env('ZEKO_RESULTS_CRON', '30 * * * *'),
     },
+  },
+
+  /** Evalground Assessment invite/deadline tracking (Phase 3 M2 extension) */
+  assessment: {
+    /** Overdue-invite polling cadence — pure DB polling, no external API, always runs. */
+    deadlineCheckCron: env('ASSESSMENT_DEADLINE_CHECK_CRON', '0 * * * *'),
   },
 
   /** File upload settings */
