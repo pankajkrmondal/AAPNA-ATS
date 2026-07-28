@@ -45,12 +45,27 @@ router.post('/reasons', requireAdmin, pipelineController.createReason);
 /** PUT /api/pipeline/reasons/:id — edit a reason (admin only). */
 router.put('/reasons/:id', requireAdmin, pipelineController.updateReason);
 
-/** /api/pipeline/assessment-import/* — Phase 3 M2, Evalground bulk-CSV import.
- * Registered before "/:id" so "assessment-import" is never captured as a pipeline id. */
-router.use('/assessment-import', assessmentImportRoutes);
+/** Interview cancel + its email preview. Registered before "/:id" so
+ * "interview" is never captured as a pipeline id. */
+router.post('/interview/:scheduleId/cancel', pipelineController.cancelScheduledInterview);
+router.get('/interview/:scheduleId/cancel-preview', pipelineController.getCancelPreview);
+/** Record whether the interview happened (held/no_show) — the scorecard gate. */
+router.post('/interview/:scheduleId/occurrence', pipelineController.recordInterviewOccurrence);
+/** Manually send the scorecard link (idempotent; only after 'held'). */
+router.post('/interview/:scheduleId/send-scorecard', pipelineController.sendScorecard);
 
 /** GET /api/pipeline/:id — full journey detail (feeds the per-round drawer). */
 router.get('/:id', pipelineController.getPipelineDetail);
+/** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
+router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
+/** POST /api/pipeline/:id/interview — book the interview for tech1/tech2. */
+router.post('/:id/interview', pipelineController.scheduleInterview);
+/** GET /api/pipeline/:id/interview-preview — editable invite email preview. */
+router.get('/:id/interview-preview', pipelineController.getSchedulePreview);
+/** POST /api/pipeline/:id/interview/reschedule — cancel current booking + rebook. */
+router.post('/:id/interview/reschedule', pipelineController.rescheduleInterview);
+/** GET /api/pipeline/:id/interview/reschedule-preview — editable reschedule email preview. */
+router.get('/:id/interview/reschedule-preview', pipelineController.getReschedulePreview);
 /** GET /api/pipeline/:id/outcome-preview?outcome_key=X — compiled email preview, no send. */
 router.get('/:id/outcome-preview', pipelineController.getOutcomePreview);
 /** POST /api/pipeline/:id/outcome — record Approve/Reject/Hold (reason mandatory); Approve auto-advances. */

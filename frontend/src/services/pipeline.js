@@ -75,6 +75,86 @@ const pipelineService = {
   },
 
   /**
+   * Books the interview for the candidate's current scheduled round (tech1/tech2).
+   * @param {number} id - pipeline id
+   * @param {Object} payload - { stage_key, start_at, duration_minutes?, interviewer_email?, interviewer_name?, notes? }
+   */
+  scheduleInterview(id, payload) {
+    return api.post(`/pipeline/${id}/interview`, payload);
+  },
+
+  /**
+   * Compiled (not sent) candidate + panel invite emails for the Schedule modal.
+   * @param {number} id - pipeline id
+   * @param {Object} params - { stage_key, start_at, duration_minutes }
+   */
+  getSchedulePreview(id, params) {
+    return api.get(`/pipeline/${id}/interview-preview`, { params });
+  },
+
+  /**
+   * Reschedules the current-round interview (cancels the old booking + rebooks).
+   * @param {number} id - pipeline id
+   * @param {Object} payload - { stage_key, start_at, duration_minutes?, interviewer_email?, candidate_subject?, candidate_body?, panel_subject?, panel_body? }
+   */
+  rescheduleInterview(id, payload) {
+    return api.post(`/pipeline/${id}/interview/reschedule`, payload);
+  },
+
+  /**
+   * Compiled (not sent) candidate + panel reschedule emails for the modal.
+   * @param {number} id - pipeline id
+   * @param {Object} params - { stage_key, start_at, duration_minutes }
+   */
+  getReschedulePreview(id, params) {
+    return api.get(`/pipeline/${id}/interview/reschedule-preview`, { params });
+  },
+
+  /**
+   * Cancels a booked interview so the round can be rebooked.
+   * @param {number} scheduleId - rpa_interview_schedule id
+   * @param {Object} [payload] - { cancel_reason?, candidate_subject?, candidate_body?, panel_subject?, panel_body? }
+   */
+  cancelInterview(scheduleId, payload = {}) {
+    return api.post(`/pipeline/interview/${scheduleId}/cancel`, payload);
+  },
+
+  /**
+   * Compiled (not sent) candidate + panel cancellation emails for the Cancel modal.
+   * @param {number} scheduleId - rpa_interview_schedule id
+   */
+  getCancelPreview(scheduleId, reason = '') {
+    return api.get(`/pipeline/interview/${scheduleId}/cancel-preview`, { params: { reason } });
+  },
+
+  /**
+   * Records whether the interview happened. 'held' releases the scorecard link;
+   * 'no_show' records it (with party/reason) and the caller offers reschedule/reject.
+   * @param {number} scheduleId - rpa_interview_schedule id
+   * @param {Object} payload - { outcome: 'held'|'no_show', party?, reason? }
+   */
+  recordInterviewOccurrence(scheduleId, payload) {
+    return api.post(`/pipeline/interview/${scheduleId}/occurrence`, payload);
+  },
+
+  /**
+   * Manually dispatches the interviewer scorecard link (only meaningful once the
+   * interview is confirmed held). Idempotent — a repeat call is a no-op.
+   * @param {number} scheduleId - rpa_interview_schedule id
+   */
+  sendScorecard(scheduleId) {
+    return api.post(`/pipeline/interview/${scheduleId}/send-scorecard`, {});
+  },
+
+  /**
+   * Per-round submitted scorecards + overall sum/average for a candidate.
+   * @param {number} id - pipeline id
+   */
+  getScorecardReport(id) {
+    return api.get(`/pipeline/${id}/scorecard-report`);
+  },
+
+  /**
    * Sets the final/closure outcome (Q12 — 8 closure statuses).
    * @param {number} id
    * @param {Object} payload - { final_outcome_key, notes? }

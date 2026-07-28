@@ -95,6 +95,42 @@ const config = {
     oneDriveParentId: env('MS_ONEDRIVE_PARENT_ID', ''),
     // Sending mailbox (staging "Saurabh" vs production "AAPNA Recruitment").
     defaultSender: env('MS_DEFAULT_SENDER_EMAIL', 'pkmondal@aapnainfotech.com'),
+
+    /**
+     * Outlook calendar + Teams meeting creation for scheduled interview rounds.
+     * OFF by default: it needs Calendars.ReadWrite (and OnlineMeetings.ReadWrite
+     * for a Teams link) granted to the app registration by a tenant admin —
+     * the mail-only consent the rest of this integration uses is not enough.
+     *
+     * When false, scheduling still works end-to-end: the booking is saved and
+     * both parties are emailed the date/time — just without a calendar event
+     * or join link. Flip to true once consent is granted; no code change needed.
+     */
+    calendarEnabled: env('MS_CALENDAR_ENABLED', 'false') === 'true',
+
+    /** Mailbox that owns the interview calendar events (defaults to the sender). */
+    calendarMailbox: env('MS_CALENDAR_MAILBOX', '') || env('MS_DEFAULT_SENDER_EMAIL', 'pkmondal@aapnainfotech.com'),
+
+    /**
+     * Teams attendance-report auto-detection for scheduled interviews — used to
+     * decide "did the interview actually happen?" before releasing the
+     * interviewer scorecard link (docs/phase3/INTERVIEWER-SCORECARD-PLAN.md).
+     *
+     * OFF by default and INDEPENDENT of calendarEnabled: reading attendance
+     * needs consent the event-creation grant does not include —
+     * OnlineMeetingArtifact.Read.All (application) PLUS an application access
+     * policy (Set-CsApplicationAccessPolicy) authorizing the app to read
+     * meetings on behalf of the calendar mailbox. When false (or when a report
+     * isn't available), the occurrence sweep falls back to asking a human to
+     * confirm — no scorecard is ever sent for an unconfirmed interview.
+     */
+    attendanceEnabled: env('MS_ATTENDANCE_ENABLED', 'false') === 'true',
+
+    /**
+     * Minimum seconds a participant must have been present to count as having
+     * actually attended, so an accidental 10-second join isn't read as "held".
+     */
+    attendanceMinSeconds: parseInt(env('MS_ATTENDANCE_MIN_SECONDS', '60'), 10),
   },
 
   /**

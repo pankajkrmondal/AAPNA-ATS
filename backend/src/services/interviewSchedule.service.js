@@ -1,0 +1,931 @@
+/**
+ * interviewSchedule.service.js — booking for the human interview rounds
+ * (Technical Round 1 & 2) in the Pipeline Tracker.
+ *
+ * WHO interviews is defined on the MRF, not on a separate panel table:
+ *   tech1 -> rpa_mrf.first_technical_round  + first_round_interview_slot
+ *   tech2 -> rpa_mrf.second_technical_round + second_round_interview_slot
+ * Those columns are free text ("Naveen", "Harish M", "11 AM- 12 PM", "NA"),
+ * so they are surfaced to the recruiter as read-only hints while the
+ * interviewer's actual mailbox is entered per booking.
+ *
+ * A booking always saves + emails; the Outlook/Teams event is best-effort on
+ * top (see graphCalendar.service.js), so the flow works before the tenant
+ * grants Calendars.ReadWrite.
+ */
+import prisma from '../config/database.js';
+import logger from '../config/logger.js';
+import config from '../config/index.js';
+import AppError from '../utils/AppError.js';
+import { resolveRecipients } from '../config/emailRecipients.js';
+import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
+import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
+import { createInterviewEvent, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
+
+/** Template names seeded by prisma/seed-email-templates.js for this flow. */
+const TEMPLATE_NAMES = Object.freeze({
+  scheduleCandidate: 'Interview Scheduled — Candidate',
+  schedulePanel: 'Interview Scheduled — Panel',
+  cancelCandidate: 'Interview Cancelled — Candidate',
+  cancelPanel: 'Interview Cancelled — Panel',
+  rescheduleCandidate: 'Interview Rescheduled — Candidate',
+  reschedulePanel: 'Interview Rescheduled — Panel',
+});
+
+/** Stage keys this service can book, mapped to their MRF columns. */
+export const SCHEDULABLE_STAGES = Object.freeze({
+  tech1: { ownerField: 'first_technical_round', slotField: 'first_round_interview_slot', label: 'Technical Round 1' },
+  tech2: { ownerField: 'second_technical_round', slotField: 'second_round_interview_slot', label: 'Technical Round 2' },
+});
+
+/** True when the drawer should offer a "Schedule Interview" action for a stage. */
+export const isSchedulableStage = (stageKey) => Object.hasOwn(SCHEDULABLE_STAGES, stageKey || '');
+
+/**
+ * Placeholder values recruiters typed into the MRF's interviewer/slot columns
+ * that carry no information — treated as "not specified" rather than shown.
+ */
+const EMPTY_HINTS = new Set(['na', 'n/a', 'no', 'none', '-', '']);
+const cleanHint = (value) => {
+  const trimmed = (value || '').trim();
+  return EMPTY_HINTS.has(trimmed.toLowerCase()) ? null : trimmed;
+};
+
+// Exact placeholder/non-person values seen in the real interviewer column.
+const NON_NAME_TOKENS = new Set(['dev', 'demo', 'xxx', 'xx', 'abc', 'asdf', 'tbd', 'todo', 'null', 'none']);
+
+/**
+ * Decides whether an MRF interviewer value looks like an actual human name,
+ * so the UI can show it rather than a confusing "Interviewer: 1".
+ *
+ * Deliberately CONSERVATIVE (RT choice, 2026-07-24): it hides only values that
+ * clearly are not a person, so a real but terse entry is never suppressed.
+ * In particular bare initials like "HM"/"PK" are KEPT — they may be how a
+ * recruiter abbreviated a real interviewer, and showing them beats hiding a
+ * real name. What it rejects:
+ *   - pure non-letter noise: "1", "12", "-", "?!"
+ *   - known placeholders: "dev", "tbd", … (NON_NAME_TOKENS)
+ *   - anything that is (or starts with) the test marker "test": "TEST",
+ *     "TESTWeb", "TEST RPA", "TESTDecsions"
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeHumanName(value) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return false;
+
+  // Collapse to letters-only for the marker checks so "TEST RPA" -> "testrpa".
+  const lettersOnly = trimmed.toLowerCase().replace(/[^a-z]/g, '');
+  if (!lettersOnly || lettersOnly.length < 2) return false; // "1", "12", "-", "P."
+  if (NON_NAME_TOKENS.has(lettersOnly)) return false;
+  if (lettersOnly.startsWith('test')) return false; // TEST, TESTWeb, TEST RPA, …
+
+  // Letters must dominate — a mostly-symbol/number blob isn't a name.
+  const letters = (trimmed.match(/[a-z]/gi) || []).length;
+  const nonSpace = trimmed.replace(/\s/g, '').length;
+  return letters / nonSpace >= 0.5;
+}
+
+/** Returns the interviewer name only when it looks human; otherwise null. */
+const cleanInterviewerName = (value) => {
+  const cleaned = cleanHint(value);
+  return cleaned && looksLikeHumanName(cleaned) ? cleaned : null;
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Parses the interviewer field into a clean address list. A panel can be one
+ * or several people, entered comma-separated; semicolons are accepted too
+ * since Outlook hands addresses back that way.
+ *
+ * @param {string} raw
+ * @returns {{ emails: string[], invalid: string[] }} de-duplicated, trimmed
+ */
+export function parseInterviewerEmails(raw) {
+  const parts = String(raw || '')
+    .split(/[,;]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const emails = [];
+  const invalid = [];
+  const seen = new Set();
+
+  for (const part of parts) {
+    if (!EMAIL_RE.test(part)) {
+      invalid.push(part);
+      continue;
+    }
+    const key = part.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      emails.push(part);
+    }
+  }
+  return { emails, invalid };
+}
+
+/**
+ * Reads the MRF-defined interviewer + preferred slot for a stage.
+ * @param {object|null} mrf - rpa_mrf row
+ * @param {string} stageKey
+ * @returns {{interviewerName: string|null, preferredSlot: string|null}|null}
+ */
+export function mrfRoundHints(mrf, stageKey) {
+  const mapping = SCHEDULABLE_STAGES[stageKey];
+  if (!mapping || !mrf) return null;
+  return {
+    // Only surface a name that actually looks like one — "1", "TEST", "dev"
+    // become null so the UI shows "not specified" instead of a junk value.
+    interviewerName: cleanInterviewerName(mrf[mapping.ownerField]),
+    // The slot is free-form ("4-5", "11 AM- 12 PM"), so it keeps the lenient cleaner.
+    preferredSlot: cleanHint(mrf[mapping.slotField]),
+  };
+}
+
+/** Serializes a schedule row for the API (BigInt -> Number). */
+function serialize(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    id: Number(row.id),
+    pipeline_id: Number(row.pipeline_id),
+  };
+}
+
+/** The single live (non-cancelled) booking for a candidate-round, if any. */
+export async function getLiveSchedule(pipelineId, stageKey) {
+  const row = await prisma.rpa_interview_schedule.findFirst({
+    where: { pipeline_id: BigInt(pipelineId), stage_key: stageKey, status: { not: 'cancelled' } },
+    orderBy: { created_at: 'desc' },
+  });
+  return serialize(row);
+}
+
+const IST = 'Asia/Kolkata';
+const fmtIst = (d) =>
+  `${new Date(d).toLocaleString('en-IN', {
+    day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST,
+  })} IST`;
+
+/** Loads an active template row by name, or null. */
+async function getTemplate(name) {
+  return prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
+}
+
+/**
+ * Builds the interpolation values shared by every interview email. The Teams
+ * line and cancellation-reason line are pre-rendered HTML fragments so the
+ * templates can place them with a single {{teams_line}} / {{reason_line}} token.
+ */
+/**
+ * The Microsoft Teams meeting block for an invite email: a Join button, then the
+ * dial-in Meeting ID + Passcode (each rendered only when Graph returned it).
+ * Empty string when there is no join URL. Shared by the template token and the
+ * send-time injector below.
+ */
+export function buildTeamsBlock(joinUrl, meetingId, passcode) {
+  if (!joinUrl) return '';
+  // Styled to match the branded card it now sits inside (emailLayout.service.js):
+  // the same tinted panel + green left rule the Shortlist template's callout
+  // uses, so the block reads as part of the email rather than pasted on.
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background:#f6f9eb;border-left:4px solid #7a922e;border-radius:8px;">
+         <tr><td style="padding:16px 18px;">
+         <p style="margin:0 0 10px 0;font-weight:700;color:#5a6e1f;">Microsoft Teams meeting</p>
+         <p style="margin:0 0 10px 0;"><a href="${joinUrl}" style="background:#7a922e;color:#ffffff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Join the meeting</a></p>
+         <p style="margin:0;font-size:13px;color:#374151;word-break:break-all;">Or join with the link: <a href="${joinUrl}" style="color:#5a6e1f;">${joinUrl}</a></p>
+         ${meetingId ? `<p style="margin:6px 0 0 0;font-size:13px;color:#374151;"><strong>Meeting ID:</strong> ${meetingId}</p>` : ''}
+         ${passcode ? `<p style="margin:2px 0 0 0;font-size:13px;color:#374151;"><strong>Passcode:</strong> ${passcode}</p>` : ''}
+         </td></tr></table>`;
+}
+
+/**
+ * Guarantees the Teams block is present in a final email body. The Schedule
+ * modal's preview is compiled BEFORE the meeting exists, so the recruiter-edited
+ * copy the UI sends back has no join link ({{teams_line}} rendered empty). At
+ * real send time the meeting DOES exist, so if the body doesn't already contain
+ * the join URL we append the block — otherwise the initial invite would ship
+ * without the Teams link even though the reminder later has it.
+ *
+ * @param {string} html - the (possibly recruiter-edited) body
+ * @param {string|null} joinUrl
+ * @param {string|null} meetingId
+ * @param {string|null} passcode
+ * @returns {string}
+ */
+function ensureTeamsBlock(html, joinUrl, meetingId, passcode) {
+  if (!joinUrl || !html) return html;
+  if (html.includes(joinUrl)) return html; // already there (fresh-compiled body)
+  return `${html}${buildTeamsBlock(joinUrl, meetingId, passcode)}`;
+}
+
+function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen }) {
+  const teamsLine = buildTeamsBlock(joinUrl, meetingId, passcode);
+  const reasonLine = reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '';
+  return {
+    candidate_name: candidate?.candidate_name || 'Candidate',
+    candidate_email: candidate?.candidate_email || 'n/a',
+    position,
+    stage_label: stageLabel,
+    interview_when: when,
+    // The slot the interview was moved FROM — only used by the reschedule templates.
+    previous_when: previousWhen || '',
+    duration: String(durationMinutes ?? ''),
+    teams_line: teamsLine,
+    reason_line: reasonLine,
+  };
+}
+
+/**
+ * Loads the candidate + panel email templates for an action and compiles both
+ * with the given context. Used by both the preview endpoints and the real send.
+ *
+ * @param {'schedule'|'cancel'|'reschedule'} action
+ * @param {object} ctx - the values interviewTokens() needs
+ * @returns {Promise<{ candidate: {subject,body,templateId,templateName}, panel: {...} }>}
+ */
+async function buildInterviewEmails(action, ctx) {
+  const names = action === 'cancel'
+    ? { c: TEMPLATE_NAMES.cancelCandidate, p: TEMPLATE_NAMES.cancelPanel }
+    : action === 'reschedule'
+      ? { c: TEMPLATE_NAMES.rescheduleCandidate, p: TEMPLATE_NAMES.reschedulePanel }
+      : { c: TEMPLATE_NAMES.scheduleCandidate, p: TEMPLATE_NAMES.schedulePanel };
+
+  const tokens = interviewTokens(ctx);
+  const [cTpl, pTpl] = await Promise.all([getTemplate(names.c), getTemplate(names.p)]);
+
+  const compile = (tpl) => {
+    if (!tpl) return { subject: '', body: '', templateId: null, templateName: null };
+    const { subject, html } = compileTemplate(tpl.subject, tpl.body_html, tokens);
+    return { subject, body: html, templateId: tpl.id, templateName: tpl.name };
+  };
+  const candidate = compile(cTpl);
+  const panel = compile(pTpl);
+  // The branded header/footer each body is wrapped in at send time, returned so
+  // the Schedule/Cancel modals can render the real email around the editable
+  // fragment (plan §4.2). Candidate and panel carry DIFFERENT subjects, and the
+  // headline is the subject, so each side gets its own wrapper.
+  return {
+    candidate: { ...candidate, wrapper: brandedWrapperParts(interviewWrapOpts(candidate.subject)) },
+    panel: { ...panel, wrapper: brandedWrapperParts(interviewWrapOpts(panel.subject)) },
+  };
+}
+
+/**
+ * The branded-shell options for an interview email. The header headline is the
+ * email's own subject (RT decision, 2026-07-25) — pass the FINAL subject, i.e.
+ * the recruiter's edited value when the modal supplied one.
+ */
+const interviewWrapOpts = (subject) => ({ title: subject || '' });
+
+/**
+ * Assembles the full email context for a pipeline's current round without
+ * sending — feeds the Schedule modal's editable preview. Uses the given
+ * date/time/duration so the preview reflects what the recruiter is entering.
+ *
+ * @param {number} pipelineId
+ * @param {object} params - { stageKey, startAt, durationMinutes }
+ */
+export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60 } = {}) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  if (!isSchedulableStage(stageKey || pipeline.current_stage_key)) {
+    throw new AppError('This stage does not support interview scheduling.', 400);
+  }
+
+  const candidate = pipeline.rpa_shortlisted_candidates;
+  const key = stageKey || pipeline.current_stage_key;
+  const start = startAt ? new Date(startAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const when = fmtIst(start);
+
+  // The Teams link is unknown until the event is created, so previews show the
+  // note that it will be added; the real send fills in the actual link.
+  return buildInterviewEmails('schedule', {
+    candidate,
+    stageLabel: SCHEDULABLE_STAGES[key].label,
+    position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+    when,
+    durationMinutes,
+    joinUrl: null,
+    reason: null,
+  });
+}
+
+/**
+ * Preview for the Cancel action — compiles from the live booking so the
+ * recruiter edits the exact text before the cancellation email goes out.
+ * @param {number} scheduleId
+ */
+export async function previewCancelEmails(scheduleId, { reason = '' } = {}) {
+  const row = await prisma.rpa_interview_schedule.findUnique({
+    where: { id: BigInt(scheduleId) },
+    include: { rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } } },
+  });
+  if (!row) throw new AppError('Interview booking not found.', 404);
+
+  const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
+  return buildInterviewEmails('cancel', {
+    candidate,
+    stageLabel: SCHEDULABLE_STAGES[row.stage_key]?.label || row.stage_key,
+    position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+    when: fmtIst(row.scheduled_start_at),
+    durationMinutes: Math.round((new Date(row.scheduled_end_at) - new Date(row.scheduled_start_at)) / 60000),
+    joinUrl: row.teams_join_url,
+    reason: reason || null,
+  });
+}
+
+/**
+ * Books an interview: saves the row, creates the Outlook/Teams event when
+ * enabled, then emails the candidate and the interviewer.
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string} params.stageKey - 'tech1' | 'tech2'
+ * @param {string} params.startAt - ISO datetime
+ * @param {number} [params.durationMinutes=60]
+ * @param {string} params.interviewerEmail - required; one or more mailboxes, comma-separated
+ * @param {string} [params.interviewerName] - defaults to the MRF owner name
+ * @param {string} [params.notes]
+ * @param {number} params.actedBy
+ */
+export async function scheduleInterviewRound(pipelineId, {
+  stageKey,
+  startAt,
+  durationMinutes = 60,
+  interviewerEmail = '',
+  interviewerName = '',
+  notes = null,
+  actedBy,
+  // Optional recruiter-edited copy from the modal. When omitted, the seeded
+  // templates are compiled fresh at send time.
+  candidateSubject = null,
+  candidateBody = null,
+  panelSubject = null,
+  panelBody = null,
+}) {
+  if (!isSchedulableStage(stageKey)) {
+    throw new AppError(`Stage "${stageKey}" does not support interview scheduling.`, 400);
+  }
+
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+  if (pipeline.current_stage_key !== stageKey) {
+    throw new AppError(`The candidate is not currently on ${SCHEDULABLE_STAGES[stageKey].label}.`, 400);
+  }
+
+  // At least one interviewer mailbox is required: without it only the
+  // candidate is told about the interview, and the panel never receives the
+  // invite or the pre-interview reminder. Several may be given, comma-separated.
+  const { emails: interviewerEmails, invalid } = parseInterviewerEmails(interviewerEmail);
+  if (invalid.length > 0) {
+    throw new AppError(
+      `Not a valid email address: ${invalid.join(', ')}. Separate multiple interviewers with commas.`,
+      400
+    );
+  }
+  if (interviewerEmails.length === 0) {
+    throw new AppError("At least one interviewer's email is required so they receive the invite.", 400);
+  }
+  // Stored as the canonical comma-separated list the mailer already understands.
+  const interviewerEmailList = interviewerEmails.join(', ');
+
+  const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) {
+    throw new AppError('A valid interview date & time is required.', 400);
+  }
+  if (start.getTime() < Date.now()) {
+    throw new AppError('The interview time is in the past. Please pick a future slot.', 400);
+  }
+  const end = new Date(start.getTime() + Math.max(15, durationMinutes) * 60 * 1000);
+
+  const existing = await getLiveSchedule(pipelineId, stageKey);
+  if (existing) {
+    throw new AppError('This round already has a scheduled interview. Cancel it first to rebook.', 409);
+  }
+
+  const candidate = pipeline.rpa_shortlisted_candidates;
+  const hints = mrfRoundHints(candidate?.mrf, stageKey);
+  const resolvedName = (interviewerName || '').trim() || hints?.interviewerName || null;
+  const stageLabel = SCHEDULABLE_STAGES[stageKey].label;
+  const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
+
+  // 1) Persist first — the booking is the source of truth even if Graph fails.
+  const row = await prisma.rpa_interview_schedule.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: stageKey,
+      interviewer_name: resolvedName,
+      interviewer_email: interviewerEmailList,
+      scheduled_start_at: start,
+      scheduled_end_at: end,
+      status: 'scheduled',
+      notes,
+      created_by: actedBy || null,
+    },
+  });
+
+  // 2) Best-effort calendar event (no-op unless MS_CALENDAR_ENABLED=true).
+  const attendees = [
+    candidate?.candidate_email ? { email: candidate.candidate_email, name: candidate.candidate_name } : null,
+    ...interviewerEmails.map((email) => ({ email })),
+  ].filter(Boolean);
+
+  const calendar = await createInterviewEvent({
+    subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+    bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
+    start,
+    end,
+    attendees,
+  });
+
+  // 3) Notify both sides. Recipients follow the usual prod/non-prod redirect.
+  //    Copy comes from the modal when the recruiter edited it, else the seeded
+  //    templates compiled with this booking's real details (incl. Teams link).
+  const when = fmtIst(start);
+  const defaults = await buildInterviewEmails('schedule', {
+    candidate,
+    stageLabel,
+    position,
+    when,
+    durationMinutes,
+    joinUrl: calendar.joinUrl,
+    meetingId: calendar.meetingId,
+    passcode: calendar.passcode,
+    reason: null,
+  });
+
+  // The recruiter-edited copy from the modal was previewed before the meeting
+  // existed, so ensure the Teams block is present on the body actually sent.
+  // Branding is applied AFTER that, so the Teams block lands inside the card
+  // rather than after </html> (plan §3.2).
+  // Each side's header headline is its own final subject.
+  const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
+  const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+  const candidateEmail = {
+    subject: candidateFinalSubject,
+    body: wrapBrandedEmail(
+      ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+      interviewWrapOpts(candidateFinalSubject)
+    ),
+  };
+  const panelEmail = {
+    subject: panelFinalSubject,
+    body: wrapBrandedEmail(
+      ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+      interviewWrapOpts(panelFinalSubject)
+    ),
+  };
+
+  const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
+  let inviteSentAt = null;
+  if (candidateTo && candidateEmail.subject) {
+    try {
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: candidateTo,
+        subject: candidateEmail.subject,
+        html: candidateEmail.body,
+      });
+      inviteSentAt = new Date();
+    } catch (err) {
+      logger.error(`Interview schedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+    }
+  }
+
+  const { to: interviewerTo } = resolveRecipients('interviewScheduled', interviewerEmailList);
+  if (interviewerTo && panelEmail.subject) {
+    try {
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: interviewerTo,
+        subject: panelEmail.subject,
+        html: panelEmail.body,
+      });
+      inviteSentAt = inviteSentAt || new Date();
+    } catch (err) {
+      logger.error(`Interview schedule: interviewer email failed for pipeline ${pipelineId}: ${err.message}`);
+    }
+  }
+
+  const updated = await prisma.rpa_interview_schedule.update({
+    where: { id: row.id },
+    data: {
+      graph_event_id: calendar.eventId,
+      teams_join_url: calendar.joinUrl,
+      // Stored so the occurrence sweep can read the Teams attendance report
+      // after the meeting ends (null unless the calendar integration is on).
+      online_meeting_id: calendar.onlineMeetingId,
+      // Dial-in details shown in the invite emails (mirror the Outlook block).
+      teams_meeting_id: calendar.meetingId,
+      teams_passcode: calendar.passcode,
+      invite_sent_at: inviteSentAt,
+      modified_at: new Date(),
+    },
+  });
+
+  // Record the booking on the journey's audit trail.
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: stageKey,
+      event_type: 'note',
+      notes: `${stageLabel} scheduled for ${when}${resolvedName ? ` with ${resolvedName}` : ''}${calendar.joinUrl ? ' (Teams)' : ''}`,
+      acted_by: actedBy || null,
+    },
+  });
+
+  logger.info(`Interview scheduled: pipeline ${pipelineId} ${stageKey} at ${start.toISOString()} (calendar=${calendar.eventId ? 'yes' : isCalendarEnabled() ? 'failed' : 'disabled'}).`);
+  return serialize(updated);
+}
+
+/**
+ * Cancels a booking: cancels the calendar event (best effort), marks the row
+ * cancelled so the round can be rebooked, and notifies the candidate.
+ *
+ * @param {number} scheduleId
+ * @param {object} params
+ * @param {string} params.reason
+ * @param {number} params.actedBy
+ * @param {string|null} [params.candidateSubject] - recruiter-edited copy from the modal
+ * @param {string|null} [params.candidateBody]
+ * @param {string|null} [params.panelSubject]
+ * @param {string|null} [params.panelBody]
+ */
+export async function cancelInterviewRound(scheduleId, {
+  reason,
+  actedBy,
+  candidateSubject = null,
+  candidateBody = null,
+  panelSubject = null,
+  panelBody = null,
+}) {
+  const row = await prisma.rpa_interview_schedule.findUnique({
+    where: { id: BigInt(scheduleId) },
+    include: {
+      rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },
+    },
+  });
+  if (!row) {
+    throw new AppError('Interview booking not found.', 404);
+  }
+  if (row.status === 'cancelled') {
+    throw new AppError('This interview is already cancelled.', 400);
+  }
+
+  await cancelInterviewEvent(row.graph_event_id, reason || 'This interview has been cancelled.');
+
+  const updated = await prisma.rpa_interview_schedule.update({
+    where: { id: row.id },
+    data: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason || null, modified_at: new Date() },
+  });
+
+  const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
+  const stageLabel = SCHEDULABLE_STAGES[row.stage_key]?.label || row.stage_key;
+  const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
+
+  // Copy from the modal when edited, else the seeded cancellation templates
+  // compiled with the reason the recruiter gave.
+  const defaults = await buildInterviewEmails('cancel', {
+    candidate,
+    stageLabel,
+    position,
+    when: fmtIst(row.scheduled_start_at),
+    durationMinutes: Math.round((new Date(row.scheduled_end_at) - new Date(row.scheduled_start_at)) / 60000),
+    joinUrl: null,
+    reason,
+  });
+  const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
+  const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+  const candidateEmail = {
+    subject: candidateFinalSubject,
+    body: wrapBrandedEmail(candidateBody ?? defaults.candidate.body, interviewWrapOpts(candidateFinalSubject)),
+  };
+  const panelEmail = {
+    subject: panelFinalSubject,
+    body: wrapBrandedEmail(panelBody ?? defaults.panel.body, interviewWrapOpts(panelFinalSubject)),
+  };
+
+  const { to: candidateTo } = resolveRecipients('interviewCancelled', candidate?.candidate_email || '');
+  if (candidateTo && candidateEmail.subject) {
+    try {
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: candidateTo,
+        subject: candidateEmail.subject,
+        html: candidateEmail.body,
+      });
+    } catch (err) {
+      logger.error(`Interview cancel: candidate email failed for schedule ${scheduleId}: ${err.message}`);
+    }
+  }
+
+  // Also tell the panel the round is off, so no one shows up.
+  const { to: panelTo } = resolveRecipients('interviewCancelled', row.interviewer_email || '');
+  if (panelTo && panelEmail.subject) {
+    try {
+      await sendGraphEmail({
+        sender: config.microsoft.defaultSender,
+        to: panelTo,
+        subject: panelEmail.subject,
+        html: panelEmail.body,
+      });
+    } catch (err) {
+      logger.error(`Interview cancel: panel email failed for schedule ${scheduleId}: ${err.message}`);
+    }
+  }
+
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: row.pipeline_id,
+      stage_key: row.stage_key,
+      event_type: 'note',
+      notes: `${stageLabel} interview cancelled${reason ? `: ${reason}` : ''}`,
+      acted_by: actedBy || null,
+    },
+  });
+
+  logger.info(`Interview cancelled: schedule ${scheduleId} (pipeline ${row.pipeline_id}, ${row.stage_key}).`);
+  return serialize(updated);
+}
+
+/**
+ * Preview for the Reschedule action — the candidate + panel "rescheduled"
+ * emails, showing the existing booking's time as `previous_when` and the
+ * recruiter's proposed new time as `interview_when`.
+ *
+ * @param {number} pipelineId
+ * @param {object} params - { stageKey, startAt, durationMinutes }
+ */
+export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60 } = {}) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  const key = stageKey || pipeline.current_stage_key;
+  if (!isSchedulableStage(key)) {
+    throw new AppError('This stage does not support interview scheduling.', 400);
+  }
+
+  const candidate = pipeline.rpa_shortlisted_candidates;
+  const existing = await getLiveSchedule(pipelineId, key);
+  const start = startAt ? new Date(startAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  return buildInterviewEmails('reschedule', {
+    candidate,
+    stageLabel: SCHEDULABLE_STAGES[key].label,
+    position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+    when: fmtIst(start),
+    previousWhen: existing ? fmtIst(existing.scheduled_start_at) : '(not set)',
+    durationMinutes,
+    joinUrl: null,
+    reason: null,
+  });
+}
+
+/**
+ * Reschedules the candidate's current-round interview: cancels the existing
+ * booking (calendar event + row), creates a NEW booking, and sends ONE
+ * "rescheduled" email to each side showing the old → new time. This is
+ * cancel+rebook in a single action, so the recipient sees it as a move, not
+ * two disconnected cancel/invite mails.
+ *
+ * @param {number} pipelineId
+ * @param {object} params - same shape as scheduleInterviewRound, plus the
+ *   optional edited candidate/panel copy.
+ */
+export async function rescheduleInterviewRound(pipelineId, {
+  stageKey,
+  startAt,
+  durationMinutes = 60,
+  interviewerEmail = '',
+  interviewerName = '',
+  actedBy,
+  candidateSubject = null,
+  candidateBody = null,
+  panelSubject = null,
+  panelBody = null,
+}) {
+  if (!isSchedulableStage(stageKey)) {
+    throw new AppError(`Stage "${stageKey}" does not support interview scheduling.`, 400);
+  }
+
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  if (pipeline.current_stage_key !== stageKey) {
+    throw new AppError(`The candidate is not currently on ${SCHEDULABLE_STAGES[stageKey].label}.`, 400);
+  }
+
+  const oldRow = await getLiveSchedule(pipelineId, stageKey);
+  if (!oldRow) {
+    throw new AppError('There is no scheduled interview to reschedule. Use Schedule Interview instead.', 400);
+  }
+  const previousWhen = fmtIst(oldRow.scheduled_start_at);
+
+  const { emails: interviewerEmails, invalid } = parseInterviewerEmails(interviewerEmail);
+  if (invalid.length > 0) {
+    throw new AppError(`Not a valid email address: ${invalid.join(', ')}. Separate multiple interviewers with commas.`, 400);
+  }
+  if (interviewerEmails.length === 0) {
+    throw new AppError("At least one interviewer's email is required so they receive the invite.", 400);
+  }
+  const interviewerEmailList = interviewerEmails.join(', ');
+
+  const start = new Date(startAt);
+  if (Number.isNaN(start.getTime())) throw new AppError('A valid interview date & time is required.', 400);
+  if (start.getTime() < Date.now()) throw new AppError('The new interview time is in the past. Please pick a future slot.', 400);
+  const end = new Date(start.getTime() + Math.max(15, durationMinutes) * 60 * 1000);
+
+  const candidate = pipeline.rpa_shortlisted_candidates;
+  const hints = mrfRoundHints(candidate?.mrf, stageKey);
+  const resolvedName = (interviewerName || '').trim() || hints?.interviewerName || null;
+  const stageLabel = SCHEDULABLE_STAGES[stageKey].label;
+  const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
+
+  // 1) Cancel the old calendar event + mark the old row cancelled so the unique
+  //    "one live booking per round" index frees up for the new row.
+  await cancelInterviewEvent(oldRow.graph_event_id, 'This interview has been rescheduled.');
+  await prisma.rpa_interview_schedule.update({
+    where: { id: BigInt(oldRow.id) },
+    data: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'Rescheduled', modified_at: new Date() },
+  });
+
+  // 2) Create the new booking.
+  const row = await prisma.rpa_interview_schedule.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: stageKey,
+      interviewer_name: resolvedName,
+      interviewer_email: interviewerEmailList,
+      scheduled_start_at: start,
+      scheduled_end_at: end,
+      status: 'scheduled',
+      created_by: actedBy || null,
+    },
+  });
+
+  // 3) Best-effort new calendar event (no-op unless MS_CALENDAR_ENABLED=true).
+  const attendees = [
+    candidate?.candidate_email ? { email: candidate.candidate_email, name: candidate.candidate_name } : null,
+    ...interviewerEmails.map((email) => ({ email })),
+  ].filter(Boolean);
+  const calendar = await createInterviewEvent({
+    subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+    bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
+    start,
+    end,
+    attendees,
+  });
+
+  // 4) One "rescheduled" email per side, old → new time.
+  const when = fmtIst(start);
+  const defaults = await buildInterviewEmails('reschedule', {
+    candidate, stageLabel, position, when, previousWhen, durationMinutes,
+    joinUrl: calendar.joinUrl, meetingId: calendar.meetingId, passcode: calendar.passcode, reason: null,
+  });
+  const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
+  const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+  const candidateEmail = {
+    subject: candidateFinalSubject,
+    body: wrapBrandedEmail(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), interviewWrapOpts(candidateFinalSubject)),
+  };
+  const panelEmail = {
+    subject: panelFinalSubject,
+    body: wrapBrandedEmail(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), interviewWrapOpts(panelFinalSubject)),
+  };
+
+  const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
+  let inviteSentAt = null;
+  if (candidateTo && candidateEmail.subject) {
+    try {
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body });
+      inviteSentAt = new Date();
+    } catch (err) {
+      logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+    }
+  }
+  const { to: panelTo } = resolveRecipients('interviewScheduled', interviewerEmailList);
+  if (panelTo && panelEmail.subject) {
+    try {
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body });
+      inviteSentAt = inviteSentAt || new Date();
+    } catch (err) {
+      logger.error(`Interview reschedule: panel email failed for pipeline ${pipelineId}: ${err.message}`);
+    }
+  }
+
+  const updated = await prisma.rpa_interview_schedule.update({
+    where: { id: row.id },
+    data: { graph_event_id: calendar.eventId, teams_join_url: calendar.joinUrl, online_meeting_id: calendar.onlineMeetingId, teams_meeting_id: calendar.meetingId, teams_passcode: calendar.passcode, invite_sent_at: inviteSentAt, modified_at: new Date() },
+  });
+
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: stageKey,
+      event_type: 'note',
+      notes: `${stageLabel} rescheduled: ${previousWhen} → ${when}${resolvedName ? ` with ${resolvedName}` : ''}`,
+      acted_by: actedBy || null,
+    },
+  });
+
+  logger.info(`Interview rescheduled: pipeline ${pipelineId} ${stageKey} ${previousWhen} -> ${start.toISOString()}.`);
+  return serialize(updated);
+}
+
+/**
+ * Records whether a scheduled interview actually HAPPENED — the single gate the
+ * scorecard is released under. Converged on by all three paths: the Graph
+ * attendance sweep (source 'graph'), the recruiter's drawer button (source
+ * 'recruiter'), and the interviewer's no-login gate link (source 'interviewer').
+ *
+ * Idempotent: once occurrence_status is set, the verdict is returned unchanged
+ * so a second path (or a repeated sweep tick) is a no-op. On 'held' the booking
+ * becomes status='completed' and the scorecard links are dispatched exactly
+ * once (guarded inside dispatchScorecards by scorecard_dispatched_at). On
+ * 'no_show' the booking becomes status='no_show', the reason is recorded, and
+ * NO scorecard is ever sent — the caller then offers reschedule/reject.
+ *
+ * @param {number|bigint} scheduleId
+ * @param {object} params
+ * @param {'held'|'no_show'} params.outcome
+ * @param {'graph'|'recruiter'|'interviewer'} params.source
+ * @param {string} [params.confirmedBy] - ATS username or interviewer email
+ * @param {number} [params.actedBy] - ATS user id (recruiter path)
+ * @param {string} [params.party] - no_show only: candidate|panel|both|technical
+ * @param {string} [params.reason] - no_show only
+ * @returns {Promise<{status: string, occurrence_status: string, alreadyResolved: boolean, scorecard?: object}>}
+ */
+export async function markInterviewOccurrence(scheduleId, { outcome, source, confirmedBy = null, actedBy = null, party = null, reason = null } = {}) {
+  if (!['held', 'no_show'].includes(outcome)) {
+    throw new AppError("outcome must be 'held' or 'no_show'.", 400);
+  }
+
+  const schedule = await prisma.rpa_interview_schedule.findUnique({ where: { id: BigInt(scheduleId) } });
+  if (!schedule) throw new AppError('Interview booking not found.', 404);
+  if (schedule.status === 'cancelled') {
+    throw new AppError('This interview was cancelled; its occurrence cannot be recorded.', 400);
+  }
+
+  // Already resolved → return the existing verdict unchanged (idempotent).
+  if (schedule.occurrence_status) {
+    return { status: schedule.status, occurrence_status: schedule.occurrence_status, alreadyResolved: true };
+  }
+
+  const stageLabel = SCHEDULABLE_STAGES[schedule.stage_key]?.label || schedule.stage_key;
+  const newStatus = outcome === 'held' ? 'completed' : 'no_show';
+
+  await prisma.rpa_interview_schedule.update({
+    where: { id: schedule.id },
+    data: {
+      status: newStatus,
+      occurrence_status: outcome,
+      occurrence_source: source || null,
+      occurrence_confirmed_by: confirmedBy || null,
+      occurrence_confirmed_at: new Date(),
+      no_show_party: outcome === 'no_show' ? (party || null) : null,
+      no_show_reason: outcome === 'no_show' ? (reason || null) : null,
+      modified_at: new Date(),
+    },
+  });
+
+  // Audit note on the journey.
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: schedule.pipeline_id,
+      stage_key: schedule.stage_key,
+      event_type: 'note',
+      notes: outcome === 'held'
+        ? `${stageLabel} confirmed held (${source || 'manual'})`
+        : `${stageLabel} marked no-show${party ? ` — ${party}` : ''}${reason ? `: ${reason}` : ''} (${source || 'manual'})`,
+      acted_by: actedBy || null,
+    },
+  });
+
+  logger.info(`Interview occurrence: schedule ${scheduleId} → ${outcome} (${source}).`);
+
+  // On 'held', release the scorecard links (exactly once). Lazy import breaks
+  // the cycle with interviewScorecard.service.js (which imports helpers here).
+  let scorecard;
+  if (outcome === 'held') {
+    const { dispatchScorecards } = await import('./interviewScorecard.service.js');
+    scorecard = await dispatchScorecards(scheduleId, { trigger: source === 'graph' ? 'graph' : 'manual', actedBy });
+  }
+
+  return { status: newStatus, occurrence_status: outcome, alreadyResolved: false, scorecard };
+}

@@ -10,8 +10,13 @@ router.use(authenticate);
 router.get('/reminder', settingsController.getReminderSettings);
 router.post('/reminder', settingsController.saveReminderSettings);
 
-/** Evalground Assessment automation — deadline days + auto-advance/reject toggle. */
-router.get('/assessment-automation', settingsController.getAssessmentAutomation);
-router.post('/assessment-automation', settingsController.saveAssessmentAutomation);
+// Interview reminder scheduler (on/off + poll interval) for booked technical rounds
+router.get('/interview-reminder', settingsController.getInterviewReminderConfig);
+router.post('/interview-reminder', settingsController.saveInterviewReminderConfig);
+
+// Interview occurrence sweep (on/off + poll interval + grace) — the post-interview
+// "did it happen?" gate that guards scorecard dispatch.
+router.get('/interview-occurrence', settingsController.getInterviewOccurrenceConfig);
+router.post('/interview-occurrence', settingsController.saveInterviewOccurrenceConfig);
 
 export default router;
