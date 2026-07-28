@@ -12,7 +12,6 @@ import screeningRoutes from './screening.routes.js';
 import emailTemplateRoutes from './emailTemplate.routes.js';
 import trackingRoutes from './tracking.routes.js';
 import pipelineRoutes from './pipeline.routes.js';
-import scorecardRoutes from './scorecard.routes.js';
 
 const router = Router();
 
@@ -29,8 +28,6 @@ router.use('/screening', screeningRoutes);
 router.use('/pipeline', pipelineRoutes);
 // Public email open-tracking pixel (no auth — see tracking.routes.js).
 router.use('/track', trackingRoutes);
-// Public interviewer scorecard link (no auth — see scorecard.routes.js).
-router.use('/scorecard', scorecardRoutes);
 
 // ── Placeholder routes (to be implemented in later phases) ────────────
 // Each placeholder returns a friendly "coming soon" message so the

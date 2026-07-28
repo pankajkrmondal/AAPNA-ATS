@@ -46,7 +46,6 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import PageHeader from '../components/common/PageHeader';
 import emailTemplateService from '../services/emailTemplateService';
 import useTheme from '../hooks/useTheme';
-import { wrapBrandedPreview, isFullHtmlDocument } from '../utils/emailPreview';
 
 dayjs.extend(relativeTime);
 
@@ -102,12 +101,6 @@ const brandTagStyle = {
   margin: 0,
 };
 
-// Structural placeholders the sending service injects as HTML fragments (not
-// recruiter content) — excluded from required-placeholder validation so they
-// can be freely removed from a body. Mirrors OPTIONAL_PLACEHOLDERS in
-// backend/src/controllers/emailTemplate.controller.js.
-const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
-
 // Dummy replacements for live compiled preview
 const dummyReplacements = {
   candidate_name: 'John Doe',
@@ -125,13 +118,6 @@ const dummyReplacements = {
   recruiter_name: 'Sarah Jenkins',
   ctc: '18 LPA',
   joining_date: '01 July 2026',
-  // Technical-round interview templates (#22–27).
-  stage_label: 'Technical Round 1',
-  interview_when: '28 July 2026 at 11:00 AM IST',
-  previous_when: '25 July 2026 at 03:00 PM IST',
-  duration: '60',
-  teams_line: '<p style="margin:16px 0;"><a href="https://teams.microsoft.com/l/meetup-join/sample" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Join the Microsoft Teams meeting</a></p>',
-  reason_line: '<p><strong>Reason:</strong> Interviewer unavailable</p>',
 };
 
 export default function EmailManagement() {
@@ -372,8 +358,6 @@ export default function EmailManagement() {
 
     for (const p of selectedTemplate.placeholders) {
       const cleanP = p.replace(/[{}]/g, '').toLowerCase();
-      // Inject-only structural fragments are optional (see OPTIONAL_PLACEHOLDERS).
-      if (OPTIONAL_PLACEHOLDERS.has(cleanP)) continue;
       const hasDouble = contentToValidate.includes(`{{${cleanP}}}`);
       const hasSingle = contentToValidate.includes(`{${cleanP}}`);
       let hasAlias = false;
@@ -504,20 +488,9 @@ export default function EmailManagement() {
   };
 
   const preview = getPreviewContent();
-  // Templates stored as body fragments (Pipeline Tracker: stage outcomes,
-  // interview schedule/cancel/reminder, scorecard) get the branded header and
-  // footer applied by the backend at send time — so preview them wrapped, or
-  // the admin would be shown something the recipient never receives.
-  // Already-branded templates are returned unchanged by the guard.
-  // The header headline is the email's own subject, matching the send path.
   const previewSrcDoc = sanitizeDoc(
-    wrapBrandedPreview(
-      preview.body || '<p style="font-family:sans-serif;color:#8a8f8c">This template has no body content.</p>',
-      { title: preview.subject }
-    )
+    preview.body || '<p style="font-family:sans-serif;color:#8a8f8c;padding:24px">This template has no body content.</p>'
   );
-  // Whether the wrapper was actually applied, so the UI can say so.
-  const previewIsWrapped = !isFullHtmlDocument(preview.body || '');
 
   const categories = [
     { key: 'all', label: 'All Templates' },
@@ -717,14 +690,6 @@ export default function EmailManagement() {
             <Text style={{ width: 60, color: '#64748b' }}>To:</Text>
             <Text style={{ color: '#334155' }}>candidate@example.com</Text>
           </div>
-          {previewIsWrapped && (
-            <div style={{ display: 'flex', fontSize: 11.5, gap: 10 }}>
-              <Text style={{ width: 60, color: '#64748b' }}>Format:</Text>
-              <Text style={{ color: '#64748b' }}>
-                Standard AAPNA header &amp; footer are applied automatically on send.
-              </Text>
-            </div>
-          )}
         </div>
 
         {/* Faithful, isolated render of the compiled email */}

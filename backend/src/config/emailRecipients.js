@@ -80,12 +80,6 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
-  // Interviewer scorecard link, sent once an interview is confirmed held.
-  // Prod -> the interviewer/HR/CEO mailbox (dynamic); non-prod -> test inbox.
-  scorecardInvite: { to: '', cc: '', dynamic: true },
-  // "Please confirm this interview happened" nudge from the occurrence sweep.
-  // Prod -> recruiter/interviewer (dynamic); non-prod -> test inbox.
-  occurrenceNudge: { to: '', cc: '', dynamic: true },
   // Screening status -> Rejected notification to candidate. Prod -> candidate.
   rejection: { to: '', cc: '', dynamic: true },
   // Screening status -> On Hold notification to candidate. Prod -> candidate.

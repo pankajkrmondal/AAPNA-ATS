@@ -7,8 +7,6 @@ import { disconnectRedis } from './config/redis.js';
 import { initializeSocket } from './socket/index.js';
 import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
-import { startInterviewReminderJob, stopInterviewReminderJob } from './jobs/interviewReminder.js';
-import { startInterviewOccurrenceJob, stopInterviewOccurrenceJob } from './jobs/interviewOccurrence.js';
 import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
 import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
@@ -35,15 +33,6 @@ async function startServer() {
     // 3) Start background jobs
     startSessionCleanupJob();
     await startReminderSchedulerJob();
-
-    // Pre-interview reminders for booked technical rounds; self-gated by the
-    // interview_reminder_enabled setting (Settings → Reminder Settings).
-    await startInterviewReminderJob();
-
-    // Post-interview occurrence sweep — decides "did it happen?" (Teams
-    // attendance or a confirm nudge) so a scorecard is never sent for a
-    // no-show; self-gated by interview_occurrence_enabled.
-    await startInterviewOccurrenceJob();
 
     // Consolidated Outlook mailbox poller — one delta fetch per tick fanned out
     // to resume intake + inbound sync (replaces n8n "Outlook Trigger2" + "WF2");
@@ -85,8 +74,6 @@ async function gracefulShutdown(signal) {
 
   // Stop cron schedulers
   stopReminderSchedulerJob();
-  stopInterviewReminderJob();
-  stopInterviewOccurrenceJob();
   stopMailboxPollerJob();
   stopZekoSchedulerJob();
   stopAssessmentDeadlineJob();
