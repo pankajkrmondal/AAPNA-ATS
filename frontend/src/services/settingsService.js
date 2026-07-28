@@ -33,6 +33,21 @@ const settingsService = {
    */
   saveInterviewReminderConfig(payload) {
     return api.post('/settings/interview-reminder', payload);
+   * Get Evalground Assessment automation settings (invite deadline days +
+   * the global auto-advance/auto-reject toggle).
+   * @returns {Promise}
+   */
+  getAssessmentAutomation() {
+    return api.get('/settings/assessment-automation');
+  },
+
+  /**
+   * Save Evalground Assessment automation settings. Admin-tier only server-side.
+   * @param {object} payload — { assessment_deadline_days, assessment_auto_advance_enabled }
+   * @returns {Promise}
+   */
+  saveAssessmentAutomation(payload) {
+    return api.post('/settings/assessment-automation', payload);
   },
 };
 

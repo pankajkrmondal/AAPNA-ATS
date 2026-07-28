@@ -5,9 +5,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
 import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined } from '@ant-design/icons';
+import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch } from 'antd';
+import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
+import useAuth from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
 
@@ -27,6 +30,12 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const { mode, setMode } = useTheme();
   const appearanceRef = useRef(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role && ['admin', 'superadmin'].includes(user.role.toLowerCase());
+
+  const [assessmentForm] = Form.useForm();
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [assessmentSaving, setAssessmentSaving] = useState(false);
 
   // Interview reminder scheduler — saved on change, applied without a restart.
   const [interviewCfg, setInterviewCfg] = useState({ enabled: false, interval_minutes: 30, lead_minutes: 30 });
@@ -117,6 +126,37 @@ export default function Settings() {
       setInterviewCfg(interviewCfg); // roll back the optimistic change
     } finally {
       setInterviewSaving(false);
+  // Load Assessment automation settings on mount
+  useEffect(() => {
+    const fetchAssessmentSettings = async () => {
+      setAssessmentLoading(true);
+      try {
+        const res = await settingsService.getAssessmentAutomation();
+        if (res.data && res.data.data) {
+          const { assessment_deadline_days, assessment_auto_advance_enabled } = res.data.data;
+          assessmentForm.setFieldsValue({ assessment_deadline_days, assessment_auto_advance_enabled });
+        }
+      } catch (err) {
+        message.error('Failed to load assessment automation settings.');
+      } finally {
+        setAssessmentLoading(false);
+      }
+    };
+    fetchAssessmentSettings();
+  }, [assessmentForm]);
+
+  const onFinishAssessment = async (values) => {
+    setAssessmentSaving(true);
+    try {
+      await settingsService.saveAssessmentAutomation({
+        assessment_deadline_days: values.assessment_deadline_days,
+        assessment_auto_advance_enabled: !!values.assessment_auto_advance_enabled,
+      });
+      message.success('Assessment automation settings updated successfully!');
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update assessment automation settings.');
+    } finally {
+      setAssessmentSaving(false);
     }
   };
 
@@ -473,6 +513,93 @@ export default function Settings() {
             }}
           />
         </div>
+      </Card>
+
+      {/* Assessment Automation — Evalground invite deadline + auto-advance/reject toggle */}
+      <Card
+        bordered={false}
+        style={{
+          borderRadius: 12,
+          boxShadow: 'var(--shadow-md)',
+          borderTop: '4px solid var(--gold)',
+          marginTop: 24,
+        }}
+      >
+        <div style={{ marginBottom: 24 }}>
+          <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
+            Assessment Automation
+          </Title>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Controls for the Evalground assessment round on the Pipeline Tracker.
+          </Text>
+        </div>
+
+        <div
+          style={{
+            background: 'var(--info-bg)',
+            border: '1px solid var(--info-border)',
+            borderRadius: 8,
+            padding: '16px 20px',
+            color: 'var(--info-text)',
+            fontSize: 13.5,
+            lineHeight: 1.6,
+            marginBottom: 28,
+          }}
+        >
+          <strong>How it works:</strong> The deadline days control how long a candidate has to complete
+          the Evalground test after an invite is sent before recruiters get a reminder. When
+          auto-advance/reject is ON, a CSV import with a Marks Scored above 50 automatically approves
+          the candidate to the next round, and 50 or below automatically rejects them — both with a real
+          outcome email, no recruiter click required. When OFF (default), nothing is automatic; recruiters
+          always decide manually.
+        </div>
+
+        <Form
+          form={assessmentForm}
+          layout="vertical"
+          onFinish={onFinishAssessment}
+          initialValues={{ assessment_deadline_days: 2, assessment_auto_advance_enabled: false }}
+          disabled={assessmentLoading}
+        >
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <Form.Item
+              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Invite Deadline (Days) *</span>}
+              name="assessment_deadline_days"
+              rules={[{ required: true, message: 'Required' }]}
+              style={{ margin: 0, flex: '1 1 220px' }}
+            >
+              <InputNumber
+                min={1}
+                max={30}
+                style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Auto-Advance / Auto-Reject on Score</span>}
+              name="assessment_auto_advance_enabled"
+              valuePropName="checked"
+              style={{ margin: 0 }}
+            >
+              <Switch disabled={!isAdmin} />
+            </Form.Item>
+
+            <Button
+              type="primary"
+              htmlType="submit"
+              icon={<SaveOutlined />}
+              loading={assessmentSaving}
+              style={{ height: 42, borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
+            >
+              Save Settings
+            </Button>
+          </div>
+          {!isAdmin && (
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 8 }}>
+              Only an admin can change the auto-advance/auto-reject toggle.
+            </Text>
+          )}
+        </Form>
       </Card>
     </div>
   );

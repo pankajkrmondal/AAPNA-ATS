@@ -666,6 +666,73 @@ export async function sendResumeErrorAlert({ executionId, failedCount, totalCoun
 }
 
 /**
+ * Sends an internal alert when the Cohere Rerank API fails during a screening
+ * search, so the candidate list can gracefully fall back to a bounded,
+ * base-relevance-ordered list instead of erroring out for the recruiter.
+ * @param {{ query: string, candidateCount: number, errorMessage: string, rateLimited?: boolean }} params
+ * @returns {Promise<boolean>}
+ */
+export async function sendRerankApiAlert({ query, candidateCount, errorMessage, rateLimited = false }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('rerankApiAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping rerank API alert: no recipient configured.');
+      return false;
+    }
+
+    const subject = rateLimited
+      ? `⏳ Candidate Ranking (Cohere) Rate Limit Hit — Screening Search`
+      : `🚨 Candidate Ranking (Cohere) API Failure — Screening Search`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:${rateLimited ? '#b8860b' : '#b71c1c'};color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    ${rateLimited ? 'Candidate Ranking API Rate Limit Hit' : 'Candidate Ranking API Failure'}
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>${rateLimited
+      ? 'The Cohere Rerank API returned a 429 (rate limit) during a Candidate Screening search — likely the candidate pool for this search produced more concurrent batches than the current Cohere plan allows per minute (the candidate pool is no longer capped before reranking). If this recurs often, consider lowering RERANK_MAX_CONCURRENT_BATCHES in vectorStore.service.js or upgrading the Cohere plan.'
+      : 'The Cohere Rerank API failed during a Candidate Screening search.'
+    } The recruiter was shown a bounded fallback list (base vector relevance, no rerank) instead of an error.</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Search query:</td><td>${query || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Candidate pool size:</td><td>${candidateCount}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Error:</p>
+    <p style="font-family:monospace;">${String(errorMessage || 'Unknown error')}</p>
+  </div>
+</body>
+</html>
+    `;
+
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'rerank_api_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev / Admin',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info('Rerank API alert sent.');
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send rerank API alert: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Sends duplicate resume detection alert to HR and administrator.
  */
 export async function sendDuplicateAlertEmail(candidate, hrUserEmail) {
@@ -1503,5 +1570,100 @@ export async function sendPasswordResetEmail({ user, resetUrl }) {
   }
 }
 
+/** Last-alerted timestamp per error signature, so a sustained outage sends one email, not a flood. */
+const errorAlertCooldown = new Map();
+const ERROR_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Alerts developers by email when a 5xx error reaches the global error handler,
+ * carrying the real (pre-sanitization) error detail so it doesn't just vanish
+ * behind the friendly message the user sees. Never throws — errors here must
+ * never affect the HTTP response already being sent to the user.
+ *
+ * Throttled per error signature (code/name + route) so a sustained outage
+ * (e.g. a connection pool timeout under load) sends one alert, not one per
+ * failed request.
+ *
+ * @param {Object} params
+ * @param {Error} params.err - The original error, before sanitization.
+ * @param {Error} params.finalErr - The (possibly sanitized) AppError sent to the client.
+ * @param {import('express').Request} params.req
+ * @returns {Promise<boolean>}
+ */
+export async function sendBackendErrorAlert({ err, finalErr, req }) {
+  try {
+    const route = `${req.method} ${req.originalUrl}`;
+    const signature = `${err.code || err.name || 'Error'}:${route}`;
+
+    const now = Date.now();
+    const lastSent = errorAlertCooldown.get(signature);
+    if (lastSent && now - lastSent < ERROR_ALERT_COOLDOWN_MS) {
+      return false; // Same error/route alerted recently — skip.
+    }
+    errorAlertCooldown.set(signature, now);
+
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('backendErrorAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping backend error alert: no recipient configured.');
+      return false;
+    }
+
+    const stackSnippet = (err.stack || 'No stack trace available.')
+      .split('\n')
+      .slice(0, 8)
+      .join('\n');
+
+    const subject = `🚨 Backend Error Alert — ${finalErr.statusCode} on ${route}`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:#b71c1c;color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    Backend Error Alert
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>A backend error reached the global error handler and was shown to a user as a sanitized message. Real detail below:</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Environment:</td><td>${config.env}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Time:</td><td>${new Date().toISOString()}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Route:</td><td>${route}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Status sent to user:</td><td>${finalErr.statusCode}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Message shown to user:</td><td>${finalErr.message}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Error name:</td><td>${err.name || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Error code:</td><td>${err.code || 'n/a'}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Real error message:</p>
+    <p style="font-family:monospace;white-space:pre-wrap;">${String(err.message || 'n/a')}</p>
+    <p style="margin-top:14px;font-weight:700;">Stack (top frames — full trace in server logs):</p>
+    <pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;background:#f9fbf5;padding:10px;border-radius:4px;">${stackSnippet}</pre>
+  </div>
+</body>
+</html>
+    `;
+
+    await sendGraphEmail({ sender, to: toEmail, subject, html });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'backend_error_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev Team',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    return true;
+  } catch (alertErr) {
+    logger.error(`Failed to send backend error alert: ${alertErr.message}`);
+    return false;
+  }
+}
 
 

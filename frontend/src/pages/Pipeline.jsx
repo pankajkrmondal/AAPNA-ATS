@@ -26,11 +26,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Badge, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
+  Alert, Badge, Button, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
 import { LeftOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { ImportOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
+import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 
 const { Text, Title } = Typography;
 
@@ -81,6 +83,10 @@ function cardStatus(card) {
   // Zeko "Invited"). Both use the same blue accent as the active-but-not-done look.
   if (card.scheduled) return { label: 'Scheduled', color: 'blue', accent: '#5b7ff0' };
   if (card.invited) return { label: 'Invited', color: 'blue', accent: '#5b7ff0' };
+  // Phase 3 M2 — Evalground bulk-CSV import: no result has landed for this
+  // journey yet. Never expires/clears itself; only an import (or a decision)
+  // moves the card past this state (RT: "test pending" is shown indefinitely).
+  if (card.assessment_pending) return { label: 'Evalground test pending', color: 'gold', accent: '#d4a017' };
   return { label: 'In progress', color: 'blue', accent: '#5b7ff0' };
 }
 
@@ -323,6 +329,7 @@ export default function Pipeline() {
   const [openPipelineId, setOpenPipelineId] = useState(null);
   const [nlQuery, setNlQuery] = useState('');
   const [nlRead, setNlRead] = useState(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const filters = {
     position,
@@ -443,7 +450,21 @@ export default function Pipeline() {
                   {col.is_optional && <Tag style={{ fontSize: 10 }}>optional</Tag>}
                 </Space>
               )}
-              extra={<Badge count={col.cards.length} showZero color="#7a922e" />}
+              extra={(
+                <Space size={6}>
+                  {col.stage_key === 'assessment' && (
+                    <Tooltip title="Import Evalground results (CSV) — matches by candidate email to journeys currently in this round">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<ImportOutlined />}
+                        onClick={(e) => { e.stopPropagation(); setImportModalOpen(true); }}
+                      />
+                    </Tooltip>
+                  )}
+                  <Badge count={col.cards.length} showZero color="#7a922e" />
+                </Space>
+              )}
               styles={{ body: { padding: 10, background: 'transparent' } }}
               style={{ borderTop: 0, overflow: 'hidden' }}
             >
@@ -466,6 +487,15 @@ export default function Pipeline() {
         onChanged={() => {
           refreshBoard();
           message.success('Pipeline updated.');
+        }}
+      />
+
+      <AssessmentImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImported={() => {
+          refreshBoard();
+          queryClient.invalidateQueries({ queryKey: ['assessment-result'] });
         }}
       />
     </div>

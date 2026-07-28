@@ -42,7 +42,6 @@ import {
   ArrowRightOutlined,
   StarFilled,
   WarningOutlined,
-  InfoCircleOutlined,
   UnorderedListOutlined,
   ClockCircleOutlined,
   RightOutlined,
@@ -60,6 +59,7 @@ import screeningService from '../services/screeningService';
 import { useApprovedRoles, useRoleCandidates, screeningKeys } from '../hooks/useScreeningData';
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
+import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
@@ -322,8 +322,12 @@ export default function CandidateScreening() {
   const [summary, setSummary] = useState(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateKeys, setSelectedCandidateKeys] = useState([]);
-  // Blocks the whole page while the bulk shortlist request (incl. email sends) is in flight.
+  // Blocks the whole page while the bulk shortlist/reject request (incl. email sends) is in flight.
   const [isShortlisting, setIsShortlisting] = useState(false);
+  // Which decision the floating dock opened the modal for: null | 'shortlist' | 'reject'.
+  const [decisionModalOpen, setDecisionModalOpen] = useState(null);
+  // Dedupes the ranking-service-degraded warning so in-place cache patches don't re-toast it.
+  const degradedNotifiedRef = useRef(null);
 
   // ── Pagination State (client-side; result sets are bounded server-side) ──
   const [currentPage, setCurrentPage] = useState(1);
@@ -422,6 +426,16 @@ export default function CandidateScreening() {
       setRoleDetails(data.role || null);
       setCandidates(data.candidates || []);
       setSummary(data.summary || null);
+      // Ranking-service outage fallback (see rerankCandidates on the backend) — warn
+      // once per distinct failure rather than re-notifying on every in-place cache patch.
+      if (data.summary?.degraded && degradedNotifiedRef.current !== data.summary.degradedReason) {
+        degradedNotifiedRef.current = data.summary.degradedReason;
+        notification.warning({
+          message: 'Showing a limited candidate list',
+          description: data.summary.degradedReason,
+          duration: 8,
+        });
+      }
     }
   }, [roleCandidatesQuery.data, activeTab]);
 
@@ -531,6 +545,13 @@ export default function CandidateScreening() {
       setCandidates(data.candidates || []);
       setSummary(data.summary || null);
       message.success(`Search completed: ${data.candidates?.length || 0} matches`);
+      if (data.summary?.degraded) {
+        notification.warning({
+          message: 'Showing a limited candidate list',
+          description: data.summary.degradedReason,
+          duration: 8,
+        });
+      }
     } catch (err) {
       const isAIError = err.status === 503 || err.status === 429;
       if (isAIError) {
@@ -556,33 +577,70 @@ export default function CandidateScreening() {
     setSelectedCandidateKeys([]);
   };
 
-  /* ═══════ BULK SHORTLIST ACTION ═══════ */
-  const handleShortlistSelected = async () => {
+  /* ═══════ BULK SHORTLIST / REJECT ACTIONS ═══════ */
+  // Both dock buttons open DecisionEmailModal (reason/Tag-to-JD/editable email
+  // preview) instead of firing immediately; the actual API call happens in
+  // handleDecisionConfirm once the recruiter confirms.
+  const openDecisionModal = (decision) => {
     if (selectedCandidateKeys.length === 0) return;
+    setDecisionModalOpen(decision);
+  };
 
+  const patchCandidateLists = (updater) => {
+    if (activeTab === 'jd') {
+      // The JD list is sourced from the react-query cache (sync effect
+      // above), so patch the cached axios envelope; the effect then
+      // refreshes the local render state.
+      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), (prev) => {
+        const payload = prev?.data?.data ?? prev?.data;
+        if (!payload?.candidates) return prev;
+        const updated = { ...payload, candidates: updater(payload.candidates) };
+        return prev.data?.data !== undefined
+          ? { ...prev, data: { ...prev.data, data: updated } }
+          : { ...prev, data: updated };
+      });
+    } else {
+      setCandidates((prev) => updater(prev));
+    }
+  };
+
+  const handleDecisionConfirm = async ({ mrfId, roleName, reason, sendEmail, emailOverride }) => {
+    const decision = decisionModalOpen;
+    if (!decision) return;
     const selectedList = candidates.filter((c) => selectedCandidateKeys.includes(c.id));
-    const mrfId = activeTab === 'jd' ? selectedRoleId : 0;
-    const roleName = activeTab === 'jd' ? roleDetails?.role_title : 'Manual Screening';
+    if (selectedList.length === 0) return;
 
     const payload = {
       candidates: selectedList.map((c) => ({ id: c.id, Name: c.Name, EmailID: c.EmailID })),
       mrf_id: mrfId,
       role_name: roleName,
+      send_email: sendEmail,
+      email_override: emailOverride,
     };
+    if (decision === 'reject') payload.reason = reason;
 
     setIsShortlisting(true);
     try {
-      const res = await screeningService.shortlistCandidates(payload);
+      const res = decision === 'reject'
+        ? await screeningService.rejectCandidates(payload)
+        : await screeningService.shortlistCandidates(payload);
       const result = res.data?.data || res.data || {};
       const emailsSent = result.emails_sent ?? 0;
-      const shortlistedCount = selectedList.length;
+      const processedCount = decision === 'reject'
+        ? (result.rejected ?? selectedList.length)
+        : (result.shortlisted ?? selectedList.length);
+      const skippedCount = result.skipped ?? 0;
+      const skippedNote = skippedCount > 0
+        ? ` ${skippedCount} already had a record for this role and ${skippedCount === 1 ? 'was' : 'were'} left unchanged.`
+        : '';
       const failures = result.email_failures || [];
+      const verb = decision === 'reject' ? 'Rejected' : 'Shortlisted';
 
       if (failures.length > 0) {
         // Group identical reasons so the message stays readable for bulk actions.
         const reasons = [...new Set(failures.map((f) => f.reason))];
         notification.warning({
-          message: `Shortlisted ${shortlistedCount}, but ${failures.length} email(s) not sent`,
+          message: `${verb} ${processedCount}, but ${failures.length} email(s) not sent`,
           description: (
             <div>
               {reasons.map((r, i) => (
@@ -595,38 +653,40 @@ export default function CandidateScreening() {
           ),
           duration: 0,
         });
+      } else if (sendEmail) {
+        message.success(`Successfully ${verb.toLowerCase()} ${processedCount} candidate(s) and sent ${emailsSent} notification email(s).${skippedNote}`);
       } else {
-        message.success(`Successfully shortlisted ${shortlistedCount} candidate(s) and sent ${emailsSent} notification email(s).`);
+        message.success(`Successfully ${verb.toLowerCase()} ${processedCount} candidate(s). No email was sent.${skippedNote}`);
       }
-      setSelectedCandidateKeys([]);
 
-      // Update shortlist badges in place — re-running the search (JD force
-      // reload or keyword re-search) is expensive and kept the blocking
-      // overlay up long after the success toast.
-      const shortlistedIds = new Set(selectedList.map((c) => c.id));
-      const markShortlisted = (list) =>
-        (list || []).map((c) =>
-          shortlistedIds.has(c.id)
-            ? { ...c, FinalStatus: 'Stage 0 - Resume Shortlisted', shortlisted_status: 'Stage 0 - Resume Shortlisted' }
-            : c
-        );
-      if (activeTab === 'jd') {
-        // The JD list is sourced from the react-query cache (sync effect
-        // above), so patch the cached axios envelope; the effect then
-        // refreshes the local render state.
-        queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), (prev) => {
-          const payload = prev?.data?.data ?? prev?.data;
-          if (!payload?.candidates) return prev;
-          const updated = { ...payload, candidates: markShortlisted(payload.candidates) };
-          return prev.data?.data !== undefined
-            ? { ...prev, data: { ...prev.data, data: updated } }
-            : { ...prev, data: updated };
-        });
+      setSelectedCandidateKeys([]);
+      setDecisionModalOpen(null);
+
+      const decidedIds = new Set(selectedList.map((c) => c.id));
+      if (decision === 'reject') {
+        // A rejected candidate should no longer sit in this role's current result
+        // list (the backend also excludes them from future searches of this role).
+        patchCandidateLists((list) => (list || []).filter((c) => !decidedIds.has(c.id)));
       } else {
-        setCandidates((prev) => markShortlisted(prev));
+        // Update shortlist badges in place — re-running the search (JD force
+        // reload or keyword re-search) is expensive and kept the blocking
+        // overlay up long after the success toast.
+        patchCandidateLists((list) =>
+          (list || []).map((c) =>
+            decidedIds.has(c.id)
+              ? {
+                  ...c,
+                  FinalStatus: 'Stage 0 - Resume Shortlisted',
+                  shortlisted_status: 'Stage 0 - Resume Shortlisted',
+                  shortlisted_by: user?.username || 'recruiter',
+                  shortlisted_at: new Date().toISOString(),
+                }
+              : c
+          )
+        );
       }
     } catch (err) {
-      message.error(err.message || 'Failed to shortlist candidate list.');
+      message.error(err.message || `Failed to ${decision} candidate list.`);
     } finally {
       setIsShortlisting(false);
     }
@@ -641,63 +701,26 @@ export default function CandidateScreening() {
 
     setAssigningJob(true);
     try {
-      // Find candidate's shortlist ID
-      // If we are in keyword search, we pull or create a dummy shortlist record in the backend
-      // But usually we assign from the pipeline Zeko Analytics.
-      // The backend service requires candidate_id (which maps to shortlist row ID in rpa_shortlisted_candidates)
-      // Wait, let's verify if shortlist ID is available in candidate
+      // `assignZekoJob` needs a rpa_shortlisted_candidates.id, not a raw candidate
+      // id — the Zeko pipeline joins on the shortlist row (see getZekoPipeline's
+      // `sc.id AS candidate_id`). So the candidate must be shortlisted first.
       const shortlistId = selectedCandidate.shortlisted_status ? selectedCandidate.id : null;
-      
-      let finalShortlistId = shortlistId;
-      if (!finalShortlistId) {
-        // If not shortlisted yet, we should prompt to shortlist first or backend will fail
-        // Let's check candidate.shortlisted_status.
-        // Wait, does the backend assignCandidateToZekoJob take shortlistId as candidateId?
-        // Yes, the service does:
-        // const shortlist = await prisma.rpa_shortlisted_candidates.findUnique({ where: { id: candidateId } });
-        // So candidateId in assign endpoint represents rpa_shortlisted_candidates.id!
-        // Let's verify if selectedCandidate has that.
-        // Yes, candidate.shortlisted_status is the status, but does candidate.id in our payload represent shortlist ID?
-        // Wait! In service.js:
-        // `shortlist_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null`
-        // Wait, if a candidate is loaded in JD search, the candidate id is c.id (which is BigInt of rpa_cv).
-        // Let's verify what shortlist record is loaded.
-        // Ah! In service.js, it says:
-        // `const exists = await prisma.rpa_shortlisted_candidates.findFirst({ where: { cv_id: candidateId, mrf_id: BigInt(mrfId) } })`
-        // Wait, where is the shortlist ID?
-        // Let's look at `getZekoPipeline` SQL:
-        // `JOIN rpa_shortlisted_candidates sc ON sc.id = p.candidate_id`
-        // In the pipeline list, `candidate_id` is the ID of the shortlisted candidate record!
-        // Let's check `getZekoPipeline` SQL: `sc.id AS candidate_db_id` or similar.
-        // Ah! In `E:/ATS-Migration/backend/src/services/screening.service.js`:
-        // `sc.id` is joined as `p.candidate_id` in `rpa_zeko_candidate_pipeline`!
-        // So Zeko Candidate Pipeline's `candidate_id` is actually the primary key ID of `rpa_shortlisted_candidates`!
-        // So we must shortlist a candidate *first* before assigning them to a Zeko job!
-        message.info('Candidate must be shortlisted first. Creating shortlist record...');
-        
-        const mrfId = activeTab === 'jd' ? selectedRoleId : 0;
-        const roleName = activeTab === 'jd' ? roleDetails?.role_title : 'Manual Screening';
-        const payload = {
-          candidates: [{ id: selectedCandidate.id, Name: selectedCandidate.Name, EmailID: selectedCandidate.EmailID }],
-          mrf_id: mrfId,
-          role_name: roleName,
-        };
-        const resShort = await screeningService.shortlistCandidates(payload);
-        message.success('Candidate shortlisted successfully. Proceeding to assign job...');
-        
-        // Refresh candidates
-        if (activeTab === 'jd') {
-          await handleRoleSelect(selectedRoleId);
-        } else {
-          form.submit();
-        }
-        
-        // We will need to reload pipeline and re-select candidate or let user assign again.
+
+      if (!shortlistId) {
+        // Not shortlisted yet — route through the same modal the dock buttons use
+        // so Keyword-tab candidates get the same mandatory role tag + editable
+        // email that DecisionEmailModal already enforces, instead of a role-less
+        // "Manual Screening" shortlist. JD tab still gets its role pre-filled
+        // automatically (defaultMrfId/defaultRoleName are already wired into the
+        // modal at the top-level render).
+        setSelectedCandidateKeys([selectedCandidate.id]);
+        setDecisionModalOpen('shortlist');
+        message.info('Confirm the shortlist details to continue, then click "Assign to Zeko job" again.');
         return;
       }
 
       await screeningService.assignZekoJob({
-        candidate_id: finalShortlistId,
+        candidate_id: shortlistId,
         zeko_job_id: selectedZekoJobId,
       });
       message.success('Candidate assigned to Zeko job successfully.');
@@ -1479,7 +1502,11 @@ export default function CandidateScreening() {
                         <Space direction="vertical" size={5} style={{ width: '100%' }}>
                           <Space align="center" size={8} wrap>
                             <span className="cand-name">{c.Name}</span>
-                            <StatusBadge status={c.FinalStatus ? 'shortlisted' : 'applied'} />
+                            <StatusBadge status={
+                              c.FinalStatus === 'Rejected' ? 'rejected'
+                                : c.FinalStatus ? 'shortlisted'
+                                : 'applied'
+                            } />
                             {rating && rating.stars >= 4 && (
                               <Tag
                                 style={{
@@ -1503,7 +1530,19 @@ export default function CandidateScreening() {
                               </Tag>
                             )}
                           </Space>
-                          
+
+                          {/* Shortlisted/Rejected by/on — plainly visible, no hover required */}
+                          {c.shortlisted_by && (
+                            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                              Shortlisted by <strong style={{ color: 'var(--text-2)' }}>{c.shortlisted_by}</strong> on {dayjs(c.shortlisted_at).format('DD MMM YYYY')}
+                            </div>
+                          )}
+                          {c.rejected_by && (
+                            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                              Rejected by <strong style={{ color: 'var(--text-2)' }}>{c.rejected_by}</strong> on {dayjs(c.rejected_at).format('DD MMM YYYY')}
+                            </div>
+                          )}
+
                           {/* Current Company */}
                           {(() => {
                             const companyName = formatCurrentCompany(c.CurrentCompany);
@@ -1638,7 +1677,7 @@ export default function CandidateScreening() {
                   pageSize={pageSize}
                   total={candidates.length}
                   showSizeChanger
-                  pageSizeOptions={['10', '20', '50']}
+                  pageSizeOptions={['10', '20', '50', '100']}
                   showTotal={(total, range) => `${range[0]}-${range[1]} of ${total}`}
                   onChange={(p, s) => { setCurrentPage(p); setPageSize(s); }}
                   onShowSizeChange={(_, s) => { setPageSize(s); setCurrentPage(1); }}
@@ -1674,8 +1713,9 @@ export default function CandidateScreening() {
         )}
       </Card>
 
-      {/* Floating shortlist dock */}
-      {selectedCandidateKeys.length > 0 && createPortal(
+      {/* Floating shortlist dock — hidden while the decision modal is open so its own
+          Cancel/Confirm footer isn't fought by this fixed-position, higher-z-index bar. */}
+      {selectedCandidateKeys.length > 0 && !decisionModalOpen && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -1700,10 +1740,18 @@ export default function CandidateScreening() {
           <Button
             type="primary"
             icon={<CheckCircleOutlined />}
-            onClick={handleShortlistSelected}
+            onClick={() => openDecisionModal('shortlist')}
             style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Shortlist Selected
+          </Button>
+          <Button
+            danger
+            icon={<CloseCircleOutlined />}
+            onClick={() => openDecisionModal('reject')}
+            style={{ borderRadius: 8, fontWeight: 700 }}
+          >
+            Reject Selected
           </Button>
           <Tooltip title="Clear selection">
             <Button
@@ -1717,7 +1765,20 @@ export default function CandidateScreening() {
         document.body
       )}
 
-      {/* Full-page blocker while the shortlist request (incl. email sends) runs.
+      <DecisionEmailModal
+        open={Boolean(decisionModalOpen)}
+        decision={decisionModalOpen || 'shortlist'}
+        activeTab={activeTab}
+        candidates={candidates.filter((c) => selectedCandidateKeys.includes(c.id))}
+        roles={roles}
+        defaultMrfId={selectedRoleId}
+        defaultRoleName={roleDetails?.role_title}
+        confirmLoading={isShortlisting}
+        onCancel={() => setDecisionModalOpen(null)}
+        onConfirm={handleDecisionConfirm}
+      />
+
+      {/* Full-page blocker while the shortlist/reject request (incl. email sends) runs.
           Rendered via portal to <body> — antd's `fullscreen` Spin uses position:fixed
           in place, which ancestor transforms clip to a sub-container. */}
       {isShortlisting && createPortal(
@@ -1747,7 +1808,7 @@ export default function CandidateScreening() {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
               <Spin size="large" />
               <Text strong style={{ color: 'var(--color-primary)', fontSize: 15 }}>
-                Shortlisting candidates and sending emails...
+                Processing candidates...
               </Text>
               <Text type="secondary" style={{ fontSize: 12 }}>
                 This may take a few seconds. Please wait.
@@ -2345,6 +2406,30 @@ export default function CandidateScreening() {
                               <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>RPA Final Status</Text>
                               <Text strong style={{ fontSize: 13 }}>{selectedCandidate.FinalStatus || 'No Status'}</Text>
                             </Col>
+                            {selectedCandidate.shortlisted_by && (
+                              <>
+                                <Col span={12}>
+                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Shortlisted By</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{selectedCandidate.shortlisted_by}</Text>
+                                </Col>
+                                <Col span={12}>
+                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Shortlisted On</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.shortlisted_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                </Col>
+                              </>
+                            )}
+                            {selectedCandidate.rejected_by && (
+                              <>
+                                <Col span={12}>
+                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Rejected By</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{selectedCandidate.rejected_by}</Text>
+                                </Col>
+                                <Col span={12}>
+                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Rejected On</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.rejected_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                </Col>
+                              </>
+                            )}
                           </Row>
                         </Card>
                       </div>

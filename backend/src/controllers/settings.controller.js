@@ -16,6 +16,11 @@ import {
   getInterviewOccurrenceSettings,
   restartInterviewOccurrenceJob,
 } from '../jobs/interviewOccurrence.js';
+import { isAdminTier } from '../config/roles.js';
+import {
+  getAssessmentAutomationSettings,
+  saveAssessmentAutomationSettings,
+} from '../services/assessmentSettings.service.js';
 
 /**
  * @desc    Get automated email reminder configuration settings
@@ -276,5 +281,47 @@ export const saveInterviewOccurrenceConfig = catchAsync(async (req, res) => {
     interval_minutes: saved.intervalMin,
     grace_minutes: saved.graceMin,
   }, `Interview occurrence sweep ${saved.enabled ? 'enabled' : 'disabled'}`);
+ * @desc    Get Evalground Assessment automation settings (invite deadline
+ *          window + the global auto-advance/auto-reject toggle)
+ * @route   GET /api/settings/assessment-automation
+ * @access  Private — any authenticated user may read (recruiters need to see
+ *          the current deadline/toggle state when sending an invite)
+ */
+export const getAssessmentAutomation = catchAsync(async (req, res) => {
+  const { deadlineDays, autoAdvanceEnabled } = await getAssessmentAutomationSettings();
+  return success(res, {
+    assessment_deadline_days: deadlineDays,
+    assessment_auto_advance_enabled: autoAdvanceEnabled,
+  }, 'Assessment automation settings retrieved successfully');
+});
+
+/**
+ * @desc    Update Evalground Assessment automation settings
+ * @route   POST /api/settings/assessment-automation
+ * @access  Private — admin-tier only. Deliberately tighter than the reminder
+ *          settings above: this toggle can trigger unattended approve/reject
+ *          decisions plus real outcome emails, a materially higher-stakes
+ *          action than a reminder cadence.
+ */
+export const saveAssessmentAutomation = catchAsync(async (req, res) => {
+  if (!isAdminTier(req.user?.role)) {
+    throw new AppError('Admin access required to change assessment automation settings.', 403);
+  }
+
+  const { assessment_deadline_days, assessment_auto_advance_enabled } = req.body;
+  const deadlineDays = parseInt(assessment_deadline_days, 10);
+  if (isNaN(deadlineDays) || deadlineDays < 1 || deadlineDays > 30) {
+    throw new AppError('assessment_deadline_days must be a valid integer between 1 and 30.', 400);
+  }
+
+  const result = await saveAssessmentAutomationSettings({
+    deadlineDays,
+    autoAdvanceEnabled: assessment_auto_advance_enabled === true || assessment_auto_advance_enabled === 'true',
+  });
+
+  return success(res, {
+    assessment_deadline_days: result.deadlineDays,
+    assessment_auto_advance_enabled: result.autoAdvanceEnabled,
+  }, 'Assessment automation settings updated successfully');
 });
 

@@ -9,7 +9,8 @@
  * Turnstile keys keep working unchanged. The parent can call reset() through
  * a ref after a failed login — tokens are single-use.
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Alert, Button } from 'antd';
 import useTheme from '../hooks/useTheme';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -40,14 +41,22 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
   const onTokenRef = useRef(onToken);
   onTokenRef.current = onToken;
   const { isDark } = useTheme();
+  // Cloudflare renders its own "Verification failed / Troubleshoot" UI inside
+  // the widget's cross-origin iframe on failure — meaningless to an end user
+  // and not something we can restyle. Track the failure ourselves so we can
+  // hide that iframe and show a message that actually makes sense instead.
+  const [hasError, setHasError] = useState(false);
+
+  const requestFreshChallenge = () => {
+    setHasError(false);
+    if (widgetIdRef.current !== null && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+  };
 
   useImperativeHandle(ref, () => ({
     /** Discard the current (single-use) token and request a fresh challenge. */
-    reset() {
-      if (widgetIdRef.current !== null && window.turnstile) {
-        window.turnstile.reset(widgetIdRef.current);
-      }
-    },
+    reset: requestFreshChallenge,
   }));
 
   useEffect(() => {
@@ -61,9 +70,15 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
           sitekey: siteKey,
           theme: isDark ? 'dark' : 'light',
           action,
-          callback: (token) => onTokenRef.current(token),
+          callback: (token) => {
+            setHasError(false);
+            onTokenRef.current(token);
+          },
           'expired-callback': () => onTokenRef.current(''),
-          'error-callback': () => onTokenRef.current(''),
+          'error-callback': () => {
+            onTokenRef.current('');
+            setHasError(true);
+          },
         });
       })
       .catch(() => {
@@ -82,7 +97,25 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
   }, [siteKey, isDark, action]);
 
   if (!siteKey) return null;
-  return <div ref={containerRef} style={{ minHeight: 65 }} />;
+  return (
+    <div>
+      <div ref={containerRef} style={{ minHeight: hasError ? 0 : 65, display: hasError ? 'none' : 'block' }} />
+      {hasError && (
+        <Alert
+          type="warning"
+          showIcon
+          message="Verification check failed"
+          description="This is usually temporary. Click retry to request a new check."
+          action={
+            <Button size="small" onClick={requestFreshChallenge}>
+              Retry
+            </Button>
+          }
+          style={{ borderRadius: 8 }}
+        />
+      )}
+    </div>
+  );
 });
 
 export default TurnstileWidget;

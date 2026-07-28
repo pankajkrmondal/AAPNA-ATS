@@ -2448,6 +2448,7 @@ h1, h2, h3, h4, h5, h6,
 }
 .dash-chart-tip__label { font-size: 11px; color: var(--text-2); margin-bottom: 2px; }
 .dash-chart-tip__value { font-size: 14px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.dash-chart-tip__note { font-size: 11px; color: var(--text-3); margin-top: 4px; max-width: 220px; line-height: 1.4; }
 
 /* ----- Command palette (⌘K) ----- */
 .dash-cmdk .ant-modal-content { padding: 0; overflow: hidden; border-radius: 16px; }

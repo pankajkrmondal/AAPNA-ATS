@@ -22,3 +22,14 @@ export const getRecentUploads = catchAsync(async (req, res) => {
   const uploads = await dashboardService.getRecentUploads(limit);
   return success(res, uploads, 'Recent uploads retrieved');
 });
+
+/**
+ * @desc    Get per-recruiter candidate breakdown (Added vs Tagged)
+ * @route   GET /api/dashboard/recruiter-breakdown
+ * @access  Private
+ */
+export const getRecruiterBreakdown = catchAsync(async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const breakdown = await dashboardService.getRecruiterBreakdown(limit);
+  return success(res, breakdown, 'Recruiter breakdown retrieved');
+});
