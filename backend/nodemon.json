@@ -1,0 +1,14 @@
+{
+  "ignore": [
+    "uploads/*",
+    "logs/*",
+    "node_modules/*",
+    "scratch/*",
+    "*.log",
+    "scratch-*.js"
+  ],
+  "watch": [
+    "src"
+  ],
+  "ext": "js,json"
+}

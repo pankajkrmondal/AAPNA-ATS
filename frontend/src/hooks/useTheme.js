@@ -1,0 +1,14 @@
+/**
+ * useTheme — Convenience hook for consuming ThemeContext.
+ * Throws if used outside of <ThemeProvider>.
+ */
+import { useContext } from 'react';
+import { ThemeContext } from '../context/ThemeContext';
+
+export default function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme must be used within a <ThemeProvider>');
+  }
+  return context;
+}
