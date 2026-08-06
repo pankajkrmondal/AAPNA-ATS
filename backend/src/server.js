@@ -12,6 +12,8 @@ import { startInterviewOccurrenceJob, stopInterviewOccurrenceJob } from './jobs/
 import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
 import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
+import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
+import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
@@ -56,6 +58,14 @@ async function startServer() {
     // Evalground invite deadline checker — pure DB polling, no external API, always runs.
     startAssessmentDeadlineJob();
 
+    // Offer sweeps — daily approval nudge + post-joining auto-close (Q12/Q26);
+    // pure DB polling, no external API, always runs.
+    startOfferSweepJob();
+
+    // Document reminder sweep — chases candidates whose documents are still
+    // outstanding ("reminders until submitted"); pure DB polling, always runs.
+    startDocumentReminderJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -90,6 +100,8 @@ async function gracefulShutdown(signal) {
   stopMailboxPollerJob();
   stopZekoSchedulerJob();
   stopAssessmentDeadlineJob();
+  stopOfferSweepJob();
+  stopDocumentReminderJob();
 
   // Stop accepting new connections
   server.close(async () => {

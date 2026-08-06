@@ -45,6 +45,7 @@ import MrfApprovalAction from './pages/MrfApprovalAction';
 import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
 import Pipeline from './pages/Pipeline';
 import InterviewScorecard from './pages/InterviewScorecard';
+import DocumentUpload from './pages/DocumentUpload';
 
 /* ---- Route Guards ---- */
 
@@ -288,6 +289,9 @@ function AppShell() {
             {/* Public interviewer scorecard (no login — opened from an emailed link) */}
             <Route path="/scorecard/:token" element={<ForceLight><InterviewScorecard /></ForceLight>} />
 
+            {/* Public candidate document upload (no login — opened from an emailed link) */}
+            <Route path="/documents/:token" element={<ForceLight><DocumentUpload /></ForceLight>} />
+
             {/* Protected (app) routes */}
             <Route
               element={
@@ -326,17 +330,31 @@ function AppShell() {
               <Route path="/analytics" element={<Analytics />} />
               {/* Preserved pre-rebrand page — operational fallback, sidebar-only. */}
               <Route path="/analytics-legacy" element={<AnalyticsLegacy />} />
-              {/* Phase 3 walkthrough prototype (mock data only) — remove once
-                  the real Pipeline Tracker ships in Phase 3 Module 1. */}
-              <Route path="/candidate-pipeline-prototype" element={<CandidatePipelinePrototype />} />
               {/* Real Pipeline Tracker (Module 1) — persists to /api/pipeline,
-                  sends real outcome emails. Kept alongside the prototype above
-                  until RT signs off and this is verified end-to-end. */}
+                  sends real outcome emails. This is "Candidate Pipeline" in the
+                  sidebar. */}
               <Route
                 path="/pipeline"
                 element={
                   <ModuleRoute moduleKey="recruitment_pipeline">
                     <Pipeline />
+                  </ModuleRoute>
+                }
+              />
+              {/* Phase 3 walkthrough demo (mock data only). Retired from the
+                  sidebar but still routable for client walkthroughs and as the
+                  design reference PipelineDrawer / AssessmentImportModal /
+                  DecisionEmailModal cite.
+
+                  Now behind the SAME module guard as the real page: it was a
+                  bare route, so a user explicitly denied the recruitment_pipeline
+                  module could still open a full pipeline UI and act on it. The
+                  data was fake, but the access check was too. */}
+              <Route
+                path="/candidate-pipeline-prototype"
+                element={
+                  <ModuleRoute moduleKey="recruitment_pipeline">
+                    <CandidatePipelinePrototype />
                   </ModuleRoute>
                 }
               />

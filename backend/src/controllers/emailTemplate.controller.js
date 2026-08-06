@@ -45,6 +45,61 @@ export const getEmailTemplateById = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Create a new email template
+ * @route   POST /api/email/templates
+ * @access  Private (Admin only — see requireAdmin in middleware/auth.js)
+ *
+ * The other half of RT's "changeable without development" ask: admins could
+ * already EDIT templates but not create them, which is why every template gap
+ * (the closure emails above all) needed a developer and a seed script run.
+ *
+ * `placeholders` is the contract the PUT validator enforces on later edits, so
+ * it is accepted here but never inferred — declaring a placeholder the body
+ * does not use would lock the template into failing its own validation.
+ */
+export const createEmailTemplate = catchAsync(async (req, res) => {
+  const { name, subject, body_html, category, placeholders, is_active } = req.body;
+
+  if (!name || !subject || !body_html) {
+    throw new AppError('name, subject and body_html are required fields.', 400);
+  }
+
+  const trimmedName = String(name).trim();
+  if (!trimmedName) {
+    throw new AppError('name cannot be blank.', 400);
+  }
+
+  // Templates are resolved BY NAME throughout the codebase (getTemplate() in
+  // interviewSchedule / documentCollection / stageNotification, and the
+  // GENERIC_FALLBACK_BY_OUTCOME map). A duplicate name would make which row
+  // wins a matter of insertion order, so it is rejected outright.
+  const clash = await prisma.rpa_email_templates.findFirst({
+    where: { name: trimmedName },
+  });
+  if (clash) {
+    throw new AppError(`An email template named "${trimmedName}" already exists.`, 409);
+  }
+
+  if (placeholders !== undefined && !Array.isArray(placeholders)) {
+    throw new AppError('placeholders must be an array of token names.', 400);
+  }
+
+  const template = await prisma.rpa_email_templates.create({
+    data: {
+      name: trimmedName,
+      subject,
+      body_html,
+      category: (category || 'general').trim(),
+      placeholders: (placeholders || []).map((p) => String(p).replace(/[{}]/g, '').trim()).filter(Boolean),
+      is_active: is_active === undefined ? true : Boolean(is_active),
+      created_by: req.user?.id || null,
+    },
+  });
+
+  return success(res, template, 'Email template created successfully', 201);
+});
+
+/**
  * @desc    Update template subject and body
  * @route   PUT /api/email/templates/:id
  * @access  Private (Recruiter/Admin)

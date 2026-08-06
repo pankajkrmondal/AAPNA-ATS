@@ -1,9 +1,6 @@
 import { Router } from 'express';
 import * as pipelineController from '../controllers/pipeline.controller.js';
-import { authenticate, checkModuleAccess } from '../middleware/auth.js';
-import { isAdminTier } from '../config/roles.js';
-import AppError from '../utils/AppError.js';
-import catchAsync from '../utils/catchAsync.js';
+import { authenticate, checkModuleAccess, requireAdmin } from '../middleware/auth.js';
 import assessmentImportRoutes from './assessmentImport.routes.js';
 
 const router = Router();
@@ -12,13 +9,8 @@ const router = Router();
 router.use(authenticate);
 router.use(checkModuleAccess('recruitment_pipeline'));
 
-/** Admin-only gate for stage/outcome/reason config CRUD (RT ask 2026-07-13). */
-const requireAdmin = catchAsync(async (req, _res, next) => {
-  if (!isAdminTier(req.user?.role)) {
-    throw new AppError('Admin access required to modify pipeline configuration.', 403);
-  }
-  next();
-});
+// Stage/outcome/reason config CRUD is admin-only (RT ask 2026-07-13); the gate
+// itself now lives in middleware/auth.js so the templates routes share it.
 
 /** GET /api/pipeline — board data (columns + cards), filterable. */
 router.get('/', pipelineController.listPipeline);
@@ -53,6 +45,10 @@ router.get('/interview/:scheduleId/cancel-preview', pipelineController.getCancel
 router.post('/interview/:scheduleId/occurrence', pipelineController.recordInterviewOccurrence);
 /** Manually send the scorecard link (idempotent; only after 'held'). */
 router.post('/interview/:scheduleId/send-scorecard', pipelineController.sendScorecard);
+/** Per-document verify/reject. Registered before "/:id" so "documents" is
+ * never captured as a pipeline id. */
+router.post('/documents/:docId/verify', pipelineController.verifyDocument);
+router.post('/documents/:docId/reject', pipelineController.rejectDocument);
 /** /api/pipeline/assessment-import/* — Phase 3 M2, Evalground bulk-CSV import.
  * Registered before "/:id" so "assessment-import" is never captured as a pipeline id. */
 router.use('/assessment-import', assessmentImportRoutes);
@@ -61,7 +57,7 @@ router.use('/assessment-import', assessmentImportRoutes);
 router.get('/:id', pipelineController.getPipelineDetail);
 /** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
 router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
-/** POST /api/pipeline/:id/interview — book the interview for tech1/tech2. */
+/** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */
 router.post('/:id/interview', pipelineController.scheduleInterview);
 /** GET /api/pipeline/:id/interview-preview — editable invite email preview. */
 router.get('/:id/interview-preview', pipelineController.getSchedulePreview);
@@ -77,6 +73,18 @@ router.post('/:id/outcome', pipelineController.setStageOutcome);
 router.post('/:id/advance', pipelineController.advanceStage);
 /** POST /api/pipeline/:id/closure — set the final/closure outcome (Q12). */
 router.post('/:id/closure', pipelineController.setFinalOutcome);
+
+/** Documents round (Module 4) — recruiter-facing half; the candidate uploads
+ * through the public token route in document.routes.js. */
+router.get('/:id/documents', pipelineController.getDocumentStatus);
+router.post('/:id/documents/request', pipelineController.requestDocuments);
+router.post('/:id/documents/remind', pipelineController.remindDocuments);
+
+/** Offer round (Module 5) — record-only; the letter itself never enters the ATS. */
+router.post('/:id/offer/request-approval', pipelineController.requestOfferApproval);
+router.post('/:id/offer/approve', pipelineController.approveOffer);
+router.post('/:id/offer/share', pipelineController.recordOfferShared);
+router.post('/:id/offer/decision', pipelineController.recordOfferDecision);
 /** POST /api/pipeline/:id/email — ad-hoc per-candidate email override (RT ask 2026-07-14). */
 router.post('/:id/email', pipelineController.sendAdHocEmail);
 

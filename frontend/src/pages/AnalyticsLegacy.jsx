@@ -43,8 +43,7 @@ import {
   CompassOutlined,
   WarningOutlined,
   CloseOutlined,
-  EyeOutlined,
-  ApartmentOutlined
+  EyeOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
@@ -52,8 +51,8 @@ import screeningService from '../services/screeningService';
 import StatusBadge from '../components/common/StatusBadge';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
-// Phase 3 walkthrough prototype tab — remove with the prototype page.
-import { CandidatePipelineAnalyticsPreview } from './CandidatePipelinePrototype';
+// (The Candidate Pipeline preview tab and its import were removed — real
+// pipeline analytics live on Analytics.jsx, sourced from /api/pipeline/analytics.)
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -362,7 +361,7 @@ export default function AnalyticsLegacy() {
       // Recalculate tiles locally or refetch
       fetchMainData();
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to update candidate status');
+      message.error(err.response?.data?.message || err?.message || 'Failed to update candidate status');
     } finally {
       setSavingStatusId(null);
     }
@@ -384,7 +383,7 @@ export default function AnalyticsLegacy() {
       message.success('Candidate assigned to Zeko job successfully');
       fetchMainData();
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to assign candidate to Zeko Job');
+      message.error(err.response?.data?.message || err?.message || 'Failed to assign candidate to Zeko Job');
     } finally {
       setAssigningCandidateId(null);
     }
@@ -444,7 +443,7 @@ export default function AnalyticsLegacy() {
       setReplyDrafts((prev) => ({ ...prev, [thread.group_key]: '' }));
       message.success('Reply sent');
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to send reply');
+      message.error(err.response?.data?.message || err?.message || 'Failed to send reply');
     } finally {
       setReplySendingKey(null);
     }
@@ -492,7 +491,7 @@ export default function AnalyticsLegacy() {
       setSchedulingCandidate(null);
       fetchMainData();
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to schedule Zeko interview');
+      message.error(err.response?.data?.message || err?.message || 'Failed to schedule Zeko interview');
     } finally {
       setSchedulingLoading(false);
     }
@@ -514,7 +513,7 @@ export default function AnalyticsLegacy() {
       setCancellingPipeline(null);
       fetchMainData();
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to cancel interview');
+      message.error(err.response?.data?.message || err?.message || 'Failed to cancel interview');
     } finally {
       setCancellingLoading(false);
     }
@@ -1150,17 +1149,16 @@ export default function AnalyticsLegacy() {
                 />
               )
             },
-            {
-              // Phase 3 walkthrough prototype tab (mock data) — remove with the prototype page.
-              key: 'pipeline',
-              label: (
-                <span>
-                  <ApartmentOutlined className="tab-ico" />
-                  Candidate Pipeline (Preview)
-                </span>
-              ),
-              children: <CandidatePipelineAnalyticsPreview />
-            },
+            // The "Candidate Pipeline (Preview)" tab that used to sit here was
+            // removed: it rendered the walkthrough prototype's HARDCODED funnel
+            // and stage counts inside an operational analytics page, where
+            // invented numbers are indistinguishable from real ones.
+            //
+            // It is not repointed at the real endpoint because that already
+            // exists — Analytics.jsx's PipelineInsights reads the same figures
+            // live from GET /api/pipeline/analytics. This tab was duplicated,
+            // not merely mocked. Removing it also drops the last code-level
+            // import of CandidatePipelinePrototype.jsx.
             {
               key: 'emailDelivery',
               label: (

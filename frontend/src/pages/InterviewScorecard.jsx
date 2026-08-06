@@ -35,7 +35,9 @@ export default function InterviewScorecard() {
   const [recommendation, setRecommendation] = useState('approve');
   const [comments, setComments] = useState('');
   const [recordingUrl, setRecordingUrl] = useState('');
-  const [hr, setHr] = useState({ notice: '', currentCtc: '', expectedCtc: '', relocation: '', strengths: '' });
+  // Keyed by the API/DB field names so submit needs no translation layer.
+  const [hr, setHr] = useState({});
+  const setHrField = (field, value) => setHr((prev) => ({ ...prev, [field]: value }));
 
   const load = async () => {
     setLoading(true);
@@ -97,20 +99,16 @@ export default function InterviewScorecard() {
     setError('');
     try {
       const payload = {
-        skills: skills.filter((s) => s.label.trim()).map((s) => ({ label: s.label, rating: s.rating || null, remark: s.remark })),
+        // The HR round scores the conversation, not a skill matrix — its card
+        // has no skill rows at all (per the Interview Evaluation Format).
+        skills: isHr ? [] : skills.filter((s) => s.label.trim()).map((s) => ({ label: s.label, rating: s.rating || null, remark: s.remark })),
         communication: communication || null,
         attitude: attitude || null,
         final_rating: finalRating || null,
         recommendation,
         comments,
         recording_url: recordingUrl,
-        ...(isHr ? {
-          hr_notice_period: hr.notice,
-          hr_current_ctc: hr.currentCtc,
-          hr_expected_ctc: hr.expectedCtc,
-          hr_relocation: hr.relocation,
-          hr_strengths: hr.strengths,
-        } : {}),
+        ...(isHr ? hr : {}),
       };
       await scorecardService.submit(token, payload);
       setDone('submitted');
@@ -198,8 +196,8 @@ export default function InterviewScorecard() {
 
         {showForm && (
           <Space direction="vertical" size={14} style={{ width: '100%' }}>
-            {/* One skill (schema supports more) */}
-            {skills.map((s, i) => (
+            {/* The technical card rates skills; the HR card doesn't have them. */}
+            {!isHr && skills.map((s, i) => (
               <div key={i}>
                 <Text strong style={{ fontSize: 13 }}>Skill <Text type="danger">*</Text></Text>
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 4 }} wrap>
@@ -216,22 +214,44 @@ export default function InterviewScorecard() {
               </div>
             ))}
 
+            {isHr && (
+              <>
+                <Divider style={{ margin: '4px 0' }} orientation="left" plain>Candidate background</Divider>
+                <HrField label="Family background" rows={2} value={hr.hr_family_background} onChange={(v) => setHrField('hr_family_background', v)} />
+                <HrField label="General / other" rows={2} value={hr.hr_general_other} onChange={(v) => setHrField('hr_general_other', v)} />
+                <HrField label="Timings" maxLength={255} value={hr.hr_timings} onChange={(v) => setHrField('hr_timings', v)} />
+              </>
+            )}
+
             <RatingRow label="Communication" value={communication} onChange={setCommunication} />
+            {isHr && (
+              <HrField label="Communication comments" rows={2} value={hr.hr_communication_comments} onChange={(v) => setHrField('hr_communication_comments', v)} />
+            )}
             <RatingRow label="Attitude" value={attitude} onChange={setAttitude} />
-            <RatingRow label="Final rating" required value={finalRating} onChange={setFinalRating} />
+            {isHr && (
+              <HrField label="Attitude comments" rows={2} value={hr.hr_attitude_comments} onChange={(v) => setHrField('hr_attitude_comments', v)} />
+            )}
 
             {isHr && (
               <>
-                <Divider style={{ margin: '4px 0' }} orientation="left" plain>HR details</Divider>
-                <Input size="small" placeholder="Notice period" value={hr.notice} onChange={(e) => setHr({ ...hr, notice: e.target.value })} />
-                <Space style={{ width: '100%' }}>
-                  <Input size="small" placeholder="Current CTC" value={hr.currentCtc} onChange={(e) => setHr({ ...hr, currentCtc: e.target.value })} />
-                  <Input size="small" placeholder="Expected CTC" value={hr.expectedCtc} onChange={(e) => setHr({ ...hr, expectedCtc: e.target.value })} />
-                </Space>
-                <Input size="small" placeholder="Relocation" value={hr.relocation} onChange={(e) => setHr({ ...hr, relocation: e.target.value })} />
-                <TextArea rows={2} placeholder="Strengths" value={hr.strengths} onChange={(e) => setHr({ ...hr, strengths: e.target.value })} />
+                <Divider style={{ margin: '4px 0' }} orientation="left" plain>Availability &amp; compensation</Divider>
+                <HrField label="Relocation" maxLength={100} value={hr.hr_relocation} onChange={(v) => setHrField('hr_relocation', v)} />
+                <HrField label="Notice period" maxLength={100} value={hr.hr_notice_period} onChange={(v) => setHrField('hr_notice_period', v)} />
+                <HrField label="Current CTC" maxLength={100} value={hr.hr_current_ctc} onChange={(v) => setHrField('hr_current_ctc', v)} />
+                <HrField label="Expected CTC" maxLength={100} value={hr.hr_expected_ctc} onChange={(v) => setHrField('hr_expected_ctc', v)} />
+
+                <Divider style={{ margin: '4px 0' }} orientation="left" plain>Assessment</Divider>
+                <HrField label="Strength" rows={2} value={hr.hr_strengths} onChange={(v) => setHrField('hr_strengths', v)} />
+                <HrField label="Weakness" rows={2} value={hr.hr_weakness} onChange={(v) => setHrField('hr_weakness', v)} />
+                <HrField label="Only negative" rows={2} value={hr.hr_only_negative} onChange={(v) => setHrField('hr_only_negative', v)} />
+                <HrField label="Any other observation / request" rows={2} value={hr.hr_other_observation} onChange={(v) => setHrField('hr_other_observation', v)} />
+                <HrField label="Final feedback" rows={2} value={hr.hr_final_feedback} onChange={(v) => setHrField('hr_final_feedback', v)} />
+                <HrField label="Next step for recruitment team" rows={2} value={hr.hr_next_step} onChange={(v) => setHrField('hr_next_step', v)} />
+                <Divider style={{ margin: '4px 0' }} />
               </>
             )}
+
+            <RatingRow label="Final rating" required value={finalRating} onChange={setFinalRating} />
 
             <div>
               <Text strong style={{ fontSize: 12.5 }}>Status <Text type="danger">*</Text></Text>
@@ -260,6 +280,30 @@ function RatingRow({ label, value, onChange, required }) {
       <Text strong style={{ fontSize: 13 }}>{label} {required ? <Text type="danger">*</Text> : null}</Text>
       <Rate allowHalf value={value} onChange={onChange} />
     </Space>
+  );
+}
+
+/**
+ * A labelled free-text field on the HR card — single line, or `rows` for a
+ * textarea. Single-line fields back VARCHAR columns, so `maxLength` stops the
+ * interviewer from typing past what the column accepts (the server also caps).
+ */
+function HrField({ label, value, onChange, rows, maxLength }) {
+  return (
+    <div>
+      <Text strong style={{ fontSize: 12.5 }}>{label}</Text>
+      {rows ? (
+        <TextArea rows={rows} value={value || ''} onChange={(e) => onChange(e.target.value)} style={{ marginTop: 4 }} />
+      ) : (
+        <Input
+          size="small"
+          maxLength={maxLength}
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ marginTop: 4 }}
+        />
+      )}
+    </div>
   );
 }
 

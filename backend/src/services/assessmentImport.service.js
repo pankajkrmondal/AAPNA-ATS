@@ -26,6 +26,8 @@ import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import * as onedriveService from './onedrive.service.js';
 import { emitToRole } from '../socket/index.js';
 import { setStageOutcome } from './pipeline.service.js';
+import { STAGE_KEYS } from '../config/pipelineStages.js';
+import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
 
 const PREVIEW_KEY_PREFIX = 'assessment-import:preview:';
@@ -552,7 +554,34 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
     // advance to the next stage — with zero recruiter click in the loop.
     let autoOutcomeApplied = false;
     const marksScored = row.overallMarksScored ?? null;
-    if (automation.autoAdvanceEnabled && pipelineId && marksScored !== null) {
+
+    // STAGE GATE — the candidate must still be ON the assessment round.
+    //
+    // setStageOutcome() resolves the outcome against the journey's CURRENT
+    // stage, not the stage the CSV is about. Without this check, re-importing
+    // an older Evalground export for someone who has since moved to Tech 1
+    // would approve them out of TECH 1 and advance them to Tech 2 — a round
+    // they never sat. Same for a candidate already closed, or one whose result
+    // arrives after a recruiter decided the round manually.
+    //
+    // The result itself is still recorded either way (above); only the
+    // automatic outcome is skipped. A row that fails this gate falls through to
+    // the manual path, which is exactly what a human would want to review.
+    let onAssessmentStage = false;
+    if (automation.autoAdvanceEnabled && pipelineId) {
+      const journey = await prisma.rpa_candidate_pipeline.findUnique({
+        where: { id: BigInt(pipelineId) },
+        select: { current_stage_key: true, final_outcome: true },
+      });
+      onAssessmentStage = journey?.current_stage_key === STAGE_KEYS.ASSESSMENT && !journey.final_outcome;
+      if (!onAssessmentStage) {
+        logger.info(
+          `Assessment auto-advance skipped for pipeline ${pipelineId} (row ${row.rowNumber}): candidate is at "${journey?.current_stage_key || 'unknown'}"${journey?.final_outcome ? ' and closed' : ''}, not the assessment round. Result recorded for manual review.`
+        );
+      }
+    }
+
+    if (automation.autoAdvanceEnabled && pipelineId && marksScored !== null && onAssessmentStage) {
       try {
         if (Number(marksScored) > 50) {
           await setStageOutcome(pipelineId, {
@@ -627,10 +656,20 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
   };
 
   try {
+    // Kept: AssessmentImportModal and other open views still listen for this to
+    // refresh themselves. The bell now reads from rpa_notifications instead.
     emitToRole('recruiter', 'assessment:import_done', serializeBigInts(summary));
   } catch (err) {
     logger.warn(`assessment:import_done emit failed: ${err.message}`);
   }
+
+  await notify({
+    type: NOTIFICATION_TYPES.ASSESSMENT_IMPORT_DONE,
+    title: 'Evalground results imported',
+    description: `${matchedCount} matched${unmatchedCount ? `, ${unmatchedCount} unmatched` : ''}${duplicateSkippedCount ? `, ${duplicateSkippedCount} unchanged` : ''}`,
+    linkPath: '/pipeline',
+    meta: serializeBigInts(summary),
+  });
 
   return serializeBigInts(summary);
 }

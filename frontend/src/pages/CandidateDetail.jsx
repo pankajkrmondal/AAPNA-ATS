@@ -173,7 +173,7 @@ export default function CandidateDetail() {
       setEditOpen(false);
       queryClient.invalidateQueries({ queryKey: ['candidate', id] });
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to update candidate details.');
+      message.error(err.response?.data?.message || err?.message || 'Failed to update candidate details.');
     } finally {
       setUpdating(false);
     }

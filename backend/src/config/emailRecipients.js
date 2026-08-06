@@ -80,12 +80,24 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
+  // Same two notifications, but to the interview PANEL rather than the
+  // candidate. Separate keys so the panel side can keep its real recipients in
+  // every environment (see OPERATOR_ADDRESSED below) while the candidate side
+  // stays redirected on staging.
+  interviewScheduledPanel: { to: '', cc: '', dynamic: true },
+  interviewCancelledPanel: { to: '', cc: '', dynamic: true },
   // Interviewer scorecard link, sent once an interview is confirmed held.
   // Prod -> the interviewer/HR/CEO mailbox (dynamic); non-prod -> test inbox.
   scorecardInvite: { to: '', cc: '', dynamic: true },
   // "Please confirm this interview happened" nudge from the occurrence sweep.
   // Prod -> recruiter/interviewer (dynamic); non-prod -> test inbox.
   occurrenceNudge: { to: '', cc: '', dynamic: true },
+  // Daily "this offer is still awaiting internal approval" reminder (Q26).
+  // Internal only — goes to the recruitment mailbox, never the candidate.
+  offerApprovalNudge: { to: '', cc: '', dynamic: true },
+  // Document-collection request / reminder / re-request. Prod -> candidate.
+  // NO vendor cc, ever — document-stage mail never reaches a vendor (Q5).
+  documentRequest: { to: '', cc: '', dynamic: true },
   // Screening status -> Rejected notification to candidate. Prod -> candidate.
   rejection: { to: '', cc: '', dynamic: true },
   // Screening status -> On Hold notification to candidate. Prod -> candidate.
@@ -123,6 +135,22 @@ for (const [key, val] of Object.entries(DEFAULTS)) {
  *     owner's own inbox.
  */
 const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'rerankApiAlert', 'backendErrorAlert', 'userCredentialUpdate', 'passwordReset']);
+
+/**
+ * Flows whose recipient is an address an ATS operator deliberately typed in
+ * during the action itself — the interview panel entered in the Schedule /
+ * Reschedule modal, and the scorecard/confirmation links that follow from it.
+ *
+ * These also bypass the test-inbox redirect, but for a different reason than
+ * NEVER_REDIRECT above (which is about internal alerts and account security).
+ * Here the point is that redirecting would defeat the action: whoever books an
+ * interview on staging is naming the mailbox that should receive the invite,
+ * so sending it to a generic test inbox instead makes the round-trip
+ * unverifiable. The candidate side of the very same booking is NOT in this set
+ * — a candidate never asks to be emailed, so they stay protected by the
+ * redirect on staging.
+ */
+const OPERATOR_ADDRESSED = new Set(['interviewScheduledPanel', 'interviewCancelledPanel', 'scorecardInvite', 'occurrenceNudge']);
 
 let loaded = false;
 
@@ -195,9 +223,11 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
   }
 
   // Non-production: redirect everything to the internal test inbox, no cc.
-  // Exception: NEVER_REDIRECT flows (internal failure alerts) always go to
-  // their configured recipients regardless of environment / redirect flag.
-  if (config.email.redirectInNonProd && !NEVER_REDIRECT.has(flowKey)) {
+  // Exceptions: NEVER_REDIRECT (internal failure alerts / account security) and
+  // OPERATOR_ADDRESSED (an address the operator typed in for this very action)
+  // always reach their configured recipients regardless of environment.
+  const bypassRedirect = NEVER_REDIRECT.has(flowKey) || OPERATOR_ADDRESSED.has(flowKey);
+  if (config.email.redirectInNonProd && !bypassRedirect) {
     return { to: config.email.testRecipients, cc: '' };
   }
 
@@ -210,4 +240,49 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
   return { to: to || '', cc: entry.cc || '' };
 }
 
-export default { resolveRecipients, loadEmailRecipients, reloadEmailRecipients };
+/**
+ * The candidate's address to hand to a system that will email them ITSELF,
+ * substituted with the internal test inbox outside production.
+ *
+ * resolveRecipients() only protects mail WE send through Graph. It cannot cover
+ * an address we hand to someone else — a calendar attendee list (Outlook sends
+ * the invite) or an external platform's API payload (Zeko emails its own
+ * interview invitation). Those bypass every mail guard we own, so a real
+ * candidate would receive a genuine invite from local or staging.
+ *
+ * Use this at exactly those hand-off points. The interview PANEL is deliberately
+ * NOT substituted: those addresses are typed in per booking by whoever is
+ * scheduling, so they are meant to be reached (the same reasoning as
+ * OPERATOR_ADDRESSED above).
+ *
+ * @param {string} candidateEmail - the real candidate address
+ * @param {string} [context] - short label for the log line, e.g. 'zeko:schedule'
+ * @returns {string} the address safe to hand over in THIS environment
+ */
+export function nonProdSafeCandidateEmail(candidateEmail, context = '') {
+  if (!config.email.redirectInNonProd) return candidateEmail;
+
+  const testInbox = (config.email.testRecipients || '').split(',')[0].trim();
+  // FAIL CLOSED. If the redirect is on but no test inbox is configured, there is
+  // no safe address to hand over — and returning the candidate's real one would
+  // do exactly what this function exists to prevent, silently. A failed booking
+  // is recoverable; a real candidate invited from staging is not.
+  //
+  // EMAIL_STAGING_RECIPIENTS has a hard-coded default in config/index.js, so
+  // reaching this needs someone to have explicitly blanked it. That is a
+  // misconfiguration worth stopping on rather than working around.
+  if (!testInbox) {
+    throw new Error(
+      `Refusing to hand over a candidate address${context ? ` [${context}]` : ''}: recipient redirect is ON but EMAIL_STAGING_RECIPIENTS is empty, so there is no safe substitute address.`
+    );
+  }
+
+  if (candidateEmail && candidateEmail !== testInbox) {
+    logger.info(
+      `Non-prod guard${context ? ` [${context}]` : ''}: candidate address "${candidateEmail}" substituted with "${testInbox}" before hand-off.`
+    );
+  }
+  return testInbox;
+}
+
+export default { resolveRecipients, loadEmailRecipients, reloadEmailRecipients, nonProdSafeCandidateEmail };

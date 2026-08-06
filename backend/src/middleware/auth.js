@@ -151,6 +151,27 @@ export const checkModuleAccess = (moduleName) => {
 };
 
 /**
+ * Admin-tier gate for configuration endpoints — the things RT asked to be
+ * changeable "without development" (pipeline stages/outcomes/reasons, creating
+ * email templates). Recruiters use that configuration; they do not reshape it.
+ *
+ * Must run after authenticate(), which populates req.user.
+ *
+ * Usage:  router.post('/stages', requireAdmin, handler);
+ *
+ * @type {import('express').RequestHandler}
+ */
+export const requireAdmin = catchAsync(async (req, _res, next) => {
+  if (!req.user) {
+    throw new AppError('Authentication required.', 401);
+  }
+  if (!isAdminTier(req.user.role)) {
+    throw new AppError('Admin access required to change this configuration.', 403);
+  }
+  next();
+});
+
+/**
  * Tenant-scope guard helper (not middleware — called inside controllers once the
  * target record is loaded).
  *

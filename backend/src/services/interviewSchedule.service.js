@@ -1,10 +1,15 @@
 /**
  * interviewSchedule.service.js — booking for the human interview rounds
- * (Technical Round 1 & 2) in the Pipeline Tracker.
+ * (Technical Rounds 1-3, HR Round, CEO/Final Round, Client Interview) in the
+ * Pipeline Tracker.
  *
  * WHO interviews is defined on the MRF, not on a separate panel table:
- *   tech1 -> rpa_mrf.first_technical_round  + first_round_interview_slot
- *   tech2 -> rpa_mrf.second_technical_round + second_round_interview_slot
+ *   tech1    -> rpa_mrf.first_technical_round  + first_round_interview_slot
+ *   tech2    -> rpa_mrf.second_technical_round + second_round_interview_slot
+ *   hr_round -> rpa_mrf.hr_round
+ *   ceo      -> rpa_mrf.ceo_management_round
+ *   client   -> rpa_mrf.client_round
+ *   tech3    -> (no MRF column exists for a third technical round)
  * Those columns are free text ("Naveen", "Harish M", "11 AM- 12 PM", "NA"),
  * so they are surfaced to the recruiter as read-only hints while the
  * interviewer's actual mailbox is entered per booking.
@@ -17,7 +22,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
-import { resolveRecipients } from '../config/emailRecipients.js';
+import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { createInterviewEvent, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
@@ -32,10 +37,39 @@ const TEMPLATE_NAMES = Object.freeze({
   reschedulePanel: 'Interview Rescheduled — Panel',
 });
 
-/** Stage keys this service can book, mapped to their MRF columns. */
+/**
+ * Stage keys this service can book, mapped to their MRF columns.
+ *
+ * `autoInvite: false` books the round WITHOUT generating anything outward: no
+ * Outlook/Teams meeting and no invite email to either side. Only the Client
+ * Interview is set that way, per Q14 (RT, 2026-07-13): the client is external
+ * and *"the system must not generate anything for the client"* — HR coordinates
+ * that round by hand and transcribes the outcome. The booking is still recorded
+ * so the round shows its schedule, occurrence and scorecard like any other.
+ * Flip this to true if RT ever agrees to automate client communication.
+ */
 export const SCHEDULABLE_STAGES = Object.freeze({
-  tech1: { ownerField: 'first_technical_round', slotField: 'first_round_interview_slot', label: 'Technical Round 1' },
-  tech2: { ownerField: 'second_technical_round', slotField: 'second_round_interview_slot', label: 'Technical Round 2' },
+  tech1: { ownerField: 'first_technical_round', slotField: 'first_round_interview_slot', label: 'Technical Round 1', autoInvite: true },
+  tech2: { ownerField: 'second_technical_round', slotField: 'second_round_interview_slot', label: 'Technical Round 2', autoInvite: true },
+  // Tech 3 has no dedicated MRF interviewer/slot column — mrfRoundHints() below
+  // already handles a null ownerField/slotField gracefully ("not specified").
+  tech3: { ownerField: null, slotField: null, label: 'Technical Round 3', autoInvite: true },
+  hr_round: { ownerField: 'hr_round', slotField: null, label: 'HR Round', autoInvite: true },
+  ceo: { ownerField: 'ceo_management_round', slotField: null, label: 'CEO / Final Round', autoInvite: true },
+  client: { ownerField: 'client_round', slotField: null, label: 'Client Interview', autoInvite: false },
+});
+
+/**
+ * True when booking this round may create a calendar meeting and email the
+ * candidate + panel. False for manually-coordinated rounds (Client Interview).
+ * @param {string} stageKey
+ * @returns {boolean}
+ */
+export const stageSendsInvites = (stageKey) => SCHEDULABLE_STAGES[stageKey]?.autoInvite !== false;
+
+/** The shape createInterviewEvent() returns when no meeting was created. */
+const NO_CALENDAR = Object.freeze({
+  eventId: null, joinUrl: null, onlineMeetingId: null, meetingId: null, passcode: null, skipped: true, error: null,
 });
 
 /** True when the drawer should offer a "Schedule Interview" action for a stage. */
@@ -96,6 +130,18 @@ const cleanInterviewerName = (value) => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * The candidate's address for a calendar invite. Outlook — not us — sends that
+ * invite, so it bypasses every mail guard we own; outside production the shared
+ * hand-off helper substitutes the internal test inbox. See
+ * nonProdSafeCandidateEmail() in config/emailRecipients.js.
+ *
+ * @param {string} candidateEmail
+ * @returns {string} the address to put on the event
+ */
+const calendarCandidateEmail = (candidateEmail) =>
+  nonProdSafeCandidateEmail(candidateEmail, 'calendar:invite');
+
+/**
  * Parses the interviewer field into a clean address list. A panel can be one
  * or several people, entered comma-separated; semicolons are accepted too
  * since Outlook hands addresses back that way.
@@ -139,9 +185,10 @@ export function mrfRoundHints(mrf, stageKey) {
   return {
     // Only surface a name that actually looks like one — "1", "TEST", "dev"
     // become null so the UI shows "not specified" instead of a junk value.
-    interviewerName: cleanInterviewerName(mrf[mapping.ownerField]),
+    // A null ownerField means the round has no MRF column at all (Tech 3).
+    interviewerName: mapping.ownerField ? cleanInterviewerName(mrf[mapping.ownerField]) : null,
     // The slot is free-form ("4-5", "11 AM- 12 PM"), so it keeps the lenient cleaner.
-    preferredSlot: cleanHint(mrf[mapping.slotField]),
+    preferredSlot: mapping.slotField ? cleanHint(mrf[mapping.slotField]) : null,
   };
 }
 
@@ -347,7 +394,7 @@ export async function previewCancelEmails(scheduleId, { reason = '' } = {}) {
  *
  * @param {number} pipelineId
  * @param {object} params
- * @param {string} params.stageKey - 'tech1' | 'tech2'
+ * @param {string} params.stageKey - any key in SCHEDULABLE_STAGES
  * @param {string} params.startAt - ISO datetime
  * @param {number} [params.durationMinutes=60]
  * @param {string} params.interviewerEmail - required; one or more mailboxes, comma-separated
@@ -436,19 +483,25 @@ export async function scheduleInterviewRound(pipelineId, {
     },
   });
 
-  // 2) Best-effort calendar event (no-op unless MS_CALENDAR_ENABLED=true).
+  // 2) Best-effort calendar event (no-op unless MS_CALENDAR_ENABLED=true, and
+  //    skipped entirely for manually-coordinated rounds — see autoInvite).
+  const sendsInvites = stageSendsInvites(stageKey);
   const attendees = [
-    candidate?.candidate_email ? { email: candidate.candidate_email, name: candidate.candidate_name } : null,
+    candidate?.candidate_email
+      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name }
+      : null,
     ...interviewerEmails.map((email) => ({ email })),
   ].filter(Boolean);
 
-  const calendar = await createInterviewEvent({
-    subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-    bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
-    start,
-    end,
-    attendees,
-  });
+  const calendar = sendsInvites
+    ? await createInterviewEvent({
+      subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
+      start,
+      end,
+      attendees,
+    })
+    : NO_CALENDAR;
 
   // 3) Notify both sides. Recipients follow the usual prod/non-prod redirect.
   //    Copy comes from the modal when the recruiter edited it, else the seeded
@@ -490,7 +543,7 @@ export async function scheduleInterviewRound(pipelineId, {
 
   const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
   let inviteSentAt = null;
-  if (candidateTo && candidateEmail.subject) {
+  if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
@@ -504,14 +557,17 @@ export async function scheduleInterviewRound(pipelineId, {
     }
   }
 
-  const { to: interviewerTo } = resolveRecipients('interviewScheduled', interviewerEmailList);
-  if (interviewerTo && panelEmail.subject) {
+  const { to: interviewerTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
+  if (sendsInvites && interviewerTo && panelEmail.subject) {
     try {
+      // OPERATOR_ADDRESSED: the panel address was typed into the Schedule modal
+      // for this very booking, so it is reached in every environment.
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
         to: interviewerTo,
         subject: panelEmail.subject,
         html: panelEmail.body,
+        allowRealRecipients: true,
       });
       inviteSentAt = inviteSentAt || new Date();
     } catch (err) {
@@ -541,7 +597,7 @@ export async function scheduleInterviewRound(pipelineId, {
       pipeline_id: pipeline.id,
       stage_key: stageKey,
       event_type: 'note',
-      notes: `${stageLabel} scheduled for ${when}${resolvedName ? ` with ${resolvedName}` : ''}${calendar.joinUrl ? ' (Teams)' : ''}`,
+      notes: `${stageLabel} scheduled for ${when}${resolvedName ? ` with ${resolvedName}` : ''}${calendar.joinUrl ? ' (Teams)' : ''}${sendsInvites ? '' : ' — coordinated manually, no invite sent'}`,
       acted_by: actedBy || null,
     },
   });
@@ -594,6 +650,9 @@ export async function cancelInterviewRound(scheduleId, {
   const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
   const stageLabel = SCHEDULABLE_STAGES[row.stage_key]?.label || row.stage_key;
   const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
+  // A manually-coordinated round was never invited by the system, so it is not
+  // un-invited by it either — HR tells the client themselves (Q14).
+  const sendsInvites = stageSendsInvites(row.stage_key);
 
   // Copy from the modal when edited, else the seeded cancellation templates
   // compiled with the reason the recruiter gave.
@@ -618,7 +677,7 @@ export async function cancelInterviewRound(scheduleId, {
   };
 
   const { to: candidateTo } = resolveRecipients('interviewCancelled', candidate?.candidate_email || '');
-  if (candidateTo && candidateEmail.subject) {
+  if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
@@ -632,14 +691,16 @@ export async function cancelInterviewRound(scheduleId, {
   }
 
   // Also tell the panel the round is off, so no one shows up.
-  const { to: panelTo } = resolveRecipients('interviewCancelled', row.interviewer_email || '');
-  if (panelTo && panelEmail.subject) {
+  const { to: panelTo } = resolveRecipients('interviewCancelledPanel', row.interviewer_email || '');
+  if (sendsInvites && panelTo && panelEmail.subject) {
     try {
+      // OPERATOR_ADDRESSED: same panel mailbox the booking was made against.
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
         to: panelTo,
         subject: panelEmail.subject,
         html: panelEmail.body,
+        allowRealRecipients: true,
       });
     } catch (err) {
       logger.error(`Interview cancel: panel email failed for schedule ${scheduleId}: ${err.message}`);
@@ -779,18 +840,24 @@ export async function rescheduleInterviewRound(pipelineId, {
     },
   });
 
-  // 3) Best-effort new calendar event (no-op unless MS_CALENDAR_ENABLED=true).
+  // 3) Best-effort new calendar event (no-op unless MS_CALENDAR_ENABLED=true, and
+  //    skipped entirely for manually-coordinated rounds — see autoInvite).
+  const sendsInvites = stageSendsInvites(stageKey);
   const attendees = [
-    candidate?.candidate_email ? { email: candidate.candidate_email, name: candidate.candidate_name } : null,
+    candidate?.candidate_email
+      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name }
+      : null,
     ...interviewerEmails.map((email) => ({ email })),
   ].filter(Boolean);
-  const calendar = await createInterviewEvent({
-    subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-    bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
-    start,
-    end,
-    attendees,
-  });
+  const calendar = sendsInvites
+    ? await createInterviewEvent({
+      subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
+      start,
+      end,
+      attendees,
+    })
+    : NO_CALENDAR;
 
   // 4) One "rescheduled" email per side, old → new time.
   const when = fmtIst(start);
@@ -811,7 +878,7 @@ export async function rescheduleInterviewRound(pipelineId, {
 
   const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
   let inviteSentAt = null;
-  if (candidateTo && candidateEmail.subject) {
+  if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {
       await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body });
       inviteSentAt = new Date();
@@ -819,10 +886,11 @@ export async function rescheduleInterviewRound(pipelineId, {
       logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
     }
   }
-  const { to: panelTo } = resolveRecipients('interviewScheduled', interviewerEmailList);
-  if (panelTo && panelEmail.subject) {
+  const { to: panelTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
+  if (sendsInvites && panelTo && panelEmail.subject) {
     try {
-      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body });
+      // OPERATOR_ADDRESSED: panel address typed into the Reschedule modal.
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body, allowRealRecipients: true });
       inviteSentAt = inviteSentAt || new Date();
     } catch (err) {
       logger.error(`Interview reschedule: panel email failed for pipeline ${pipelineId}: ${err.message}`);
@@ -918,6 +986,20 @@ export async function markInterviewOccurrence(scheduleId, { outcome, source, con
   });
 
   logger.info(`Interview occurrence: schedule ${scheduleId} → ${outcome} (${source}).`);
+
+  // A no-show needs a human decision — reschedule or reject (Q9: never
+  // auto-Hold). 'held' raises its own notification from dispatchScorecards().
+  if (outcome === 'no_show') {
+    const { notify, NOTIFICATION_TYPES } = await import('./notification.service.js');
+    await notify({
+      type: NOTIFICATION_TYPES.INTERVIEW_NO_SHOW,
+      title: `No-show — ${stageLabel}`,
+      description: `${party ? `${party} did not attend` : 'The interview did not happen'}${reason ? `: ${reason}` : ''} — reschedule or reject`,
+      pipelineId: schedule.pipeline_id,
+      meta: { stage_key: schedule.stage_key, party, source },
+      excludeUserId: actedBy || null,
+    });
+  }
 
   // On 'held', release the scorecard links (exactly once). Lazy import breaks
   // the cycle with interviewScorecard.service.js (which imports helpers here).

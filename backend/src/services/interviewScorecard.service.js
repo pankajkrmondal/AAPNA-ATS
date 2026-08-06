@@ -22,6 +22,7 @@ import { sendGraphEmail, compileTemplate } from './emailNotification.service.js'
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { parseInterviewerEmails } from './interviewSchedule.service.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
+import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
 /** Days a scorecard link stays valid after it is emailed. */
 const TOKEN_TTL_DAYS = 7;
@@ -192,7 +193,9 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
       try {
         // Header headline = the email's own subject (RT decision, 2026-07-25).
         const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
-        await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml });
+        // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
+        // booking was made against, so it is reached in every environment.
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
       } catch (err) {
         logger.error(`Scorecard dispatch: email failed for schedule ${scheduleId} → ${card.recipient_email}: ${err.message}`);
       }
@@ -208,6 +211,16 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
       notes: `Scorecard link sent to ${emails.join(', ')} (${trigger})`,
       acted_by: actedBy || null,
     },
+  });
+
+  // The card is now "awaiting feedback" — the single biggest stall point in the
+  // whole flow (loophole L3), so it goes on the team's board immediately.
+  await notify({
+    type: NOTIFICATION_TYPES.INTERVIEW_AWAITING_FEEDBACK,
+    title: `Awaiting interviewer feedback — ${stageLabel}`,
+    description: `${candidate?.candidate_name || 'A candidate'} · link sent to ${emails.join(', ')}`,
+    pipelineId: schedule.pipeline_id,
+    meta: { stage_key: stageKey, recipients: emails.length },
   });
 
   logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${created.length} recipient(s) (${trigger}).`);
@@ -274,6 +287,55 @@ export async function getScorecardByToken(token) {
   };
 }
 
+/**
+ * The HR round's own card fields, mirroring the HR Round sheet of
+ * docs/Interview Evaluation Format V2.xlsx (the MS Forms process this replaces).
+ * All free text; the numeric ratings it shares with the technical card
+ * (communication / attitude / final_rating) are handled separately.
+ */
+const HR_TEXT_FIELDS = [
+  'hr_family_background',
+  'hr_general_other',
+  'hr_timings',
+  'hr_communication_comments',
+  'hr_attitude_comments',
+  'hr_relocation',
+  'hr_notice_period',
+  'hr_current_ctc',
+  'hr_expected_ctc',
+  'hr_strengths',
+  'hr_weakness',
+  'hr_only_negative',
+  'hr_other_observation',
+  'hr_final_feedback',
+  'hr_next_step',
+];
+
+/**
+ * Column widths for the HR fields that are NOT unbounded TEXT. Overflowing a
+ * VARCHAR raises Postgres 22001 and fails the whole submit — and this form is a
+ * public single-use link with no draft saved, so the interviewer would lose
+ * everything they typed. Truncating is the kinder failure.
+ */
+const HR_FIELD_MAX = {
+  hr_notice_period: 100,
+  hr_current_ctc: 100,
+  hr_expected_ctc: 100,
+  hr_relocation: 100,
+  hr_timings: 255,
+};
+
+/** Picks the HR card fields off a submit payload, trimmed + capped, empty -> null. */
+function hrFieldsFrom(payload) {
+  return Object.fromEntries(
+    HR_TEXT_FIELDS.map((f) => {
+      const max = HR_FIELD_MAX[f];
+      const value = (payload[f] || '').trim();
+      return [f, (max ? value.slice(0, max) : value) || null];
+    })
+  );
+}
+
 /** Clamps a rating to 0..5 in 0.5 steps; returns null for empty. */
 function normalizeRating(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -324,6 +386,26 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
   const avg = nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : null;
 
   const updated = await prisma.$transaction(async (tx) => {
+    // CLAIM the card before writing anything.
+    //
+    // The status check above is a read, and this is a public no-login page: a
+    // double-click on a slow connection sends two submits that both pass it.
+    // Both then wrote skill rows, both stamped the card, and both went on to
+    // write an audit note and fan out a notification to every recruiter — so a
+    // single interviewer's feedback arrived twice, with the later payload
+    // silently overwriting the earlier.
+    //
+    // Flipping pending → submitted conditionally means exactly one caller can
+    // win; the loser's whole transaction rolls back and it gets the same 409 a
+    // sequential re-submit would have received.
+    const claim = await tx.rpa_interview_scorecard.updateMany({
+      where: { id: card.id, status: { not: 'submitted' } },
+      data: { status: 'submitted', submitted_at: new Date(), submitted_ip: ip },
+    });
+    if (claim.count !== 1) {
+      throw new AppError('This scorecard has already been submitted.', 409);
+    }
+
     // Replace skill rows with the submitted set.
     await tx.rpa_interview_scorecard_skill.deleteMany({ where: { scorecard_id: card.id } });
     if (normSkills.length) {
@@ -340,22 +422,16 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
         recommendation: rec,
         comments: (payload.comments || '').trim() || null,
         recording_url: (payload.recording_url || '').trim() || null,
-        hr_notice_period: (payload.hr_notice_period || '').trim() || null,
-        hr_current_ctc: (payload.hr_current_ctc || '').trim() || null,
-        hr_expected_ctc: (payload.hr_expected_ctc || '').trim() || null,
-        hr_relocation: (payload.hr_relocation || '').trim() || null,
-        hr_strengths: (payload.hr_strengths || '').trim() || null,
+        ...hrFieldsFrom(payload),
         avg_score: avg,
-        status: 'submitted',
-        submitted_at: new Date(),
-        submitted_ip: ip,
+        // status / submitted_at / submitted_ip were set by the claim above.
         modified_at: new Date(),
       },
       include: { rpa_interview_scorecard_skill: { orderBy: { sort_order: 'asc' } } },
     });
   });
 
-  // Note it on the journey; HR is informed via the existing outcome flow.
+  // Note it on the journey.
   await prisma.rpa_pipeline_stage_events.create({
     data: {
       pipeline_id: card.pipeline_id,
@@ -363,6 +439,18 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
       event_type: 'note',
       notes: `Scorecard submitted by ${card.recipient_email}${rec ? ` — recommends ${rec}` : ''}${avg !== null ? ` (avg ${avg})` : ''}`,
     },
+  });
+
+  // Notify the team: the round is unblocked and the recruiter can now set the
+  // official outcome. This is the "HR notified on submission" the old MS Forms
+  // + Power Automate flow did natively (03-DEVELOPMENT-PLAN.md §M3).
+  const stageLabel = await stageLabelFor(card.stage_key);
+  await notify({
+    type: NOTIFICATION_TYPES.INTERVIEW_FEEDBACK_RECEIVED,
+    title: `Feedback received — ${stageLabel}`,
+    description: `${card.recipient_email}${rec ? ` recommends ${rec}` : ' submitted a scorecard'}${avg !== null ? ` · avg ${avg}/5` : ''} — ready for your decision`,
+    pipelineId: card.pipeline_id,
+    meta: { stage_key: card.stage_key, recommendation: rec, avg_score: avg },
   });
 
   logger.info(`Scorecard submitted: card ${card.id} (schedule ${card.schedule_id}) by ${card.recipient_email}.`);
@@ -393,6 +481,7 @@ export async function getCandidateScorecardReport(pipelineId) {
       scorecard_id: s.id,
       stage_key: s.stage_key,
       stage_label: labelByKey[s.stage_key] || s.stage_key,
+      card_type: s.card_type,
       recipient_email: s.recipient_email,
       recipient_role: s.recipient_role,
       recommendation: s.recommendation,
@@ -401,8 +490,12 @@ export async function getCandidateScorecardReport(pipelineId) {
       attitude: s.attitude,
       final_rating: s.final_rating,
       comments: s.comments,
+      recording_url: s.recording_url,
       submitted_at: s.submitted_at,
       skills: s.rpa_interview_scorecard_skill.map((sk) => ({ label: sk.skill_label, rating: sk.rating, remark: sk.remark })),
+      // The HR round captures a whole different field set; only attach it there
+      // so technical rounds don't carry 15 null keys.
+      ...(s.card_type === 'hr' ? { hr: Object.fromEntries(HR_TEXT_FIELDS.map((f) => [f, s[f]])) } : {}),
     };
   });
 
@@ -410,5 +503,85 @@ export async function getCandidateScorecardReport(pipelineId) {
   const sum = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) * 100) / 100 : null;
   const average = scored.length ? Math.round((sum / scored.length) * 100) / 100 : null;
 
-  return { pipeline_id: Number(pipelineId), rounds, overall: { count: scored.length, sum, average } };
+  return {
+    pipeline_id: Number(pipelineId),
+    rounds,
+    overall: { count: scored.length, sum, average },
+    consolidated_feedback: buildConsolidatedFeedback(rounds, { average }),
+  };
+}
+
+/**
+ * The consolidated feedback block: every interviewer's verdict on one candidate,
+ * as a single readable passage.
+ *
+ * Whoever makes the final call — the CEO round, or HR writing the offer — has
+ * until now had to open each round's card in turn and hold the picture in their
+ * head. The data was all there; nothing assembled it. That assembly is the whole
+ * feature, so it lives here next to the report it summarises rather than being
+ * rebuilt in the drawer, the email templates and anywhere else that needs it.
+ *
+ * Returns null when nothing has been submitted yet — an empty summary is worse
+ * than none, because it reads as "no concerns raised".
+ *
+ * @param {Array<object>} rounds - the serialized rounds above
+ * @param {{average: number|null}} overall
+ * @returns {{summary: string, lines: Array<object>, recommendation_counts: object}|null}
+ */
+function buildConsolidatedFeedback(rounds, { average }) {
+  if (!rounds.length) return null;
+
+  // Count the explicit recommendations, so "3 of 4 interviewers said hire" can
+  // be stated rather than inferred from prose.
+  const recommendationCounts = {};
+  for (const r of rounds) {
+    if (!r.recommendation) continue;
+    recommendationCounts[r.recommendation] = (recommendationCounts[r.recommendation] || 0) + 1;
+  }
+
+  const lines = rounds.map((r) => {
+    // Strongest signals first: what they concluded, then how they scored it,
+    // then what they actually wrote.
+    const parts = [];
+    if (r.recommendation) parts.push(`Recommendation: ${r.recommendation}`);
+    if (r.avg_score !== null && r.avg_score !== undefined) parts.push(`Score: ${r.avg_score}`);
+    if (r.final_rating !== null && r.final_rating !== undefined) parts.push(`Overall rating: ${r.final_rating}`);
+
+    const weakSkills = (r.skills || [])
+      .filter((s) => s.rating !== null && s.rating !== undefined && s.rating <= 2)
+      .map((s) => s.skill_label || s.label)
+      .filter(Boolean);
+
+    return {
+      stage_key: r.stage_key,
+      stage_label: r.stage_label,
+      interviewer: r.recipient_email,
+      role: r.recipient_role,
+      recommendation: r.recommendation || null,
+      avg_score: r.avg_score ?? null,
+      comments: (r.comments || '').trim() || null,
+      // Surfaced separately because a low skill rating is the thing a later
+      // interviewer most wants to probe, and it is easy to miss inside a card.
+      concerns: weakSkills,
+      headline: `${r.stage_label} — ${parts.join(' · ') || 'submitted, no ratings given'}`,
+      submitted_at: r.submitted_at,
+    };
+  });
+
+  const verdict = Object.entries(recommendationCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${n}× ${k}`)
+    .join(', ');
+
+  const summaryParts = [
+    `${rounds.length} interview${rounds.length === 1 ? '' : 's'} scored`,
+    average !== null ? `average ${average}` : null,
+    verdict || null,
+  ].filter(Boolean);
+
+  return {
+    summary: summaryParts.join(' · '),
+    lines,
+    recommendation_counts: recommendationCounts,
+  };
 }

@@ -444,7 +444,7 @@ export default function EmailManagement() {
     } catch (err) {
       console.error(err);
       message.error(
-        err.response?.data?.message || 'Error occurred while saving the email template.'
+        err.response?.data?.message || err?.message || 'Error occurred while saving the email template.'
       );
     } finally {
       setIsSaving(false);

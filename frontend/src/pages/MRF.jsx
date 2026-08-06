@@ -215,7 +215,11 @@ export default function MRF() {
     const mrfStatusStr = (record.mrfstatus || '').trim().toLowerCase();
     let raiseLabel = 'PENDING';
     let raiseColor = 'gold';
-    if (mrfStatusStr === 'managersubmitted' || mrfStatusStr === 'manager submitted') {
+    if (mrfStatusStr === 'closed') {
+      // Set automatically once every opening on the requisition is filled.
+      raiseLabel = 'CLOSED';
+      raiseColor = 'default';
+    } else if (mrfStatusStr === 'managersubmitted' || mrfStatusStr === 'manager submitted') {
       raiseLabel = 'COMPLETED';
       raiseColor = 'success';
     } else if (mrfStatusStr === 'pending' || mrfStatusStr === 'pendingfromleader') {
@@ -235,7 +239,10 @@ export default function MRF() {
     const approvalStatusStr = (record.approval_status || '').trim().toLowerCase();
     let approvalLabel = 'PENDING';
     let approvalColor = 'gold';
-    if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
+    if (approvalStatusStr === 'closed') {
+      approvalLabel = 'CLOSED — FILLED';
+      approvalColor = 'default';
+    } else if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
       approvalLabel = 'APPROVED';
       approvalColor = 'success';
     } else if (approvalStatusStr === 'rejected') {
@@ -820,6 +827,7 @@ export default function MRF() {
               <Radio.Button value="All">All</Radio.Button>
               <Radio.Button value="pending">Pending</Radio.Button>
               <Radio.Button value="manager submitted">Manager Submitted</Radio.Button>
+              <Radio.Button value="closed">Closed</Radio.Button>
             </Radio.Group>
           </div>
           <Button
@@ -1048,6 +1056,7 @@ export default function MRF() {
                       <Select.Option value="pending">Pending</Select.Option>
                       <Select.Option value="pendingfromleader">Pending from Leader</Select.Option>
                       <Select.Option value="managersubmitted">Manager Submitted</Select.Option>
+                      <Select.Option value="closed">Closed — all openings filled</Select.Option>
                     </Select>
                   </Form.Item>
                 </Col>

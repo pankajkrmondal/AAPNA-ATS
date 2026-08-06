@@ -269,6 +269,39 @@ const config = {
     deadlineCheckCron: env('ASSESSMENT_DEADLINE_CHECK_CRON', '0 * * * *'),
   },
 
+  /** Document collection (Phase 3 M4) — pure DB polling, no external API. */
+  document: {
+    /**
+     * Automatic chasing for the Documents round (RT: "reminders until
+     * submitted"). Until now the only reminder was a manual button, so a
+     * candidate who simply went quiet was never followed up unless a recruiter
+     * noticed.
+     */
+    reminder: {
+      /** Daily tick; the per-request thresholds below decide who actually gets mail. */
+      cron: env('DOCUMENT_REMINDER_CRON', '0 9 * * *'),
+      /** Days to wait after the original request before the first reminder. */
+      afterDays: parseInt(env('DOCUMENT_REMINDER_AFTER_DAYS', '2'), 10),
+      /** Minimum gap between reminders, so a cadence change can't spam. */
+      repeatHours: parseInt(env('DOCUMENT_REMINDER_REPEAT_HOURS', '24'), 10),
+      /** Total reminders per request before the sweep gives up and leaves it to a human. */
+      maxCount: parseInt(env('DOCUMENT_REMINDER_MAX_COUNT', '3'), 10),
+    },
+  },
+
+  /** Offer lifecycle sweeps (Phase 3 M5) — pure DB polling, no external API. */
+  offer: {
+    /**
+     * One daily tick drives both offer sweeps: the approval nudge (chase an
+     * unapproved offer) and the post-joining auto-close. Daily is the right
+     * granularity for both — the nudge is explicitly a daily reminder (Q26) and
+     * the auto-close threshold is measured in months (Q12).
+     */
+    sweepCron: env('OFFER_SWEEP_CRON', '0 7 * * *'),
+    /** Days after the joining date before a Joined record auto-closes (Q12). */
+    autoCloseAfterDays: parseInt(env('OFFER_AUTO_CLOSE_AFTER_DAYS', '90'), 10),
+  },
+
   /** File upload settings */
   upload: {
     maxSize: env('UPLOAD_MAX_SIZE', '50mb'),

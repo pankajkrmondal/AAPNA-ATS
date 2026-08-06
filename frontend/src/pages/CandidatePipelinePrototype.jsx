@@ -171,6 +171,7 @@
  *     round-instances (current + historical) for all 52 candidates.
  */
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Alert, App as AntApp, Badge, Button, Card, Checkbox, Col, DatePicker,
   Drawer, Empty, Input, Modal, Radio, Rate, Row, Select, Space, Statistic,
@@ -1871,10 +1872,26 @@ export default function CandidatePipelinePrototype() {
     <div className="page-enter">
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }} wrap>
         <div>
-          <Title level={3} style={{ margin: 0 }}>Candidate Pipeline</Title>
-          <Text type="secondary">Phase 3 walkthrough prototype — mock data, nothing is saved, no emails are sent</Text>
+          <Title level={3} style={{ margin: 0 }}>Candidate Pipeline (Demo)</Title>
+          <Text type="secondary">Walkthrough demo — mock data, nothing is saved, no emails are sent</Text>
         </div>
       </Space>
+
+      {/* NOT closable, and first on the page. This route is no longer in the
+          sidebar, so anyone here arrived by a direct link — quite possibly
+          expecting the real board. The demo must announce itself and offer the
+          way across, every time, not just until someone dismisses it. */}
+      <Alert type="error" showIcon style={{ marginBottom: 14 }}
+        message="This is the DEMO pipeline — every candidate below is invented"
+        description={(
+          <span>
+            Nothing here is saved and no email is ever sent. It exists for client walkthroughs and as
+            the design reference for the real board. For live candidates, go to{' '}
+            <Link to="/pipeline">Candidate Pipeline</Link>.
+          </span>
+        )}
+      />
+
       <Alert type="warning" showIcon closable style={{ marginBottom: 14 }}
         message="Prototype for the RT walkthrough — v3, your answers of 2026-07-13 applied"
         description="Candidates enter here already shortlisted from Candidate Screening — the pipeline starts at HR Screening (Zeko), not a second shortlist step (vendor submissions included, carrying their vendor tag). Click a candidate, then click any completed round in the stepper to see that round's details — future rounds are locked. Pipeline analytics lives as a tab in the Analytics page. Applied answers: 30-min reminders + daily feedback reminder (no escalation), manual-only Hold, record-only offer with in-app approval, Evalground 50% pass mark with latest-attempt rule, concurrent MRF journeys (see the '2 MRFs' badge), both scheduling modes, and your interview evaluation scorecard format." />

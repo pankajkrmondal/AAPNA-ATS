@@ -17,18 +17,42 @@ import { getAccessToken } from './onedrive.service.js';
  * fall back to the legacy one-shot sendMail (ids come back null and callers
  * fall back to their synthetic conversation ids).
  *
+ * NON-PRODUCTION SAFETY NET. Outside production this function REWRITES `to` to
+ * the internal test inbox and clears `cc`, unless the caller passes
+ * `allowRealRecipients: true`. Every candidate-facing flow is already supposed
+ * to route through resolveRecipients() first — this is the net under those ~40
+ * call sites, so a new one added without that call cannot email a real
+ * candidate from local or staging. Only the flows in NEVER_REDIRECT /
+ * OPERATOR_ADDRESSED (config/emailRecipients.js) opt out.
+ *
  * @param {Object} params
  * @param {string} params.sender - The user mailbox to send from
  * @param {string} params.to - Comma-separated list of recipient emails
  * @param {string} [params.cc] - Comma-separated list of cc emails
  * @param {string} params.subject - Subject line of the email
  * @param {string} params.html - HTML email body content
+ * @param {boolean} [params.allowRealRecipients=false] - bypass the non-prod
+ *   redirect. ONLY for flows whose key is in NEVER_REDIRECT or
+ *   OPERATOR_ADDRESSED; pass the resolved recipients straight through.
  * @returns {Promise<{graphMessageId: string|null, conversationId: string|null, internetMessageId: string|null}>}
  *   Truthy on success (so old boolean-style callers keep working); throws on failure.
  */
-export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
+export async function sendGraphEmail({ sender, to, cc = '', subject, html, allowRealRecipients = false }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
+
+  // Last line of defence — applied before anything is built or sent.
+  if (config.email.redirectInNonProd && !allowRealRecipients) {
+    const original = `${to}${cc ? ` cc "${cc}"` : ''}`;
+    const testInbox = config.email.testRecipients;
+    if ((to || '').trim() !== (testInbox || '').trim() || cc) {
+      logger.info(
+        `MS Graph Email [non-prod guard]: redirected "${original}" -> "${testInbox}" (cc cleared). Subject: "${subject}".`
+      );
+    }
+    to = testInbox;
+    cc = '';
+  }
 
   try {
     return await executeSend(requestedSender);
@@ -638,7 +662,8 @@ export async function sendResumeErrorAlert({ executionId, failedCount, totalCoun
 </html>
     `;
 
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: internal failure alert — must reach real inboxes in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     await prisma.rpa_email_log.create({
       data: {
@@ -711,7 +736,8 @@ export async function sendRerankApiAlert({ query, candidateCount, errorMessage, 
 </html>
     `;
 
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: internal failure alert — must reach real inboxes in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     await prisma.rpa_email_log.create({
       data: {
@@ -1407,7 +1433,8 @@ export async function sendCredentialEmail({ user, plainTextPassword, isNewUser =
     `;
 
     // 1) Send email
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: account security — credentials go to the affected user in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     // 2) Log to rpa_email_log
     await prisma.rpa_email_log.create({
@@ -1547,7 +1574,8 @@ export async function sendPasswordResetEmail({ user, resetUrl }) {
     `;
 
     // 1) Send email
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: account security — a reset link is only useful in the owner's inbox.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     // 2) Log to rpa_email_log
     await prisma.rpa_email_log.create({
@@ -1646,7 +1674,8 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
 </html>
     `;
 
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: internal 5xx alert — staging is precisely where these are caught.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     await prisma.rpa_email_log.create({
       data: {

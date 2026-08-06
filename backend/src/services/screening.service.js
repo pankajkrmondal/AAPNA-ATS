@@ -5,7 +5,7 @@ import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
 import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, logFailedEmail, injectTrackingPixel } from './emailNotification.service.js';
 import { v4 as uuidv4 } from 'uuid';
-import { resolveRecipients } from '../config/emailRecipients.js';
+import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage } from '../config/pipelineStages.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
@@ -2410,13 +2410,20 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   const startIso = roundedStart.toISOString();
   const endIso = roundedEnd.toISOString();
 
-  // 4) Call Zeko Schedule API
+  // 4) Call Zeko Schedule API.
+  //
+  // NON-PROD SAFETY: Zeko emails its own interview invitation to whatever
+  // address we put here — that send is theirs, not ours, so neither
+  // resolveRecipients() nor the sendGraphEmail guard can catch it. Outside
+  // production the candidate address is substituted with the internal test
+  // inbox, so no real candidate is ever invited from local or staging.
   const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${interviewId}/schedule`;
+  const zekoCandidateEmail = nonProdSafeCandidateEmail(shortlist.candidate_email, 'zeko:schedule');
   const zekoPayload = {
     candidates: [
       {
         name: shortlist.candidate_name,
-        email: shortlist.candidate_email,
+        email: zekoCandidateEmail,
         phone: '',
         resumeLink: '',
         metaData: {
@@ -2563,13 +2570,19 @@ export async function cancelInterview(pipelineId, reason, user) {
 
   const jobTitle = job ? job.title : 'Position';
 
-  // 3) Call Zeko Cancel API
+  // 3) Call Zeko Cancel API.
+  //
+  // Must use the SAME substituted address the schedule call sent (see
+  // scheduleInterview above) — cancelling by the real address in non-prod would
+  // not match the booking Zeko actually holds, and would leave the test-inbox
+  // booking live.
   const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
+  const zekoCandidateEmail = nonProdSafeCandidateEmail(pipeline.candidate_email, 'zeko:cancel');
   const zekoPayload = {
-    candidateEmails: [pipeline.candidate_email],
+    candidateEmails: [zekoCandidateEmail],
   };
 
-  logger.info(`Zeko API: Cancelling interview at Zeko for candidate ${pipeline.candidate_email}`);
+  logger.info(`Zeko API: Cancelling interview at Zeko for candidate ${zekoCandidateEmail}`);
 
   const zekoRes = await fetch(zekoUrl, {
     method: 'POST',

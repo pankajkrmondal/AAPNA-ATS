@@ -4,6 +4,7 @@ import AppError from '../utils/AppError.js';
 import {
   STAGE_KEYS,
   STAGE_OUTCOMES,
+  FINAL_OUTCOMES,
   finalStatusLabelFor,
   shortlistStatusFor,
   isZekoStage,
@@ -11,6 +12,7 @@ import {
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule } from './interviewSchedule.service.js';
+import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -49,6 +51,31 @@ export {
  */
 
 const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? Number(v) : v)));
+
+/**
+ * Refuses to act on a journey that has already been closed.
+ *
+ * Closure (`final_outcome` + `closed_at`) is the end of the record: the
+ * candidate joined, withdrew, was rejected outright, or the requisition moved
+ * on. Nothing was stopping a closed journey from being advanced, given a new
+ * stage outcome, or — worse — emailed again months later, because every entry
+ * point only checked that the row existed.
+ *
+ * Exported so the offer and document services enforce the same rule; they act
+ * on the same journeys through their own entry points.
+ *
+ * @param {{id: bigint|number, final_outcome: string|null}} pipeline
+ * @param {string} action - what the caller was trying to do, for the message
+ * @throws {AppError} 409 when the journey is closed
+ */
+export function assertJourneyOpen(pipeline, action = 'change this candidate') {
+  if (pipeline?.final_outcome) {
+    throw new AppError(
+      `This candidate's record was closed as "${finalStatusLabelFor(pipeline.current_stage_key, pipeline.final_outcome)}". Reopen it before you ${action}.`,
+      409
+    );
+  }
+}
 
 /**
  * The Q5 status-only vendor cc applies to VENDOR-SOURCED journeys only. The
@@ -325,15 +352,20 @@ export async function getPipelineDetail(pipelineId) {
     });
   }
 
-  // Scheduled interview rounds (tech1/tech2): the MRF names who interviews and
-  // their preferred window — free text shown to the recruiter as hints — plus
-  // the live booking, if one exists.
+  // Scheduled interview rounds: the MRF names who interviews and their
+  // preferred window — free text shown to the recruiter as hints — plus the
+  // live booking, if one exists.
   let interviewSchedule = null;
   let mrfInterviewHints = null;
   if (isSchedulableStage(pipeline.current_stage_key)) {
     mrfInterviewHints = mrfRoundHints(pipeline.rpa_shortlisted_candidates?.mrf, pipeline.current_stage_key);
     interviewSchedule = await getLiveSchedule(pipeline.id, pipeline.current_stage_key);
   }
+
+  // The offer record drives the Offer round's own action bar (request approval →
+  // approve → record shared → decision). Always loaded rather than gated on the
+  // current stage, so a closed journey's drawer still shows what was offered.
+  const offer = await prisma.rpa_offers.findUnique({ where: { pipeline_id: pipeline.id } });
 
   return serializeBigInts({
     pipeline,
@@ -345,6 +377,7 @@ export async function getPipelineDetail(pipelineId) {
     zekoHrPipeline,
     interviewSchedule,
     mrfInterviewHints,
+    offer,
   });
 }
 
@@ -405,10 +438,13 @@ export async function getOutcomePreview(pipelineId, outcomeKey) {
  * @param {string|null} [params.notes]
  * @param {string|null} [params.emailSubject] - recruiter-edited subject from the preview step; falls back to server compile if omitted
  * @param {string|null} [params.emailBody] - recruiter-edited body from the preview step; falls back to server compile if omitted
+ * @param {boolean} [params.skipOptionalNext] - when approving and the resolved next stage is
+ *   optional, land two stages ahead instead of one and log the bypassed stage as a 'skip'
+ *   event (02-BUSINESS-DESIGN.md §2 rule 2) rather than 'entered'. Ignored otherwise.
  * @param {number} params.actedBy - rpa_users.id
  * @returns {Promise<object>} the updated pipeline row + event
  */
-export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, actedBy }) {
+export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, skipOptionalNext = false, actedBy }) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: true },
@@ -416,6 +452,7 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
   }
+  assertJourneyOpen(pipeline, 'record another outcome');
 
   const outcome = await prisma.rpa_stage_outcomes.findUnique({
     where: { stage_key_outcome_key: { stage_key: pipeline.current_stage_key, outcome_key: outcomeKey } },
@@ -447,13 +484,33 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
         : 'in_progress'; // future_prospect and similar non-terminal-non-advance outcomes
 
   // Approve auto-advances: resolve the next active stage now so the outcome
-  // event and the stage move commit together.
+  // event and the stage move commit together. When that next stage is
+  // optional and the recruiter chose to skip it up front (Q: Tech3 vs HR
+  // Round at Tech2-approval time), land one stage further and log the
+  // bypassed stage as a 'skip' event instead of 'entered' — same audit trail
+  // advanceStage(skip:true) already produces for a candidate skipping from
+  // an optional stage they're already sitting on.
   let nextStage = null;
+  let skippedStage = null;
   if (outcomeKey === STAGE_OUTCOMES.APPROVED) {
     const stages = await prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } });
     const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
-    if (currentIdx !== -1 && currentIdx < stages.length - 1) {
+    // currentIdx === -1 means the candidate is sitting on a stage that is no
+    // longer active — an admin deactivated it underneath them. Silently
+    // recording "approved" with nowhere to go would strand the journey with no
+    // sign anything was wrong, so it is an explicit error instead.
+    if (currentIdx === -1) {
+      throw new AppError(
+        `Stage "${pipeline.current_stage_key}" is no longer active, so this candidate cannot be advanced. Re-activate the stage, or move the candidate first.`,
+        409
+      );
+    }
+    if (currentIdx < stages.length - 1) {
       nextStage = stages[currentIdx + 1];
+      if (skipOptionalNext && nextStage.is_optional && currentIdx + 2 < stages.length) {
+        skippedStage = nextStage;
+        nextStage = stages[currentIdx + 2];
+      }
     }
   }
 
@@ -463,9 +520,29 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
 
   // Single transaction: update pipeline row + insert outcome event (+ the
   // "entered next stage" event, if approve auto-advanced) + legacy write-backs.
-  const txSteps = [
-    prisma.rpa_candidate_pipeline.update({ where: { id: pipeline.id }, data: pipelineUpdateData }),
-    prisma.rpa_pipeline_stage_events.create({
+  //
+  // The pipeline update is CONDITIONAL on current_stage_key still being what we
+  // read at the top. Everything above — the outcome lookup, the next-stage
+  // resolution — was computed from that read, so if another recruiter recorded
+  // an outcome in the meantime this transaction would advance the candidate a
+  // second time and send a second email. updateMany returns a count instead of
+  // throwing on no-match, which is what lets us detect that and 409 below.
+  // Interactive rather than array form: the claim can fail, and when it does the
+  // outcome/entered events must roll back with it. Throwing inside the callback
+  // is what aborts the whole thing — an array transaction has no way to.
+  const { updatedPipeline, event } = await prisma.$transaction(async (tx) => {
+    const claim = await tx.rpa_candidate_pipeline.updateMany({
+      where: { id: pipeline.id, current_stage_key: pipeline.current_stage_key, final_outcome: null },
+      data: pipelineUpdateData,
+    });
+    if (claim.count !== 1) {
+      throw new AppError(
+        'Someone else moved this candidate while you were deciding. Reopen the candidate to see where they are now.',
+        409
+      );
+    }
+
+    const outcomeEvent = await tx.rpa_pipeline_stage_events.create({
       data: {
         pipeline_id: pipeline.id,
         stage_key: pipeline.current_stage_key,
@@ -477,16 +554,25 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
         notes,
         acted_by: actedBy || null,
       },
-    }),
-  ];
-  if (nextStage) {
-    txSteps.push(
-      prisma.rpa_pipeline_stage_events.create({
-        data: { pipeline_id: pipeline.id, stage_key: nextStage.stage_key, event_type: 'entered', acted_by: actedBy || null },
-      })
-    );
-  }
-  const [updatedPipeline, event] = await prisma.$transaction(txSteps);
+    });
+
+    if (nextStage) {
+      await tx.rpa_pipeline_stage_events.create({
+        data: {
+          pipeline_id: pipeline.id,
+          stage_key: nextStage.stage_key,
+          event_type: skippedStage ? 'skip' : 'entered',
+          notes: skippedStage ? `Skipped optional stage ${skippedStage.stage_key} (${skippedStage.label})` : null,
+          acted_by: actedBy || null,
+        },
+      });
+    }
+
+    // updateMany returns a count, not the row — re-read inside the transaction
+    // so callers still get the post-update row they had before.
+    const row = await tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+    return { updatedPipeline: row, event: outcomeEvent };
+  });
 
   // Legacy write-back — best effort, never blocks the transaction above.
   try {
@@ -531,8 +617,25 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   });
 
   if (nextStage) {
-    logger.info(`Pipeline ${pipelineId} approved and auto-advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key}.`);
+    logger.info(
+      skippedStage
+        ? `Pipeline ${pipelineId} approved ${pipeline.current_stage_key}, skipped optional ${skippedStage.stage_key}, and advanced to ${nextStage.stage_key}.`
+        : `Pipeline ${pipelineId} approved and auto-advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key}.`
+    );
   }
+
+  // In-app notification. The actor already knows what they just did, so they
+  // are excluded; everyone else on the team sees the decision land.
+  const candidateName = pipeline.rpa_shortlisted_candidates?.candidate_name || 'A candidate';
+  const outcomeWord = outcomeKey === 'approved' ? 'approved' : outcomeKey === 'rejected' ? 'rejected' : outcomeKey === 'hold' ? 'put on hold' : outcomeKey;
+  await notify({
+    type: NOTIFICATION_TYPES.PIPELINE_OUTCOME,
+    title: `${stageRow?.label || pipeline.current_stage_key} — ${outcomeWord}`,
+    description: `${candidateName}${nextStage ? ` · now at ${nextStage.label}` : ''}`,
+    pipelineId: pipeline.id,
+    meta: { stage_key: pipeline.current_stage_key, outcome_key: outcomeKey },
+    excludeUserId: actedBy || null,
+  });
 
   return serializeBigInts({ pipeline: updatedPipeline, event: { ...event, email_sent: emailResult.sent, email_error: emailResult.error } });
 }
@@ -551,24 +654,41 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
   }
+  assertJourneyOpen(pipeline, 'move them to the next stage');
 
   const stages = await prisma.rpa_pipeline_stages.findMany({
     where: { is_active: true },
     orderBy: { sort_order: 'asc' },
   });
   const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
-  if (currentIdx === -1 || currentIdx === stages.length - 1) {
+  // Separate messages: "already at the end" is a normal thing to try, whereas a
+  // stage that vanished from under the candidate is a configuration problem.
+  if (currentIdx === -1) {
+    throw new AppError(
+      `Stage "${pipeline.current_stage_key}" is no longer active, so this candidate cannot be advanced. Re-activate the stage, or move the candidate first.`,
+      409
+    );
+  }
+  if (currentIdx === stages.length - 1) {
     throw new AppError('No next stage available (already at the final stage).', 400);
   }
 
   const nextStage = stages[currentIdx + 1];
 
-  const [updatedPipeline] = await prisma.$transaction([
-    prisma.rpa_candidate_pipeline.update({
-      where: { id: pipeline.id },
+  // Same claim-then-act guard as setStageOutcome: two people advancing the same
+  // candidate at once must not skip a stage between them.
+  const updatedPipeline = await prisma.$transaction(async (tx) => {
+    const claim = await tx.rpa_candidate_pipeline.updateMany({
+      where: { id: pipeline.id, current_stage_key: pipeline.current_stage_key, final_outcome: null },
       data: { current_stage_key: nextStage.stage_key, current_stage_status: 'in_progress', modified_at: new Date() },
-    }),
-    prisma.rpa_pipeline_stage_events.create({
+    });
+    if (claim.count !== 1) {
+      throw new AppError(
+        'Someone else moved this candidate while you were deciding. Reopen the candidate to see where they are now.',
+        409
+      );
+    }
+    await tx.rpa_pipeline_stage_events.create({
       data: {
         pipeline_id: pipeline.id,
         stage_key: nextStage.stage_key,
@@ -576,8 +696,9 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
         notes: skip ? `Skipped optional stage from ${pipeline.current_stage_key}` : null,
         acted_by: actedBy || null,
       },
-    }),
-  ]);
+    });
+    return tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+  });
 
   logger.info(`Pipeline ${pipelineId} advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key} (skip=${skip}).`);
   return serializeBigInts(updatedPipeline);
@@ -592,8 +713,25 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
  * @param {string} params.finalOutcomeKey - one of FINAL_OUTCOMES
  * @param {string|null} [params.notes]
  * @param {number} params.actedBy
+ * @param {boolean} [params.notifyCandidate=true] - false for machine-driven
+ *   closures (jobs/offerSweep.js's 90-day auto-close). A cron tidying up a
+ *   record months later must never be the thing that emails a candidate; a
+ *   human recording a closure decision still can.
  */
-export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = null, actedBy }) {
+export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = null, actedBy, notifyCandidate = true }) {
+  // The key was previously written through unvalidated: finalStatusLabelFor()
+  // falls through to `${stageLabel} ${outcomeKey}` for anything it doesn't
+  // recognise, so a typo — or a hand-rolled API call — landed arbitrary text in
+  // final_outcome AND in the legacy rpa_cv.FinalStatus the vendor dashboard
+  // classifies on.
+  const ALLOWED_FINAL_OUTCOMES = Object.values(FINAL_OUTCOMES);
+  if (!ALLOWED_FINAL_OUTCOMES.includes(finalOutcomeKey)) {
+    throw new AppError(
+      `"${finalOutcomeKey}" is not a valid closure outcome. Expected one of: ${ALLOWED_FINAL_OUTCOMES.join(', ')}.`,
+      400
+    );
+  }
+
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: true },
@@ -601,15 +739,22 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
   }
+  assertJourneyOpen(pipeline, 'close it again');
 
   const statusLabel = finalStatusLabelFor(pipeline.current_stage_key, finalOutcomeKey);
 
-  const [updatedPipeline, event] = await prisma.$transaction([
-    prisma.rpa_candidate_pipeline.update({
-      where: { id: pipeline.id },
+  const { updatedPipeline, event } = await prisma.$transaction(async (tx) => {
+    // Claim the closure: `final_outcome: null` in the filter means a second
+    // closure racing this one (a recruiter and the auto-close sweep on the same
+    // record, say) loses rather than overwriting the first verdict.
+    const claim = await tx.rpa_candidate_pipeline.updateMany({
+      where: { id: pipeline.id, final_outcome: null },
       data: { final_outcome: finalOutcomeKey, closed_at: new Date(), modified_at: new Date() },
-    }),
-    prisma.rpa_pipeline_stage_events.create({
+    });
+    if (claim.count !== 1) {
+      throw new AppError('This candidate\'s record has already been closed.', 409);
+    }
+    const closureEvent = await tx.rpa_pipeline_stage_events.create({
       data: {
         pipeline_id: pipeline.id,
         stage_key: pipeline.current_stage_key,
@@ -619,8 +764,11 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
         notes,
         acted_by: actedBy || null,
       },
-    }),
-  ]);
+    });
+
+    const row = await tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+    return { updatedPipeline: row, event: closureEvent };
+  });
 
   try {
     if (pipeline.cv_id) {
@@ -630,22 +778,47 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
     logger.error(`Legacy FinalStatus write-back failed for pipeline ${pipelineId}: ${err.message}`);
   }
 
-  const emailResult = await sendStageOutcomeEmail({
-    pipelineRow: updatedPipeline,
-    stageKey: pipeline.current_stage_key,
-    outcomeKey: finalOutcomeKey,
-    stageLabel: 'Closure',
-    candidate: {
-      name: pipeline.rpa_shortlisted_candidates?.candidate_name,
-      email: pipeline.rpa_shortlisted_candidates?.candidate_email,
-    },
-    vendorEmail: vendorCcFor(pipeline),
-    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
-  });
+  // The journey is over, so any outstanding no-login document upload link for it
+  // is too. Best effort: a closure must not fail because the candidate never had
+  // a document request raised.
+  try {
+    await prisma.rpa_document_requests.updateMany({
+      where: { pipeline_id: pipeline.id, token_status: { not: 'closed' } },
+      data: { token_status: 'closed', modified_at: new Date() },
+    });
+  } catch (err) {
+    logger.error(`Closure: document link could not be closed for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  const emailResult = notifyCandidate
+    ? await sendStageOutcomeEmail({
+      pipelineRow: updatedPipeline,
+      stageKey: pipeline.current_stage_key,
+      outcomeKey: finalOutcomeKey,
+      stageLabel: 'Closure',
+      candidate: {
+        name: pipeline.rpa_shortlisted_candidates?.candidate_name,
+        email: pipeline.rpa_shortlisted_candidates?.candidate_email,
+      },
+      vendorEmail: vendorCcFor(pipeline),
+      positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+    })
+    : { sent: false, error: null, messageId: null };
 
   await prisma.rpa_pipeline_stage_events.update({
     where: { id: event.id },
     data: { email_sent: emailResult.sent, email_error: emailResult.error },
+  });
+
+  // The journey is over — tell the team, since the card is about to leave the
+  // board and this is the last chance to see it happened.
+  await notify({
+    type: NOTIFICATION_TYPES.PIPELINE_CLOSURE,
+    title: `Candidate record closed — ${statusLabel}`,
+    description: pipeline.rpa_shortlisted_candidates?.candidate_name || 'A candidate',
+    pipelineId: pipeline.id,
+    meta: { final_outcome: finalOutcomeKey },
+    excludeUserId: actedBy || null,
   });
 
   return serializeBigInts(updatedPipeline);
@@ -665,6 +838,7 @@ export async function sendAdHocEmail(pipelineId, { subject, body }) {
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
   }
+  assertJourneyOpen(pipeline, 'email them');
 
   const result = await sendAdHocCandidateEmail({
     pipelineRow: pipeline,

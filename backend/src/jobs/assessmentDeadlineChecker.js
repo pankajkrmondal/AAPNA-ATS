@@ -15,6 +15,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { emitToRole } from '../socket/index.js';
+import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
 
 let job = null;
 
@@ -83,14 +84,27 @@ export async function checkOverdueAssessmentInvites() {
   for (const row of overdue) {
     try {
       const pipeline = pipelineById.get(String(row.pipeline_id));
+      const candidateName = pipeline?.rpa_shortlisted_candidates?.candidate_name || null;
+      const position = pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for
+        || pipeline?.rpa_shortlisted_candidates?.position_applied || null;
+
+      // Kept for any open view that refreshes on it; the bell reads the row.
       emitToRole('recruiter', 'assessment:deadline_expired', {
         pipelineId: Number(row.pipeline_id),
         inviteId: Number(row.invite_id),
-        candidateName: pipeline?.rpa_shortlisted_candidates?.candidate_name || null,
-        position: pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for
-          || pipeline?.rpa_shortlisted_candidates?.position_applied || null,
+        candidateName,
+        position,
         deadlineAt: row.deadline_at,
       });
+
+      await notify({
+        type: NOTIFICATION_TYPES.ASSESSMENT_DEADLINE_EXPIRED,
+        title: 'Evalground invite deadline passed',
+        description: `${candidateName || 'A candidate'}${position ? ` — ${position}` : ''} — re-invite or upload the result`,
+        pipelineId: row.pipeline_id,
+        meta: { invite_id: Number(row.invite_id) },
+      });
+
       await prisma.rpa_assessment_invites.update({
         where: { id: row.invite_id },
         data: { reminded_at: new Date() },

@@ -20,11 +20,12 @@ import cron from 'node-cron';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
-import { resolveRecipients } from '../config/emailRecipients.js';
+import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
 import { markInterviewOccurrence } from '../services/interviewSchedule.service.js';
 import { getAttendanceOutcome, isAttendanceEnabled } from '../services/graphAttendance.service.js';
+import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
 
 let job = null;
 
@@ -38,6 +39,23 @@ export const SETTING_KEYS = Object.freeze({
 export const ALLOWED_INTERVALS = Object.freeze([1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]);
 
 const DEFAULTS = { enabled: false, intervalMin: 30, graceMin: 15 };
+
+/**
+ * How long to wait before nudging again about an interview nobody has confirmed,
+ * and how many nudges to send in total before giving up.
+ *
+ * The sweep used to send exactly ONE nudge and then exclude the booking forever
+ * (`occurrence_nudge_at: null` in the due filter). If that single email was
+ * missed, the interview stayed unresolved permanently: no scorecard, no second
+ * prompt, and — because the same filter gated the attendance branch — no further
+ * attempt to read a Teams report that may only have become available afterwards.
+ *
+ * A capped re-nudge is the middle ground: persistent enough to be a work queue,
+ * bounded so it never becomes a daily nag about an interview that plainly is not
+ * going to be confirmed.
+ */
+const NUDGE_REPEAT_HOURS = 24;
+const MAX_NUDGES = 3;
 
 /**
  * Reads the occurrence-sweep configuration from rpa_settings, with defaults.
@@ -125,14 +143,31 @@ export async function sweepInterviewOccurrence() {
   const cutoff = new Date(Date.now() - graceMin * 60 * 1000);
 
   // Bookings whose window ended (+grace) and whose occurrence is unresolved.
-  // A nudged row is excluded so we don't spam; the attendance path can still
-  // re-check because attendance_checked_at doesn't block re-selection here.
+  //
+  // A row stays selectable until it is either resolved or aged out, rather than
+  // dropping out the moment one nudge is sent. Two things depend on that: the
+  // nudge can repeat (capped below), and the Teams attendance branch gets
+  // another look — a report is often not published until well after the meeting
+  // ends, and the old one-shot filter meant we only ever asked once, usually too
+  // early.
+  //
+  // The cap is expressed as a window rather than a counter so it needs no new
+  // column: nudges land ~NUDGE_REPEAT_HOURS apart, and selection stops
+  // MAX_NUDGES × NUDGE_REPEAT_HOURS after the interview ended. An interview
+  // nobody has confirmed after three days is not going to be confirmed by a
+  // fourth email.
+  const giveUpBefore = new Date(Date.now() - MAX_NUDGES * NUDGE_REPEAT_HOURS * 60 * 60 * 1000);
+  const nudgeAgainBefore = new Date(Date.now() - NUDGE_REPEAT_HOURS * 60 * 60 * 1000);
+
   const due = await prisma.rpa_interview_schedule.findMany({
     where: {
       status: 'scheduled',
       occurrence_status: null,
-      scheduled_end_at: { lt: cutoff },
-      occurrence_nudge_at: null,
+      scheduled_end_at: { lt: cutoff, gt: giveUpBefore },
+      OR: [
+        { occurrence_nudge_at: null },
+        { occurrence_nudge_at: { lt: nudgeAgainBefore } },
+      ],
     },
     include: {
       rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },
@@ -147,7 +182,23 @@ export async function sweepInterviewOccurrence() {
 
   for (const row of due) {
     const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
-    const candidateEmail = candidate?.candidate_email || '';
+
+    // Match attendance against the address that was actually PUT ON THE INVITE,
+    // not the one on file.
+    //
+    // Outside production the calendar attendee is substituted with the test
+    // inbox (nonProdSafeCandidateEmail), so nobody ever joins as the real
+    // candidate. Matching on the real address therefore found them absent every
+    // single time and auto-marked every staging interview a candidate no-show —
+    // silently, and with a no-show alert to boot.
+    //
+    // Substituting here too keeps the two ends symmetric: whoever holds the test
+    // inbox stands in for the candidate on staging, exactly as they do on the
+    // invite. In production nothing is substituted and this is a no-op.
+    const realCandidateEmail = candidate?.candidate_email || '';
+    const candidateEmail = realCandidateEmail
+      ? nonProdSafeCandidateEmail(realCandidateEmail, 'attendance:match')
+      : '';
 
     // (a) Try Teams attendance first when enabled.
     if (isAttendanceEnabled()) {
@@ -243,7 +294,8 @@ async function sendNoShowAlert(row, candidate, absentParty) {
   // Header headline = the email's own subject (RT decision, 2026-07-25).
   const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
   try {
-    await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml });
+    // OPERATOR_ADDRESSED: internal recruitment mailbox, reached in every env.
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
     logger.info(`[Occurrence Sweep] no-show alert sent for schedule ${row.id} (${absentParty || 'unknown'}).`);
     return true;
   } catch (err) {
@@ -305,15 +357,30 @@ async function sendConfirmationNudge(row, candidate) {
   let sentAny = false;
   for (const to of [recruiterTo].filter(Boolean)) {
     try {
-      await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml });
+      // OPERATOR_ADDRESSED: internal recruitment mailbox, reached in every env.
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
       sentAny = true;
     } catch (err) {
       logger.error(`[Occurrence Sweep] nudge email failed for schedule ${row.id} → ${to}: ${err.message}`);
     }
   }
 
-  // Stamp regardless, so a booking with no reachable recipient isn't retried
-  // forever; a human can still resolve it from the drawer.
+  // The same ask, in-app. The email goes to the shared recruitment mailbox
+  // (no per-requisition owner exists yet), so the bell is what actually puts
+  // this in front of the individual recruiters.
+  await notify({
+    type: NOTIFICATION_TYPES.INTERVIEW_CONFIRM_NEEDED,
+    title: `Confirm: did the ${stageLabel} happen?`,
+    description: `${tokens.candidate_name} · was scheduled for ${when} — mark it held or no-show`,
+    pipelineId: row.pipeline_id,
+    meta: { stage_key: row.stage_key, schedule_id: Number(row.id) },
+  });
+
+  // Stamp regardless of whether the email got out — the timestamp is what
+  // spaces the next nudge NUDGE_REPEAT_HOURS away, so a booking with no
+  // reachable recipient backs off like any other instead of being retried every
+  // tick. The give-up window in sweepInterviewOccurrence() ends the sequence;
+  // a human can still resolve it from the drawer at any point.
   await prisma.rpa_interview_schedule.update({
     where: { id: row.id },
     data: { occurrence_nudge_at: new Date(), modified_at: new Date() },

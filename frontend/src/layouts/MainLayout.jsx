@@ -69,11 +69,17 @@ const MENU_ITEMS = [
   { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
   { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
   { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
-  // Phase 3 walkthrough prototype — remove with the prototype page/route.
-  { key: '/candidate-pipeline-prototype', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
-  // Real Pipeline Tracker (Module 1) — persists to the backend, kept alongside
-  // the prototype above until RT signs off and this is verified end-to-end.
-  { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Pipeline Tracker' },
+  // The REAL Pipeline Tracker (Module 1) — persists to /api/pipeline and sends
+  // real outcome emails. It takes the plain "Candidate Pipeline" name because it
+  // is the pipeline; the mock walkthrough page used to hold that name and sat
+  // ABOVE this entry with an identical icon, so anyone looking for the pipeline
+  // clicked the demo and saw invented candidates.
+  //
+  // The demo page is deliberately NOT listed here any more. Its route is still
+  // live at /candidate-pipeline-prototype for client walkthroughs and as the
+  // design reference several components cite — it is just no longer something
+  // you can land on by accident.
+  { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
   // Preserved pre-rebrand page — operational fallback, not a primary surface.
   { key: '/analytics-legacy', icon: <BarChartOutlined />, label: 'Recruitment Analytics (Legacy)' },
@@ -103,8 +109,11 @@ const BREADCRUMB_MAP = {
   mrf: 'MRF',
   vendor: 'Vendor Manual Upload',
   filtering: 'Candidate Screening',
-  'candidate-pipeline-prototype': 'Candidate Pipeline (Preview)',
-  pipeline: 'Pipeline Tracker',
+  // Kept even though the demo is off the sidebar — a direct visit still needs a
+  // correct trail, and the "(Demo)" suffix is the tell that this isn't the real
+  // board.
+  'candidate-pipeline-prototype': 'Candidate Pipeline (Demo — mock data)',
+  pipeline: 'Candidate Pipeline',
   analytics: 'Recruitment Analytics',
   'analytics-legacy': 'Recruitment Screening Analytics (Legacy)',
   email: 'Email Template Management',

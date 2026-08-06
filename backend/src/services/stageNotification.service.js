@@ -35,12 +35,55 @@ import { finalStatusLabelFor } from '../config/pipelineStages.js';
  * bounce/open tracking keep working unchanged.
  */
 
-/** Generic fallback templates, looked up by name (created once via seed-email-templates.js). */
+/**
+ * Generic fallback templates, looked up by name (created once via
+ * seed-email-templates.js).
+ *
+ * The three closure entries are keyed by outcome rather than mapped per stage
+ * in rpa_stage_email_templates on purpose: a journey can be closed from ANY
+ * stage — someone withdrawing at Tech 2 never reaches the offer stage — so a
+ * per-stage mapping would silently miss most real closures. That miss is
+ * precisely why closure emails never sent before.
+ *
+ * The other five closure outcomes are absent by design; see
+ * SILENT_FINAL_OUTCOMES below.
+ */
 const GENERIC_FALLBACK_BY_OUTCOME = {
   approved: 'Stage Outcome — Approved (Generic)',
   rejected: 'Stage Outcome — Rejected (Generic)',
   hold: 'Stage Outcome — Hold (Generic)',
+  closure_approved: 'Closure — Approved',
+  closure_rejected: 'Closure — Rejected',
+  closure_on_hold: 'Closure — On Hold',
 };
+
+/**
+ * Closure outcomes that must NEVER generate a candidate email, whatever is
+ * mapped in rpa_stage_email_templates.
+ *
+ * These record something that already happened out in the world — the candidate
+ * joined, backed out, withdrew, or never turned up. There is nothing to tell
+ * them that they do not already know, and mailing them would range from odd to
+ * insulting ("Congratulations" to someone who backed out — the exact failure
+ * mode that got the generic-fallback mapping rejected in the first place).
+ *
+ * Until these were seeded this was moot: resolveTemplate() returned null for
+ * every closure and the send was skipped. Seeding the three legitimate closure
+ * templates changes that, so the silence has to become deliberate rather than
+ * incidental — including for jobs/offerSweep.js's 90-day auto-close, which would
+ * otherwise email every joined candidate months after the fact.
+ *
+ * The three closure outcomes NOT listed here (closure_approved,
+ * closure_rejected, closure_on_hold) are real decisions the candidate is waiting
+ * on, and DO send.
+ */
+export const SILENT_FINAL_OUTCOMES = new Set([
+  'joined',
+  'joined_and_left',
+  'backed_out',
+  'did_not_join',
+  'candidate_withdrawn',
+]);
 
 /**
  * The branded-shell options for a stage-outcome email.
@@ -60,6 +103,10 @@ const outcomeWrapOpts = (subject) => ({ title: subject || '' });
  * @returns {Promise<object|null>} an rpa_email_templates row, or null if none resolves
  */
 async function resolveTemplate(stageKey, outcomeKey) {
+  // Deliberately silent closures short-circuit before any lookup, so an admin
+  // mapping one of them to a template in the config UI still cannot send.
+  if (SILENT_FINAL_OUTCOMES.has(outcomeKey)) return null;
+
   const mapping = await prisma.rpa_stage_email_templates.findUnique({
     where: { stage_key_outcome_key: { stage_key: stageKey, outcome_key: outcomeKey } },
     include: { rpa_email_templates: true },
@@ -147,6 +194,16 @@ export async function sendStageOutcomeEmail({
     return { sent: false, error: 'No candidate email on file.', messageId: null };
   }
 
+  // Checked here as well as inside resolveTemplate(), because a recruiter-edited
+  // subject/body override skips template resolution entirely — the silence has
+  // to hold on that path too.
+  if (SILENT_FINAL_OUTCOMES.has(outcomeKey)) {
+    logger.info(
+      `Stage-outcome email suppressed by policy: pipeline=${pipelineRow.id} outcome=${outcomeKey} (closure outcomes are recorded, not announced).`
+    );
+    return { sent: false, error: null, messageId: null };
+  }
+
   try {
     // 'stageOutcome' flow key: dynamic recipient (candidate), staging redirect honored
     // automatically via emailRecipients.js's non-production rule.
@@ -155,7 +212,12 @@ export async function sendStageOutcomeEmail({
     // send as a full-content cc; this dispatcher only ever attaches it here,
     // which callers must ensure is appropriate for the stage (never Offer/Documents
     // until Q29 is answered).
-    const ccEmail = vendorEmail ? vendorEmail : '';
+    //
+    // The cc does NOT come from resolveRecipients(), which clears cc outside
+    // production — so without this it would put a real external vendor address
+    // back on a staging send. Dropped explicitly here at the source; the
+    // sendGraphEmail guard would also catch it, but the intent belongs here.
+    const ccEmail = vendorEmail && !config.email.redirectInNonProd ? vendorEmail : '';
 
     if (!toEmail) {
       const msg = describeEmailError('No valid recipients');
@@ -271,7 +333,8 @@ export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject,
     const sendResult = await sendGraphEmail({
       sender: config.microsoft.defaultSender,
       to: toEmail,
-      cc: vendorEmail || '',
+      // Same non-prod vendor-cc rule as sendStageOutcomeEmail above.
+      cc: vendorEmail && !config.email.redirectInNonProd ? vendorEmail : '',
       subject,
       html: injectTrackingPixel(brandedHtml, trackingToken),
     });

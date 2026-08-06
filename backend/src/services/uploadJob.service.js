@@ -8,6 +8,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { emitToUser, emitToRole } from '../socket/index.js';
+import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
 /** Canonical job statuses (also the display labels with spaces, see STATUS_LABELS). */
 export const JOB_STATUS = Object.freeze({
@@ -65,6 +66,8 @@ function emitJob(job) {
       emitToUser(job.uploaded_by_id, 'upload:job', payload);
     }
     if (job.action_required) {
+      // Kept as-is: HRUpload.jsx and VendorPortal.jsx reload their lists on this
+      // event. The bell reads rpa_notifications instead — see notifyReview().
       for (const role of REVIEW_ROLES) {
         emitToRole(role, 'review:new', payload);
       }
@@ -72,6 +75,18 @@ function emitJob(job) {
   } catch (err) {
     // Socket.io may not be initialised (e.g. in a standalone worker) — never fatal.
     logger.debug(`Socket emit skipped for job ${job.id}: ${err.message}`);
+  }
+
+  // Persist it as a notification so a review request survives a refresh and
+  // reaches whoever is on shift, not just whoever had a tab open.
+  if (job.action_required) {
+    notify({
+      type: NOTIFICATION_TYPES.REVIEW_NEW,
+      title: 'Duplicate resume needs review',
+      description: `${job.candidate_name || 'A candidate'}${job.vendor_name ? ` — vendor: ${job.vendor_name}` : ''}`,
+      linkPath: '/hr-upload',
+      meta: { job_id: payload?.id ?? null },
+    }).catch(() => {}); // notify() already swallows; this guards the un-awaited promise
   }
 }
 
