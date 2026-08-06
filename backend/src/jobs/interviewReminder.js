@@ -21,7 +21,7 @@ import config from '../config/index.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
-import { SCHEDULABLE_STAGES, buildTeamsBlock } from '../services/interviewSchedule.service.js';
+import { SCHEDULABLE_STAGES, buildTeamsBlock, stageSendsInvites } from '../services/interviewSchedule.service.js';
 
 /**
  * Template names for the two reminder emails (seeded by
@@ -167,6 +167,11 @@ export async function sendInterviewReminders() {
   let interviewerSent = 0;
 
   for (const row of due) {
+    // A round the system never invited is not reminded by it either — the
+    // Client Interview is coordinated by HR by hand (Q14). Skipped rather than
+    // filtered in the query so the reason stays next to the invite rules.
+    if (!stageSendsInvites(row.stage_key)) continue;
+
     const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
     const stageLabel = SCHEDULABLE_STAGES[row.stage_key]?.label || row.stage_key;
     const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
@@ -233,7 +238,7 @@ export async function sendInterviewReminders() {
     }
 
     if (!row.interviewer_reminded_at && row.interviewer_email) {
-      const { to } = resolveRecipients('interviewScheduled', row.interviewer_email);
+      const { to } = resolveRecipients('interviewScheduledPanel', row.interviewer_email);
       if (to) {
         const claimed = await prisma.rpa_interview_schedule.updateMany({
           where: { id: row.id, interviewer_reminded_at: null },
@@ -255,11 +260,14 @@ export async function sendInterviewReminders() {
                 ${tokens.notes_line}
                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
                 };
+            // OPERATOR_ADDRESSED: the panel mailbox typed in when the interview
+            // was booked, so the reminder is reached in every environment.
             await sendGraphEmail({
               sender: config.microsoft.defaultSender,
               to,
               subject: compiled.subject,
               html: wrapBrandedEmail(compiled.html, { title: compiled.subject }),
+              allowRealRecipients: true,
             });
             interviewerSent += 1;
           } catch (err) {

@@ -5,8 +5,10 @@
  * dropdown is instant and per-role candidate results survive page navigation.
  * staleTime: Infinity => no automatic refetch; reloads are explicit via the Refresh button.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import screeningService from '../services/screeningService';
+import { getSocket } from '../services/socket';
 
 // Query key factories (shared with prefetch + manual cache writes).
 export const screeningKeys = {
@@ -19,6 +21,27 @@ const unwrap = (res) => res?.data?.data ?? res?.data ?? null;
 
 /** Approved MRF roles for the JD Filtering dropdown. */
 export function useApprovedRoles() {
+  const queryClient = useQueryClient();
+
+  // staleTime:Infinity means this list never refetches on its own, so a
+  // requisition that closes while the page is open would keep offering a role
+  // nobody is hiring for. The backend broadcasts 'mrf:closed' the moment the
+  // last opening is filled; refetch on that one signal rather than polling.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return undefined;
+
+    const onMrfClosed = ({ mrf_id: mrfId } = {}) => {
+      queryClient.invalidateQueries({ queryKey: screeningKeys.roles });
+      if (mrfId) {
+        queryClient.removeQueries({ queryKey: screeningKeys.roleCandidates(mrfId) });
+      }
+    };
+
+    socket.on('mrf:closed', onMrfClosed);
+    return () => socket.off('mrf:closed', onMrfClosed);
+  }, [queryClient]);
+
   return useQuery({
     queryKey: screeningKeys.roles,
     queryFn: screeningService.getRoles,

@@ -31,8 +31,12 @@ const pipelineService = {
   },
 
   /** @returns {Promise<{ data: Array }>} full reason taxonomy (global + stage-scoped) */
-  listReasons() {
-    return api.get('/pipeline/reasons');
+  /**
+   * @param {boolean} [includeInactive] - admin config screen only; recruiters
+   *   picking a reason must never be offered a deactivated one.
+   */
+  listReasons(includeInactive = false) {
+    return api.get('/pipeline/reasons', includeInactive ? { params: { include_inactive: true } } : undefined);
   },
 
   /**
@@ -59,7 +63,7 @@ const pipelineService = {
    * Records Approve/Reject/Hold (or any configured outcome) on the current
    * stage. Approve auto-advances to the next active stage in the same call.
    * @param {number} id
-   * @param {Object} payload - { outcome_key, reason_id?, other_text?, notes?, email_subject?, email_body? }
+   * @param {Object} payload - { outcome_key, reason_id?, other_text?, notes?, email_subject?, email_body?, skip_optional_next? }
    */
   setStageOutcome(id, payload) {
     return api.post(`/pipeline/${id}/outcome`, payload);
@@ -170,6 +174,54 @@ const pipelineService = {
    */
   sendAdHocEmail(id, payload) {
     return api.post(`/pipeline/${id}/email`, payload);
+  },
+
+  // ── Documents round (Module 4) — recruiter-facing half ────────────────────
+
+  /** The request + checklist state for a journey. */
+  getDocumentStatus(id) {
+    return api.get(`/pipeline/${id}/documents`);
+  },
+  /** Raises the request and emails the candidate the upload link. */
+  requestDocuments(id) {
+    return api.post(`/pipeline/${id}/documents/request`, {});
+  },
+  /** Re-sends the upload link for an outstanding request. */
+  remindDocuments(id) {
+    return api.post(`/pipeline/${id}/documents/remind`, {});
+  },
+  /** Marks one uploaded document as verified. */
+  verifyDocument(docId) {
+    return api.post(`/pipeline/documents/${docId}/verify`, {});
+  },
+  /** Rejects one document with a reason, re-requesting it from the candidate. */
+  rejectDocument(docId, reason) {
+    return api.post(`/pipeline/documents/${docId}/reject`, { reason });
+  },
+
+  // ── Offer round (Module 5) — record-only; the letter never enters the ATS ──
+
+  /** Asks for internal sign-off and arms the daily nudge. */
+  requestOfferApproval(id) {
+    return api.post(`/pipeline/${id}/offer/request-approval`, {});
+  },
+  /** Records the internal sign-off. */
+  approveOffer(id) {
+    return api.post(`/pipeline/${id}/offer/approve`, {});
+  },
+  /**
+   * Records that HR shared the offer from their own mailbox.
+   * @param {Object} payload - { joining_date?, remarks? }
+   */
+  recordOfferShared(id, payload) {
+    return api.post(`/pipeline/${id}/offer/share`, payload);
+  },
+  /**
+   * Records the candidate's answer.
+   * @param {Object} payload - { decision: 'accepted'|'rejected', remarks? }
+   */
+  recordOfferDecision(id, payload) {
+    return api.post(`/pipeline/${id}/offer/decision`, payload);
   },
 
   // ── Admin config CRUD (admin-tier only, enforced server-side) ──────────

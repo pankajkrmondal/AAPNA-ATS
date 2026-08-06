@@ -1,4 +1,6 @@
 import * as pipelineService from '../services/pipeline.service.js';
+import * as offerService from '../services/offer.service.js';
+import * as documentService from '../services/documentCollection.service.js';
 import prisma from '../config/database.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
@@ -42,7 +44,13 @@ export const getPipelineAnalytics = catchAsync(async (req, res) => {
  * Admin-configurable stage list, for the board column headers and admin config UI.
  */
 export const listStages = catchAsync(async (_req, res) => {
-  const stages = await prisma.rpa_pipeline_stages.findMany({ orderBy: { sort_order: 'asc' } });
+  const stages = await prisma.rpa_pipeline_stages.findMany({
+    orderBy: { sort_order: 'asc' },
+    // Outcomes come along so the admin config screen can show and edit each
+    // stage's outcome set without a request per stage. Purely additive — the
+    // board and the drawer's dropdowns read the same top-level fields as before.
+    include: { rpa_stage_outcomes: { orderBy: { sort_order: 'asc' } } },
+  });
   return success(res, stages, 'Stages retrieved successfully');
 });
 
@@ -50,9 +58,14 @@ export const listStages = catchAsync(async (_req, res) => {
  * GET /api/pipeline/reasons
  * Full reason taxonomy (global + stage-scoped), for Reject/Hold dropdowns.
  */
-export const listReasons = catchAsync(async (_req, res) => {
+export const listReasons = catchAsync(async (req, res) => {
+  // Recruiters picking a reason should only ever see live ones, so active-only
+  // stays the default. The admin config screen passes include_inactive=true —
+  // without it a deactivated reason becomes invisible and therefore impossible
+  // to reactivate from the UI that deactivated it.
+  const includeInactive = req.query.include_inactive === 'true';
   const reasons = await prisma.rpa_outcome_reasons.findMany({
-    where: { is_active: true },
+    where: includeInactive ? {} : { is_active: true },
     orderBy: { sort_order: 'asc' },
   });
   return success(res, reasons, 'Outcome reasons retrieved successfully');
@@ -88,11 +101,13 @@ export const getOutcomePreview = catchAsync(async (req, res) => {
  * POST /api/pipeline/:id/outcome
  * Records Approve/Reject/Hold (or any configured outcome) on the current
  * stage. Approve auto-advances to the next active stage in the same call.
+ * If that next stage is optional, `skip_optional_next: true` lands on the
+ * stage after it instead, logging the bypassed stage as a skip.
  */
 export const setStageOutcome = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
-  const { outcome_key, reason_id, other_text, notes, email_subject, email_body } = req.body;
+  const { outcome_key, reason_id, other_text, notes, email_subject, email_body, skip_optional_next } = req.body;
   if (!outcome_key) throw new AppError('outcome_key is required.', 400);
 
   const result = await pipelineService.setStageOutcome(id, {
@@ -102,6 +117,7 @@ export const setStageOutcome = catchAsync(async (req, res) => {
     notes: notes || null,
     emailSubject: email_subject || null,
     emailBody: email_body || null,
+    skipOptionalNext: !!skip_optional_next,
     actedBy: req.user?.id,
   });
   return success(res, result, 'Stage outcome recorded successfully');
@@ -122,7 +138,7 @@ export const advanceStage = catchAsync(async (req, res) => {
 
 /**
  * POST /api/pipeline/:id/interview
- * Books the interview for the candidate's current scheduled round (tech1/tech2).
+ * Books the interview for the candidate's current scheduled round.
  */
 export const scheduleInterview = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -319,6 +335,121 @@ export const setFinalOutcome = catchAsync(async (req, res) => {
   return success(res, result, 'Closure recorded successfully');
 });
 
+// ── Offer round (Module 5) — record-only; letters live outside the ATS ──────
+
+/** Parses + validates :id, shared by the offer endpoints. */
+function pipelineIdFrom(req) {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  return id;
+}
+
+/**
+ * POST /api/pipeline/:id/offer/request-approval
+ * Asks for internal sign-off and arms the daily nudge.
+ */
+export const requestOfferApproval = catchAsync(async (req, res) => {
+  const result = await offerService.requestApproval(pipelineIdFrom(req), { actedBy: req.user?.id });
+  return success(res, result, 'Offer approval requested');
+});
+
+/**
+ * POST /api/pipeline/:id/offer/approve
+ * Records the internal sign-off.
+ */
+export const approveOffer = catchAsync(async (req, res) => {
+  const result = await offerService.approveOffer(pipelineIdFrom(req), { actedBy: req.user?.id });
+  return success(res, result, 'Offer approved');
+});
+
+/**
+ * POST /api/pipeline/:id/offer/share
+ * Records that HR shared the offer (soft gate — approval is not required).
+ */
+export const recordOfferShared = catchAsync(async (req, res) => {
+  const { joining_date, remarks } = req.body;
+  const result = await offerService.recordOfferShared(pipelineIdFrom(req), {
+    joiningDate: joining_date || null,
+    remarks: remarks || null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Offer recorded as shared');
+});
+
+/**
+ * POST /api/pipeline/:id/offer/decision
+ * Records the candidate's accept/reject.
+ */
+export const recordOfferDecision = catchAsync(async (req, res) => {
+  const { decision, remarks, amend } = req.body;
+  if (!decision) throw new AppError('decision is required.', 400);
+
+  const result = await offerService.recordCandidateDecision(pipelineIdFrom(req), {
+    decision,
+    remarks: remarks || null,
+    // Overwriting a decision that is already recorded needs an explicit
+    // `amend: true` from the UI, so a stale tab cannot flip an acceptance.
+    amend: amend === true,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Offer decision recorded');
+});
+
+// ── Documents round (Module 4) — recruiter-facing half ─────────────────────
+// The candidate-facing upload half is public, in document.controller.js.
+
+/**
+ * GET /api/pipeline/:id/documents
+ * The request + its checklist state, plus the configured checklist itself.
+ */
+export const getDocumentStatus = catchAsync(async (req, res) => {
+  const result = await documentService.getDocumentStatus(pipelineIdFrom(req));
+  return success(res, result, 'Document status retrieved');
+});
+
+/**
+ * POST /api/pipeline/:id/documents/request
+ * Raises the request and emails the candidate the no-login upload link.
+ */
+export const requestDocuments = catchAsync(async (req, res) => {
+  const result = await documentService.requestDocuments(pipelineIdFrom(req), { actedBy: req.user?.id });
+  return success(res, result, 'Document request sent');
+});
+
+/**
+ * POST /api/pipeline/:id/documents/remind
+ * Re-sends the upload link for an outstanding request.
+ */
+export const remindDocuments = catchAsync(async (req, res) => {
+  const result = await documentService.sendReminder(pipelineIdFrom(req), { actedBy: req.user?.id });
+  return success(res, result, 'Reminder sent');
+});
+
+/**
+ * POST /api/pipeline/documents/:docId/verify
+ * Marks one uploaded document as verified.
+ */
+export const verifyDocument = catchAsync(async (req, res) => {
+  const docId = parseInt(req.params.docId, 10);
+  if (Number.isNaN(docId)) throw new AppError('Invalid document id.', 400);
+
+  const result = await documentService.verifyDocument(docId, { actedBy: req.user?.id });
+  return success(res, result, 'Document verified');
+});
+
+/**
+ * POST /api/pipeline/documents/:docId/reject
+ * Rejects one document with a reason and re-requests it from the candidate.
+ */
+export const rejectDocument = catchAsync(async (req, res) => {
+  const docId = parseInt(req.params.docId, 10);
+  if (Number.isNaN(docId)) throw new AppError('Invalid document id.', 400);
+  const { reason } = req.body;
+
+  const result = await documentService.rejectDocument(docId, { reason, actedBy: req.user?.id });
+  return success(res, result, 'Document rejected and re-requested');
+});
+
 /**
  * POST /api/pipeline/:id/email
  * Ad-hoc per-candidate email override (RT ask, 2026-07-14).
@@ -363,6 +494,24 @@ export const createStage = catchAsync(async (req, res) => {
 export const updateStage = catchAsync(async (req, res) => {
   const { key } = req.params;
   const { label, sort_order, is_optional, is_active, stage_type } = req.body;
+
+  // Deactivating a stage that candidates are currently sitting on strands them:
+  // the stage engine resolves the next stage from the ACTIVE stage list, so
+  // their current stage is no longer in it and they can neither advance nor be
+  // approved. That used to fail silently; now the engine 409s, and this stops
+  // the situation arising in the first place — which matters much more now that
+  // an admin can do this from a screen rather than by hand-writing SQL.
+  if (is_active === false) {
+    const stranded = await prisma.rpa_candidate_pipeline.count({
+      where: { current_stage_key: key, final_outcome: null },
+    });
+    if (stranded > 0) {
+      throw new AppError(
+        `${stranded} open candidate${stranded === 1 ? ' is' : 's are'} currently on this stage. Move them on before deactivating it — deactivating now would leave them unable to advance.`,
+        409
+      );
+    }
+  }
 
   const stage = await prisma.rpa_pipeline_stages.update({
     where: { stage_key: key },

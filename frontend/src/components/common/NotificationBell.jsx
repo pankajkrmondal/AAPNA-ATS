@@ -1,89 +1,87 @@
 /**
- * NotificationBell — Header notification icon with unread badge and popover list.
- * Includes a Socket.io integration placeholder for real-time notifications.
+ * NotificationBell — header bell backed by rpa_notifications.
+ *
+ * Previously this held notifications in local React state: they vanished on
+ * refresh and never reached anyone who was logged out when the event fired.
+ * The list and unread count now come from /api/notifications, so a recruiter
+ * who was away still finds the work waiting. The socket is only a live nudge —
+ * the row is written first, so a missed push costs nothing.
  *
  * @param {{ style?: object }} props
  */
-import { useState, useEffect } from 'react';
-import { Badge, Popover, List, Typography, Button, Empty, Space } from 'antd';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Badge, Popover, List, Typography, Button, Empty, Space, Spin } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { getSocket } from '../../services/socket';
+import notificationService from '../../services/notificationService';
 
 const { Text } = Typography;
 
-export default function NotificationBell({ style }) {
-  const [notifications, setNotifications] = useState([]);
-  const [open, setOpen] = useState(false);
+const NOTIFICATIONS_KEY = ['notifications'];
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+/** Relative age for the list, e.g. "just now" / "12m" / "3h" / "2d". */
+function timeAgo(iso) {
+  if (!iso) return '';
+  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+export default function NotificationBell({ style }) {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: NOTIFICATIONS_KEY,
+    queryFn: () => notificationService.list({ limit: 30 }),
+    select: (res) => res?.data?.data ?? res?.data ?? { items: [], unread: 0 },
+    // A missed socket push shouldn't leave the bell stale forever.
+    refetchOnWindowFocus: true,
+  });
+
+  const notifications = data?.items || [];
+  const unreadCount = data?.unread ?? 0;
 
   /**
-   * Subscribe to real-time review notifications. The backend emits 'review:new'
-   * to recruiter/HR rooms whenever a duplicate resume needs review.
+   * Live push. The backend writes the row first and emits second, so this only
+   * decides how quickly it appears — never whether it survives.
    */
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return undefined;
 
-    const onReview = (job) => {
-      setNotifications((prev) => [{
-        id: `${job?.id || Date.now()}-${Date.now()}`,
-        title: 'Duplicate resume needs review',
-        description: `${job?.candidate_name || 'A candidate'}${job?.vendor_name ? ` — vendor: ${job.vendor_name}` : ''}`,
-        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        read: false,
-      }, ...prev].slice(0, 50));
-    };
+    const onNew = () => queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
+    socket.on('notification:new', onNew);
+    return () => socket.off('notification:new', onNew);
+  }, [queryClient]);
 
-    socket.on('review:new', onReview);
+  const markReadMutation = useMutation({
+    mutationFn: (id) => notificationService.markRead(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY }),
+  });
 
-    // Phase 3 M2 — the backend emits 'assessment:import_done' to the
-    // recruiter room whenever an Evalground bulk-CSV import commits, as a
-    // distinct event from the resume-review one above (doc 02 §5).
-    const onAssessmentImport = (summary) => {
-      setNotifications((prev) => [{
-        id: `assessment-import-${summary?.importId || Date.now()}`,
-        title: 'Evalground results imported',
-        description: `${summary?.matched ?? 0} matched${summary?.unmatched ? `, ${summary.unmatched} unmatched` : ''}${summary?.duplicateSkipped ? `, ${summary.duplicateSkipped} unchanged` : ''}`,
-        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        read: false,
-      }, ...prev].slice(0, 50));
-    };
-    socket.on('assessment:import_done', onAssessmentImport);
+  const markAllReadMutation = useMutation({
+    mutationFn: () => notificationService.markAllRead(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY }),
+  });
 
-    // Phase 3 M2 extension — the assessment deadline checker emits this,
-    // in-app only (no email), when an Evalground invite's deadline passes
-    // with no result landed yet.
-    const onDeadlineExpired = (payload) => {
-      setNotifications((prev) => [{
-        id: `assessment-deadline-${payload?.inviteId || Date.now()}`,
-        title: 'Evalground invite deadline passed',
-        description: `${payload?.candidateName || 'A candidate'}${payload?.position ? ` — ${payload.position}` : ''} — re-invite or upload the CSV.`,
-        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        read: false,
-      }, ...prev].slice(0, 50));
-    };
-    socket.on('assessment:deadline_expired', onDeadlineExpired);
-
-    return () => {
-      socket.off('review:new', onReview);
-      socket.off('assessment:import_done', onAssessmentImport);
-      socket.off('assessment:deadline_expired', onDeadlineExpired);
-    };
-  }, []);
-
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
-
-  const markOneRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
+  /** Mark read, then follow the deep link when the event carries one. */
+  const handleClick = (item) => {
+    if (!item.read_at) markReadMutation.mutate(item.id);
+    if (item.link_path) {
+      setOpen(false);
+      navigate(item.link_path);
+    }
   };
 
   const content = (
-    <div style={{ width: 360 }}>
+    <div style={{ width: 380 }}>
       {/* Header */}
       <div
         style={{
@@ -101,7 +99,8 @@ export default function NotificationBell({ style }) {
             type="link"
             size="small"
             icon={<CheckOutlined />}
-            onClick={markAllRead}
+            onClick={() => markAllReadMutation.mutate()}
+            loading={markAllReadMutation.isPending}
             style={{ fontSize: 12 }}
           >
             Mark all read
@@ -110,53 +109,62 @@ export default function NotificationBell({ style }) {
       </div>
 
       {/* List */}
-      {notifications.length === 0 ? (
+      {isLoading ? (
+        <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
+      ) : notifications.length === 0 ? (
         <Empty description="No notifications" style={{ padding: '24px 0' }} />
       ) : (
         <List
           dataSource={notifications}
-          style={{ maxHeight: 380, overflowY: 'auto' }}
-          renderItem={(item) => (
-            <List.Item
-              key={item.id}
-              onClick={() => markOneRead(item.id)}
-              style={{
-                cursor: 'pointer',
-                padding: '10px 8px',
-                borderRadius: 8,
-                background: item.read ? 'transparent' : 'var(--gold-subtle)',
-                transition: 'background 0.2s',
-                marginBottom: 2,
-              }}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size={6}>
-                    {!item.read && (
-                      <span
-                        style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          background: 'var(--gold)',
-                          display: 'inline-block',
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <Text strong={!item.read} style={{ fontSize: 13 }}>{item.title}</Text>
-                  </Space>
-                }
-                description={
-                  <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>{item.time}</Text>
-                  </div>
-                }
-              />
-            </List.Item>
-          )}
+          style={{ maxHeight: 400, overflowY: 'auto' }}
+          renderItem={(item) => {
+            const unread = !item.read_at;
+            return (
+              <List.Item
+                key={item.id}
+                onClick={() => handleClick(item)}
+                style={{
+                  cursor: 'pointer',
+                  padding: '10px 8px',
+                  borderRadius: 8,
+                  background: unread ? 'var(--gold-subtle)' : 'transparent',
+                  transition: 'background 0.2s',
+                  marginBottom: 2,
+                }}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space size={6}>
+                      {unread && (
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background: 'var(--gold)',
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      <Text strong={unread} style={{ fontSize: 13 }}>{item.title}</Text>
+                    </Space>
+                  }
+                  description={
+                    <div>
+                      {item.description && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>
+                      )}
+                      <br />
+                      <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
+                        {timeAgo(item.created_at)}
+                      </Text>
+                    </div>
+                  }
+                />
+              </List.Item>
+            );
+          }}
         />
       )}
     </div>

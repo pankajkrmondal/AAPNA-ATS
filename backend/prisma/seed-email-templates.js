@@ -1073,6 +1073,145 @@ const TEMPLATES = [
       is_active: true,
     },
   },
+
+  // ── Closure outcomes (Q12) ────────────────────────────────────────────
+  //
+  // Only THREE of the eight closure outcomes are seeded, and that is the point.
+  // The other five — joined, joined_and_left, backed_out, did_not_join,
+  // candidate_withdrawn — record something the candidate already lived through;
+  // they are listed in SILENT_FINAL_OUTCOMES in stageNotification.service.js and
+  // will never send however they are mapped. Seeding a "Congratulations" for
+  // someone who backed out is the exact failure that got the earlier
+  // map-closures-onto-the-generics shortcut rejected.
+  //
+  // These three ARE decisions the candidate is waiting on, so they get real copy.
+  // They resolve through GENERIC_FALLBACK_BY_OUTCOME rather than per-stage
+  // mapping rows, because a journey can be closed from ANY stage — a candidate
+  // withdrawing at Tech 2 never reaches the offer stage.
+  {
+    find: { name: 'Closure — Approved' },
+    data: {
+      name: 'Closure — Approved',
+      category: 'stage_outcome',
+      subject: 'Your application with AAPNA Infotech — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>We are pleased to confirm that your candidacy for <strong>{{position}}</strong> has been approved and your application is now complete.</p>
+<p>Our recruitment team will be in touch with everything you need for the next steps.</p>
+<p>Thank you for the time you have given us throughout this process.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Closure — Rejected' },
+    data: {
+      name: 'Closure — Rejected',
+      category: 'stage_outcome',
+      subject: 'Update on your application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for the time and effort you invested in our process for <strong>{{position}}</strong>.</p>
+<p>After careful consideration we will not be taking your application further on this occasion. This was a considered decision and not a reflection of your ability — we would genuinely welcome an application from you for a future opening that fits your profile.</p>
+<p>We wish you every success.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Closure — On Hold' },
+    data: {
+      name: 'Closure — On Hold',
+      category: 'stage_outcome',
+      subject: 'Update on your application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your patience through our process for <strong>{{position}}</strong>.</p>
+<p>Your application is currently <strong>on hold</strong>. This is not a rejection — the requirement itself is paused, and we will contact you as soon as there is a change.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+
+  // ── Templates that had only a code fallback (or none at all) ──────────
+  //
+  // Seeding these moves the copy out of JavaScript and onto the Email Templates
+  // page, so HR can reword them without a deploy. The code fallbacks stay in
+  // place as a safety net for an environment seeded later.
+  {
+    find: { name: 'Recruitment Process & Interview Stages' },
+    data: {
+      name: 'Recruitment Process & Interview Stages',
+      category: 'general',
+      subject: 'What to expect — our recruitment process for {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your interest in the <strong>{{position}}</strong> role at AAPNA Infotech. So you know what to expect, here is how our process runs:</p>
+<ol>
+  <li><strong>HR Screening</strong> — a short introductory conversation.</li>
+  <li><strong>Assessment</strong> — an online test covering aptitude and/or technical skills.</li>
+  <li><strong>Technical Rounds</strong> — one to three discussions with our engineering team, depending on the role.</li>
+  <li><strong>HR Round</strong> — role expectations, timing and compensation.</li>
+  <li><strong>Final Round</strong> — a closing conversation with our leadership team.</li>
+  <li><strong>Documents &amp; Offer</strong> — document collection, then the offer itself.</li>
+</ol>
+<p>Not every role includes every stage, and we will tell you in advance which ones apply to you. You will hear from us after each stage either way.</p>
+<p>If anything is unclear, just reply to this email.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Document Collection Request' },
+    data: {
+      name: 'Document Collection Request',
+      category: 'onboarding',
+      subject: 'Documents required to roll out your offer — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Congratulations! To roll out your offer for <strong>{{position}}</strong>, please share the documents listed on the secure link below — no login is needed.</p>
+<p><a href="{{upload_link}}" style="background:#7a922e;color:#ffffff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Upload your documents</a></p>
+<p>Please do this at the earliest so we can proceed.</p>
+<p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'upload_link'],
+      is_active: true,
+    },
+  },
+  {
+    // ONE template serves both the plain reminder and the post-rejection
+    // re-request. documentCollection.service.js always supplies
+    // rejected_document / rejection_reason — empty strings on a plain reminder —
+    // so the conditional block below simply renders blank in that case. They are
+    // NOT declared as required placeholders, or a reworded plain reminder that
+    // drops them would fail the PUT validator.
+    find: { name: 'Document Collection Reminder' },
+    data: {
+      name: 'Document Collection Reminder',
+      category: 'onboarding',
+      subject: 'Reminder: documents still needed — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>This is a gentle reminder that we are still waiting on the documents needed to roll out your offer for <strong>{{position}}</strong>.</p>
+<p>{{rejected_document}} {{rejection_reason}}</p>
+<p><a href="{{upload_link}}" style="background:#7a922e;color:#ffffff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Upload your documents</a></p>
+<p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'upload_link'],
+      is_active: true,
+    },
+  },
+  {
+    // INTERNAL — goes to the recruitment mailbox, never the candidate
+    // (offerApprovalNudge flow key). Q26: a daily chase, not a communication.
+    find: { name: 'Offer Approval Reminder' },
+    data: {
+      name: 'Offer Approval Reminder',
+      category: 'offer',
+      subject: 'Offer approval pending — {{candidate_name}} ({{position}})',
+      body_html: `<p>The offer for <strong>{{candidate_name}}</strong> ({{position}}) is still waiting for internal approval — requested {{waiting_days}} day(s) ago.</p>
+<p>Please approve it in the Pipeline Tracker so the offer can be shared with the candidate.</p>
+<p><a href="{{pipeline_link}}">Open the Pipeline Tracker</a></p>`,
+      placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
+      is_active: true,
+    },
+  },
 ];
 
 async function main() {

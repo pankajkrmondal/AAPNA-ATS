@@ -227,7 +227,7 @@ export default function VendorDashboard() {
       setStats(data.stats || EMPTY_STATS);
       setRecent(data.recentCandidates || []);
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load the dashboard. Please try again.');
+      setError(err?.response?.data?.message || err?.message || 'Failed to load the dashboard. Please try again.');
     } finally {
       setLoading(false);
     }

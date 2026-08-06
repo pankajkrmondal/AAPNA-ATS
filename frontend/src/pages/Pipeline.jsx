@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
@@ -330,6 +331,26 @@ export default function Pipeline() {
   const [nlRead, setNlRead] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
 
+  // Deep link: /pipeline?candidate=<pipelineId> opens straight into that
+  // candidate's drawer. This is how the notification bell hands off — clicking
+  // "Feedback received" should land on the candidate, not just the board.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const candidateParam = searchParams.get('candidate');
+  useEffect(() => {
+    const id = Number(candidateParam);
+    if (Number.isFinite(id) && id > 0) setOpenPipelineId(id);
+  }, [candidateParam]);
+
+  /** Closes the drawer and drops the deep-link param so a refresh doesn't reopen it. */
+  const closeDrawer = useCallback(() => {
+    setOpenPipelineId(null);
+    if (candidateParam) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('candidate');
+      setSearchParams(next, { replace: true });
+    }
+  }, [candidateParam, searchParams, setSearchParams]);
+
   const filters = {
     position,
     source,
@@ -482,7 +503,7 @@ export default function Pipeline() {
 
       <PipelineDrawer
         pipelineId={openPipelineId}
-        onClose={() => setOpenPipelineId(null)}
+        onClose={closeDrawer}
         onChanged={() => {
           refreshBoard();
           message.success('Pipeline updated.');

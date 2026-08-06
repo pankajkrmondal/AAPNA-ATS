@@ -13,6 +13,8 @@ import emailTemplateRoutes from './emailTemplate.routes.js';
 import trackingRoutes from './tracking.routes.js';
 import pipelineRoutes from './pipeline.routes.js';
 import scorecardRoutes from './scorecard.routes.js';
+import documentRoutes from './document.routes.js';
+import notificationRoutes from './notification.routes.js';
 
 const router = Router();
 
@@ -31,6 +33,8 @@ router.use('/pipeline', pipelineRoutes);
 router.use('/track', trackingRoutes);
 // Public interviewer scorecard link (no auth — see scorecard.routes.js).
 router.use('/scorecard', scorecardRoutes);
+// Public candidate document-upload link (no auth — see document.routes.js).
+router.use('/documents', documentRoutes);
 
 // ── Placeholder routes (to be implemented in later phases) ────────────
 // Each placeholder returns a friendly "coming soon" message so the
@@ -47,7 +51,7 @@ const placeholder = (moduleName) => (_req, res) => {
 router.use('/mrf', mrfRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/email', emailTemplateRoutes);
-router.use('/notifications', Router().get('/', placeholder('Notifications')));
+router.use('/notifications', notificationRoutes);
 router.use('/zeko', Router().get('/', placeholder('Zeko AI')));
 router.use('/analytics', Router().get('/', placeholder('Analytics')));
 router.use('/resumes', Router().get('/', placeholder('Resumes')));

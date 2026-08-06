@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
+import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
 
 const { Title, Text } = Typography;
 
@@ -120,7 +121,7 @@ export default function Settings() {
         message.success(res.data?.message || 'Interview reminders updated.');
       }
     } catch (err) {
-      message.error(err?.response?.data?.message || 'Failed to update interview reminders.');
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update interview reminders.');
       setInterviewCfg(interviewCfg); // roll back the optimistic change
     } finally {
       setInterviewSaving(false);
@@ -602,6 +603,11 @@ export default function Settings() {
           )}
         </Form>
       </Card>
+
+      {/* Pipeline stages / outcomes / reasons — admin only, matching the
+          requireAdmin gate the API enforces. Hidden rather than disabled for
+          non-admins: there is nothing here a recruiter can act on. */}
+      {isAdmin && <PipelineConfigPanel />}
     </div>
   );
 }

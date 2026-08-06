@@ -33,12 +33,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
   FileTextOutlined, ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  SendOutlined, UnderlineOutlined, UserOutlined,
+  SendOutlined, StepForwardOutlined, UnderlineOutlined, UserOutlined,
 } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
 import dayjs from 'dayjs';
@@ -292,8 +292,15 @@ function isZekoStageKey(key) {
 
 /** Rounds the recruiter books directly (interviewer comes from the MRF).
  * Mirrors SCHEDULABLE_STAGES in backend/src/services/interviewSchedule.service.js. */
+const SCHEDULABLE_STAGE_KEYS = ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo', 'client'];
 function isSchedulableStageKey(key) {
-  return key === 'tech1' || key === 'tech2';
+  return SCHEDULABLE_STAGE_KEYS.includes(key);
+}
+
+/** Rounds booked WITHOUT the system inviting anyone — the recruiter coordinates
+ * them by hand. Mirrors `autoInvite: false` in interviewSchedule.service.js. */
+function stageSendsInvites(key) {
+  return key !== 'client';
 }
 
 /**
@@ -412,10 +419,9 @@ function fmtDateTime(d) {
  * Derives the real 4-stage pipeline for one stage, from whatever real data
  * exists — stage events, (for zeko_hr) the real Zeko job-assignment/schedule
  * row from Candidate Screening's existing flow, and (for both Zeko stages)
- * synced scores. No scheduling/scorecard/docs/offer sub-state modeling yet
- * for other stage types (Modules 2/3), so those stay honestly "not available
- * yet" on stages 1–3; stage 4 (decision) is always driven by the real
- * outcome event, for every stage type.
+ * synced scores. The document + offer stages have no sub-state data model yet,
+ * so they stay honestly "not available yet" on stages 1–3; stage 4 (decision)
+ * is always driven by the real outcome event, for every stage type.
  *
  * zeko_fn intentionally does NOT get the same real invite/schedule treatment
  * as zeko_hr — rpa_zeko_candidate_pipeline.stage is hard-coded 'hr' every­
@@ -427,13 +433,14 @@ function fmtDateTime(d) {
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite, offer, documents }) {
   const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
   const emails = [];
   let showScheduleButton = false;
   let showInviteButton = false;
+  let showDocumentActions = false;
 
   let s1 = { state: 'pending', detail: 'Not sent yet' };
   let s2 = { state: 'pending', detail: 'Not started yet' };
@@ -535,10 +542,11 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
     // Technical Rounds 1 & 2 — real booking via rpa_interview_schedule. WHO
     // interviews comes from the MRF (first/second_technical_round); the
     // recruiter supplies the mailbox when booking.
+    const autoInvites = stageSendsInvites(stage.stage_key);
     if (interviewSchedule) {
       s2 = {
         state: 'done',
-        detail: `Scheduled · ${fmtDateTime(interviewSchedule.scheduled_start_at)}${interviewSchedule.interviewer_name ? ` with ${interviewSchedule.interviewer_name}` : ''}`,
+        detail: `${autoInvites ? 'Scheduled' : 'Recorded (coordinated manually)'} · ${fmtDateTime(interviewSchedule.scheduled_start_at)}${interviewSchedule.interviewer_name ? ` with ${interviewSchedule.interviewer_name}` : ''}`,
       };
       if (interviewSchedule.invite_sent_at) {
         const panelSize = (interviewSchedule.interviewer_email || '').split(',').filter((s) => s.trim()).length;
@@ -601,11 +609,80 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
       s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
       showInviteButton = isCurrent;
     }
+  } else if (stage.stage_key === 'offer') {
+    // Record-only offer (Q3): the letter is prepared and shared by HR outside
+    // the ATS, so these segments track the internal approval, the share, and
+    // the candidate's answer — never a document.
+    if (offer?.approval_status === 'approved') {
+      s1 = { state: 'done', detail: `Approved internally${offer.approved_at ? ` · ${fmtDateTime(offer.approved_at)}` : ''}` };
+    } else if (offer?.approval_requested_at) {
+      s1 = { state: 'active', detail: `Requested ${fmtDateTime(offer.approval_requested_at)} — awaiting recruiter sign-off` };
+    } else if (enteredEvent) {
+      s1 = { state: 'active', detail: 'Internal approval not requested yet' };
+    }
+
+    if (offer?.shared_at) {
+      s2 = {
+        state: 'done',
+        detail: `Shared ${fmtDateTime(offer.shared_at)}${offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}`,
+      };
+    } else if (offer?.approval_status === 'approved') {
+      s2 = { state: 'active', detail: 'Approved — not yet shared with the candidate' };
+    } else if (enteredEvent) {
+      s2 = { state: 'pending', detail: 'Awaiting internal approval before the offer goes out' };
+    }
+
+    if (offer?.candidate_decision === 'accepted' || offer?.candidate_decision === 'rejected') {
+      s3 = {
+        state: offer.candidate_decision === 'accepted' ? 'done' : 'rejected',
+        detail: `Candidate ${offer.candidate_decision}${offer.decision_at ? ` · ${fmtDateTime(offer.decision_at)}` : ''}`,
+      };
+    } else if (offer?.shared_at) {
+      s3 = { state: 'active', detail: 'Awaiting the candidate’s decision' };
+    } else if (enteredEvent) {
+      s3 = { state: 'pending', detail: 'Awaiting the offer to be shared' };
+    }
+  } else if (stage.stage_key === 'documents') {
+    const req = documents?.request;
+    const docs = req?.rpa_candidate_documents || [];
+    const uploaded = docs.filter((d) => d.status !== 'pending').length;
+    const verified = docs.filter((d) => d.status === 'verified').length;
+    const rejected = docs.filter((d) => d.status === 'rejected').length;
+
+    if (req) {
+      s1 = { state: 'done', detail: `Request emailed to the candidate · ${fmtDateTime(req.requested_at)} (vendor not copied — PII)` };
+      if (req.last_reminded_at) {
+        emails.push(`Document reminder → candidate · ${fmtDateTime(req.last_reminded_at)}${req.reminder_count > 1 ? ` (${req.reminder_count} sent)` : ''}`);
+      }
+      emails.push(`Document request → candidate only · ${fmtDateTime(req.requested_at)}`);
+    } else if (enteredEvent) {
+      s1 = { state: 'active', detail: 'Document request not sent yet' };
+    }
+
+    if (!req) {
+      s2 = { state: 'pending', detail: 'Send the document request to start collection' };
+      s3 = { state: 'pending', detail: 'Awaiting the candidate’s uploads' };
+    } else {
+      s2 = uploaded === docs.length && docs.length > 0
+        ? { state: 'done', detail: `All ${docs.length} document(s) uploaded` }
+        : { state: 'active', detail: uploaded === 0 ? 'No uploads yet' : `${uploaded} of ${docs.length} document(s) uploaded` };
+
+      if (docs.length > 0 && verified === docs.length) {
+        s3 = { state: 'done', detail: 'All documents verified' };
+      } else if (uploaded > 0) {
+        s3 = {
+          state: 'active',
+          detail: `${verified} of ${docs.length} verified${rejected ? ` — ${rejected} rejected, re-requested` : ''}`,
+        };
+      } else {
+        s3 = { state: 'pending', detail: 'Awaiting uploads to verify' };
+      }
+    }
+
+    showDocumentActions = isCurrent && !outcomeEvent;
   } else if (enteredEvent) {
-    // Remaining stage types have no real scheduling/scorecard/docs/offer data
-    // model yet — honestly say so rather than fabricating a state.
-    s2 = { state: 'pending', detail: 'Not available yet — needs Module 2/3 (scheduling/scorecards)' };
-    s3 = { state: 'pending', detail: 'Not available yet — needs Module 2/3 (scheduling/scorecards)' };
+    s2 = { state: 'pending', detail: 'Not tracked for this stage type' };
+    s3 = { state: 'pending', detail: 'Not tracked for this stage type' };
   }
 
   if (outcomeEvent) {
@@ -636,6 +713,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
     emails,
     showScheduleButton,
     showInviteButton,
+    showDocumentActions,
   };
 }
 
@@ -650,6 +728,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const [notes, setNotes] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  // Approving into an optional stage (Tech 3, Client Interview): recruiter picks
+  // whether to send the candidate there or skip straight past it, right in the
+  // same Approve modal — defaults to NOT skipping (the safer, current behavior).
+  const [skipOptionalNext, setSkipOptionalNext] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleJobId, setScheduleJobId] = useState(null);
   const [scheduleDates, setScheduleDates] = useState(null);
@@ -688,6 +770,13 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const [schedEmailForKey, setSchedEmailForKey] = useState(null);
   const [cxlEmailForKey, setCxlEmailForKey] = useState(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  // Offer round (Module 5) — the "record offer shared" and closure modals.
+  const [offerShareOpen, setOfferShareOpen] = useState(false);
+  const [offerJoiningDate, setOfferJoiningDate] = useState(null);
+  const [offerRemarks, setOfferRemarks] = useState('');
+  const [closureOpen, setClosureOpen] = useState(false);
+  const [closureOutcome, setClosureOutcome] = useState(null);
+  const [closureNotes, setClosureNotes] = useState('');
 
   const open = !!pipelineId;
 
@@ -742,6 +831,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       return res.data?.data || res.data;
     },
     enabled: open,
+  });
+
+  // Phase 3 M4 — the document request + checklist state for this journey.
+  const { data: documentsData } = useQuery({
+    queryKey: ['pipeline-documents', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getDocumentStatus(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: open && !!pipelineId,
   });
 
   // Deadline-days default, for the invite compose modal's template text.
@@ -884,6 +983,88 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     },
   });
 
+  /**
+   * The Documents round's actions (Module 4). Every one of these returns the
+   * refreshed document status, so the panel re-renders from the server rather
+   * than a locally-guessed state.
+   */
+  const documentMutation = useMutation({
+    mutationFn: ({ action, docId, reason }) => {
+      if (action === 'request') return pipelineService.requestDocuments(pipelineId);
+      if (action === 'remind') return pipelineService.remindDocuments(pipelineId);
+      if (action === 'verify') return pipelineService.verifyDocument(docId);
+      return pipelineService.rejectDocument(docId, reason);
+    },
+    onSuccess: (_res, { successMessage }) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-documents', pipelineId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      message.success(successMessage);
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to update documents.');
+    },
+  });
+
+  /**
+   * The Offer round's actions (Module 5). All record-only: the appointment
+   * letter itself is prepared and shared by HR outside the ATS, so nothing here
+   * generates or stores one.
+   */
+  const offerMutation = useMutation({
+    mutationFn: ({ action, payload }) => {
+      if (action === 'request-approval') return pipelineService.requestOfferApproval(pipelineId);
+      if (action === 'approve') return pipelineService.approveOffer(pipelineId);
+      if (action === 'share') return pipelineService.recordOfferShared(pipelineId, payload);
+      return pipelineService.recordOfferDecision(pipelineId, payload);
+    },
+    onSuccess: (_res, { successMessage }) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      setOfferShareOpen(false);
+      // Clear the form so reopening the modal doesn't show the previous values.
+      setOfferJoiningDate(null);
+      setOfferRemarks('');
+      message.success(successMessage);
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to update the offer.');
+    },
+  });
+
+  const closureMutation = useMutation({
+    mutationFn: () => pipelineService.setFinalOutcome(pipelineId, {
+      final_outcome_key: closureOutcome,
+      notes: closureNotes || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      setClosureOpen(false);
+      setClosureNotes('');
+      setClosureOutcome(null);
+      message.success('Candidate record closed.');
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to close the record.');
+    },
+  });
+
+  // Optional stages (Tech 3, Client Interview) can be advanced past without
+  // recording an outcome — mirrors the backend's advanceStage(skip:true)
+  // (02-BUSINESS-DESIGN.md §2 rule 2). No outcome email is sent for a skip.
+  const skipStageMutation = useMutation({
+    mutationFn: () => pipelineService.advanceStage(pipelineId, { skip: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      message.success('Round skipped — advanced to the next stage.');
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to skip this round.');
+    },
+  });
+
   // Real assign+schedule — the same POST /screening/analytics/assign and
   // /schedule endpoints Candidate Screening's drawer calls (screeningService.js),
   // just invoked from the Tracker instead of duplicating a second recruiter
@@ -980,7 +1161,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setSchedEmailForKey(null);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to save the interview.');
+      message.error(err?.response?.data?.message || err?.message || 'Failed to save the interview.');
     },
   });
 
@@ -1000,7 +1181,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setCxlEmailForKey(null);
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || 'Failed to cancel the interview.');
+      message.error(err?.response?.data?.message || err?.message || 'Failed to cancel the interview.');
     },
   });
 
@@ -1193,6 +1374,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const isRejectOrHold = decisionOutcome === 'rejected' || decisionOutcome === 'hold';
   const selectedReason = reasons.find((r) => r.id === reasonId);
 
+  // Approving the current stage would normally auto-advance to allStages[currentIdx + 1].
+  // When that next stage is optional (Tech 3, Client Interview), the modal offers a choice
+  // instead of silently walking onto it — send the candidate there, or skip straight to
+  // the stage after it (allStages[currentIdx + 2]).
+  const nextStageIfApproved = allStages[currentIdx + 1];
+  const stageAfterOptionalNext = allStages[currentIdx + 2];
+  const showOptionalNextChoice = decisionOutcome === 'approved' && !!nextStageIfApproved?.is_optional;
+
   // Opens the "Record round outcome" modal — mirrors the prototype's
   // decision modal: pick Approve/Hold/Reject, (for Reject/Hold) a mandatory
   // reason, and an editable preview of the real outcome email before send.
@@ -1208,6 +1397,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     setNotes('');
     setEmailSubject('');
     setEmailBody('');
+    setSkipOptionalNext(false);
     setOutcomeModalOpen(true);
   };
 
@@ -1227,6 +1417,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       notes: notes.trim() || undefined,
       email_subject: emailSubject,
       email_body: emailBody,
+      skip_optional_next: showOptionalNextChoice ? skipOptionalNext : undefined,
     });
   };
 
@@ -1242,7 +1433,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     }
 
     const isCurrent = stage.stage_key === pipeline.current_stage_key;
-    const { segments: segs, emails, showScheduleButton, showInviteButton } = buildPipelineSegments({
+    const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
@@ -1259,6 +1450,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       scorecardSubmitted: (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key),
       assessmentResult: stage.stage_key === 'assessment' ? assessmentResultData?.result : null,
       assessmentInvite: stage.stage_key === 'assessment' ? assessmentInviteData : null,
+      offer: stage.stage_key === 'offer' ? data?.offer : null,
+      documents: stage.stage_key === 'documents' ? documentsData : null,
     });
     const lastStageEvent = stageEvents[stageEvents.length - 1];
 
@@ -1328,6 +1521,38 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                         <Button size="small" type="link" loading={inviteMutation.isPending}>Mark as sent manually</Button>
                       </Popconfirm>
                     </Space>
+                  </div>
+                )}
+                {i === 0 && showDocumentActions && !documentsData?.request && (
+                  <div className="cp-pipeline-step__extra">
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<SendOutlined />}
+                      loading={documentMutation.isPending}
+                      onClick={() => documentMutation.mutate({
+                        action: 'request',
+                        successMessage: 'Document request sent — a secure upload link was emailed to the candidate.',
+                      })}
+                    >
+                      Send document request
+                    </Button>
+                  </div>
+                )}
+                {i === 2 && showDocumentActions && documentsData?.request && (
+                  <div className="cp-pipeline-step__extra">
+                    <DocumentChecklist
+                      documents={documentsData.request.rpa_candidate_documents}
+                      pending={documentMutation.isPending}
+                      onVerify={(docId) => documentMutation.mutate({ action: 'verify', docId, successMessage: 'Document verified.' })}
+                      onReject={(docId, reason) => documentMutation.mutate({
+                        action: 'reject',
+                        docId,
+                        reason,
+                        successMessage: 'Rejected — a re-request was emailed to the candidate.',
+                      })}
+                      onRemind={() => documentMutation.mutate({ action: 'remind', successMessage: 'Reminder sent.' })}
+                    />
                   </div>
                 )}
                 {i === 1 && showScheduleButton && stage.stage_key === 'zeko_hr' && (
@@ -1573,7 +1798,25 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
 
           {renderStagePanel()}
 
-          {isCurrentStageSelected && !pipeline.final_outcome && (
+          {/* The Offer round has its own lifecycle (approval → shared → decision
+              → close) instead of the generic Approve/Reject/Hold bar. */}
+          {isCurrentStageSelected && !pipeline.final_outcome && selectedStageKey === 'offer' && (
+            <OfferActions
+              offer={data?.offer}
+              pending={offerMutation.isPending}
+              onRequestApproval={() => offerMutation.mutate({ action: 'request-approval', successMessage: 'Approval requested — a daily reminder is armed until it is approved.' })}
+              onApprove={() => offerMutation.mutate({ action: 'approve', successMessage: 'Offer approved internally.' })}
+              onOpenShare={() => setOfferShareOpen(true)}
+              onDecision={(decision) => offerMutation.mutate({
+                action: 'decision',
+                payload: { decision },
+                successMessage: `Offer marked ${decision}.`,
+              })}
+              onClose={() => setClosureOpen(true)}
+            />
+          )}
+
+          {isCurrentStageSelected && !pipeline.final_outcome && selectedStageKey !== 'offer' && (
             <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
               <Title level={5} style={{ fontSize: 14 }}>Record outcome — current stage</Title>
               {selectedStageKey === 'assessment' && assessmentResultData?.result?.overall_result && (
@@ -1599,6 +1842,20 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                   </Button>
                 ))}
               </Space>
+              {allStages[currentIdx]?.is_optional && (
+                <div style={{ marginBottom: 12 }}>
+                  <Popconfirm
+                    title="Skip this optional round?"
+                    description={`Skip ${allStages[currentIdx].label} and move straight to ${allStages[currentIdx + 1]?.label || 'the next stage'}? This is logged and cannot be undone from here.`}
+                    onConfirm={() => skipStageMutation.mutate()}
+                    okText="Yes, skip it"
+                  >
+                    <Button size="small" type="link" icon={<StepForwardOutlined />} loading={skipStageMutation.isPending} style={{ paddingLeft: 0 }}>
+                      Skip this optional round
+                    </Button>
+                  </Popconfirm>
+                </div>
+              )}
               <Alert
                 type="info"
                 showIcon
@@ -1630,6 +1887,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           <Text type="secondary">
             {pipeline.rpa_shortlisted_candidates?.candidate_name} · {allStages[selectedIdx]?.label}
           </Text>
+          {showOptionalNextChoice && (
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Next stage — {nextStageIfApproved.label} is optional</Text>
+              <Radio.Group
+                style={{ display: 'block', marginTop: 6 }}
+                value={skipOptionalNext}
+                onChange={(e) => setSkipOptionalNext(e.target.value)}
+              >
+                <Space direction="vertical">
+                  <Radio value={false}>Send to {nextStageIfApproved.label}</Radio>
+                  <Radio value={true}>Skip straight to {stageAfterOptionalNext?.label || 'the next stage'}</Radio>
+                </Space>
+              </Radio.Group>
+            </div>
+          )}
           {isRejectOrHold && (
             <div>
               <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text> (mandatory for Reject / Hold)</Text>
@@ -1794,7 +2066,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       footer={[
         <Button key="cancel" onClick={() => setInterviewOpen(false)}>Cancel</Button>,
         <Button key="confirm" type="primary" icon={<CalendarOutlined />} onClick={submitInterview} loading={interviewMutation.isPending}>
-          {interviewMode === 'reschedule' ? 'Reschedule & notify' : 'Create invite'}
+          {!stageSendsInvites(selectedStageKey)
+            ? 'Record booking'
+            : interviewMode === 'reschedule' ? 'Reschedule & notify' : 'Create invite'}
         </Button>,
       ]}
     >
@@ -1803,6 +2077,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           <Text type="secondary">
             {pipeline.rpa_shortlisted_candidates?.candidate_name} · {allStages[currentIdx]?.label} · {interviewDuration}-minute interview
           </Text>
+
+          {/* The client is external: the system never emails or invites them
+              (Q14). Booking here only records the round for tracking. */}
+          {!stageSendsInvites(selectedStageKey) && (
+            <Alert
+              type="info"
+              showIcon
+              message="This round is coordinated manually — saving records the booking only. No Teams meeting is created and no invite email is sent to the candidate or the client."
+            />
+          )}
 
           {/* Reschedule: make it explicit that the existing slot is being cancelled. */}
           {interviewMode === 'reschedule' && interviewSchedule && (
@@ -1882,31 +2166,36 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           </div>
 
           {/* Editable emails — prefilled from the seeded templates, tweakable
-              before send, exactly like the Approve outcome flow. */}
-          <div>
-            <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
-              Emails to send <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
-            </Text>
-            <InterviewEmailEditors
-              state={schedEmail}
-              onChange={(patch) => setSchedEmail((s) => ({ ...s, ...patch }))}
-              candidateLabel={interviewMode === 'reschedule' ? 'Reschedule notice → candidate' : 'Invitation → candidate'}
-              panelLabel={interviewMode === 'reschedule' ? 'Reschedule notice → interviewer(s)' : 'Invitation → interviewer(s)'}
-              candidateWrapper={schedPreview?.candidate?.wrapper}
-              panelWrapper={schedPreview?.panel?.wrapper}
-              ready={!!schedPreview && (schedEmail.touched || schedEmailForKey === schedPreview)}
-              key={`sched-${schedEmailForKey === schedPreview ? 'ready' : 'loading'}`}
-            />
-          </div>
+              before send, exactly like the Approve outcome flow. Hidden on
+              manually-coordinated rounds, which send nothing. */}
+          {stageSendsInvites(selectedStageKey) && (
+            <>
+              <div>
+                <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
+                  Emails to send <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
+                </Text>
+                <InterviewEmailEditors
+                  state={schedEmail}
+                  onChange={(patch) => setSchedEmail((s) => ({ ...s, ...patch }))}
+                  candidateLabel={interviewMode === 'reschedule' ? 'Reschedule notice → candidate' : 'Invitation → candidate'}
+                  panelLabel={interviewMode === 'reschedule' ? 'Reschedule notice → interviewer(s)' : 'Invitation → interviewer(s)'}
+                  candidateWrapper={schedPreview?.candidate?.wrapper}
+                  panelWrapper={schedPreview?.panel?.wrapper}
+                  ready={!!schedPreview && (schedEmail.touched || schedEmailForKey === schedPreview)}
+                  key={`sched-${schedEmailForKey === schedPreview ? 'ready' : 'loading'}`}
+                />
+              </div>
 
-          <Alert
-            type="info"
-            showIcon
-            icon={<MailOutlined />}
-            message={interviewMode === 'reschedule'
-              ? 'Both parties are emailed the new time when you reschedule.'
-              : 'Both emails are sent from the recruitment mailbox when you create the invite.'}
-          />
+              <Alert
+                type="info"
+                showIcon
+                icon={<MailOutlined />}
+                message={interviewMode === 'reschedule'
+                  ? 'Both parties are emailed the new time when you reschedule.'
+                  : 'Both emails are sent from the recruitment mailbox when you create the invite.'}
+              />
+            </>
+          )}
         </Space>
       )}
     </Modal>
@@ -2017,7 +2306,251 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       sending={inviteMutation.isPending}
       onSend={(payload) => inviteMutation.mutate(payload)}
     />
+
+    {/* Offer round — record what HR shared outside the ATS. */}
+    <Modal
+      open={offerShareOpen}
+      onCancel={() => setOfferShareOpen(false)}
+      title="Record offer as shared"
+      width={480}
+      okText="Record it"
+      confirmLoading={offerMutation.isPending}
+      onOk={() => offerMutation.mutate({
+        action: 'share',
+        payload: {
+          joining_date: offerJoiningDate ? offerJoiningDate.format('YYYY-MM-DD') : null,
+          remarks: offerRemarks || null,
+        },
+        successMessage: 'Offer recorded as shared.',
+      })}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="HR shares the appointment letter from their own mailbox. This only records that it went out — no letter is stored or sent by the ATS."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Proposed joining date</Text>
+          <DatePicker
+            style={{ width: '100%', marginTop: 4 }}
+            value={offerJoiningDate}
+            onChange={setOfferJoiningDate}
+          />
+        </div>
+        <TextArea rows={2} placeholder="Remarks (optional)" value={offerRemarks} onChange={(e) => setOfferRemarks(e.target.value)} />
+      </Space>
+    </Modal>
+
+    {/* Closure — the 8 final statuses (Q12). Ends the journey. */}
+    <Modal
+      open={closureOpen}
+      onCancel={() => setClosureOpen(false)}
+      title="Close candidate record"
+      width={480}
+      okText="Close the record"
+      okButtonProps={{ danger: true, disabled: !closureOutcome }}
+      confirmLoading={closureMutation.isPending}
+      onOk={() => closureMutation.mutate()}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        {/* Deliberately does NOT promise an email: the 8 closure outcomes have
+            no generic fallback template (stageNotification.service.js only
+            covers approved/rejected/hold), so one is sent only where an admin
+            has mapped a template to that status. */}
+        <Alert
+          type="warning"
+          showIcon
+          message="This ends the journey and removes the candidate from the active board. A closure email is sent only if a template is mapped to the status you pick."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Final status <Text type="danger">*</Text></Text>
+          <Select
+            style={{ width: '100%', marginTop: 4 }}
+            placeholder="Pick the final status"
+            value={closureOutcome}
+            onChange={setClosureOutcome}
+            options={CLOSURE_OPTIONS}
+          />
+        </div>
+        <TextArea rows={2} placeholder="Notes (optional)" value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} />
+      </Space>
+    </Modal>
     </>
+  );
+}
+
+/** How each document state reads in the verification table. */
+const DOC_TAG = {
+  pending: { color: 'default', label: 'Not uploaded' },
+  uploaded: { color: 'blue', label: 'Uploaded — review' },
+  verified: { color: 'green', label: 'Verified' },
+  rejected: { color: 'red', label: 'Rejected — re-requested' },
+};
+
+/**
+ * DocumentChecklist — HR's verification view of what the candidate sent.
+ *
+ * Verify/Reject appear only on an uploaded document: a pending one has nothing
+ * to judge, and a verified/rejected one has already been judged. Rejecting takes
+ * a mandatory reason because it is emailed to the candidate as the re-request.
+ */
+function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemind }) {
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const submitReject = () => {
+    if (!rejectReason.trim()) return;
+    onReject(rejectingId, rejectReason.trim());
+    setRejectingId(null);
+    setRejectReason('');
+  };
+
+  return (
+    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+      {documents.map((doc) => {
+        const tag = DOC_TAG[doc.status] || DOC_TAG.pending;
+        return (
+          <div key={doc.id} style={{ borderBottom: '1px solid var(--ant-color-border)', paddingBottom: 6 }}>
+            <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+              <Space size={6} wrap>
+                <Text style={{ fontSize: 12.5 }}>{doc.rpa_document_checklist_items?.label || 'Document'}</Text>
+                <Tag color={tag.color} style={{ marginInlineEnd: 0 }}>{tag.label}</Tag>
+              </Space>
+              {doc.status === 'uploaded' && (
+                <Space size={4}>
+                  {doc.file_url && (
+                    <Button size="small" type="link" href={doc.file_url} target="_blank" rel="noreferrer" style={{ paddingInline: 4 }}>
+                      Open
+                    </Button>
+                  )}
+                  <Button size="small" loading={pending} onClick={() => onVerify(doc.id)}>Verify</Button>
+                  <Button size="small" danger onClick={() => { setRejectingId(doc.id); setRejectReason(''); }}>Reject…</Button>
+                </Space>
+              )}
+            </Space>
+            {doc.status === 'rejected' && doc.remarks ? (
+              <Text type="secondary" style={{ fontSize: 11.5 }}>Reason sent to candidate: {doc.remarks}</Text>
+            ) : null}
+          </div>
+        );
+      })}
+
+      <Button size="small" type="link" icon={<MailOutlined />} loading={pending} onClick={onRemind} style={{ paddingLeft: 0 }}>
+        Send reminder
+      </Button>
+      <Text type="secondary" style={{ fontSize: 11.5 }}>
+        The candidate uploads via a secure link — no login. Vendors never see documents or these emails.
+        Completeness is automatic; authenticity stays with the recruitment team.
+      </Text>
+
+      <Modal
+        open={rejectingId !== null}
+        onCancel={() => setRejectingId(null)}
+        title="Reject document"
+        width={440}
+        okText="Reject & re-request"
+        okButtonProps={{ danger: true, disabled: !rejectReason.trim() }}
+        onOk={submitReject}
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          <Alert type="info" showIcon message="The reason is emailed to the candidate so they know exactly what to re-upload." />
+          <TextArea
+            rows={3}
+            placeholder="e.g. The June payslip is missing — please upload all three months."
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+        </Space>
+      </Modal>
+    </Space>
+  );
+}
+
+/** The 8 closure statuses (Q12), in the order RT reads them. */
+const CLOSURE_OPTIONS = [
+  { value: 'joined', label: 'Joined' },
+  { value: 'candidate_withdrawn', label: 'Candidate Withdrawn' },
+  { value: 'did_not_join', label: 'Did Not Join' },
+  { value: 'backed_out', label: 'Backed Out' },
+  { value: 'joined_and_left', label: 'Joined and Left' },
+  { value: 'closure_approved', label: 'Approved' },
+  { value: 'closure_rejected', label: 'Rejected' },
+  { value: 'closure_on_hold', label: 'On Hold' },
+];
+
+/**
+ * OfferActions — the Offer round's own action bar, which replaces the generic
+ * Approve/Reject/Hold buttons every other stage gets.
+ *
+ * Record-only (Q3): HR prepares and shares the appointment letter entirely
+ * outside the ATS, so this tracks the internal approval, the share date, and
+ * the candidate's answer — never a letter file.
+ *
+ * The approval is a SOFT gate (Q26): "Record offer shared" stays available even
+ * when approval was never recorded, so an exceptional case is never blocked.
+ */
+function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShare, onDecision, onClose }) {
+  const approved = offer?.approval_status === 'approved';
+  const awaitingApproval = offer?.approval_status === 'pending' && !!offer?.approval_requested_at;
+  const shared = !!offer?.shared_at;
+  const decided = shared && offer?.candidate_decision !== 'pending';
+
+  return (
+    <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
+      <Title level={5} style={{ fontSize: 14 }}>Offer</Title>
+
+      <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        {!offer && (
+          <Text type="secondary" style={{ fontSize: 12.5 }}>
+            Record-only: HR shares the letter from its own mailbox. Request internal approval first.
+          </Text>
+        )}
+        {awaitingApproval && (
+          <Text type="warning" style={{ fontSize: 12.5 }}>
+            Requested — awaiting recruiter sign-off. A daily reminder goes out until it is approved.
+          </Text>
+        )}
+        {approved && !shared && (
+          <Text type="secondary" style={{ fontSize: 12.5 }}>
+            Approved internally{offer.approved_at ? ` · ${new Date(offer.approved_at).toLocaleDateString()}` : ''} — not yet shared with the candidate.
+          </Text>
+        )}
+        {shared && (
+          <Text type="secondary" style={{ fontSize: 12.5 }}>
+            Shared {new Date(offer.shared_at).toLocaleDateString()}
+            {offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}
+            {decided ? ` · candidate ${offer.candidate_decision}` : ' · awaiting the candidate’s decision'}
+          </Text>
+        )}
+
+        <Space wrap>
+          {!offer || (!approved && !awaitingApproval) ? (
+            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onRequestApproval}>
+              Request internal approval
+            </Button>
+          ) : null}
+          {awaitingApproval && (
+            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onApprove}>
+              Mark approved
+            </Button>
+          )}
+          {!shared && (
+            <Button loading={pending} onClick={onOpenShare}>Record offer shared</Button>
+          )}
+          {shared && !decided && (
+            <>
+              <Button icon={<CheckOutlined />} loading={pending} onClick={() => onDecision('accepted')}>Mark accepted</Button>
+              <Button danger icon={<CloseOutlined />} loading={pending} onClick={() => onDecision('rejected')}>Mark rejected</Button>
+            </>
+          )}
+        </Space>
+
+        <div>
+          <Button danger size="small" onClick={onClose}>Close candidate record…</Button>
+        </div>
+      </Space>
+    </div>
   );
 }
 
@@ -2061,6 +2594,40 @@ function TeamsDetails({ schedule }) {
   );
 }
 
+/** The HR round's own card fields, in the order the HR interviewer fills them. */
+const HR_SCORECARD_LABELS = [
+  ['hr_family_background', 'Family background'],
+  ['hr_general_other', 'General / other'],
+  ['hr_timings', 'Timings'],
+  ['hr_communication_comments', 'Communication comments'],
+  ['hr_attitude_comments', 'Attitude comments'],
+  ['hr_relocation', 'Relocation'],
+  ['hr_notice_period', 'Notice period'],
+  ['hr_current_ctc', 'Current CTC'],
+  ['hr_expected_ctc', 'Expected CTC'],
+  ['hr_strengths', 'Strength'],
+  ['hr_weakness', 'Weakness'],
+  ['hr_only_negative', 'Only negative'],
+  ['hr_other_observation', 'Any other observation / request'],
+  ['hr_final_feedback', 'Final feedback'],
+  ['hr_next_step', 'Next step for recruitment team'],
+];
+
+/** Renders the filled-in fields of an HR-round scorecard; skips empty ones. */
+function HrScorecardFields({ hr }) {
+  const filled = HR_SCORECARD_LABELS.filter(([key]) => hr[key]);
+  if (filled.length === 0) return null;
+  return (
+    <>
+      {filled.map(([key, label]) => (
+        <Text key={key} type="secondary" style={{ fontSize: 12.5 }}>
+          <strong>{label}:</strong> {hr[key]}
+        </Text>
+      ))}
+    </>
+  );
+}
+
 /**
  * ScorecardReportModal — lazy-loads GET /pipeline/:id/scorecard-report when
  * opened and renders each submitted round's score plus the overall average/sum.
@@ -2086,6 +2653,41 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
             <Tag color="blue" style={{ fontSize: 13, padding: '4px 10px' }}>Sum: {data.overall?.sum ?? '—'}</Tag>
             <Tag style={{ fontSize: 13, padding: '4px 10px' }}>Rounds scored: {data.overall?.count ?? 0}</Tag>
           </div>
+
+          {/* Consolidated feedback — every interviewer's verdict in one place,
+              above the per-round cards. Whoever makes the final call (the CEO
+              round, or HR writing the offer) previously had to open each card in
+              turn and hold the picture in their head. Low-rated skills are
+              called out separately because they are the thing the next
+              interviewer most wants to probe and the easiest to miss. */}
+          {data.consolidated_feedback && (
+            <Card
+              size="small"
+              title="Consolidated feedback"
+              style={{ background: 'var(--info-bg)', borderColor: 'var(--info-border)' }}
+            >
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <Text strong>{data.consolidated_feedback.summary}</Text>
+                {(data.consolidated_feedback.lines || []).map((l, i) => (
+                  <div key={i}>
+                    <Text style={{ fontSize: 12.5 }}>{l.headline}</Text>
+                    {l.concerns?.length > 0 && (
+                      <div>
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          Concerns: {l.concerns.join(', ')}
+                        </Text>
+                      </div>
+                    )}
+                    {l.comments && (
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>“{l.comments}”</Text>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </Space>
+            </Card>
+          )}
           {(data.rounds || []).map((r) => (
             <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
               extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
@@ -2094,6 +2696,7 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                 {(r.skills || []).map((s, i) => (
                   <Text key={i} type="secondary" style={{ fontSize: 12.5 }}>{s.label}: {s.rating ?? '—'}{s.remark ? ` — ${s.remark}` : ''}</Text>
                 ))}
+                {r.hr ? <HrScorecardFields hr={r.hr} /> : null}
                 {r.comments ? <Text type="secondary" style={{ fontSize: 12.5 }}>“{r.comments}”</Text> : null}
               </Space>
             </Card>

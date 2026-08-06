@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as emailTemplateController from '../controllers/emailTemplate.controller.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -8,6 +8,9 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/templates', emailTemplateController.getEmailTemplates);
+/** POST /api/email/templates — create a template (admin only). Creating shapes
+ * the configuration; editing an existing one stays open to recruiters. */
+router.post('/templates', requireAdmin, emailTemplateController.createEmailTemplate);
 router.get('/templates/:id', emailTemplateController.getEmailTemplateById);
 router.put('/templates/:id', emailTemplateController.updateEmailTemplate);
 
