@@ -4,8 +4,17 @@ import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
+
+/**
+ * Roles allowed to bulk-export requisitions. Vendors are external companies and
+ * are deliberately excluded: the export carries `budget_min`/`budget_max` for
+ * every open role, which is commercially sensitive. They have no UI route to
+ * MRF either (`VENDOR_ALLOWED_PATHS` in MainLayout.jsx), but that is a
+ * client-side confinement — a vendor's token can call the API directly.
+ */
+const MRF_EXPORT_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
 
 const router = Router();
 
@@ -48,7 +57,7 @@ router.post('/', mrfController.createMrfRequest);
 router.get('/', mrfController.listMrfRequests);
 // Registered before '/:id' so 'export' is never captured as an MRF id — the
 // controller would run BigInt('export') and 500.
-router.get('/export', exportLimiter, mrfController.exportMrfRequests);
+router.get('/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfRequests);
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
 router.get('/main/:id', mrfController.getMainMrf);
 router.patch('/main/:id', mrfController.updateMainMrf);

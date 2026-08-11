@@ -240,6 +240,31 @@ headers-only CSV with a 200, never a 500.
 
 **R8 — CORS `exposedHeaders`.** Fixed (see §3).
 
+**R9 — two export routes were `authenticate`-only (found in a follow-up audit).**
+`/api/mrf/export` and `/api/email/monitoring/export` inherited routers with no
+role or module gate, so **any** logged-in principal could reach them — including
+a `vendor`, who is an external company. The MRF export carries
+`budget_min`/`budget_max` for every requisition (commercially sensitive), and
+the email-failures export carries candidate `recipient_email` and subject lines
+(other people's PII). Vendors have no UI route to either screen, but
+`VENDOR_ALLOWED_PATHS` is client-side confinement — their token calls the API
+directly. Both routes now carry
+`restrictTo('admin', 'superadmin', 'recruiter', 'hr')`. Verified by driving
+`restrictTo` per role: vendor → **403**, every internal role → 200.
+The underlying *list* endpoints (`GET /api/mrf`, `GET /api/email/monitoring`)
+have the same pre-existing exposure and should get the same guard — not changed
+here because the database was unreachable at the time and the change could not
+be exercised end-to-end.
+
+**R10 — `@codemirror/view` was an undeclared dependency (frontend).**
+`EmailBodyEditor/EmailHtmlSourceEditor.jsx` imports it, but `package.json` never
+declared it; it resolved only because npm hoisted it out of
+`@codemirror/lang-html`'s subtree. That builds on a warm `node_modules` and
+**fails on a clean `npm ci`**, or under a different npm version or pnpm/yarn,
+with `Could not resolve "@codemirror/view"`. Declared explicitly at the version
+already resolved (`^6.43.4`) and `package-lock.json` synced. An audit of every
+bare import across both packages (228 source files) found no others.
+
 ---
 
 ## Verified

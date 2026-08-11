@@ -74,15 +74,11 @@ export function mrfStatusLabel(status) {
  * which destroyed the real value (see mrfClosure.service.js); fill state is
  * surfaced alongside, never instead.
  *
- * NOTE ON `filled_at`: the dedicated `rpa_mrf.filled_at` column that
- * mrfClosure.service.js is being migrated onto does NOT yet exist — not in the
- * database, not in prisma/schema.prisma, not in the generated client. Selecting
- * it here throws "Unknown field `filled_at`" on every MRF list and export.
- * So we deliberately do not select it, and let isMrfFilled() fall back to its
- * legacy `approval_status === 'closed'` test, which is correct for every row
- * that exists today. Once the DDL lands and `prisma db pull && prisma generate`
- * has run, add `filled_at: true` to the select and `mrf_filled_at` to the
- * mapping below — isMrfFilled() already prefers it.
+ * Fill state is read from the dedicated `rpa_mrf.filled_at` column (added by
+ * prisma/ddl/2026-08-11-mrf-filled-at.sql). `filled_at` MUST be selected here:
+ * closure now stamps that column and no longer writes
+ * `approval_status = 'closed'`, so without it isMrfFilled() falls back to the
+ * legacy status test and reports every newly-filled requisition as NOT filled.
  */
 export async function attachApprovalStatus(records) {
   const mrfIds = records.map((r) => r.mrf_id).filter(Boolean).map((id) => BigInt(id));
@@ -90,7 +86,7 @@ export async function attachApprovalStatus(records) {
   const linked = mrfIds.length > 0
     ? await prisma.rpa_mrf.findMany({
       where: { id: { in: mrfIds } },
-      select: { id: true, approval_status: true },
+      select: { id: true, approval_status: true, filled_at: true },
     })
     : [];
 
@@ -104,6 +100,7 @@ export async function attachApprovalStatus(records) {
       ...record,
       approval_status: mrf?.approval_status || 'pending',
       mrf_filled: isMrfFilled(mrf),
+      mrf_filled_at: mrf?.filled_at || null,
     };
   });
 }
@@ -121,6 +118,7 @@ export const columns = [
   { header: 'Approval Status', key: 'approval_status' },
   // Independent of Approval Status — a requisition can be 'completed' AND filled.
   { header: 'Openings Filled', value: (r) => (r.mrf_filled ? 'YES' : 'NO') },
+  { header: 'Filled On', key: 'mrf_filled_at', type: 'datetime' },
   { header: 'JD Document Link', key: 'jd_doc_link' },
   { header: 'Linked MRF ID', key: 'mrf_id' },
   { header: 'Created Date', key: 'created_at', type: 'date' },
