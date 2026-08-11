@@ -37,6 +37,15 @@ const hrUploadService = {
   },
 
   /**
+   * CSV of every upload job matching the filters (no pagination).
+   * @param {Object} [params] - { status, actionRequired }
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  exportJobs(params = {}, config = {}) {
+    return api.get('/hr-upload/jobs/export', { params, ...config });
+  },
+
+  /**
    * Reprocess a failed upload job.
    * @param {string|number} id
    * @returns {Promise}

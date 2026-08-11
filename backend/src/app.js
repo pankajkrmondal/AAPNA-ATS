@@ -38,6 +38,11 @@ app.use(
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    // CSV exports read these client-side. Without exposedHeaders the browser
+    // hides them on cross-origin responses, so staging/production (where
+    // VITE_API_URL points at another origin) would name every download
+    // "export.csv" while dev — proxied same-origin by Vite — looked fine.
+    exposedHeaders: ['Content-Disposition', 'X-Export-Row-Count', 'X-Export-Degraded'],
   }),
 );
 

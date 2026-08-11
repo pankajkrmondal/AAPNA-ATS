@@ -6,37 +6,38 @@
  * requisition stays open (and stays in the JD dropdown) until all three are
  * filled — the dropdown label literally reads "(3 openings)".
  *
- * Closure is written to the two status columns that already exist rather than
- * new ones:
- *   rpa_mrf.approval_status        -> 'closed'
- *   rpa_mrf_jd_send.mrfstatus      -> 'closed'   (the New MRF Request row)
+ * Fill state lives in ONE dedicated column, `rpa_mrf.filled_at` (NULL = still
+ * hiring). Nothing here writes a status column.
  *
- * Setting rpa_mrf.approval_status='closed' removes the role from JD filtering
- * everywhere for free: getApprovedRoles() (screening.service.js) whitelists only
- * 'approved' and 'completed', and the dashboard's Active-MRF tile counts only
- * pending/waiting/approved. Nothing else needs a new filter.
+ * That is deliberate and hard-won. This module used to express "filled" by
+ * overwriting `rpa_mrf.approval_status` -> 'closed' and
+ * `rpa_mrf_jd_send.mrfstatus` -> 'closed', restoring both to a hardcoded
+ * 'approved' on re-open. Both writes were lossy:
+ *
+ *   - 'completed' is the most common real approval_status, and
+ *     getApprovedRoles() gates it on approved_by_abhijit while treating plain
+ *     'approved' as unconditional. A completed requisition that filled and
+ *     re-opened came back as 'approved' — permanently escaping that gate.
+ *   - mrfstatus is the protected "raise status" workflow column the MRF page
+ *     filters, displays and exports (mrf.controller.js documents it as not
+ *     user-writable). The write was an updateMany on a loose non-FK mrf_id, so
+ *     one requisition could rewrite dozens of unrelated request rows.
+ *
+ * Approved and Filled are independent facts. Consumers ask isMrfFilled()
+ * (config/pipelineStages.js) rather than inspecting a status string.
  */
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import redis from '../config/redis.js';
 import { broadcast } from '../socket/index.js';
-import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
+import { VACATING_OUTCOMES, LEGACY_MRF_CLOSED_STATUS, isMrfFilled } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
-/** The status both tables carry once a requisition is filled. */
-export const MRF_CLOSED_STATUS = 'closed';
-
 /**
- * Closure outcomes that FREE the opening the candidate was holding — they
- * accepted, but never joined or did not stay. Any other outcome (or none yet)
- * means the seat is still theirs.
+ * @deprecated LEGACY READ ONLY — re-exported for callers that still recognise
+ * rows closed by the old lossy path. Never write this to a status column.
  */
-const VACATING_OUTCOMES = Object.freeze([
-  FINAL_OUTCOMES.BACKED_OUT,
-  FINAL_OUTCOMES.DID_NOT_JOIN,
-  FINAL_OUTCOMES.JOINED_AND_LEFT,
-  FINAL_OUTCOMES.CANDIDATE_WITHDRAWN,
-]);
+export const MRF_CLOSED_STATUS = LEGACY_MRF_CLOSED_STATUS;
 
 /**
  * How many candidates have accepted an offer against this requisition.
@@ -79,10 +80,10 @@ export async function closeMrfIfFilled(mrfId) {
   try {
     const mrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfId) },
-      select: { id: true, approval_status: true, number_of_positions: true, position_hiring_for: true },
+      select: { id: true, approval_status: true, filled_at: true, number_of_positions: true, position_hiring_for: true },
     });
     if (!mrf) return { closed: false, reason: 'not_found' };
-    if (mrf.approval_status === MRF_CLOSED_STATUS) return { closed: false, reason: 'already_closed' };
+    if (isMrfFilled(mrf)) return { closed: false, reason: 'already_closed' };
 
     // A requisition with no stated count still fills with one hire.
     const openings = mrf.number_of_positions && mrf.number_of_positions > 0 ? mrf.number_of_positions : 1;
@@ -91,27 +92,26 @@ export async function closeMrfIfFilled(mrfId) {
       return { closed: false, accepted, openings, reason: 'openings_remaining' };
     }
 
-    await prisma.rpa_mrf.update({
-      where: { id: mrf.id },
-      data: { approval_status: MRF_CLOSED_STATUS },
+    // Conditional claim rather than a plain update: two acceptances landing
+    // together would both read "not filled" above and both proceed, sending two
+    // "Requisition closed" notifications for one event. Whichever writes first
+    // wins; the loser sees count 0 and backs out.
+    const claim = await prisma.rpa_mrf.updateMany({
+      where: { id: mrf.id, filled_at: null },
+      data: { filled_at: new Date() },
     });
+    if (claim.count !== 1) {
+      return { closed: false, accepted, openings, reason: 'already_closed' };
+    }
 
     // Everything below this point is AFTER the closing write has committed, so
     // each step is individually guarded: a failure here must not report the
     // requisition as still open when the database says otherwise.
-
-    // Mirror it onto the New MRF Request row so the MRF page shows it closed.
-    // rpa_mrf_jd_send.mrf_id is a loose Int (no FK), so this is a plain match
-    // and legitimately affects zero rows for an MRF raised outside that flow.
-    let mirrored = { count: 0 };
-    try {
-      mirrored = await prisma.rpa_mrf_jd_send.updateMany({
-        where: { mrf_id: Number(mrf.id) },
-        data: { mrfstatus: MRF_CLOSED_STATUS },
-      });
-    } catch (err) {
-      logger.warn(`MRF ${mrf.id} closed but its New MRF Request row was not updated: ${err.message}`);
-    }
+    //
+    // NOTE: no status column is written — not rpa_mrf.approval_status, not
+    // rpa_mrf_jd_send.mrfstatus. See this file's header for why. The MRF page
+    // overlays approval_status from the joined rpa_mrf row and derives
+    // "Filled" from filled_at, so it needs no mirrored copy.
 
     // Drop this role's cached candidate search (same key screening.service.js
     // writes) so a stale entry can't resurrect the closed requisition.
@@ -135,20 +135,43 @@ export async function closeMrfIfFilled(mrfId) {
       logger.warn(`MRF ${mrf.id} closed but the mrf:closed broadcast failed: ${err.message}`);
     }
 
+    // Candidates who are STILL RUNNING against this requisition are now
+    // chasing a role with no opening left. Nobody was ever told: a recruiter
+    // could keep interviewing, scheduling and collecting documents for a role
+    // filled last week. The board flags them too (card `mrf_closed`), but that
+    // only helps someone already looking — this notification is the moment
+    // they can actually act. Best-effort, like everything below the closing
+    // write: a counting failure must not misreport the closure.
+    let stranded = 0;
+    try {
+      const openJourneys = await prisma.rpa_candidate_pipeline.count({
+        where: { mrf_id: mrf.id, final_outcome: null },
+      });
+      // The accepted hires are open journeys too, but they are the ones who
+      // filled it — they are not stranded.
+      stranded = Math.max(0, openJourneys - accepted);
+    } catch (err) {
+      logger.warn(`MRF ${mrf.id} closed but its in-flight candidate count failed: ${err.message}`);
+    }
+
     // In-app too: the role has just left every JD dropdown, which is a visible
     // change to everyone's screening workflow.
     await notify({
       type: NOTIFICATION_TYPES.MRF_CLOSED,
       title: 'Requisition closed — all openings filled',
-      description: `${mrf.position_hiring_for || 'A role'} · ${accepted}/${openings} filled — removed from JD filtering`,
+      description: `${mrf.position_hiring_for || 'A role'} · ${accepted}/${openings} filled — removed from JD filtering`
+        + (stranded > 0
+          ? ` · ${stranded} candidate${stranded === 1 ? ' is' : 's are'} still in progress for this role`
+          : ''),
       linkPath: '/mrf',
-      meta: { mrf_id: Number(mrf.id), openings, accepted },
+      meta: { mrf_id: Number(mrf.id), openings, accepted, stranded },
     });
 
     logger.info(
-      `MRF ${mrf.id} ("${mrf.position_hiring_for}") closed — ${accepted}/${openings} opening(s) filled (${mirrored.count} request row(s) mirrored).`
+      `MRF ${mrf.id} ("${mrf.position_hiring_for}") marked filled — ${accepted}/${openings} opening(s) filled`
+      + `${stranded > 0 ? `, ${stranded} candidate(s) still in progress` : ''}. approval_status left as "${mrf.approval_status}".`
     );
-    return { closed: true, accepted, openings };
+    return { closed: true, accepted, openings, stranded };
   } catch (err) {
     logger.error(`MRF closure check failed for MRF ${mrfId}: ${err.message}`);
     return { closed: false, reason: 'error' };
@@ -164,9 +187,14 @@ export async function closeMrfIfFilled(mrfId) {
  * of JD filtering and recruiters had to notice and fix it by hand, at exactly
  * the moment they most needed to fill it again.
  *
- * Deliberately conservative: it only re-opens requisitions sitting in the
- * `closed` status this module itself sets. A requisition closed by a human for
- * any other reason is left alone.
+ * Deliberately conservative: it only re-opens requisitions this module itself
+ * marked filled. A requisition a human closed some other way is left alone.
+ *
+ * Clearing `filled_at` is now the WHOLE operation, which is what makes this
+ * correct: the approval status was never touched on the way in, so there is
+ * nothing to restore and nothing to guess. The previous version restored a
+ * hardcoded 'approved', silently promoting 'completed' requisitions and
+ * stripping the approved_by_abhijit gate they are subject to.
  *
  * Never throws, for the same reason closeMrfIfFilled doesn't — the decision
  * being recorded matters more than the requisition bookkeeping.
@@ -180,10 +208,10 @@ export async function reopenMrfIfUnfilled(mrfId) {
   try {
     const mrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfId) },
-      select: { id: true, approval_status: true, number_of_positions: true, position_hiring_for: true },
+      select: { id: true, approval_status: true, filled_at: true, number_of_positions: true, position_hiring_for: true },
     });
     if (!mrf) return { reopened: false, reason: 'not_found' };
-    if (mrf.approval_status !== MRF_CLOSED_STATUS) return { reopened: false, reason: 'not_closed' };
+    if (!isMrfFilled(mrf)) return { reopened: false, reason: 'not_closed' };
 
     const openings = mrf.number_of_positions && mrf.number_of_positions > 0 ? mrf.number_of_positions : 1;
     const accepted = await countAcceptedHires(mrf.id);
@@ -191,21 +219,21 @@ export async function reopenMrfIfUnfilled(mrfId) {
       return { reopened: false, accepted, openings, reason: 'still_filled' };
     }
 
-    // 'approved' is the state an MRF is in while it is actively hiring — the
-    // status it held before closeMrfIfFilled overwrote it.
+    // Clearing the fill marker is the entire re-open. approval_status keeps
+    // whatever it legitimately held all along.
+    //
+    // A row closed by the OLD path (approval_status='closed', filled_at
+    // backfilled) cannot be fully repaired here — its real prior status is
+    // gone — so it is left for the manual review the DDL README describes
+    // rather than being guessed at again.
     await prisma.rpa_mrf.update({
       where: { id: mrf.id },
-      data: { approval_status: 'approved' },
+      data: { filled_at: null },
     });
-
-    let mirrored = { count: 0 };
-    try {
-      mirrored = await prisma.rpa_mrf_jd_send.updateMany({
-        where: { mrf_id: Number(mrf.id) },
-        data: { mrfstatus: 'approved' },
-      });
-    } catch (err) {
-      logger.warn(`MRF ${mrf.id} re-opened but its New MRF Request row was not updated: ${err.message}`);
+    if (mrf.approval_status === LEGACY_MRF_CLOSED_STATUS) {
+      logger.warn(
+        `MRF ${mrf.id} re-opened but still carries the legacy approval_status='closed' — its true prior status was destroyed by the old closure path and must be set by hand (see prisma/ddl/2026-08-11-mrf-filled-at.README.md).`
+      );
     }
 
     // Same cache + broadcast hygiene as the closing path, so the role comes back
@@ -230,7 +258,7 @@ export async function reopenMrfIfUnfilled(mrfId) {
     });
 
     logger.info(
-      `MRF ${mrf.id} ("${mrf.position_hiring_for}") re-opened — ${accepted}/${openings} opening(s) filled (${mirrored.count} request row(s) mirrored).`
+      `MRF ${mrf.id} ("${mrf.position_hiring_for}") re-opened — ${accepted}/${openings} opening(s) filled. approval_status left as "${mrf.approval_status}".`
     );
     return { reopened: true, accepted, openings };
   } catch (err) {

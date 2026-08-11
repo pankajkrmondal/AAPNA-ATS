@@ -284,8 +284,8 @@ async function sendNoShowAlert(row, candidate, absentParty) {
         subject: `${stageLabel} with ${tokens.candidate_name} did not take place`,
         html: `<p>The <strong>${stageLabel}</strong> interview with <strong>${tokens.candidate_name}</strong> (${position}) scheduled for ${when} <strong>did not take place</strong>.</p>
                <p>The Microsoft Teams attendance report shows that <strong>${whoMissed}</strong>.</p>
-               <p>No scorecard has been requested from the interviewer. Please reschedule the round or update the candidate's status in the Pipeline Tracker.</p>
-               <p><a href="${pipelineLink}">Open the Pipeline Tracker</a></p>`,
+               <p>No scorecard has been requested from the interviewer. Please reschedule the round or update the candidate's status in the Candidate Pipeline.</p>
+               <p><a href="${pipelineLink}">Open the Candidate Pipeline</a></p>`,
       };
 
   const { to } = resolveRecipients('occurrenceNudge', config.microsoft.defaultSender);
@@ -336,7 +336,7 @@ async function sendConfirmationNudge(row, candidate) {
     : {
         subject: `Did the ${stageLabel} with ${tokens.candidate_name} take place?`,
         html: `<p>The ${stageLabel} interview with ${tokens.candidate_name} (${position}) for ${when} has passed.</p>
-               <p>Please confirm whether it happened in the Pipeline Tracker so we can request the scorecard or reschedule.</p>`,
+               <p>Please confirm whether it happened in the Candidate Pipeline so we can request the scorecard or reschedule.</p>`,
       };
 
   // RECRUITER/HR ONLY (RT decision, 2026-07-27). The interviewer is deliberately

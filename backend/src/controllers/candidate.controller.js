@@ -11,6 +11,8 @@ import { getApprovedRoles } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import path from 'path';
+import runExport from '../exports/runExport.js';
+import candidatesExport from '../exports/candidates.export.js';
 
 /**
  * @desc    Search candidates with pagination and filters
@@ -34,7 +36,12 @@ export const searchCandidates = catchAsync(async (req, res) => {
     order = 'desc',
   } = req.query;
 
-  const filters = { search, status, finalStatus, vendorEmail, position, location, name, email, phone };
+  const requested = { search, status, finalStatus, vendorEmail, position, location, name, email, phone };
+  // `vendorEmail` is a plain query param, so a vendor-role token could omit it
+  // (or name someone else's address) and page through the entire candidate
+  // table. Scope is forced server-side from the session instead.
+  const filters = candidateService.enforceVendorScope(requested, req.user);
+
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
 
@@ -42,6 +49,19 @@ export const searchCandidates = catchAsync(async (req, res) => {
 
   return paginated(res, result.data, pageNum, limitNum, result.total, 'Candidates retrieved');
 });
+
+/**
+ * @desc    Export candidates matching the current filters as CSV
+ * @route   GET /api/candidates/export
+ * @access  Private (vendors are scoped to their own submissions)
+ */
+export const exportCandidates = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'candidates',
+  label: 'Candidates',
+  columns: candidatesExport.columns,
+  filters: candidatesExport.parseFilters(req),
+  fetch: candidatesExport.fetch,
+}));
 
 /**
  * @desc    Get a single candidate by ID

@@ -36,179 +36,23 @@ import {
   Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  BoldOutlined, CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, ItalicOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  SendOutlined, StepForwardOutlined, UnderlineOutlined, UserOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
+  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
+  SendOutlined, StepForwardOutlined, UserOutlined,
 } from '@ant-design/icons';
-import DOMPurify from 'dompurify';
 import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
 import screeningService from '../../services/screeningService';
 import assessmentImportService from '../../services/assessmentImportService';
 import settingsService from '../../services/settingsService';
 import AssessmentInviteModal from './AssessmentInviteModal';
+import { EmailEditorTabs } from '../common/EmailBodyEditor';
+import { MODAL_WIDTH } from './modalWidths';
+import DateTimeField from './DateTimeField';
+import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConfig';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
-const { RangePicker } = DatePicker;
-
-const SANITIZE_OPTS = { WHOLE_DOCUMENT: true, ADD_ATTR: ['target'] };
-const EDITOR_CONTENT_CSS = `
-  html, body { margin: 0; }
-  body:focus { outline: none; }
-  /* Degraded (no-wrapper) mode only — the branded shell supplies its own padding. */
-  body:not(:has([data-editable-body])) { padding: 12px 14px; font-family: inherit; font-size: 13.5px; }
-  /* Make the editable region visibly the only editable part. */
-  [data-editable-body] { outline: 1px dashed rgba(122,146,46,0.55); outline-offset: 6px; border-radius: 2px; min-height: 60px; }
-  [data-editable-body]:focus { outline: 2px solid rgba(122,146,46,0.85); }
-`;
-
-/**
- * WYSIWYG for the outcome-email body, shown inside the real branded shell.
- *
- * The iframe renders the FULL email the recipient will get — green AAPNA
- * header, logo, card, footer — but only the body slot is contenteditable, so
- * the recruiter reviews the true outgoing format while editing just the copy
- * (docs/phase3/PIPELINE-TRACKER-BRANDED-EMAIL-PLAN.md §4.1).
- *
- * That split matters: the previous version put designMode on the whole
- * document and round-tripped documentElement.outerHTML, so any chrome inside
- * the value could be deleted or broken by a stray edit and shipped that way.
- * Here `onChange` only ever emits the body fragment — exactly what the backend
- * stores and re-wraps at send time.
- *
- * `wrapper` is {headerHtml, footerHtml} from the preview endpoint, produced by
- * the same backend module the send path uses, so preview and delivery cannot
- * drift. Without it the editor degrades to the bare fragment.
- */
-function BrandedBodyEditor({ value, onChange, wrapper, subject }) {
-  const iframeRef = useRef(null);
-  const savedSelRef = useRef(null);
-  // srcDoc only needs to reset when a *different* preview loads, not on every
-  // keystroke — otherwise the iframe would reload (and lose the caret) as the
-  // recruiter types.
-  const srcDoc = useMemo(
-    () => {
-      const body = DOMPurify.sanitize(value || '<p>Empty.</p>', SANITIZE_OPTS);
-      if (!wrapper?.headerHtml) return body;
-      // Mirrors wrapBrandedEmail()'s table skeleton so the preview matches the
-      // delivered mail; only the body slot carries data-editable-body.
-      return `<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif">`
-        + `<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:20px 8px"><tr><td align="center">`
-        + `<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.08)">`
-        + wrapper.headerHtml
-        + `<tr><td style="padding:32px 40px 24px 40px;font-size:15px;color:#374151;line-height:1.8">`
-        + `<div data-editable-body contenteditable="true">${body}</div>`
-        + `</td></tr>`
-        + (wrapper.footerHtml || '')
-        + `</table></td></tr></table></body>`;
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
-  // The header headline IS the subject, so keep the band in step as the
-  // recruiter edits the subject field. Patched into the live iframe DOM rather
-  // than rebuilt into srcDoc, which would reload the frame and drop the caret.
-  // textContent assignment escapes the value, matching the backend's escaping.
-  useEffect(() => {
-    const doc = iframeRef.current?.contentDocument;
-    const h1 = doc?.querySelector('h1');
-    if (!h1) return;
-    const next = (subject || '').trim();
-    if (h1.textContent !== next) h1.textContent = next;
-  }, [subject]);
-
-  /** Reads back ONLY the editable slot, never the surrounding chrome. */
-  const syncFromEditor = () => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const slot = doc.querySelector('[data-editable-body]');
-    if (slot) {
-      onChange(slot.innerHTML);
-      return;
-    }
-    // No wrapper (degraded mode): the whole document is the body.
-    if (doc.designMode === 'on') {
-      const clone = doc.documentElement.cloneNode(true);
-      clone.querySelectorAll('style[data-editor-css]').forEach((el) => el.remove());
-      onChange(clone.outerHTML);
-    }
-  };
-
-  const handleLoad = () => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const slot = doc.querySelector('[data-editable-body]');
-    if (slot) {
-      // Chrome stays read-only; only the body slot accepts input.
-      slot.setAttribute('contenteditable', 'true');
-    } else {
-      doc.designMode = 'on';
-    }
-    const style = doc.createElement('style');
-    style.textContent = EDITOR_CONTENT_CSS;
-    style.setAttribute('data-editor-css', '1');
-    doc.head?.appendChild(style);
-    doc.addEventListener('input', syncFromEditor);
-    doc.addEventListener('selectionchange', () => {
-      const sel = doc.getSelection?.();
-      if (sel && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        // Only remember selections inside the editable region, so the toolbar
-        // can never apply formatting to the header or footer.
-        const scope = slot || doc.body;
-        if (scope?.contains(range.commonAncestorContainer)) {
-          savedSelRef.current = range.cloneRange();
-        }
-      }
-    });
-  };
-
-  const exec = (command, val = null) => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    iframeRef.current.contentWindow?.focus();
-    // Focus the editable slot so execCommand has a valid target even before
-    // the recruiter has clicked into the body.
-    doc.querySelector('[data-editable-body]')?.focus?.();
-    const sel = doc.getSelection?.();
-    if (sel && savedSelRef.current) {
-      try { sel.removeAllRanges(); sel.addRange(savedSelRef.current); } catch { /* stale range */ }
-    }
-    try { doc.execCommand(command, false, val); } catch { /* noop */ }
-    syncFromEditor();
-  };
-
-  const toolbarBtn = (icon, title, onClick) => (
-    <Tooltip title={title}>
-      <Button size="small" type="text" icon={icon} onMouseDown={(e) => e.preventDefault()} onClick={onClick} />
-    </Tooltip>
-  );
-
-  return (
-    <div style={{ border: '1px solid var(--ant-color-border)', borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', gap: 2, padding: '4px 6px', borderBottom: '1px solid var(--ant-color-border)', background: 'var(--ink-3)' }}>
-        {toolbarBtn(<BoldOutlined />, 'Bold', () => exec('bold'))}
-        {toolbarBtn(<ItalicOutlined />, 'Italic', () => exec('italic'))}
-        {toolbarBtn(<UnderlineOutlined />, 'Underline', () => exec('underline'))}
-        {toolbarBtn(<LinkOutlined />, 'Insert link', () => {
-          const url = window.prompt('Link URL (https://…)');
-          if (url && url.trim()) exec('createLink', url.trim());
-        })}
-      </div>
-      <iframe
-        ref={iframeRef}
-        title="Outcome email body"
-        srcDoc={srcDoc}
-        onLoad={handleLoad}
-        // Taller when the branded shell renders, so the header, body and footer
-        // are all visible without scrolling inside the modal.
-        style={{ width: '100%', height: wrapper?.headerHtml ? 420 : 220, border: 'none', background: 'var(--ant-color-bg-container, #fff)' }}
-      />
-    </div>
-  );
-}
 
 /**
  * Two collapsible editable emails (candidate + panel) for the Schedule/Cancel
@@ -221,7 +65,7 @@ function BrandedBodyEditor({ value, onChange, wrapper, subject }) {
 function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, candidateWrapper, panelWrapper, ready = true }) {
   const field = (key, value) => onChange({ [key]: value, touched: true });
 
-  // BrandedBodyEditor freezes its srcDoc on first mount (to protect the caret
+  // EmailBodyEditor freezes its srcDoc on first mount (to protect the caret
   // while typing), so it must not mount before the preview text and wrapper
   // have arrived — otherwise it would render an empty, unbranded shell.
   if (!ready) {
@@ -246,7 +90,13 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
                 placeholder="Subject"
                 style={{ marginBottom: 8 }}
               />
-              <BrandedBodyEditor value={state.candidateBody} onChange={(v) => field('candidateBody', v)} wrapper={candidateWrapper} subject={state.candidateSubject} />
+              <EmailEditorTabs
+                bodyHtml={state.candidateBody}
+                onBodyChange={(v) => field('candidateBody', v)}
+                wrapper={candidateWrapper}
+                subject={state.candidateSubject}
+                height={candidateWrapper?.headerHtml ? 420 : 220}
+              />
             </>
           ),
         },
@@ -261,7 +111,13 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
                 placeholder="Subject"
                 style={{ marginBottom: 8 }}
               />
-              <BrandedBodyEditor value={state.panelBody} onChange={(v) => field('panelBody', v)} wrapper={panelWrapper} subject={state.panelSubject} />
+              <EmailEditorTabs
+                bodyHtml={state.panelBody}
+                onBodyChange={(v) => field('panelBody', v)}
+                wrapper={panelWrapper}
+                subject={state.panelSubject}
+                height={panelWrapper?.headerHtml ? 420 : 220}
+              />
             </>
           ),
         },
@@ -389,11 +245,17 @@ function assessmentScoreSegment(result) {
  * per RT feedback, this stage is where HR actually schedules the Zeko
  * interview, not a passive wait; the label should say what to DO here. */
 const PIPELINE_LABELS = {
-  zeko: ['Invite Sent', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
+  // Stage 1 reads "Stage Entry" (not "Invite Sent") for zeko/scheduled_interview
+  // — the real per-round invite for both is tracked in stage 2, so stage 1 here
+  // is actually about how the candidate arrived: the previous stage's approval
+  // (see previousStageOutcome below), not an invite this stage itself sent.
+  // manual's "Invite Sent" stays as-is — assessment (its only real user today)
+  // genuinely sends its own invite as this stage's first action.
+  zeko: ['Stage Entry', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
   manual: ['Invite Sent', 'Awaiting Test', 'Awaiting Results', 'Approve / Reject'],
   // Stage 2 reads "Schedule Interview" for the same reason zeko's does: this is
   // where the recruiter ACTS, so the label names the action, not a passive wait.
-  scheduled_interview: ['Invite Sent', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
+  scheduled_interview: ['Stage Entry', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
   document: ['Request Sent', 'Awaiting Upload', 'Awaiting Verification', 'Approve / Reject'],
   offer: ['Offer Prepared', 'Offer Sent', 'Awaiting Response', 'Accepted / Declined'],
 };
@@ -423,17 +285,17 @@ function fmtDateTime(d) {
  * so they stay honestly "not available yet" on stages 1–3; stage 4 (decision)
  * is always driven by the real outcome event, for every stage type.
  *
- * zeko_fn intentionally does NOT get the same real invite/schedule treatment
- * as zeko_hr — rpa_zeko_candidate_pipeline.stage is hard-coded 'hr' every­
- * where it's written in screening.service.js, so there is no real backing
- * row for "functional screening" today; fabricating one would misrepresent
- * data that doesn't exist.
+ * Both Zeko stages get the same real invite/schedule treatment — each has
+ * its own rpa_zeko_candidate_pipeline row distinguished by `stage` ('hr' vs
+ * 'functional'), threaded through from whichever stage the drawer is
+ * currently scheduling for (screening.service.js's assignCandidateToZekoJob/
+ * scheduleInterview both accept and honor a real `stage` param).
  *
  * Returns `emails`: a real (not mocked) email log line list, built only from
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zekoHrPipeline, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite, offer, documents }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOutcome, zekoScores, zekoHrPipeline, zekoReportLink, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite, offer, documents }) {
   const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
@@ -451,7 +313,25 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
   // not automatic — derived below from assessmentInvite instead of the
   // generic "candidate entered this stage" baseline every other stage uses.
   if (enteredEvent && stage.stage_key !== 'assessment') {
-    s1 = { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
+    // Real signal when available: the previous stage's approval is what
+    // actually put the candidate here, and its outcome email's send status
+    // is already recorded — more honest than a bare "entered this stage"
+    // timestamp. Stages with their own dedicated stage-1 tracking (zeko_hr's
+    // shortlist notice, offer's approval chain, etc.) overwrite s1 again
+    // further down, so this is only ever the final answer where nothing
+    // more specific applies.
+    s1 = previousStageOutcome
+      ? {
+          state: 'done',
+          detail: `Approved from ${previousStageOutcome.stageLabel} — ${
+            previousStageOutcome.emailSent
+              ? `outcome email sent ${fmtDateTime(previousStageOutcome.sentAt)}`
+              : previousStageOutcome.emailError
+                ? 'outcome email failed to send'
+                : 'no outcome email recorded'
+          }`,
+        }
+      : { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
   }
 
   if (stage.stage_key === 'zeko_hr') {
@@ -500,7 +380,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
       // score isn't meaningful for this round, so it's suppressed here even
       // when the sync returns one (RT, 2026-07-22). zeko_fn below still shows
       // all three.
-      s3 = { state: 'done', ...zekoScoreSegment(zekoScores, { coding: false }) };
+      s3 = { state: 'done', ...zekoScoreSegment(zekoScores, { coding: false }), link: zekoReportLink };
     } else if (zekoHrPipeline?.link_sent_at) {
       s3 = { state: 'active', detail: 'Awaiting Zeko to sync the score' };
     }
@@ -532,7 +412,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, zekoScores, zeko
     if (zekoScores) {
       // Unlike HR screening, the functional round shows all three scores —
       // coding included, since that is what this round actually assesses.
-      s3 = { state: 'done', ...zekoScoreSegment(zekoScores) };
+      s3 = { state: 'done', ...zekoScoreSegment(zekoScores), link: zekoReportLink };
     } else if (zekoHrPipeline?.link_sent_at) {
       s3 = { state: 'active', detail: 'Awaiting Zeko to sync the score' };
     } else if (enteredEvent) {
@@ -1102,7 +982,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   // "Schedule Interview" reappears rather than "Change window" — reschedule
   // is cancel-then-recreate, not an in-place edit.
   const cancelMutation = useMutation({
-    mutationFn: (reason) => screeningService.cancelZekoInterview({ pipeline_id: zekoHrPipeline.id, cancel_reason: reason || 'Cancelled from Pipeline Tracker' }),
+    mutationFn: (reason) => screeningService.cancelZekoInterview({ pipeline_id: zekoHrPipeline.id, cancel_reason: reason || 'Cancelled from Candidate Pipeline' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
       onChanged?.();
@@ -1261,10 +1141,22 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const reasons = data?.reasons || [];
   const zekoScores = data?.zekoScores;
   const zekoHrPipeline = data?.zekoHrPipeline;
+  const zekoReportLink = data?.zekoReportLink;
   const mrfInterviewHints = data?.mrfInterviewHints;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
   const zekoJobs = zekoJobsData || [];
+  // Scoped to whichever Zeko round is being scheduled, so a job published
+  // for the wrong round (e.g. HR when scheduling Functional) isn't even
+  // offered — same job title is often published twice, once per round,
+  // distinguished only by interview_type. Falls back to the full list (with
+  // a visible warning) if nothing matches, so a data/tagging gap never
+  // blocks scheduling outright.
+  const isHrRound = pipeline?.current_stage_key === 'zeko_hr';
+  const matchingZekoJobs = zekoJobs.filter((j) => (isHrRound ? j.interview_type === 'hr' : j.interview_type !== 'hr'));
+  const zekoJobOptions = matchingZekoJobs.length > 0 ? matchingZekoJobs : zekoJobs;
+  const zekoJobFallback = matchingZekoJobs.length === 0 && zekoJobs.length > 0;
+  const ZEKO_TYPE_TAG = { hr: { label: 'HR', color: 'blue' }, functional: { label: 'Functional', color: 'green' }, coding: { label: 'Coding', color: 'purple' } };
   const allStages = (stagesData || []).filter((s) => s.is_active).sort((a, b) => a.sort_order - b.sort_order);
   const currentIdx = allStages.findIndex((s) => s.stage_key === pipeline?.current_stage_key);
   const selectedIdx = allStages.findIndex((s) => s.stage_key === selectedStageKey);
@@ -1284,8 +1176,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       message.error('Please select a Zeko job.');
       return;
     }
-    if (!scheduleDates || scheduleDates.length !== 2) {
-      message.error('Please pick an interview date & time range.');
+    // Both halves are set independently now (Outlook-style opens/closes
+    // fields), so one can be filled while the other is still empty — a
+    // length check alone would pass and then blow up on .toDate() below.
+    if (!scheduleDates?.[0] || !scheduleDates?.[1]) {
+      message.error('Please set when the interview window opens and closes.');
+      return;
+    }
+    if (!scheduleDates[1].isAfter(scheduleDates[0])) {
+      message.error('The window must close after it opens.');
       return;
     }
     scheduleMutation.mutate({
@@ -1433,14 +1332,39 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     }
 
     const isCurrent = stage.stage_key === pipeline.current_stage_key;
+
+    // What actually got the candidate INTO this stage: the previous active
+    // stage's approval — not a Zeko/interview invite this stage sent itself
+    // (that's tracked separately, in stage 2). Looked up from the full,
+    // unfiltered event history (stageEvents above is scoped to this stage
+    // only). Genuinely null for the pipeline's first stage — there is no
+    // prior stage to have approved anything.
+    const stageIdx = allStages.findIndex((s) => s.stage_key === stage.stage_key);
+    const priorStage = stageIdx > 0 ? allStages[stageIdx - 1] : null;
+    const priorOutcomeEvent = priorStage
+      ? [...(pipeline.rpa_pipeline_stage_events || [])]
+          .reverse()
+          .find((ev) => ev.stage_key === priorStage.stage_key && ev.event_type === 'outcome' && ev.outcome === 'approved')
+      : null;
+    const previousStageOutcome = priorOutcomeEvent
+      ? {
+          stageLabel: priorStage.label,
+          emailSent: !!priorOutcomeEvent.email_sent,
+          emailError: priorOutcomeEvent.email_error,
+          sentAt: priorOutcomeEvent.created_at,
+        }
+      : null;
+
     const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
+      previousStageOutcome,
       zekoScores: isZekoStageKey(stage.stage_key) ? zekoScores : null,
       // The backend returns the row for the CURRENT stage's round only, so it
       // must not leak onto the other Zeko stage's card when browsing history.
       zekoHrPipeline: stage.stage_key === pipeline.current_stage_key ? zekoHrPipeline : null,
+      zekoReportLink: stage.stage_key === pipeline.current_stage_key ? zekoReportLink : null,
       screening,
       // Same rule for the interview booking + MRF hints.
       interviewSchedule: stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null,
@@ -1497,6 +1421,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                       </div>
                     ))}
                   </div>
+                )}
+                {s.link && (
+                  <a href={s.link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                    <LinkOutlined /> View full report on Zeko
+                  </a>
                 )}
                 {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
                   <div className="cp-pipeline-step__extra">
@@ -1555,7 +1484,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                     />
                   </div>
                 )}
-                {i === 1 && showScheduleButton && stage.stage_key === 'zeko_hr' && (
+                {i === 1 && showScheduleButton && isZekoStageKey(stage.stage_key) && (
                   <div className="cp-pipeline-step__extra">
                     {zekoHrPipeline?.interview_start_at ? (
                       <Button size="small" danger icon={<CloseOutlined />} onClick={openCancelModal}>
@@ -1874,7 +1803,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={outcomeModalOpen}
       onCancel={() => setOutcomeModalOpen(false)}
       title="Record round outcome"
-      width={620}
+      width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="cancel" onClick={() => setOutcomeModalOpen(false)}>Cancel</Button>,
         <Button key="confirm" type="primary" onClick={submitOutcome} loading={outcomeMutation.isPending}>
@@ -1951,7 +1880,13 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
             ) : (
               <>
                 <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject" style={{ marginBottom: 8 }} />
-                <BrandedBodyEditor value={emailBody} onChange={setEmailBody} wrapper={previewData?.wrapper} subject={emailSubject} />
+                <EmailEditorTabs
+                  bodyHtml={emailBody}
+                  onBodyChange={setEmailBody}
+                  wrapper={previewData?.wrapper}
+                  subject={emailSubject}
+                  height={previewData?.wrapper?.headerHtml ? 420 : 220}
+                />
               </>
             )}
             <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
@@ -1966,7 +1901,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={scheduleOpen}
       onCancel={() => setScheduleOpen(false)}
       title="Schedule Zeko Interview"
-      width={560}
+      width={MODAL_WIDTH.FORM}
       footer={[
         <Button key="cancel" onClick={() => setScheduleOpen(false)}>Cancel</Button>,
         <Button key="confirm" type="primary" onClick={submitSchedule} loading={scheduleMutation.isPending}>
@@ -1984,7 +1919,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
             </div>
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Zeko Job</Text>
+            <Text strong style={{ fontSize: 12.5 }}>Zeko Job — {isHrRound ? 'HR Screening' : 'Functional Test'} round</Text>
+            {zekoJobFallback && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 4, marginBottom: 4, fontSize: 12 }}
+                message={`No jobs tagged for the ${isHrRound ? 'HR' : 'Functional'} round — showing all published jobs.`}
+              />
+            )}
             <Select
               style={{ width: '100%', marginTop: 4 }}
               placeholder="Select a Zeko job"
@@ -1992,18 +1935,52 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
               onChange={setScheduleJobId}
               showSearch
               optionFilterProp="label"
-              options={zekoJobs.map((j) => ({ value: j.zeko_id, label: j.title }))}
+              options={zekoJobOptions.map((j) => ({
+                value: j.zeko_id,
+                label: j.hiring_name || j.title,
+                role: j.role_name,
+                type: j.interview_type,
+              }))}
+              optionRender={(option) => (
+                <div style={{ padding: '2px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontWeight: 600, whiteSpace: 'normal', lineHeight: 1.35 }}>{option.data.label}</span>
+                    {ZEKO_TYPE_TAG[option.data.type] && (
+                      <Tag color={ZEKO_TYPE_TAG[option.data.type].color} style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '16px' }}>
+                        {ZEKO_TYPE_TAG[option.data.type].label}
+                      </Tag>
+                    )}
+                  </div>
+                  {option.data.role && (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Role: {option.data.role}</div>
+                  )}
+                </div>
+              )}
             />
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interview Date &amp; Time Range (IST)</Text>
-            <RangePicker
-              showTime={{ format: 'HH:mm', minuteStep: 30 }}
-              format="DD MMM YYYY, HH:mm"
-              style={{ width: '100%', marginTop: 4 }}
-              value={scheduleDates}
-              onChange={setScheduleDates}
-            />
+            <Text strong style={{ fontSize: 12.5 }}>Interview window (IST)</Text>
+            <div style={{ marginTop: 2 }}>
+              <Text type="secondary" style={{ fontSize: 11.5 }}>Opens</Text>
+              <DateTimeField
+                value={scheduleDates?.[0] || null}
+                onChange={(next) => setScheduleDates([next, scheduleDates?.[1] || null])}
+                disabledDate={noPastDates}
+                datePlaceholder="Window opens"
+              />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 11.5 }}>Closes</Text>
+              <DateTimeField
+                value={scheduleDates?.[1] || null}
+                onChange={(next) => setScheduleDates([scheduleDates?.[0] || null, next])}
+                defaultHour={18}
+                // The window can never close before it opens.
+                disabledDate={(cur) => noPastDates(cur)
+                  || (scheduleDates?.[0] && cur && cur < scheduleDates[0].startOf('day'))}
+                datePlaceholder="Window closes"
+              />
+            </div>
             <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
               Candidate self-schedules within this window via the Zeko link; times round to 30-minute slots automatically.
             </Text>
@@ -2016,7 +1993,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={cancelOpen}
       onCancel={() => setCancelOpen(false)}
       title="Confirm Cancel Interview"
-      width={560}
+      width={MODAL_WIDTH.CONFIRM}
       footer={[
         <Button key="back" onClick={() => setCancelOpen(false)}>Back</Button>,
         <Button key="confirm" danger type="primary" icon={<CloseOutlined />} onClick={submitCancel} loading={cancelMutation.isPending}>
@@ -2062,7 +2039,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={interviewOpen}
       onCancel={() => setInterviewOpen(false)}
       title={interviewMode === 'reschedule' ? 'Reschedule interview' : 'Schedule interview'}
-      width={560}
+      width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="cancel" onClick={() => setInterviewOpen(false)}>Cancel</Button>,
         <Button key="confirm" type="primary" icon={<CalendarOutlined />} onClick={submitInterview} loading={interviewMutation.isPending}>
@@ -2118,25 +2095,32 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           </div>
 
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>{interviewMode === 'reschedule' ? 'New date' : 'Date'} &amp; time (IST) <Text type="danger">*</Text></Text>
-            <DatePicker
-              showTime={{ format: 'HH:mm', minuteStep: 15 }}
-              format="DD MMM YYYY, HH:mm"
-              style={{ width: '100%', marginTop: 4 }}
+            <Text strong style={{ fontSize: 12.5 }}>{interviewMode === 'reschedule' ? 'New start' : 'Start'} time (IST) <Text type="danger">*</Text></Text>
+            <DateTimeField
               value={interviewAt}
               onChange={setInterviewAt}
-              disabledDate={(cur) => cur && cur < dayjs().startOf('day')}
+              disabledDate={noPastDates}
+              datePlaceholder="Select a date"
             />
           </div>
 
           <div>
             <Text strong style={{ fontSize: 12.5 }}>Duration</Text>
             <Select
+              size="large"
               style={{ width: '100%', marginTop: 4 }}
               value={interviewDuration}
               onChange={setInterviewDuration}
-              options={[30, 45, 60, 90].map((m) => ({ value: m, label: `${m} minutes` }))}
+              options={[15, 30, 45, 60, 90, 120].map((m) => ({
+                value: m,
+                label: m >= 60 ? `${m / 60} hour${m > 60 ? 's' : ''}${m % 60 ? ` ${m % 60} min` : ''}` : `${m} minutes`,
+              }))}
             />
+            {interviewAt && (
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                Ends at {interviewAt.add(interviewDuration, 'minute').format('h:mm A')} · {interviewAt.format('ddd, DD MMM YYYY')}
+              </Text>
+            )}
           </div>
 
           <div>
@@ -2204,7 +2188,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={interviewCancelOpen}
       onCancel={() => setInterviewCancelOpen(false)}
       title="Confirm Cancel Interview"
-      width={560}
+      width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="back" onClick={() => setInterviewCancelOpen(false)}>Back</Button>,
         <Button
@@ -2265,7 +2249,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={noShowOpen}
       onCancel={() => setNoShowOpen(false)}
       title="Mark interview as no-show"
-      width={480}
+      width={MODAL_WIDTH.CONFIRM}
       footer={[
         <Button key="back" onClick={() => setNoShowOpen(false)}>Back</Button>,
         <Button key="confirm" danger type="primary"
@@ -2312,7 +2296,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={offerShareOpen}
       onCancel={() => setOfferShareOpen(false)}
       title="Record offer as shared"
-      width={480}
+      width={MODAL_WIDTH.CONFIRM}
       okText="Record it"
       confirmLoading={offerMutation.isPending}
       onOk={() => offerMutation.mutate({
@@ -2333,7 +2317,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
         <div>
           <Text strong style={{ fontSize: 12.5 }}>Proposed joining date</Text>
           <DatePicker
+            size="large"
             style={{ width: '100%', marginTop: 4 }}
+            format={DATE_FORMAT}
+            disabledDate={noPastDates}
+            presets={JOINING_DATE_PRESETS}
+            placeholder="Pick the proposed joining date"
             value={offerJoiningDate}
             onChange={setOfferJoiningDate}
           />
@@ -2347,7 +2336,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       open={closureOpen}
       onCancel={() => setClosureOpen(false)}
       title="Close candidate record"
-      width={480}
+      width={MODAL_WIDTH.CONFIRM}
       okText="Close the record"
       okButtonProps={{ danger: true, disabled: !closureOutcome }}
       confirmLoading={closureMutation.isPending}
@@ -2448,7 +2437,7 @@ function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemi
         open={rejectingId !== null}
         onCancel={() => setRejectingId(null)}
         title="Reject document"
-        width={440}
+        width={MODAL_WIDTH.CONFIRM}
         okText="Reject & re-request"
         okButtonProps={{ danger: true, disabled: !rejectReason.trim() }}
         onOk={submitReject}
@@ -2641,7 +2630,7 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
   });
 
   return (
-    <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={620} footer={<Button onClick={onClose}>Close</Button>}>
+    <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
       ) : !data || (data.rounds || []).length === 0 ? (

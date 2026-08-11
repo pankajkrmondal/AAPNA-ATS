@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as pipelineController from '../controllers/pipeline.controller.js';
 import { authenticate, checkModuleAccess, requireAdmin } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 import assessmentImportRoutes from './assessmentImport.routes.js';
 
 const router = Router();
@@ -18,6 +19,12 @@ router.get('/', pipelineController.listPipeline);
 /** GET /api/pipeline/analytics — real funnel/stuck/rejection/time-to-hire/vendor/source data.
  * Registered before "/:id" so "analytics" is never captured as a pipeline id. */
 router.get('/analytics', pipelineController.getPipelineAnalytics);
+
+/** GET /api/pipeline/export — CSV of every journey matching the board filters.
+ * Registered before "/:id" for the same reason as "analytics" above. */
+router.get('/export', exportLimiter, pipelineController.exportPipeline);
+/** GET /api/pipeline/analytics/export?table=… — CSV of one analytics table. */
+router.get('/analytics/export', exportLimiter, pipelineController.exportPipelineAnalytics);
 
 /** GET /api/pipeline/stages — admin-configurable stage list. */
 router.get('/stages', pipelineController.listStages);

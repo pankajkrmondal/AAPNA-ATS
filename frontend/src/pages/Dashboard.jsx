@@ -28,6 +28,7 @@ import {
 import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
 import candidateService from '../services/candidateService';
+import ExportButton from '../components/common/ExportButton';
 import useDashboardData from '../hooks/useDashboardData';
 import useLiveActivity from '../hooks/useLiveActivity';
 import {
@@ -410,12 +411,27 @@ export default function Dashboard() {
         }}
         styles={{ body: { padding: 24 } }}
       >
-        <Space size={6} align="center" style={{ marginBottom: 16 }}>
-          <Title level={5} style={{ margin: 0 }}>Recent Candidates</Title>
-          <Tooltip title="The most recently added candidates across all roles. Use the action button to download a résumé." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 280 }}>
-            <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
-          </Tooltip>
-        </Space>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 16,
+        }}>
+          <Space size={6} align="center">
+            <Title level={5} style={{ margin: 0 }}>Recent Candidates</Title>
+            <Tooltip title="The most recently added candidates across all roles. Use the action button to download a résumé." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 280 }}>
+              <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
+            </Tooltip>
+          </Space>
+          {/* Exports every candidate, not just this table's page. */}
+          <ExportButton
+            request={(cfg) => candidateService.exportCsv({}, cfg)}
+            fallbackName="AAPNA-ATS_Candidates.csv"
+            rowCount={total}
+            size="small"
+          />
+        </div>
         <Table
           dataSource={candidates}
           columns={tableColumns}

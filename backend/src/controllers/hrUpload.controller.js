@@ -10,6 +10,8 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
 import * as uploadJobService from '../services/uploadJob.service.js';
+import runExport from '../exports/runExport.js';
+import uploadJobsExport from '../exports/uploadJobs.export.js';
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -244,6 +246,16 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * @desc    Export HR upload jobs matching the current filters as CSV
+ * @route   GET /api/hr-upload/jobs/export
+ * @access  Private (hr_manual_upload module)
+ */
+export const exportUploadJobs = catchAsync(async (req, res) => runExport(req, res, {
+  ...uploadJobsExport.hrSpec,
+  filters: uploadJobsExport.parseHrFilters(req),
+}));
 
 /**
  * @desc    Reprocess a failed upload job by re-running parsing on its stored file.

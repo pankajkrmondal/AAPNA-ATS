@@ -37,6 +37,17 @@ const emailTemplateService = {
   getEmailMonitoring(days = 30) {
     return api.get('/email/monitoring', { params: { days } });
   },
+
+  /**
+   * CSV of one Email Delivery table. `failures` returns every failure in the
+   * window, where the screen shows only the 20 most recent.
+   * @param {'by_type'|'failures'} table
+   * @param {number} [days=30]
+   * @param {object} [config] - blob/timeout config from downloadFile
+   */
+  exportEmailMonitoring(table, days = 30, config = {}) {
+    return api.get('/email/monitoring/export', { params: { table, days }, ...config });
+  },
 };
 
 export default emailTemplateService;

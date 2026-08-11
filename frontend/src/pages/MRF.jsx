@@ -5,9 +5,10 @@
  *   2) Submitted Records Listing (Search records, Status filter tabs, Export CSV, and paginated table)
  */
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Radio, Modal, Select } from 'antd';
-import { FileExcelOutlined, SendOutlined, ClearOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Radio, Modal, Select, Tooltip } from 'antd';
+import { SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
+import ExportButton from '../components/common/ExportButton';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 
 const { Title, Text } = Typography;
@@ -240,7 +241,10 @@ export default function MRF() {
     let approvalLabel = 'PENDING';
     let approvalColor = 'gold';
     if (approvalStatusStr === 'closed') {
-      approvalLabel = 'CLOSED — FILLED';
+      // LEGACY only — rows closed before fill state moved to its own column.
+      // Their real approval status was destroyed at closure time and cannot be
+      // recovered; see prisma/ddl/2026-08-11-mrf-filled-at.README.md.
+      approvalLabel = 'CLOSED (legacy)';
       approvalColor = 'default';
     } else if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
       approvalLabel = 'APPROVED';
@@ -488,56 +492,6 @@ export default function MRF() {
     setStatusTab(val);
     setPage(1);
     loadRecords(1, searchQuery, val);
-  };
-
-  // Export current records list to CSV
-  const handleExportCSV = async () => {
-    try {
-      // Fetch all records (without pagination limit) for complete export
-      const res = await mrfService.list({
-        search: searchQuery,
-        status: statusTab === 'All' ? '' : statusTab,
-        page: 1,
-        limit: 1000, // Large number to fetch all filtered
-      });
-
-      const exportList = Array.isArray(res.data?.data) ? res.data.data : records;
-
-      if (exportList.length === 0) {
-        message.warning('No records found to export.');
-        return;
-      }
-
-      // Build CSV content
-      const headers = ['First Name', 'Last Name', 'Email', 'Role', 'Min Budget', 'Max Budget', 'Status', 'Created Date'];
-      const rows = exportList.map(r => [
-        r.first_name || '',
-        r.last_name || '',
-        r.email || '',
-        r.role || '',
-        r.budget_min || '',
-        r.budget_max || '',
-        r.mrfstatus || '',
-        r.created_at ? r.created_at.split('T')[0] : '',
-      ]);
-
-      const csvContent = [
-        headers.join(','),
-        ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
-      ].join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `MRF_Records_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      message.success('CSV exported successfully!');
-    } catch {
-      message.error('Failed to export CSV.');
-    }
   };
 
   const formatCurrency = (val) => {
@@ -830,18 +784,14 @@ export default function MRF() {
               <Radio.Button value="closed">Closed</Radio.Button>
             </Radio.Group>
           </div>
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={handleExportCSV}
-            style={{
-              borderRadius: 6,
-              color: '#7a922e',
-              borderColor: '#7a922e',
-              fontWeight: 600,
-            }}
-          >
-            Export CSV
-          </Button>
+          <ExportButton
+            request={(cfg) => mrfService.exportCsv(
+              { search: searchQuery, status: statusTab === 'All' ? '' : statusTab },
+              cfg,
+            )}
+            fallbackName="AAPNA-ATS_MRF-Requests.csv"
+            rowCount={total}
+          />
         </div>
 
         {/* Records Table */}
@@ -927,6 +877,18 @@ export default function MRF() {
                     <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
                       {getWorkflowSummaryTags(selectedRecord).approval.label}
                     </Tag>
+                    {/* Independent of approval status — a requisition can be
+                        approved/completed AND have all its openings filled.
+                        Shown alongside rather than replacing it, because the
+                        two used to share one column and that destroyed the
+                        approval value. */}
+                    {selectedRecord?.mrf_filled && (
+                      <Tooltip title="Every opening on this requisition has been filled, so it no longer appears in JD filtering. It re-opens automatically if a hire falls through.">
+                        <Tag color="default" style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                          FILLED
+                        </Tag>
+                      </Tooltip>
+                    )}
                   </Space>
                 </Col>
               </Row>

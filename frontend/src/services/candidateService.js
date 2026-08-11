@@ -19,6 +19,17 @@ const candidateService = {
   },
 
   /**
+   * Download every candidate matching the filters as CSV (no pagination).
+   * Vendors are scoped to their own submissions server-side.
+   * @param {object} [filters={}] — same criteria as search()
+   * @param {object} [config={}] — blob/timeout config from downloadFile
+   * @returns {Promise}
+   */
+  exportCsv(filters = {}, config = {}) {
+    return api.get('/candidates/export', { params: filters, ...config });
+  },
+
+  /**
    * Get a single candidate by ID.
    * @param {string} id
    * @returns {Promise<{ data: object }>}

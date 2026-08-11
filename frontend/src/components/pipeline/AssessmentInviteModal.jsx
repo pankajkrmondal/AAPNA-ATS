@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, Input, Button, Space, Typography, Alert } from 'antd';
 import { MailOutlined } from '@ant-design/icons';
+import { MODAL_WIDTH } from './modalWidths';
 
 const { TextArea } = Input;
 
@@ -38,7 +39,7 @@ export default function AssessmentInviteModal({ open, onClose, candidateName, po
       open={open}
       onCancel={onClose}
       title="Send Evalground Invite"
-      width={560}
+      width={MODAL_WIDTH.FORM}
       footer={[
         <Button key="cancel" onClick={onClose}>Cancel</Button>,
         <Button key="send" type="primary" icon={<MailOutlined />} loading={sending} disabled={!subject.trim() || !body.trim()} onClick={() => onSend({ method: 'email', subject, body })}>

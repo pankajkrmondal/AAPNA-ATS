@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Row,
@@ -6,7 +6,6 @@ import {
   List,
   Input,
   Button,
-  Tabs,
   Badge,
   Alert,
   message,
@@ -15,80 +14,21 @@ import {
   Typography,
   Space,
   Tag,
-  Tooltip,
 } from 'antd';
 import {
   MailOutlined,
-  EditOutlined,
-  EyeOutlined,
   SaveOutlined,
-  TagOutlined,
-  InfoCircleOutlined,
   SearchOutlined,
   CopyOutlined,
-  BoldOutlined,
-  ItalicOutlined,
-  UnderlineOutlined,
-  UnorderedListOutlined,
-  OrderedListOutlined,
-  LinkOutlined,
-  PictureOutlined,
-  ClearOutlined,
-  CodeOutlined,
 } from '@ant-design/icons';
-import DOMPurify from 'dompurify';
-import CodeMirror from '@uiw/react-codemirror';
-import { html as cmHtml } from '@codemirror/lang-html';
-import { EditorView } from '@codemirror/view';
-import { html_beautify } from 'js-beautify';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import PageHeader from '../components/common/PageHeader';
 import emailTemplateService from '../services/emailTemplateService';
 import useTheme from '../hooks/useTheme';
-import { wrapBrandedPreview, isFullHtmlDocument } from '../utils/emailPreview';
+import { EmailEditorTabs, FULL_TOOLBAR, sanitizeDoc } from '../components/common/EmailBodyEditor';
 
 dayjs.extend(relativeTime);
-
-// Strip base64/data-URI images anywhere we sanitize — they're blocked by Outlook/Gmail
-// on send and bloat stored HTML. Hosted https images (added via Insert image) are kept.
-DOMPurify.addHook('uponSanitizeElement', (node, data) => {
-  if (data.tagName === 'img' && node.getAttribute) {
-    const src = (node.getAttribute('src') || '').trim().toLowerCase();
-    if (src.startsWith('data:') && node.parentNode) {
-      node.parentNode.removeChild(node);
-    }
-  }
-});
-
-const SANITIZE_OPTS = { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], ADD_ATTR: ['target'] };
-const sanitizeDoc = (html) => DOMPurify.sanitize(html || '', SANITIZE_OPTS);
-
-// Minimal styling injected INTO the editor iframe so editing is comfortable without
-// overriding the email's own styles.
-const EDITOR_CONTENT_CSS = `
-  html, body { margin: 0; }
-  body { padding: 16px; -webkit-font-smoothing: antialiased; }
-  body:focus { outline: none; }
-  img { max-width: 100%; }
-`;
-
-// Pretty-print serialized email HTML so the code tab is readable — the WYSIWYG
-// serializer emits it as one long line.
-const formatHtml = (html) => {
-  try {
-    return html_beautify(html || '', {
-      indent_size: 2,
-      wrap_line_length: 0,
-      preserve_newlines: true,
-      max_preserve_newlines: 1,
-    });
-  } catch {
-    return html || '';
-  }
-};
-
-const CM_EXTENSIONS = [cmHtml(), EditorView.lineWrapping];
 
 const { Title, Text } = Typography;
 
@@ -108,7 +48,9 @@ const brandTagStyle = {
 // backend/src/controllers/emailTemplate.controller.js.
 const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
 
-// Dummy replacements for live compiled preview
+// Dummy replacements for the Live Preview tab — a template's real values
+// (candidate name, interview time, etc.) don't exist until send time, so
+// preview substitutes sample text for every token it recognizes.
 const dummyReplacements = {
   candidate_name: 'John Doe',
   job_title: 'Senior Node.js Engineer',
@@ -134,6 +76,17 @@ const dummyReplacements = {
   reason_line: '<p><strong>Reason:</strong> Interviewer unavailable</p>',
 };
 
+/** Substitutes every recognized {token}/{{token}} with its dummy sample value. */
+function compileDummyPreview(subject, body) {
+  let compiledSubject = subject;
+  let compiledBody = body;
+  for (const [key, val] of Object.entries(dummyReplacements)) {
+    compiledSubject = compiledSubject.split(`{{${key}}}`).join(val).split(`{${key}}`).join(val);
+    compiledBody = compiledBody.split(`{{${key}}}`).join(val).split(`{${key}}`).join(val);
+  }
+  return { subject: compiledSubject, body: compiledBody };
+}
+
 export default function EmailManagement() {
   const { isDark } = useTheme();
   const [templates, setTemplates] = useState([]);
@@ -148,22 +101,7 @@ export default function EmailManagement() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [validationError, setValidationError] = useState('');
-  const [activeTab, setActiveTab] = useState('1');
   const [isDirty, setIsDirty] = useState(false);
-  const [editorRev, setEditorRev] = useState(0); // bump to remount the WYSIWYG iframe from bodyHtml
-  // CodeMirror doc seed — replaced only on external changes (tab entry, template switch,
-  // save). Feeding every keystroke back through `value` would reset the doc mid-typing
-  // whenever a render carries a slightly stale bodyHtml, silently dropping characters.
-  const [htmlView, setHtmlView] = useState({ rev: 0, text: '' });
-
-  // Insert-image-by-URL modal
-  const [imgModalOpen, setImgModalOpen] = useState(false);
-  const [imgUrl, setImgUrl] = useState('');
-  const [imgAlt, setImgAlt] = useState('');
-
-  const bodyEditorRef = useRef(null);   // WYSIWYG editing iframe
-  const savedSelRef = useRef(null);     // last caret range inside the iframe
-  const htmlDirtyRef = useRef(false);   // bodyHtml changed via the HTML tab since the iframe last loaded
 
   useEffect(() => {
     fetchTemplates();
@@ -208,10 +146,7 @@ export default function EmailManagement() {
     setSubject(template.subject);
     setBodyHtml(template.body_html);
     setValidationError('');
-    setActiveTab('1');
     setIsDirty(false);
-    savedSelRef.current = null;
-    htmlDirtyRef.current = false;
   };
 
   const handleSelectTemplate = (template) => {
@@ -231,138 +166,19 @@ export default function EmailManagement() {
     applySelection(template);
   };
 
-  // srcDoc for the editor iframe — keyed on (template id, editorRev) so in-place edits and
-  // re-saves don't reload the iframe and reset the caret. editorRev is bumped only when raw
-  // HTML edits need to be pushed back into the visual editor.
-  const editorSrcDoc = useMemo(
-    () => sanitizeDoc(bodyHtml || '<p style="font-family:sans-serif;color:#8a8f8c">Empty template.</p>'),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedTemplate?.id, editorRev]
-  );
-
-  // ----- iframe editor plumbing -----
-
-  // Serialize the editor document without the editor-comfort CSS we inject on load,
-  // so it never leaks into the HTML tab or saved templates.
-  const serializeEditorDoc = (doc) => {
-    const clone = doc.documentElement.cloneNode(true);
-    clone.querySelectorAll('style[data-editor-css]').forEach(el => el.remove());
-    return clone.outerHTML;
-  };
-
-  const syncFromEditor = () => {
-    const doc = bodyEditorRef.current?.contentDocument;
-    // designMode is only 'on' once handleEditorLoad has wired the document — don't
-    // serialize the transient about:blank document before that.
-    if (doc && doc.designMode === 'on') setBodyHtml(serializeEditorDoc(doc));
-  };
-
-  const focusAndRestore = () => {
-    const iframe = bodyEditorRef.current;
-    const doc = iframe?.contentDocument;
-    if (!doc) return null;
-    iframe.contentWindow?.focus();
-    const sel = doc.getSelection?.();
-    if (sel && savedSelRef.current) {
-      try {
-        sel.removeAllRanges();
-        sel.addRange(savedSelRef.current);
-      } catch { /* range may be stale — ignore */ }
-    }
-    return doc;
-  };
-
-  const exec = (command, value = null) => {
-    const doc = focusAndRestore();
-    if (!doc) return;
-    try { doc.execCommand(command, false, value); } catch { /* noop */ }
-    syncFromEditor();
-    setIsDirty(true);
-  };
-
-  const handleEditorLoad = () => {
-    const doc = bodyEditorRef.current?.contentDocument;
-    if (!doc) return;
-    doc.designMode = 'on';
-
-    // Drop editor-CSS copies that leaked into templates saved before serialization stripped them.
-    doc.querySelectorAll('style').forEach(s => {
-      if (s.textContent.trim() === EDITOR_CONTENT_CSS.trim()) s.remove();
-    });
-    const style = doc.createElement('style');
-    style.textContent = EDITOR_CONTENT_CSS;
-    style.setAttribute('data-editor-css', '1');
-    doc.head?.appendChild(style);
-
-    doc.addEventListener('input', () => {
-      syncFromEditor();
-      setIsDirty(true);
-    });
-    doc.addEventListener('selectionchange', () => {
-      const sel = doc.getSelection?.();
-      if (sel && sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        if (doc.body?.contains(range.commonAncestorContainer)) {
-          savedSelRef.current = range.cloneRange();
-        }
-      }
-    });
-    // Block image paste/drop (no image hosting; base64 is unreliable in real mail clients).
-    doc.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items || [];
-      const hasImage = Array.from(items).some(it => it.type?.startsWith('image/'));
-      if (hasImage) {
-        e.preventDefault();
-        message.info('Pasted images aren’t supported. Use "Insert image" to add a hosted URL.');
-        return;
-      }
-      // Tables/rich text paste natively; strip any data-URI images that ride along in HTML.
-      setTimeout(() => {
-        doc.querySelectorAll('img[src^="data:"]').forEach(el => el.remove());
-        syncFromEditor();
-      }, 0);
-    }, true);
-    doc.addEventListener('drop', (e) => {
-      const files = e.dataTransfer?.files || [];
-      if (Array.from(files).some(f => f.type?.startsWith('image/'))) {
-        e.preventDefault();
-        message.info('Dropped images aren’t supported. Use "Insert image" to add a hosted URL.');
-      }
-    }, true);
-  };
-
-  // Helper to insert placeholders at cursor position inside the editor iframe.
-  const handleInsertPlaceholder = (rawPlaceholderName) => {
-    const cleanPlaceholder = rawPlaceholderName.replace(/[{}]/g, '');
+  // Resolves each placeholder to its final, insert-ready bracketed form once
+  // per template selection (e.g. `{token}` vs `{{token}}`, matching whichever
+  // style this template's own placeholders array already uses).
+  const resolvedPlaceholders = useMemo(() => {
+    if (!selectedTemplate) return [];
     const hasSingleBrackets = selectedTemplate.placeholders.some(
       p => p.startsWith('{') && !p.startsWith('{{')
     );
-    const placeholderText = hasSingleBrackets
-      ? `{${cleanPlaceholder}}`
-      : `{{${cleanPlaceholder}}}`;
-
-    const doc = focusAndRestore();
-    if (!doc) return;
-    try { doc.execCommand('insertText', false, placeholderText); } catch { /* noop */ }
-    syncFromEditor();
-    setIsDirty(true);
-  };
-
-  const handleInsertLink = () => {
-    const url = window.prompt('Link URL (https://…)');
-    if (url && url.trim()) exec('createLink', url.trim());
-  };
-
-  const confirmInsertImage = () => {
-    const url = imgUrl.trim();
-    if (!url) { setImgModalOpen(false); return; }
-    const safeUrl = url.replace(/"/g, '&quot;');
-    const safeAlt = imgAlt.trim().replace(/"/g, '&quot;');
-    exec('insertHTML', `<img src="${safeUrl}" alt="${safeAlt}" style="max-width:100%" />`);
-    setImgModalOpen(false);
-    setImgUrl('');
-    setImgAlt('');
-  };
+    return selectedTemplate.placeholders.map((p) => {
+      const clean = p.replace(/[{}]/g, '');
+      return hasSingleBrackets ? `{${clean}}` : `{{${clean}}}`;
+    });
+  }, [selectedTemplate]);
 
   // Pre-save placeholder validation
   const validateTemplate = (sub, body) => {
@@ -398,11 +214,7 @@ export default function EmailManagement() {
   };
 
   const handleSave = async () => {
-    // The live iframe DOM is authoritative only while the visual editor is active;
-    // on the HTML/Preview tabs, bodyHtml is current and the iframe may be stale.
-    const doc = activeTab === '1' ? bodyEditorRef.current?.contentDocument : null;
-    const rawBody = doc && doc.designMode === 'on' ? serializeEditorDoc(doc) : bodyHtml;
-    const cleanBody = sanitizeDoc(rawBody);
+    const cleanBody = sanitizeDoc(bodyHtml);
 
     if (!validateTemplate(subject, cleanBody)) {
       message.error('Cannot save: Missing mandatory placeholders.');
@@ -419,10 +231,6 @@ export default function EmailManagement() {
       if (res.data.status === 'success') {
         message.success('Template saved successfully!');
         setBodyHtml(cleanBody);
-        // Code tab shows exactly what was persisted (sanitized form).
-        if (activeTab === '2') {
-          setHtmlView(v => ({ rev: v.rev + 1, text: formatHtml(cleanBody) }));
-        }
         setTemplates(prev =>
           prev.map(t =>
             t.id === selectedTemplate.id
@@ -430,7 +238,7 @@ export default function EmailManagement() {
               : t
           )
         );
-        // Keep the same id so the editor iframe does not reload.
+        // Keep the same id so the editor does not reload.
         setSelectedTemplate(prev => ({
           ...prev,
           subject,
@@ -451,35 +259,12 @@ export default function EmailManagement() {
     }
   };
 
-  const handleTabChange = (key) => {
-    // Leaving the visual editor: capture the live DOM into bodyHtml.
-    let html = bodyHtml;
-    if (activeTab === '1') {
-      const doc = bodyEditorRef.current?.contentDocument;
-      if (doc && doc.designMode === 'on') html = serializeEditorDoc(doc);
-    }
-    // Entering the code tab: pretty-print so the source is readable (whitespace-only
-    // change — doesn't mark the template dirty or force an editor reload).
-    if (key === '2') {
-      html = formatHtml(html);
-      setHtmlView(v => ({ rev: v.rev + 1, text: html }));
-    }
-    if (html !== bodyHtml) setBodyHtml(html);
-    // Entering the visual editor after raw-HTML edits: remount the iframe from bodyHtml.
-    if (key === '1' && htmlDirtyRef.current) {
-      htmlDirtyRef.current = false;
-      savedSelRef.current = null; // saved ranges belong to the destroyed document
-      setEditorRev(r => r + 1);
-    }
-    setActiveTab(key);
+  const handleBodyChange = (html) => {
+    setBodyHtml(html);
+    setIsDirty(true);
   };
 
-  const handleHtmlChange = (value) => {
-    setBodyHtml(value);
-    setIsDirty(true);
-    setValidationError('');
-    htmlDirtyRef.current = true;
-  };
+  const dummyPreview = useMemo(() => compileDummyPreview(subject, bodyHtml), [subject, bodyHtml]);
 
   const handleCopyHtml = async () => {
     try {
@@ -490,43 +275,15 @@ export default function EmailManagement() {
     }
   };
 
-  // Compile dummy preview html
-  const getPreviewContent = () => {
-    let compiledSubject = subject;
-    let compiledBody = bodyHtml;
-    for (const [key, val] of Object.entries(dummyReplacements)) {
-      compiledSubject = compiledSubject.split(`{{${key}}}`).join(val);
-      compiledBody = compiledBody.split(`{{${key}}}`).join(val);
-      compiledSubject = compiledSubject.split(`{${key}}`).join(val);
-      compiledBody = compiledBody.split(`{${key}}`).join(val);
-    }
-    return { subject: compiledSubject, body: compiledBody };
-  };
-
-  const preview = getPreviewContent();
-  // Templates stored as body fragments (Pipeline Tracker: stage outcomes,
-  // interview schedule/cancel/reminder, scorecard) get the branded header and
-  // footer applied by the backend at send time — so preview them wrapped, or
-  // the admin would be shown something the recipient never receives.
-  // Already-branded templates are returned unchanged by the guard.
-  // The header headline is the email's own subject, matching the send path.
-  const previewSrcDoc = sanitizeDoc(
-    wrapBrandedPreview(
-      preview.body || '<p style="font-family:sans-serif;color:#8a8f8c">This template has no body content.</p>',
-      { title: preview.subject }
-    )
-  );
-  // Whether the wrapper was actually applied, so the UI can say so.
-  const previewIsWrapped = !isFullHtmlDocument(preview.body || '');
-
   const categories = [
     { key: 'all', label: 'All Templates' },
     { key: 'general', label: 'General / Alerts' },
     { key: 'shortlist', label: 'Shortlist' },
     { key: 'interview', label: 'Interviews' },
+    { key: 'stage_outcome', label: 'Stage Outcome' },
     { key: 'offer', label: 'Offer Letter' },
     { key: 'rejection', label: 'Rejection' },
-    { key: 'follow_up', label: 'Follow Up' },
+    { key: 'onboarding', label: 'Onboarding' },
   ];
 
   // Keyboard activation helper for custom clickable elements.
@@ -536,207 +293,6 @@ export default function EmailManagement() {
       handler();
     }
   };
-
-  const noBlur = (e) => e.preventDefault(); // keep caret in the iframe when clicking toolbar
-
-  const toolbarBtn = (icon, title, onClick) => (
-    <Tooltip title={title}>
-      <Button
-        type="text"
-        size="small"
-        icon={icon}
-        onMouseDown={noBlur}
-        onClick={onClick}
-        className="email-editor-toolbar__btn"
-      />
-    </Tooltip>
-  );
-
-  const editorTab = selectedTemplate && (
-    <div className="email-tabpane email-editor-pane" style={{ paddingTop: 16 }}>
-      {/* Subject Input */}
-      <div style={{ marginBottom: 16 }}>
-        <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
-          Subject Line
-        </Text>
-        <Input
-          value={subject}
-          onChange={e => {
-            setSubject(e.target.value);
-            setValidationError('');
-            setIsDirty(true);
-          }}
-          placeholder="Enter email subject line..."
-          maxLength={255}
-          showCount
-          style={{ borderRadius: 8, fontSize: 14, padding: '8px 12px', border: '1px solid var(--border)' }}
-        />
-      </div>
-
-      {/* Placeholders helper tray */}
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          background: 'var(--gold-subtle)',
-          borderRadius: 8,
-          border: '1px dashed var(--border)',
-        }}
-      >
-        <Space style={{ marginBottom: 6 }} align="center">
-          <TagOutlined style={{ color: 'var(--gold)' }} />
-          <Text strong style={{ fontSize: 12 }}>Available Placeholders</Text>
-          <Tooltip title="Click to insert at the cursor position in the email body">
-            <InfoCircleOutlined style={{ fontSize: 12, color: 'var(--text-2)', cursor: 'pointer' }} />
-          </Tooltip>
-        </Space>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-          {selectedTemplate.placeholders.map(p => {
-            const cleanP = p.replace(/[{}]/g, '');
-            return (
-              <Tag
-                key={p}
-                role="button"
-                tabIndex={0}
-                aria-label={`Insert placeholder ${cleanP}`}
-                onMouseDown={noBlur}
-                onClick={() => handleInsertPlaceholder(cleanP)}
-                onKeyDown={onActivate(() => handleInsertPlaceholder(cleanP))}
-                style={{ ...brandTagStyle, cursor: 'pointer', padding: '3px 8px', fontSize: 11, fontWeight: 500 }}
-                className="placeholder-tag"
-              >
-                +{cleanP}
-              </Tag>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* WYSIWYG email body editor */}
-      <div className="email-body-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
-          <Text strong style={{ fontSize: 13 }}>Email Body</Text>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            Edit visually like Outlook, or switch to the HTML Code tab for the raw source.
-          </Text>
-        </div>
-        <div className="email-editor-shell">
-          <div className="email-editor-toolbar">
-            {toolbarBtn(<BoldOutlined />, 'Bold', () => exec('bold'))}
-            {toolbarBtn(<ItalicOutlined />, 'Italic', () => exec('italic'))}
-            {toolbarBtn(<UnderlineOutlined />, 'Underline', () => exec('underline'))}
-            <span className="email-editor-toolbar__sep" />
-            {toolbarBtn(<UnorderedListOutlined />, 'Bulleted list', () => exec('insertUnorderedList'))}
-            {toolbarBtn(<OrderedListOutlined />, 'Numbered list', () => exec('insertOrderedList'))}
-            <span className="email-editor-toolbar__sep" />
-            {toolbarBtn(<LinkOutlined />, 'Insert link', handleInsertLink)}
-            {toolbarBtn(<PictureOutlined />, 'Insert image by URL', () => setImgModalOpen(true))}
-            <span className="email-editor-toolbar__sep" />
-            {toolbarBtn(<ClearOutlined />, 'Clear formatting', () => exec('removeFormat'))}
-          </div>
-          <iframe
-            key={`${selectedTemplate.id}:${editorRev}`}
-            ref={bodyEditorRef}
-            title="Email body editor"
-            className="email-editor-iframe"
-            srcDoc={editorSrcDoc}
-            onLoad={handleEditorLoad}
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  const htmlTab = selectedTemplate && (
-    <div className="email-tabpane email-html-pane" style={{ paddingTop: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
-        <Text strong style={{ fontSize: 13 }}>Raw HTML Source</Text>
-        <Space size={8}>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            Full HTML document. Sanitized on save and when switching to the visual editor.
-          </Text>
-          <Button size="small" icon={<CopyOutlined />} onClick={handleCopyHtml}>
-            Copy HTML
-          </Button>
-        </Space>
-      </div>
-      <div className="email-html-editor">
-        <CodeMirror
-          key={`${selectedTemplate.id}:${htmlView.rev}`}
-          value={htmlView.text}
-          onChange={handleHtmlChange}
-          extensions={CM_EXTENSIONS}
-          theme={isDark ? 'dark' : 'light'}
-          height="100%"
-          basicSetup={{ foldGutter: true, highlightActiveLine: true, autocompletion: true }}
-          aria-label="Raw email HTML source"
-        />
-      </div>
-    </div>
-  );
-
-  const previewTab = selectedTemplate && (
-    <div className="email-tabpane email-preview-pane" style={{ paddingTop: 16 }}>
-      <div
-        className="email-preview-shell"
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          background: '#ffffff',
-          boxShadow: 'var(--shadow-sm)',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Mail-client shell header */}
-        <div
-          style={{
-            background: '#f8fafc',
-            borderBottom: '1px solid #e2e8f0',
-            padding: '14px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444' }} />
-            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b' }} />
-            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} />
-            <Text style={{ fontSize: 11, color: '#64748b', marginLeft: 10, fontWeight: 500 }}>
-              New Message — Preview Mode
-            </Text>
-          </div>
-          {/* The mail-client shell is intentionally white in both themes, so
-              these labels pin slate instead of theme "secondary" (near-white
-              in dark). */}
-          <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-            <Text style={{ width: 60, color: '#64748b' }}>Subject:</Text>
-            <Text strong style={{ color: '#0f172a' }}>{preview.subject}</Text>
-          </div>
-          <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-            <Text style={{ width: 60, color: '#64748b' }}>To:</Text>
-            <Text style={{ color: '#334155' }}>candidate@example.com</Text>
-          </div>
-          {previewIsWrapped && (
-            <div style={{ display: 'flex', fontSize: 11.5, gap: 10 }}>
-              <Text style={{ width: 60, color: '#64748b' }}>Format:</Text>
-              <Text style={{ color: '#64748b' }}>
-                Standard AAPNA header &amp; footer are applied automatically on send.
-              </Text>
-            </div>
-          )}
-        </div>
-
-        {/* Faithful, isolated render of the compiled email */}
-        <iframe
-          title="Email preview"
-          sandbox=""
-          className="email-preview-iframe"
-          srcDoc={previewSrcDoc}
-        />
-      </div>
-    </div>
-  );
 
   return (
     <div className="stagger-children email-page">
@@ -926,17 +482,40 @@ export default function EmailManagement() {
                 />
               )}
 
-              <Tabs
-                activeKey={activeTab}
-                onChange={handleTabChange}
-                type="card"
-                className="email-editor-tabs"
-                style={{ marginBottom: 0 }}
-                items={[
-                  { key: '1', label: (<span><EditOutlined /> Editor</span>), children: editorTab },
-                  { key: '2', label: (<span><CodeOutlined /> HTML Code</span>), children: htmlTab },
-                  { key: '3', label: (<span><EyeOutlined /> Live Preview</span>), children: previewTab },
-                ]}
+              <div style={{ marginBottom: 16 }}>
+                <Text strong style={{ display: 'block', marginBottom: 8, fontSize: 13 }}>
+                  Subject Line
+                </Text>
+                <Input
+                  value={subject}
+                  onChange={e => {
+                    setSubject(e.target.value);
+                    setValidationError('');
+                    setIsDirty(true);
+                  }}
+                  placeholder="Enter email subject line..."
+                  maxLength={255}
+                  showCount
+                  style={{ borderRadius: 8, fontSize: 14, padding: '8px 12px', border: '1px solid var(--border)' }}
+                />
+              </div>
+
+              <EmailEditorTabs
+                key={selectedTemplate.id}
+                bodyHtml={bodyHtml}
+                onBodyChange={handleBodyChange}
+                subject={subject}
+                previewSubject={dummyPreview.subject}
+                previewBodyHtml={dummyPreview.body}
+                placeholders={resolvedPlaceholders}
+                toolbar={FULL_TOOLBAR}
+                isDark={isDark}
+                fillHeight
+                htmlExtra={
+                  <Button size="small" icon={<CopyOutlined />} onClick={handleCopyHtml}>
+                    Copy HTML
+                  </Button>
+                }
               />
             </Card>
           ) : (
@@ -971,36 +550,6 @@ export default function EmailManagement() {
           )}
         </Col>
       </Row>
-
-      {/* Insert image by URL */}
-      <Modal
-        title="Insert image by URL"
-        open={imgModalOpen}
-        onOk={confirmInsertImage}
-        onCancel={() => setImgModalOpen(false)}
-        okText="Insert"
-        centered
-        destroyOnClose
-      >
-        <Input
-          placeholder="https://…"
-          value={imgUrl}
-          onChange={e => setImgUrl(e.target.value)}
-          onPressEnter={confirmInsertImage}
-          style={{ marginBottom: 8 }}
-          autoFocus
-        />
-        <Input
-          placeholder="Alt text (optional)"
-          value={imgAlt}
-          onChange={e => setImgAlt(e.target.value)}
-          style={{ marginBottom: 8 }}
-        />
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Use a hosted <b>https</b> image URL. Local/pasted images aren’t supported because they
-          don’t render reliably in delivered email.
-        </Text>
-      </Modal>
     </div>
   );
 }

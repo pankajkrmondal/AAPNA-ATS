@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as companyController from '../controllers/company.controller.js';
 import { authenticate, restrictTo } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 import { ROLES } from '../config/roles.js';
 
 const router = Router();
@@ -9,6 +10,7 @@ const router = Router();
 router.use(authenticate, restrictTo(ROLES.SUPERADMIN));
 
 router.get('/list', companyController.listCompanies);
+router.get('/export', exportLimiter, companyController.exportCompanies);
 router.post('/create', companyController.createCompany);
 router.post('/update', companyController.updateCompany);
 router.post('/toggle-status', companyController.toggleCompanyStatus);

@@ -4,6 +4,8 @@ import AppError from '../utils/AppError.js';
 import { hashPassword } from '../services/auth.service.js';
 import { sendCredentialEmail } from '../services/emailNotification.service.js';
 import { restrictToCompanyScope } from '../middleware/auth.js';
+import runExport from '../exports/runExport.js';
+import adminExport from '../exports/admin.export.js';
 import {
   ROLES,
   ADMIN_ASSIGNABLE_ROLES,
@@ -42,6 +44,13 @@ const DEFAULT_MODULES_BY_ROLE = {
     'candidate_screening',
     'screening_analytics',
     'vendor_dashboard',
+    // Candidate Pipeline (Phase 3 M1). This list was NOT updated when the
+    // module shipped, so every recruiter created since then arrived without
+    // access to the pipeline — the comment above already claimed they get
+    // everything but `hr_admin`, which made the omission easy to miss.
+    // Existing recruiters are repaired by
+    // prisma/grant-recruiter-pipeline-access.js.
+    'recruitment_pipeline',
   ],
 };
 
@@ -111,6 +120,16 @@ export const listUsers = catchAsync(async (req, res) => {
 
   return res.status(200).json(users.map(toSafeUser));
 });
+
+/**
+ * Export users in scope as CSV — same tenant scoping as listUsers.
+ * @route GET /api/admin/users/export
+ */
+export const exportUsers = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  adminExport.usersSpecFor(req),
+));
 
 /**
  * Check if email duplicate exists.

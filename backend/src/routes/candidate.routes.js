@@ -5,6 +5,7 @@ import fs from 'fs';
 import config from '../config/index.js';
 import * as candidateController from '../controllers/candidate.controller.js';
 import { authenticate } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
@@ -54,6 +55,13 @@ router.use(authenticate);
  * Search with pagination & filters: ?search=&status=&page=&limit=&sort=&order=
  */
 router.get('/', candidateController.searchCandidates);
+
+/**
+ * GET /api/candidates/export
+ * CSV of every candidate matching the filters (no pagination).
+ * Registered before '/:id' so 'export' is never captured as a candidate id.
+ */
+router.get('/export', exportLimiter, candidateController.exportCandidates);
 
 /**
  * GET /api/candidates/:id

@@ -3,6 +3,8 @@ import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import runExport from '../exports/runExport.js';
+import emailMonitoringExport from '../exports/emailMonitoring.export.js';
 
 /**
  * Structural placeholders that the sending service injects as HTML fragments
@@ -262,4 +264,23 @@ export const getEmailMonitoring = catchAsync(async (req, res) => {
     },
     'Email monitoring data retrieved successfully'
   );
+});
+
+/**
+ * @desc    Export one Email Delivery table as CSV
+ * @route   GET /api/email/monitoring/export?days=30&table=by_type|failures
+ * @access  Private
+ */
+export const exportEmailMonitoring = catchAsync(async (req, res) => {
+  const days = emailMonitoringExport.parseDays(req.query.days);
+  const spec = emailMonitoringExport.specFor(req.query.table, days);
+
+  if (!spec) {
+    throw new AppError(
+      `Unknown table "${req.query.table || ''}". Expected one of: ${emailMonitoringExport.TABLE_KEYS.join(', ')}.`,
+      400,
+    );
+  }
+
+  return runExport(req, res, spec);
 });

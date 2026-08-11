@@ -8,15 +8,12 @@
  * with an editable Subject/Body seeded from the live rpa_email_templates row.
  */
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Modal, Space, Typography, Select, Input, Checkbox, Tag, Segmented } from 'antd';
+import { Modal, Space, Typography, Select, Input, Checkbox, Tag } from 'antd';
 import { MailOutlined } from '@ant-design/icons';
-import DOMPurify from 'dompurify';
 import emailTemplateService from '../../services/emailTemplateService';
-import EmailBodyEditor from '../common/EmailBodyEditor';
+import { EmailEditorTabs } from '../common/EmailBodyEditor';
 
 const { Text } = Typography;
-
-const SANITIZE_OPTS = { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], ADD_ATTR: ['target'] };
 
 const REJECT_REASONS = [
   'Skills mismatch', 'High salary expectation', 'High notice period',
@@ -90,9 +87,8 @@ export default function DecisionEmailModal({
   const [body, setBody] = useState('');
   const [template, setTemplate] = useState(null);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
-  const [previewMode, setPreviewMode] = useState('edit');
   // Bumped every time {role_paragraph} is (re-)baked into `body` as static text,
-  // so EmailBodyEditor (uncontrolled after mount) remounts and shows the fresh text.
+  // so the editor (uncontrolled after mount) remounts and shows the fresh text.
   const [roleParagraphRev, setRoleParagraphRev] = useState(0);
 
   useEffect(() => {
@@ -102,7 +98,6 @@ export default function DecisionEmailModal({
     setReason(undefined);
     setCustomReason('');
     setSendEmail(true);
-    setPreviewMode('edit');
     setTemplate(null);
     setSubject('');
     setBody('');
@@ -265,68 +260,32 @@ export default function DecisionEmailModal({
                   <Text strong style={{ fontSize: 12.5 }}>
                     <MailOutlined style={{ marginInlineEnd: 4 }} /> Email
                   </Text>
-                  <Space size={8}>
-                    {template
-                      ? <Tag color="blue">Template — {template.name} (#{template.id})</Tag>
-                      : loadingTemplate ? <Tag>Loading template…</Tag> : <Tag color="orange">No active template found</Tag>}
-                    <Segmented
-                      size="small"
-                      value={previewMode}
-                      onChange={setPreviewMode}
-                      options={[
-                        { label: 'Visual', value: 'edit' },
-                        { label: 'HTML', value: 'html' },
-                        { label: 'Preview', value: 'preview' },
-                      ]}
-                    />
-                  </Space>
+                  {template
+                    ? <Tag color="blue">Template — {template.name} (#{template.id})</Tag>
+                    : loadingTemplate ? <Tag>Loading template…</Tag> : <Tag color="orange">No active template found</Tag>}
                 </Space>
 
-                {previewMode !== 'preview' ? (
-                  <>
-                    <Input
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      placeholder="Subject"
-                      style={{ marginBottom: 8 }}
-                    />
-                    {previewMode === 'edit' ? (
-                      <EmailBodyEditor
-                        key={`${template?.id ?? 'loading'}-${roleParagraphRev}`}
-                        initialHtml={body}
-                        onChange={setBody}
-                        placeholders={(template?.placeholders || []).filter((p) => p.replace(/[{}]/g, '') !== 'role_paragraph')}
-                        height={220}
-                      />
-                    ) : (
-                      <Input.TextArea
-                        rows={9}
-                        value={body}
-                        onChange={(e) => setBody(e.target.value)}
-                        placeholder="Body (HTML)"
-                        style={{ fontFamily: 'var(--mono, monospace)', fontSize: 12.5 }}
-                      />
-                    )}
-                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-                      Editable before send — the exact text above goes out. Tokens like <code>{'{candidate_name}'}</code> (chips above the body) personalize per candidate when multiple are selected.
-                    </Text>
-                  </>
-                ) : (
-                  <div style={{ border: '1px solid var(--border-light, #eaebe8)', borderRadius: 6, overflow: 'hidden' }}>
-                    <div style={{ padding: '6px 10px', background: 'var(--ink-4, #f4f6f9)', fontSize: 12, fontWeight: 600 }}>
-                      {preview.subject}
-                    </div>
-                    <iframe
-                      title="email-preview"
-                      sandbox=""
-                      style={{ width: '100%', height: 260, border: 'none', background: '#fff' }}
-                      srcDoc={DOMPurify.sanitize(preview.body, SANITIZE_OPTS)}
-                    />
-                    <Text type="secondary" style={{ fontSize: 11, display: 'block', padding: '4px 10px 8px' }}>
-                      Preview shown for {firstCandidateName}{candidateCount > 1 ? ` (+${candidateCount - 1} more, personalized individually when sent)` : ''}.
-                    </Text>
-                  </div>
-                )}
+                <Input
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Subject"
+                  style={{ marginBottom: 8 }}
+                />
+                <EmailEditorTabs
+                  key={`${template?.id ?? 'loading'}-${roleParagraphRev}`}
+                  bodyHtml={body}
+                  onBodyChange={setBody}
+                  subject={subject}
+                  previewSubject={preview.subject}
+                  previewBodyHtml={preview.body}
+                  placeholders={(template?.placeholders || []).filter((p) => p.replace(/[{}]/g, '') !== 'role_paragraph')}
+                  compact
+                  height={220}
+                />
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                  Editable before send — the exact text above goes out. Tokens like <code>{'{candidate_name}'}</code> (chips above the body) personalize per candidate when multiple are selected.
+                  {candidateCount > 1 && ` Preview shown for ${firstCandidateName} (+${candidateCount - 1} more, personalized individually when sent).`}
+                </Text>
               </div>
             )}
           </>

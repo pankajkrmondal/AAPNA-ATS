@@ -11,6 +11,8 @@ import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import runExport from '../exports/runExport.js';
+import uploadJobsExport from '../exports/uploadJobs.export.js';
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -471,6 +473,17 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * @desc    Export vendor upload jobs as CSV, honouring the same visibility
+ *          scoping as the list (vendors see only their own self-uploads).
+ * @route   GET /api/vendor/jobs/export
+ * @access  Private (Vendor + staff with vendor_upload)
+ */
+export const exportUploadJobs = catchAsync(async (req, res) => runExport(req, res, {
+  ...uploadJobsExport.vendorSpec,
+  filters: uploadJobsExport.parseVendorFilters(req),
+}));
 
 /**
  * @desc    Reprocess a failed upload job by re-running parsing on its stored file.

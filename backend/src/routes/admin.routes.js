@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller.js';
 import { authenticate, restrictTo } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
@@ -12,6 +13,7 @@ router.get('/auth/verify', adminController.verifyToken);
 
 // User Management CRUD
 router.get('/users/list', adminController.listUsers);
+router.get('/users/export', exportLimiter, adminController.exportUsers);
 router.get('/users/check-email', adminController.checkEmail);
 router.post('/users/create', adminController.createUser);
 router.post('/users/update', adminController.updateUser);

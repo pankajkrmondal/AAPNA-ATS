@@ -13,8 +13,9 @@ import {
 } from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
 import scorecardService from '../services/scorecardService';
+import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export default function InterviewScorecard() {
@@ -123,61 +124,78 @@ export default function InterviewScorecard() {
 
   // ── Render states ──────────────────────────────────────────────────────
   if (loading) {
-    return <Centered><Spin size="large" tip="Loading scorecard…" /></Centered>;
+    return (
+      <PublicPageShell title="Interviewer scorecard" subtitle="Loading this interview…">
+        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+      </PublicPageShell>
+    );
   }
 
   if (done === 'submitted' || view?.state === 'submitted') {
     return (
-      <Centered>
+      <PublicPageShell title="Thank you" subtitle="Your feedback has reached the recruitment team.">
         <Result status="success" title="Feedback submitted"
           subTitle="Thank you. This scorecard link is now closed." />
-      </Centered>
+      </PublicPageShell>
     );
   }
   if (done === 'no_show') {
     return (
-      <Centered>
+      <PublicPageShell title="Thanks for letting us know" subtitle="We have recorded that this interview did not take place.">
         <Result status="info" title="Recorded — interview did not take place"
-          subTitle="Thanks for letting us know. The recruiter will follow up. No scorecard is needed." />
-      </Centered>
+          subTitle="The recruiter will follow up. No scorecard is needed." />
+      </PublicPageShell>
     );
   }
   if (view?.state === 'expired') {
     return (
-      <Centered>
+      <PublicPageShell title="This link has expired" subtitle="Feedback can no longer be submitted here.">
         <Result status="warning" title="This scorecard link has expired"
           subTitle="Please contact the recruitment team if you still need to submit feedback." />
-      </Centered>
+      </PublicPageShell>
     );
   }
   if (view?.state === 'no_show') {
     return (
-      <Centered>
+      <PublicPageShell title="Interview not held" subtitle="This round was marked as not having taken place.">
         <Result status="info" title="This interview was marked as not held"
           subTitle="No scorecard can be submitted for it." />
-      </Centered>
+      </PublicPageShell>
     );
   }
   if (error && !view) {
-    return <Centered><Result status="error" title="Link unavailable" subTitle={error} /></Centered>;
+    return (
+      <PublicPageShell title="Link unavailable" subtitle="We could not open this scorecard.">
+        <Result status="error" title="Link unavailable" subTitle={error} />
+      </PublicPageShell>
+    );
   }
 
   return (
-    <Centered wide>
-      <Card style={{ width: '100%', maxWidth: 620 }}>
-        <Title level={4} style={{ marginBottom: 4 }}>Interviewer scorecard</Title>
-        <Text type="secondary">Interview Evaluation Format · no login needed</Text>
-        <Divider style={{ margin: '14px 0' }} />
+    <PublicPageShell
+      title="Interviewer scorecard"
+      subtitle={`Share your assessment of ${ctx.candidate_name || 'the candidate'} for the ${ctx.stage_label || ctx.stage_key || 'interview'} round.`}
+      maxWidth={720}
+    >
+      {/* Pre-filled read-only context */}
+      <div
+        style={{
+          background: BRAND.page,
+          borderRadius: 10,
+          padding: '12px 16px',
+          marginBottom: 18,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px 28px',
+        }}
+      >
+        <ContextItem label="CANDIDATE" value={ctx.candidate_name} />
+        <ContextItem label="POSITION" value={ctx.position} />
+        <ContextItem label="ROUND" value={ctx.stage_label || ctx.stage_key} />
+        {ctx.interviewer_name ? <ContextItem label="INTERVIEWER" value={ctx.interviewer_name} /> : null}
+      </div>
 
-        {/* Pre-filled read-only context */}
-        <Space direction="vertical" size={2} style={{ width: '100%', marginBottom: 12 }}>
-          <Text><strong>Candidate:</strong> {ctx.candidate_name || '—'}</Text>
-          <Text><strong>Position:</strong> {ctx.position || '—'}</Text>
-          <Text><strong>Round:</strong> {ctx.stage_label || ctx.stage_key || '—'}</Text>
-          {ctx.interviewer_name ? <Text><strong>Interviewer:</strong> {ctx.interviewer_name}</Text> : null}
-        </Space>
-
-        {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
+      {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
 
         {showGate && (
           <Card size="small" style={{ background: '#fffbe6', borderColor: '#ffe58f' }}>
@@ -263,14 +281,32 @@ export default function InterviewScorecard() {
             <TextArea rows={2} placeholder="Final comments" value={comments} onChange={(e) => setComments(e.target.value)} />
             <Input size="small" placeholder="Interview recording link (optional)" value={recordingUrl} onChange={(e) => setRecordingUrl(e.target.value)} />
 
-            <Button type="primary" block loading={submitting} onClick={submit}>Submit feedback</Button>
+            <Button
+              type="primary"
+              size="large"
+              block
+              loading={submitting}
+              onClick={submit}
+              style={{ background: BRAND.accent, borderColor: BRAND.accent, fontWeight: 600 }}
+            >
+              Submit feedback
+            </Button>
             <Text type="secondary" style={{ fontSize: 12 }}>
               This link works once. After you submit, it closes and cannot be reopened.
             </Text>
           </Space>
         )}
-      </Card>
-    </Centered>
+    </PublicPageShell>
+  );
+}
+
+/** One labelled read-only fact in the context strip. */
+function ContextItem({ label, value }) {
+  return (
+    <div>
+      <Text type="secondary" style={{ fontSize: 11, display: 'block', letterSpacing: 0.3 }}>{label}</Text>
+      <Text strong style={{ fontSize: 13.5 }}>{value || '—'}</Text>
+    </div>
   );
 }
 
@@ -307,10 +343,3 @@ function HrField({ label, value, onChange, rows, maxLength }) {
   );
 }
 
-function Centered({ children, wide }) {
-  return (
-    <div style={{ minHeight: '100vh', background: '#f4f6f9', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: wide ? 640 : 480 }}>{children}</div>
-    </div>
-  );
-}

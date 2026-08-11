@@ -1577,6 +1577,19 @@ h1, h2, h3, h4, h5, h6,
   border-radius: var(--border-radius-lg) !important;
 }
 
+/* Modal widths are set in px per modal (see components/pipeline/modalWidths.js).
+   The widest tier (820) exceeds a narrow laptop viewport, so cap every modal to
+   the window with a gutter — otherwise the dialog runs under the screen edge and
+   its footer buttons become unreachable. Also keep tall modals scrollable inside
+   themselves rather than pushing the page. */
+.ant-modal {
+  max-width: calc(100vw - 32px);
+}
+.ant-modal-body {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+
 /* AntD Button active press effect */
 .ant-btn:active {
   transform: scale(0.97);

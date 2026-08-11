@@ -751,7 +751,7 @@ const INTERVIEW_CONFIRM_BODY = `<p>Hi,</p>
 const INTERVIEW_NO_SHOW_BODY = `<p>Hi,</p>
 <p>The scheduled <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) for {{interview_when}} <strong>did not take place</strong>.</p>
 <p>The Microsoft Teams attendance report shows that <strong>{{absent_party}}</strong>.</p>
-<p style="margin:16px 0;"><a href="{{confirm_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open Pipeline Tracker</a></p>
+<p style="margin:16px 0;"><a href="{{confirm_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open Candidate Pipeline</a></p>
 <p style="color:#888;font-size:13px;">No scorecard has been requested from the interviewer. Please reschedule the round or update the candidate's status.</p>
 <p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
 
@@ -1206,8 +1206,8 @@ const TEMPLATES = [
       category: 'offer',
       subject: 'Offer approval pending — {{candidate_name}} ({{position}})',
       body_html: `<p>The offer for <strong>{{candidate_name}}</strong> ({{position}}) is still waiting for internal approval — requested {{waiting_days}} day(s) ago.</p>
-<p>Please approve it in the Pipeline Tracker so the offer can be shared with the candidate.</p>
-<p><a href="{{pipeline_link}}">Open the Pipeline Tracker</a></p>`,
+<p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
+<p><a href="{{pipeline_link}}">Open the Candidate Pipeline</a></p>`,
       placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
       is_active: true,
     },
