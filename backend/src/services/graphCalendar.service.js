@@ -14,6 +14,7 @@
  */
 import config from '../config/index.js';
 import logger from '../config/logger.js';
+import { nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -56,6 +57,42 @@ export async function resolveUserId(upnOrId) {
 }
 
 /**
+ * The non-production net for calendar attendees.
+ *
+ * OUTLOOK sends the invite, not us, so it bypasses sendGraphEmail()'s gate
+ * entirely — an address on this list gets a real meeting request wherever the
+ * code runs. Callers are expected to substitute the candidate themselves
+ * (interviewSchedule.service.js does), but relying on that alone is what let
+ * real candidates be invited from staging: one branch missing the call-site
+ * guard is enough. So the substitution is repeated HERE, under every call
+ * site, mirroring the global gate inside sendGraphEmail(). Idempotent, so
+ * doing it in both places is harmless.
+ *
+ * `role: 'panel'` is the ONE exemption: interviewer addresses are typed in
+ * per booking by whoever is scheduling and are meant to be reached (same
+ * reasoning as OPERATOR_ADDRESSED in config/emailRecipients.js).
+ *
+ * Anything NOT explicitly marked 'panel' — including an unmarked attendee —
+ * is substituted. A future call site that forgets to label its attendees
+ * therefore fails safe (nobody real is invited) rather than failing open.
+ */
+export function nonProdSafeAttendees(attendees) {
+  const seen = new Set();
+  return attendees.reduce((acc, a) => {
+    const email = a.role === 'panel'
+      ? a.email
+      : nonProdSafeCandidateEmail(a.email, 'calendar:invite');
+    // Substitution can collapse the candidate onto a panel member who already
+    // IS the test inbox — Graph would otherwise get the same address twice.
+    const key = email.toLowerCase();
+    if (seen.has(key)) return acc;
+    seen.add(key);
+    acc.push({ ...a, email });
+    return acc;
+  }, []);
+}
+
+/**
  * Creates an Outlook event (with a Teams meeting when the tenant allows it) on
  * the recruitment mailbox, inviting the candidate and the interviewer.
  *
@@ -64,7 +101,9 @@ export async function resolveUserId(upnOrId) {
  * @param {string} params.bodyHtml
  * @param {Date}   params.start
  * @param {Date}   params.end
- * @param {Array<{email: string, name?: string}>} params.attendees
+ * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'}>} params.attendees
+ *   Mark interviewers `role: 'panel'` so they are not redirected outside
+ *   production; everything else is (see nonProdSafeAttendees above).
  * @returns {Promise<{eventId: string|null, joinUrl: string|null, onlineMeetingId: string|null, skipped: boolean, error: string|null}>}
  *   `onlineMeetingId` is the Teams onlineMeeting id (distinct from the Outlook
  *   `eventId`) — the path segment the Graph attendanceReports endpoint needs to
@@ -77,7 +116,7 @@ export async function createInterviewEvent({ subject, bodyHtml, start, end, atte
   }
 
   const mailbox = config.microsoft.calendarMailbox;
-  const validAttendees = attendees.filter((a) => a?.email);
+  const validAttendees = nonProdSafeAttendees(attendees.filter((a) => a?.email));
 
   const event = {
     subject,

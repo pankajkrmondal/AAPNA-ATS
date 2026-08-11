@@ -532,7 +532,7 @@ export default function Settings() {
             Assessment Automation
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Controls for the Evalground assessment round on the Pipeline Tracker.
+            Controls for the Evalground assessment round on the Candidate Pipeline.
           </Text>
         </div>
 

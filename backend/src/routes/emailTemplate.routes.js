@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as emailTemplateController from '../controllers/emailTemplate.controller.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
@@ -16,5 +17,8 @@ router.put('/templates/:id', emailTemplateController.updateEmailTemplate);
 
 // Delivery monitoring (send/tracking stats, recent failures, poller status)
 router.get('/monitoring', emailTemplateController.getEmailMonitoring);
+
+/** CSV of one Email Delivery table (?table=by_type|failures&days=30). */
+router.get('/monitoring/export', exportLimiter, emailTemplateController.exportEmailMonitoring);
 
 export default router;

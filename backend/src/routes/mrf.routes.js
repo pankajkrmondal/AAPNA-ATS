@@ -5,6 +5,7 @@ import fs from 'fs';
 import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
 import { authenticate } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
@@ -45,6 +46,9 @@ router.use(authenticate);
 
 router.post('/', mrfController.createMrfRequest);
 router.get('/', mrfController.listMrfRequests);
+// Registered before '/:id' so 'export' is never captured as an MRF id — the
+// controller would run BigInt('export') and 500.
+router.get('/export', exportLimiter, mrfController.exportMrfRequests);
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
 router.get('/main/:id', mrfController.getMainMrf);
 router.patch('/main/:id', mrfController.updateMainMrf);

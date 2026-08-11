@@ -23,8 +23,17 @@ export async function getApprovedRoles() {
         number_of_positions,
         created_at
     FROM rpa_mrf
-    WHERE approval_status = 'approved'
-       OR (approval_status = 'completed' AND approved_by_abhijit IN ('approved', 'true'))
+    WHERE (
+            approval_status = 'approved'
+         OR (approval_status = 'completed' AND approved_by_abhijit IN ('approved', 'true'))
+          )
+      -- Filled requisitions leave JD filtering. This used to happen implicitly
+      -- because closure overwrote approval_status to 'closed'; that was lossy
+      -- (see mrfClosure.service.js) so fill state now lives in its own column
+      -- and has to be filtered explicitly.
+      -- The approval test above MUST stay parenthesised: AND binds tighter than
+      -- OR, so without the brackets plain 'approved' rows would skip this check.
+      AND filled_at IS NULL
     ORDER BY position_hiring_for, created_at DESC;`
   );
 
@@ -1747,6 +1756,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
   let shortlistedCount = 0;
   let skippedCount = 0;
   const emailFailures = [];
+  const pipelineEntries = [];
 
   // A keyword search is not tied to an MRF role. mrf_id is a nullable FK to
   // rpa_mrf, so for keyword (mrfId <= 0) we must store NULL — inserting 0 (no
@@ -1847,13 +1857,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     // Best-effort: a failure here must never block the legacy shortlist flow
     // that predates the stage engine.
     try {
-      await createPipelineJourney({
+      const journey = await createPipelineJourney({
         cvId: candidateId,
         mrfId: mrfRef,
         shortlistId: shortlist.id,
         source: 'screening_shortlist',
         vendorEmail: c.VendorEmail || null,
       });
+      pipelineEntries.push({ cv_id: Number(candidateId), pipeline_id: journey.id });
     } catch (err) {
       logger.error(`Pipeline journey creation failed for shortlist ${shortlist.id}: ${err.message}`);
     }
@@ -1992,6 +2003,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     skipped: skippedCount,
     emails_sent: emailsSent,
     email_failures: emailFailures,
+    pipeline_entries: pipelineEntries,
   };
 }
 

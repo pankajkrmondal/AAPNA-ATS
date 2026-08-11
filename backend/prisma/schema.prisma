@@ -212,6 +212,7 @@ model rpa_mrf {
   parsed_jd_json                Json?
   mandatory_skills_other        String?
   good_to_have_skills_other     String?
+  filled_at                     DateTime?                    @db.Timestamptz(6)
   emails                        rpa_email_messages[]
   shortlisted                   rpa_shortlisted_candidates[]
 

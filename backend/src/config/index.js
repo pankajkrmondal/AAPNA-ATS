@@ -345,6 +345,20 @@ const config = {
     authMax: parseInt(env('RATE_LIMIT_AUTH_MAX', '20'), 10),
   },
 
+  /** CSV export endpoints (see src/exports/, src/utils/csvExport.js). */
+  exports: {
+    /**
+     * Hard row ceiling per export. Over this the request is refused with a 413
+     * telling the user to narrow their filters — never silently truncated.
+     * 25k covers the whole production candidate table (~8.8k rows) with room.
+     */
+    maxRows: parseInt(env('EXPORT_MAX_ROWS', '25000'), 10),
+    /** Export limiter window (default 5 minutes). */
+    rateWindowMs: parseInt(env('EXPORT_RATE_WINDOW_MS', String(5 * 60 * 1000)), 10),
+    /** Exports allowed per window per USER (not per IP — the office shares one). */
+    rateMax: parseInt(env('EXPORT_RATE_MAX', '20'), 10),
+  },
+
   /**
    * Set TRUST_PROXY=true when running behind a reverse proxy (nginx/IIS/Azure)
    * so Express derives the real client IP from X-Forwarded-For; otherwise the

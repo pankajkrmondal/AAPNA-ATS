@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
 import { authenticate, checkModuleAccess } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as hrUploadController from '../controllers/hrUpload.controller.js';
 
 const router = Router();
@@ -57,6 +58,9 @@ router.get('/summary/:executionId', hrUploadController.getSummary);
 
 /** Persistent per-resume job feed (powers the live Upload Status dashboard) */
 router.get('/jobs', hrUploadController.getUploadJobs);
+
+/** CSV of every upload job matching the filters (no pagination). */
+router.get('/jobs/export', exportLimiter, hrUploadController.exportUploadJobs);
 
 /** Reprocess a failed upload job */
 router.post('/jobs/:id/reprocess', hrUploadController.reprocessJob);

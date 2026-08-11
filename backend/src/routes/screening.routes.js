@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as screeningController from '../controllers/screening.controller.js';
 import { authenticate, checkModuleAccess } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
@@ -23,10 +24,23 @@ router.get('/roles', screeningController.getRoles);
 router.post('/roles/:id/search', screeningController.searchRoleCandidates);
 
 /**
+ * POST /api/screening/roles/:id/export
+ * CSV of the JD-filtering results. POST (not GET) because it re-runs the same
+ * search; the server never accepts a client-supplied candidate list.
+ */
+router.post('/roles/:id/export', exportLimiter, screeningController.exportRoleCandidates);
+
+/**
  * POST /api/screening/keyword-search
  * Keyword-based candidate search and scoring
  */
 router.post('/keyword-search', screeningController.searchKeywordCandidates);
+
+/**
+ * POST /api/screening/keyword-export
+ * CSV of the keyword-tab results, from the same filter body as the search.
+ */
+router.post('/keyword-export', exportLimiter, screeningController.exportKeywordCandidates);
 
 /**
  * POST /api/screening/shortlist
@@ -51,6 +65,12 @@ router.get('/analytics/jobs', screeningController.getZekoJobs);
  * Retrieve Zeko interview pipeline candidates
  */
 router.get('/analytics/pipeline', screeningController.getZekoPipeline);
+
+/**
+ * GET /api/screening/analytics/pipeline/export
+ * CSV of the Analytics "Role Summary" table.
+ */
+router.get('/analytics/pipeline/export', exportLimiter, screeningController.exportRoleSummary);
 
 /**
  * POST /api/screening/analytics/assign

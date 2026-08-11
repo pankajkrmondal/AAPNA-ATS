@@ -1,6 +1,8 @@
 import prisma from '../config/database.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import runExport from '../exports/runExport.js';
+import adminExport from '../exports/admin.export.js';
 
 /**
  * Company (tenant) management — superadmin only.
@@ -36,6 +38,16 @@ export const listCompanies = catchAsync(async (_req, res) => {
 
   return res.status(200).json(result);
 });
+
+/**
+ * Export all companies as CSV (superadmin only, per the router guard).
+ * @route GET /api/admin/companies/export
+ */
+export const exportCompanies = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  adminExport.companiesSpec,
+));
 
 /**
  * Create a new company.

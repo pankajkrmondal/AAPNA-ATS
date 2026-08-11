@@ -22,6 +22,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, ApartmentOutlined } from '@ant-design/icons';
 import pipelineService from '../../services/pipeline';
+import { MODAL_WIDTH } from './modalWidths';
 
 const { Title, Text } = Typography;
 
@@ -347,6 +348,7 @@ export default function PipelineConfigPanel() {
         onOk={saveStage}
         confirmLoading={saving}
         okText={stageModal.editing ? 'Save' : 'Create'}
+        width={MODAL_WIDTH.CONFIRM}
         destroyOnClose
       >
         <Form form={stageForm} layout="vertical" style={{ marginTop: 16 }}>
@@ -391,7 +393,7 @@ export default function PipelineConfigPanel() {
         open={outcomeModal.open}
         onCancel={() => setOutcomeModal({ open: false, stageKey: null, editing: null })}
         footer={null}
-        width={720}
+        width={MODAL_WIDTH.EMAIL}
         destroyOnClose
       >
         <Space style={{ marginBottom: 12, marginTop: 8 }}>
@@ -465,6 +467,7 @@ export default function PipelineConfigPanel() {
         onOk={saveReason}
         confirmLoading={saving}
         okText={reasonModal.editing ? 'Save' : 'Create'}
+        width={MODAL_WIDTH.CONFIRM}
         destroyOnClose
       >
         <Form form={reasonForm} layout="vertical" style={{ marginTop: 16 }}>

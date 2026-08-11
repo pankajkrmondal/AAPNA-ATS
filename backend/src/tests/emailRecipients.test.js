@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import config from '../config/index.js';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { SILENT_FINAL_OUTCOMES } from '../services/stageNotification.service.js';
+import { nonProdSafeAttendees } from '../services/graphCalendar.service.js';
 
 const REDIRECTS = config.email.redirectInNonProd;
 const TEST_INBOX = config.email.testRecipients;
@@ -145,6 +146,67 @@ test('nonProdSafeCandidateEmail is stable — schedule and cancel resolve alike'
     nonProdSafeCandidateEmail(CANDIDATE, 'zeko:schedule'),
     nonProdSafeCandidateEmail(CANDIDATE, 'zeko:cancel')
   );
+});
+
+// ── Calendar attendees: the net under the call sites ──────────────────
+//
+// Outlook sends the meeting request, not us, so an address that reaches this
+// list gets a real invite wherever the code runs. Real candidates were once
+// invited from staging because only the CALL SITE substituted them and one
+// branch was missing that call; these cover the net that now sits underneath.
+
+test('nonProdSafeAttendees substitutes the candidate outside production', () => {
+  const [attendee] = nonProdSafeAttendees([
+    { email: CANDIDATE, name: 'A Candidate', role: 'candidate' },
+  ]);
+  if (REDIRECTS) {
+    assert.equal(attendee.email, FIRST_TEST_INBOX);
+    assert.notEqual(attendee.email, CANDIDATE, 'the candidate was invited from a non-prod environment');
+  } else {
+    assert.equal(attendee.email, CANDIDATE);
+  }
+});
+
+test('nonProdSafeAttendees leaves the interview panel alone', () => {
+  // Panel addresses are typed in per booking and are meant to be reached —
+  // same reasoning as OPERATOR_ADDRESSED.
+  const panel = 'interviewer@aapnainfotech.com';
+  const [attendee] = nonProdSafeAttendees([{ email: panel, role: 'panel' }]);
+  assert.equal(attendee.email, panel);
+});
+
+test('nonProdSafeAttendees redirects an UNMARKED attendee (fails safe)', () => {
+  // The whole point of the net: a future call site that forgets to label its
+  // attendees must fail closed, not quietly invite a real person.
+  const [attendee] = nonProdSafeAttendees([{ email: CANDIDATE }]);
+  if (REDIRECTS) {
+    assert.notEqual(attendee.email, CANDIDATE, 'an unmarked attendee must not reach a real address');
+    assert.equal(attendee.email, FIRST_TEST_INBOX);
+  } else {
+    assert.equal(attendee.email, CANDIDATE);
+  }
+});
+
+test('nonProdSafeAttendees de-duplicates once the candidate collapses onto the panel', () => {
+  // Substitution can turn the candidate into the very inbox a panel member
+  // already uses; Graph must not be handed the same address twice.
+  const result = nonProdSafeAttendees([
+    { email: CANDIDATE, role: 'candidate' },
+    { email: FIRST_TEST_INBOX, role: 'panel' },
+  ]);
+  const emails = result.map((a) => a.email.toLowerCase());
+  assert.equal(new Set(emails).size, emails.length, 'duplicate attendee addresses were sent to Graph');
+  if (REDIRECTS) assert.equal(result.length, 1);
+});
+
+test('nonProdSafeAttendees preserves attendee order and name', () => {
+  const result = nonProdSafeAttendees([
+    { email: CANDIDATE, name: 'A Candidate', role: 'candidate' },
+    { email: 'interviewer@aapnainfotech.com', role: 'panel' },
+  ]);
+  assert.equal(result.length, 2);
+  assert.equal(result[0].name, 'A Candidate', 'the display name must survive substitution');
+  assert.equal(result[1].email, 'interviewer@aapnainfotech.com');
 });
 
 // ── Closure-email suppression ─────────────────────────────────────────

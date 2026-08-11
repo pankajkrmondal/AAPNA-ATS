@@ -82,8 +82,8 @@ export async function runApprovalNudges() {
       : {
           subject: `Offer approval pending — ${tokens.candidate_name} (${position})`,
           html: `<p>The offer for <strong>${tokens.candidate_name}</strong> (${position}) is still waiting for internal approval${waitingDays ? ` — requested ${waitingDays} day(s) ago` : ''}.</p>
-                 <p>Please approve it in the Pipeline Tracker so the offer can be shared with the candidate.</p>
-                 <p><a href="${tokens.pipeline_link}">Open the Pipeline Tracker</a></p>`,
+                 <p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
+                 <p><a href="${tokens.pipeline_link}">Open the Candidate Pipeline</a></p>`,
         };
 
     try {

@@ -21,6 +21,17 @@ const mrfService = {
   },
 
   /**
+   * Download every MRF request matching the filters as CSV.
+   * Pagination is deliberately absent — the server returns the full filtered set.
+   * @param {object} [params={}] — { search, status }
+   * @param {object} [config={}] — blob/timeout config from downloadFile
+   * @returns {Promise}
+   */
+  exportCsv(params = {}, config = {}) {
+    return api.get('/mrf/export', { params, ...config });
+  },
+
+  /**
    * Get MRF request details by ID.
    * @param {string|number} id
    * @returns {Promise}

@@ -2,6 +2,8 @@ import * as screeningService from '../services/screening.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import runExport from '../exports/runExport.js';
+import screeningExport from '../exports/screening.export.js';
 
 /**
  * GET /api/screening/roles
@@ -35,6 +37,39 @@ export const searchKeywordCandidates = catchAsync(async (req, res) => {
   const result = await screeningService.searchKeywordCandidates(filters);
   return success(res, result, 'Keyword-filtered candidates retrieved successfully');
 });
+
+/**
+ * POST /api/screening/roles/:id/export
+ * CSV of the JD-filtering results for one MRF. POST, not GET, to mirror the
+ * search it re-runs.
+ */
+export const exportRoleCandidates = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId)) {
+    throw new AppError('Invalid MRF ID provided.', 400);
+  }
+  return runExport(req, res, screeningExport.roleSpec(mrfId));
+});
+
+/**
+ * POST /api/screening/keyword-export
+ * CSV of the keyword-tab results. Takes the same filter body as the search.
+ */
+export const exportKeywordCandidates = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  screeningExport.keywordSpec(req.body || {}),
+));
+
+/**
+ * GET /api/screening/analytics/pipeline/export
+ * CSV of the Analytics "Role Summary" table.
+ */
+export const exportRoleSummary = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  screeningExport.roleSummarySpec,
+));
 
 /**
  * POST /api/screening/shortlist

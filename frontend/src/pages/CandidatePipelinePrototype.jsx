@@ -947,7 +947,7 @@ export function CandidatePipelineAnalyticsPreview() {
   return (
     <>
       <Alert type="warning" showIcon style={{ marginBottom: 14 }}
-        message="Preview — mock data from the Pipeline Tracker prototype; becomes live pipeline analytics in Phase 3 Module 1." />
+        message="Preview — mock data from the Candidate Pipeline prototype; becomes live pipeline analytics in Phase 3 Module 1." />
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {PIPELINE_TILES.map((t, i) => (
           <Col xs={12} sm={12} md={8} lg={PIPELINE_TILES.length >= 4 ? 6 : 8} key={t.key}>

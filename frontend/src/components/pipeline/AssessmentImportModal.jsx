@@ -17,6 +17,7 @@ import {
 import { InboxOutlined, ImportOutlined, RobotOutlined } from '@ant-design/icons';
 import assessmentImportService from '../../services/assessmentImportService';
 import UploadCelebration from '../common/UploadCelebration';
+import { MODAL_WIDTH } from './modalWidths';
 
 const { Text, Paragraph } = Typography;
 const { Dragger } = Upload;
@@ -147,7 +148,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
       open={open}
       onCancel={handleClose}
       title="IQ / Tech Assessment — import Evalground results"
-      width={820}
+      width={MODAL_WIDTH.EMAIL}
       footer={
         showReportStep ? [
           <Button key="cancel" onClick={handleClose}>Cancel</Button>,

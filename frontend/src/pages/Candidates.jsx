@@ -7,6 +7,7 @@ import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typograp
 import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
+import ExportButton from '../components/common/ExportButton';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -558,10 +559,22 @@ export default function Candidates() {
           }}
           styles={{ body: { padding: 12 } }}
         >
-          <div style={{ padding: '8px 12px 14px' }}>
+          <div style={{
+            padding: '8px 12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}>
             <Text strong style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
               Showing {total} results
             </Text>
+            <ExportButton
+              request={(cfg) => candidateService.exportCsv(searchParams, cfg)}
+              fallbackName="AAPNA-ATS_Candidates.csv"
+              rowCount={total}
+              size="small"
+            />
           </div>
 
           <div style={{ overflowX: 'auto' }}>

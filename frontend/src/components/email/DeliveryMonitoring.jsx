@@ -24,6 +24,7 @@ import {
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import emailTemplateService from '../../services/emailTemplateService';
+import ExportButton from '../common/ExportButton';
 
 dayjs.extend(relativeTime);
 
@@ -164,7 +165,20 @@ export default function DeliveryMonitoring() {
 
       <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
         <Col xs={24} md={10}>
-          <Card size="small" title="By email type" bordered>
+          <Card
+            size="small"
+            title="By email type"
+            bordered
+            extra={(
+              <ExportButton
+                request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', days, cfg)}
+                fallbackName="AAPNA-ATS_Email-Delivery-By-Type.csv"
+                rowCount={data?.by_type?.length ?? null}
+                label="Export"
+                size="small"
+              />
+            )}
+          >
             <Table
               size="small"
               rowKey="email_type"
@@ -177,7 +191,21 @@ export default function DeliveryMonitoring() {
           </Card>
         </Col>
         <Col xs={24} md={14}>
-          <Card size="small" title="Recent failures" bordered>
+          <Card
+            size="small"
+            title="Recent failures"
+            bordered
+            extra={(
+              <ExportButton
+                request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', days, cfg)}
+                fallbackName="AAPNA-ATS_Email-Delivery-Failures.csv"
+                rowCount={data?.recent_failures?.length ?? null}
+                fullSetNote="This is every failure in the window — the table above shows only the 20 most recent."
+                label="Export"
+                size="small"
+              />
+            )}
+          >
             <Table
               size="small"
               rowKey="id"

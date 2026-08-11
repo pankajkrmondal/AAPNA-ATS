@@ -3,6 +3,7 @@ import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
+import { ROLES, normalizeRole } from '../config/roles.js';
 
 /**
  * Candidate service.
@@ -241,17 +242,8 @@ export function unmapCandidate(data) {
 export async function search(filters = {}, page = 1, limit = 20, sort = 'createdAt', order = 'desc') {
   const where = buildWhereClause(filters);
 
-  // Validate sort field exists on model
-  const allowedSorts = ['id', 'Name', 'EmailID', 'PositionApplied', 'createdAt', 'modifiedAt'];
-  let dbSortField = 'createdAt';
-  if (sort === 'name') dbSortField = 'Name';
-  else if (sort === 'email') dbSortField = 'EmailID';
-  else if (sort === 'position') dbSortField = 'PositionApplied';
-  else if (sort === 'modifiedAt') dbSortField = 'modifiedAt';
-  
-  if (!allowedSorts.includes(dbSortField)) {
-    dbSortField = 'createdAt';
-  }
+  // Shared with the CSV export so both order rows identically.
+  const dbSortField = resolveSortField(sort);
 
   const [data, total] = await Promise.all([
     prisma.rpa_cv.findMany({
@@ -409,79 +401,186 @@ export async function update(id, data) {
 
 /**
  * Build Prisma `where` clause from filter params.
- * Uses logical OR for name, email, and phone search criteria to align with legacy search functionality.
+ *
+ * Every supplied filter is AND'ed, so each one can only ever narrow the result.
+ * The name/email/phone trio stays OR'ed *with each other* inside its own group,
+ * which is the legacy "search by any identifier" behaviour.
+ *
+ * Previously each group assigned onto a bare `where` object, so two filters
+ * touching the same key silently clobbered one another — `search` overwrote the
+ * name/email/phone `OR` entirely, and `filterPosition` and `position` fought
+ * over `PositionApplied`. Combining a search term with a name filter therefore
+ * dropped the name and returned MORE rows than asked for. Now they compose.
+ *
  * @param {Object} filters
  * @returns {Object}
  */
-function buildWhereClause(filters) {
-  const where = {};
+export function buildWhereClause(filters = {}) {
+  const and = [];
 
-  const orConditions = [];
+  // Legacy identifier search — any one of these may match.
+  const identityOr = [];
   if (filters.email) {
-    orConditions.push({ EmailID: { contains: filters.email, mode: 'insensitive' } });
+    identityOr.push({ EmailID: { contains: filters.email, mode: 'insensitive' } });
   }
   if (filters.name) {
-    orConditions.push({ Name: { contains: filters.name, mode: 'insensitive' } });
+    identityOr.push({ Name: { contains: filters.name, mode: 'insensitive' } });
   }
   if (filters.phone) {
-    orConditions.push({ ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
+    identityOr.push({ ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
+  }
+  if (identityOr.length > 0) {
+    and.push({ OR: identityOr });
   }
 
-  if (orConditions.length > 0) {
-    where.OR = orConditions;
-  }
-
+  // Free-text search across the profile.
   if (filters.search) {
-    where.OR = [
-      { Name: { contains: filters.search, mode: 'insensitive' } },
-      { EmailID: { contains: filters.search, mode: 'insensitive' } },
-      { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
-      { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
-    ];
+    and.push({
+      OR: [
+        { Name: { contains: filters.search, mode: 'insensitive' } },
+        { EmailID: { contains: filters.search, mode: 'insensitive' } },
+        { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
+        { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
+      ],
+    });
   }
 
   // Discrete field filters (mirror the n8n vendor "My Uploads" filterName/filterEmail/filterPosition).
-  // Combined with AND so all supplied filters must match.
   if (filters.filterName) {
-    where.Name = { contains: filters.filterName, mode: 'insensitive' };
+    and.push({ Name: { contains: filters.filterName, mode: 'insensitive' } });
   }
   if (filters.filterEmail) {
-    where.EmailID = { contains: filters.filterEmail, mode: 'insensitive' };
+    and.push({ EmailID: { contains: filters.filterEmail, mode: 'insensitive' } });
   }
   if (filters.filterPosition) {
-    where.PositionApplied = { contains: filters.filterPosition, mode: 'insensitive' };
+    and.push({ PositionApplied: { contains: filters.filterPosition, mode: 'insensitive' } });
   }
 
   if (filters.status) {
-    where.statusActive = filters.status;
+    and.push({ statusActive: filters.status });
   }
 
   if (filters.finalStatus) {
-    where.FinalStatus = filters.finalStatus;
+    and.push({ FinalStatus: filters.finalStatus });
   }
 
   // Vendor isolation: exact (case-insensitive) match so a vendor only ever
   // sees their own uploads — matches the n8n `VendorEmail = <session email>` equality.
+  // See enforceVendorScope(), which guarantees this is set for vendor callers.
   if (filters.vendorEmail) {
-    where.VendorEmail = { equals: filters.vendorEmail, mode: 'insensitive' };
+    and.push({ VendorEmail: { equals: filters.vendorEmail, mode: 'insensitive' } });
   }
 
   if (filters.position) {
-    where.PositionApplied = { contains: filters.position, mode: 'insensitive' };
+    and.push({ PositionApplied: { contains: filters.position, mode: 'insensitive' } });
   }
 
   if (filters.location) {
-    where.CurrentLocation = { contains: filters.location, mode: 'insensitive' };
+    and.push({ CurrentLocation: { contains: filters.location, mode: 'insensitive' } });
   }
 
   // Restrict to all vendor-sourced candidates (recruiter "all vendors" overview).
   if (filters.vendorOnly) {
-    where.AND = [
-      ...(where.AND || []),
-      { VendorEmail: { not: null } },
-      { VendorEmail: { not: '' } },
-    ];
+    and.push({ VendorEmail: { not: null } });
+    and.push({ VendorEmail: { not: '' } });
   }
 
-  return where;
+  return and.length > 0 ? { AND: and } : {};
+}
+
+/**
+ * Force a vendor caller's query to their own candidates.
+ *
+ * `vendorEmail` arrives as a plain query parameter, so without this a
+ * vendor-role token could simply omit it (or name another vendor) and read the
+ * entire candidate table. Both the paginated list and the CSV export run every
+ * filter set through here, so the two cannot drift apart.
+ *
+ * Non-vendor roles are untouched — recruiters and admins legitimately query
+ * across vendors, and pass `vendorEmail` deliberately.
+ *
+ * @param {Object} filters
+ * @param {{ role?: string, email?: string }} [user]
+ * @returns {Object} a new filters object; the input is not mutated
+ */
+export function enforceVendorScope(filters = {}, user) {
+  if (normalizeRole(user?.role) !== ROLES.VENDOR) return { ...filters };
+
+  return {
+    ...filters,
+    // Overwrite, never merge: whatever the client asked for is irrelevant.
+    vendorEmail: user.email,
+    vendorOnly: false,
+  };
+}
+
+/**
+ * Columns the CSV export renders. Deliberately narrow: `rpa_cv` is ~80 columns
+ * wide and includes `resume_full_text`, `MetaData` and `ai_profile_insights`.
+ * `search()` selects all of them, which is fine for a 20-row page and hundreds
+ * of megabytes at the production row count — so the export must not reuse it.
+ * Being an allowlist also means no unlisted column can ever leak into a file.
+ */
+export const EXPORT_SELECT = {
+  id: true,
+  Name: true,
+  EmailID: true,
+  ContactNumber: true,
+  PositionApplied: true,
+  Gender: true,
+  CurrentLocation: true,
+  TotalExperienceYears: true,
+  LastCompanyExperienceYears: true,
+  CurrentCompany: true,
+  CTC_LPA: true,
+  ExpectedCTC_LPA: true,
+  NoticePeriod: true,
+  HighestQualification: true,
+  Top5KeySkills: true,
+  EnglishCommunicationRating: true,
+  PreferredShift: true,
+  ReasonForJobChange: true,
+  JobSource: true,
+  RecruiterInfoAAPNA: true,
+  VendorEmail: true,
+  statusActive: true,
+  FinalStatus: true,
+  ZekoInterviewScore: true,
+  LinkedInProfile: true,
+  cvFileUrl: true,
+  createdAt: true,
+  modifiedAt: true,
+};
+
+/**
+ * Map an API sort key onto a real column. Shared by search() and the export so
+ * there is one mapping rather than two that can drift.
+ * @param {string} sort
+ * @returns {string}
+ */
+export function resolveSortField(sort) {
+  if (sort === 'name') return 'Name';
+  if (sort === 'email') return 'EmailID';
+  if (sort === 'position') return 'PositionApplied';
+  if (sort === 'modifiedAt') return 'modifiedAt';
+  return 'createdAt';
+}
+
+/**
+ * Every candidate matching the filters, unpaginated, for CSV export.
+ * Same `where` as search() — only the pagination and the column set differ.
+ *
+ * @param {Object} filters
+ * @param {{ sort?: string, order?: string, max?: number }} [options]
+ * @returns {Promise<Array>}
+ */
+export async function findAllForExport(filters = {}, { sort = 'createdAt', order = 'desc', max } = {}) {
+  const rows = await prisma.rpa_cv.findMany({
+    where: buildWhereClause(filters),
+    select: EXPORT_SELECT,
+    orderBy: { [resolveSortField(sort)]: order === 'asc' ? 'asc' : 'desc' },
+    take: max,
+  });
+
+  return rows.map(mapCandidate);
 }

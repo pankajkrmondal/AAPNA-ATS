@@ -40,6 +40,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import adminService from '../services/adminService';
+import ExportButton from '../components/common/ExportButton';
 import useAuth from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
@@ -53,7 +54,7 @@ const MODULES_INFO = [
   { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: '#2f54eb' },
   { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: '#13c2c2' },
   { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: '#eb2f96' },
-  { key: 'recruitment_pipeline', label: 'Pipeline Tracker',                desc: 'Track candidates through the interview pipeline (Phase 3)', icon: '🧭', color: '#08979c' },
+  { key: 'recruitment_pipeline', label: 'Candidate Pipeline',              desc: 'Track candidates through the interview pipeline (Phase 3)', icon: '🧭', color: '#08979c' },
 ];
 
 // Per-role badge metadata — distinct, on-brand colors so the hierarchy reads at a glance.
@@ -771,21 +772,30 @@ export default function AdminDashboard() {
                   />
                 )}
               </Space>
-              <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : ""}>
-                <span>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    disabled={!isAuthorized}
-                    onClick={() => openUserModal()}
-                    style={!isAuthorized
-                      ? { borderRadius: 6, fontWeight: 600 }
-                      : { background: 'var(--gold)', borderColor: 'var(--gold)', borderRadius: 6, fontWeight: 600 }}
-                  >
-                    Add User
-                  </Button>
-                </span>
-              </Tooltip>
+              <Space size={8}>
+                {/* Exports everything the caller is scoped to, not the
+                    client-side filtered view. */}
+                <ExportButton
+                  request={(cfg) => adminService.exportUsers({}, cfg)}
+                  fallbackName="AAPNA-ATS_Admin-Users.csv"
+                  rowCount={users.length}
+                />
+                <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : ""}>
+                  <span>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      disabled={!isAuthorized}
+                      onClick={() => openUserModal()}
+                      style={!isAuthorized
+                        ? { borderRadius: 6, fontWeight: 600 }
+                        : { background: 'var(--gold)', borderColor: 'var(--gold)', borderRadius: 6, fontWeight: 600 }}
+                    >
+                      Add User
+                    </Button>
+                  </span>
+                </Tooltip>
+              </Space>
             </div>
 
             {/* Users Table */}
@@ -1010,14 +1020,21 @@ export default function AdminDashboard() {
               }}
             >
               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Companies</span>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => openCompanyModal()}
-                style={{ borderRadius: 6, fontWeight: 600 }}
-              >
-                Add Company
-              </Button>
+              <Space size={8}>
+                <ExportButton
+                  request={(cfg) => adminService.exportCompanies(cfg)}
+                  fallbackName="AAPNA-ATS_Admin-Companies.csv"
+                  rowCount={companies.length}
+                />
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => openCompanyModal()}
+                  style={{ borderRadius: 6, fontWeight: 600 }}
+                >
+                  Add Company
+                </Button>
+              </Space>
             </div>
             <Table
               dataSource={companies}

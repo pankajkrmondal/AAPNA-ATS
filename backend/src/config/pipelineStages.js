@@ -85,6 +85,54 @@ export const FINAL_OUTCOMES = Object.freeze({
   BACKED_OUT: 'backed_out',
 });
 
+/**
+ * The closure outcomes that FREE the requisition opening a candidate was
+ * holding — they accepted, but never joined or did not stay. Any other outcome
+ * (or none yet) means the seat is still theirs.
+ *
+ * Lives here, in pure config, rather than beside the closure machinery,
+ * because BOTH paths that can free a seat have to agree on it: offer.service's
+ * decision reversal and pipeline.service's setFinalOutcome. Those two drifted
+ * apart once already — only the first re-opened the requisition — so this is
+ * deliberately a single shared list, not a constant either service owns.
+ * Being import-free also keeps it testable without dragging in Redis/sockets.
+ */
+export const VACATING_OUTCOMES = Object.freeze([
+  FINAL_OUTCOMES.BACKED_OUT,
+  FINAL_OUTCOMES.DID_NOT_JOIN,
+  FINAL_OUTCOMES.JOINED_AND_LEFT,
+  FINAL_OUTCOMES.CANDIDATE_WITHDRAWN,
+]);
+
+/**
+ * The value `approval_status` used to be overwritten with to mean "filled".
+ *
+ * LEGACY READ ONLY. Nothing may write this again: expressing fill state by
+ * clobbering the approval column destroyed the real status ('completed' came
+ * back as 'approved', escaping the approved_by_abhijit gate). Fill state now
+ * lives in its own column, `rpa_mrf.filled_at`. This constant exists so rows
+ * closed by the old code are still recognised as filled.
+ */
+export const LEGACY_MRF_CLOSED_STATUS = 'closed';
+
+/**
+ * Whether a requisition's openings are all filled.
+ *
+ * One definition shared by every consumer (JD dropdown, dashboard active
+ * tile, pipeline board card) so they cannot disagree about what "filled"
+ * means — three separate inline checks is how the close and re-open paths
+ * drifted apart before.
+ *
+ * @param {{ filled_at?: Date|string|null, approval_status?: string|null }|null} mrf
+ * @returns {boolean}
+ */
+export function isMrfFilled(mrf) {
+  if (!mrf) return false;
+  if (mrf.filled_at != null) return true;
+  // Pre-migration rows, closed by the old lossy path.
+  return mrf.approval_status === LEGACY_MRF_CLOSED_STATUS;
+}
+
 const STAGE_LABELS = Object.freeze({
   [STAGE_KEYS.SHORTLIST]: 'Shortlisted',
   [STAGE_KEYS.ZEKO_HR]: 'Zeko HR Screening',

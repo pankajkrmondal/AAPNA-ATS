@@ -46,6 +46,7 @@ import hrUploadService from '../services/hrUploadService';
 import { getSocket } from '../services/socket';
 import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
+import ExportButton from '../components/common/ExportButton';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -493,7 +494,17 @@ export default function HRUpload() {
               Live processing status for every uploaded resume — review duplicates inline.
             </Text>
           </div>
-          <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
+            <ExportButton
+              request={(cfg) => hrUploadService.exportJobs({
+                ...(statusFilter ? { status: statusFilter } : {}),
+                ...(onlyActionRequired ? { actionRequired: 'true' } : {}),
+              }, cfg)}
+              fallbackName="AAPNA-ATS_HR-Upload-Jobs.csv"
+              rowCount={jobsTotal}
+            />
+          </Space>
         </div>
 
         {/* Premium count-up KPI cards */}

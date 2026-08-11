@@ -33,9 +33,39 @@ const screeningService = {
   },
 
   /**
+   * CSV of the JD-filtering results for one MRF. The server re-runs the search
+   * (hitting the cache the on-screen search wrote) rather than accepting a
+   * client-supplied candidate list.
+   * @param {number} mrfId
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  exportRoleCandidates(mrfId, config = {}) {
+    return api.post(`/screening/roles/${mrfId}/export`, {}, config);
+  },
+
+  /**
+   * CSV of the keyword-tab results, from the same filter body as the search.
+   * Re-runs embeddings + rerank, so it can be slow and can degrade — the
+   * response carries X-Export-Degraded when the ranking was unavailable.
+   * @param {Object} filters
+   * @param {Object} [config]
+   */
+  exportKeywordCandidates(filters, config = {}) {
+    return api.post('/screening/keyword-export', filters, config);
+  },
+
+  /** CSV of the Analytics "Role Summary" table. */
+  exportRoleSummary(config = {}) {
+    return api.get('/screening/analytics/pipeline/export', config);
+  },
+
+  /**
    * Shortlist selected candidates (insert records, send notification draft emails, update vectors).
+   * Also creates a Candidate Pipeline journey per candidate (best-effort) — the
+   * response's `pipeline_entries: [{ cv_id, pipeline_id }]` carries the ids
+   * needed to deep-link into /pipeline?candidate=<pipeline_id>.
    * @param {Object} payload - { candidates: Array, mrf_id: number, role_name: string, send_email?: boolean, email_override?: { subject, body } }
-   * @returns {Promise<{ data: { success: boolean, emails_sent: number } }>}
+   * @returns {Promise<{ data: { success: boolean, emails_sent: number, pipeline_entries: Array<{cv_id: number, pipeline_id: number}> } }>}
    */
   shortlistCandidates(payload) {
     return api.post('/screening/shortlist', payload);

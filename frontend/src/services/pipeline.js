@@ -25,6 +25,26 @@ const pipelineService = {
     return api.get('/pipeline/analytics', { params });
   },
 
+  /**
+   * CSV of every journey matching the board filters (no pagination).
+   * @param {Object} [filters] - the same params listPipeline takes
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  exportBoard(filters = {}, config = {}) {
+    return api.get('/pipeline/export', { params: filters, ...config });
+  },
+
+  /**
+   * CSV of one analytics table — the COMPLETE ranked list, where the screen
+   * shows only the top 10.
+   * @param {string} table - funnel | stuck | rejection_reasons | time_to_hire
+   *                       | vendor_performance | source_of_hire
+   * @param {Object} [config]
+   */
+  exportAnalytics(table, config = {}) {
+    return api.get('/pipeline/analytics/export', { params: { table }, ...config });
+  },
+
   /** @returns {Promise<{ data: Array }>} admin-configurable stage list */
   listStages() {
     return api.get('/pipeline/stages');

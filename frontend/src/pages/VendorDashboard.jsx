@@ -31,6 +31,8 @@ import {
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
 import vendorService from '../services/vendorService';
+import candidateService from '../services/candidateService';
+import ExportButton from '../components/common/ExportButton';
 
 const { Title, Text } = Typography;
 
@@ -448,15 +450,35 @@ export default function VendorDashboard() {
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
           <Card className="animate-fade-in-up stagger-4" bordered={false} style={{ ...SECTION_CARD_STYLE, marginBottom: 0 }}>
-            <div style={{ marginBottom: 20 }}>
-              <Text strong style={{ fontSize: 16, display: 'block' }}>
-                Recent Submissions
-              </Text>
-              <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-                {isStaff
-                  ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
-                  : 'Your most recently uploaded candidates.'}
-              </Text>
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 20,
+            }}>
+              <div>
+                <Text strong style={{ fontSize: 16, display: 'block' }}>
+                  Recent Submissions
+                </Text>
+                <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                  {isStaff
+                    ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
+                    : 'Your most recently uploaded candidates.'}
+                </Text>
+              </div>
+              {/* This table is only the most recent handful, so the export is
+                  the full candidate set behind it, not the five rows shown. */}
+              <ExportButton
+                request={(cfg) => candidateService.exportCsv(
+                  selectedVendor ? { vendorEmail: selectedVendor } : { vendorOnly: 'true' },
+                  cfg,
+                )}
+                fallbackName="AAPNA-ATS_Vendor-Candidates.csv"
+                fullSetNote="This is every matching candidate — the table above shows only the most recent."
+                label="Export"
+                size="small"
+              />
             </div>
             <Table
               rowKey={(r) => r.id}

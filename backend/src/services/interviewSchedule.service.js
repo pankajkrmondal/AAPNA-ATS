@@ -488,9 +488,9 @@ export async function scheduleInterviewRound(pipelineId, {
   const sendsInvites = stageSendsInvites(stageKey);
   const attendees = [
     candidate?.candidate_email
-      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name }
+      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name, role: 'candidate' }
       : null,
-    ...interviewerEmails.map((email) => ({ email })),
+    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
   ].filter(Boolean);
 
   const calendar = sendsInvites
@@ -845,9 +845,9 @@ export async function rescheduleInterviewRound(pipelineId, {
   const sendsInvites = stageSendsInvites(stageKey);
   const attendees = [
     candidate?.candidate_email
-      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name }
+      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name, role: 'candidate' }
       : null,
-    ...interviewerEmails.map((email) => ({ email })),
+    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
   ].filter(Boolean);
   const calendar = sendsInvites
     ? await createInterviewEvent({

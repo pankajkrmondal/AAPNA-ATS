@@ -5,19 +5,23 @@ import prisma from '../config/database.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import runExport from '../exports/runExport.js';
+import pipelineExport from '../exports/pipeline.export.js';
+import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 
 /**
  * GET /api/pipeline
  * Board data for the kanban view: columns (stages) + cards (journeys), filterable.
  */
 export const listPipeline = catchAsync(async (req, res) => {
-  const { source, on_hold_only, mrf_id, stuck_days, position } = req.query;
+  const { source, on_hold_only, mrf_id, stuck_days, position, include_closed } = req.query;
   const result = await pipelineService.listPipeline({
     source: source || undefined,
     onHoldOnly: on_hold_only === '1' || on_hold_only === 'true',
     mrfId: mrf_id ? parseInt(mrf_id, 10) : undefined,
     stuckDays: stuck_days ? parseInt(stuck_days, 10) : undefined,
     position: position || undefined,
+    includeClosed: include_closed === '1' || include_closed === 'true',
   });
   return success(res, result, 'Pipeline board retrieved successfully');
 });
@@ -37,6 +41,33 @@ export const getPipelineAnalytics = catchAsync(async (req, res) => {
     holdThresholdDays: hold_threshold_days ? parseInt(hold_threshold_days, 10) : undefined,
   });
   return success(res, result, 'Pipeline analytics retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/export
+ * CSV of every journey matching the board's current filters.
+ */
+export const exportPipeline = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'pipeline',
+  label: 'Candidate-Pipeline',
+  columns: pipelineExport.columns,
+  filters: pipelineExport.parseFilters(req),
+  fetch: pipelineExport.fetch,
+}));
+
+/**
+ * GET /api/pipeline/analytics/export?table=…
+ * CSV of one analytics table, complete rather than the screen's top 10.
+ */
+export const exportPipelineAnalytics = catchAsync(async (req, res) => {
+  const spec = pipelineAnalyticsExport.specFor(req.query.table);
+  if (!spec) {
+    throw new AppError(
+      `Unknown analytics table "${req.query.table || ''}". Expected one of: ${pipelineAnalyticsExport.TABLE_KEYS.join(', ')}.`,
+      400,
+    );
+  }
+  return runExport(req, res, { ...spec, filters: { table: req.query.table } });
 });
 
 /**

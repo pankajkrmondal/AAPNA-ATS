@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Card,
   Tabs,
@@ -59,6 +60,7 @@ import screeningService from '../services/screeningService';
 import { useApprovedRoles, useRoleCandidates, screeningKeys } from '../hooks/useScreeningData';
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
+import ExportButton from '../components/common/ExportButton';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 
 const { Title, Text, Paragraph } = Typography;
@@ -292,9 +294,48 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
   );
 };
 
+/**
+ * Placeholder rows shaped like the real candidate cards, shown while a match
+ * runs. Replaces a blank 200px spacer: an empty void made the wait feel longer
+ * and let the page jump when results landed. Reuses the app-wide `.shimmer`
+ * class so it animates like every other loading surface.
+ */
+function CandidateListSkeleton({ rows = 4 }) {
+  const Bar = ({ w, h = 12, mb = 0 }) => (
+    <div className="shimmer" style={{ width: w, height: h, borderRadius: 6, marginBottom: mb }} />
+  );
+  return (
+    <div aria-busy="true" aria-label="Loading candidates">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Card
+          key={i}
+          className="no-lift"
+          style={{ marginBottom: 10, animation: `fadeIn .3s ease ${i * 0.06}s both` }}
+          styles={{ body: { padding: 20 } }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <div className="shimmer" style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Bar w="38%" h={14} mb={9} />
+              <Bar w="62%" h={11} mb={9} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Bar w={64} h={18} />
+                <Bar w={80} h={18} />
+                <Bar w={52} h={18} />
+              </div>
+            </div>
+            <Bar w={92} h={30} />
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function CandidateScreening() {
   const { user } = useAuth();
   const convBodyRef = useRef(null);
+  const navigate = useNavigate();
 
   const queryClient = useQueryClient();
 
@@ -319,6 +360,8 @@ export default function CandidateScreening() {
 
   // ── Candidates List State ──
   const [candidates, setCandidates] = useState([]);
+  // The keyword filters behind the results on screen, replayed by Export.
+  const [lastKeywordPayload, setLastKeywordPayload] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateKeys, setSelectedCandidateKeys] = useState([]);
@@ -332,6 +375,13 @@ export default function CandidateScreening() {
   // ── Pagination State (client-side; result sets are bounded server-side) ──
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  /** The slice actually on screen — what "select this page" acts on. */
+  const pageCandidates = useMemo(
+    () => candidates.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [candidates, currentPage, pageSize]
+  );
+  const pageCandidateIds = useMemo(() => pageCandidates.map((c) => c.id), [pageCandidates]);
 
   // ── Keyword Filter Fields ──
   const [form] = Form.useForm();
@@ -538,6 +588,9 @@ export default function CandidateScreening() {
       ...values,
       education: selectedEduCategories.join(','),
     };
+    // Kept so Export can re-run the identical search server-side (the export
+    // never sends a candidate list — see screening.export.js).
+    setLastKeywordPayload(payload);
 
     try {
       const res = await screeningService.searchKeywordCandidates(payload);
@@ -653,10 +706,42 @@ export default function CandidateScreening() {
           ),
           duration: 0,
         });
-      } else if (sendEmail) {
-        message.success(`Successfully ${verb.toLowerCase()} ${processedCount} candidate(s) and sent ${emailsSent} notification email(s).${skippedNote}`);
       } else {
-        message.success(`Successfully ${verb.toLowerCase()} ${processedCount} candidate(s). No email was sent.${skippedNote}`);
+        const emailNote = sendEmail
+          ? ` Sent ${emailsSent} notification email(s).`
+          : ' No email was sent.';
+        const pipelineEntries = result.pipeline_entries || [];
+
+        if (decision === 'shortlist' && selectedList.length === 1 && pipelineEntries[0]?.pipeline_id) {
+          const pipelineId = pipelineEntries[0].pipeline_id;
+          notification.success({
+            message: `Shortlisted — ${selectedList[0].Name}`,
+            description: `Now at HR Screening (Zeko) on the Pipeline board.${emailNote}`,
+            btn: (
+              <Button type="primary" size="small" onClick={() => navigate(`/pipeline?candidate=${pipelineId}`)}>
+                View in Pipeline
+              </Button>
+            ),
+            placement: 'topRight',
+          });
+        } else if (decision === 'shortlist') {
+          notification.success({
+            message: `Shortlisted ${processedCount} candidate(s) for ${roleName}`,
+            description: `Now on the Pipeline board.${emailNote}${skippedNote}`,
+            btn: (
+              <Button type="primary" size="small" onClick={() => navigate(`/pipeline?position=${encodeURIComponent(roleName)}`)}>
+                View in Pipeline
+              </Button>
+            ),
+            placement: 'topRight',
+          });
+        } else {
+          notification.success({
+            message: `Rejected ${processedCount} candidate(s)`,
+            description: `${emailNote}${skippedNote}`,
+            placement: 'topRight',
+          });
+        }
       }
 
       setSelectedCandidateKeys([]);
@@ -1360,6 +1445,21 @@ export default function CandidateScreening() {
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                   <Text strong style={{ color: 'var(--text)', fontSize: 15, letterSpacing: '-0.01em' }}>{head.trim()}</Text>
                   {detail && <Text style={{ color: 'var(--text-3)', fontSize: 12 }}>{detail.trim()}</Text>}
+                  {/* Carries the match score and the per-dimension breakdown the
+                      cards have no room for. The server re-runs the search. */}
+                  <ExportButton
+                    request={(cfg) => (activeTab === 'jd'
+                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg)
+                      : screeningService.exportKeywordCandidates(lastKeywordPayload || {}, cfg))}
+                    fallbackName={activeTab === 'jd'
+                      ? 'AAPNA-ATS_Screening-Results.csv'
+                      : 'AAPNA-ATS_Screening-Keyword-Search.csv'}
+                    rowCount={candidates.length}
+                    disabled={activeTab === 'jd' ? !selectedRoleId : !lastKeywordPayload}
+                    label="Export"
+                    size="small"
+                    style={{ marginLeft: 4 }}
+                  />
                 </div>
               );
             })()}
@@ -1423,32 +1523,59 @@ export default function CandidateScreening() {
         )}
 
         {loadingCandidates ? (
-          <div style={{ height: 200 }} />
+          <CandidateListSkeleton rows={pageSize > 10 ? 6 : 4} />
         ) : candidates.length > 0 ? (
           <div>
-            {/* Select All Row */}
-            <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', background: 'var(--ink-4)', borderRadius: 6, marginBottom: 10 }}>
+            {/* Select-all row. The checkbox acts on the VISIBLE PAGE only —
+                selecting hundreds of unseen candidates from a control that sits
+                above ten rows is how a bulk reject goes wrong. Selecting every
+                match is still available, but as a deliberate second click. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '6px 12px', background: 'var(--ink-4)', borderRadius: 6, marginBottom: 10 }}>
               <Checkbox
-                checked={selectedCandidateKeys.length === candidates.length}
-                indeterminate={selectedCandidateKeys.length > 0 && selectedCandidateKeys.length < candidates.length}
+                checked={pageCandidateIds.length > 0 && pageCandidateIds.every((id) => selectedCandidateKeys.includes(id))}
+                indeterminate={
+                  pageCandidateIds.some((id) => selectedCandidateKeys.includes(id))
+                  && !pageCandidateIds.every((id) => selectedCandidateKeys.includes(id))
+                }
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedCandidateKeys(candidates.map((c) => c.id));
+                    setSelectedCandidateKeys((prev) => [...new Set([...prev, ...pageCandidateIds])]);
                   } else {
-                    setSelectedCandidateKeys([]);
+                    setSelectedCandidateKeys((prev) => prev.filter((id) => !pageCandidateIds.includes(id)));
                   }
                 }}
               >
                 <Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Select All ({candidates.length})
+                  Select this page ({pageCandidateIds.length})
                 </Text>
               </Checkbox>
+
+              {candidates.length > pageCandidateIds.length && (
+                selectedCandidateKeys.length === candidates.length ? (
+                  <Button size="small" type="link" onClick={() => setSelectedCandidateKeys([])}>
+                    Clear selection
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => setSelectedCandidateKeys(candidates.map((c) => c.id))}
+                  >
+                    Select all {candidates.length} matches
+                  </Button>
+                )
+              )}
+
+              {selectedCandidateKeys.length > 0 && (
+                <Text type="secondary" style={{ fontSize: 12, marginInlineStart: 'auto' }}>
+                  {selectedCandidateKeys.length} selected
+                </Text>
+              )}
             </div>
 
             {/* Candidates card list */}
             <Space direction="vertical" style={{ width: '100%' }} size={10}>
-              {candidates
-                .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+              {pageCandidates
                 .map((c) => {
                 const isSelected = selectedCandidateKeys.includes(c.id);
                 const rating = activeTab === 'jd' ? c.starRating : c.relevanceScore;
@@ -1735,7 +1862,7 @@ export default function CandidateScreening() {
           }}
         >
           <Text strong style={{ fontSize: 14 }}>
-            {selectedCandidateKeys.length} candidates selected
+            {selectedCandidateKeys.length} candidate{selectedCandidateKeys.length === 1 ? '' : 's'} selected
           </Text>
           <Button
             type="primary"

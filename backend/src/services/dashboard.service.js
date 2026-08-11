@@ -27,10 +27,15 @@ export async function getStats() {
       // Total candidates in rpa_cv
       prisma.rpa_cv.count(),
 
-      // Active MRFs (approval_status is 'pending', 'waiting', or 'approved')
+      // Active MRFs (approval_status is 'pending', 'waiting', or 'approved',
+      // and the openings are not all filled). The filled_at test used to be
+      // implicit — closure overwrote approval_status to 'closed', which fell
+      // out of this list for free. That write was lossy, so fill state now has
+      // its own column and must be excluded explicitly.
       prisma.rpa_mrf.count({
         where: {
           approval_status: { in: ['pending', 'waiting', 'approved'] },
+          filled_at: null,
         },
       }),
 

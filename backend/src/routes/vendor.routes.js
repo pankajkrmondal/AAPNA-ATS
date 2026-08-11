@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { authenticate, restrictTo, checkModuleAccess } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as vendorController from '../controllers/vendor.controller.js';
 import config from '../config/index.js';
 
@@ -82,6 +83,9 @@ router.get('/batches', vendorController.getUploadBatches);
 
 /** Persistent upload/job-tracking dashboard feed (one row per resume) */
 router.get('/jobs', vendorController.getUploadJobs);
+
+/** CSV of every upload job this user is scoped to see (no pagination). */
+router.get('/jobs/export', exportLimiter, vendorController.exportUploadJobs);
 
 /** Reprocess a failed upload job */
 router.post('/jobs/:id/reprocess', vendorController.reprocessJob);

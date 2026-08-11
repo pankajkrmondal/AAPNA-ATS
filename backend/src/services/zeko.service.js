@@ -131,7 +131,11 @@ function transformRole(r) {
     job_ref_id: r.jobRefId ? String(r.jobRefId) : null,
     title: String(r.title || r.hiringName || 'Untitled'),
     hiring_name: r.hiringName ? String(r.hiringName) : null,
-    role_name: r.designation || r.title ? String(r.designation || r.title) : null,
+    // r.designation is unreliable Zeko-side data (frequently the literal
+    // string "NA", occasionally a stale value copied from an unrelated
+    // posting) — the interview's own roleName is the clean, accurate value
+    // Zeko's own dashboard displays as "Role".
+    role_name: r.interviews?.[0]?.roleName || r.designation || r.title ? String(r.interviews?.[0]?.roleName || r.designation || r.title) : null,
     status,
     interview_type: interviewType,
     is_published: !!r.isPublished,
@@ -399,6 +403,8 @@ export async function syncZekoJobs() {
       where: { zeko_id: data.zeko_id },
       update: {
         title: data.title,
+        hiring_name: data.hiring_name,
+        role_name: data.role_name,
         status: data.status,
         interview_type: data.interview_type,
         is_published: data.is_published,

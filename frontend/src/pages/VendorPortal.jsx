@@ -48,6 +48,7 @@ import vendorService from '../services/vendorService';
 import { getSocket } from '../services/socket';
 import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
+import ExportButton from '../components/common/ExportButton';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -612,7 +613,18 @@ export default function VendorPortal() {
               {isStaff ? 'Live processing status across all vendors — filter below.' : 'Live processing status for every uploaded resume.'}
             </Text>
           </div>
-          <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={() => loadJobs(jobsPage)}>Refresh</Button>
+            <ExportButton
+              request={(cfg) => vendorService.exportJobs({
+                ...(statusFilter ? { status: statusFilter } : {}),
+                ...(onlyActionRequired ? { actionRequired: 'true' } : {}),
+                ...(isStaff && jobFilterVendor ? { vendorEmail: jobFilterVendor } : {}),
+              }, cfg)}
+              fallbackName="AAPNA-ATS_Vendor-Upload-Jobs.csv"
+              rowCount={jobsTotal}
+            />
+          </Space>
         </div>
 
         {/* Premium count-up KPI cards */}

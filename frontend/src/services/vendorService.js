@@ -76,6 +76,16 @@ const vendorService = {
   },
 
   /**
+   * CSV of every upload job this user is scoped to see (no pagination).
+   * Vendors are restricted to their own self-uploads server-side.
+   * @param {object} [params] — status, actionRequired, vendorEmail
+   * @param {object} [config] — blob/timeout config from downloadFile
+   */
+  exportJobs(params = {}, config = {}) {
+    return api.get('/vendor/jobs/export', { params, ...config });
+  },
+
+  /**
    * Reprocess a failed upload job.
    * @param {string|number} id
    * @returns {Promise}

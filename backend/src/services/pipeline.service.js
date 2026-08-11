@@ -9,10 +9,13 @@ import {
   shortlistStatusFor,
   isZekoStage,
   normalizeZekoRoundStage,
+  VACATING_OUTCOMES,
+  isMrfFilled,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule } from './interviewSchedule.service.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
+import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -107,6 +110,12 @@ export async function listPipeline(filters = {}) {
   if (filters.source) where.source = filters.source;
   if (filters.onHoldOnly) where.current_stage_status = 'hold';
   if (filters.mrfId) where.mrf_id = BigInt(filters.mrfId);
+  // A closed journey is finished work. setFinalOutcome's own notification says
+  // "the card is about to leave the board" — it never did, because nothing
+  // filtered on final_outcome, so finished candidates piled up in their last
+  // column forever. Hidden by default; `includeClosed` brings them back for
+  // anyone who wants the history.
+  if (!filters.includeClosed) where.final_outcome = null;
 
   const journeys = await prisma.rpa_candidate_pipeline.findMany({
     where,
@@ -237,6 +246,12 @@ export async function listPipeline(filters = {}) {
       scheduled,
       assessment_pending: assessmentPending,
       final_outcome: j.final_outcome,
+      // The requisition this candidate is running against has already been
+      // filled. Free to compute — the MRF is loaded with the journey above —
+      // and it is the only signal that a candidate is chasing a role that no
+      // longer has an opening. Keyword shortlists carry no MRF, so they are
+      // never flagged.
+      mrf_closed: isMrfFilled(j.rpa_shortlisted_candidates?.mrf),
       source: j.source,
       vendor_email: j.vendor_email,
       is_paused: j.is_paused,
@@ -306,6 +321,11 @@ export async function getPipelineDetail(pipelineId) {
   });
 
   // Real Zeko scores + resume link (no mock) — one lookup when there's a cv_id.
+  // This is a fallback only: rpa_cv holds ONE set of Zeko score columns per
+  // CANDIDATE, not per round, so a candidate who has completed both Zeko
+  // rounds would show whichever round synced last here. The round-scoped
+  // rpa_zeko_interview_results lookup below overrides this with the correct
+  // per-round numbers whenever one exists.
   let zekoScores = null;
   let cvFileUrl = null;
   if (pipeline.cv_id) {
@@ -341,6 +361,7 @@ export async function getPipelineDetail(pipelineId) {
   // ('hr' vs 'functional'), so functional screening reads its own row and can
   // never pick up the HR round's schedule.
   let zekoHrPipeline = null;
+  let zekoReportLink = null;
   if (isZekoStage(pipeline.current_stage_key) && pipeline.shortlist_id) {
     zekoHrPipeline = await prisma.rpa_zeko_candidate_pipeline.findFirst({
       where: {
@@ -350,6 +371,29 @@ export async function getPipelineDetail(pipelineId) {
       },
       orderBy: { created_at: 'desc' },
     });
+
+    // reportLink lives in a separate table, keyed by Zeko's own external
+    // interview id (zekoHrPipeline.pipeline_id) — NOT this journey's id.
+    // fetchInterviewResults() (zeko.service.js) writes both under that same
+    // external id when the hourly poll syncs a completed interview's score.
+    if (zekoHrPipeline) {
+      const zekoResult = await prisma.rpa_zeko_interview_results.findFirst({
+        where: { pipeline_id: zekoHrPipeline.pipeline_id },
+        orderBy: { created_at: 'desc' },
+      });
+      zekoReportLink = zekoResult?.reportlink || null;
+
+      // Prefer this round's own synced result over the rpa_cv fallback above
+      // — this row is keyed by THIS round's external interview id, so it
+      // can't be clobbered by the other Zeko round syncing later.
+      if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
+        zekoScores = {
+          ZekoInterviewScore: zekoResult.scores_overallscore,
+          ZekoCodingScore: zekoResult.scores_technicalscore,
+          ZekoCommunicationScore: zekoResult.scores_communicationscore,
+        };
+      }
+    }
   }
 
   // Scheduled interview rounds: the MRF names who interviews and their
@@ -375,6 +419,7 @@ export async function getPipelineDetail(pipelineId) {
     cvFileUrl,
     screening,
     zekoHrPipeline,
+    zekoReportLink,
     interviewSchedule,
     mrfInterviewHints,
     offer,
@@ -790,6 +835,35 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
     logger.error(`Closure: document link could not be closed for pipeline ${pipelineId}: ${err.message}`);
   }
 
+  // Closing a journey as backed-out / did-not-join / joined-and-left /
+  // withdrawn FREES the opening that candidate was holding, so a requisition
+  // auto-closed on the strength of their acceptance has to come back.
+  //
+  // offer.service.js already does this when an acceptance is AMENDED to
+  // declined, but that is only one of the two doors: the outcome is far more
+  // often recorded here, by closing the journey. Without this the role stayed
+  // out of JD filtering permanently, with no in-app way to reopen it —
+  // precisely when it most needed re-filling. reopenMrfIfUnfilled is
+  // idempotent, null-safe and never throws, so no extra guarding is needed.
+  if (VACATING_OUTCOMES.includes(finalOutcomeKey)) {
+    const mrfReopen = await reopenMrfIfUnfilled(pipeline.mrf_id);
+    if (mrfReopen.reopened) {
+      try {
+        await prisma.rpa_pipeline_stage_events.create({
+          data: {
+            pipeline_id: pipeline.id,
+            stage_key: pipeline.current_stage_key,
+            event_type: 'note',
+            notes: `Requisition re-opened — ${mrfReopen.accepted}/${mrfReopen.openings} opening(s) now filled`,
+            acted_by: actedBy || null,
+          },
+        });
+      } catch (err) {
+        logger.error(`Closure: re-open audit note failed for pipeline ${pipelineId}: ${err.message}`);
+      }
+    }
+  }
+
   const emailResult = notifyCandidate
     ? await sendStageOutcomeEmail({
       pipelineRow: updatedPipeline,
@@ -915,6 +989,29 @@ export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, 
     return serializeBigInts(existing);
   }
 
+  // Shortlisting into a requisition whose openings are already filled is
+  // ALLOWED — a backup candidate, or a role about to be re-opened, are both
+  // legitimate. It is usually a stale cached JD dropdown though (the roles
+  // list is held client-side with staleTime:Infinity), so record it: the
+  // board flags the card "Role filled", and this makes it traceable
+  // server-side rather than silent.
+  if (mrfIdBig) {
+    try {
+      const mrf = await prisma.rpa_mrf.findUnique({
+        where: { id: mrfIdBig },
+        select: { filled_at: true, approval_status: true, position_hiring_for: true },
+      });
+      if (isMrfFilled(mrf)) {
+        logger.warn(
+          `Journey created for cv ${cvIdBig} against MRF ${mrfIdBig} ("${mrf.position_hiring_for}") whose openings are already filled — likely a stale roles dropdown.`
+        );
+      }
+    } catch (err) {
+      // Advisory only: never block a shortlist over a logging lookup.
+      logger.warn(`Filled-requisition check failed for MRF ${mrfIdBig}: ${err.message}`);
+    }
+  }
+
   const created = await prisma.rpa_candidate_pipeline.create({
     data: {
       cv_id: cvIdBig,
@@ -949,13 +1046,20 @@ export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, 
  * @param {number} [params.rejectionWindowDays] - default 30, for the rejection-reasons breakdown
  * @param {number} [params.stuckThresholdDays] - default 10, for the "stuck" tile/table
  * @param {number} [params.holdThresholdDays] - default 30, for the "on hold > N days" tile
+ * @param {number|null} [params.topN] - how many rows the ranked tables keep.
+ *   The screen shows the top 10; a CSV export passes null for the COMPLETE
+ *   ranked list, because a 10-row file is useless for the analysis someone
+ *   exports in order to do.
  */
 export async function getPipelineAnalytics({
   mrfId = null,
   rejectionWindowDays = 30,
   stuckThresholdDays = 10,
   holdThresholdDays = 30,
+  topN = 10,
 } = {}) {
+  /** Apply the ranked-table cap, or keep everything when topN is null. */
+  const capped = (rows) => (topN == null ? rows : rows.slice(0, topN));
   const stages = await prisma.rpa_pipeline_stages.findMany({
     where: { is_active: true },
     orderBy: { sort_order: 'asc' },
@@ -1043,8 +1147,8 @@ export async function getPipelineAnalytics({
       };
     })
     .filter((row) => row.days >= stuckThresholdDays)
-    .sort((a, b) => b.days - a.days)
-    .slice(0, 10);
+    .sort((a, b) => b.days - a.days);
+  const stuckCandidatesTop = capped(stuckCandidates);
 
   // ── Rejection reasons — last N days ──
   const rejectionCutoff = new Date(now - rejectionWindowDays * 24 * 60 * 60 * 1000);
@@ -1073,8 +1177,8 @@ export async function getPipelineAnalytics({
       }
       return { reason: entry.reason, count: entry.count, most_common_stage: mostCommonStage };
     })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
+    .sort((a, b) => b.count - a.count);
+  const rejectionReasonsTop = capped(rejectionReasons);
 
   // ── Time-to-hire: average days spent in each stage, across CLOSED (final_outcome) journeys ──
   const closedJourneys = allJourneys.filter((j) => j.final_outcome);
@@ -1116,8 +1220,8 @@ export async function getPipelineAnalytics({
   }
   const vendorPerformance = [...vendorCounts.values()]
     .map((v) => ({ ...v, shortlist_rate: v.submitted > 0 ? Math.round((v.shortlisted / v.submitted) * 100) : 0 }))
-    .sort((a, b) => b.submitted - a.submitted)
-    .slice(0, 10);
+    .sort((a, b) => b.submitted - a.submitted);
+  const vendorPerformanceTop = capped(vendorPerformance);
 
   // ── Source of hire: submitted/shortlisted/rejected/on-hold by source ──
   const sourceGroups = new Map();
@@ -1146,11 +1250,13 @@ export async function getPipelineAnalytics({
       offers_pending: offersPending,
     },
     funnel: { mrf_id: funnelMrfId, mrf_label: funnelMrfLabel, stages: funnel },
-    stuckCandidates,
-    rejectionReasons,
+    // Ranked tables are capped to `topN` (10 on screen); an export passes
+    // topN: null and gets the complete list here.
+    stuckCandidates: stuckCandidatesTop,
+    rejectionReasons: rejectionReasonsTop,
     rejectionWindowDays,
     timeToHire: { total_days: totalTimeToHire, stages: timeToHire },
-    vendorPerformance,
+    vendorPerformance: vendorPerformanceTop,
     sourceOfHire,
   };
 }

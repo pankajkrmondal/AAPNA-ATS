@@ -29,6 +29,7 @@ import {
 import screeningService from '../services/screeningService';
 import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
+import ExportButton from '../components/common/ExportButton';
 
 const { Title, Text } = Typography;
 
@@ -47,7 +48,15 @@ const { Title, Text } = Typography;
  * here before Module 1 shipped.
  */
 
-const SHARED_SOURCE = <Text type="secondary" style={{ fontSize: 12 }}>from the Pipeline Tracker</Text>;
+const SHARED_SOURCE = <Text type="secondary" style={{ fontSize: 12 }}>from the Candidate Pipeline</Text>;
+
+/**
+ * These tables are ranked top-10 summaries on screen, but a 10-row CSV is
+ * useless for the analysis someone exports in order to do — so the export
+ * returns the complete ranked list. Said out loud in the success toast rather
+ * than left to be discovered as a discrepancy.
+ */
+const TOP_TEN_NOTE = 'This is the complete list — the table on screen shows only the top 10.';
 
 /**
  * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
@@ -130,7 +139,23 @@ function PipelineInsights() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="Stuck candidates" extra={SHARED_SOURCE} loading={loading}>
+          <Card
+            title="Stuck candidates"
+            extra={(
+              <Space size={8}>
+                {SHARED_SOURCE}
+                <ExportButton
+                  request={(cfg) => pipelineService.exportAnalytics('stuck', cfg)}
+                  fallbackName="AAPNA-ATS_Pipeline-Stuck-Candidates.csv"
+                  rowCount={data?.stuckCandidates?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
+            loading={loading}
+          >
             <Table size="small" pagination={false} rowKey="pipeline_id"
               columns={[
                 { title: 'Candidate', dataIndex: 'candidate_name' },
@@ -143,7 +168,23 @@ function PipelineInsights() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title={`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`} extra={SHARED_SOURCE} loading={loading}>
+          <Card
+            title={`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+            extra={(
+              <Space size={8}>
+                {SHARED_SOURCE}
+                <ExportButton
+                  request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', cfg)}
+                  fallbackName="AAPNA-ATS_Pipeline-Rejection-Reasons.csv"
+                  rowCount={data?.rejectionReasons?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
+            loading={loading}
+          >
             <Table size="small" pagination={false} rowKey="reason"
               columns={[
                 { title: 'Reason', dataIndex: 'reason' },
@@ -219,7 +260,21 @@ function RecruiterInsights() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="Vendor performance" extra={<Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>}
+          <Card
+            title="Vendor performance"
+            extra={(
+              <Space size={8}>
+                <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
+                <ExportButton
+                  request={(cfg) => pipelineService.exportAnalytics('vendor_performance', cfg)}
+                  fallbackName="AAPNA-ATS_Pipeline-Vendor-Performance.csv"
+                  rowCount={vendorPerformance?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
             loading={loading} style={{ marginBottom: 16 }}>
             <Table size="small" pagination={false} rowKey="vendor_email"
               columns={[
@@ -236,7 +291,22 @@ function RecruiterInsights() {
           </Card>
         </Col>
       </Row>
-      <Card title="Source of hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>} loading={loading}>
+      <Card
+        title="Source of hire"
+        extra={(
+          <Space size={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
+            <ExportButton
+              request={(cfg) => pipelineService.exportAnalytics('source_of_hire', cfg)}
+              fallbackName="AAPNA-ATS_Pipeline-Source-Of-Hire.csv"
+              rowCount={sourceOfHire?.length ?? null}
+              label="Export"
+              size="small"
+            />
+          </Space>
+        )}
+        loading={loading}
+      >
         <Table size="small" pagination={false} rowKey="source"
           columns={[
             { title: 'Source', dataIndex: 'source' },
@@ -440,13 +510,24 @@ export default function Analytics() {
                 </span>
               ),
               children: (
-                <Table
-                  dataSource={roleStats}
-                  columns={analyticsColumns}
-                  loading={loading}
-                  pagination={{ pageSize: 10 }}
-                  locale={{ emptyText: <Empty description="No shortlisted roles found" /> }}
-                />
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                    <ExportButton
+                      request={(cfg) => screeningService.exportRoleSummary(cfg)}
+                      fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
+                      rowCount={roleStats.length}
+                      label="Export"
+                      size="small"
+                    />
+                  </div>
+                  <Table
+                    dataSource={roleStats}
+                    columns={analyticsColumns}
+                    loading={loading}
+                    pagination={{ pageSize: 10 }}
+                    locale={{ emptyText: <Empty description="No shortlisted roles found" /> }}
+                  />
+                </>
               )
             },
             {

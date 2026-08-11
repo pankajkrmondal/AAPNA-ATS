@@ -29,10 +29,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ImportOutlined, LeftOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { ClearOutlined, ImportOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
+import ExportButton from '../components/common/ExportButton';
 
 const { Text, Title } = Typography;
 
@@ -153,6 +154,14 @@ function CandidateCard({ card, onOpen }) {
                 <Tag color="purple" icon={<TeamOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.concurrent_journeys} MRFs</Tag>
               </Tooltip>
             )}
+            {/* Still running against a requisition that has already been
+                filled — the recruiter is working a role with no opening
+                left. Only shown while the journey is genuinely open. */}
+            {card.mrf_closed && !card.final_outcome && (
+              <Tooltip title="All openings on this requisition are filled — this candidate is still in progress. Continue only if you intend to re-open the role or are holding them as a backup.">
+                <Tag color="orange" className="tag-attention" icon={<WarningOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Role filled</Tag>
+              </Tooltip>
+            )}
             {card.source === 'vendor' && <ShopOutlined style={{ color: 'var(--text-3)', fontSize: 11 }} />}
           </Space>
           <Tooltip title={segTooltip}>
@@ -205,6 +214,32 @@ const COLUMN_STEP = 272;
  * this over relying on the browser's bottom scrollbar. Each arrow auto-hides
  * when the board is already at that edge, and both hide when nothing overflows.
  */
+/**
+ * "Updated 40s ago" — the board's proof that it is genuinely live.
+ *
+ * Ticks on its own timer rather than off the query, because between the 60s
+ * polls nothing re-renders this page, and a label frozen at "just now" for a
+ * minute would undercut the very claim it exists to make.
+ */
+function LastUpdated({ at, refreshing }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (refreshing) return <Text type="secondary" style={{ fontSize: 12 }}>Refreshing…</Text>;
+  if (!at) return null;
+
+  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
+  const label = secs < 45
+    ? 'just now'
+    : secs < 3600
+      ? `${Math.round(secs / 60)} min ago`
+      : `${Math.round(secs / 3600)} hr ago`;
+  return <Text type="secondary" style={{ fontSize: 12 }}>Updated {label}</Text>;
+}
+
 function BoardScroller({ children }) {
   const scrollRef = useRef(null);
   const [edges, setEdges] = useState({ canLeft: false, canRight: false });
@@ -326,6 +361,7 @@ export default function Pipeline() {
   const [source, setSource] = useState();
   const [onHoldOnly, setOnHoldOnly] = useState(false);
   const [stuckOnly, setStuckOnly] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
   const [openPipelineId, setOpenPipelineId] = useState(null);
   const [nlQuery, setNlQuery] = useState('');
   const [nlRead, setNlRead] = useState(null);
@@ -356,17 +392,37 @@ export default function Pipeline() {
     source,
     on_hold_only: onHoldOnly ? '1' : undefined,
     stuck_days: stuckOnly ? 10 : undefined,
+    include_closed: showClosed ? '1' : undefined,
   };
 
-  const { data, isLoading, isError, error } = useQuery({
+  // The board advertises itself as live, so it has to actually behave that way:
+  // candidates arrive here the moment someone shortlists them on Candidate
+  // Screening, and a recruiter watching this page previously never saw them
+  // (the global default disables focus-refetch, and nothing polled). Poll on a
+  // slow cadence, and refetch whenever the tab regains focus — the moment a
+  // recruiter is most likely to be looking for a change.
+  const { data, isLoading, isFetching, isError, error, dataUpdatedAt } = useQuery({
     queryKey: ['pipeline-board', filters],
     queryFn: async () => {
       const res = await pipelineService.listPipeline(filters);
       return res.data?.data || res.data;
     },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const refreshBoard = () => queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+
+  const anyFilterActive = Boolean(position || source || onHoldOnly || stuckOnly || showClosed || nlQuery.trim());
+  const clearFilters = () => {
+    setPosition(undefined);
+    setSource(undefined);
+    setOnHoldOnly(false);
+    setStuckOnly(false);
+    setShowClosed(false);
+    setNlQuery('');
+    setNlRead(null);
+  };
 
   const positions = useMemo(() => data?.positions || [], [data]);
 
@@ -401,7 +457,7 @@ export default function Pipeline() {
       <Alert
         type="error"
         showIcon
-        message="Failed to load the Pipeline Tracker"
+        message="Failed to load the Candidate Pipeline"
         description={error?.response?.data?.message || error?.message || 'Unknown error.'}
         style={{ margin: 24 }}
       />
@@ -414,14 +470,31 @@ export default function Pipeline() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16 }}>
-        <Title level={3} style={{ margin: 0 }}>Interview Pipeline Tracker</Title>
-        <Text type="secondary">Live data — candidates enter here when shortlisted from Candidate Screening.</Text>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div>
+          <Title level={3} style={{ margin: 0 }}>Candidate Pipeline</Title>
+          <Text type="secondary">Candidates enter here when shortlisted from Candidate Screening.</Text>
+        </div>
+        <Space size={10}>
+          <LastUpdated at={dataUpdatedAt} refreshing={isFetching} />
+          <Tooltip title="Refresh the board">
+            <Button icon={<ReloadOutlined spin={isFetching} />} onClick={refreshBoard} disabled={isFetching}>
+              Refresh
+            </Button>
+          </Tooltip>
+          {/* The board is cards, not a table — the CSV carries the columns
+              there is no room for: outcome, reason, who decided and when. */}
+          <ExportButton
+            request={(cfg) => pipelineService.exportBoard(filters, cfg)}
+            fallbackName="AAPNA-ATS_Candidate-Pipeline.csv"
+            rowCount={filteredTotal}
+          />
+        </Space>
       </div>
 
       <Input.Search
         allowClear
-        placeholder='Ask the board — e.g. "vendor candidates stuck on hold" (local keyword matching)'
+        placeholder='Ask the board — e.g. "vendor candidates stuck on hold"'
         prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
         style={{ maxWidth: 520, marginBottom: 8 }}
         value={nlQuery}
@@ -456,7 +529,17 @@ export default function Pipeline() {
         />
         <Checkbox checked={onHoldOnly} onChange={(e) => setOnHoldOnly(e.target.checked)}>On Hold only</Checkbox>
         <Checkbox checked={stuckOnly} onChange={(e) => setStuckOnly(e.target.checked)}>Stuck &gt; 10 days</Checkbox>
-        <Text type="secondary">{filteredTotal} of {total} candidates</Text>
+        <Tooltip title="Closed candidates are hidden by default — the board is for live work">
+          <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>Show closed</Checkbox>
+        </Tooltip>
+        {anyFilterActive && (
+          <Button size="small" type="text" icon={<ClearOutlined />} onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
+        <Text type="secondary">
+          {anyFilterActive ? `${filteredTotal} of ${total} candidates` : `${total} candidates`}
+        </Text>
       </Space>
 
       <BoardScroller>
