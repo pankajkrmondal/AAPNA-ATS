@@ -81,8 +81,6 @@ const MENU_ITEMS = [
   // you can land on by accident.
   { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
-  // Preserved pre-rebrand page — operational fallback, not a primary surface.
-  { key: '/analytics-legacy', icon: <BarChartOutlined />, label: 'Recruitment Analytics (Legacy)' },
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
   { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
 ];
@@ -115,7 +113,6 @@ const BREADCRUMB_MAP = {
   'candidate-pipeline-prototype': 'Candidate Pipeline (Demo — mock data)',
   pipeline: 'Candidate Pipeline',
   analytics: 'Recruitment Analytics',
-  'analytics-legacy': 'Recruitment Screening Analytics (Legacy)',
   email: 'Email Template Management',
   settings: 'Reminder Settings',
 };

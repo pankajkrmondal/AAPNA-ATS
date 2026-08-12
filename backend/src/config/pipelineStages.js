@@ -73,6 +73,62 @@ export const STAGE_OUTCOMES = Object.freeze({
   FUTURE_PROSPECT: 'future_prospect',
 });
 
+/**
+ * Values stored in rpa_pipeline_stage_events.event_type.
+ *
+ * 'entered', 'skip' and 'outcome' are STAGE TRANSITIONS — they move a journey.
+ * 'note' is an annotation written liberally by the M3/M4/M5 services (scorecard
+ * dispatched, interview rescheduled, documents requested, offer raised) and
+ * must never be read as movement.
+ *
+ * 'skip' is an ARRIVAL, not a bypass of one: it is written in place of
+ * 'entered' when a candidate lands in a stage having skipped an optional one
+ * before it (see setStageOutcome/advanceStage). The row names the stage the
+ * candidate arrived IN, which is why isStageArrival() treats it like 'entered'
+ * — assessmentImport.service.js already pairs them the same way.
+ *
+ * That distinction is the whole reason these live here rather than as inline
+ * strings: analytics measured stage durations and staleness from one event to
+ * the NEXT EVENT OF ANY TYPE, so a scorecard email reset a 40-day-stalled
+ * candidate's clock to zero. Anything computing elapsed time between events
+ * must filter on isTransitionEvent() first.
+ */
+export const EVENT_TYPES = Object.freeze({
+  ENTERED: 'entered',
+  SKIP: 'skip',
+  OUTCOME: 'outcome',
+  NOTE: 'note',
+});
+
+/** The event types that actually move a journey. See EVENT_TYPES. */
+export const TRANSITION_EVENT_TYPES = Object.freeze([
+  EVENT_TYPES.ENTERED,
+  EVENT_TYPES.SKIP,
+  EVENT_TYPES.OUTCOME,
+]);
+
+/** The event types that put a candidate INTO a stage (i.e. start its clock). */
+export const STAGE_ARRIVAL_EVENT_TYPES = Object.freeze([EVENT_TYPES.ENTERED, EVENT_TYPES.SKIP]);
+
+/**
+ * True if an event moved the journey (as opposed to annotating it).
+ * @param {{ event_type?: string }|null} ev
+ * @returns {boolean}
+ */
+export function isTransitionEvent(ev) {
+  return TRANSITION_EVENT_TYPES.includes(ev?.event_type);
+}
+
+/**
+ * True if an event marks the candidate ARRIVING in a stage — the moment that
+ * stage's clock starts. Both 'entered' and 'skip' qualify.
+ * @param {{ event_type?: string }|null} ev
+ * @returns {boolean}
+ */
+export function isStageArrival(ev) {
+  return STAGE_ARRIVAL_EVENT_TYPES.includes(ev?.event_type);
+}
+
 /** The 8 closure outcomes (Q12), modeled as terminal outcomes on the offer stage. */
 export const FINAL_OUTCOMES = Object.freeze({
   APPROVED: 'closure_approved',
@@ -102,6 +158,21 @@ export const VACATING_OUTCOMES = Object.freeze([
   FINAL_OUTCOMES.DID_NOT_JOIN,
   FINAL_OUTCOMES.JOINED_AND_LEFT,
   FINAL_OUTCOMES.CANDIDATE_WITHDRAWN,
+]);
+
+/**
+ * The closure outcomes that count as a HIRE for conversion analytics —
+ * the offer was accepted and the candidate joined.
+ *
+ * Deliberately narrower than "not rejected": JOINED_AND_LEFT is excluded
+ * because someone who left is not a successful hire for a source/vendor
+ * leaderboard, and counting them there would flatter whoever sourced them.
+ * Shared by source-of-hire and vendor-performance so the two cannot disagree
+ * about what "hired" means.
+ */
+export const HIRED_OUTCOMES = Object.freeze([
+  FINAL_OUTCOMES.APPROVED,
+  FINAL_OUTCOMES.JOINED,
 ]);
 
 /**

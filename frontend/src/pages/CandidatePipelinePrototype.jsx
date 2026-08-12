@@ -1407,9 +1407,10 @@ export default function CandidatePipelinePrototype() {
     message.success('Feedback submitted — RT can now record the round outcome');
   };
 
-  /* §5 — Zeko invite now schedules a real interview window (mirrors
-     AnalyticsLegacy's "Schedule Zeko Interview" modal) instead of firing
-     a bare invite with no scheduling data. */
+  /* §5 — Zeko invite now schedules a real interview window (mirroring the
+     "Schedule Zeko Interview" modal from the old Recruitment Screening
+     Analytics page, deleted 2026-08-12) instead of firing a bare invite with
+     no scheduling data. */
   const sendZekoInvite = () => {
     if (!current) return;
     setZekoRange(null);
@@ -2073,8 +2074,9 @@ export default function CandidatePipelinePrototype() {
         )}
       </Modal>
 
-      {/* ---------- Zeko interview scheduling modal (v11 — mirrors AnalyticsLegacy's
-          "Schedule Zeko Interview": candidate card → Interview Date & Time Range) ---------- */}
+      {/* ---------- Zeko interview scheduling modal (v11 — mirrors the old
+          Recruitment Screening Analytics "Schedule Zeko Interview" flow:
+          candidate card → Interview Date & Time Range) ---------- */}
       <Modal open={zekoSchedOpen} onCancel={() => setZekoSchedOpen(false)} onOk={confirmZekoSchedule}
         okText="Confirm & Invite" width={520}
         okButtonProps={{ disabled: !zekoRange || !zekoRange[0] || !zekoRange[1] }}

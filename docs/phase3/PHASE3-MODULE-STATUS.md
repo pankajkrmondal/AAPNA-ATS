@@ -1,7 +1,7 @@
 # Phase 3 — Module Status & Delivery Scope
 
 **Date:** 2026-08-06 · **For:** RT / PM
-**Companion documents:** [Production deployment runbook](../deployment/PHASE3-PRODUCTION-DEPLOYMENT.md) · [Code review & test report](PHASE3-CODE-REVIEW-2026-08-06.md) · [Coverage audit](PHASE3-COVERAGE-AUDIT.md)
+**Companion documents:** [Production deployment runbook](../deployment/PHASE3-PRODUCTION-DEPLOYMENT.md) · [Code review & test report](PHASE3-CODE-REVIEW-2026-08-06.md) · [Coverage audit](PHASE3-COVERAGE-AUDIT.md) · [Recruitment Analytics audit](../Recruitment-Analytics.md)
 
 ---
 
@@ -91,6 +91,7 @@ Items 3–5 are choices, not work in progress. Item 1 is the immediate blocker.
 | Stage → email template mapping screen | Assigning a specific email to a specific stage outcome still needs a database change. |
 | "Amend offer decision" screen | Correcting a recorded acceptance/rejection needs a developer. |
 | Free/busy availability display | The scheduling window does not yet show when the interviewer is busy. |
+| Recruitment Analytics corrections | Six metrics on the Analytics page are wrong. Most notably "Awaiting feedback" is hardcoded to `0` because the code still assumes M3a is unbuilt — it has shipped, so that tile reports zero over real outstanding scorecards. Full audit and plan: [Recruitment Analytics](../Recruitment-Analytics.md). |
 
 ### Deferred by agreement — not planned for Phase 3
 
