@@ -58,6 +58,9 @@ router.get('/', mrfController.listMrfRequests);
 // Registered before '/:id' so 'export' is never captured as an MRF id — the
 // controller would run BigInt('export') and 500.
 router.get('/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfRequests);
+// One requisition (request + the MRF the Hiring Manager submitted), from the
+// details modal. Two path segments, so it cannot collide with '/:id'.
+router.get('/:id/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfDetail);
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
 router.get('/main/:id', mrfController.getMainMrf);
 router.patch('/main/:id', mrfController.updateMainMrf);

@@ -1,3 +1,4 @@
+import MetricInfo from '../common/MetricInfo';
 /**
  * ActionCenterCard — "Needs your attention": the recruiter's actionable queue, each row
  * deep-links into the relevant screen. Counts are sourced from data already loaded:
@@ -26,7 +27,11 @@ export default function ActionCenterCard({
   onNavigate,
 }) {
   const items = [
-    { key: 'mrf', label: 'MRFs pending approval', desc: 'Requisitions submitted but not yet approved or declined.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
+    // `pendingMrfCount` now comes from the server's approval_status = pending count.
+    // It was previously the LENGTH of a list fetched with status=pending, which mapped
+    // onto `mrfstatus` (submission state) rather than approval state and was capped at
+    // 50 — see dashboard.service.js getStats().
+    { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
     { key: 'dup', label: 'Duplicates to review', desc: 'Resumes flagged as possible duplicates, detected live.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
     { key: 'screen', label: 'Awaiting screening', desc: 'Sourced candidates not yet run through AI screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
     { key: 'interview', label: 'Interviews today', desc: "Zeko-scheduled interviews with a start time today.", count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
@@ -38,7 +43,7 @@ export default function ActionCenterCard({
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Needs Your Attention</Title>
+          <Title level={5} style={{ margin: 0 }}>Needs Your Attention <MetricInfo metric="actionCentre" size={12} /></Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>Your actionable queue</Text>
         </div>
       </div>

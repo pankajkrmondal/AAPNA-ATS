@@ -15,6 +15,7 @@ import * as onedriveService from './onedrive.service.js';
 import { saveCandidateVector } from './vectorStore.service.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
+import { summariseEmploymentHistory, resolveExperienceYears, isStorableExperience } from '../utils/experienceParser.js';
 import { stripControlChars } from '../utils/textSanitize.js';
 import {
   sendWelcomeEmail,
@@ -26,6 +27,9 @@ import {
   sendResumeErrorAlert
 } from './emailNotification.service.js';
 import { setJobStatus, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
+import { activeVendorFor, vendorLockExpiry } from '../utils/vendorLock.js';
+import { findRecentRejection } from './pipeline.service.js';
+import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
 
 // Marker stamped on candidates who applied themselves (website or direct email),
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
@@ -325,61 +329,30 @@ ${text}
 }
 
 /**
- * Date parse helper
+ * TotalExperienceYearsNumeric, or null when the reading is not storable.
+ *
+ * Thin logging wrapper over isStorableExperience() — the range rule itself lives
+ * in utils/experienceParser.js so it can be unit-tested. Out-of-range readings
+ * are DROPPED rather than clamped to 999.99: a candidate with no experience
+ * recorded is recoverable, one recorded as having 999 years is a number somebody
+ * will eventually filter on.
+ *
+ * @param {*} value  the parsed TotalExperienceYears
+ * @param {string} [context]  filename, for the log line
+ * @returns {number|null}
  */
-function parseDate(value) {
-  if (!value) return null;
-  const v = String(value).toLowerCase().trim();
-  if (['present','current','till date','now'].some(k => v.includes(k))) return new Date();
-  
-  // MM/YYYY or MM-YYYY
-  let m = v.match(/^(\d{1,2})[\/\-](\d{4})$/);
-  if (m) return new Date(Number(m[2]), Number(m[1]) - 1, 1);
-  
-  // YYYY/MM or YYYY-MM
-  m = v.match(/^(\d{4})[\/\-](\d{1,2})$/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, 1);
-  
-  // Month Name YYYY
-  m = v.match(/^([a-z]{3,})\s(\d{4})$/);
-  if (m) return new Date(m[1] + ' 1, ' + m[2]);
-  
-  const d = new Date(value);
-  return isNaN(d) ? null : d;
-}
-
-/**
- * Months between helper
- */
-function monthsBetween(start, end) {
-  if (!start || !end) return 0;
-  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-}
-
-/**
- * Calculate candidate experience from employment history.
- */
-function calculateExperience(employmentHistory) {
-  const history = Array.isArray(employmentHistory) ? employmentHistory : [];
-  let totalMonths = 0;
-  let lastCompanyMonths = 0;
-  
-  history.forEach((job, index) => {
-    const start = parseDate(job.StartDate);
-    const end = parseDate(job.EndDate);
-    const months = monthsBetween(start, end);
-    if (months > 0) {
-      totalMonths += months;
-      if (index === 0) {
-        lastCompanyMonths = months;
-      }
+function safeExperienceNumeric(value, context = '') {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = parseExperienceNumeric(String(value));
+  if (!isStorableExperience(numeric)) {
+    if (numeric !== null) {
+      logger.warn(
+        `Implausible total experience "${value}" (${numeric}) parsed from ${context || 'resume'} — storing null instead.`
+      );
     }
-  });
-  
-  return {
-    totalExperienceYears: history.length > 0 ? (totalMonths / 12).toFixed(2) : null,
-    lastCompanyExperienceYears: history.length > 0 ? (lastCompanyMonths / 12).toFixed(2) : null
-  };
+    return null;
+  }
+  return numeric;
 }
 
 /**
@@ -638,9 +611,49 @@ export async function mergeDuplicates(ids, token, user = {}) {
           updateData.modifiedAt = new Date();
           updateData.last_action_by = user?.email || user?.username || 'recruiter';
           updateData.last_action_context = 'duplicate_merge';
-          updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
+          updateData.TotalExperienceYearsNumeric = safeExperienceNumeric(updateData.TotalExperienceYears, 'duplicate merge');
           updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
           updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
+
+          // 90-DAY OWNERSHIP RULE (VENDOR_PROCESS.md §8) — implemented here for
+          // the first time in M6, 2026-08-12.
+          //
+          // The generic field loop above copies `VendorEmail`, `vendorName` and
+          // `lockForNinetyDays` like any other column, so the incoming vendor
+          // simply overwrote the existing one whenever they supplied a value.
+          // The doc has described first-vendor ownership since June; the merge
+          // path never enforced it. A second vendor re-submitting a candidate
+          // and getting the duplicate merged took the placement outright, inside
+          // the window that was supposed to prevent exactly that.
+          //
+          // Lock still live  -> the first vendor keeps the candidate, untouched.
+          // Lock lapsed/none -> an incoming vendor may take over, with a fresh
+          //                     90-day window of their own.
+          // No incoming vendor (internal HR duplicate) -> leave as-is.
+          const lockHolder = activeVendorFor(existingCandidate);
+          const incomingVendorEmail = (tempCandidate.VendorEmail || '').trim();
+          if (lockHolder) {
+            updateData.VendorEmail = existingCandidate.VendorEmail;
+            updateData.vendorName = existingCandidate.vendorName;
+            updateData.lockForNinetyDays = existingCandidate.lockForNinetyDays;
+            if (incomingVendorEmail && incomingVendorEmail.toLowerCase() !== lockHolder.vendorEmail.toLowerCase()) {
+              logger.info(
+                `Merge on candidate ${existingCandidate.id}: vendor attribution preserved for ${lockHolder.vendorEmail} `
+                + `(lock active until ${lockHolder.lockExpiresOn}); incoming vendor ${incomingVendorEmail} did not take ownership.`
+              );
+            }
+          } else if (incomingVendorEmail) {
+            updateData.VendorEmail = tempCandidate.VendorEmail;
+            updateData.vendorName = tempCandidate.vendorName;
+            updateData.lockForNinetyDays = vendorLockExpiry();
+            logger.info(
+              `Merge on candidate ${existingCandidate.id}: vendor attribution updated to ${incomingVendorEmail} with a fresh 90-day lock (previous lock expired or absent).`
+            );
+          } else {
+            updateData.VendorEmail = existingCandidate.VendorEmail;
+            updateData.vendorName = existingCandidate.vendorName;
+            updateData.lockForNinetyDays = existingCandidate.lockForNinetyDays;
+          }
 
           // Update candidate in rpa_cv
           await tx.rpa_cv.update({
@@ -664,7 +677,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
           insertData.modifiedAt = new Date();
           insertData.last_action_by = user?.email || user?.username || 'recruiter';
           insertData.last_action_context = 'duplicate_merge';
-          insertData.TotalExperienceYearsNumeric = parseExperienceNumeric(insertData.TotalExperienceYears);
+          insertData.TotalExperienceYearsNumeric = safeExperienceNumeric(insertData.TotalExperienceYears, 'duplicate merge');
           insertData.ExpectedCTCNumeric = parseExpectedCTCNumeric(insertData.ExpectedCTC_LPA);
           insertData.NoticePeriodDays = parseNoticePeriodDays(insertData.NoticePeriod);
 
@@ -705,15 +718,16 @@ export async function mergeDuplicates(ids, token, user = {}) {
     for (const task of postMergeTasks) {
       try {
         const metadata = await saveCandidateVector(task.id, task.data);
-        
-        let lockForNinetyDays = null;
-        const vendorName = task.data.vendorName || null;
+
+        // The ownership decision was already made inside the transaction above
+        // (or, for the insert path, is simply "this vendor, starting now"), so
+        // honour whatever it wrote. This block used to re-stamp a fresh 90-day
+        // lock unconditionally whenever a vendor was present, which would have
+        // silently overwritten a preserved first-vendor lock with a new window
+        // — reintroducing the takeover the rule above exists to prevent.
         const vendorEmail = task.data.VendorEmail || null;
-        if (vendorName && vendorEmail) {
-          const date = new Date();
-          date.setDate(date.getDate() + 90);
-          lockForNinetyDays = date.toISOString().split('T')[0];
-        }
+        const lockForNinetyDays = task.data.lockForNinetyDays
+          || (vendorEmail && task.data.vendorName ? vendorLockExpiry() : null);
 
         // Pre-generate AI profile insights post-merge
         let aiInsights = null;
@@ -1139,40 +1153,25 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             continue;
           }
 
-          // 4) Compute experience history and calculate years
+          // 4) Compute experience history and calculate years.
+          //
+          // The dates win when they can be read, because a sum of real employment
+          // spans beats whatever the model asserted — but only when they actually
+          // produced something. This block used to take the computed value whenever
+          // the history array was non-empty, so a CV whose dates were in a format
+          // the parser could not read (Jun-2022, May'21, 05.2022) was saved as
+          // "0 years": the resume said 8, the Search Candidate page said 0, and
+          // because "0" is a non-empty string getMissingFields() never flagged it.
           const historyInput = Array.isArray(parsed.EmploymentHistory) ? parsed.EmploymentHistory : [];
-          const formattedHistory = historyInput.map(job => {
-            const start = parseDate(job.StartDate);
-            const end = parseDate(job.EndDate);
-            const months = monthsBetween(start, end);
-            return {
-              CompanyName: job.CompanyName || null,
-              StartDate: job.StartDate || null,
-              EndDate: job.EndDate || null,
-              YearsWorked: historyInput.length > 0 ? +(months / 12).toFixed(2) : null
-            };
-          });
+          const { companies, totalMonths, lastCompanyMonths } = summariseEmploymentHistory(historyInput);
 
-          let totalMonths = 0;
-          let lastCompanyMonths = 0;
-          formattedHistory.forEach((job, index) => {
-            const start = parseDate(job.StartDate);
-            const end = parseDate(job.EndDate);
-            const months = monthsBetween(start, end);
-            if (months > 0) {
-              totalMonths += months;
-              if (index === 0) lastCompanyMonths = months;
-            }
-          });
+          // Resolution rule lives in utils/experienceParser.js and is unit-tested
+          // there. A genuine "Fresher"/"0" passes through untouched —
+          // parseExperienceNumeric() maps fresher variants to 0.0 downstream.
+          parsed.TotalExperienceYears = resolveExperienceYears(totalMonths, parsed.TotalExperienceYears);
+          parsed.LastCompanyExperienceYears = resolveExperienceYears(lastCompanyMonths, parsed.LastCompanyExperienceYears);
 
-          if (formattedHistory.length > 0) {
-            parsed.TotalExperienceYears = String(+(totalMonths / 12).toFixed(2));
-            parsed.LastCompanyExperienceYears = String(+(lastCompanyMonths / 12).toFixed(2));
-          } else {
-            parsed.TotalExperienceYears = parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : null;
-            parsed.LastCompanyExperienceYears = parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : null;
-          }
-
+          const formattedHistory = companies;
           const employmentHistoryDb = {
             companies: formattedHistory,
             total_companies: formattedHistory.length
@@ -1275,16 +1274,28 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               const isVendorSource = source === 'vendor_portal';
               const tempCandidate = await prisma.rpa_cv_tmp.create({
                 data: {
+                  // Falls back to the EXISTING candidate's value (this is a duplicate,
+                  // so that value is about the same person) and then to null — never
+                  // to an invented one. The old "9876543210" / "Software Engineer" /
+                  // "B.Tech" / "3" tail put fabricated data in front of the recruiter
+                  // making the Merge/Cancel call.
                   Name: parsed.Name || "Candidate",
                   EmailID: emailToSearch,
-                  ContactNumber: parsed.ContactNumber || existingCandidate.ContactNumber || "9876543210",
-                  PositionApplied: parsed.PositionApplied || existingCandidate.PositionApplied || "Software Engineer",
-                  HighestQualification: parsed.HighestQualification || existingCandidate.HighestQualification || "B.Tech",
-                  TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : (existingCandidate.TotalExperienceYears || "3"),
-                  LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : (existingCandidate.LastCompanyExperienceYears || "0"),
-                  CurrentLocation: parsed.CurrentLocation || existingCandidate.CurrentLocation || "Delhi",
-                  CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || existingCandidate.CurrentCompany || "AAPNA Infotech"),
+                  ContactNumber: parsed.ContactNumber || existingCandidate.ContactNumber || null,
+                  PositionApplied: parsed.PositionApplied || existingCandidate.PositionApplied || null,
+                  HighestQualification: parsed.HighestQualification || existingCandidate.HighestQualification || null,
+                  TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : (existingCandidate.TotalExperienceYears || null),
+                  LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : (existingCandidate.LastCompanyExperienceYears || null),
+                  CurrentLocation: parsed.CurrentLocation || existingCandidate.CurrentLocation || null,
+                  CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || existingCandidate.CurrentCompany || null),
                   Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || existingCandidate.Top5KeySkills || ""),
+                  // Same omission the main create carried: parsed, but never stored,
+                  // so a merge could not restore them either.
+                  NoticePeriod: parsed.NoticePeriod || existingCandidate.NoticePeriod || null,
+                  CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : (existingCandidate.CTC_LPA || null),
+                  ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : (existingCandidate.ExpectedCTC_LPA || null),
+                  JobSource: parsed.JobSource || existingCandidate.JobSource || null,
+                  RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || existingCandidate.RecruiterInfoAAPNA || null,
                   EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || existingCandidate.EducationalScoresPercentage || null),
                   a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : (existingCandidate.a10th || null),
                   a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : (existingCandidate.a12th || null),
@@ -1328,6 +1339,31 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               jobInfo.candidate_name = parsed.Name || 'Candidate';
               jobInfo.candidate_email = emailToSearch;
               jobInfo.cv_tmp_id = tempCandidate.id;
+
+              // COOLING-OFF ADVISORY (M6 audit, 2026-08-12). The 6-month
+              // re-application gate lived only in createPipelineJourney, so it
+              // fired at shortlisting — after a recruiter had already read the
+              // CV and made the call. Nothing warned them at the point the
+              // duplicate landed.
+              //
+              // Advisory, NOT a block: a vendor re-submitting someone we
+              // rejected in March is not doing anything wrong, and usually has
+              // no way to know. The resume is still queued for review; the
+              // recruiter just gets the fact before they spend time on it,
+              // instead of hitting a 409 at the end.
+              try {
+                const priorRejection = await findRecentRejection(existingCandidate.id);
+                if (priorRejection) {
+                  jobInfo.advisory = `Rejected at "${priorRejection.current_stage_key}" on `
+                    + `${priorRejection.modified_at.toISOString().slice(0, 10)} — still inside the `
+                    + `${REAPPLICATION_COOLING_OFF_MONTHS}-month re-application cooling-off period. `
+                    + 'Merging is allowed, but this candidate cannot re-enter the pipeline until it lapses.';
+                  logger.info(`Cooling-off advisory raised on duplicate for cv ${existingCandidate.id} (job ${item.filename}).`);
+                }
+              } catch (err) {
+                // Advisory only — never let it break an upload.
+                logger.warn(`Cooling-off advisory lookup failed for cv ${existingCandidate.id}: ${err.message}`);
+              }
 
               // Notify recruiter/HR by email; the in-app socket notification fires via
               // the job's action_required transition at the per-file aggregate below.
@@ -1431,7 +1467,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               updateData.modifiedAt = new Date();
               updateData.last_action_by = isSelfApplied ? SELF_APPLIED_TAG : email;
               updateData.last_action_context = source;
-              updateData.TotalExperienceYearsNumeric = parseExperienceNumeric(updateData.TotalExperienceYears);
+              updateData.TotalExperienceYearsNumeric = safeExperienceNumeric(updateData.TotalExperienceYears, item.filename);
               updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
               updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
               updateData.resume_full_text = fullText;
@@ -1455,16 +1491,33 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             // New candidate! Create directly in main rpa_cv table
             const newCv = await prisma.rpa_cv.create({
               data: {
+                // NOTHING here is invented. These columns used to fall back to
+                // "9876543210" / "Software Developer" / "B.Tech" / "Delhi" / "2",
+                // which put fabricated data into the candidate table and — worse —
+                // made it look complete: getMissingFields() runs on `parsed`, so it
+                // correctly flagged the gap, but the row itself then showed a real-
+                // looking phone number and 2 years of experience to every recruiter
+                // who opened it. A blank is honest and is what the existing
+                // missing-data email exists to chase.
                 Name: parsed.Name || "Candidate",
                 EmailID: emailToSearch,
-                ContactNumber: parsed.ContactNumber || "9876543210",
-                PositionApplied: parsed.PositionApplied || "Software Developer",
-                HighestQualification: parsed.HighestQualification || "B.Tech",
-                TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : "2",
-                LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : "0",
-                CurrentLocation: parsed.CurrentLocation || "Delhi",
-                CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || "N/A"),
+                ContactNumber: parsed.ContactNumber || null,
+                PositionApplied: parsed.PositionApplied || null,
+                HighestQualification: parsed.HighestQualification || null,
+                TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : null,
+                LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : null,
+                CurrentLocation: parsed.CurrentLocation || null,
+                CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || null),
                 Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || ""),
+                // Parsed, and until now used ONLY to derive the numeric shadow
+                // columns below — the display strings themselves were never written,
+                // so View Details showed blank Notice Period / CTC while
+                // NoticePeriodDays and ExpectedCTCNumeric held real values.
+                NoticePeriod: parsed.NoticePeriod || null,
+                CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : null,
+                ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null,
+                JobSource: parsed.JobSource || null,
+                RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || null,
                 EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || null),
                 a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : null,
                 a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : null,
@@ -1491,7 +1544,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 last_action_context: source,
                 createdAt: new Date(),
                 modifiedAt: new Date(),
-                TotalExperienceYearsNumeric: parseExperienceNumeric(parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : "2"),
+                TotalExperienceYearsNumeric: safeExperienceNumeric(parsed.TotalExperienceYears, item.filename),
                 ExpectedCTCNumeric: parseExpectedCTCNumeric(parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null),
                 NoticePeriodDays: parseNoticePeriodDays(parsed.NoticePeriod ? String(parsed.NoticePeriod) : null),
                 resume_full_text: fullText,
@@ -1552,6 +1605,10 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
         error_message: rowRejected.length > 0
           ? rowRejected.join(' | ')
           : (rowErrors.length > 0 ? rowErrors.join(' | ') : null),
+        // Context the recruiter should have before deciding, distinct from
+        // error_message: the row succeeded, there is just something to know
+        // about it (currently only the cooling-off notice).
+        advisory: jobInfo.advisory || null,
       }).catch((e) => logger.warn(`Failed to update upload job status: ${e.message}`));
 
       try {
@@ -1684,14 +1741,11 @@ function runPostProcessing(cvId, parsed, source, fullName, email, missingFields,
 
       // 2) Calculate lockForNinetyDays — prefer the explicit attribution (vendor the
       // resume was uploaded for), then any vendor parsed from the resume.
-      let lockForNinetyDays = null;
+      // This is the FIRST save of a vendor-sourced candidate, so a fresh window
+      // is always correct here; the contested case is the merge path.
       const vendorName = attr?.vendorName || parsed.VendorName || parsed.vendorName || null;
       const vendorEmail = attr?.vendorEmail || parsed.VendorEmail || parsed.vendorEmail || null;
-      if (vendorName && vendorEmail) {
-        const date = new Date();
-        date.setDate(date.getDate() + 90);
-        lockForNinetyDays = date.toISOString().split('T')[0];
-      }
+      const lockForNinetyDays = vendorName && vendorEmail ? vendorLockExpiry() : null;
 
       // 3) Pre-generate AI profile insights
       let aiInsights = null;

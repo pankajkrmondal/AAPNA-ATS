@@ -1,3 +1,4 @@
+import MetricInfo from '../common/MetricInfo';
 /**
  * HiringTrendsCard — animated gradient area chart of new candidates added per day over the
  * selected date-range (client-bucketed from the candidate batch). Honest label: it reflects
@@ -43,22 +44,23 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Hiring Trends</Title>
+          <Title level={5} style={{ margin: 0 }}>Hiring Trends <MetricInfo metric="hiringTrends" size={12} /></Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             New candidates added · last {rangeDays} days
           </Text>
         </div>
-        <Tooltip title="Daily count of candidates entering the system over the selected range, computed from the 200 most-recently-added profiles. If that range extends further back than the 200-profile window covers, earlier days may under-count.">
+        <Tooltip title="Candidates entering the system across the selected range. Computed from the 200 most-recently-added profiles, so a range reaching further back than that window covers may under-count its earlier days.">
           <div className="dash-card-metric">
             <span className="dash-card-metric__num">{total.toLocaleString()}</span>
             <span className="dash-card-metric__cap">total <InfoCircleOutlined /></span>
           </div>
         </Tooltip>
       </div>
-      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
-        Based on the 200 most recently added candidate profiles, not the full database.
-      </Text>
-
+      {/* The "based on the 200 most recently added profiles" caveat used to sit here as
+          body copy. It is still true and still stated — it moved into this card's
+          MetricInfo definition (constants/metricDefinitions.js `hiringTrends.caveat`),
+          which is where every other metric's provenance lives. A permanent apology
+          printed under the title read as clutter and drew the eye away from the data. */}
       <div style={{ height: 240, marginTop: 8 }}>
         {!loading && total === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No candidates in this range" style={{ paddingTop: 60 }} />

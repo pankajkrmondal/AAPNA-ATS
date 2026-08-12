@@ -19,6 +19,8 @@ import AppError from '../utils/AppError.js';
 import { closeMrfIfFilled, reopenMrfIfUnfilled } from './mrfClosure.service.js';
 import { assertJourneyOpen } from './pipeline.service.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
+import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
+import { STAGE_KEYS } from '../config/pipelineStages.js';
 
 /** Serializes an offer row for the API (BigInt -> Number). */
 function serialize(row) {
@@ -211,6 +213,20 @@ export async function recordOfferShared(pipelineId, { joiningDate = null, remark
     `Offer recorded as shared${joining ? ` — proposed joining ${joining.toISOString().slice(0, 10)}` : ''}${skippedApproval ? ' (internal approval was not recorded)' : ''}`,
     actedBy
   );
+
+  // Q29, answered 2026-08-12: the vendor is told an offer went out, and
+  // nothing else. The offer stage is 'bare' in VENDOR_STAGE_POLICY, so
+  // notifyVendor() emits a milestone line — the joining date, the remarks and
+  // the letter itself never leave this function.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: VENDOR_EVENTS.OFFER_SHARED,
+    stageKey: STAGE_KEYS.OFFER,
+    stageLabel: 'Offer',
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+  });
+
   logger.info(`Offer shared recorded: pipeline ${pipelineId} (approvalSkipped=${skippedApproval}).`);
   return serialize(row);
 }
@@ -287,6 +303,19 @@ export async function recordCandidateDecision(pipelineId, { decision, remarks = 
     pipelineId: pipeline.id,
     meta: { decision },
     excludeUserId: actedBy || null,
+  });
+
+  // The one outcome a vendor genuinely needs — did the placement land. Still
+  // the bare offer-stage line: accepted or declined, no joining date. Note the
+  // in-app notify() above DOES carry the joining date; that goes to the
+  // internal team's bell, not out of the building.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: decision === 'accepted' ? VENDOR_EVENTS.OFFER_ACCEPTED : VENDOR_EVENTS.OFFER_DECLINED,
+    stageKey: STAGE_KEYS.OFFER,
+    stageLabel: 'Offer',
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
   });
 
   // An acceptance fills an opening — close the requisition once they all are,

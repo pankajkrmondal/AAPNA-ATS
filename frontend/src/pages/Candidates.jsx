@@ -1,10 +1,21 @@
 /**
- * Candidates Page — Searchable, filterable candidate listing matching legacy UI.
- * Recreates the exact n8n layout, modals, actions, fields, and validations.
+ * Candidates Page — the records surface for the whole candidate database.
+ *
+ * Browsable by default and paginated/sorted/filtered SERVER-side. It previously
+ * refused to render any rows until you typed a search term, then pulled up to 200
+ * rows and sliced them in the browser — so there was no way to browse ~4k candidates,
+ * and the result count reported rows fetched rather than rows matched.
+ *
+ * None of that needed new backend work: candidate.service.search() already supported
+ * free-text `search` across name/email/skills, plus position/location/status filters,
+ * `sort`/`order`, and real `page`/`limit`. This page just never called it that way.
+ *
+ * Retained as-is: the view/edit/conversations modals and CSV export. Export takes the
+ * same filter object as the table, so it exports exactly what is on screen.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin } from 'antd';
-import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, FilterOutlined, ReloadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import ExportButton from '../components/common/ExportButton';
@@ -18,11 +29,21 @@ export default function Candidates() {
   const [candidates, setCandidates] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(5); // Matches legacy PAGE_SIZE = 5
+  const [pageSize, setPageSize] = useState(25);
+  const [sort, setSort] = useState({ field: 'createdAt', order: 'desc' });
 
-  // Search parameters and searched state
-  const [searchParams, setSearchParams] = useState({ email: '', name: '', phone: '' });
-  const [hasSearched, setHasSearched] = useState(false);
+  /** Free-text term, wired to the backend's `search` param (name/email/skills at
+   *  once). Kept separate from the three precise fields below. */
+  const [quick, setQuick] = useState('');
+  const [quickInput, setQuickInput] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Precise filters. `email`/`name`/`phone` are the legacy identifier fields;
+  // position/location are additional filters the API already supported but the UI
+  // never exposed.
+  const [searchParams, setSearchParams] = useState({
+    email: '', name: '', phone: '', position: '', location: '',
+  });
 
   // Modals state
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -36,51 +57,96 @@ export default function Candidates() {
   
   const [updating, setUpdating] = useState(false);
 
-  // Load candidates
-  const loadCandidates = async (params = searchParams) => {
-    if (!hasSearched && !params.email && !params.name && !params.phone) {
-      return;
-    }
+  /** Filters actually sent to the API — undefined for blanks so they are omitted. */
+  const activeFilters = useMemo(() => {
+    const f = {};
+    if (quick) f.search = quick;
+    Object.entries(searchParams).forEach(([k, v]) => {
+      if (v && String(v).trim()) f[k] = String(v).trim();
+    });
+    return f;
+  }, [quick, searchParams]);
+
+  const hasFilters = Object.keys(activeFilters).length > 0;
+
+  /**
+   * Loads ONE page from the server.
+   *
+   * This used to refuse to run until a search term was typed, then fetch up to 200
+   * rows and paginate them in the browser — so there was no way to browse the
+   * database, and "Showing N results" reported rows fetched (max 200) rather than the
+   * true match count. The backend already supported free-text search, filters,
+   * sorting and real pagination; the page simply never used them.
+   */
+  const loadCandidates = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch up to 200 candidates to allow client-side sorting and pagination of the full dataset
-      const res = await candidateService.search({
-        email: params.email || undefined,
-        name: params.name || undefined,
-        phone: params.phone || undefined,
-      }, 1, 200);
-
-      if (res.data) {
-        const list = Array.isArray(res.data.data)
-          ? res.data.data
-          : (res.data.data?.data || res.data.data?.candidates || []);
-        
-        setCandidates(list);
-        setTotal(list.length);
-      }
-    } catch (err) {
+      const res = await candidateService.search(
+        { ...activeFilters, sort: sort.field, order: sort.order },
+        page,
+        pageSize,
+      );
+      const body = res.data || {};
+      const list = Array.isArray(body.data)
+        ? body.data
+        : (body.data?.data || body.data?.candidates || []);
+      const pagination = body.pagination || body.data?.pagination || {};
+      setCandidates(Array.isArray(list) ? list : []);
+      // Fall back to the row count only when the server sends no total, so the
+      // pager degrades rather than lying about the dataset size.
+      setTotal(pagination.total ?? body.total ?? list.length);
+    } catch {
       message.error('Failed to load candidates.');
+      setCandidates([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
+  }, [activeFilters, page, pageSize, sort]);
+
+  // Browse by default: no search term required to see data.
+  useEffect(() => { loadCandidates(); }, [loadCandidates]);
+
+  /** Debounce the quick-search box so typing doesn't fire a request per keystroke. */
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setQuick(quickInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(id);
+  }, [quickInput]);
+
+  /** Advanced (precise) filter submit. */
+  const handleSearch = (values) => {
+    setSearchParams({
+      email: (values.email || '').trim(),
+      name: (values.name || '').trim(),
+      phone: (values.phone || '').trim(),
+      position: (values.position || '').trim(),
+      location: (values.location || '').trim(),
+    });
+    setPage(1);
   };
 
-  // Handle search submit
-  const handleSearch = (values) => {
-    const email = (values.email || '').trim();
-    const name = (values.name || '').trim();
-    const phone = (values.phone || '').trim();
-    
-    if (!email && !name && !phone) {
-      message.error('Please enter at least one search field (Email, Name, or Phone).');
-      return;
-    }
-    
-    const params = { email, name, phone };
-    setSearchParams(params);
-    setHasSearched(true);
+  const handleClearFilters = () => {
+    form.resetFields();
+    setSearchParams({ email: '', name: '', phone: '', position: '', location: '' });
+    setQuickInput('');
+    setQuick('');
     setPage(1);
-    loadCandidates(params);
+  };
+
+  /** AntD hands back its own sorter shape; map it to the API's sort/order params. */
+  const handleTableChange = (pagination, _filters, sorter) => {
+    if (pagination.current !== page) setPage(pagination.current);
+    if (pagination.pageSize !== pageSize) {
+      setPageSize(pagination.pageSize);
+      setPage(1);
+    }
+    const field = sorter?.field || sorter?.columnKey;
+    if (field) {
+      setSort({ field, order: sorter.order === 'ascend' ? 'asc' : 'desc' });
+    }
   };
 
   // Open View Details
@@ -360,18 +426,30 @@ export default function Candidates() {
       width: 50,
       render: (_, __, index) => <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>{(page - 1) * pageSize + index + 1}</span>,
     },
+    // Sorting is SERVER-side now (`sorter: true`), because with real pagination a
+    // client comparator would only reorder the 25 rows on screen and present that as
+    // sorting the database.
+    //
+    // Only the fields the API can actually sort by are sortable. resolveSortField()
+    // in candidate.service.js maps name / email / position / modifiedAt and silently
+    // FALLS BACK to createdAt for anything else — so marking Location or Gender
+    // sortable would show sort arrows that quietly reorder by date instead. No arrow
+    // is better than a lying one.
+    //
+    // The "⇅" glyphs previously baked into these titles are gone; AntD renders its
+    // own arrows, and the manual ones appeared on unsortable columns too.
     {
-      title: 'NAME ⇅',
+      title: 'NAME',
       dataIndex: 'name',
       key: 'name',
-      sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
+      sorter: true,
       render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>,
     },
     {
-      title: 'EMAIL ⇅',
+      title: 'EMAIL',
       dataIndex: 'email',
       key: 'email',
-      sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
+      sorter: true,
       render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
     },
     {
@@ -381,10 +459,10 @@ export default function Candidates() {
       render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
     },
     {
-      title: 'POSITION APPLIED ⇅',
+      title: 'POSITION APPLIED',
       dataIndex: 'position',
       key: 'position',
-      sorter: (a, b) => (a.position || '').localeCompare(b.position || ''),
+      sorter: true,
       render: (text) => <Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{text || '—'}</Text>,
     },
     {
@@ -394,10 +472,9 @@ export default function Candidates() {
       render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
     },
     {
-      title: 'LOCATION ⇅',
+      title: 'LOCATION',
       dataIndex: 'location',
       key: 'location',
-      sorter: (a, b) => (a.location || '').localeCompare(b.location || ''),
       render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
     },
     {
@@ -466,91 +543,106 @@ export default function Candidates() {
           marginBottom: 28,
         }}
       >
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 18 }}>
           <Title level={3} style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, margin: '0 0 4px 0' }}>
             Search Candidate
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Search existing candidates by Email ID, Name, or Phone Number — results show below.
+            {total > 0
+              ? `Browsing all ${total.toLocaleString()} candidates. Search by name, email or skill, or open Advanced filters.`
+              : 'Search by name, email or skill, or open Advanced filters.'}
           </Text>
         </div>
 
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSearch}
-        >
-          <Row gutter={16}>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email ID</span>}
-                name="email"
-              >
-                <Input placeholder="candidate@example.com" style={{ height: 42, borderRadius: 8 }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Candidate Name</span>}
-                name="name"
-              >
-                <Input placeholder="e.g. Rahul Sharma" style={{ height: 42, borderRadius: 8 }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Phone / Contact Number</span>}
-                name="phone"
-              >
-                <Input placeholder="+91 98765 43210" style={{ height: 42, borderRadius: 8 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+        {/* One box hitting the backend's free-text `search` (name + email + skills at
+            once), debounced. This is the primary affordance now — the three precise
+            identifier fields moved into Advanced below, because needing an exact email
+            to see anything was what made the page feel empty. */}
+        <Input
+          size="large"
+          allowClear
+          prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />}
+          placeholder="Search name, email, or skill…"
+          value={quickInput}
+          onChange={(e) => setQuickInput(e.target.value)}
+          style={{ borderRadius: 10 }}
+        />
 
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<SearchOutlined />}
-              loading={loading}
-              style={{
-                height: 42,
-                borderRadius: 8,
-                fontWeight: 600,
-                padding: '0 24px',
-              }}
-            >
-              Search Candidate
-            </Button>
-          </Form.Item>
-        </Form>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+          <Button
+            type={advancedOpen ? 'primary' : 'default'}
+            ghost={advancedOpen}
+            icon={<FilterOutlined />}
+            onClick={() => setAdvancedOpen((o) => !o)}
+            style={{ borderRadius: 8 }}
+          >
+            Advanced filters
+          </Button>
+          {hasFilters && (
+            <>
+              <Text type="secondary" style={{ fontSize: 12.5 }}>
+                {Object.keys(activeFilters).length} filter{Object.keys(activeFilters).length > 1 ? 's' : ''} active
+              </Text>
+              <Button type="text" size="small" icon={<ReloadOutlined />} onClick={handleClearFilters}>
+                Clear all
+              </Button>
+            </>
+          )}
+        </div>
+
+        {advancedOpen && (
+          <Form form={form} layout="vertical" onFinish={handleSearch} style={{ marginTop: 18 }}>
+            <Row gutter={16}>
+              {[
+                { name: 'email', label: 'Email ID', ph: 'candidate@example.com' },
+                { name: 'name', label: 'Candidate Name', ph: 'e.g. Rahul Sharma' },
+                { name: 'phone', label: 'Phone / Contact Number', ph: '+91 98765 43210' },
+                { name: 'position', label: 'Position Applied', ph: 'e.g. React Engineer' },
+                { name: 'location', label: 'Current Location', ph: 'e.g. Hyderabad' },
+              ].map((f) => (
+                <Col xs={24} sm={12} lg={8} key={f.name}>
+                  <Form.Item
+                    label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>{f.label}</span>}
+                    name={f.name}
+                  >
+                    <Input placeholder={f.ph} style={{ height: 42, borderRadius: 8 }} />
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Space>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  icon={<SearchOutlined />}
+                  loading={loading}
+                  style={{ height: 42, borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
+                >
+                  Apply filters
+                </Button>
+                <Button onClick={handleClearFilters} style={{ height: 42, borderRadius: 8 }}>
+                  Reset
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
       </Card>
 
-      {/* Loading state indicator */}
+      {/* Initial load only — subsequent page/filter changes use the table's own
+          loading overlay so rows don't disappear and jump the scroll position. */}
       {loading && candidates.length === 0 && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
           <Spin size="large" />
         </div>
       )}
 
-      {/* No Data alert matching legacy style */}
-      {hasSearched && !loading && candidates.length === 0 && (
-        <div style={{
-          padding: 16,
-          background: 'rgba(192, 57, 43, 0.1)',
-          border: '1px solid #c0392b',
-          color: '#c0392b',
-          borderRadius: 8,
-          fontWeight: 500,
-          fontSize: 13,
-          marginBottom: 28,
-        }}>
-          No candidates found matching your search criteria. Please try a different name, email, or phone number.
-        </div>
-      )}
-
-      {/* Candidates Results Table */}
-      {hasSearched && candidates.length > 0 && (
+      {/* The table renders unconditionally once anything has loaded — it owns its own
+          empty state. The page previously hid the whole card until a search had run,
+          which is why it looked broken on arrival. */}
+      {(!loading || candidates.length > 0) && (
         <Card
           bordered={false}
           style={{
@@ -567,10 +659,12 @@ export default function Candidates() {
             gap: 12,
           }}>
             <Text strong style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
-              Showing {total} results
+              {/* Real match count from the server, not the number of rows fetched. */}
+              {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'}
+              {hasFilters ? ' matching' : ' in total'}
             </Text>
             <ExportButton
-              request={(cfg) => candidateService.exportCsv(searchParams, cfg)}
+              request={(cfg) => candidateService.exportCsv(activeFilters, cfg)}
               fallbackName="AAPNA-ATS_Candidates.csv"
               rowCount={total}
               size="small"
@@ -581,14 +675,21 @@ export default function Candidates() {
             <Table
               dataSource={candidates}
               columns={columns}
-              rowKey="id"
+              rowKey={(r) => r.id ?? r.EmailID}
               loading={loading}
+              onChange={handleTableChange}
+              locale={{
+                emptyText: hasFilters
+                  ? 'No candidates match these filters. Try a broader search or clear them.'
+                  : 'No candidates in the database yet.',
+              }}
               pagination={{
                 current: page,
-                pageSize: pageSize,
-                total: total,
-                onChange: setPage,
-                showSizeChanger: false,
+                pageSize,
+                total,
+                showSizeChanger: true,
+                pageSizeOptions: ['25', '50', '100'],
+                showTotal: (t, range) => `${range[0]}–${range[1]} of ${t.toLocaleString()}`,
                 style: { paddingRight: 10 },
               }}
               size="middle"

@@ -43,7 +43,15 @@ const BYPASS_FLOWS = [
   'occurrenceNudge',
 ];
 
-/** Every candidate-facing flow that must be redirected outside production. */
+/**
+ * Every flow reaching someone OUTSIDE the company, which must be redirected to
+ * the test inbox outside production.
+ *
+ * Mostly candidates. `vendorStatus` (M6) is here for the same reason even
+ * though a vendor is not a candidate: they are an external party who did not
+ * ask to hear from a staging box, and the vendor half of the Q5 dual-send is
+ * now its own send rather than a cc that resolveRecipients() cleared for free.
+ */
 const CANDIDATE_FLOWS = [
   'welcome',
   'missingData',
@@ -55,6 +63,7 @@ const CANDIDATE_FLOWS = [
   'onHold',
   'manualReply',
   'stageOutcome',
+  'vendorStatus',
 ];
 
 // ── resolveRecipients: the redirect rule ──────────────────────────────

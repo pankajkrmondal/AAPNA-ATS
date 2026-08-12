@@ -22,6 +22,8 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, ApartmentOutlined } from '@ant-design/icons';
 import pipelineService from '../../services/pipeline';
+import emailTemplateService from '../../services/emailTemplateService';
+import settingsService from '../../services/settingsService';
 import { MODAL_WIDTH } from './modalWidths';
 
 const { Title, Text } = Typography;
@@ -46,6 +48,9 @@ const CORE_OUTCOME_KEYS = ['approved', 'rejected', 'hold', 'future_prospect'];
 export default function PipelineConfigPanel() {
   const [stages, setStages] = useState([]);
   const [reasons, setReasons] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [flowKeys, setFlowKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -53,21 +58,37 @@ export default function PipelineConfigPanel() {
   const [stageModal, setStageModal] = useState({ open: false, editing: null });
   const [outcomeModal, setOutcomeModal] = useState({ open: false, stageKey: null, editing: null });
   const [reasonModal, setReasonModal] = useState({ open: false, editing: null });
+  const [flowKeyModal, setFlowKeyModal] = useState({ open: false, editing: null });
 
   const [stageForm] = Form.useForm();
   const [outcomeForm] = Form.useForm();
   const [reasonForm] = Form.useForm();
+  const [flowKeyForm] = Form.useForm();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [stageRes, reasonRes] = await Promise.all([
+      // Flow keys and templates are admin-only reads and 403 for anyone else.
+      // allSettled so one refused call cannot blank the tabs that did load —
+      // this panel is already behind an admin check, but a role change
+      // mid-session should degrade, not wipe the screen.
+      const [stageRes, reasonRes, templateRes, mappingRes, flowRes] = await Promise.allSettled([
         pipelineService.listStages(),
         // Inactive ones included: this is the only screen that can bring one back.
         pipelineService.listReasons(true),
+        emailTemplateService.getEmailTemplates(),
+        pipelineService.listStageTemplates(),
+        settingsService.getFlowKeys(),
       ]);
-      setStages(stageRes.data?.data || []);
-      setReasons(reasonRes.data?.data || []);
+      if (stageRes.status === 'fulfilled') setStages(stageRes.value.data?.data || []);
+      if (reasonRes.status === 'fulfilled') setReasons(reasonRes.value.data?.data || []);
+      if (templateRes.status === 'fulfilled') setTemplates(templateRes.value.data?.data || []);
+      if (mappingRes.status === 'fulfilled') setMappings(mappingRes.value.data?.data || []);
+      if (flowRes.status === 'fulfilled') setFlowKeys(flowRes.value.data?.data || []);
+
+      if (stageRes.status === 'rejected') {
+        message.error(stageRes.reason?.response?.data?.message || 'Could not load the pipeline configuration.');
+      }
     } catch (err) {
       message.error(err.response?.data?.message || err?.message || 'Could not load the pipeline configuration.');
     } finally {
@@ -268,6 +289,103 @@ export default function PipelineConfigPanel() {
     <span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>{t}</span>
   );
 
+  // ── Stage → email template mappings ──────────────────────────────────
+  //
+  // One row per stage×outcome pair the engine can actually produce, built from
+  // the stage list rather than from the mapping table: an unmapped pair is the
+  // interesting case (it falls back to the generic template), and a table of
+  // only-what-exists would hide every one of them. Staging had zero mapping
+  // rows, so that view would have been empty.
+  const mappingByPair = new Map(mappings.map((m) => [`${m.stage_key}:${m.outcome_key}`, m]));
+  const templateRows = stages
+    .filter((s) => s.is_active !== false)
+    .flatMap((stage) => (stage.rpa_stage_outcomes || [])
+      .filter((o) => o.is_active !== false)
+      .map((outcome) => {
+        const mapped = mappingByPair.get(`${stage.stage_key}:${outcome.outcome_key}`);
+        return {
+          key: `${stage.stage_key}:${outcome.outcome_key}`,
+          stage_key: stage.stage_key,
+          stage_label: stage.label,
+          outcome_key: outcome.outcome_key,
+          outcome_label: outcome.label,
+          template_id: mapped?.template_id ?? null,
+          template_name: mapped?.rpa_email_templates?.name || null,
+        };
+      }));
+
+  const saveMapping = (row, templateId) => submit(
+    () => pipelineService.setStageTemplate({
+      stage_key: row.stage_key,
+      outcome_key: row.outcome_key,
+      template_id: templateId ?? null,
+    }),
+    templateId ? 'Email template mapped to that outcome.' : 'Mapping cleared — the generic template will be used.',
+    () => {},
+  );
+
+  const templateColumns = [
+    { title: 'Stage', dataIndex: 'stage_label', width: 190 },
+    { title: 'Outcome', dataIndex: 'outcome_label', width: 150, render: (v, r) => <Tag>{v || r.outcome_key}</Tag> },
+    {
+      title: 'Email sent',
+      key: 'template_id',
+      render: (_, row) => (
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          style={{ width: '100%', maxWidth: 380 }}
+          placeholder="Generic template for this outcome"
+          value={row.template_id}
+          disabled={saving}
+          onChange={(val) => saveMapping(row, val)}
+          options={templates
+            .filter((t) => t.is_active !== false)
+            .map((t) => ({ value: t.id, label: t.name }))}
+        />
+      ),
+    },
+  ];
+
+  // ── Email flow keys ──────────────────────────────────────────────────
+
+  const openFlowKey = (row) => {
+    flowKeyForm.resetFields();
+    flowKeyForm.setFieldsValue({ to: row.to || '', cc: row.cc || '' });
+    setFlowKeyModal({ open: true, editing: row });
+  };
+
+  const submitFlowKey = () => flowKeyForm.validateFields().then((values) => submit(
+    () => settingsService.saveFlowKey({ flowKey: flowKeyModal.editing.flowKey, ...values }),
+    'Email routing updated — it takes effect on the next send.',
+    () => setFlowKeyModal({ open: false, editing: null }),
+  ));
+
+  const flowKeyColumns = [
+    { title: 'Flow', dataIndex: 'flowKey', width: 220, render: (v) => <Text code>{v}</Text> },
+    {
+      title: 'Goes to',
+      dataIndex: 'to',
+      render: (v, r) => {
+        // A blank `to` on a dynamic flow is correct, not missing — the address
+        // is worked out per send (the candidate, the vendor, the submitter).
+        if (r.dynamic && !v) return <Text type="secondary">Resolved per send — the candidate, vendor or submitter</Text>;
+        return v ? <Text style={{ fontSize: 12.5 }}>{v}</Text> : <Text type="secondary">Not set</Text>;
+      },
+    },
+    { title: 'Cc', dataIndex: 'cc', width: 200, render: (v) => (v ? <Text style={{ fontSize: 12.5 }}>{v}</Text> : <Text type="secondary">—</Text>) },
+    {
+      title: 'On staging',
+      key: 'redirectExempt',
+      width: 150,
+      render: (_, r) => (r.redirectExempt
+        ? <Tag color="orange">Reaches real inbox</Tag>
+        : <Tag color="green">Test inbox</Tag>),
+    },
+    { title: '', width: 90, render: (_, row) => <Button size="small" icon={<EditOutlined />} onClick={() => openFlowKey(row)}>Edit</Button> },
+  ];
+
   return (
     <Card
       bordered={false}
@@ -337,8 +455,96 @@ export default function PipelineConfigPanel() {
               </>
             ),
           },
+          {
+            key: 'stage-templates',
+            label: 'Outcome Emails',
+            children: (
+              <>
+                <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                  Which email a candidate receives for each stage outcome. Leave one blank and the
+                  generic Approved / Rejected / On&nbsp;Hold template is used instead — so nothing here
+                  can accidentally silence an email. Create new templates on the Email Templates screen.
+                </Text>
+                <Table
+                  rowKey="key"
+                  loading={loading}
+                  columns={templateColumns}
+                  dataSource={templateRows}
+                  pagination={{ pageSize: 15 }}
+                  size="middle"
+                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'flow-keys',
+            label: 'Email Routing',
+            children: (
+              <>
+                <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                  Who receives each kind of mail this system sends. Changes apply to the next send —
+                  no restart. Most candidate-facing flows resolve their recipient at send time and
+                  have nothing to set here.
+                </Text>
+                <Table
+                  rowKey="flowKey"
+                  loading={loading}
+                  columns={flowKeyColumns}
+                  dataSource={flowKeys}
+                  pagination={{ pageSize: 15 }}
+                  size="middle"
+                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                />
+              </>
+            ),
+          },
         ]}
       />
+
+      {/* ── Flow-key modal ── */}
+      <Modal
+        title={`Email routing — ${flowKeyModal.editing?.flowKey || ''}`}
+        open={flowKeyModal.open}
+        onCancel={() => setFlowKeyModal({ open: false, editing: null })}
+        onOk={submitFlowKey}
+        confirmLoading={saving}
+        okText="Save"
+        width={MODAL_WIDTH}
+        destroyOnClose
+      >
+        {flowKeyModal.editing?.dynamic && (
+          <div
+            style={{
+              background: 'var(--info-bg)', border: '1px solid var(--info-border)', borderRadius: 8,
+              padding: '12px 16px', color: 'var(--info-text)', fontSize: 13, lineHeight: 1.6, marginBottom: 16,
+            }}
+          >
+            This flow works out its own recipient at send time — the candidate, the vendor or whoever
+            submitted the form. Anything set here is only a fallback for when that address is missing.
+          </div>
+        )}
+        {flowKeyModal.editing?.redirectExempt && (
+          <div
+            style={{
+              background: 'var(--warning-bg, #fff7e6)', border: '1px solid var(--warning-border, #ffd591)', borderRadius: 8,
+              padding: '12px 16px', fontSize: 13, lineHeight: 1.6, marginBottom: 16,
+            }}
+          >
+            <strong>This flow reaches real inboxes on staging.</strong> It is exempt from the test-inbox
+            redirect — internal alerts, password mail, and addresses an operator typed in for that
+            specific action. Whatever you put here will genuinely be emailed.
+          </div>
+        )}
+        <Form form={flowKeyForm} layout="vertical">
+          <Form.Item name="to" label={uppercaseLabel('To')} extra="Comma-separated. Leave blank for dynamic flows.">
+            <Input placeholder="someone@aapnainfotech.com, someone.else@aapnainfotech.com" />
+          </Form.Item>
+          <Form.Item name="cc" label={uppercaseLabel('Cc')} extra="Comma-separated. Applies in production only.">
+            <Input placeholder="Optional" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* ── Stage modal ── */}
       <Modal

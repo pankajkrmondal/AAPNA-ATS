@@ -411,9 +411,19 @@ export default function VendorPortal() {
       render: (_, r) => {
         const meta = STATUS_META[r.status] || { label: r.status, color: 'default' };
         return (
-          <Tooltip title={meta.hint}>
-            <Tag icon={meta.icon} color={meta.color} className={r.action_required ? 'tag-attention' : undefined} style={{ cursor: 'default' }}>{meta.label}</Tag>
-          </Tooltip>
+          <Space size={4}>
+            <Tooltip title={meta.hint}>
+              <Tag icon={meta.icon} color={meta.color} className={r.action_required ? 'tag-attention' : undefined} style={{ cursor: 'default' }}>{meta.label}</Tag>
+            </Tooltip>
+            {/* Advisory: the row is fine, but the recruiter should know
+                something before deciding — currently the cooling-off notice.
+                Deliberately not styled as an error; nothing went wrong. */}
+            {r.advisory && (
+              <Tooltip title={r.advisory}>
+                <Tag color="gold" style={{ cursor: 'help', marginInlineEnd: 0 }}>Note</Tag>
+              </Tooltip>
+            )}
+          </Space>
         );
       },
     },

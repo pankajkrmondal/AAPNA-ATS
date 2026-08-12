@@ -1131,7 +1131,8 @@ export async function searchRoleCandidates(mrfId, force = false) {
 
   const responsePayload = {
     role: roleContext,
-    candidates: filtered,
+    // Stage history attached before caching, so a cache hit carries it too.
+    candidates: await attachStageHistory(filtered),
     summary,
   };
 
@@ -1153,6 +1154,95 @@ export async function searchRoleCandidates(mrfId, force = false) {
 /**
  * POST /api/screening/keyword-search
  */
+/**
+ * How many past stage events to attach per candidate. Enough to read the shape
+ * of a journey ("cleared Tech 1, rejected at Tech 2") without turning a search
+ * response into a full audit log — the drawer already shows the complete
+ * timeline for anyone who opens the candidate.
+ */
+const STAGE_HISTORY_LIMIT = 5;
+
+/**
+ * Attaches pipeline stage + recent history to search results.
+ *
+ * WHY (M6, 2026-08-12): doc 02 §1.1 makes whole-database skill search with
+ * stage history a non-negotiable requirement — "find me all Java resources, and
+ * show me where each of them got to". The search half was already true: both
+ * tabs query the entire rpa_cv table, uncapped, with no MRF tagging needed. The
+ * history half was not. Results carried only the legacy
+ * rpa_shortlisted_candidates shortlisted/rejected stamps, which say a decision
+ * happened but not at which round, and predate the stage engine entirely.
+ *
+ * So a recruiter searching "Java" saw that someone had been rejected, with no
+ * way to tell a resume-screening reject from a candidate who reached the CEO
+ * round — a difference that decides whether it is worth approaching them again.
+ *
+ * Runs on the FILTERED result set, not the candidate pool: two queries for the
+ * rows actually being returned, rather than for every candidate scored.
+ *
+ * @param {Array<object>} candidates - scored + filtered results
+ * @returns {Promise<Array<object>>} the same array, each row gaining `pipelineHistory`
+ */
+async function attachStageHistory(candidates) {
+  if (!candidates || candidates.length === 0) return candidates || [];
+
+  try {
+    const cvIds = candidates.map((c) => BigInt(c.id));
+
+    const journeys = await prisma.rpa_candidate_pipeline.findMany({
+      where: { cv_id: { in: cvIds } },
+      orderBy: { modified_at: 'desc' },
+      include: {
+        rpa_shortlisted_candidates: { include: { mrf: true } },
+        rpa_pipeline_stage_events: {
+          orderBy: { created_at: 'desc' },
+          take: STAGE_HISTORY_LIMIT,
+          select: { stage_key: true, event_type: true, outcome: true, status_label: true, created_at: true },
+        },
+      },
+    });
+    if (journeys.length === 0) return candidates;
+
+    const stages = await prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } });
+    const labelByKey = new Map(stages.map((s) => [s.stage_key, s.label]));
+
+    // A candidate can hold several journeys (Q13/Q24 concurrent MRFs), and on a
+    // whole-DB search that is exactly what a recruiter needs to see — "already
+    // in play for two other roles" changes the decision. So all of them, most
+    // recent first, not just the latest.
+    const byCv = new Map();
+    for (const j of journeys) {
+      const key = String(j.cv_id);
+      if (!byCv.has(key)) byCv.set(key, []);
+      byCv.get(key).push({
+        pipeline_id: Number(j.id),
+        position: j.rpa_shortlisted_candidates?.mrf?.position_hiring_for
+          || j.rpa_shortlisted_candidates?.position_applied
+          || null,
+        current_stage_key: j.current_stage_key,
+        current_stage_label: labelByKey.get(j.current_stage_key) || j.current_stage_key,
+        current_stage_status: j.current_stage_status,
+        final_outcome: j.final_outcome,
+        is_closed: !!j.final_outcome,
+        events: j.rpa_pipeline_stage_events.map((e) => ({
+          stage_key: e.stage_key,
+          stage_label: labelByKey.get(e.stage_key) || e.stage_key,
+          event_type: e.event_type,
+          outcome: e.outcome,
+          status_label: e.status_label,
+          at: e.created_at,
+        })),
+      });
+    }
+
+    return candidates.map((c) => ({ ...c, pipelineHistory: byCv.get(String(c.id)) || [] }));
+  } catch (err) {
+    // Additive context: a search must still return results if this fails.
+    logger.warn(`Stage-history attach skipped: ${err.message}`);
+    return candidates;
+  }
+}
+
 /**
  * Keyword tab isn't scoped to one MRF, so a candidate rejected under ANY MRF
  * (JD-tab or Keyword-tab reject — Keyword-tab reject now also requires tagging
@@ -1687,7 +1777,11 @@ export async function searchKeywordCandidates(filters) {
   };
 
   return {
-    candidates: filtered,
+    // The keyword tab is the whole-DB skill search doc 02 §1.1 calls
+    // non-negotiable, so stage history matters most here: results are not
+    // scoped to an MRF, and "where did this person get to last time?" is the
+    // question a recruiter is actually asking.
+    candidates: await attachStageHistory(filtered),
     summary,
   };
 }
@@ -1857,12 +1951,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     // Best-effort: a failure here must never block the legacy shortlist flow
     // that predates the stage engine.
     try {
+      // Vendor attribution is deliberately not passed: createPipelineJourney
+      // resolves it from the candidate's live 90-day lock, so a candidate whose
+      // vendor lock lapsed years ago is not re-attributed here (M6).
       const journey = await createPipelineJourney({
         cvId: candidateId,
         mrfId: mrfRef,
         shortlistId: shortlist.id,
         source: 'screening_shortlist',
-        vendorEmail: c.VendorEmail || null,
       });
       pipelineEntries.push({ cv_id: Number(candidateId), pipeline_id: journey.id });
     } catch (err) {

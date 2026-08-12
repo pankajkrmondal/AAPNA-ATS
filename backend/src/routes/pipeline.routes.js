@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as pipelineController from '../controllers/pipeline.controller.js';
-import { authenticate, checkModuleAccess, requireAdmin } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireAdmin, requireStaff } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 import assessmentImportRoutes from './assessmentImport.routes.js';
 
@@ -8,6 +8,10 @@ const router = Router();
 
 // Phase 3 Module 1 — Stage Engine + Pipeline Tracker.
 router.use(authenticate);
+// Role floor before the module check (M6): this board carries every candidate
+// and every MRF, so a vendor must be refused by role and not merely by whether
+// someone remembered to leave their recruitment_pipeline toggle off.
+router.use(requireStaff);
 router.use(checkModuleAccess('recruitment_pipeline'));
 
 // Stage/outcome/reason config CRUD is admin-only (RT ask 2026-07-13); the gate
@@ -36,6 +40,11 @@ router.put('/stages/:key', requireAdmin, pipelineController.updateStage);
 router.post('/stages/:key/outcomes', requireAdmin, pipelineController.createStageOutcome);
 /** PUT /api/pipeline/stages/:key/outcomes/:outcomeKey — edit an outcome (admin only). */
 router.put('/stages/:key/outcomes/:outcomeKey', requireAdmin, pipelineController.updateStageOutcome);
+
+/** GET /api/pipeline/stage-templates — stage×outcome → email template mappings. */
+router.get('/stage-templates', pipelineController.listStageTemplates);
+/** PUT /api/pipeline/stage-templates — set or clear one mapping (admin only). */
+router.put('/stage-templates', requireAdmin, pipelineController.setStageTemplate);
 
 /** GET /api/pipeline/reasons — full reason taxonomy. */
 router.get('/reasons', pipelineController.listReasons);

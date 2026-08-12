@@ -207,11 +207,16 @@ export const getSchedulePreview = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
 
-  const { stage_key, start_at, duration_minutes } = req.query;
+  // interviewer_name/_email are forwarded so the panel copy the modal shows is
+  // the copy that gets sent — the submit posts this compiled body back, and the
+  // send path prefers it over recompiling.
+  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email } = req.query;
   const result = await pipelineService.previewScheduleEmails(id, {
     stageKey: stage_key,
     startAt: start_at,
     durationMinutes: duration_minutes ? parseInt(duration_minutes, 10) : 60,
+    interviewerName: interviewer_name || '',
+    interviewerEmail: interviewer_email || '',
   });
   return success(res, result, 'Schedule email preview generated');
 });
@@ -256,11 +261,13 @@ export const getReschedulePreview = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
 
-  const { stage_key, start_at, duration_minutes } = req.query;
+  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email } = req.query;
   const result = await pipelineService.previewRescheduleEmails(id, {
     stageKey: stage_key,
     startAt: start_at,
     durationMinutes: duration_minutes ? parseInt(duration_minutes, 10) : 60,
+    interviewerName: interviewer_name || '',
+    interviewerEmail: interviewer_email || '',
   });
   return success(res, result, 'Reschedule email preview generated');
 });
@@ -640,4 +647,59 @@ export const updateReason = catchAsync(async (req, res) => {
     },
   });
   return success(res, reason, 'Reason updated successfully');
+});
+
+/**
+ * GET /api/pipeline/stage-templates
+ * Every stage×outcome → email template mapping (rpa_stage_email_templates).
+ *
+ * The table has always existed and the dispatcher has always read it, but no
+ * screen ever wrote to it — so "which email goes out when a candidate is
+ * rejected at Tech 2" needed a developer and a SQL client, which is the exact
+ * opposite of RT's "changeable without development" ask (2026-07-13). Every
+ * mapping row in staging today was inserted by hand; there were zero.
+ */
+export const listStageTemplates = catchAsync(async (_req, res) => {
+  const mappings = await prisma.rpa_stage_email_templates.findMany({
+    include: { rpa_email_templates: { select: { id: true, name: true, subject: true, is_active: true } } },
+  });
+  return success(res, mappings, 'Stage email template mappings retrieved successfully');
+});
+
+/**
+ * PUT /api/pipeline/stage-templates
+ * Sets (or clears) the template for one stage×outcome pair. Admin only.
+ *
+ * Upsert rather than create+update: the pair is the natural key, and an admin
+ * re-picking a template for a stage they already configured is the common case,
+ * not an error. A null/absent template_id clears the mapping, which returns
+ * that pair to the generic per-outcome fallback rather than silencing it.
+ */
+export const setStageTemplate = catchAsync(async (req, res) => {
+  const { stage_key, outcome_key, template_id } = req.body;
+  if (!stage_key || !outcome_key) {
+    throw new AppError('stage_key and outcome_key are required.', 400);
+  }
+
+  const key = { stage_key_outcome_key: { stage_key, outcome_key } };
+
+  if (template_id === null || template_id === undefined || template_id === '') {
+    await prisma.rpa_stage_email_templates.deleteMany({ where: { stage_key, outcome_key } });
+    return success(res, { stage_key, outcome_key, template_id: null }, 'Stage email template mapping cleared');
+  }
+
+  const templateId = parseInt(template_id, 10);
+  if (Number.isNaN(templateId)) throw new AppError('template_id must be a number.', 400);
+
+  // Checked explicitly so a bad id reads as "that template does not exist"
+  // rather than a raw foreign-key violation.
+  const template = await prisma.rpa_email_templates.findUnique({ where: { id: templateId } });
+  if (!template) throw new AppError('That email template does not exist.', 404);
+
+  const mapping = await prisma.rpa_stage_email_templates.upsert({
+    where: key,
+    create: { stage_key, outcome_key, template_id: templateId },
+    update: { template_id: templateId },
+  });
+  return success(res, mapping, 'Stage email template mapping saved');
 });

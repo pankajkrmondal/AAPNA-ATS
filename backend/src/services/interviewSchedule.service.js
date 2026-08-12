@@ -26,6 +26,7 @@ import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRec
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { createInterviewEvent, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
+import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 
 /** Template names seeded by prisma/seed-email-templates.js for this flow. */
 const TEMPLATE_NAMES = Object.freeze({
@@ -269,12 +270,33 @@ function ensureTeamsBlock(html, joinUrl, meetingId, passcode) {
   return `${html}${buildTeamsBlock(joinUrl, meetingId, passcode)}`;
 }
 
-function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen }) {
+/**
+ * How the panel templates address the recipient.
+ *
+ * One invite goes to every interviewer on the booking, so a single name is wrong
+ * as soon as there are two of them — "Hi all," is what the pre-interview reminder
+ * already falls back to (jobs/interviewReminder.js). Resolved here rather than in
+ * the template so the DB copy HR edits gets the same treatment as the seeded one,
+ * and so "Hi {{interviewer_name}}," can never render as a bare "Hi ,".
+ *
+ * @param {string} name   the booking's interviewer_name (may be blank)
+ * @param {string} emails the comma-joined interviewer mailbox list
+ */
+function interviewerGreeting(name, emails) {
+  if (String(emails || '').includes(',')) return 'all';
+  return String(name || '').trim() || 'there';
+}
+
+function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen, interviewerName, interviewerEmail }) {
   const teamsLine = buildTeamsBlock(joinUrl, meetingId, passcode);
   const reasonLine = reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '';
   return {
     candidate_name: candidate?.candidate_name || 'Candidate',
     candidate_email: candidate?.candidate_email || 'n/a',
+    // Panel-side greeting. Absent from this map until 2026-08-11, so the seeded
+    // "Hi," could never be personalised and any template carrying the placeholder
+    // rendered it verbatim — compileTemplate leaves unknown tokens in place.
+    interviewer_name: interviewerGreeting(interviewerName, interviewerEmail),
     position,
     stage_label: stageLabel,
     interview_when: when,
@@ -336,7 +358,7 @@ const interviewWrapOpts = (subject) => ({ title: subject || '' });
  * @param {number} pipelineId
  * @param {object} params - { stageKey, startAt, durationMinutes }
  */
-export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60 } = {}) {
+export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
@@ -353,6 +375,11 @@ export async function previewScheduleEmails(pipelineId, { stageKey, startAt, dur
 
   // The Teams link is unknown until the event is created, so previews show the
   // note that it will be added; the real send fills in the actual link.
+  // The interviewer name/mailbox come from what the recruiter is typing into the
+  // modal, not from a saved row — there is no booking yet. They MUST be honoured
+  // here: the modal posts this compiled body straight back on submit, and the
+  // send path prefers it over its own defaults, so a preview that greeted "Hi
+  // there," would be the copy that actually went out.
   return buildInterviewEmails('schedule', {
     candidate,
     stageLabel: SCHEDULABLE_STAGES[key].label,
@@ -361,6 +388,8 @@ export async function previewScheduleEmails(pipelineId, { stageKey, startAt, dur
     durationMinutes,
     joinUrl: null,
     reason: null,
+    interviewerName: interviewerName || mrfRoundHints(candidate?.mrf, key)?.interviewerName || '',
+    interviewerEmail,
   });
 }
 
@@ -385,6 +414,9 @@ export async function previewCancelEmails(scheduleId, { reason = '' } = {}) {
     durationMinutes: Math.round((new Date(row.scheduled_end_at) - new Date(row.scheduled_start_at)) / 60000),
     joinUrl: row.teams_join_url,
     reason: reason || null,
+    // Cancel previews from the live booking, so the name is already saved.
+    interviewerName: row.interviewer_name,
+    interviewerEmail: row.interviewer_email,
   });
 }
 
@@ -517,6 +549,8 @@ export async function scheduleInterviewRound(pipelineId, {
     meetingId: calendar.meetingId,
     passcode: calendar.passcode,
     reason: null,
+    interviewerName: resolvedName,
+    interviewerEmail: interviewerEmailList,
   });
 
   // The recruiter-edited copy from the modal was previewed before the meeting
@@ -602,6 +636,17 @@ export async function scheduleInterviewRound(pipelineId, {
     },
   });
 
+  // Vendor status line (M6). Says the round was booked — never the time, the
+  // panel, or the Teams link, none of which are a vendor's business.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: candidate?.candidate_name },
+    eventType: VENDOR_EVENTS.INTERVIEW_SCHEDULED,
+    stageKey,
+    stageLabel,
+    positionLabel: position,
+  });
+
   logger.info(`Interview scheduled: pipeline ${pipelineId} ${stageKey} at ${start.toISOString()} (calendar=${calendar.eventId ? 'yes' : isCalendarEnabled() ? 'failed' : 'disabled'}).`);
   return serialize(updated);
 }
@@ -664,6 +709,8 @@ export async function cancelInterviewRound(scheduleId, {
     durationMinutes: Math.round((new Date(row.scheduled_end_at) - new Date(row.scheduled_start_at)) / 60000),
     joinUrl: null,
     reason,
+    interviewerName: row.interviewer_name,
+    interviewerEmail: row.interviewer_email,
   });
   const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
   const panelFinalSubject = panelSubject ?? defaults.panel.subject;
@@ -717,6 +764,18 @@ export async function cancelInterviewRound(scheduleId, {
     },
   });
 
+  // Vendor status line (M6). The cancellation reason is deliberately not
+  // forwarded — it is internal, and often about the panel rather than the
+  // candidate.
+  await notifyVendor({
+    pipelineRow: row.rpa_candidate_pipeline,
+    candidate: { name: candidate?.candidate_name },
+    eventType: VENDOR_EVENTS.INTERVIEW_CANCELLED,
+    stageKey: row.stage_key,
+    stageLabel,
+    positionLabel: position,
+  });
+
   logger.info(`Interview cancelled: schedule ${scheduleId} (pipeline ${row.pipeline_id}, ${row.stage_key}).`);
   return serialize(updated);
 }
@@ -729,7 +788,7 @@ export async function cancelInterviewRound(scheduleId, {
  * @param {number} pipelineId
  * @param {object} params - { stageKey, startAt, durationMinutes }
  */
-export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60 } = {}) {
+export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
@@ -753,6 +812,10 @@ export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, d
     durationMinutes,
     joinUrl: null,
     reason: null,
+    // What the recruiter is typing wins; the existing booking is the fallback,
+    // since a reschedule usually keeps the same panel.
+    interviewerName: interviewerName || existing?.interviewer_name || '',
+    interviewerEmail: interviewerEmail || existing?.interviewer_email || '',
   });
 }
 
@@ -864,6 +927,7 @@ export async function rescheduleInterviewRound(pipelineId, {
   const defaults = await buildInterviewEmails('reschedule', {
     candidate, stageLabel, position, when, previousWhen, durationMinutes,
     joinUrl: calendar.joinUrl, meetingId: calendar.meetingId, passcode: calendar.passcode, reason: null,
+    interviewerName: resolvedName, interviewerEmail: interviewerEmailList,
   });
   const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
   const panelFinalSubject = panelSubject ?? defaults.panel.subject;
@@ -910,6 +974,17 @@ export async function rescheduleInterviewRound(pipelineId, {
       notes: `${stageLabel} rescheduled: ${previousWhen} → ${when}${resolvedName ? ` with ${resolvedName}` : ''}`,
       acted_by: actedBy || null,
     },
+  });
+
+  // Vendor status line (M6) — the round moved; neither the old nor the new
+  // time goes out.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: candidate?.candidate_name },
+    eventType: VENDOR_EVENTS.INTERVIEW_RESCHEDULED,
+    stageKey,
+    stageLabel,
+    positionLabel: position,
   });
 
   logger.info(`Interview rescheduled: pipeline ${pipelineId} ${stageKey} ${previousWhen} -> ${start.toISOString()}.`);

@@ -3,10 +3,10 @@
  * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
  */
 import { useMemo, useState } from 'react';
-import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { Card, Typography, Segmented, Empty } from 'antd';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { topByField, topSkills } from '../../utils/dashboardAggregations';
+import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
 
@@ -40,10 +40,7 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
       <div className="dash-card-head">
         <div>
           <Title level={5} style={{ margin: 0 }}>
-            Talent Insights{' '}
-            <Tooltip title="Frequency count of applied roles / listed skills, computed from the 200 most-recently-added candidate profiles — not the full database.">
-              <InfoCircleOutlined style={{ fontSize: 12, color: 'var(--text-3)' }} />
-            </Tooltip>
+            Talent Insights <MetricInfo metric="talentInsights" size={12} />
           </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'}
@@ -56,9 +53,9 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           options={[{ label: 'Roles', value: 'roles' }, { label: 'Skills', value: 'skills' }]}
         />
       </div>
-      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: -6, marginBottom: 4 }}>
-        Based on the 200 most recently added candidate profiles, not the full database.
-      </Text>
+      {/* Sampling caveat moved into this card's MetricInfo definition
+          (`talentInsights.caveat`) rather than printed under the title — same as
+          HiringTrendsCard. Still stated, no longer clutter. */}
 
       <div style={{ height: 250, marginTop: 12 }}>
         {data.length === 0 ? (
@@ -67,11 +64,16 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 4 }}>
               <XAxis type="number" hide allowDecimals={false} />
+              {/* width was 120, which clipped real role names ("Senior React
+                  Engineer" rendered as "enior React Engineer"). Widened, and long
+                  labels now truncate with an ellipsis so nothing can clip mid-glyph
+                  regardless of length — the full value is in the bar's tooltip. */}
               <YAxis
                 type="category"
                 dataKey="name"
-                width={120}
+                width={150}
                 tick={{ fontSize: 11.5, fill: 'var(--text)' }}
+                tickFormatter={(v) => (String(v).length > 22 ? `${String(v).slice(0, 21)}…` : v)}
                 tickLine={false}
                 axisLine={false}
               />

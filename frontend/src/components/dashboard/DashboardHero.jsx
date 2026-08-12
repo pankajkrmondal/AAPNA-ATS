@@ -2,10 +2,16 @@
  * DashboardHero — the "wow" header: animated gradient-mesh background, greeting with a
  * live clock/pulse, the primary CTAs, and the global controls (date-range, role filter,
  * ⌘K command palette trigger). Presentational — all state is owned by the page.
+ *
+ * Under Design V2 (`.ats-v2`) this is the flagship glass surface: the mesh below gains a
+ * slow conic light sweep and the AAPNA rotor bleeding off the corner. Both are decorative
+ * siblings styled entirely in theme/aurora-glass.css — outside that scope they inherit no
+ * rules and render as zero-size no-ops, so this markup is safe either way.
  */
 import { useEffect, useState } from 'react';
 import { Button, Select, Segmented, Space, Typography, Tooltip } from 'antd';
 import { PlusOutlined, FilterOutlined, ThunderboltOutlined, SearchOutlined } from '@ant-design/icons';
+import AapnaLogo from '../common/AapnaLogo';
 
 const { Title, Text } = Typography;
 
@@ -18,6 +24,8 @@ function greetingForNow() {
 
 export default function DashboardHero({
   firstName = 'there',
+  /** Brand-sourced eyebrow text (see brands.js heroEyebrow). */
+  eyebrow = 'ATS Platform',
   isModuleEnabled,
   onNewMrf,
   onScreen,
@@ -47,14 +55,25 @@ export default function DashboardHero({
   return (
     <div className="dash-hero">
       <div className="dash-hero__mesh" aria-hidden />
+      <div className="dash-hero__sweep" aria-hidden />
+      {/* The rotor again, but small and crisp at higher opacity — the mark needs to
+          be legible somewhere, not only ghosted across the page behind glass. */}
+      <div className="dash-hero__mark" aria-hidden>
+        <AapnaLogo />
+      </div>
       <div className="dash-hero__content">
         <div className="dash-hero__intro">
           <span className="dash-hero__eyebrow">
             <span className="dash-hero__pulse" />
-            AAPNA Recruitment Operations
+            {eyebrow}
           </span>
           <Title level={2} className="dash-hero__title">
-            {greetingForNow()}, {firstName} 👋
+            {/* The gradient ink is on a span, not the heading: background-clip
+                would render the waving hand as a transparent blob. */}
+            <span className="dash-hero__greeting">
+              {greetingForNow()}, {firstName}
+            </span>{' '}
+            👋
           </Title>
           <Text className="dash-hero__subtitle">
             Here's what's happening across your recruitment pipeline ·{' '}

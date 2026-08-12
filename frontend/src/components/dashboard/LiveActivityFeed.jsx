@@ -1,3 +1,4 @@
+import MetricInfo from '../common/MetricInfo';
 /**
  * LiveActivityFeed — presentational real-time feed. Receives events from useLiveActivity
  * (socket). Shows a live pulse and a graceful "listening" state before anything arrives.
@@ -31,7 +32,7 @@ export default function LiveActivityFeed({ events = [] }) {
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Live Activity</Title>
+          <Title level={5} style={{ margin: 0 }}>Live Activity <MetricInfo metric="liveActivity" size={12} /></Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>Real-time pipeline events</Text>
         </div>
         <span className="live-badge"><span className="live-badge__dot" />LIVE</span>

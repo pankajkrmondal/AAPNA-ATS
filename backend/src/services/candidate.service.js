@@ -3,7 +3,6 @@ import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
-import { ROLES, normalizeRole } from '../config/roles.js';
 
 /**
  * Candidate service.
@@ -274,6 +273,78 @@ function vendorScopeWhere(vendorEmail) {
 }
 
 /**
+ * The live pipeline journey for each of a set of candidates, keyed by cv_id.
+ *
+ * The Vendor Dashboard used to derive everything from `rpa_cv.FinalStatus` and
+ * a client-side keyword matcher (`classifyStatus` in VendorDashboard.jsx), which
+ * reads a string the stage engine writes back rather than the stage engine
+ * itself — so it lagged, and could not distinguish "no journey yet" from
+ * "journey with no outcome recorded".
+ *
+ * A candidate can hold several journeys (one per MRF, Q13/Q24). The most
+ * recently touched one is the honest answer to "where are they now?" on a
+ * per-candidate dashboard; the per-MRF breakdown lives on the Pipeline Tracker,
+ * which is the screen built for it.
+ *
+ * @param {Array<bigint|number>} cvIds
+ * @returns {Promise<Map<string, { stage_key: string, stage_status: string, stage_label: string|null, final_outcome: string|null }>>}
+ */
+export async function vendorPipelineByCvId(cvIds) {
+  const byCv = new Map();
+  if (!cvIds || cvIds.length === 0) return byCv;
+
+  const [journeys, stages] = await Promise.all([
+    prisma.rpa_candidate_pipeline.findMany({
+      where: { cv_id: { in: cvIds.map((id) => BigInt(id)) } },
+      orderBy: { modified_at: 'desc' },
+      select: {
+        cv_id: true,
+        current_stage_key: true,
+        current_stage_status: true,
+        final_outcome: true,
+      },
+    }),
+    prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } }),
+  ]);
+
+  const labelByKey = new Map(stages.map((s) => [s.stage_key, s.label]));
+  for (const j of journeys) {
+    const key = String(j.cv_id);
+    if (byCv.has(key)) continue; // ordered desc — first hit is the most recent
+    byCv.set(key, {
+      stage_key: j.current_stage_key,
+      stage_status: j.current_stage_status,
+      stage_label: labelByKey.get(j.current_stage_key) || j.current_stage_key,
+      final_outcome: j.final_outcome,
+    });
+  }
+  return byCv;
+}
+
+/**
+ * Attaches the real pipeline stage to a list of mapped candidates.
+ *
+ * Rows with no journey keep `stage: null` and are marked `stage_source:
+ * 'legacy'`, which is the signal for the dashboard to fall back to
+ * classifyStatus(FinalStatus). Candidates uploaded before the stage engine
+ * existed will never have a journey, so the fallback is permanent, not
+ * transitional.
+ *
+ * @param {Array<object>} candidates - already through mapCandidate()
+ * @returns {Promise<Array<object>>}
+ */
+export async function attachPipelineStage(candidates) {
+  if (!candidates || candidates.length === 0) return candidates || [];
+  const byCv = await vendorPipelineByCvId(candidates.map((c) => c.id));
+  return candidates.map((c) => {
+    const journey = byCv.get(String(c.id));
+    return journey
+      ? { ...c, stage: journey, stage_source: 'pipeline' }
+      : { ...c, stage: null, stage_source: 'legacy' };
+  });
+}
+
+/**
  * Compute lifetime upload stats for a single vendor, or across all vendors when
  * vendorEmail is omitted.
  * @param {string} [vendorEmail] - Vendor email (exact, case-insensitive); omit for all vendors
@@ -307,13 +378,14 @@ export async function vendorStats(vendorEmail) {
 export async function vendorStatusSummary(vendorEmail) {
   const base = vendorScopeWhere(vendorEmail);
 
-  const [stats, grouped] = await Promise.all([
+  const [stats, grouped, byStage] = await Promise.all([
     vendorStats(vendorEmail),
     prisma.rpa_cv.groupBy({
       by: ['FinalStatus'],
       where: base,
       _count: { _all: true },
     }),
+    vendorStageBreakdown(base),
   ]);
 
   const byFinalStatus = grouped
@@ -323,7 +395,51 @@ export async function vendorStatusSummary(vendorEmail) {
     }))
     .sort((a, b) => b.count - a.count);
 
-  return { ...stats, byFinalStatus };
+  return { ...stats, byFinalStatus, byStage };
+}
+
+/**
+ * Real stage counts for the vendor's candidates, straight from
+ * rpa_candidate_pipeline — the M6 replacement for inferring a pipeline from
+ * FinalStatus keyword matching.
+ *
+ * `untracked` is deliberately part of the result rather than dropped: it is the
+ * count of vendor candidates with no journey at all, which is exactly the
+ * population the dashboard's legacy fallback covers. Hiding it would make the
+ * stage tiles silently under-count and look like data loss.
+ *
+ * @param {object} candidateWhere - the vendor scope from vendorScopeWhere()
+ * @returns {Promise<{ stages: Array<{stage_key, stage_label, count}>, closed: number, untracked: number }>}
+ */
+async function vendorStageBreakdown(candidateWhere) {
+  const [scopedCandidates, stages] = await Promise.all([
+    prisma.rpa_cv.findMany({ where: candidateWhere, select: { id: true } }),
+    prisma.rpa_pipeline_stages.findMany({
+      where: { is_active: true },
+      orderBy: { sort_order: 'asc' },
+      select: { stage_key: true, label: true },
+    }),
+  ]);
+  if (scopedCandidates.length === 0) return { stages: [], closed: 0, untracked: 0 };
+
+  const byCv = await vendorPipelineByCvId(scopedCandidates.map((c) => c.id));
+
+  const counts = new Map();
+  let closed = 0;
+  for (const journey of byCv.values()) {
+    if (journey.final_outcome) { closed += 1; continue; }
+    counts.set(journey.stage_key, (counts.get(journey.stage_key) || 0) + 1);
+  }
+
+  return {
+    // Stage order comes from the admin-configured sort_order, so a stage added
+    // through PipelineConfigPanel shows up here without a code change.
+    stages: stages
+      .map((s) => ({ stage_key: s.stage_key, stage_label: s.label, count: counts.get(s.stage_key) || 0 }))
+      .filter((s) => s.count > 0),
+    closed,
+    untracked: scopedCandidates.length - byCv.size,
+  };
 }
 
 /**
@@ -489,30 +605,11 @@ export function buildWhereClause(filters = {}) {
 }
 
 /**
- * Force a vendor caller's query to their own candidates.
- *
- * `vendorEmail` arrives as a plain query parameter, so without this a
- * vendor-role token could simply omit it (or name another vendor) and read the
- * entire candidate table. Both the paginated list and the CSV export run every
- * filter set through here, so the two cannot drift apart.
- *
- * Non-vendor roles are untouched — recruiters and admins legitimately query
- * across vendors, and pass `vendorEmail` deliberately.
- *
- * @param {Object} filters
- * @param {{ role?: string, email?: string }} [user]
- * @returns {Object} a new filters object; the input is not mutated
+ * Re-exported from utils/vendorScope.js, where it now lives so it can be tested
+ * without loading this service's database and socket dependencies. Callers
+ * importing it from here continue to work unchanged.
  */
-export function enforceVendorScope(filters = {}, user) {
-  if (normalizeRole(user?.role) !== ROLES.VENDOR) return { ...filters };
-
-  return {
-    ...filters,
-    // Overwrite, never merge: whatever the client asked for is irrelevant.
-    vendorEmail: user.email,
-    vendorOnly: false,
-  };
-}
+export { enforceVendorScope } from '../utils/vendorScope.js';
 
 /**
  * Columns the CSV export renders. Deliberately narrow: `rpa_cv` is ~80 columns

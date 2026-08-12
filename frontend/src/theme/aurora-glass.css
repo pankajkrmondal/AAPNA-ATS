@@ -1,0 +1,802 @@
+/* ============================================================
+   Design V2 — Aurora Glass
+   ------------------------------------------------------------
+   Imported by theme/index.css. Kept as its own file because index.css is
+   already ~3000 lines and this is a self-contained design layer: one import to
+   remove if the pilot is rejected.
+
+   SCOPED TO `.ats-v2`, which MainLayout puts on its outer <Layout> for the
+   dashboard route only. That scope is load-bearing: `.glass`, `.glass-card` and
+   `.glass-sidebar` are also used by CandidateDetail, CandidateScreening,
+   Analytics, AnalyticsLegacy and LoadingSkeleton — screens with no aurora behind
+   them, where heavier translucency would read as washed out. Nothing here may be
+   written unscoped, with one deliberate exception noted at .premium-stat-card.
+
+   To roll out app-wide: drop the route check in MainLayout, not the scope here.
+
+   Tokens (--glass-1-bg, --depth-2, --aurora-*, …) are defined for both themes in
+   index.css alongside the originals, so there is a single source of truth.
+   ============================================================ */
+
+/* ----- The ambient canvas -------------------------------------------------
+   One fixed plane: aurora, watermark, grain. Fixed (not absolute) so it is
+   excluded from scroll repaint — that is what keeps the backdrop-filtered
+   surfaces above it from re-blurring on every wheel tick. */
+.ats-v2 .ats-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* The base coat. Glass above this refracts it.
+     Uses its own --brand-canvas-deep rather than --ink so the dashboard's ground can
+     be tuned without shifting every other screen's background. In light mode that
+     ground is near-white but strongly olive-SATURATED — not darker. Darkening it was
+     tried and reverted: it bought value contrast at the cost of the airiness the
+     design wants, and the dullness was never a brightness problem but a chroma one.
+     In dark mode the two values are identical. */
+  background: var(--brand-canvas-deep, var(--ink));
+}
+
+.ats-v2 .ats-aurora {
+  position: absolute;
+  inset: 0;
+  opacity: var(--aurora-opacity);
+}
+
+/* ----- LIGHT MODE AURORA: a different construction -----------------------
+   Light mode paints four shallow percentage-ellipses on ONE element, anchored near
+   the corners. Dark mode keeps the four-blob construction below, untouched, because
+   it is already right.
+
+   Why light needed its own: the blob construction (large circles, centres pulled
+   inside the viewport) covers most of the page at high alpha. On a dark ground that
+   reads as glow; on a light ground the same coverage reads as a flat mid-olive wash —
+   the background stopped being light at all. Shallow ellipses pinned to the corners
+   leave the centre of the page clean, which is what keeps it airy.
+
+   Alphas here are ~a third of what the blobs use, matching the reference field. That
+   was the main error: light mode does need more CHROMA than instinct suggests, but the
+   preceding pass pushed it to ~0.76 and turned the page green.
+
+   One element, one transform: also four fewer composited layers than the blobs. */
+[data-theme='light'] .ats-v2 .ats-aurora {
+  background:
+    radial-gradient(58% 52% at 20% 4%, var(--aurora-1), transparent 66%),
+    radial-gradient(48% 44% at 72% 0%, var(--aurora-2), transparent 70%),
+    radial-gradient(50% 46% at 88% 92%, var(--aurora-3), transparent 72%),
+    radial-gradient(42% 40% at 8% 88%, var(--aurora-4), transparent 72%);
+  animation: atsBreathe 26s ease-in-out infinite;
+  will-change: transform;
+}
+[data-theme='light'] .ats-v2 .ats-aurora__blob { display: none; }
+
+@keyframes atsBreathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.92; }
+  50%      { transform: translate3d(1.5%, 1%, 0) scale(1.06); opacity: 1; }
+}
+
+/* Blobs are soft radial gradients with a transparent falloff — inherently
+   feathered, so they need no `filter: blur()`. Skipping the filter matters: a
+   blur on a viewport-sized element is a per-frame raster cost, while a gradient
+   is rasterized once and only re-composited as it transforms. */
+.ats-v2 .ats-aurora__blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  will-change: transform;
+}
+/* Offsets are deliberately shallow. A radial gradient's colour is concentrated at
+   its centre, so parking the blobs fully off-canvas (the instinctive choice)
+   leaves only their faint outer falloff on screen and the glass above has nothing
+   to refract — the surfaces just read as flat white cards. Each centre sits
+   inside, or barely outside, the viewport. */
+.ats-v2 .ats-aurora__blob--1 {
+  width: 68vw; height: 68vw; top: -18vw; left: -10vw;
+  background: radial-gradient(circle closest-side, var(--aurora-1) 0%, transparent 72%);
+  animation: atsAurora1 34s var(--ease-out-quint) infinite;
+}
+.ats-v2 .ats-aurora__blob--2 {
+  width: 56vw; height: 56vw; top: -6vw; right: -6vw;
+  background: radial-gradient(circle closest-side, var(--aurora-2) 0%, transparent 70%);
+  animation: atsAurora2 42s var(--ease-out-quint) infinite;
+}
+.ats-v2 .ats-aurora__blob--3 {
+  width: 62vw; height: 62vw; bottom: -20vw; left: 10vw;
+  background: radial-gradient(circle closest-side, var(--aurora-4) 0%, transparent 72%);
+  animation: atsAurora3 38s var(--ease-out-quint) infinite;
+}
+.ats-v2 .ats-aurora__blob--4 {
+  width: 44vw; height: 44vw; bottom: -8vw; right: 2vw;
+  background: radial-gradient(circle closest-side, var(--aurora-3) 0%, transparent 68%);
+  animation: atsAurora4 48s var(--ease-out-quint) infinite;
+}
+
+/* Transform-only keyframes — compositor work, no layout and no paint. */
+@keyframes atsAurora1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(6vw, 4vw, 0) scale(1.12); }
+}
+@keyframes atsAurora2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.06); }
+  50%      { transform: translate3d(-7vw, 6vw, 0) scale(1); }
+}
+@keyframes atsAurora3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(8vw, -5vw, 0) scale(1.14); }
+}
+@keyframes atsAurora4 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.1); }
+  50%      { transform: translate3d(-5vw, -6vw, 0) scale(1); }
+}
+
+/* The rotor as architecture: oversized, anchored so ~a third bleeds off the
+   bottom-right corner, turning once every ~140s. Sized in vmin so it scales with
+   the viewport's short edge and stays proportionate on any screen. */
+.ats-v2 .ats-watermark {
+  position: absolute;
+  right: -14vmin;
+  bottom: -16vmin;
+  width: 70vmin;
+  height: 70vmin;
+  color: var(--watermark-color);
+  opacity: var(--watermark-opacity);
+}
+.ats-v2 .ats-watermark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Rotation only — compositor work, no paint. The global prefers-reduced-motion
+     guard in index.css freezes this for free. */
+  animation: atsRotorSpin 140s linear infinite;
+  will-change: transform;
+}
+@keyframes atsRotorSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Grain — fractal noise, kills gradient banding on 8-bit panels.
+   NO mix-blend-mode, deliberately. It used multiply/overlay, which forces a
+   FULL-VIEWPORT recomposite whenever anything beneath it changes — and the rotor now
+   turns continuously beneath it. Measured with the continuous-scroll probe (3 reps):
+   with the blend ~23% of frames exceeded 20ms; without it ~3%. At 3-6% opacity plain
+   alpha compositing is visually indistinguishable, so the blend cost a lot for
+   nothing. --grain-blend is left defined in index.css but intentionally unused. */
+.ats-v2 .ats-grain {
+  position: absolute;
+  inset: 0;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ----- Shell: sits above the canvas, transparent so the canvas shows ----- */
+.ats-v2 > .ant-layout-sider,
+.ats-v2 > .ant-layout {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+.ats-v2 .ant-layout-header,
+.ats-v2 .ant-layout-content { background: transparent; }
+
+/* LIGHT MODE: the nav and topbar are WHITE, not tinted glass. A translucent pane
+   is only ever as neutral as what shows through it, so this cannot be done by
+   lowering alpha — it needs an opaque fill. The blur goes with it (nothing to blur
+   through an opaque surface), which is also a small perf win. Dark mode below keeps
+   its glass tier exactly as it was. */
+[data-theme='light'] .ats-v2 .glass-sidebar,
+[data-theme='light'] .ats-v2 .glass-sidebar .ant-layout-sider-children,
+[data-theme='light'] .ats-v2 .ant-layout-header.glass {
+  background: #ffffff !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-theme='light'] .ats-v2 .glass-sidebar { border-right: 1px solid var(--border-light) !important; }
+[data-theme='light'] .ats-v2 .ant-layout-header.glass { border-bottom: 1px solid var(--border-light) !important; }
+
+/* Sidebar — glass tier 1 (the strongest blur in the system). AntD paints the
+   sider background on an inner children wrapper as well, so both need it. */
+.ats-v2 .glass-sidebar,
+.ats-v2 .glass-sidebar .ant-layout-sider-children {
+  background: var(--glass-1-bg);
+}
+.ats-v2 .glass-sidebar {
+  backdrop-filter: var(--glass-1-blur);
+  -webkit-backdrop-filter: var(--glass-1-blur);
+  border-right: 1px solid var(--glass-1-border) !important;
+  box-shadow: var(--depth-1);
+}
+
+/* Topbar — same tier, plus the catch-light along its bottom edge. */
+.ats-v2 .ant-layout-header.glass {
+  background: var(--glass-1-bg) !important;
+  backdrop-filter: var(--glass-1-blur);
+  -webkit-backdrop-filter: var(--glass-1-blur);
+  border-bottom: 1px solid var(--glass-1-border) !important;
+  box-shadow: var(--depth-1);
+}
+
+/* Nav: the selected item becomes a brand-gradient pill with a glowing rail on
+   its leading edge, so the active surface is legible at a glance in the icon
+   rail as well as expanded. */
+.ats-v2 .ant-menu-item {
+  position: relative;
+  overflow: hidden;
+  transition: background-color var(--transition-fast), color var(--transition-fast),
+    transform 0.28s var(--ease-spring) !important;
+}
+.ats-v2 .ant-menu-item:not(.ant-menu-item-selected):hover { transform: translateX(3px); }
+.ats-v2 .ant-menu-item-selected {
+  background: linear-gradient(100deg, var(--gold-bg) 0%, rgba(122, 146, 46, 0.04) 100%) !important;
+  box-shadow: var(--glass-hilite);
+}
+.ats-v2 .ant-menu-item-selected::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  width: 3px; height: 60%;
+  transform: translateY(-50%);
+  border-radius: 0 3px 3px 0;
+  background: var(--gradient-primary);
+  box-shadow: 0 0 10px 1px rgba(122, 146, 46, 0.55);
+}
+[data-theme='dark'] .ats-v2 .ant-menu-item-selected {
+  background: linear-gradient(100deg, rgba(168, 194, 74, 0.20) 0%, rgba(168, 194, 74, 0.05) 100%) !important;
+}
+[data-theme='dark'] .ats-v2 .ant-menu-item-selected::before {
+  box-shadow: 0 0 12px 1px rgba(168, 194, 74, 0.6);
+}
+
+/* ----- Glass surface primitives -----------------------------------------
+   The rim and sheen are ::before / ::after on the surface classes, so the seven
+   existing dashboard widget cards inherit the whole treatment without a single
+   JSX edit — they already carry `className="glass-card dash-chart-card"`. */
+
+/* NO backdrop-filter on scrolling content surfaces (~11 cards). A deliberate
+   economy, not a fix for a measured problem: profiling this page with a
+   continuous rAF-driven scroll showed 16.7ms median / ~16.9ms p95 and zero
+   dropped frames whether these cards were blurred or not, so the blur was not
+   costing anything here. It is omitted because it also was not buying anything —
+   blur only reads as blur when there is high-frequency detail behind it, and this
+   backdrop is soft gradients plus 3% grain. Translucency, the rim, the sheen and
+   the layered shadow carry the entire effect; the blur is spent only on the
+   sticky chrome below.
+   Worth knowing if you revisit this: a naive probe that fires a wheel event then
+   waits will report large frame drops here. Those are rAF scheduling gaps between
+   impulses, not paint. Scroll continuously (one scrollBy per frame) or you will
+   chase a phantom. */
+.ats-v2 .glass-card,
+.ats-v2 .premium-stat-card,
+.ats-v2 .dash-hero {
+  position: relative;
+  background: var(--glass-2-bg) !important;
+  border: 1px solid transparent !important;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+
+/* The gradient rim. A plain 1px border cannot fade, so we paint a gradient into
+   the padding box and mask out the interior — the rim is bright where the light
+   lands and brand-tinted where it falls away. */
+.ats-v2 .glass-card::before,
+.ats-v2 .premium-stat-card::before,
+.ats-v2 .dash-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-ring);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
+
+/* Diagonal specular sheen across the top-left — the cue that reads as "pane of
+   glass lit from above" rather than "translucent rectangle".
+
+   RADIUS: must be set EXPLICITLY, not `inherit`. These pseudo-elements hang off
+   .ant-card-body, whose own border-radius is 0 — AntD puts the radius on the card,
+   not the body. `border-radius: inherit` therefore resolved to 0 and painted a
+   SQUARE sheen whose corners poked out past the card's rounded edge. The KPI cards
+   masked the bug because they set `overflow: hidden`; the widget cards do not (and
+   must not, or Recharts tooltips would be clipped). */
+.ats-v2 .glass-card > .ant-card-body,
+.ats-v2 .premium-stat-card > .ant-card-body { position: relative; }
+.ats-v2 .glass-card > .ant-card-body::before,
+.ats-v2 .premium-stat-card > .ant-card-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: calc(var(--radius-card) - 1px);
+  background: var(--glass-specular);
+  pointer-events: none;
+}
+/* Keep real content above the sheen. */
+.ats-v2 .glass-card > .ant-card-body > * { position: relative; z-index: 1; }
+
+/* Cursor-tracked spotlight. --mx/--my are published by usePointerSpotlight;
+   before the first pointermove they are unset, so the fallbacks keep the
+   highlight centred rather than collapsing to the top-left corner. */
+.ats-v2 .spotlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  background: radial-gradient(
+    420px circle at var(--mx, 50%) var(--my, 50%),
+    var(--spotlight-tint) 0%,
+    transparent 62%
+  );
+}
+.ats-v2 .spotlight:hover::after { opacity: 1; }
+
+/* Lift: glass rises further than an opaque card, because the shadow and the
+   blur both sell the elevation. */
+.ats-v2 .glass-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-3), var(--glass-hilite) !important;
+}
+/* Chart cards stay put so Recharts tooltips and axes read cleanly — preserves
+   the intent of the existing .dash-chart-card rule in index.css. */
+.ats-v2 .dash-chart-card:hover {
+  transform: none;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+
+/* ----- Radius scale ------------------------------------------------------
+   Five different radii were in play across the dashboard (12/14/18/20/24), which
+   reads as inconsistency even when nothing else is wrong. Two values only: cards
+   share --radius-card, and the hero gets the single larger one because it is the
+   only full-width feature surface.
+
+   --radius-card exists as a token because the overlay pseudo-elements that sit on
+   .ant-card-body cannot use `border-radius: inherit` (the body has no radius) and so
+   must repeat the value. One token keeps them from drifting out of sync with the
+   card, which is exactly how the square-corner artifact appeared. */
+.ats-v2 {
+  --radius-card: 16px;
+}
+.ats-v2 .glass-card,
+.ats-v2 .premium-stat-card,
+.ats-v2 .glass-3,
+.ats-v2 .kpi-card { border-radius: var(--radius-card) !important; }
+
+/* ----- Hero: the flagship surface --------------------------------------- */
+.ats-v2 .dash-hero {
+  border-radius: 22px;
+  padding: 34px 38px;
+  overflow: hidden;
+  isolation: isolate;
+}
+/* Strengthen the existing mesh now that it sits on glass rather than on a flat
+   gradient card, and re-derive its colours from the brand so a tenant theme does not
+   leave an olive wash across the hero. (The base .dash-hero__mesh rule in index.css
+   still carries hardcoded AAPNA values as the no-brand fallback.) */
+/* Hero mesh — a wash, not a wall. These were 3x stronger and, combined with a
+   half-opaque pane, turned the flagship surface into a mid-olive slab: the darkest
+   thing on a page that is supposed to read light. */
+.ats-v2 .dash-hero__mesh {
+  /* 0.9 in light mode was a third of the hero's excess darkness on its own; the
+     brief then moved to a near-white hero, so it drops again to a faint tint. */
+  opacity: 0.28;
+  filter: blur(16px);
+  background:
+    radial-gradient(circle at 18% 25%, color-mix(in srgb, var(--brand-primary) 16%, transparent) 0%, transparent 44%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--brand-accent) 13%, transparent) 0%, transparent 46%),
+    radial-gradient(circle at 70% 85%, color-mix(in srgb, var(--brand-primary-hover) 11%, transparent) 0%, transparent 48%),
+    radial-gradient(circle at 30% 80%, color-mix(in srgb, var(--brand-primary) 9%, transparent) 0%, transparent 46%);
+  background-size: 200% 200%;
+}
+[data-theme='dark'] .ats-v2 .dash-hero__mesh {
+  /* Dark mode's hero was judged right as-is, so it keeps the stronger mesh and its
+     original opacity. */
+  opacity: 0.9;
+  background:
+    radial-gradient(circle at 18% 25%, color-mix(in srgb, var(--brand-primary) 30%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--brand-accent) 24%, transparent) 0%, transparent 44%),
+    radial-gradient(circle at 70% 85%, color-mix(in srgb, var(--brand-primary-hover) 20%, transparent) 0%, transparent 46%),
+    radial-gradient(circle at 30% 80%, color-mix(in srgb, var(--brand-primary) 17%, transparent) 0%, transparent 44%);
+  background-size: 200% 200%;
+}
+
+/* The hero is the one surface allowed to sit MORE transparent than the glass tier, so
+   its mesh and the aurora behind it come through as real colour instead of being
+   veiled by a 70%-white pane. That is what stops the flagship surface from being the
+   palest thing on a light page. Dark mode keeps the tier value — it has no such
+   problem, and going more transparent there would wash out the greeting. */
+/* Measured, not guessed: the hero was sampling rgb(219,226,193) against a page of
+   rgb(246,249,236) — 27 points darker, which is what read as a "mid-olive slab". The
+   cause was cumulative rather than any single layer: pane + mesh + conic sweep +
+   specular sheen + the inset shade in --glass-hilite all stack on the same surface.
+   Raising the pane and easing the two decorative layers (below) lands it around
+   rgb(237,241,227): still visibly brand-tinted, unmistakably light. */
+.ats-v2 .dash-hero { background: rgba(255, 255, 255, 0.92) !important; }
+[data-theme='dark'] .ats-v2 .dash-hero { background: var(--glass-2-bg) !important; }
+
+/* Slow conic sweep — a light source travelling around the hero. Sits above the
+   mesh and below the content. */
+.ats-v2 .dash-hero__sweep {
+  position: absolute;
+  inset: -60%;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--brand-primary) 7%, transparent) 32deg,
+    transparent 76deg,
+    transparent 360deg
+  );
+  animation: atsHeroSweep 22s linear infinite;
+  will-change: transform;
+}
+[data-theme='dark'] .ats-v2 .dash-hero__sweep {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--brand-primary) 18%, transparent) 32deg,
+    transparent 76deg,
+    transparent 360deg
+  );
+}
+@keyframes atsHeroSweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* The rotor bleeding off the hero's bottom-right corner — brand presence without a
+   logo slot. Cropped by roughly a third so it reads as a deliberate crop, and left
+   static: the page-scale rotor already carries the motion, and two marks turning at
+   once would read as decoration rather than depth. */
+.ats-v2 .dash-hero__mark {
+  position: absolute;
+  right: -34px;
+  bottom: -48px;
+  z-index: 0;
+  width: 200px;
+  height: 200px;
+  color: var(--brand-primary);
+  opacity: 0.13;
+  pointer-events: none;
+}
+.ats-v2 .dash-hero__mark svg { display: block; width: 100%; height: 100%; }
+[data-theme='dark'] .ats-v2 .dash-hero__mark { opacity: 0.16; }
+
+.ats-v2 .dash-hero__content { z-index: 2; }
+.ats-v2 .dash-hero__title {
+  font-size: clamp(26px, 2.6vw, 34px) !important;
+  letter-spacing: -0.03em;
+}
+/* Gradient ink on the greeting only — the one place a gradient headline is
+   justified. Scoped to a span so the waving-hand emoji keeps its own colour
+   (background-clip: text would otherwise render it as a transparent blob). */
+.ats-v2 .dash-hero__greeting {
+  background: linear-gradient(120deg, var(--text) 0%, var(--gold) 92%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* Same reasoning as the card surfaces: these scroll, so no backdrop-filter. */
+.ats-v2 .dash-hero__eyebrow {
+  background: var(--glass-3-bg);
+  border-color: var(--glass-2-border);
+  box-shadow: var(--glass-hilite);
+}
+.ats-v2 .dash-hero__cmd.ant-btn {
+  background: var(--glass-3-bg);
+  border-color: var(--glass-2-border);
+  box-shadow: var(--depth-1), var(--glass-hilite);
+}
+.ats-v2 .dash-hero__cmd.ant-btn:hover { transform: translateY(-1px); }
+
+/* ----- KPI cards -------------------------------------------------------- */
+/* NOTE — the one intentionally unscoped rule in this file. StatCard used to set
+   these two properties as inline styles, which no stylesheet can override
+   without !important. Moving them here (driven by the --stat-color custom
+   property StatCard still sets inline) keeps the pre-V2 appearance byte-identical
+   for any future non-dashboard consumer, while letting the .ats-v2 block below
+   restyle it cleanly. */
+.premium-stat-card {
+  border-top: 4px solid var(--stat-color, var(--gold));
+  /* 4% reproduces the `${color}0a` 8-digit hex the inline style used (0x0a/0xff). */
+  background: linear-gradient(160deg, var(--colorBgContainer) 0%,
+    color-mix(in srgb, var(--stat-color, var(--gold)) 4%, transparent) 100%);
+}
+
+.ats-v2 .premium-stat-card {
+  border-top: 4px solid var(--stat-color, var(--gold)) !important;
+  border-radius: 18px !important;
+  overflow: hidden;
+  isolation: isolate;
+}
+/* Tint the pane with the metric's colour without losing the glass. Explicit radius
+   for the same reason as the sheen above — this hangs off the body, not the card. */
+.ats-v2 .premium-stat-card > .ant-card-body::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: calc(var(--radius-card) - 1px);
+  /* Each card carries a real dose of its own metric colour. At 9% the tint was
+     technically present but perceptually absent on a light ground, which is a large
+     part of why light mode read as four identical white rectangles. 20% was then too
+     far the other way — the cards started reading as solid colour blocks rather than
+     tinted glass — so this sits between the two. */
+  background: linear-gradient(165deg,
+    transparent 0%,
+    color-mix(in srgb, var(--stat-color, var(--gold)) 13%, transparent) 100%);
+}
+.ats-v2 .premium-stat-inner { z-index: 1; }
+.ats-v2 .premium-stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--depth-3), var(--glass-hilite) !important;
+}
+.ats-v2 .premium-stat-icon {
+  border-radius: 13px;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--stat-color, var(--gold)) 42%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.ats-v2 .premium-stat-value { font-size: 38px; letter-spacing: -0.035em; }
+
+/* ----- KPI cards, second family (`.kpi-card` — Vendor Dashboard, Vendor/HR
+   upload, Pipeline prototype) ---------------------------------------------
+   An older, plainer stat-card component (components/common/KpiCard.jsx) that
+   predates .premium-stat-card and never got the glass treatment above. It is
+   a bare div, not an antd Card, so there is no .ant-card-body to hang the
+   tint/sheen pseudo-elements off; and its own `::before` is already spoken
+   for (the sweeping top accent bar), so the tint overlay below uses `::after`
+   instead of the `.ant-card-body::after` trick .premium-stat-card uses. */
+.ats-v2 .kpi-card {
+  background: var(--glass-2-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+  isolation: isolate;
+}
+.ats-v2 .kpi-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Same 13% dose as .premium-stat-card's tint, keyed off this component's own
+     --kpi-color custom property so each card still carries its own metric hue. */
+  background: linear-gradient(165deg,
+    transparent 0%,
+    color-mix(in srgb, var(--kpi-color, var(--gold)) 13%, transparent) 100%);
+}
+/* Lift the accent bar and real content above the tint overlay. All four are
+   already `position: relative`/`absolute` in the base rule (index.css); only
+   the stacking order needs raising here, so position itself is untouched —
+   .kpi-card__glow relies on its absolute top/right offsets. */
+.ats-v2 .kpi-card::before,
+.ats-v2 .kpi-card__glow,
+.ats-v2 .kpi-card__icon,
+.ats-v2 .kpi-card__label,
+.ats-v2 .kpi-card__value {
+  z-index: 1;
+}
+.ats-v2 .kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-3), var(--glass-hilite) !important;
+}
+
+/* ----- Composition: bands ------------------------------------------------
+   Every band is one 24-column row with a single consistent gap below it. The old
+   layout set marginBottom inline per row and changed column shape four times down
+   the page; one class gives the whole dashboard a single vertical rhythm. */
+.ats-v2 .dash-band { margin-bottom: 20px; }
+
+/* Equal-height cards within a band, so a short widget cannot leave a ragged bottom
+   edge beside a tall one. */
+.ats-v2 .dash-band > .ant-col > .ant-card,
+.ats-v2 .dash-band > .ant-col > div > .ant-card { height: 100%; }
+
+/* KPI footnote — one line of real context, above the sparkline band. */
+.premium-stat-footnote {
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+/* The band bleeds to the card edges, so the inner block owns no bottom padding. */
+.ats-v2 .premium-stat-inner { padding-bottom: 12px; }
+.ats-v2 .premium-stat-band {
+  /* The base rule in index.css sets `margin: 16px -22px 0` because the band used to
+     live INSIDE the 22px-padded inner block and had to break out of it. It is now a
+     direct child of the (unpadded) card body, so those negative margins pushed it
+     22px past each edge where `overflow: hidden` clipped the sparkline away. */
+  margin: 0;
+  height: 54px;
+  /* Above the tinted ::after overlay, below the ring. */
+  z-index: 1;
+  border-bottom-left-radius: calc(var(--radius-card) - 1px);
+  border-bottom-right-radius: calc(var(--radius-card) - 1px);
+  overflow: hidden;
+}
+/* Push the band to the bottom of the card regardless of content height above it, so
+   all four bands line up across the row. */
+.ats-v2 .premium-stat-card > .ant-card-body {
+  display: flex;
+  flex-direction: column;
+}
+.ats-v2 .premium-stat-card > .ant-card-body > .premium-stat-inner { flex: 1 1 auto; }
+
+/* ----- Quick actions: single-column launcher ----------------------------
+   Seven items in a two-column grid always left one empty cell. One column has no
+   hole at any count, and reads as a launcher rather than a broken grid. */
+.ats-v2 .dash-qa {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ats-v2 .dash-qa .quick-action-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-2-border);
+}
+.ats-v2 .dash-qa .quick-action-row.enabled:hover {
+  border-color: var(--qa-color, var(--brand-primary)) !important;
+}
+.quick-action-row__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--qa-color, var(--brand-primary)) 0%,
+    color-mix(in srgb, var(--qa-color, var(--brand-primary)) 78%, transparent) 100%);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--qa-color, var(--brand-primary)) 27%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* ----- Latest uploads strip -------------------------------------------- */
+.ats-v2 .dash-uploads { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ats-v2 .dash-uploads__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-2-border);
+  background: var(--glass-3-bg);
+  cursor: pointer;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+.ats-v2 .dash-uploads__row:hover {
+  transform: translateX(3px);
+  border-color: var(--brand-primary);
+}
+.dash-uploads__avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 700; color: #fff;
+  background: var(--gradient-primary);
+}
+.dash-uploads__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dash-uploads__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.dash-uploads__role {
+  font-size: 11.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dash-uploads__time { font-size: 11px; color: var(--text-3); flex-shrink: 0; }
+
+/* ----- Tier 3: data surfaces -------------------------------------------
+   Near-opaque and NOT backdrop-filtered. A table that re-blurs its backdrop on
+   every scroll frame is the most expensive mistake available in a glass design. */
+
+/* Unscoped base. `.glass-3` is a name introduced by this file, so defining it
+   outside the scope collides with nothing — it just means a tier-3 surface still
+   looks like a proper card if it is ever rendered outside `.ats-v2`. Values match
+   the inline styles this class replaced on the Recent Candidates card. */
+.glass-3 {
+  background: var(--colorBgContainer);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.ats-v2 .glass-3 {
+  position: relative;
+  background: var(--glass-3-bg) !important;
+  border: 1px solid var(--glass-3-border) !important;
+  border-radius: 18px;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+.ats-v2 .glass-3:hover { transform: none; box-shadow: var(--depth-2), var(--glass-hilite) !important; }
+/* Let the surface tint show through the table instead of AntD's opaque fills. */
+.ats-v2 .glass-3 .ant-table,
+.ats-v2 .glass-3 .ant-table-thead > tr > th { background: transparent; }
+.ats-v2 .glass-3 .ant-table-thead > tr > th { border-bottom-color: var(--border-light); }
+
+/* Quick-action rows: glassy, with the accent colour arriving on hover. */
+.ats-v2 .quick-action-row {
+  background: var(--glass-3-bg) !important;
+  border-color: var(--glass-2-border) !important;
+  transition: transform var(--transition-fast), border-color var(--transition-fast),
+    box-shadow var(--transition-fast) !important;
+}
+.ats-v2 .quick-action-row.enabled:hover {
+  transform: translateX(4px);
+  box-shadow: var(--depth-1);
+}
+
+/* ----- Accessibility & capability fallbacks -----------------------------
+   Motion is already handled app-wide by the prefers-reduced-motion guard in
+   index.css, which zeroes every animation — the aurora, the sweep and the
+   spotlight transition inherit that for free. These two cover the other axes. */
+
+/* No backdrop-filter support: the chrome is the only tier that relies on it, and
+   at 0.50 alpha with no blur the aurora would read sharply through the nav text,
+   so those two go opaque. The content tiers never blurred, so they need nothing. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ats-v2 .glass-sidebar,
+  .ats-v2 .glass-sidebar .ant-layout-sider-children,
+  .ats-v2 .ant-layout-header.glass {
+    background: var(--colorBgContainer) !important;
+  }
+}
+
+/* Users who ask the OS to reduce transparency get flat, opaque surfaces and no
+   decorative canvas at all. */
+@media (prefers-reduced-transparency: reduce) {
+  .ats-v2 .ats-aurora,
+  .ats-v2 .ats-grain,
+  .ats-v2 .ats-watermark,
+  .ats-v2 .dash-hero__sweep,
+  .ats-v2 .dash-hero__mark { display: none; }
+  .ats-v2 .glass-card,
+  .ats-v2 .premium-stat-card,
+  .ats-v2 .dash-hero,
+  .ats-v2 .glass-3,
+  .ats-v2 .glass-sidebar,
+  .ats-v2 .glass-sidebar .ant-layout-sider-children,
+  .ats-v2 .ant-layout-header.glass,
+  .ats-v2 .kpi-card {
+    background: var(--colorBgContainer) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+  .ats-v2 .glass-card::before,
+  .ats-v2 .premium-stat-card::before,
+  .ats-v2 .dash-hero::before,
+  .ats-v2 .glass-card > .ant-card-body::before,
+  .ats-v2 .premium-stat-card > .ant-card-body::before,
+  .ats-v2 .kpi-card::after,
+  .ats-v2 .spotlight::after { display: none; }
+}
+
+/* Narrow viewports: the watermark and hero mark stop earning their space. The
+   chrome also drops to a cheaper blur — mobile GPUs pay disproportionately for
+   large backdrop-filter regions. */
+@media (max-width: 768px) {
+  .ats-v2 .ats-watermark,
+  .ats-v2 .dash-hero__mark { display: none; }
+  .ats-v2 .dash-hero { padding: 24px 20px; border-radius: 18px; }
+  .ats-v2 .glass-sidebar,
+  .ats-v2 .ant-layout-header.glass {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+}
+

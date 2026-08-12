@@ -859,3 +859,244 @@ on screen. Also closed a **pre-existing vendor-isolation hole** on
 fixed `buildWhereClause` silently discarding filters.
 
 **Full detail:** [CHANGES-csv-export.md](CHANGES-csv-export.md).
+
+---
+
+## 18. No way to export a single requisition from the MRF details modal
+
+**Issue:** MRF had exactly one export — the toolbar button above the Records
+table, which pulls the filtered **list** (15 columns of `rpa_mrf_jd_send` plus
+approval/fill state). The content people actually want out of the app lives one
+click deeper, in the details modal: the **New MRF Request Info** section and the
+~45-field **Submitted MRF Details** section the Hiring Manager filled in. None of
+it was exportable. A recruiter forwarding one requisition to an interview panel
+had to screenshot the modal or retype fields.
+
+**Fix:** An `Export CSV` button in the modal footer that emits one file for the
+open requisition, covering both sections. It goes through the existing
+`runExport` path, so it inherits the row cap, the `rpa_processing_log` audit row,
+the UTF-8 BOM, the CSV-injection guard and the shared `ExportButton` loading/error
+handling — no new client-side exporter.
+
+The file is **transposed** relative to every other export: `Section, Field, Value`,
+one row per field, instead of one row with 65 columns. A 65-column single-row
+file is unreadable — you scroll sideways to find one value. Accepted trade-off:
+two of these files do not stack into a table, which is fine for a sheet that gets
+read, printed and forwarded rather than pivoted.
+
+Details worth recording:
+
+- **The status labels follow the modal, not the list table.** These genuinely
+  disagree: the table renders `managersubmitted` as "MANAGER SUBMITTED" (via
+  `mrfStatusLabel` in `mrf.export.js`) while the modal's tag reads "COMPLETED".
+  The export is taken from the modal, so it mirrors `getWorkflowSummaryTags`
+  instead — otherwise someone comparing the file to the screen it came from would
+  think it had picked up a different record. Both mappings now exist, each
+  commented with which surface it serves.
+- **Gated "Other" fields follow the modal's visibility rule.** Rows keep stale
+  `*_other` text from before a select was changed away from "Other"; the modal
+  hides those fields, so the export omits them rather than putting invisible data
+  in the file.
+- **Approval status and fill state stay independent** — same rule as #15. A
+  requisition can be `APPROVED` and have `Openings Filled = YES`.
+- **The row-count header is suppressed** for this endpoint. A "row" here is a
+  *field*, not a record, so the shared toast would have read *"Exported 61 rows."*
+  for one MRF. `sendCsv` skips null-valued headers, so passing
+  `'X-Export-Row-Count': null` makes `downloadFile` report `null` and the toast
+  falls back to *"Exported CSV."*
+- **View mode only.** The file is built from the database, so offering the button
+  mid-edit would hand back values that silently disagree with the unsaved ones on
+  screen.
+- Excluded as not modal-visible: `email_body_content` / `emailbody` (HTML blobs),
+  the attachment path columns, `existing_resource_allocation`, `submitter_email`
+  (already present as "Manager Email"). Added *beyond* the modal: MRF Request ID,
+  Linked MRF ID and CC Email — a file that has left the app has to be traceable
+  back to the record it came from.
+- Same `MRF_EXPORT_ROLES` + `exportLimiter` as the list export; vendors stay
+  excluded because the file carries budget figures.
+
+**Files:** `backend/src/exports/mrfDetail.export.js` (new),
+`backend/src/tests/mrfDetailExport.test.js` (new),
+`backend/src/controllers/mrf.controller.js`, `backend/src/routes/mrf.routes.js`,
+`frontend/src/services/mrfService.js`, `frontend/src/pages/MRF.jsx`.
+
+Unit suite 107 passing (12 new, all DB-free); frontend production build clean.
+**Full detail:** [CHANGES-csv-export.md](CHANGES-csv-export.md) §6.
+
+---
+
+## 19. 🚨 Total Experience was fabricated on every HR upload
+
+**Issue:** QA (HRU-01/HRU-02) reported *"Total Experience is not updating when we
+checked in the Search Candidate page."* It was worse than not updating — the value
+shown was frequently one the resume never contained. Three compounding causes in
+`hrUpload.service.js`:
+
+1. Whenever a resume had **any** employment-history row, the parser's own
+   `TotalExperienceYears` was *unconditionally* overwritten by date arithmetic.
+   `parseDate()` understood only `MM/YYYY`, `YYYY/MM`, `Month YYYY` and whatever
+   `new Date()` accepts — so `Jun-2022`, `May'21`, `05.2022` and `2020 – 2022` all
+   failed, every row scored 0 months, and the candidate was stored as **`"0"`**.
+2. When the parser returned nothing, a hardcoded **`"2"`** was written (`"3"` on the
+   duplicate path).
+3. `"0"` is a non-empty string, so `getMissingFields()` never flagged it. The
+   candidate was marked `ACTIVE`, no missing-data email went out, and the wrong
+   number was never chased.
+
+The field name is consistent across every layer (`TotalExperienceYears` → API
+`experience` → `CandidateDetailCard`), so there was no mapping bug to find — the
+data was wrong before it was ever written.
+
+**Fix:** the date-computed total now wins **only when it computed something**;
+otherwise the resume's own statement stands, and null (not `"0"`) is stored when
+there is neither — null being what the missing-data flow chases. `parseDate` reads
+`Mon-YYYY`, `Mon'YY`, `MM.YYYY`, `MM YYYY` and bare `YYYY`; `monthsBetween` no
+longer returns a negative span for a reversed pair.
+
+The rest of the same block was fabricating too, and all of it is now `null`:
+`ContactNumber "9876543210"`, `PositionApplied "Software Developer"`,
+`HighestQualification "B.Tech"`, `CurrentLocation "Delhi"`, and on the duplicate
+path `"Software Engineer"` / `"AAPNA Infotech"` / `"3"`. This is not cosmetic — the
+codebase already called the phone default a hazard (*"must never be used as a match
+key"*, `PLACEHOLDER_CONTACT`), and a fake number is exactly what would defeat the
+missing-data flow QA has queued as HRU-07/HRU-08.
+
+Also fixed alongside, same block:
+
+- **Five parsed columns were never written.** `NoticePeriod`, `CTC_LPA`,
+  `ExpectedCTC_LPA`, `JobSource`, `RecruiterInfoAAPNA` were used to derive
+  `NoticePeriodDays`/`ExpectedCTCNumeric` and then discarded, so View Details showed
+  those fields blank while the numeric shadows held real values.
+- **`YearsWorked` per job** was derived from the *length of the history array*, so
+  every row whose dates would not parse reported 0 years worked.
+- **A live crash path.** `TotalExperienceYearsNumeric` is `Decimal(5,2)` (max
+  999.99) and `parseExperienceNumeric` takes the first number in the string, so a CV
+  saying "since 2019" yields 2019 — which Postgres rejects and Prisma turns into a
+  thrown create that loses the candidate. Survivable while the column was fed a
+  computed span or a hardcoded `"2"`; a real risk now the parsed value is trusted.
+  Out-of-range readings are dropped and logged, not clamped to 999.99.
+
+The date/experience logic had **two copies** in the file (one inline, one in an
+unused `calculateExperience()`); both are replaced by one tested module.
+
+**Existing rows:** `npm run report:experience:staging|prod` is a **read-only**
+diagnostic that counts and samples rows likely carrying a fabricated value. No
+backfill has been run — the decision waits on that number, since `"2"` is also an
+ordinary genuine answer.
+
+**Files:** `backend/src/utils/experienceParser.js` (new),
+`backend/src/tests/experienceParser.test.js` (new, 15 DB-free tests),
+`backend/scripts/report-experience-anomalies.js` (new, read-only),
+`backend/src/services/hrUpload.service.js`, `backend/package.json`.
+Unit suite 122 passing.
+
+---
+
+## 20. Interviewer name missing from the interview invitation email
+
+**Issue:** QA (T1-09, and again in the sheet's Feedback block) — *"An email is
+sending to the interviewers but interviewer name is not coming automatically in body
+content; user has to provide manually."*
+
+The column, the API field and an MRF-name fallback **already existed**, and the name
+was already persisted on every booking (`rpa_interview_schedule.interviewer_name`).
+Two things were missing: `interviewTokens()` had no `interviewer_name` key, and the
+three panel templates opened with a bare `<p>Hi,</p>`. Since `compileTemplate` leaves
+unknown tokens verbatim, a template carrying the placeholder would have rendered
+`Hi {{interviewer_name}},` literally. The pre-interview *reminder* template had been
+doing this correctly all along — that pattern was copied.
+
+**Fix (the preview path is the part that matters):** the modal posts its compiled
+`panel_body` back on submit and the service prefers it over recompiling
+(`panelBody ?? defaults.panel.body`). **A send-time-only fix would have been silently
+overridden by the body the preview compiled** — so the name is threaded through the
+preview endpoints as well as the send paths, and into the preview's react-query key.
+
+- `interviewer_name` added to `interviewTokens()`, resolved by a new
+  `interviewerGreeting()`: the name, `"all"` when more than one mailbox is invited
+  (one email serves the whole panel), `"there"` when no name was captured. Never
+  blank, so `Hi {{interviewer_name}},` cannot render as `Hi ,`.
+- Threaded into all six `buildInterviewEmails` call sites — schedule, reschedule and
+  cancel, for both the send and the preview. Cancel/reschedule read it off the live
+  booking; schedule takes what the recruiter is typing.
+- An **Interviewer name** input added to the schedule modal, prefilled from the MRF
+  hint already displayed read-only above it. An input rather than pure derivation is
+  required: Technical Round 3 has no MRF interviewer column at all, and the MRF field
+  is free text that is often a team rather than a person.
+
+**⚠️ Deploy step:** the template bodies only change once
+`prisma/seed-email-templates.js` is re-run, and that seeder updates by name — **it
+overwrites any edits HR has made to those three templates in the Email Templates
+UI**. Check before running it on staging/production. The token-map change works
+immediately for any template that already contains the placeholder.
+
+**Files:** `backend/src/services/interviewSchedule.service.js`,
+`backend/src/controllers/pipeline.controller.js`,
+`backend/prisma/seed-email-templates.js`,
+`frontend/src/components/pipeline/PipelineDrawer.jsx`,
+`frontend/src/services/pipeline.js`.
+
+---
+
+## 21. Documents: the submit button existed, the acknowledgement did not
+
+**Issue:** QA Feedback — *"In Documents column when candidate opens the upload
+documents option there should be submit button."*
+
+**The button has been there since item #11 above** (`DocumentUpload.jsx`,
+staged-then-submit). What is missing is any sign that pressing it worked. `allDone`
+required every item to be **`verified`** — an HR action that can take days.
+Immediately after submitting, every item is `uploaded`, so the candidate was handed
+back the same checklist with a greyed-out button reading *"Choose your files to
+continue"*, the success toast already faded. That reads as "there is no submit
+button", which is very likely what was being reported.
+
+**Fix:** a third state between outstanding and verified. When nothing is staged and
+every item is `uploaded` or `verified`, the page shows *"Documents received — thank
+you"* with an explanation that review is pending and the link stays valid. The
+checklist stays visible **below** the acknowledgement rather than replacing it, so a
+later rejection flips one row back to actionable and the candidate can still see and
+replace it. The disabled button reads *"Nothing left to send"* instead of asking for
+files that have already been sent.
+
+Recorded so this does not get re-filed: **the submit button was not missing.**
+
+**Files:** `frontend/src/pages/DocumentUpload.jsx`.
+
+---
+
+## 22. Documents: reminders were already automatic — and had two counter bugs
+
+**Issue:** QA Feedback — *"In Documents Option there should be Reminder that should
+sent automatically, currently it needs to share manually."*
+
+**The daily sweep has shipped since Phase 3 M4** (`jobs/documentReminder.js`,
+registered in `server.js`, first reminder after 2 days then daily, max 3). The panel
+simply never said so: its helper text described only the secure link and the manual
+*"Send reminder"* button, so a reviewer reasonably concluded chasing was manual. The
+Offer panel already advertises its own schedule — that precedent was followed.
+
+**Fix (UI):** the Documents panel now states the real cadence, and the button reads
+*"Send a reminder now"* so it presents as an override rather than the only
+mechanism.
+
+**Fix (two real defects found while confirming the above):**
+
+1. `sendReminder()` stamped `last_reminded_at` and incremented `reminder_count`
+   **even when the email failed**. The sweep selects on `reminder_count < maxCount`,
+   so three bounced sends exhausted a candidate's reminder budget on emails they
+   never received, and they were never chased again. The counters now move only on a
+   successful send, leaving the sweep free to retry.
+2. `requestDocuments()` re-opened the request and refreshed `requested_at` but left
+   the counters, so a **re-request after 3 reminders fell permanently outside the
+   sweep's filter** — reopened, then never followed up. A re-request now resets both.
+3. Related, fixed alongside: the post-rejection re-request sends the reminder
+   template directly and did not stamp `last_reminded_at`, so the daily pass could
+   chase the candidate again hours after a rejection email landed. It now stamps the
+   timestamp without incrementing the count — HR's rejection should not consume the
+   candidate's reminder budget.
+
+Recorded so this does not get re-filed: **automatic reminders were not missing.**
+
+**Files:** `backend/src/services/documentCollection.service.js`,
+`frontend/src/components/pipeline/PipelineDrawer.jsx`.

@@ -844,6 +844,14 @@ export default function MRF() {
             </Space>
           ) : (
             <Space key="footer-view">
+              {/* Exports this one requisition — both the request and the MRF the
+                  Hiring Manager submitted. View mode only: the file is built from
+                  the database, so offering it mid-edit would hand back values that
+                  silently disagree with the unsaved ones on screen. */}
+              <ExportButton
+                request={(cfg) => mrfService.exportDetailCsv(selectedRecord?.id, cfg)}
+                fallbackName={`AAPNA-ATS_MRF-${selectedRecord?.id}.csv`}
+              />
               <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#7a922e', borderColor: '#7a922e', fontWeight: 600 }}>
                 Edit
               </Button>

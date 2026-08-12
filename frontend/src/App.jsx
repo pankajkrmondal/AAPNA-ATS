@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { BrandProvider } from './context/BrandContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
 import { lightTheme, darkTheme } from './theme/themeConfig';
@@ -378,9 +379,15 @@ function AppShell() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
+      {/* BrandProvider is the per-organization theming axis (theme/brands.js). It is
+          independent of ThemeProvider's light/dark: it publishes `-light`/`-dark`
+          token pairs and index.css selects between them, so the two nest in either
+          order. It sits inside so a future server-driven theme can read auth. */}
+      <BrandProvider>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </BrandProvider>
     </ThemeProvider>
   );
 }

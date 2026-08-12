@@ -1,3 +1,4 @@
+import MetricInfo from '../common/MetricInfo';
 /**
  * UpcomingInterviews — next-7-days agenda derived from the Zeko pipeline
  * (rows with a future interview_start_at). "Today" rows are highlighted.
@@ -22,7 +23,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Upcoming Interviews</Title>
+          <Title level={5} style={{ margin: 0 }}>Upcoming Interviews <MetricInfo metric="upcomingInterviews" size={12} /></Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>Next 7 days</Text>
         </div>
         <Tooltip title="Open screening analytics">

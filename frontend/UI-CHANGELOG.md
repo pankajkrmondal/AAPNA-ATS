@@ -5,6 +5,576 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-13 — Aurora Glass rollout, Phase 0: `.kpi-card` glass tier (foundation only)
+
+First step of taking Aurora Glass beyond `/dashboard` app-wide (see the two Aurora Glass
+entries below for the pilot and its scope). Rather than widening `isV2` in one shot, the
+rollout is phased route-by-route — `.glass`/`.glass-card` are already reused unscoped by
+several screens with no aurora canvas behind them, so a naive one-shot widening risks
+silently inconsistent pages (chrome goes glass, cards don't). This entry is Phase 0: CSS
+only, no route's `isV2` gate touched.
+
+**`.ats-v2 .kpi-card`** (`src/theme/aurora-glass.css`) — a second, older KPI-card component
+(`components/common/KpiCard.jsx`, shared by Vendor Dashboard, Vendor/HR upload and the
+Pipeline prototype) had zero rules in `aurora-glass.css`; only `.premium-stat-card`
+(Dashboard's own KPI cards) had been given the glass treatment. Added the same tier-2 glass
+background/border/shadow plus a metric-colour tint, keyed off the component's existing
+`--kpi-color` custom property. One structural difference from `.premium-stat-card`:
+`.kpi-card` is a bare div, not an antd `Card`, so there's no `.ant-card-body` to hang the
+tint on, and its own `::before` is already spoken for (the sweeping top accent bar) — so the
+tint overlay uses `::after` instead, and the accent bar plus the four content spans get
+`z-index: 1` to sit above it. Their existing `position` values are left untouched, since
+`.kpi-card__glow` depends on its own absolute top/right offsets. Also added `.kpi-card` to
+the shared `--radius-card` list and to the `prefers-reduced-transparency: reduce` fallback
+block, alongside the other glass surfaces.
+
+**Currently inert.** No page renders `.kpi-card` under `.ats-v2` yet — `KpiCard` doesn't
+appear on `/dashboard`, and none of its four consumer routes have joined `isV2`. This simply
+pre-clears the CSS so a later phase can widen `isV2` for those four routes with no further
+JSX change, the same way `.glass-card` already restyled Dashboard's widgets for free because
+they already carried the right class name.
+
+**Verified:** `npm run build` clean, no CSS errors; confirmed `KpiCard` is unused in
+`Dashboard.jsx` (so `/dashboard` is unaffected). **Not built this pass:** every other phase
+of the rollout (route-by-route `isV2` widening for Candidates/CandidateDetail/
+CandidateScreening/Pipeline/Analytics/AnalyticsLegacy/HRUpload/MRF/VendorPortal/
+VendorDashboard/Settings/EmailManagement/CandidatePipelinePrototype, plus a separate pass for
+the admin portal) is deliberately deferred to later sessions.
+
+### The full rollout plan (phases 1–6, not started — recorded here for continuity)
+
+The mechanism: `MainLayout.jsx:183`, `const isV2 = location.pathname.startsWith('/dashboard')`,
+puts `.ats-v2` on the outer `<Layout>` (Sider + Header + `<Outlet/>` together) and mounts
+`<AmbientBackdrop/>`. Widening it only "just works" for a route whose cards already carry the
+exact class names `aurora-glass.css` targets (`.glass-card`, `.glass-3`, `.premium-stat-card`,
+`.dash-hero`, `.spotlight`, now `.kpi-card` too); elsewhere it needs per-page work first.
+
+**Verified landmine:** bare `className="glass"` (no `-card`/`-3` suffix) is styled by a
+separate, non-aurora rule in `index.css:840` and is *never* touched by `aurora-glass.css`.
+`Analytics.jsx` (lines 464, 496) and `AnalyticsLegacy.jsx` (lines 995, 1027) both use it —
+widening `isV2` for those routes as-is would re-theme their chrome while those specific cards
+stayed flatly unchanged.
+
+- **Phase 1** — `/candidates/:id` (`CandidateDetail.jsx`), `/filtering`
+  (`CandidateScreening.jsx`). Both already use `.glass-card` correctly; widen `isV2`, then
+  audit for inline `style`/`bodyStyle` that would shadow the new rules (the exact bug the
+  topbar's `background: isV2 ? undefined : ...` guard at `MainLayout.jsx:481` avoids), and
+  confirm `CandidateScreening`'s results list is `.glass-3` (tier 3) not `.glass-card`.
+- **Phase 2** — `/candidates` (`Candidates.jsx`), `/pipeline` (`Pipeline.jsx`). No existing
+  glass classes — net-new JSX: table container → `.glass-3`, non-scrolling toolbar →
+  `.glass-card`. `Pipeline.jsx` is the real Module-1 board (persists to `/api/pipeline`,
+  sends real emails) — visual-only changes, no touching data/permission logic.
+- **Phase 3** — `/analytics`, `/analytics-legacy`. Mandatory rework (see landmine above):
+  rename the tab-shell `Card className="glass"` to `glass-3`; consolidate the ad-hoc
+  `tile.bg`/`tile.color` KPI tiles onto the shared `StatCard`/`.premium-stat-card` pattern
+  (gains `MetricInfo` tooltips they currently lack); strip inline `border`/`boxShadow`/
+  `background` overrides that would otherwise shadow the new class.
+- **Phase 4** — `/hr-upload`, `/mrf`, `/vendor`, `/vendor-dashboard`. Ship together: per
+  `VENDOR_ALLOWED_PATHS` in `MainLayout.jsx`, `/vendor` and `/vendor-dashboard` are the
+  *entire* reachable app for the `vendor` role, so converting only one would flip a vendor's
+  chrome between glass/non-glass every click. Thanks to this Phase 0 entry, their `.kpi-card`s
+  should light up with no JSX change; only the records tables need `.glass-3` added.
+- **Phase 5** — `/settings`, `/email`, `/candidate-pipeline-prototype`. `Settings.jsx` is
+  net-new (no existing classes); `EmailManagement.jsx` already uses
+  `"glass no-lift email-pane-card"` — rename to `glass-3 no-lift` (the pre-existing `no-lift`
+  already implies tier-3 intent). `CandidatePipelinePrototype.jsx` has 7 modals + 1 drawer
+  with no established glass treatment anywhere in the app — leave AntD's default modal/drawer
+  chrome untouched app-wide rather than inventing a tier under time pressure; open question.
+- **Phase 6** — Admin portal (`/admin/dashboard`, `AdminDashboard.jsx`). Biggest structural
+  departure: `MainLayout.jsx`'s `isAdminPath` branch (lines 229–329) has its own
+  `admin-topbar` header, no `Sider` at all, and its own independent `.admin-stat` KPI family.
+  Widening `isV2`'s path check does nothing here by itself — the admin branch never applies
+  `.ats-v2` or mounts `<AmbientBackdrop/>` today. Planned approach: keep the header-only shell
+  (no Sider — that's a nav redesign, not a visual one) but mount `<AmbientBackdrop/>`, add
+  `.ats-v2` to the admin `<Layout>`, give `admin-topbar` the tier-1 chrome treatment, and add
+  an `.ats-v2 .admin-stat` block mirroring this entry's `.kpi-card` approach. A full
+  Sider-based admin nav is a larger, separate structural change, deferred beyond this.
+
+**Out of scope for the whole rollout:** AuthLayout (`/login`, `/admin/login`,
+`/forgot-password`, `/reset-password`) — a distinct tree `isV2` never reaches, and the
+pilot's own `/login` pixel-diff anchor. Public `ForceLight` pages (`/missing-jd-upload`,
+`/mrf-submit`, `/mrf/:id/approve`, `/documents/:token`, `/scorecard/:token`) — rendered
+outside `MainLayout` entirely, so `.ats-v2` structurally cannot reach them regardless.
+
+Sequencing rationale: 1 (audit-only, lowest risk) → 2 (new tier-3 JSX, biggest tables) → 3
+(the two pages that actually break the "just widen the boolean" premise) → 4 (batched,
+one role's whole UI) → 5 (lowest traffic, surfaces the modal/drawer question) → 6 (biggest
+structural departure, saved for last so the CSS patterns are fully proven elsewhere first).
+Every phase repeats this entry's verification set: both themes, CDP
+`prefers-reduced-transparency` emulation (Playwright can't do it directly), the app-wide
+`prefers-reduced-motion` guard, a shared-class non-regression diff generalized from the
+`/login` pixel-diff (any phase touching a shared base class must re-diff every other page
+still using that class unscoped), an inline-style audit, and — for any table/list — the
+continuous rAF `scrollBy`-per-frame perf probe (a wheel-then-wait probe reports phantom drops
+from rAF scheduling gaps, not real paint cost, per the entries below).
+
+## 2026-08-13 — Light mode settled (white chrome), and four data-integrity bugs
+
+Closes out the V3 entry below. The light-mode iteration had over-corrected into a
+mid-olive page; this fixes that in one pass and then stops. Dark mode is untouched
+throughout — it was signed off as correct and is guarded by `[data-theme='dark']`
+overrides on every surface this touches.
+
+### Light mode: near-white ground, WHITE nav and topbar
+
+- Ground `#fbfcf7`, corner field alphas halved again to `0.13 / 0.11 / 0.08 / 0.06`,
+  hero pane raised to 0.92 white with its mesh at 0.28 opacity. Measured: page
+  `rgb(249,249,244)`, hero `rgb(244,247,238)`, nav `rgb(255,255,255)`.
+- **The nav and topbar are opaque white in light mode**, not tinted glass. This could
+  not be achieved by lowering alpha — a translucent pane is only ever as neutral as
+  what shows through it, so it needed an explicit fill. The blur goes with it (there
+  is nothing to blur through an opaque surface), which is also a small perf saving.
+
+### Four bugs, all visible in a screenshot of real production data
+
+**1. "MRFs pending approval: 50" was both mislabelled and truncated.** The dashboard
+derived it from `GET /api/mrf?status=pending&limit=50` and took `array.length`. Two
+independent defects:
+- **Wrong column.** `buildMrfWhere()` maps `status=pending` onto **`mrfstatus`** — the
+  manager's *submission* state (`pending` / `pendingfromleader`) — not
+  `approval_status`. A row labelled "pending **approval**" was counting requisitions
+  that had not been submitted yet. This is why the dashboard could show "Active MRFs
+  21" beside "50 pending approval": the two figures were reading different columns.
+- **Truncated.** `.length` of a page capped at `limit=50` can never exceed 50, so the
+  number silently plateaus at 50 forever once there are 50+ matches. The endpoint does
+  return `pagination.total`; the hook discarded it.
+
+Fixed by counting it server-side in `getStats()` as `pendingApprovalMRFs`
+(`approval_status = 'pending'`, same `filled_at` exclusion as `activeMRFs`, so the two
+are consistent by construction) and reading that. Relabelled "awaiting approval".
+
+**2. Two different "Shortlisted" numbers on one screen** (74 in the KPI card, 78 in the
+funnel). `getStats` had two predicates both surfaced as "Shortlisted": the KPI counted
+`pipeline_status in (shortlisted, selected)`, the funnel counted "every shortlist row
+not explicitly rejected" — which also swept in on-hold and in-progress rows and
+overstated the funnel. Both now use the same count.
+
+**3. One job title appeared as several bars in Talent Insights.** `topByField` grouped
+on the trimmed raw string, so "Product Sales Executive", "product sales executive" and
+"Product  Sales  Executive" counted as three roles — the duplicate
+"Product Sales Executi…" rows in the screenshot. It now groups on a normalised key
+(lower-cased, internal whitespace collapsed) while displaying the first spelling
+encountered, so the label still reads the way recruiters typed it. Verified: three
+spellings of one title collapse from 6 bars to 4.
+
+**4. The greeting name, in two stages.**
+- It was `user?.firstName || user?.username`. **`firstName` (camelCase) does not
+  exist** — `/auth/me` spreads the raw `rpa_users` row, so the fields are `first_name`
+  and `last_name`. The condition therefore always fell through and rendered the raw
+  login handle: "Good evening, harish.mopuri".
+- Reading `first_name` then exposed a second issue: some records store an abbreviated
+  first name (one real account holds `"Har"`), so greeting on that field alone still
+  looked cut off. The greeting now uses **first + last**, which shows everything the
+  row contains.
+
+**Confirmed NOT a display bug.** Before changing anything a second time, the frontend
+was tested against four name shapes including a 41-character one: in every case the
+DOM's `textContent` held the complete name, horizontal overflow was 0px, and the
+heading computes `white-space: normal` / `overflow: visible` / `text-overflow: clip`.
+No `slice`, `substring` or CSS ellipsis touches a name anywhere in `src/` — the only
+`[0]` uses are deliberate avatar initials. So a short greeting means a short value in
+the user record; correct it in **Admin Portal → Users → First Name**.
+
+**Also:** the "Based on the 200 most recently added candidate profiles" line was
+removed from under two card titles and now surfaces through those cards' `MetricInfo`
+caveats instead — still stated, no longer printed as a standing apology. **The
+underlying sampling bug is unchanged and still outstanding.**
+
+**Environment note:** the machine hit 0 bytes free on C: mid-session, which is what
+made several commands fail and what produced the nonsense perf readings (~99% dropped
+frames on *every* arm including the no-glass control). ~3.6 GB was reclaimed from the
+npm cache. **The `saturate(220%)` chrome-blur figure remains unmeasured** — see the
+caveat in the V3 entry; light mode's opaque chrome now skips that blur entirely in the
+common case, which likely makes the question moot.
+
+**Verified:** 9 checks green, asserting on the exact production numbers that exposed
+these bugs (both MRF figures agree at 6; 74 appears twice and 78 not at all; 4 bars
+with one sales label; greeting reads "Harish"), plus sampled pixels for the white nav
+and near-white page and hero, in both themes.
+
+## 2026-08-12 — Design V3: real brand mark, composed dashboard, per-org theming, records view
+
+Follow-up to the Aurora Glass pilot below, which was judged "not awe-inspiring". Fair: it
+made the surfaces prettier without fixing what the screen *is*. This pass attacks structure,
+brand and data honesty.
+
+### The AAPNA rotor as vector — and why it took four attempts
+
+Source: `C:\Users\hmopuri\Pictures\AAPNA Log.jpg`, a 200×200 white-background JPEG. Now
+`src/components/common/AapnaLogo.jsx`, traced with potrace and **verified against the original
+at 3.2% pixel disagreement**. Four defects were found by measuring rather than eyeballing, each
+worth knowing if this is ever regenerated:
+
+1. **Rotation centre.** The ink bounding box is 181×153 and off-centre, because the solid green
+   wedge overshoots the ring. Framing on the bbox would make the mark wobble when rotated. The
+   true centre of rotational symmetry is (88,102), found as the largest circle inscribed in the
+   central hole. The exported viewBox is square and centred on it, so `rotate()` needs no
+   `transform-origin`.
+2. **`fill-rule`.** The three outline blades are hollow and wound for `evenodd`. With the
+   default `nonzero` they filled solid — **43% disagreement vs 3.2%**. `fillRule="evenodd"` on
+   the SVG is load-bearing, not decoration.
+3. **Upscaling order.** Classifying at 200px then replicating pixels 4× gave potrace 4×4
+   staircases to trace faithfully: 28KB of path data. Scaling bicubically *first*, then
+   thresholding, plus a low-pass to kill the JPEG's edge ringing, got the same fidelity in
+   **7.3KB**.
+4. **A phantom dark rim.** The green test was `G > R+15 AND G > B+40`. Where green blends into
+   white, R and G both converge on 255, so `G > R+15` fails — and those antialiased edge pixels
+   fell into the *dark* mask. The trace grew a thick dark outline around the wedge that does not
+   exist in the logo. `(G − B) > 22` separates cleanly across the whole blend ramp.
+
+A from-scratch geometric rebuild was also tried (390 bytes, four arcs) and **rejected at 24%
+disagreement** — the crescent end-caps are chord cuts, not radial, and fitting them wasn't worth
+the remaining error.
+
+**Where the vector is used:** the background rotor, the hero corner accent, and the collapsed
+72px rail. It does **not** replace the official bitmap in the expanded brand slot or the admin
+topbar. The rail case is not a compromise — the rotor device at the left of the official logo is
+the very mark being traced.
+
+**Backdrop:** the rotor at 70vmin bleeds off the bottom-right corner, turning once per ~140s.
+The mark is a pinwheel, so rotation is the shape's own logic rather than an effect imposed on it.
+
+### The brand slot said the company name twice
+
+- The logo bitmap already reads "aapna", and the label beside it repeated **"AAPNA"** over
+  "ATS PLATFORM". Dropped to a single "ATS Platform" product label behind a divider.
+- **The logo was cropped mid-badge.** `objectFit: 'cover'` at `width: 74` sliced the Great Place
+  To Work badge off and left "CMMIDEV/3 CERTIFIED" dangling — it read as broken, not certified.
+  Now `contain`, with the logo taking all flexible width (`flex: 1`) and the label only what its
+  text needs, so the mark is as large as the sidebar allows.
+- **Dark mode inverted a colour badge.** Un-cropping exposed a latent bug: `invert(1)` turned the
+  GPTW badge's red to cyan. It now sits on a light chip — the same approach `AuthLayout` already
+  used for this logo on a dark panel.
+- Collapsed rail showed an unreadable "aa" fragment; now the square rotor.
+
+### Per-organization theming (groundwork, `theme/brands.js` + `context/BrandContext.jsx`)
+
+Two orthogonal axes: `mode` (light/dark, user's choice, already shipped) × `brand`
+(organization's choice, new). Verified end-to-end: flipping a `localStorage` brand flag repaints
+primary colour, aurora, gradients and product label with **zero code edits**.
+
+- `--gold` / `--ink` and friends **keep their names** and are aliased onto `--brand-*`. Those
+  names appear in hundreds of places; renaming them would be repo-wide churn for no user benefit.
+- Brand tokens are emitted as `-light`/`-dark` **pairs** and CSS selects between them. Writing
+  only the active mode's values inline on `<html>` would have overridden the `<ForceLight>`
+  wrapper, so the public token-link pages (`/mrf-submit`, `/mrf/:id/approve`,
+  `/missing-jd-upload`) would render with dark-mode brand colours in a dark session.
+- Next session is additive: store a theme JSON per company (`rpa_settings` takes
+  `theme.company.<id>` with no migration) and pass it to `BrandProvider` as `overrides`.
+
+### Composition, not decoration
+
+Four ad-hoc row shapes (16/8 → 8/8/8 → 24 → conditional 8/16) replaced by consistent 24-column
+bands. Widgets previously moved between rows depending on whether data existed, so the page's
+shape changed with the data; they now have fixed homes and own their empty states. Also fixed:
+
+- Quick Actions' **permanent empty grid cell** (7 items in 2 columns) — now a single-column
+  launcher, which has no hole at any count.
+- Five competing corner radii → one `--radius-card`.
+- **Square corners.** The specular sheen is a pseudo-element on `.ant-card-body`, and
+  `border-radius: inherit` inherited the *body's* radius, which AntD leaves at 0 — so it painted
+  a square whose corners poked past the card's rounded edge. The KPI cards masked it with
+  `overflow: hidden`; the widget cards can't (it would clip Recharts tooltips). Now an explicit
+  `calc(var(--radius-card) - 1px)`, nested inside the 1px border.
+- Y-axis role labels clipped ("enior React Engineer") — widened, plus ellipsis truncation.
+- Sidebar "Recruitment Analyti…" → "Analytics (Legacy)".
+
+### KPI cards: graphs back, with real series for all four
+
+Every card now has identical anatomy — icon, delta, label, value, footnote, **sparkline** —
+where an earlier revision of this pass had dropped the graphs because only the two
+candidate-derived metrics had a client-side series. Rather than drop them or fabricate data,
+MRF and shortlist series are derived from batches the page already fetches.
+
+**The line is a rate, the number is a total.** Those are different quantities, so every metric's
+definition states what its line plots rather than letting the reader assume it's the total's
+history.
+
+### Light mode — and the wrong diagnosis I had to reverse
+
+Dark mode was already right. Light mode read flat, and my first diagnosis was **value
+contrast**: near-white cards on a near-white page have nothing to separate against. So I
+darkened the ground (a dedicated `--brand-canvas-deep`, scoped to the dashboard backdrop so no
+other screen shifted) and added an edge vignette.
+
+**That was wrong, and it was reverted.** It bought separation at the cost of the airiness the
+design wants, and it still didn't feel premium — because the problem was never brightness, it
+was **chroma**. A light-mode glass reference (the Spinova prototype) makes the opposite choice
+and gets there: its ground is `hsl(228 34% 96%)` — almost white, but heavily *saturated*. Three
+techniques ported from it (technique, not hue — that design is blue/violet, this one olive):
+
+1. **Coloured shadows.** Its `--shade` token is a saturated mid-tone, never black, and every
+   shadow is mixed from it. Grey shadows on a light ground read as dirt; brand-hued ones read as
+   glow. This was the single biggest change — `--shade-rgb` now drives the whole light depth ramp.
+2. **High `saturate()` through the pane** — `blur(34px) saturate(220%)` in light against dark
+   mode's `165%`. Over a light ground the colour behind glass needs amplifying, not just admitting.
+3. **A much more transparent fill** (`0.56` for features, `0.55` for chrome, down from `0.70`),
+   so the colour field actually reaches the surface — paired with a **full-opacity white inner
+   top edge**, which is what keeps the pane's edge crisp at that transparency.
+
+The ground went back to near-white-but-saturated (`#f6f9ec`), and the edge vignette was replaced
+by a **centre bloom** that *adds* light at the core rather than removing it at the rim. Per-card
+metric tint went from a perceptually-absent 9% to 13%, so the four KPI cards stop reading as four
+identical white rectangles without becoming solid colour blocks.
+
+**Two further corrections after seeing it on real data**, both of which came from *measuring*
+rather than looking:
+
+- **The field was ~3× too strong.** Chasing chroma, I had pushed light aurora alphas to
+  0.76/0.56/0.46/0.64. The reference field uses **0.26/0.22/0.17/0.12**. At my values the
+  background stopped being light at all — it rendered as a mid-olive wash. Light mode also gets
+  its own aurora *construction*: four shallow percentage-ellipses pinned near the corners on a
+  single element (as the reference does), rather than the four large circles dark mode uses. The
+  blob geometry covers most of the page, which glows on a dark ground and muddies a light one.
+  Leaving the centre clean is what keeps it airy. Bonus: one composited layer instead of four.
+- **The hero was a mid-olive slab, and no single layer was to blame.** Sampling it gave
+  `rgb(219,226,193)` against a page of `rgb(246,249,236)` — 27 points darker. The cause was
+  cumulative: pane + mesh + conic sweep + specular sheen + the new inset shade all stacking on one
+  surface. Raising the pane to 0.82 and easing the mesh (opacity 0.9 → 0.5) and sweep (14% → 7%)
+  lands it at `rgb(231,236,215)` — brand-tinted, unmistakably light.
+
+**Dark mode is explicitly preserved.** It was judged correct, so it keeps its own aurora
+construction, hero mesh strength and hero fill via `[data-theme='dark']` overrides; every light
+change above is scoped away from it, and it was screenshot-compared before and after.
+
+### The sampling disclaimer moved into the tooltip
+
+"Based on the 200 most recently added candidate profiles, not the full database" was printed as
+body copy under two card titles. It is still true and still stated — it now lives in those cards'
+`metricDefinitions` caveats, surfacing through `MetricInfo` like every other metric's provenance.
+A permanent apology under the title read as clutter and pulled the eye off the data. **The
+underlying correctness bug is unchanged and still outstanding** (see the bottom of this entry).
+
+### KPI graph bands, fixed properly
+
+`Sparkline` bailed with `return null` when a series was empty or all-zero, so any quiet metric
+left a bare gradient band — visually identical to a broken chart, which is why the row didn't
+look right on all four cards. A genuine zero week is information: it now renders as a flat
+baseline, so every card has the same silhouette regardless of its data. Also fixed: the
+gradient's SVG `id` was derived from the colour, so two cards sharing a colour would emit
+duplicate ids and the second would reference the first's gradient — now per-instance via `useId`.
+Added a "now" dot on the final point (suppressed on flat series, where it would imply a reading
+worth noting).
+
+### Hero eyebrow and the greeting
+
+- The eyebrow read "AAPNA RECRUITMENT OPERATIONS", restating context you already have. Now
+  "AAPNA ATS Platform", sourced from `brands.js` (`heroEyebrow`) rather than hardcoded, so a
+  tenant theme replaces it too.
+- **The greeting showed the raw login handle** — "Good evening, harish.mopuri" — because it fell
+  back to `user.username` whenever a first name wasn't mapped. It now prefers the real name
+  fields and, failing those, takes the first dot/underscore-separated token and capitalises it.
+
+### `/candidates` is now the records view for all ~4k
+
+**No backend work needed** — `candidate.service.search()` already supported free-text `search`
+across name/email/skills, position/location/status filters, `sort`/`order` and real
+`page`/`limit`. The page simply never called it that way. It used to refuse to render any rows
+until you typed a term, then fetch ≤200 rows and slice them client-side, reporting *rows
+fetched* as the total.
+
+- Browses by default; real server-side pagination (25/50/100) with the true match count.
+- One debounced quick-search box on `search`; the three identifier fields move into Advanced
+  filters, joined by position and location.
+- **Sorting is server-side, and only on columns the API can actually sort.**
+  `resolveSortField()` maps name/email/position/modifiedAt and silently falls back to
+  `createdAt` for anything else — so Location and Gender show no sort arrow. A sort arrow that
+  quietly reorders by date is worse than none. The manual "⇅" glyphs (which appeared on
+  unsortable columns too) are gone.
+- The dashboard's heavy 10-row table is replaced by a 5-row `LatestUploads` strip on
+  `/dashboard/recent-uploads` — an endpoint that already existed, was purpose-built for this
+  (it even returns relative "2 hours ago" timestamps), and was called by nothing.
+
+### Tooltips: one registry (`constants/metricDefinitions.js` + `common/MetricInfo.jsx`)
+
+`KPI_TOOLTIPS` was a local const in `Dashboard.jsx` keyed by display string, other widgets
+hardcoded `<Tooltip title="…">`, and `LiveActivityFeed` explained nothing. Every number now has
+one entry — plain-language meaning, formula, data source, what its chart plots, and any caveat —
+rendered through a single keyboard-reachable affordance.
+
+### Performance: a measurement that was wrong, then right
+
+The Aurora Glass entry below claims glass costs nothing on scroll. That measurement used a
+wheel-then-wait probe and was **noise-dominated** — it also reported that *removing* layers made
+the page slower, which is impossible. With a continuous rAF-driven scroll (one `scrollBy` per
+frame, arms interleaved, median of 3 reps) the real finding is:
+
+- The full-viewport **`mix-blend-mode` grain** cost ~23% of frames over 20ms, because a blend
+  layer must recompute across the whole viewport whenever anything beneath it changes — and the
+  rotor now turns continuously beneath it. Removed: **23.5% → 5.3%**, median 16.7ms (60fps)
+  throughout. At 3–6% opacity plain alpha compositing is indistinguishable.
+- Content cards carry no `backdrop-filter`; blur is spent only on the sticky chrome. Blur only
+  reads as blur when there's high-frequency detail behind it, and this backdrop is soft gradients.
+
+**If you profile this page, scroll continuously.** A wheel-then-wait probe reports large drops
+here that are rAF scheduling gaps, not paint.
+
+**Caveat on the numbers above:** 23.5% → 5.3% was measured on a quiet machine and is the last
+reading I trust. A later attempt (after light mode raised the chrome blur to `saturate(220%)`)
+returned ~99% dropped frames on *every* arm including the no-glass control, with a 24.7ms median
+throughout — uniform across all six arms means the host was throttled, not the design, so it
+measures nothing. **The `saturate(220%)` increase is therefore unmeasured.** Re-run
+`perf2.mjs` on an idle machine before trusting any figure; if the chrome blur does prove costly,
+it is a one-token change (`--glass-1-blur`).
+
+### Also
+- `useCountUp` existed in **three** copies (shared hook, StatCard, VendorDashboard); only
+  StatCard's respected `prefers-reduced-motion`. Its implementation was promoted to
+  `hooks/useCountUp.js` and the other two deleted — so `KpiCard` and `VendorDashboard` stop
+  animating numbers for users who asked for no motion. `VendorDashboard` also had a duplicate
+  local `KpiCard`, now importing the shared one.
+- `AapnaMark.jsx` (a hand-drawn wordmark approximation from the previous pass) deleted,
+  superseded by the traced mark.
+- **Source files repaired:** several PowerShell `Get-Content | Set-Content` round-trips corrupted
+  every em dash in `index.css`, `aurora-glass.css` and `Dashboard.jsx` (93 sequences) — PS 5.1
+  reads BOM-less UTF-8 as CP1252. Repaired by reversing the bad decode, and BOMs stripped.
+
+**Verified:** 22 automated checks green (both themes, equal card heights, brand slot on one line,
+4,000-row records view asserting on intercepted request params, brand axis, `/login`
+non-regression), plus magnified corner crops and the scroll-perf A/B.
+
+**Not built this pass:** the backend insight endpoints (velocity / pipeline health / offer
+analytics / source effectiveness) and the **P0 correctness fix** where Hiring Trends, Top Roles
+and Skills are still computed from only the 200 newest candidates client-side — the charts say so
+in their own subtitles. Specced in the plan; they need a live database to verify.
+
+## 2026-08-12 — Design V2 "Aurora Glass": Dashboard + app shell pilot
+
+A new visual language, piloted on **one screen** so it can be judged before rollout:
+`/dashboard` plus the shell chrome around it. Everything else is untouched.
+
+**Why the old glassmorphism was never glass.** The tokens existed (`--glass-bg`,
+`--glass-blur`, `.glass-card`) but had nothing to work on: the app canvas was a flat colour
+(inline `background: var(--ink)` on both `<Layout>`s) and `--gradient-card` was
+`rgba(255,255,255,0.95) → 0.7`, i.e. opaque. `backdrop-filter` over a flat colour returns
+that flat colour. The topbar was the clearest case — it carried `className="glass"` and then
+an inline `background: var(--colorBgContainer)` that overrode it. So the fix is not "more
+blur", it is *putting something alive behind the glass*.
+
+**New: the ambient canvas** (`src/components/common/AmbientBackdrop.jsx`)
+- One `position: fixed` plane holding four drifting aurora blobs, the AAPNA wordmark as a
+  large faint watermark, and a fractal-noise grain that kills gradient banding.
+- Blobs animate `transform` only (compositor work, no paint) — deliberately *not*
+  `background-position` like the hero's older `meshDrift`, which repaints each frame.
+- Blob offsets are shallow on purpose. Parking them fully off-canvas — the instinctive
+  choice — leaves only their faint outer falloff on screen, and the glass above has nothing
+  to refract, so surfaces read as flat white cards. That was the first draft's actual bug.
+- Aurora palette is olive-led (brand `#7a922e`, teal-forest companion, warm accent) so it
+  reads as AAPNA rather than as generic AI-product violet.
+
+**New: brand wordmark as vector** (`src/components/common/AapnaMark.jsx`)
+- Geometric `AAPNA` lockup + single-letter monogram, drawn as inline SVG paths filled with
+  `currentColor` so it tints per theme.
+- **Scope is deliberately narrow:** this is an *approximation* of the official typography, so
+  it is only ever used as low-opacity texture (backdrop watermark, hero corner accent). The
+  remote `aapna-gptw-black.png` remains the mark of record everywhere a user reads it —
+  sidebar brand, admin topbar, public token pages. A real vector logo replaces the paths in
+  this one file.
+
+**New: three glass tiers** (`src/theme/aurora-glass.css`, tokens in `src/theme/index.css`)
+- Tier 1 chrome (sidebar, topbar) · tier 2 features (hero, KPI, widgets) · tier 3 data
+  (tables, dense lists). A data table and a hero want opposite things from transparency.
+- Only **tier 1** carries `backdrop-filter`. Tiers 2–3 get their depth from translucency, a
+  masked gradient rim, a specular sheen and layered (ambient + direct + contact) shadows.
+  Profiling with a continuous rAF-driven scroll showed 16.7ms median / ~16.9ms p95 and zero
+  dropped frames whether the content cards were blurred or not — the blur was neither costing
+  nor buying anything visible over a soft-gradient backdrop, so it is spent only where it
+  reads. **Caution for future profiling:** a probe that fires a wheel event then waits will
+  report ~10% frame drops on this page; those are rAF scheduling gaps, not paint.
+- The rim and sheen are `::before`/`::after` on the surface classes, so all seven existing
+  dashboard widget cards inherit the full treatment with **no JSX changes** — they already
+  carried `className="glass-card dash-chart-card"`.
+
+**New: cursor spotlight** (`src/hooks/usePointerSpotlight.js`)
+- One delegated `pointermove` listener on the page root (not one per card), rAF-coalesced,
+  publishing `--mx`/`--my` on the hovered `.spotlight` surface for a radial highlight.
+
+**Scope containment — the constraint that shaped all of the above.** `.glass-card` and
+`.glass` are *not* dashboard-only: they are also used by `CandidateDetail`,
+`CandidateScreening`, `LoadingSkeleton`, `Analytics` and `AnalyticsLegacy`, none of which
+have an aurora behind them. Restyling those classes globally would have washed out five
+screens nobody asked us to touch. So every new rule is scoped under **`.ats-v2`**, which
+`MainLayout` puts on its outer `<Layout>` for the dashboard route only; because that element
+wraps the Sider, Header *and* the `<Outlet />`, one boolean scopes chrome and page together.
+Verified: `/login` is pixel-identical before and after, and the only unscoped rules in
+`aurora-glass.css` are two documented base definitions (`.premium-stat-card`, `.glass-3`).
+Rolling out app-wide means widening that route check — not touching the scope.
+
+**Also changed**
+- `StatCard.jsx` — the surface wash and coloured top edge moved from inline styles to CSS
+  keyed off the `--stat-color` custom property it still sets. An inline background cannot be
+  overridden by a stylesheet, which would have forced `!important` on every V2 rule; the 4%
+  `color-mix` reproduces the previous `${color}0a` exactly.
+- `Dashboard.jsx` — spotlight root; Recent Candidates moved onto tier 3 (its hardcoded inline
+  background/border/shadow removed). **No changes to data fetching, aggregation, permissions,
+  KPI wiring or table columns.**
+- `DashboardHero.jsx` — conic light sweep, monogram bleeding off the bottom-right corner, and
+  the greeting on a gradient-ink span. The monogram replaced a full wordmark that got clipped
+  mid-letter by the hero's `overflow` and read as a smudge behind the filters.
+- `main.jsx` — imports `aurora-glass.css` *after* `index.css`; cascade order is what lets the
+  V2 rules override the base glass classes without `!important` everywhere. Deleting that one
+  import reverts the pilot.
+
+**Accessibility.** `prefers-reduced-transparency: reduce` drops the canvas entirely and makes
+every surface opaque (verified via CDP media emulation — Playwright cannot emulate it).
+Motion is already covered by the app-wide `prefers-reduced-motion` guard, which the new
+keyframes inherit for free. `@supports not (backdrop-filter)` makes the chrome opaque.
+
+**Kept intentional:** the admin-portal branch of `MainLayout` is untouched; chart cards still
+cancel their hover-lift so Recharts tooltips read cleanly; the `~3 MB` single-chunk build
+warning is pre-existing.
+
+## 2026-08-11 — QA test-pass: interviewer name, document acknowledgement, reminder copy
+
+Three UI changes from the team's test pass. Two of them exist because a working feature
+*looked* broken — worth noting as a pattern: both were reported as missing functionality when
+the actual gap was that the UI never said what it was doing.
+
+**Schedule interview modal** (`src/components/pipeline/PipelineDrawer.jsx`)
+- New **Interviewer name** field above Interviewer email(s), prefilled from the MRF hint already
+  shown read-only directly above it. Optional; blank means the invite opens "Hi there,".
+- Helper text switches to *"With more than one interviewer the invite opens 'Hi all,'"* once the
+  email field holds a comma, so the greeting is predictable before sending.
+- The name is in the **preview** query as well as the submit payload. This is not redundancy —
+  the modal posts its compiled panel body back and the server prefers it, so a name absent from
+  the preview would be absent from the email that actually goes out.
+
+**Public document upload page** (`src/pages/DocumentUpload.jsx`)
+- New **submitted** state. Previously the page only congratulated the candidate once HR had
+  *verified* every document — an action that can take days — so immediately after submitting
+  they saw the same checklist and a greyed-out *"Choose your files to continue"*, the toast
+  already gone. It read as though nothing had happened; QA filed it as a missing submit button.
+- The acknowledgement sits **above** the checklist rather than replacing it, so a later rejection
+  flips one row back to actionable and the candidate can still find it. The disabled button now
+  reads *"Nothing left to send"*.
+
+**Documents panel** (`src/components/pipeline/PipelineDrawer.jsx`)
+- States the automatic reminder cadence (chased after two days, then daily, up to three times),
+  matching how the Offer panel already advertises its own schedule. The sweep has run since
+  Phase 3 M4; showing only a *"Send reminder"* button made it look manual.
+- Button reworded to *"Send a reminder now"* — an override, not the only mechanism.
+
+## 2026-08-11 — MRF details modal: Export CSV in the footer
+
+The MRF page had one Export, on the Records toolbar, and it exported the **list**. The
+details modal — which is where the New MRF Request fields and the Hiring Manager's
+submitted MRF actually live — had no way out.
+
+**Change** (`src/pages/MRF.jsx`, `src/services/mrfService.js`)
+- `ExportButton` added to the modal footer, left of `Edit` / `Close`. Same shared component
+  as every other export surface, so the olive styling, the loading state and the error toast
+  are unchanged — no new visual vocabulary.
+- **View mode only.** The edit-mode footer (`Cancel` / `Save Changes`) deliberately does not
+  carry it: the file is built server-side from the database, so exporting mid-edit would hand
+  back a file that silently disagrees with the unsaved values on screen.
+- Toast reads *"Exported CSV."* rather than *"Exported 61 rows."* — the backend suppresses
+  the row-count header for this endpoint, because a "row" in a per-record file is a field,
+  not a record. No change to `ExportButton` itself; it already falls back when the header is
+  absent.
+
+**Kept intentional:** the toolbar Export above the Records table stays as-is. The two are
+different jobs — the filtered list vs. the one requisition you have open.
+
 ## 2026-07-10 — Dark-mode contrast fix sweep (all screens)
 
 Follow-up to the theme system below: real usage in dark mode surfaced unreadable text

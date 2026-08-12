@@ -1670,6 +1670,40 @@ export default function CandidateScreening() {
                             </div>
                           )}
 
+                          {/* Pipeline history (M6) — how far this candidate got,
+                              and on which role. The lines above say a decision
+                              happened; these say at which round, which is what
+                              decides whether they are worth approaching again.
+                              One chip per journey, so a candidate already live
+                              on two other MRFs shows as such. */}
+                          {c.pipelineHistory?.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                              {c.pipelineHistory.map((j) => (
+                                <Tooltip
+                                  key={j.pipeline_id}
+                                  title={
+                                    <div style={{ fontSize: 11.5 }}>
+                                      <div style={{ fontWeight: 700, marginBottom: 4 }}>{j.position || 'Role not recorded'}</div>
+                                      {j.events.length > 0 ? j.events.map((e, i) => (
+                                        <div key={i}>
+                                          {dayjs(e.at).format('DD MMM YY')} · {e.status_label || `${e.stage_label} ${e.event_type}`}
+                                        </div>
+                                      )) : <div>No recorded events yet.</div>}
+                                    </div>
+                                  }
+                                >
+                                  <Tag
+                                    color={j.is_closed ? 'purple' : (j.current_stage_status === 'rejected' ? 'red' : j.current_stage_status === 'hold' ? 'orange' : 'blue')}
+                                    style={{ fontSize: 10, margin: 0, cursor: 'help' }}
+                                  >
+                                    {j.is_closed ? `Closed — ${j.final_outcome.replace(/_/g, ' ')}` : j.current_stage_label}
+                                    {j.position ? ` · ${j.position}` : ''}
+                                  </Tag>
+                                </Tooltip>
+                              ))}
+                            </div>
+                          )}
+
                           {/* Current Company */}
                           {(() => {
                             const companyName = formatCurrentCompany(c.CurrentCompany);

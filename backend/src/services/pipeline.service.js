@@ -16,6 +16,9 @@ import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } f
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule } from './interviewSchedule.service.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
+import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
+import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
+import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../utils/rejectionCooldown.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -81,16 +84,54 @@ export function assertJourneyOpen(pipeline, action = 'change this candidate') {
 }
 
 /**
- * The Q5 status-only vendor cc applies to VENDOR-SOURCED journeys only. The
- * `vendor_email` column alone is not sufficient proof of that: rows created by
- * other intake paths can carry a stale/non-null vendor_email, which previously
- * leaked a cc onto screening_shortlist candidates (RT, 2026-07-22). Gate on
- * `source` so a non-vendor journey never cc's anyone, whatever the column says.
- * @param {{ source?: string, vendor_email?: string|null }} pipelineRow
- * @returns {string|null}
+ * Resolves the vendor a NEW journey belongs to, from the candidate's live
+ * 90-day ownership lock (M6, 2026-08-12).
+ *
+ * Read once here and snapshotted onto the journey, which is what makes both
+ * halves of the rule work:
+ *  - a stale attribution from a lapsed lock never triggers vendor mail — the
+ *    leak RT reported on 2026-07-22, where a keyword-search shortlist cc'd a
+ *    vendor who had submitted the candidate years earlier;
+ *  - a lock lapsing mid-journey does not cut the vendor off from a journey they
+ *    started, because nothing re-reads it after this point.
+ *
+ * @param {bigint} cvIdBig
+ * @returns {Promise<{ source: 'vendor', vendor_email: string }|null>}
  */
-function vendorCcFor(pipelineRow) {
-  return pipelineRow?.source === 'vendor' ? (pipelineRow.vendor_email || null) : null;
+/**
+ * The most recent Stage 1+ rejection for a candidate inside the re-application
+ * window, or null.
+ *
+ * Exported because the vendor upload path needs the same question answered for
+ * a different purpose: createPipelineJourney() REFUSES on a hit, while the
+ * upload path only FLAGS it (see hrUpload.service.js). A vendor submitting a
+ * recently-rejected candidate is not doing anything forbidden — they usually
+ * have no idea — so the resume is still accepted and the recruiter is simply
+ * told before they spend time on it.
+ *
+ * @param {bigint|number} cvId
+ * @param {number} [months]
+ * @returns {Promise<{current_stage_key: string, modified_at: Date}|null>}
+ */
+export async function findRecentRejection(cvId, months = REAPPLICATION_COOLING_OFF_MONTHS) {
+  return prisma.rpa_candidate_pipeline.findFirst({
+    where: {
+      cv_id: BigInt(cvId),
+      current_stage_status: 'rejected',
+      modified_at: { gt: getReapplicationCutoff(months) },
+    },
+    orderBy: { modified_at: 'desc' },
+    select: { current_stage_key: true, modified_at: true },
+  });
+}
+
+async function vendorAttributionFor(cvIdBig) {
+  const cv = await prisma.rpa_cv.findUnique({
+    where: { id: cvIdBig },
+    select: { VendorEmail: true, vendorName: true, lockForNinetyDays: true },
+  });
+  const owner = activeVendorFor(cv);
+  return owner ? { source: 'vendor', vendor_email: owner.vendorEmail } : null;
 }
 
 /**
@@ -650,10 +691,22 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
       name: pipeline.rpa_shortlisted_candidates?.candidate_name,
       email: pipeline.rpa_shortlisted_candidates?.candidate_email,
     },
-    vendorEmail: vendorCcFor(pipeline), // Q5: status-only cc, vendor-sourced only
     positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
     subjectOverride: emailSubject,
     bodyOverride: emailBody,
+  });
+
+  // The vendor half of Q5 — a separate generated status line, never the
+  // candidate's body (which may be recruiter-edited). Suppressed at the
+  // Documents stage and reduced to a milestone at Offer, inside notifyVendor().
+  await notifyVendor({
+    pipelineRow: updatedPipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: VENDOR_EVENTS.STAGE_OUTCOME,
+    stageKey: pipeline.current_stage_key,
+    stageLabel: stageRow?.label || pipeline.current_stage_key,
+    outcomeKey,
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
   });
 
   await prisma.rpa_pipeline_stage_events.update({
@@ -823,6 +876,31 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
     logger.error(`Legacy FinalStatus write-back failed for pipeline ${pipelineId}: ${err.message}`);
   }
 
+  // 90-day lock vs closure (M6 audit, 2026-08-12). Someone we actually hired is
+  // not a lead any more, but their ownership lock kept ticking down as if they
+  // were: once it lapsed, a second vendor could re-submit them, have a recruiter
+  // merge the duplicate, and take attribution for a placement they had no part
+  // in — and the first vendor's claim would vanish silently.
+  //
+  // Freezing the lock on a successful hire stops the clock at the moment the
+  // question is settled. Only for JOINED: every other closure means the seat is
+  // open again and the candidate genuinely is back in the market, so their lock
+  // should expire normally.
+  if (finalOutcomeKey === FINAL_OUTCOMES.JOINED && pipeline.cv_id) {
+    try {
+      const frozen = await prisma.rpa_cv.updateMany({
+        where: { id: pipeline.cv_id, VendorEmail: { not: null } },
+        data: { lockForNinetyDays: VENDOR_LOCK_FROZEN },
+      });
+      if (frozen.count > 0) {
+        logger.info(`Vendor lock frozen on cv ${pipeline.cv_id} — placed candidate, attribution is now permanent.`);
+      }
+    } catch (err) {
+      // Never let an ownership bookkeeping failure undo a recorded hire.
+      logger.error(`Vendor lock freeze failed for pipeline ${pipelineId}: ${err.message}`);
+    }
+  }
+
   // The journey is over, so any outstanding no-login document upload link for it
   // is too. Best effort: a closure must not fail because the candidate never had
   // a document request raised.
@@ -874,10 +952,24 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
         name: pipeline.rpa_shortlisted_candidates?.candidate_name,
         email: pipeline.rpa_shortlisted_candidates?.candidate_email,
       },
-      vendorEmail: vendorCcFor(pipeline),
       positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
     })
     : { sent: false, error: null, messageId: null };
+
+  // The vendor hears about closure even when the candidate deliberately does
+  // not. SILENT_FINAL_OUTCOMES exists because there is nothing to tell someone
+  // who backed out that they don't already know — but their vendor was never in
+  // that conversation, and "did this placement land?" is the one question they
+  // are actually tracking. Independent of notifyCandidate for the same reason.
+  await notifyVendor({
+    pipelineRow: updatedPipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: VENDOR_EVENTS.CLOSURE,
+    stageKey: pipeline.current_stage_key,
+    stageLabel: 'Closure',
+    outcomeKey: finalOutcomeKey,
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+  });
 
   await prisma.rpa_pipeline_stage_events.update({
     where: { id: event.id },
@@ -922,7 +1014,17 @@ export async function sendAdHocEmail(pipelineId, { subject, body }) {
     },
     subject,
     body,
-    vendorEmail: vendorCcFor(pipeline),
+  });
+
+  // The vendor learns that contact happened, not what was said. `body` here is
+  // free text a recruiter typed — the exact content the old cc would have
+  // forwarded verbatim.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: VENDOR_EVENTS.ADHOC_CONTACT,
+    stageKey: pipeline.current_stage_key,
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
   });
 
   await prisma.rpa_pipeline_stage_events.create({
@@ -941,21 +1043,32 @@ export async function sendAdHocEmail(pipelineId, { subject, body }) {
 
 /**
  * Creates a new candidate-per-MRF journey. Called from screening.service.js's
- * shortlistCandidates (source='screening_shortlist') and vendor.controller.js's
- * upload path (source='vendor'). Enforces the cooling-off guard (Q11/Q23):
- * blocks/warns if this cv_id was rejected at Stage 1+ within the configured
- * window, but never touches an existing active journey for the same candidate.
+ * shortlistCandidates. Enforces the cooling-off guard (Q11/Q23): blocks/warns
+ * if this cv_id was rejected at Stage 1+ within the configured window, but
+ * never touches an existing active journey for the same candidate.
+ *
+ * Vendor attribution is NOT a parameter (M6, 2026-08-12). It is resolved here
+ * from the candidate's live 90-day lock — see vendorAttributionFor() — so the
+ * caller and the journey can never disagree about who owns the candidate. The
+ * `source` passed in is the intake path; a live lock overrides it with
+ * 'vendor', which is what the vendor notification, the board's vendor filter
+ * and the analytics vendor-performance table all key off.
  *
  * @param {object} params
  * @param {bigint|number|null} params.cvId
  * @param {bigint|number|null} params.mrfId
  * @param {number|null} params.shortlistId
- * @param {string} params.source - recruiter | bulk_excel | vendor | screening_shortlist | email_intake
- * @param {string|null} [params.vendorEmail]
+ * @param {string} params.source - recruiter | bulk_excel | screening_shortlist | email_intake
  * @param {number} [params.coolingOffMonths] - default 6 (Q11)
  * @returns {Promise<object>} the created (or existing) pipeline row
  */
-export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, vendorEmail = null, coolingOffMonths = 6 }) {
+export async function createPipelineJourney({
+  cvId,
+  mrfId,
+  shortlistId,
+  source,
+  coolingOffMonths = REAPPLICATION_COOLING_OFF_MONTHS,
+}) {
   if (!cvId) {
     throw new AppError('cvId is required to create a pipeline journey.', 400);
   }
@@ -966,15 +1079,7 @@ export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, 
   // NEW journey (shortlisting itself happens on Candidate Screening, not in
   // this pipeline, so there's no "Stage 0" exemption anymore — every journey
   // here starts at HR Screening); it never touches an existing active one (Q23).
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - coolingOffMonths);
-  const priorRejection = await prisma.rpa_candidate_pipeline.findFirst({
-    where: {
-      cv_id: cvIdBig,
-      current_stage_status: 'rejected',
-      modified_at: { gt: cutoff },
-    },
-  });
+  const priorRejection = await findRecentRejection(cvIdBig, coolingOffMonths);
   if (priorRejection) {
     throw new AppError(
       `Candidate is in a ${coolingOffMonths}-month re-application cooling-off period (rejected at "${priorRejection.current_stage_key}" on ${priorRejection.modified_at.toISOString().slice(0, 10)}).`,
@@ -1012,6 +1117,10 @@ export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, 
     }
   }
 
+  // Who owns this candidate right now, per the 90-day lock. A live lock
+  // overrides the intake source with 'vendor' and pins the vendor onto the row.
+  const vendorAttribution = await vendorAttributionFor(cvIdBig);
+
   const created = await prisma.rpa_candidate_pipeline.create({
     data: {
       cv_id: cvIdBig,
@@ -1020,9 +1129,16 @@ export async function createPipelineJourney({ cvId, mrfId, shortlistId, source, 
       current_stage_key: STAGE_KEYS.ZEKO_HR,
       current_stage_status: 'in_progress',
       source,
-      vendor_email: vendorEmail,
+      vendor_email: null,
+      ...vendorAttribution,
     },
   });
+
+  if (vendorAttribution) {
+    logger.info(
+      `Journey ${created.id} attributed to vendor ${vendorAttribution.vendor_email} (90-day lock active on cv ${cvIdBig}).`
+    );
+  }
 
   await prisma.rpa_pipeline_stage_events.create({
     data: {
