@@ -67,6 +67,19 @@ export const SCHEDULABLE_STAGES = Object.freeze({
  */
 export const stageSendsInvites = (stageKey) => SCHEDULABLE_STAGES[stageKey]?.autoInvite !== false;
 
+/**
+ * rpa_interview_schedule.occurrence_status — did the interview actually happen?
+ *
+ * NULL means "not yet resolved", which is why this is a two-value set rather
+ * than three: the unresolved state is the absence of a value, not a member.
+ * HELD is the gate the scorecard is released under (see dispatchScorecards),
+ * so anything counting outstanding feedback must filter on it.
+ */
+export const OCCURRENCE_STATUS = Object.freeze({
+  HELD: 'held',
+  NO_SHOW: 'no_show',
+});
+
 /** The shape createInterviewEvent() returns when no meeting was created. */
 const NO_CALENDAR = Object.freeze({
   eventId: null, joinUrl: null, onlineMeetingId: null, meetingId: null, passcode: null, skipped: true, error: null,
@@ -940,7 +953,7 @@ export async function rescheduleInterviewRound(pipelineId, {
  * @returns {Promise<{status: string, occurrence_status: string, alreadyResolved: boolean, scorecard?: object}>}
  */
 export async function markInterviewOccurrence(scheduleId, { outcome, source, confirmedBy = null, actedBy = null, party = null, reason = null } = {}) {
-  if (!['held', 'no_show'].includes(outcome)) {
+  if (!Object.values(OCCURRENCE_STATUS).includes(outcome)) {
     throw new AppError("outcome must be 'held' or 'no_show'.", 400);
   }
 

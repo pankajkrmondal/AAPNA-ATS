@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Card,
   Tabs,
@@ -13,7 +13,7 @@ import {
   message,
   Empty,
   Table,
-  Button
+  Select
 } from 'antd';
 import {
   TeamOutlined,
@@ -24,23 +24,73 @@ import {
   SendOutlined,
   MailOutlined,
   ApartmentOutlined,
-  RiseOutlined
+  RiseOutlined,
+  SolutionOutlined,
+  FileDoneOutlined
 } from '@ant-design/icons';
 import screeningService from '../services/screeningService';
 import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 import ExportButton from '../components/common/ExportButton';
+import KpiCard from '../components/common/KpiCard';
+import LoadingOverlay from '../components/common/LoadingOverlay';
 
 const { Title, Text } = Typography;
 
 /**
+ * Semantic palette, shared with the Dashboard / HR Upload / Vendor screens.
+ * Colour carries MEANING here rather than decoration — gold reads as positive,
+ * red as rejected/failed, blue as in-flight, amber as waiting on someone. Kept
+ * as one map so a tile, a tag and a table cell for the same concept cannot
+ * drift to different colours.
+ */
+const ACCENT = {
+  positive: { color: '#7a922e', tint: 'rgba(122,146,46,0.12)', accent: 'linear-gradient(90deg,#7a922e,#92a63c)' },
+  negative: { color: '#c0392b', tint: 'rgba(192,57,43,0.12)', accent: 'linear-gradient(90deg,#c0392b,#e0654f)' },
+  progress: { color: '#2f6f9f', tint: 'rgba(47,111,159,0.12)', accent: 'linear-gradient(90deg,#2f6f9f,#4f93c4)' },
+  waiting: { color: '#b6883a', tint: 'rgba(182,136,58,0.14)', accent: 'linear-gradient(90deg,#b6883a,#d2a85a)' },
+  neutral: { color: '#5f6664', tint: 'rgba(95,102,100,0.12)', accent: 'linear-gradient(90deg,#5f6664,#828b88)' },
+  success: { color: '#4a7c59', tint: 'rgba(74,124,89,0.12)', accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)' },
+};
+
+/**
+ * Card header used across all four tabs: a coloured rule + title, so every
+ * panel is scannable at a glance and colour-coded to what it reports on.
+ */
+function SectionTitle({ children, accent = ACCENT.positive, hint }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span style={{
+        width: 4, height: 18, borderRadius: 3, background: accent.accent, flexShrink: 0,
+      }}
+      />
+      <span>
+        <Text strong style={{ fontSize: 15 }}>{children}</Text>
+        {hint && (
+          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 400 }}>{hint}</Text>
+        )}
+      </span>
+    </span>
+  );
+}
+
+/** Shared shell for every panel on the page, so radius/shadow stay consistent. */
+const PANEL_STYLE = {
+  borderRadius: 14,
+  border: '1px solid var(--border-light)',
+  boxShadow: 'var(--shadow-sm)',
+};
+
+/**
  * Analytics.jsx — "Recruitment Analytics", the curated analytics-only page.
  *
- * Rebuilt from the pre-rebrand page (preserved as `AnalyticsLegacy.jsx`,
- * still reachable at /analytics-legacy) by dropping everything operational
- * — candidate search/status editing, Zeko interview scheduling/cancelling,
- * the Outlook conversation viewer — and keeping only what's genuinely
- * analytics.
+ * Rebuilt from the pre-rebrand "Recruitment Screening Analytics" page by
+ * dropping everything operational — candidate search/status editing, Zeko
+ * interview scheduling/cancelling, the Outlook conversation viewer — and
+ * keeping only what is genuinely analytics. That old page survived for a while
+ * at /analytics-legacy as a fallback and was deleted on 2026-08-12; its
+ * operational features live on the screens that own them (Candidate Screening,
+ * Candidate Pipeline, Search Candidate). See git history for the original.
  *
  * "Pipeline Insights" and "Recruiter Insights" below are wired to the real
  * Phase 3 Module 1 backend (/api/pipeline/analytics, pipeline.service.js's
@@ -48,7 +98,8 @@ const { Title, Text } = Typography;
  * here before Module 1 shipped.
  */
 
-const SHARED_SOURCE = <Text type="secondary" style={{ fontSize: 12 }}>from the Candidate Pipeline</Text>;
+/* The "from the Candidate Pipeline" provenance note now rides on SectionTitle's
+   `hint`, so the standalone SHARED_SOURCE node is gone. */
 
 /**
  * These tables are ranked top-10 summaries on screen, but a 10-row CSV is
@@ -59,80 +110,194 @@ const SHARED_SOURCE = <Text type="secondary" style={{ fontSize: 12 }}>from the C
 const TOP_TEN_NOTE = 'This is the complete list — the table on screen shows only the top 10.';
 
 /**
+ * The analysis parameters the backend has always accepted but nothing sent.
+ * The defaults here MUST match getPipelineAnalytics()'s own defaults, so the
+ * page renders exactly as before until someone changes a control.
+ */
+const DEFAULT_ANALYTICS_PARAMS = Object.freeze({
+  mrf_id: undefined,          // undefined = let the server pick the busiest
+  stuck_threshold_days: 10,
+  hold_threshold_days: 30,
+  rejection_window_days: 30,
+});
+
+const daysOptions = (values) => values.map((v) => ({ value: v, label: `${v} days` }));
+const STUCK_THRESHOLD_OPTIONS = daysOptions([5, 10, 14, 30]);
+const HOLD_THRESHOLD_OPTIONS = daysOptions([7, 30, 60, 90]);
+// Mirrors the Email Delivery tab's 7/30/90 selector so the page is consistent.
+const REJECTION_WINDOW_OPTIONS = daysOptions([7, 30, 90]);
+
+/**
  * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
  * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
  */
-function PipelineInsights() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
-  const [errored, setErrored] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await pipelineService.getAnalytics();
-        if (!cancelled) setData(res.data?.data || res.data);
-      } catch (err) {
-        if (!cancelled) setErrored(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
+function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
   if (errored) {
     return <Alert type="error" showIcon message="Failed to load pipeline analytics." />;
   }
 
   const tiles = data?.tiles || {};
-  const funnel = data?.funnel || { stages: [], mrf_label: null };
+  const funnel = data?.funnel || { stages: [], mrf_label: null, available_mrfs: [] };
   const maxFunnel = Math.max(1, ...(funnel.stages.map((f) => f.count)));
+  const availableMrfs = funnel.available_mrfs || [];
 
   return (
     <>
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} lg={6}><Card loading={loading}><Statistic title="Active in pipeline" value={tiles.active_in_pipeline ?? 0} /></Card></Col>
+      <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
         <Col xs={12} lg={6}>
-          <Card loading={loading}>
-            <Statistic title="Awaiting feedback" value={tiles.awaiting_feedback ?? 0} />
-            <Text type="secondary" style={{ fontSize: 11.5 }}>Needs Module 3 (scorecards) to populate</Text>
-          </Card>
+          {loading ? <Card loading style={PANEL_STYLE} /> : (
+            <KpiCard
+              index={0}
+              icon={<ApartmentOutlined />}
+              label="Active in pipeline"
+              value={tiles.active_in_pipeline ?? 0}
+              {...ACCENT.progress}
+            />
+          )}
         </Col>
         <Col xs={12} lg={6}>
-          <Card loading={loading}>
-            <Statistic title={`On hold > ${tiles.hold_threshold_days ?? 30} days`} value={tiles.on_hold_over_threshold ?? 0} />
-          </Card>
+          {loading ? <Card loading style={PANEL_STYLE} /> : (
+            <div style={{ position: 'relative' }}>
+              <KpiCard
+                index={1}
+                icon={<SolutionOutlined />}
+                label="Awaiting feedback"
+                value={tiles.awaiting_feedback ?? 0}
+                {...ACCENT.waiting}
+              />
+              <Text
+                type="secondary"
+                style={{ fontSize: 11, display: 'block', padding: '6px 24px 0', lineHeight: 1.4 }}
+              >
+                interviewer scorecard still outstanding
+                {/* A panel round issues one card per interviewer, so the card
+                    count can exceed the candidate count — said out loud so the
+                    tile does not look undercounted on the scorecard screen. */}
+                {tiles.awaiting_feedback_cards > (tiles.awaiting_feedback ?? 0)
+                  && ` · ${tiles.awaiting_feedback_cards} cards`}
+              </Text>
+            </div>
+          )}
         </Col>
-        <Col xs={12} lg={6}><Card loading={loading}><Statistic title="Offers pending" value={tiles.offers_pending ?? 0} /></Card></Col>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading style={PANEL_STYLE} /> : (
+            <div style={{ position: 'relative' }}>
+              <KpiCard
+                index={2}
+                icon={<ClockCircleOutlined />}
+                label={`On hold > ${tiles.hold_threshold_days ?? 30} days`}
+                value={tiles.on_hold_over_threshold ?? 0}
+                {...ACCENT.negative}
+              />
+              <div style={{ padding: '6px 24px 0' }}>
+                <Select
+                  size="small"
+                  variant="borderless"
+                  value={params.hold_threshold_days}
+                  onChange={(v) => onParamsChange({ hold_threshold_days: v })}
+                  options={HOLD_THRESHOLD_OPTIONS}
+                  style={{ marginLeft: -11 }}
+                />
+              </div>
+            </div>
+          )}
+        </Col>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading style={PANEL_STYLE} /> : (
+            <KpiCard
+              index={3}
+              icon={<FileDoneOutlined />}
+              label="Offers pending"
+              value={tiles.offers_pending ?? 0}
+              {...ACCENT.positive}
+            />
+          )}
+        </Col>
       </Row>
 
       <Card
-        title={funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+        title={(
+          <SectionTitle accent={ACCENT.positive}>
+            {funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+          </SectionTitle>
+        )}
         loading={loading}
-        style={{ marginBottom: 16 }}
+        style={{ ...PANEL_STYLE, marginBottom: 16 }}
+        extra={availableMrfs.length > 0 && (
+          <Space size={8}>
+            {/* An auto-picked requisition presented silently reads as "the"
+                funnel rather than one of several — say which it is. */}
+            {funnel.auto_selected && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                showing the requisition with the most candidates
+              </Text>
+            )}
+            <Select
+              size="small"
+              showSearch
+              optionFilterProp="label"
+              style={{ minWidth: 260 }}
+              value={funnel.mrf_id ?? undefined}
+              onChange={(v) => onParamsChange({ mrf_id: v })}
+              options={availableMrfs.map((m) => ({
+                value: m.mrf_id,
+                label: `${m.label} · ${m.journey_count}`,
+              }))}
+            />
+          </Space>
+        )}
       >
         {funnel.stages.length === 0 ? (
           <Empty description="No candidates in the pipeline yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <Space direction="vertical" size={7} style={{ width: '100%' }}>
-            {funnel.stages.map((f, i) => (
-              <Row key={f.stage_key} gutter={10} align="middle" wrap={false}>
-                <Col flex="180px" style={{ textAlign: 'right' }}>
-                  <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
-                </Col>
-                <Col flex="auto">
-                  <div style={{ height: 20, width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.88 }} />
-                </Col>
-                <Col flex="110px">
-                  <Text strong>{f.count}</Text>
-                  {i > 0 && funnel.stages[i - 1].count > 0 && (
-                    <Text type="secondary" style={{ fontSize: 12 }}> · {Math.round((f.count / funnel.stages[i - 1].count) * 100)}%</Text>
-                  )}
-                </Col>
-              </Row>
-            ))}
+          <Space direction="vertical" size={9} style={{ width: '100%' }}>
+            {funnel.stages.map((f, i) => {
+              const conversion = i > 0 && funnel.stages[i - 1].count > 0
+                ? Math.round((f.count / funnel.stages[i - 1].count) * 100)
+                : null;
+              return (
+                <Row key={f.stage_key} gutter={10} align="middle" wrap={false}>
+                  <Col flex="180px" style={{ textAlign: 'right' }}>
+                    <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
+                  </Col>
+                  <Col flex="auto">
+                    {/* Track behind the bar gives the funnel a shape to read
+                        against — a bare bar on white loses its scale. */}
+                    <div style={{
+                      height: 22, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
+                    }}
+                    >
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`,
+                        background: 'linear-gradient(90deg,#7a922e,#a8c24a)',
+                        borderRadius: 6,
+                        transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
+                      }}
+                      />
+                    </div>
+                  </Col>
+                  <Col flex="120px">
+                    <Text strong style={{ fontSize: 14 }}>{f.count}</Text>
+                    {conversion !== null && (
+                      <Tag
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          border: 'none',
+                          // A steep drop between stages is the thing worth
+                          // noticing, so it is tinted rather than left neutral.
+                          background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(122,146,46,0.12)',
+                          color: conversion < 50 ? '#c0392b' : '#5c7022',
+                        }}
+                      >
+                        {conversion}%
+                      </Tag>
+                    )}
+                  </Col>
+                </Row>
+              );
+            })}
           </Space>
         )}
       </Card>
@@ -140,12 +305,25 @@ function PipelineInsights() {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card
-            title="Stuck candidates"
+            // The threshold was previously applied but never stated, so the
+            // list looked like "all stuck candidates" rather than a cut-off.
+            title={(
+              <SectionTitle accent={ACCENT.waiting} hint="from the Candidate Pipeline">
+                {`Stuck candidates — ${params.stuck_threshold_days}+ days`}
+              </SectionTitle>
+            )}
+            style={PANEL_STYLE}
             extra={(
               <Space size={8}>
-                {SHARED_SOURCE}
+                <Select
+                  size="small"
+                  value={params.stuck_threshold_days}
+                  onChange={(v) => onParamsChange({ stuck_threshold_days: v })}
+                  options={STUCK_THRESHOLD_OPTIONS}
+                  style={{ width: 100 }}
+                />
                 <ExportButton
-                  request={(cfg) => pipelineService.exportAnalytics('stuck', cfg)}
+                  request={(cfg) => pipelineService.exportAnalytics('stuck', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Stuck-Candidates.csv"
                   rowCount={data?.stuckCandidates?.length ?? null}
                   fullSetNote={TOP_TEN_NOTE}
@@ -158,10 +336,44 @@ function PipelineInsights() {
           >
             <Table size="small" pagination={false} rowKey="pipeline_id"
               columns={[
-                { title: 'Candidate', dataIndex: 'candidate_name' },
-                { title: 'Stage', dataIndex: 'stage' },
-                { title: 'Days', dataIndex: 'days', width: 60 },
-                { title: 'Status', dataIndex: 'blocked_on', render: (b) => <Tag color="gold">{b}</Tag> },
+                {
+                  title: 'Candidate',
+                  dataIndex: 'candidate_name',
+                  render: (name) => <Text strong style={{ fontSize: 13 }}>{name}</Text>,
+                },
+                {
+                  title: 'Stage',
+                  dataIndex: 'stage',
+                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                },
+                {
+                  title: 'Days',
+                  dataIndex: 'days',
+                  width: 76,
+                  align: 'center',
+                  // The longer someone has been stuck, the harder the number
+                  // should be to skim past.
+                  render: (d) => (
+                    <Text strong style={{ color: d >= 20 ? '#c0392b' : d >= 14 ? '#b6883a' : 'var(--text-2)' }}>
+                      {d}d
+                    </Text>
+                  ),
+                },
+                {
+                  title: 'Status',
+                  dataIndex: 'blocked_on',
+                  render: (b) => (
+                    <Tag
+                      style={{
+                        border: 'none',
+                        background: b?.includes('Hold') ? 'rgba(192,57,43,0.10)' : 'rgba(182,136,58,0.14)',
+                        color: b?.includes('Hold') ? '#c0392b' : '#8a6427',
+                      }}
+                    >
+                      {b}
+                    </Tag>
+                  ),
+                },
               ]}
               dataSource={data?.stuckCandidates || []}
               locale={{ emptyText: <Empty description="No stuck candidates" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
@@ -169,12 +381,23 @@ function PipelineInsights() {
         </Col>
         <Col xs={24} lg={12}>
           <Card
-            title={`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+            title={(
+              <SectionTitle accent={ACCENT.negative} hint="from the Candidate Pipeline">
+                {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+              </SectionTitle>
+            )}
+            style={PANEL_STYLE}
             extra={(
               <Space size={8}>
-                {SHARED_SOURCE}
+                <Select
+                  size="small"
+                  value={params.rejection_window_days}
+                  onChange={(v) => onParamsChange({ rejection_window_days: v })}
+                  options={REJECTION_WINDOW_OPTIONS}
+                  style={{ width: 100 }}
+                />
                 <ExportButton
-                  request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', cfg)}
+                  request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Rejection-Reasons.csv"
                   rowCount={data?.rejectionReasons?.length ?? null}
                   fullSetNote={TOP_TEN_NOTE}
@@ -187,9 +410,27 @@ function PipelineInsights() {
           >
             <Table size="small" pagination={false} rowKey="reason"
               columns={[
-                { title: 'Reason', dataIndex: 'reason' },
-                { title: 'Count', dataIndex: 'count', width: 70 },
-                { title: 'Most common stage', dataIndex: 'most_common_stage' },
+                {
+                  title: 'Reason',
+                  dataIndex: 'reason',
+                  render: (r) => <Text strong style={{ fontSize: 13 }}>{r}</Text>,
+                },
+                {
+                  title: 'Count',
+                  dataIndex: 'count',
+                  width: 72,
+                  align: 'center',
+                  render: (c) => (
+                    <Tag style={{ border: 'none', background: 'rgba(192,57,43,0.10)', color: '#c0392b', fontWeight: 600 }}>
+                      {c}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: 'Most common stage',
+                  dataIndex: 'most_common_stage',
+                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                },
               ]}
               dataSource={data?.rejectionReasons || []}
               locale={{ emptyText: <Empty description="No rejections in this window" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
@@ -204,26 +445,7 @@ function PipelineInsights() {
  * RecruiterInsights — time-to-hire, vendor performance, source-of-hire.
  * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
  */
-function RecruiterInsights() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
-  const [errored, setErrored] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await pipelineService.getAnalytics();
-        if (!cancelled) setData(res.data?.data || res.data);
-      } catch (err) {
-        if (!cancelled) setErrored(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
+function RecruiterInsights({ data, loading, errored, params }) {
   if (errored) {
     return <Alert type="error" showIcon message="Failed to load recruiter insights." />;
   }
@@ -237,9 +459,23 @@ function RecruiterInsights() {
     <>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="Time-to-hire" extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
-            loading={loading} style={{ marginBottom: 16 }}>
-            <Statistic title="Average days, shortlist to offer" value={timeToHire.total_days} suffix="days" style={{ marginBottom: 16 }} />
+          <Card
+            title={<SectionTitle accent={ACCENT.progress}>Time-to-hire</SectionTitle>}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
+            loading={loading}
+            style={{ ...PANEL_STYLE, marginBottom: 16 }}
+          >
+            <div style={{
+              background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
+            }}
+            >
+              <Statistic
+                title="Average days, shortlist to offer"
+                value={timeToHire.total_days}
+                suffix="days"
+                valueStyle={{ color: '#2f6f9f', fontWeight: 800 }}
+              />
+            </div>
             {timeToHire.stages.length === 0 ? (
               <Empty description="No closed journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
@@ -250,9 +486,21 @@ function RecruiterInsights() {
                       <Text type="secondary" style={{ fontSize: 12.5 }}>{label}</Text>
                     </Col>
                     <Col flex="auto">
-                      <div style={{ height: 18, width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.85 }} />
+                      <div style={{
+                        height: 20, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
+                      }}
+                      >
+                        <div style={{
+                          height: '100%',
+                          width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`,
+                          background: 'linear-gradient(90deg,#2f6f9f,#4f93c4)',
+                          borderRadius: 6,
+                          transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
+                        }}
+                        />
+                      </div>
                     </Col>
-                    <Col flex="60px"><Text strong>{avg_days}d</Text></Col>
+                    <Col flex="60px"><Text strong style={{ fontSize: 13 }}>{avg_days}d</Text></Col>
                   </Row>
                 ))}
               </Space>
@@ -261,12 +509,13 @@ function RecruiterInsights() {
         </Col>
         <Col xs={24} lg={12}>
           <Card
-            title="Vendor performance"
+            title={<SectionTitle accent={ACCENT.waiting}>Vendor performance</SectionTitle>}
+            style={{ ...PANEL_STYLE, marginBottom: 16 }}
             extra={(
               <Space size={8}>
                 <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
                 <ExportButton
-                  request={(cfg) => pipelineService.exportAnalytics('vendor_performance', cfg)}
+                  request={(cfg) => pipelineService.exportAnalytics('vendor_performance', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Vendor-Performance.csv"
                   rowCount={vendorPerformance?.length ?? null}
                   fullSetNote={TOP_TEN_NOTE}
@@ -275,15 +524,33 @@ function RecruiterInsights() {
                 />
               </Space>
             )}
-            loading={loading} style={{ marginBottom: 16 }}>
+            loading={loading}
+          >
+            {/* No "Shortlist rate" column: it read 100% for every vendor by
+                construction. The honest denominator (CVs actually sent) is in
+                rpa_upload_jobs, but only 23% of those rows carry a cv_id, so a
+                rate there would be invented. See docs/Recruitment-Analytics.md. */}
             <Table size="small" pagination={false} rowKey="vendor_email"
               columns={[
-                { title: 'Vendor', dataIndex: 'vendor_email' },
-                { title: 'Submitted', dataIndex: 'submitted', align: 'center', width: 100 },
-                { title: 'Shortlisted', dataIndex: 'shortlisted', align: 'center', width: 100 },
                 {
-                  title: 'Shortlist rate', dataIndex: 'shortlist_rate', align: 'center', width: 120,
-                  render: (rate) => <Tag color="green">{rate}%</Tag>,
+                  title: 'Vendor',
+                  dataIndex: 'vendor_email',
+                  render: (v) => <Text strong style={{ fontSize: 13 }}>{v}</Text>,
+                },
+                { title: 'In pipeline', dataIndex: 'in_pipeline', align: 'center', width: 110 },
+                {
+                  title: 'Hired',
+                  dataIndex: 'hired',
+                  align: 'center',
+                  width: 90,
+                  render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+                },
+                {
+                  title: 'Rejected',
+                  dataIndex: 'rejected',
+                  align: 'center',
+                  width: 100,
+                  render: (n) => <Text style={{ color: n > 0 ? '#c0392b' : 'var(--text-2)' }}>{n}</Text>,
                 },
               ]}
               dataSource={vendorPerformance}
@@ -292,12 +559,13 @@ function RecruiterInsights() {
         </Col>
       </Row>
       <Card
-        title="Source of hire"
+        title={<SectionTitle accent={ACCENT.success}>Source of hire</SectionTitle>}
+        style={PANEL_STYLE}
         extra={(
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
             <ExportButton
-              request={(cfg) => pipelineService.exportAnalytics('source_of_hire', cfg)}
+              request={(cfg) => pipelineService.exportAnalytics('source_of_hire', { ...cfg, params })}
               fallbackName="AAPNA-ATS_Pipeline-Source-Of-Hire.csv"
               rowCount={sourceOfHire?.length ?? null}
               label="Export"
@@ -307,16 +575,68 @@ function RecruiterInsights() {
         )}
         loading={loading}
       >
+        {/* Columns are mutually exclusive and sum to Submitted. The old
+            "Shortlist rate" was ~100% for every source because every pipeline
+            row IS a shortlist; hire rate is the question worth asking. */}
         <Table size="small" pagination={false} rowKey="source"
           columns={[
-            { title: 'Source', dataIndex: 'source' },
-            { title: 'Submitted', dataIndex: 'submitted', align: 'center' },
-            { title: 'Shortlisted', dataIndex: 'shortlisted', align: 'center' },
-            { title: 'Rejected', dataIndex: 'rejected', align: 'center' },
-            { title: 'On Hold', dataIndex: 'on_hold', align: 'center' },
             {
-              title: 'Shortlist rate', dataIndex: 'shortlist_rate', align: 'center',
-              render: (rate) => <Tag color="blue">{rate}%</Tag>,
+              title: 'Source',
+              dataIndex: 'source',
+              // Stored values are snake_case keys ('screening_shortlist'); the
+              // table is read by humans, so present them as words.
+              render: (s) => (
+                <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>
+                  {String(s || '').replace(/_/g, ' ')}
+                </Text>
+              ),
+            },
+            {
+              title: 'Submitted',
+              dataIndex: 'submitted',
+              align: 'center',
+              render: (n) => <Text strong>{n}</Text>,
+            },
+            {
+              title: 'In progress',
+              dataIndex: 'in_progress',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? '#2f6f9f' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Hired',
+              dataIndex: 'hired',
+              align: 'center',
+              render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Rejected',
+              dataIndex: 'rejected',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? '#c0392b' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'On Hold',
+              dataIndex: 'on_hold',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? '#b6883a' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Hire rate',
+              dataIndex: 'hire_rate',
+              align: 'center',
+              render: (rate) => (
+                <Tag
+                  style={{
+                    border: 'none',
+                    fontWeight: 600,
+                    background: rate > 0 ? 'rgba(74,124,89,0.12)' : 'var(--ink-3)',
+                    color: rate > 0 ? '#4a7c59' : 'var(--text-2)',
+                  }}
+                >
+                  {rate}%
+                </Tag>
+              ),
             },
           ]}
           dataSource={sourceOfHire}
@@ -330,10 +650,45 @@ export default function Analytics() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ pipeline: [], candidates: [], tiles: {} });
   const [activeTab, setActiveTab] = useState('analytics');
+  // Distinct from pipelineAnalytics.loading: that one drives per-card skeletons
+  // on first paint, this one drives the blocking scrim on a user-triggered
+  // refetch. Conflating them would put a full-screen overlay over the initial
+  // page load.
+  const [refetching, setRefetching] = useState(false);
+
+  /**
+   * Pipeline analytics is owned HERE, not by the two tabs that render it.
+   * Both Pipeline Insights and Recruiter Insights read the same
+   * GET /api/pipeline/analytics payload; when each fetched its own, opening the
+   * page fired the identical (and expensive) request twice.
+   */
+  const [pipelineAnalytics, setPipelineAnalytics] = useState({
+    data: null, loading: true, errored: false,
+  });
+
+  /**
+   * The analysis window the two pipeline tabs are showing. These map 1:1 onto
+   * query params getPipelineAnalytics has always accepted; until now nothing
+   * sent them, so the server defaults were effectively fixed.
+   */
+  const [analyticsParams, setAnalyticsParams] = useState(DEFAULT_ANALYTICS_PARAMS);
 
   useEffect(() => {
     fetchMainData();
   }, []);
+
+  // Refetch whenever a control moves. The initial mount runs this too, with the
+  // defaults, so there is still exactly ONE request per page load.
+  //
+  // isInitialAnalyticsLoad separates the two cases: on first paint the cards
+  // are skeletons and a scrim on top of them would be noise, but on a control
+  // change the user is looking at real numbers that are about to be replaced —
+  // that needs the overlay, or the swap reads as "nothing happened".
+  const isInitialAnalyticsLoad = useRef(true);
+  useEffect(() => {
+    loadPipelineAnalytics(analyticsParams, { showOverlay: !isInitialAnalyticsLoad.current });
+    isInitialAnalyticsLoad.current = false;
+  }, [analyticsParams]);
 
   const fetchMainData = async () => {
     setLoading(true);
@@ -345,6 +700,34 @@ export default function Analytics() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadPipelineAnalytics = async (params = analyticsParams, { showOverlay = false } = {}) => {
+    if (showOverlay) setRefetching(true);
+    setPipelineAnalytics((prev) => ({ ...prev, loading: true, errored: false }));
+    try {
+      const res = await pipelineService.getAnalytics(params);
+      setPipelineAnalytics({ data: res.data?.data || res.data, loading: false, errored: false });
+    } catch (err) {
+      setPipelineAnalytics({ data: null, loading: false, errored: true });
+    } finally {
+      if (showOverlay) setRefetching(false);
+    }
+  };
+
+  /**
+   * Merge one control's new value into the current analysis window.
+   *
+   * Re-selecting the value that is already showing returns the SAME state
+   * object, so React bails out and the effect below never re-runs — no request,
+   * no spinner, no flash. Picking your current requisition out of the dropdown
+   * should be a no-op, not a reload of identical data.
+   */
+  const handleParamsChange = (patch) => {
+    setAnalyticsParams((prev) => {
+      const unchanged = Object.entries(patch).every(([k, v]) => prev[k] === v);
+      return unchanged ? prev : { ...prev, ...patch };
+    });
   };
 
   // Group candidates by Role for the Role Summary tab
@@ -391,28 +774,35 @@ export default function Analytics() {
       title: 'MRF ID',
       dataIndex: 'mrf_id',
       key: 'mrf_id',
-      render: (text) => <Tag color="default">MRF #{text || 'N/A'}</Tag>
+      render: (text) => (
+        <Tag style={{
+          border: 'none', background: 'var(--ink-3)', color: 'var(--text-2)', fontFamily: 'monospace',
+        }}
+        >
+          MRF #{text || 'N/A'}
+        </Tag>
+      )
     },
     {
       title: 'Shortlisted',
       dataIndex: 'shortlisted',
       key: 'shortlisted',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="var(--gold)" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.positive.color} />
     },
     {
       title: 'Rejected',
       dataIndex: 'rejected',
       key: 'rejected',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="var(--red)" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.negative.color} />
     },
     {
       title: 'On Hold',
       dataIndex: 'on_hold',
       key: 'on_hold',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="#95a5a6" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.waiting.color} />
     },
     {
       title: 'Total Candidates',
@@ -423,71 +813,60 @@ export default function Analytics() {
     }
   ];
 
-  // Tile items
+  // Headline tiles — the shared KpiCard used by Dashboard / HR Upload / Vendor,
+  // so this page speaks the same visual language as the rest of the app.
   const tilesData = [
-    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, color: 'var(--gold)', bg: 'rgba(122, 146, 46, 0.08)' },
-    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, color: 'var(--red)', bg: 'rgba(192, 57, 43, 0.08)' },
-    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, color: '#95a5a6', bg: 'rgba(149, 165, 166, 0.08)' },
-    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, color: 'var(--text)', bg: 'var(--gold-subtle)' },
-    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, color: '#185fa5', bg: 'rgba(24, 95, 165, 0.08)' },
-    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, color: '#27ae60', bg: 'rgba(39, 174, 96, 0.08)' },
+    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, ...ACCENT.positive },
+    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, ...ACCENT.negative },
+    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, ...ACCENT.waiting },
+    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, ...ACCENT.neutral },
+    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, ...ACCENT.progress },
+    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, ...ACCENT.success },
   ];
 
   return (
     <div className="stagger-children" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Page Header */}
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
-            Recruitment Analytics
-          </Title>
-          <Text type="secondary">
-            Track recruitment performance and hiring trends across roles, sources, and vendors.
-          </Text>
-        </div>
-        <Button
-          type="primary"
-          onClick={fetchMainData}
-          loading={loading}
-          style={{ background: 'var(--gold)', borderColor: 'var(--gold)', height: 40, borderRadius: 8 }}
-        >
-          Refresh Data
-        </Button>
+      {/* Blocking scrim while a control change re-queries. Matches the Candidate
+          Screening page so a wait looks the same everywhere in the app. */}
+      <LoadingOverlay open={refetching} message="Updating analytics…" />
+
+      {/* Page Header. No "Refresh Data" button: the page already refetches
+          whenever a control changes, and the Email Delivery tab carries its own
+          Refresh for the one surface with a poller behind it. */}
+      <div style={{ marginBottom: 24 }}>
+        <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
+          Recruitment Analytics
+        </Title>
+        <Text type="secondary">
+          Track recruitment performance and hiring trends across roles, sources, and vendors.
+        </Text>
+        <br />
+        {/* These six counts have no date window — saying so beats letting
+            them be read as "this month". */}
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Headline counts below are <strong>all time</strong>, across every requisition.
+        </Text>
       </div>
 
-      {/* Stats Tiles */}
+      {/* Headline tiles. Until the first payload lands there is nothing true to
+          count up to, so the strip is skeletoned rather than animating from 0 —
+          a confident "0" mid-fetch is a wrong answer, not a slow one. */}
       <Row gutter={[16, 16]} style={{ marginBottom: 28 }}>
         {tilesData.map((tile, idx) => (
-          <Col xs={12} sm={12} md={8} lg={4} key={idx}>
-            <Card
-              bordered={false}
-              className="glass"
-              style={{
-                borderRadius: 12,
-                background: tile.bg,
-                border: '1px solid var(--border-light)',
-                padding: '12px 16px',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-              bodyStyle={{ padding: 0, width: '100%' }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {tile.title}
-                  </Text>
-                  <Title level={3} style={{ margin: '4px 0 0', fontWeight: 800, color: tile.color }}>
-                    {tile.value}
-                  </Title>
-                </div>
-                <div style={{ fontSize: 24, color: tile.color, opacity: 0.85 }}>
-                  {tile.icon}
-                </div>
-              </div>
-            </Card>
+          <Col xs={12} sm={12} md={8} lg={4} key={tile.title}>
+            {loading && !data.tiles ? (
+              <Card bordered={false} loading style={{ ...PANEL_STYLE, height: '100%' }} />
+            ) : (
+              <KpiCard
+                index={idx}
+                icon={tile.icon}
+                label={tile.title}
+                value={tile.value}
+                color={tile.color}
+                tint={tile.tint}
+                accent={tile.accent}
+              />
+            )}
           </Col>
         ))}
       </Row>
@@ -511,7 +890,18 @@ export default function Analytics() {
               ),
               children: (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 12,
+                    marginBottom: 14,
+                  }}
+                  >
+                    <SectionTitle accent={ACCENT.positive} hint="candidate outcomes per requisition">
+                      Role summary
+                    </SectionTitle>
                     <ExportButton
                       request={(cfg) => screeningService.exportRoleSummary(cfg)}
                       fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
@@ -539,7 +929,15 @@ export default function Analytics() {
                   Pipeline Insights
                 </span>
               ),
-              children: <PipelineInsights />
+              children: (
+                <PipelineInsights
+                  data={pipelineAnalytics.data}
+                  loading={pipelineAnalytics.loading}
+                  errored={pipelineAnalytics.errored}
+                  params={analyticsParams}
+                  onParamsChange={handleParamsChange}
+                />
+              )
             },
             {
               key: 'recruiterInsights',
@@ -549,7 +947,14 @@ export default function Analytics() {
                   Recruiter Insights
                 </span>
               ),
-              children: <RecruiterInsights />
+              children: (
+                <RecruiterInsights
+                  data={pipelineAnalytics.data}
+                  loading={pipelineAnalytics.loading}
+                  errored={pipelineAnalytics.errored}
+                  params={analyticsParams}
+                />
+              )
             },
             {
               key: 'emailDelivery',

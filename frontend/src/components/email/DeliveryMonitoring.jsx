@@ -11,6 +11,7 @@ import {
   Typography,
   Button,
   Space,
+  Alert,
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -30,6 +31,26 @@ dayjs.extend(relativeTime);
 
 const { Text } = Typography;
 
+/** Panel shell shared with the other Analytics tabs, so radius/shadow match. */
+const PANEL_STYLE = {
+  borderRadius: 14,
+  border: '1px solid var(--border-light)',
+  boxShadow: 'var(--shadow-sm)',
+};
+
+/** Coloured rule + title, mirroring SectionTitle on the Analytics page. */
+function PanelTitle({ children, accent }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+      <span style={{
+        width: 4, height: 16, borderRadius: 3, background: accent, flexShrink: 0,
+      }}
+      />
+      <Text strong style={{ fontSize: 14 }}>{children}</Text>
+    </span>
+  );
+}
+
 /**
  * Email delivery monitoring view — surfaces the send/tracking data that the
  * backend has been recording (rpa_email_log.status, rpa_email_tracking) but no
@@ -41,14 +62,20 @@ export default function DeliveryMonitoring() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [days, setDays] = useState(30);
+  const [errored, setErrored] = useState(false);
 
   const load = useCallback(async (windowDays) => {
     setLoading(true);
+    setErrored(false);
     try {
       const res = await emailTemplateService.getEmailMonitoring(windowDays);
       setData(res.data?.data || res.data || null);
     } catch {
+      // A swallowed failure here rendered every tile as 0, which reads as a
+      // clean month with no failures and no bounces — the worst possible
+      // failure mode for a monitoring tab. Say the request failed instead.
       setData(null);
+      setErrored(true);
     } finally {
       setLoading(false);
     }
@@ -61,12 +88,30 @@ export default function DeliveryMonitoring() {
   const summary = data?.summary || {};
   const poller = data?.poller_status || {};
 
+  // Same semantic palette as the Analytics page: a count that means "something
+  // went wrong" is only tinted red when it is actually non-zero, so a clean
+  // window reads calm rather than alarming.
   const tiles = [
-    { key: 'sent', title: 'Sent', value: summary.sent, icon: <CheckCircleOutlined /> },
-    { key: 'failed', title: 'Failed', value: summary.failed, icon: <CloseCircleOutlined />, valueStyle: summary.failed > 0 ? { color: '#cf1322' } : undefined },
-    { key: 'opened', title: 'Opened', value: summary.opened, icon: <EyeOutlined />, hint: 'Opens are a positive signal, not an exact count — mail clients proxy or block tracking images.' },
-    { key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined /> },
-    { key: 'bounced', title: 'Bounced', value: summary.bounced, icon: <StopOutlined />, valueStyle: summary.bounced > 0 ? { color: '#cf1322' } : undefined },
+    {
+      key: 'sent', title: 'Sent', value: summary.sent, icon: <CheckCircleOutlined />, tone: '#2f6f9f',
+    },
+    {
+      key: 'failed', title: 'Failed', value: summary.failed, icon: <CloseCircleOutlined />, tone: summary.failed > 0 ? '#c0392b' : undefined,
+    },
+    {
+      key: 'opened',
+      title: 'Opened',
+      value: summary.opened,
+      icon: <EyeOutlined />,
+      tone: '#4a7c59',
+      hint: 'Opens are a positive signal, not an exact count — mail clients proxy or block tracking images.',
+    },
+    {
+      key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? '#7a922e' : undefined,
+    },
+    {
+      key: 'bounced', title: 'Bounced', value: summary.bounced, icon: <StopOutlined />, tone: summary.bounced > 0 ? '#c0392b' : undefined,
+    },
   ];
 
   const byTypeColumns = [
@@ -138,24 +183,45 @@ export default function DeliveryMonitoring() {
         </Col>
       </Row>
 
+      {errored && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Failed to load email delivery data."
+          description="The figures below are not current. Retry, or check that the backend is reachable."
+          action={<Button size="small" onClick={() => load(days)}>Retry</Button>}
+        />
+      )}
+
       <Row gutter={[12, 12]}>
         {tiles.map((t) => (
           <Col xs={12} sm={8} md={4} key={t.key} flex="auto">
-            <Card size="small" bordered>
+            <Card
+              size="small"
+              bordered={false}
+              style={{
+                borderRadius: 12,
+                border: '1px solid var(--border-light)',
+                boxShadow: 'var(--shadow-sm)',
+                background: 'var(--gradient-card, #fff)',
+                height: '100%',
+              }}
+            >
               <Statistic
-                title={
-                  <Space size={4}>
-                    {t.icon}
-                    {t.title}
+                title={(
+                  <Space size={6}>
+                    <span style={{ color: t.tone || 'var(--text-2)' }}>{t.icon}</span>
+                    <span style={{ fontSize: 12.5 }}>{t.title}</span>
                     {t.hint && (
                       <Tooltip title={t.hint}>
-                        <InfoCircleOutlined style={{ color: '#999' }} />
+                        <InfoCircleOutlined style={{ color: 'var(--text-2)' }} />
                       </Tooltip>
                     )}
                   </Space>
-                }
-                value={t.value ?? 0}
-                valueStyle={t.valueStyle}
+                )}
+                value={errored ? '—' : (t.value ?? 0)}
+                valueStyle={{ color: t.tone || 'var(--text)', fontWeight: 800, fontSize: 26 }}
                 loading={loading}
               />
             </Card>
@@ -167,8 +233,9 @@ export default function DeliveryMonitoring() {
         <Col xs={24} md={10}>
           <Card
             size="small"
-            title="By email type"
-            bordered
+            title={<PanelTitle accent="linear-gradient(90deg,#2f6f9f,#4f93c4)">By email type</PanelTitle>}
+            bordered={false}
+            style={PANEL_STYLE}
             extra={(
               <ExportButton
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', days, cfg)}
@@ -193,8 +260,9 @@ export default function DeliveryMonitoring() {
         <Col xs={24} md={14}>
           <Card
             size="small"
-            title="Recent failures"
-            bordered
+            title={<PanelTitle accent="linear-gradient(90deg,#c0392b,#e0654f)">Recent failures</PanelTitle>}
+            bordered={false}
+            style={PANEL_STYLE}
             extra={(
               <ExportButton
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', days, cfg)}

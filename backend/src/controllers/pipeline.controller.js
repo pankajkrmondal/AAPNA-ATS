@@ -33,13 +33,11 @@ export const listPipeline = catchAsync(async (req, res) => {
  * CandidatePipelineAnalyticsPreview / RecruiterInsightsPreview).
  */
 export const getPipelineAnalytics = catchAsync(async (req, res) => {
-  const { mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days } = req.query;
-  const result = await pipelineService.getPipelineAnalytics({
-    mrfId: mrf_id ? parseInt(mrf_id, 10) : null,
-    rejectionWindowDays: rejection_window_days ? parseInt(rejection_window_days, 10) : undefined,
-    stuckThresholdDays: stuck_threshold_days ? parseInt(stuck_threshold_days, 10) : undefined,
-    holdThresholdDays: hold_threshold_days ? parseInt(hold_threshold_days, 10) : undefined,
-  });
+  // Same parser the CSV export uses — see parseAnalyticsParams for why they
+  // must not be two separate implementations.
+  const result = await pipelineService.getPipelineAnalytics(
+    pipelineAnalyticsExport.parseAnalyticsParams(req.query),
+  );
   return success(res, result, 'Pipeline analytics retrieved successfully');
 });
 
@@ -60,14 +58,24 @@ export const exportPipeline = catchAsync(async (req, res) => runExport(req, res,
  * CSV of one analytics table, complete rather than the screen's top 10.
  */
 export const exportPipelineAnalytics = catchAsync(async (req, res) => {
-  const spec = pipelineAnalyticsExport.specFor(req.query.table);
+  // req.query is forwarded so the CSV honours the same mrf_id/threshold filters
+  // the screen used, rather than silently exporting the unfiltered set.
+  const spec = pipelineAnalyticsExport.specFor(req.query.table, req.query);
   if (!spec) {
     throw new AppError(
       `Unknown analytics table "${req.query.table || ''}". Expected one of: ${pipelineAnalyticsExport.TABLE_KEYS.join(', ')}.`,
       400,
     );
   }
-  return runExport(req, res, { ...spec, filters: { table: req.query.table } });
+  // Only the recognised params are echoed into the audit line — spreading raw
+  // req.query would log arbitrary caller-supplied keys.
+  const { mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days } = req.query;
+  return runExport(req, res, {
+    ...spec,
+    filters: {
+      table: req.query.table, mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days,
+    },
+  });
 });
 
 /**
