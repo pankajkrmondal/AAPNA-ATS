@@ -13,7 +13,16 @@ import {
   isMrfFilled,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule } from './interviewSchedule.service.js';
+import { isSchedulableStage, mrfRoundHints, getLiveSchedule, OCCURRENCE_STATUS } from './interviewSchedule.service.js';
+import { SCORECARD_STATUS } from './interviewScorecard.service.js';
+// Pure analytics arithmetic lives in its own dependency-free module so it can
+// be unit-tested — importing this service opens Redis and hangs `node --test`.
+import {
+  MS_PER_DAY,
+  stageClockStart,
+  stageDurations,
+  bucketFor,
+} from './pipelineAnalytics.helpers.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
 import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
@@ -1189,48 +1198,97 @@ export async function getPipelineAnalytics({
   });
 
   const now = Date.now();
-  const daysSince = (d) => Math.floor((now - new Date(d).getTime()) / (1000 * 60 * 60 * 24));
-  const lastEventOf = (j) => j.rpa_pipeline_stage_events[j.rpa_pipeline_stage_events.length - 1];
+  const daysSince = (d) => Math.floor((now - new Date(d).getTime()) / MS_PER_DAY);
 
   // ── Top tiles: active in pipeline, awaiting feedback, on-hold > N days, offers pending ──
   const activeInPipeline = allJourneys.filter((j) => !j.final_outcome).length;
-  // "Awaiting feedback" needs rpa_interview_schedules/rpa_interview_feedback
-  // (Module 3 — Teams/Outlook scheduling + scorecards), which isn't built yet.
-  // Honestly 0 until M3 ships rather than approximating from event data that
-  // can't actually distinguish "scheduled, feedback pending" from other states.
-  const awaitingFeedback = 0;
+
+  // "Awaiting feedback" — interviews that happened, whose scorecard is still out.
+  //
+  // This was hardcoded to 0 with a comment saying Module 3 wasn't built. M3a
+  // shipped, so the tile was quietly reporting zero over real outstanding cards.
+  //
+  // Bounded on token_expires_at because status only flips to 'expired' lazily,
+  // when someone opens a stale link (getScorecardByToken) — a card nobody ever
+  // opens stays 'pending' forever, and without this the tile would ratchet up
+  // and never come down.
+  const awaitingRows = await prisma.rpa_interview_scorecard.findMany({
+    where: {
+      status: SCORECARD_STATUS.PENDING,
+      sent_at: { not: null },
+      token_expires_at: { gt: new Date() },
+      rpa_interview_schedule: { occurrence_status: OCCURRENCE_STATUS.HELD, cancelled_at: null },
+      rpa_candidate_pipeline: { final_outcome: null },
+    },
+    select: { pipeline_id: true },
+  });
+  // Counted as CANDIDATES, not cards: a 3-person panel is one candidate waiting,
+  // and every neighbouring tile counts candidates. The card count rides along
+  // separately so a panel round doesn't look undercounted on screen.
+  const awaitingFeedback = new Set(awaitingRows.map((r) => String(r.pipeline_id))).size;
+  const awaitingFeedbackCards = awaitingRows.length;
+
   const onHoldOverThreshold = allJourneys.filter((j) => {
-    if (j.current_stage_status !== 'hold') return false;
-    const ev = lastEventOf(j);
-    return daysSince(ev?.created_at || j.modified_at) > holdThresholdDays;
+    if (j.current_stage_status !== STAGE_OUTCOMES.HOLD) return false;
+    return daysSince(stageClockStart(j)) > holdThresholdDays;
   }).length;
   const offersPending = allJourneys.filter(
     (j) => j.current_stage_key === STAGE_KEYS.OFFER && !j.final_outcome
   ).length;
 
   // ── Stage funnel: counts of journeys that have EVER entered each stage, for one MRF ──
-  // Pick the requested MRF, or (if not given) the MRF with the most journeys — mirrors
-  // the mock's single-MRF funnel ("Stage funnel — Senior .NET Developer (MRF-2031)").
+  // The funnel shows ONE requisition. Counting journeys per MRF happens either
+  // way now: when no mrf_id is given it picks the busiest, and the same tally
+  // populates the selector so the user can see the funnel is a choice among
+  // several rather than the whole picture.
+  const mrfJourneyCounts = new Map();
+  for (const j of allJourneys) {
+    if (!j.mrf_id) continue;
+    const key = String(j.mrf_id);
+    mrfJourneyCounts.set(key, (mrfJourneyCounts.get(key) || 0) + 1);
+  }
+
   let funnelMrfId = mrfId;
+  const funnelAutoSelected = !funnelMrfId;
   if (!funnelMrfId) {
-    const counts = new Map();
-    for (const j of allJourneys) {
-      if (!j.mrf_id) continue;
-      const key = String(j.mrf_id);
-      counts.set(key, (counts.get(key) || 0) + 1);
-    }
     let best = null;
-    for (const [key, count] of counts) {
+    for (const [key, count] of mrfJourneyCounts) {
       if (!best || count > best.count) best = { key, count };
     }
     funnelMrfId = best ? Number(best.key) : null;
   }
 
+  // Label every selectable requisition, so the dropdown reads like the rest of
+  // the app ("Role (MRF-110)") instead of bare ids. One query for the whole
+  // list rather than one per row. The explicitly-requested MRF is included even
+  // if it has no journeys yet — otherwise asking for it would render an
+  // unlabelled "MRF-123" heading over an empty funnel.
+  const selectableMrfIds = [...new Set([
+    ...mrfJourneyCounts.keys(),
+    ...(funnelMrfId ? [String(funnelMrfId)] : []),
+  ])].map((k) => BigInt(k));
+  const selectableMrfs = selectableMrfIds.length
+    ? await prisma.rpa_mrf.findMany({
+      where: { id: { in: selectableMrfIds } },
+      select: { id: true, position_hiring_for: true },
+    })
+    : [];
+  const mrfLabelFor = (id) => {
+    const row = selectableMrfs.find((m) => Number(m.id) === Number(id));
+    return row ? `${row.position_hiring_for || 'Role'} (MRF-${id})` : `MRF-${id}`;
+  };
+  const availableMrfs = [...mrfJourneyCounts.entries()]
+    .map(([key, count]) => ({
+      mrf_id: Number(key),
+      label: mrfLabelFor(key),
+      journey_count: count,
+    }))
+    .sort((a, b) => b.journey_count - a.journey_count);
+
   let funnelMrfLabel = null;
   let funnel = [];
   if (funnelMrfId) {
-    const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(funnelMrfId) } });
-    funnelMrfLabel = mrf ? `${mrf.position_hiring_for || 'Role'} (MRF-${funnelMrfId})` : `MRF-${funnelMrfId}`;
+    funnelMrfLabel = mrfLabelFor(funnelMrfId);
 
     const mrfJourneys = allJourneys.filter((j) => j.mrf_id && Number(j.mrf_id) === funnelMrfId);
     funnel = stages.map((s) => ({
@@ -1251,8 +1309,7 @@ export async function getPipelineAnalytics({
   const stuckCandidates = allJourneys
     .filter((j) => !j.final_outcome)
     .map((j) => {
-      const ev = lastEventOf(j);
-      const days = daysSince(ev?.created_at || j.modified_at);
+      const days = daysSince(stageClockStart(j));
       const stageLabel = stages.find((s) => s.stage_key === j.current_stage_key)?.label || j.current_stage_key;
       return {
         pipeline_id: Number(j.id),
@@ -1300,15 +1357,8 @@ export async function getPipelineAnalytics({
   const closedJourneys = allJourneys.filter((j) => j.final_outcome);
   const stageDurationTotals = new Map(); // stage_key -> { totalDays, count }
   for (const j of closedJourneys) {
-    const events = j.rpa_pipeline_stage_events;
-    for (let i = 0; i < events.length; i += 1) {
-      const ev = events[i];
-      if (ev.event_type !== 'entered' && i !== 0) continue;
-      const next = events[i + 1];
-      const start = new Date(ev.created_at).getTime();
-      const end = next ? new Date(next.created_at).getTime() : new Date(j.closed_at || j.modified_at).getTime();
-      const days = Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
-      const key = ev.stage_key;
+    // stageDurations() measures entered → next TRANSITION, skipping notes.
+    for (const [key, days] of stageDurations(j.rpa_pipeline_stage_events, j.closed_at || j.modified_at)) {
       if (!stageDurationTotals.has(key)) stageDurationTotals.set(key, { totalDays: 0, count: 0 });
       const agg = stageDurationTotals.get(key);
       agg.totalDays += days;
@@ -1324,48 +1374,79 @@ export async function getPipelineAnalytics({
     .filter((row) => row.avg_days > 0);
   const totalTimeToHire = Math.round(timeToHire.reduce((sum, r) => sum + r.avg_days, 0));
 
-  // ── Vendor performance: submitted vs. shortlisted (= journey created) per vendor ──
+  // ── Vendor performance: how many of a vendor's candidates are in the pipeline ──
+  //
+  // Deliberately NO shortlist_rate. The old one incremented `submitted` and
+  // `shortlisted` on the same row, so it read 100% for every vendor forever —
+  // real data, meaningless metric.
+  //
+  // The honest denominator (CVs the vendor actually sent) lives in
+  // rpa_upload_jobs, but that join is not viable: of 31 vendor upload jobs on
+  // staging only 7 carry a cv_id, and exactly 1 joins to a pipeline row. A rate
+  // built on 23% coverage would invent a number, so the column is dropped
+  // rather than relabelled — the figure was the problem, not its name.
+  // Revisit if cv_id backfill lands; the query is in docs/Recruitment-Analytics.md.
   const vendorJourneys = allJourneys.filter((j) => j.source === 'vendor' && j.vendor_email);
   const vendorCounts = new Map();
   for (const j of vendorJourneys) {
-    const key = j.vendor_email;
-    if (!vendorCounts.has(key)) vendorCounts.set(key, { vendor_email: key, submitted: 0, shortlisted: 0 });
+    const key = String(j.vendor_email).trim().toLowerCase();
+    if (!vendorCounts.has(key)) {
+      vendorCounts.set(key, { vendor_email: key, in_pipeline: 0, hired: 0, rejected: 0 });
+    }
     const entry = vendorCounts.get(key);
-    entry.shortlisted += 1; // every pipeline row IS a shortlist (Stage 0 approved) by construction
-    entry.submitted += 1;
+    entry.in_pipeline += 1;
+    const bucket = bucketFor(j);
+    if (bucket === 'hired') entry.hired += 1;
+    if (bucket === 'rejected') entry.rejected += 1;
   }
-  const vendorPerformance = [...vendorCounts.values()]
-    .map((v) => ({ ...v, shortlist_rate: v.submitted > 0 ? Math.round((v.shortlisted / v.submitted) * 100) : 0 }))
-    .sort((a, b) => b.submitted - a.submitted);
+  const vendorPerformance = [...vendorCounts.values()].sort((a, b) => b.in_pipeline - a.in_pipeline);
   const vendorPerformanceTop = capped(vendorPerformance);
 
-  // ── Source of hire: submitted/shortlisted/rejected/on-hold by source ──
+  // ── Source of hire: how each intake route CONVERTS ──
+  //
+  // Reports a hire rate, not a "shortlist rate". Every rpa_candidate_pipeline
+  // row already IS a shortlist by construction, so a per-source shortlist rate
+  // was definitionally ~100% and ranked nothing. The question worth asking is
+  // which source produces hires.
+  //
+  // Buckets are mutually exclusive (see bucketFor) and therefore sum to
+  // `submitted` — the invariant that makes the rate below a real rate.
   const sourceGroups = new Map();
   for (const j of allJourneys) {
     const key = j.source;
     if (!sourceGroups.has(key)) {
-      sourceGroups.set(key, { source: key, submitted: 0, shortlisted: 0, rejected: 0, on_hold: 0 });
+      sourceGroups.set(key, {
+        source: key, submitted: 0, in_progress: 0, hired: 0, rejected: 0, on_hold: 0, closed_other: 0,
+      });
     }
     const entry = sourceGroups.get(key);
     entry.submitted += 1;
-    if (j.current_stage_status === 'approved' || !j.final_outcome) entry.shortlisted += 1;
-    if (j.current_stage_status === 'rejected' || j.final_outcome === 'closure_rejected') entry.rejected += 1;
-    if (j.current_stage_status === 'hold') entry.on_hold += 1;
+    entry[bucketFor(j)] += 1;
   }
   const sourceOfHire = [...sourceGroups.values()].map((s) => ({
     ...s,
-    shortlist_rate: s.submitted > 0 ? Math.round((s.shortlisted / s.submitted) * 100) : 0,
+    hire_rate: s.submitted > 0 ? Math.round((s.hired / s.submitted) * 100) : 0,
   }));
 
   return {
     tiles: {
       active_in_pipeline: activeInPipeline,
       awaiting_feedback: awaitingFeedback,
+      awaiting_feedback_cards: awaitingFeedbackCards,
       on_hold_over_threshold: onHoldOverThreshold,
       hold_threshold_days: holdThresholdDays,
       offers_pending: offersPending,
     },
-    funnel: { mrf_id: funnelMrfId, mrf_label: funnelMrfLabel, stages: funnel },
+    funnel: {
+      mrf_id: funnelMrfId,
+      mrf_label: funnelMrfLabel,
+      stages: funnel,
+      // auto_selected tells the UI to say the requisition was CHOSEN for the
+      // user (busiest one) rather than requested — an auto-pick presented as a
+      // deliberate one reads as "the" funnel instead of "a" funnel.
+      auto_selected: funnelAutoSelected,
+      available_mrfs: availableMrfs,
+    },
     // Ranked tables are capped to `topN` (10 on screen); an export passes
     // topN: null and gets the complete list here.
     stuckCandidates: stuckCandidatesTop,

@@ -1,7 +1,7 @@
 # Phase 3 — Module Status & Delivery Scope
 
 **Date:** 2026-08-06 · **For:** RT / PM
-**Companion documents:** [Production deployment runbook](../deployment/PHASE3-PRODUCTION-DEPLOYMENT.md) · [Code review & test report](PHASE3-CODE-REVIEW-2026-08-06.md) · [Coverage audit](PHASE3-COVERAGE-AUDIT.md)
+**Companion documents:** [Production deployment runbook](../deployment/PHASE3-PRODUCTION-DEPLOYMENT.md) · [Code review & test report](PHASE3-CODE-REVIEW-2026-08-06.md) · [Coverage audit](PHASE3-COVERAGE-AUDIT.md) · [Recruitment Analytics audit](../Recruitment-Analytics.md)
 
 ---
 
@@ -107,6 +107,7 @@ Two of the four screens and one of the four decisions are also closed — see §
 | ~~Stage → email template mapping screen~~ | ✅ **Built in M6** — *Outcome Emails* tab on the Pipeline Configuration screen. Unmapped pairs are shown too, since they are the ones falling back to the generic template. |
 | "Amend offer decision" screen | Correcting a recorded acceptance/rejection needs a developer. |
 | Free/busy availability display | The scheduling window does not yet show when the interviewer is busy. |
+| Recruitment Analytics corrections | Six metrics on the Analytics page are wrong. Most notably "Awaiting feedback" is hardcoded to `0` because the code still assumes M3a is unbuilt — it has shipped, so that tile reports zero over real outstanding scorecards. Full audit and plan: [Recruitment Analytics](../Recruitment-Analytics.md). |
 
 M6 also added an **Email Routing** tab, closing a gap nobody had listed: who
 receives each kind of mail (`email_recipients.<flowKey>`) lived in `rpa_settings`

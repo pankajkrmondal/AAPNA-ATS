@@ -37,12 +37,22 @@ const pipelineService = {
   /**
    * CSV of one analytics table — the COMPLETE ranked list, where the screen
    * shows only the top 10.
+   *
+   * `config.params` carries the same analysis filters the screen is showing
+   * (mrf_id / *_days). They are merged with the table key rather than replacing
+   * it, so the CSV matches the filtered view instead of silently exporting the
+   * unfiltered set — the toast promises the file matches what is on screen.
+   *
    * @param {string} table - funnel | stuck | rejection_reasons | time_to_hire
    *                       | vendor_performance | source_of_hire
-   * @param {Object} [config]
+   * @param {Object} [config] - blob/timeout config, plus optional `params`
    */
   exportAnalytics(table, config = {}) {
-    return api.get('/pipeline/analytics/export', { params: { table }, ...config });
+    const { params: analysisParams = {}, ...rest } = config;
+    return api.get('/pipeline/analytics/export', {
+      params: { table, ...analysisParams },
+      ...rest,
+    });
   },
 
   /** @returns {Promise<{ data: Array }>} admin-configurable stage list */

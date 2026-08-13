@@ -27,6 +27,21 @@ import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 /** Days a scorecard link stays valid after it is emailed. */
 const TOKEN_TTL_DAYS = 7;
 
+/**
+ * rpa_interview_scorecard.status lifecycle.
+ *
+ * Note that PENDING → EXPIRED is applied LAZILY, in getScorecardByToken(), the
+ * first time someone opens a stale link — there is no sweep job. So a card that
+ * is never opened keeps status='pending' indefinitely, past token_expires_at.
+ * Anything counting outstanding cards must therefore bound on token_expires_at
+ * as well as status, or it will count dead links forever.
+ */
+export const SCORECARD_STATUS = Object.freeze({
+  PENDING: 'pending',
+  SUBMITTED: 'submitted',
+  EXPIRED: 'expired',
+});
+
 /** Human label for a stage, from the admin-editable rpa_pipeline_stages table. */
 async function stageLabelFor(stageKey) {
   const row = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: stageKey } });

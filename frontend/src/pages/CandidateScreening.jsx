@@ -61,6 +61,7 @@ import { useApprovedRoles, useRoleCandidates, screeningKeys } from '../hooks/use
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 import ExportButton from '../components/common/ExportButton';
+import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 
 const { Title, Text, Paragraph } = Typography;
@@ -1486,41 +1487,9 @@ export default function CandidateScreening() {
           </div>
         )}
 
-        {/* Loading spinner viewport overlay */}
-        {loadingCandidates && createPortal(
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'var(--overlay-scrim)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 11000,
-          }}>
-            <Card
-              bordered={false}
-              style={{
-                background: 'var(--colorBgElevated)',
-                padding: '16px 32px',
-                borderRadius: '16px',
-                boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-                border: '1px solid var(--color-primary-border)',
-              }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                <Spin size="large" />
-                <Text strong style={{ color: 'var(--color-primary)', fontSize: 15 }}>
-                  Matching and scoring candidates...
-                </Text>
-              </div>
-            </Card>
-          </div>,
-          document.body
-        )}
+        {/* Loading spinner viewport overlay. The markup moved to the shared
+            LoadingOverlay so the Analytics page shows an identical wait. */}
+        <LoadingOverlay open={loadingCandidates} message="Matching and scoring candidates..." />
 
         {loadingCandidates ? (
           <CandidateListSkeleton rows={pageSize > 10 ? 6 : 4} />
@@ -1942,43 +1911,11 @@ export default function CandidateScreening() {
       {/* Full-page blocker while the shortlist/reject request (incl. email sends) runs.
           Rendered via portal to <body> — antd's `fullscreen` Spin uses position:fixed
           in place, which ancestor transforms clip to a sub-container. */}
-      {isShortlisting && createPortal(
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'var(--overlay-scrim)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 11000,
-        }}>
-          <Card
-            bordered={false}
-            style={{
-              background: 'var(--colorBgElevated)',
-              padding: '16px 32px',
-              borderRadius: '16px',
-              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-              border: '1px solid var(--color-primary-border)',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-              <Spin size="large" />
-              <Text strong style={{ color: 'var(--color-primary)', fontSize: 15 }}>
-                Processing candidates...
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                This may take a few seconds. Please wait.
-              </Text>
-            </div>
-          </Card>
-        </div>,
-        document.body
-      )}
+      <LoadingOverlay
+        open={isShortlisting}
+        message="Processing candidates..."
+        hint="This may take a few seconds. Please wait."
+      />
 
       {/* Sliding Candidate Insights Drawer */}
       <Drawer

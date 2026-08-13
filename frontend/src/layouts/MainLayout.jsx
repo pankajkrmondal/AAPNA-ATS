@@ -120,7 +120,6 @@ const BREADCRUMB_MAP = {
   'candidate-pipeline-prototype': 'Candidate Pipeline (Demo — mock data)',
   pipeline: 'Candidate Pipeline',
   analytics: 'Recruitment Analytics',
-  'analytics-legacy': 'Recruitment Screening Analytics (Legacy)',
   email: 'Email Template Management',
   settings: 'Reminder Settings',
 };
