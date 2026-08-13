@@ -166,19 +166,24 @@ export default function DeliveryMonitoring() {
         <Col>{pollerSummary}</Col>
         <Col>
           <Space>
-            <Select
-              size="small"
-              value={days}
-              onChange={setDays}
-              options={[
-                { value: 7, label: 'Last 7 days' },
-                { value: 30, label: 'Last 30 days' },
-                { value: 90, label: 'Last 90 days' },
-              ]}
-            />
-            <Button size="small" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
-              Refresh
-            </Button>
+            <Tooltip title="How far back these email figures look. Every count and both tables below cover only this period — widen it to see older sends and failures.">
+              <Select
+                size="small"
+                value={days}
+                onChange={setDays}
+                options={[
+                  { value: 7, label: 'Last 7 days' },
+                  { value: 30, label: 'Last 30 days' },
+                  { value: 90, label: 'Last 90 days' },
+                ]}
+                style={{ cursor: 'help' }}
+              />
+            </Tooltip>
+            <Tooltip title="Re-checks the mail records now. Email figures are not live — use this after a send to see whether it went out or failed.">
+              <Button size="small" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
+                Refresh
+              </Button>
+            </Tooltip>
           </Space>
         </Col>
       </Row>
@@ -238,6 +243,7 @@ export default function DeliveryMonitoring() {
             style={PANEL_STYLE}
             extra={(
               <ExportButton
+                tooltip="Downloads sent and failed counts for every kind of email in this period — useful for spotting one template failing while the rest are fine."
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', days, cfg)}
                 fallbackName="AAPNA-ATS_Email-Delivery-By-Type.csv"
                 rowCount={data?.by_type?.length ?? null}
@@ -265,6 +271,7 @@ export default function DeliveryMonitoring() {
             style={PANEL_STYLE}
             extra={(
               <ExportButton
+                tooltip="Downloads every failed send in this period with its recipient and the full error message — the file to attach when reporting an email problem."
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', days, cfg)}
                 fallbackName="AAPNA-ATS_Email-Delivery-Failures.csv"
                 rowCount={data?.recent_failures?.length ?? null}

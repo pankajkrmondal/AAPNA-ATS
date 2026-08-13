@@ -13,7 +13,8 @@ import {
   message,
   Empty,
   Table,
-  Select
+  Select,
+  Tooltip
 } from 'antd';
 import {
   TeamOutlined,
@@ -190,14 +191,16 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {...ACCENT.negative}
               />
               <div style={{ padding: '6px 24px 0' }}>
-                <Select
-                  size="small"
-                  variant="borderless"
-                  value={params.hold_threshold_days}
-                  onChange={(v) => onParamsChange({ hold_threshold_days: v })}
-                  options={HOLD_THRESHOLD_OPTIONS}
-                  style={{ marginLeft: -11 }}
-                />
+                <Tooltip title="How old a hold has to be before it is counted above. At 30 days the tile shows only candidates parked on hold for more than 30 days — the ones likely to need chasing. Lower it to catch holds sooner; raise it to see only the worst cases. Affects this tile only.">
+                  <Select
+                    size="small"
+                    variant="borderless"
+                    value={params.hold_threshold_days}
+                    onChange={(v) => onParamsChange({ hold_threshold_days: v })}
+                    options={HOLD_THRESHOLD_OPTIONS}
+                    style={{ marginLeft: -11, cursor: 'help' }}
+                  />
+                </Tooltip>
               </div>
             </div>
           )}
@@ -232,18 +235,20 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 showing the requisition with the most candidates
               </Text>
             )}
-            <Select
-              size="small"
-              showSearch
-              optionFilterProp="label"
-              style={{ minWidth: 260 }}
-              value={funnel.mrf_id ?? undefined}
-              onChange={(v) => onParamsChange({ mrf_id: v })}
-              options={availableMrfs.map((m) => ({
-                value: m.mrf_id,
-                label: `${m.label} · ${m.journey_count}`,
-              }))}
-            />
+            <Tooltip title="Which requisition this funnel shows. The funnel covers one role at a time — the number after each name is how many candidates it has. Type to search. Affects the funnel only; the tiles and tables below cover every requisition.">
+              <Select
+                size="small"
+                showSearch
+                optionFilterProp="label"
+                style={{ minWidth: 260 }}
+                value={funnel.mrf_id ?? undefined}
+                onChange={(v) => onParamsChange({ mrf_id: v })}
+                options={availableMrfs.map((m) => ({
+                  value: m.mrf_id,
+                  label: `${m.label} · ${m.journey_count}`,
+                }))}
+              />
+            </Tooltip>
           </Space>
         )}
       >
@@ -315,14 +320,17 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             style={PANEL_STYLE}
             extra={(
               <Space size={8}>
-                <Select
-                  size="small"
-                  value={params.stuck_threshold_days}
-                  onChange={(v) => onParamsChange({ stuck_threshold_days: v })}
-                  options={STUCK_THRESHOLD_OPTIONS}
-                  style={{ width: 100 }}
-                />
+                <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage — notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
+                  <Select
+                    size="small"
+                    value={params.stuck_threshold_days}
+                    onChange={(v) => onParamsChange({ stuck_threshold_days: v })}
+                    options={STUCK_THRESHOLD_OPTIONS}
+                    style={{ width: 100, cursor: 'help' }}
+                  />
+                </Tooltip>
                 <ExportButton
+                  tooltip="Downloads every candidate stuck past the day threshold — name, stage, days waiting and status — so you can chase them offline."
                   request={(cfg) => pipelineService.exportAnalytics('stuck', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Stuck-Candidates.csv"
                   rowCount={data?.stuckCandidates?.length ?? null}
@@ -389,14 +397,17 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             style={PANEL_STYLE}
             extra={(
               <Space size={8}>
-                <Select
-                  size="small"
-                  value={params.rejection_window_days}
-                  onChange={(v) => onParamsChange({ rejection_window_days: v })}
-                  options={REJECTION_WINDOW_OPTIONS}
-                  style={{ width: 100 }}
-                />
+                <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
+                  <Select
+                    size="small"
+                    value={params.rejection_window_days}
+                    onChange={(v) => onParamsChange({ rejection_window_days: v })}
+                    options={REJECTION_WINDOW_OPTIONS}
+                    style={{ width: 100, cursor: 'help' }}
+                  />
+                </Tooltip>
                 <ExportButton
+                  tooltip="Downloads why candidates were rejected in the selected window — each reason, how often it occurred, and the stage it happens at most."
                   request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Rejection-Reasons.csv"
                   rowCount={data?.rejectionReasons?.length ?? null}
@@ -515,6 +526,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
               <Space size={8}>
                 <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
                 <ExportButton
+                  tooltip="Downloads each vendor's candidates — how many are in the pipeline, hired and rejected — for comparing vendor quality."
                   request={(cfg) => pipelineService.exportAnalytics('vendor_performance', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Vendor-Performance.csv"
                   rowCount={vendorPerformance?.length ?? null}
@@ -565,6 +577,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
             <ExportButton
+              tooltip="Downloads how each intake route converts — candidates submitted, in progress, hired, rejected and on hold, per source."
               request={(cfg) => pipelineService.exportAnalytics('source_of_hire', { ...cfg, params })}
               fallbackName="AAPNA-ATS_Pipeline-Source-Of-Hire.csv"
               rowCount={sourceOfHire?.length ?? null}
@@ -903,6 +916,7 @@ export default function Analytics() {
                       Role summary
                     </SectionTitle>
                     <ExportButton
+                      tooltip="Downloads one row per role — shortlisted, rejected, on-hold and total candidates for every requisition."
                       request={(cfg) => screeningService.exportRoleSummary(cfg)}
                       fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
                       rowCount={roleStats.length}
