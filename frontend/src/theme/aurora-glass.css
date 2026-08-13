@@ -8,9 +8,9 @@
    SCOPED TO `.ats-v2`, which MainLayout puts on its outer <Layout> for the
    dashboard route only. That scope is load-bearing: `.glass`, `.glass-card` and
    `.glass-sidebar` are also used by CandidateDetail, CandidateScreening,
-   Analytics, AnalyticsLegacy and LoadingSkeleton — screens with no aurora behind
-   them, where heavier translucency would read as washed out. Nothing here may be
-   written unscoped, with one deliberate exception noted at .premium-stat-card.
+   Analytics and LoadingSkeleton — screens with no aurora behind them, where
+   heavier translucency would read as washed out. Nothing here may be written
+   unscoped, with one deliberate exception noted at .premium-stat-card.
 
    To roll out app-wide: drop the route check in MainLayout, not the scope here.
 
