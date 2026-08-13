@@ -27,6 +27,8 @@
     "zeko:cookie:prod": "cross-env NODE_ENV=production node scratch/run_zeko_sync.js cookie",
     "zeko:jobs:prod": "cross-env NODE_ENV=production node scratch/run_zeko_sync.js jobs",
     "zeko:results:prod": "cross-env NODE_ENV=production node scratch/run_zeko_sync.js results",
+    "report:experience:staging": "cross-env NODE_ENV=staging node scripts/report-experience-anomalies.js",
+    "report:experience:prod": "cross-env NODE_ENV=production node scripts/report-experience-anomalies.js",
     "queue:worker": "node src/workers/resumeWorker.js",
     "test": "jest --passWithNoTests",
     "test:unit": "node --test \"src/tests/**/*.test.js\"",

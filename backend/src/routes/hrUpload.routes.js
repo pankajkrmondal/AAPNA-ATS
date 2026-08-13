@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
-import { authenticate, checkModuleAccess } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireStaff } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as hrUploadController from '../controllers/hrUpload.controller.js';
 
@@ -46,6 +46,9 @@ const upload = multer({
 // hr_manual_upload module toggle (managed in the Admin Portal). Mirrors the
 // screening & vendor route guards.
 router.use(authenticate);
+// Internal staff only (M6). Vendors upload through /api/vendor/upload, which
+// attributes and scopes what they send; this route does neither.
+router.use(requireStaff);
 router.use(checkModuleAccess('hr_manual_upload'));
 
 // ── HR Upload APIs ────────────────────────────────────────────────────

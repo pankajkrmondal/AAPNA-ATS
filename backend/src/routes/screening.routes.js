@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import * as screeningController from '../controllers/screening.controller.js';
-import { authenticate, checkModuleAccess } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireStaff } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 
 const router = Router();
 
 // Require authentication for all screening actions
 router.use(authenticate);
+
+// Internal staff only (M6). Screening searches the whole candidate database
+// across every vendor, so the module toggle alone is not a sufficient guard.
+router.use(requireStaff);
 
 // Middleware to check if user has access to candidate screening module
 router.use(checkModuleAccess('candidate_screening'));

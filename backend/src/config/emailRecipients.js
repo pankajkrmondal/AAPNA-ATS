@@ -108,9 +108,15 @@ const DEFAULTS = {
   manualReply: { to: '', cc: '', dynamic: true },
   // Phase 3 stage engine (Module 1): every stage×outcome notification and the
   // ad-hoc per-candidate override, dispatched by stageNotification.service.js.
-  // Prod -> candidate; vendor cc (status-only, Q5) is attached by the caller,
-  // not resolved here.
+  // Prod -> candidate. No vendor cc: the vendor half of Q5 is its own send
+  // under `vendorStatus` below, so the candidate's body has no path to a vendor.
   stageOutcome: { to: '', cc: '', dynamic: true },
+  // Phase 3 M6: the vendor's status-only notification, dispatched by
+  // vendorNotification.service.js. Prod -> the owning vendor; non-prod -> test
+  // inbox like every other external recipient. Deliberately NOT in
+  // OPERATOR_ADDRESSED: a vendor is an outside party who never asked to be
+  // mailed from staging.
+  vendorStatus: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */
@@ -238,6 +244,39 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
     : entry.to;
 
   return { to: to || '', cc: entry.cc || '' };
+}
+
+/**
+ * Every known flow key with its current routing, for the admin Flow Keys screen
+ * (M6, 2026-08-12).
+ *
+ * These rows have always been editable in principle — `loadEmailRecipients()`
+ * reads them from rpa_settings — but only by someone with a SQL client, since
+ * no API or screen ever exposed them. That made "who receives the MRF approval
+ * request" a developer task, and it is the third leg of RT's "changeable
+ * without development" ask alongside templates and pipeline config.
+ *
+ * `dynamic` and `redirectExempt` are reported so the screen can explain why a
+ * static `to` is empty (it is resolved per-send) and why some flows still reach
+ * real inboxes on staging — both look like misconfiguration otherwise.
+ *
+ * @returns {Array<{ flowKey, to, cc, dynamic, redirectExempt }>}
+ */
+export function describeFlowKeys() {
+  return Object.entries(recipients)
+    .map(([flowKey, entry]) => ({
+      flowKey,
+      to: entry.to || '',
+      cc: entry.cc || '',
+      dynamic: !!entry.dynamic,
+      redirectExempt: NEVER_REDIRECT.has(flowKey) || OPERATOR_ADDRESSED.has(flowKey),
+    }))
+    .sort((a, b) => a.flowKey.localeCompare(b.flowKey));
+}
+
+/** True when `flowKey` is one this app actually sends under. */
+export function isKnownFlowKey(flowKey) {
+  return Object.prototype.hasOwnProperty.call(recipients, flowKey);
 }
 
 /**

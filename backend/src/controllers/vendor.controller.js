@@ -41,10 +41,18 @@ export const getVendorCandidates = catchAsync(async (req, res) => {
 
   // Vendors are locked to their own email; staff scope the list to the vendor
   // they've selected (mirrors getVendorDashboard).
+  //
+  // The scoping runs through candidateService.enforceVendorScope() — the same
+  // helper the CSV export uses — rather than a second hand-rolled copy of the
+  // rule. Two implementations of "which vendor is this caller allowed to see"
+  // is exactly how the list and the export drift apart, which is what let a
+  // vendor token read the whole candidate table before b671236.
+  const scoped = candidateService.enforceVendorScope(
+    { vendorEmail: (req.query.vendorEmail || '').trim() },
+    req.user,
+  );
   const isVendor = (req.user.role || '').toLowerCase() === 'vendor';
-  const vendorEmail = isVendor
-    ? req.user.email
-    : (req.query.vendorEmail || '').trim();
+  const vendorEmail = (scoped.vendorEmail || '').trim();
 
   if (isVendor && !vendorEmail) {
     throw new AppError('Vendor email is required for listing candidates.', 400);
@@ -133,12 +141,16 @@ export const getVendorDashboard = catchAsync(async (req, res) => {
     candidateService.search(recentFilter, 1, 5, 'createdAt', 'desc'),
   ]);
 
+  // Real stage per recent candidate (M6). Candidates with no journey come back
+  // stage_source:'legacy' and the screen falls back to classifyStatus().
+  const recentWithStage = await candidateService.attachPipelineStage(recent.data);
+
   return res.status(200).json({
     status: 'success',
     message: vendorEmail ? 'Vendor dashboard retrieved' : 'All-vendors dashboard retrieved',
     data: {
       stats: { ...summary, pendingReview },
-      recentCandidates: recent.data,
+      recentCandidates: recentWithStage,
       selectedVendorEmail: vendorEmail || null,
       scope: vendorEmail ? 'vendor' : 'all',
     },

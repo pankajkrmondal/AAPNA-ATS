@@ -18,10 +18,10 @@ export async function getStats() {
     const [
       totalCandidates,
       activeMRFs,
+      pendingApprovalMRFs,
       todayUploads,
       shortlistedCount,
       aiScreenedCount,
-      funnelShortlistedCount,
       hiredCount,
     ] = await Promise.all([
       // Total candidates in rpa_cv
@@ -35,6 +35,28 @@ export async function getStats() {
       prisma.rpa_mrf.count({
         where: {
           approval_status: { in: ['pending', 'waiting', 'approved'] },
+          filled_at: null,
+        },
+      }),
+
+      // MRFs awaiting an APPROVAL decision.
+      //
+      // This exists because the dashboard was deriving "pending approval" from
+      // `GET /api/mrf?status=pending&limit=50` and taking the array length. That was
+      // wrong twice over:
+      //   1. WRONG COLUMN. buildMrfWhere() maps `status=pending` onto `mrfstatus`
+      //      (the manager's *submission* state: pending / pendingfromleader), not
+      //      `approval_status`. So a row labelled "pending approval" was counting
+      //      requisitions that had not yet been submitted. That is why the dashboard
+      //      could show "Active MRFs 21" beside "50 pending approval" — the two
+      //      numbers were reading different columns.
+      //   2. TRUNCATED. `.length` of a page capped at limit=50 can never exceed 50,
+      //      so the figure silently plateaus once there are 50+ matches.
+      // Counting it here, next to activeMRFs and with the same filled_at exclusion,
+      // keeps the two consistent by construction.
+      prisma.rpa_mrf.count({
+        where: {
+          approval_status: 'pending',
           filled_at: null,
         },
       }),
@@ -66,17 +88,6 @@ export async function getStats() {
         },
       }),
 
-      // Funnel Shortlisted: candidates shortlisted and not rejected
-      prisma.rpa_shortlisted_candidates.count({
-        where: {
-          NOT: {
-            pipeline_status: {
-              in: ['rejected', 'Rejected'],
-            },
-          },
-        },
-      }),
-
       // Hired: candidates with joined_at, offer_accepted_at or hired/joined status
       prisma.rpa_shortlisted_candidates.count({
         where: {
@@ -92,12 +103,21 @@ export async function getStats() {
     return {
       totalCandidates,
       activeMRFs,
+      pendingApprovalMRFs,
       todayUploads,
       shortlisted: shortlistedCount, // Map to frontend expected key: 'shortlisted'
       funnel: {
         sourced: totalCandidates,
         aiScreened: aiScreenedCount,
-        shortlisted: funnelShortlistedCount,
+        // ONE definition of "shortlisted" per screen.
+        //
+        // The funnel used to count "every shortlist row not explicitly rejected",
+        // while the KPI card counted "pipeline_status is shortlisted/selected". Both
+        // were labelled "Shortlisted" and rendered on the same dashboard, so the page
+        // showed two different numbers for the same word (e.g. 74 in the KPI, 78 in
+        // the funnel). The looser predicate also counted on-hold and in-progress rows
+        // as shortlisted, which overstated the funnel.
+        shortlisted: shortlistedCount,
         hired: hiredCount,
       },
     };
@@ -106,6 +126,7 @@ export async function getStats() {
     return {
       totalCandidates: 0,
       activeMRFs: 0,
+      pendingApprovalMRFs: 0,
       todayUploads: 0,
       shortlisted: 0,
       funnel: {

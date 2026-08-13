@@ -18,6 +18,53 @@ Source of truth in code:
 
 ## Update Log
 
+### 2026-08-13 — Pre-push audit: 4 issues found, not yet fixed
+Full detail: [`CHANGES-2026-08-13-vendor-audit.md`](../changelog/CHANGES-2026-08-13-vendor-audit.md).
+
+- **Closure notification is dropped when the journey is parked on Documents at
+  close time** — `notifyVendor()` applies the Documents `'never'` policy to the
+  `CLOSURE` event too, so §18's "closure notifies the vendor even for outcomes
+  silent to the candidate" does not currently hold for that combination.
+- **A JOINED closure can freeze a stale vendor's lock**: the freeze in §8 checks
+  only that `VendorEmail` is non-null, not that the lock is live or belongs to
+  the vendor who actually sourced the hire.
+- **`pipelineRow.vendor_name` is always undefined** (no such column exists on
+  `rpa_candidate_pipeline`), so every vendor email greets "Hello partner,"
+  regardless of the real vendor. Cosmetic only.
+- **`getVendorDashboard` scopes vendors with its own inline, untrimmed role
+  check** instead of `enforceVendorScope()`, unlike every other vendor-scoped
+  endpoint — contradicts this doc's §2 claim that the dashboard "runs through"
+  the shared scoping rule.
+- None of the four are covered by the 160-test unit suite (they live in the
+  call sites, not the pure functions the suite exercises). **Not yet fixed** —
+  tracked as a follow-up commit.
+
+### 2026-08-12 — M6: vendor notifications, isolation hardening, real stage tracking
+Full detail: [`CHANGES-phase3-m6-vendor.md`](../changelog/CHANGES-phase3-m6-vendor.md).
+
+- **The vendor dual-notification had never fired.** `vendorCcFor()` gated on
+  `pipeline.source === 'vendor'`, a value nothing ever wrote — so no vendor had
+  ever received a stage email, and the vendor-performance analytics table was
+  permanently empty. Vendor attribution is now stamped onto the journey by
+  `createPipelineJourney`, from the candidate's **live 90-day lock**, read once
+  at creation and snapshotted (§17).
+- **The vendor now gets its own email, not a cc.** New
+  `vendorNotification.service.js` with no subject/body parameter: every word is
+  generated from a template plus a fixed status vocabulary. The old cc would have
+  forwarded the candidate's entire body, including recruiter-typed ad-hoc text.
+- **Q29 answered:** vendors hear about every stage, with a content-free
+  milestone line at **Offer** and **nothing at all** at Documents (§18).
+- **Isolation:** `pipeline` / `screening` / `hrUpload` routes had no role floor —
+  a vendor account with the module toggle on could read the whole board. New
+  `requireStaff` guard on all three (§2).
+- **The 90-day lock did not actually lock.** `mergeDuplicates` let an incoming
+  vendor overwrite the owner regardless of the window; the documented §8 rule is
+  now implemented. Closure freezes the lock on a successful hire (§8).
+- **Cooling-off** is now surfaced as an advisory on the upload dashboard when a
+  duplicate matches a recently-rejected candidate (§19).
+- **Vendor Dashboard** reads real stages from `rpa_candidate_pipeline`, with
+  `classifyStatus(FinalStatus)` kept as the permanent legacy fallback (§9).
+
 ### 2026-06-26 — Premium pass refinement: quieter success + "Real-time" indicator
 - Made the premium pass more professional: **dropped the confetti** (now a single refined success check)
   and replaced the loud uppercase **"LIVE"** badge with a muted **"● Real-time"** indicator (soft halo +
@@ -254,6 +301,25 @@ All `/api/vendor/*` routes require authentication. Beyond that:
 - The legacy `hr` role is treated as recruiter-tier (`ROLE_RANK.hr = 20`). Vendors are rank 10 — the lowest.
 - File constraints: only `.pdf`, `.docx`, `.zip`; max **50 MB/file**; up to **100 files** per request.
 
+**Everything outside `/api/vendor/*` is closed to vendors by role** (M6, 2026-08-12).
+`/api/pipeline`, `/api/screening` and `/api/hr-upload` each apply `requireStaff`
+(rank ≥ recruiter) *before* their module check. Until M6 they had no role floor at
+all, only `checkModuleAccess`, which answers "was this switched on for this user?"
+rather than "should this role ever have it" — so a single mis-clicked checkbox on
+a vendor account in the Admin Portal exposed the entire pipeline board: every
+candidate, every MRF, plus the outcome/closure/offer/document write endpoints.
+
+The frontend confines vendors to `/vendor-dashboard` and `/vendor`
+(`MainLayout`'s `VENDOR_ALLOWED_PATHS`), but that binds a browser, not a token —
+it was never the guard it looked like. `requireStaff` is rank-based rather than a
+role list, so a future low-privilege role is denied by default.
+
+Within the vendor routes, `enforceVendorScope()` (`utils/vendorScope.js`)
+overwrites whatever `vendorEmail` a vendor's request asked for with their own,
+and forces `vendorOnly` off. The candidate list, the CSV export and the dashboard
+all run through it, so they cannot drift apart — which is how the export hole
+fixed in `b671236` opened.
+
 ### 3. Attribution — whose vendor a resume belongs to
 
 Decided at upload time:
@@ -370,7 +436,13 @@ best-effort n8n delete webhook.
 
 ### 8. The 90-day vendor lock-in (core ownership rule)
 
-Helpers: `addDaysIso(90)` sets expiry = today + 90 days; `isVendorLockActive` is true while today ≤ expiry.
+Single definition: [`utils/vendorLock.js`](../../backend/src/utils/vendorLock.js).
+`vendorLockExpiry()` returns today + 90 days as `YYYY-MM-DD`; `isVendorLockActive`
+is true while today ≤ expiry (**inclusive** of the final day — the stamp is a
+calendar date with no time component to break the tie); `activeVendorFor(cv)`
+returns the owning vendor only when there is **both** an attribution and a live
+lock. A malformed lock value fails **closed** — an unreadable date means nobody
+owns the candidate, so nobody is emailed about them.
 
 - **First save of a vendor-sourced candidate** (new insert in Scenario B, or insert-from-staging on
   merge): if it carries a vendor and has no lock → stamp a fresh 90-day lock.
@@ -381,14 +453,38 @@ Helpers: `addDaysIso(90)` sets expiry = today + 90 days; `isVendorLockActive` is
     with a fresh 90-day lock. (`"vendor attribution updated to <name> with a fresh 90-day lock"`)
   - **Incoming has no vendor** (e.g. internal HR duplicate) → existing attribution preserved as-is.
 
+> **This merge rule was documented from June but only implemented on 2026-08-12.**
+> `mergeDuplicates` copied `VendorEmail`, `vendorName` and `lockForNinetyDays`
+> through its generic field loop like any other column, so an incoming vendor
+> overwrote the owner whenever they supplied a value — and the post-merge step
+> then stamped a fresh window on top. For that period a second vendor could take
+> a placement outright, inside the window meant to prevent it.
+
+**Frozen locks (M6).** When a journey closes as **Joined**, the lock is frozen
+(`9999-12-31`) and the attribution becomes permanent. Someone we hired is not a
+lead any more, but their lock kept ticking down as if they were — once it lapsed,
+a second vendor could re-submit them and claim a placement they had no part in.
+Only `Joined` freezes: every other closure means the seat is open again and the
+candidate genuinely is back in the market.
+
 **Net rule:** whichever vendor submits a candidate first "owns" them for 90 days. A second vendor
 submitting the same candidate during that window lands in the review queue with a *different-vendor*
 alert but **cannot** seize ownership — only after the 90 days lapse can a later vendor's merge transfer it.
+
+**The lock is also the notification trigger** — see §17.
 
 ### 9. Dashboards & job tracking
 
 - **`GET /dashboard`** — vendors see their own stats; staff see an all-vendors overview, or a single
   vendor via `?vendorEmail`. Includes a `pendingReview` count (jobs with `action_required`).
+  Since M6 it also returns **real stage data** from `rpa_candidate_pipeline`: a
+  `byStage` breakdown (live stages, `closed`, `untracked`) and a per-candidate
+  `stage` + `stage_source` on the recent list. Rows the stage engine never saw
+  come back `stage_source: 'legacy'` and the screen falls back to
+  `classifyStatus(FinalStatus)`, showing **Not in pipeline** rather than
+  borrowing a stage they don't have. That fallback is permanent — anyone
+  uploaded before the stage engine, or never shortlisted, will never have a
+  journey.
 - **`GET /candidates`** — vendor's own candidates; staff get an **empty list** until they choose a vendor.
 - **`GET /jobs`** — the durable per-resume feed, **hard-scoped to `source = 'vendor_portal'`** (HR manual
   uploads never appear here). Visibility by role: **admin/superadmin** see all vendor-portal jobs;
@@ -539,6 +635,10 @@ DB changes are applied **manually in PostgreSQL** (we do not auto-create schema)
 ### 16. File map
 
 **Backend**
+- [`utils/vendorLock.js`](../../backend/src/utils/vendorLock.js) — the 90-day ownership lock: stamp, expiry, freeze, `activeVendorFor` (§8)
+- [`utils/vendorScope.js`](../../backend/src/utils/vendorScope.js) — `enforceVendorScope`, the query-scoping rule (§2)
+- [`services/vendorNotification.service.js`](../../backend/src/services/vendorNotification.service.js) — the vendor's status-only send + per-stage disclosure policy (§17–18)
+- [`middleware/auth.js`](../../backend/src/middleware/auth.js) — `requireStaff`, the role floor keeping vendors out of the staff routes (§2)
 - [`services/uploadJob.service.js`](../../backend/src/services/uploadJob.service.js) — job lifecycle + socket emits
 - [`services/hrUpload.service.js`](../../backend/src/services/hrUpload.service.js) — parsing, dedup→review queue, merge/cancel, 90-day lock, `runBatchParsing` / `dispatchBatchParsing` (shared engine)
 - [`controllers/vendor.controller.js`](../../backend/src/controllers/vendor.controller.js) — upload, attribution, jobs feed, reprocess, review actions
@@ -554,6 +654,82 @@ DB changes are applied **manually in PostgreSQL** (we do not auto-create schema)
 - [`services/socket.js`](../../frontend/src/services/socket.js) — Socket.io client singleton
 - [`services/vendorService.js`](../../frontend/src/services/vendorService.js) — API methods
 - [`components/common/NotificationBell.jsx`](../../frontend/src/components/common/NotificationBell.jsx) — live review notifications
+
+### 17. Vendor notifications — who gets told, and when (M6)
+
+A vendor is notified about a candidate's progress only when that candidate's
+journey carries `source = 'vendor'` **and** a `vendor_email`.
+
+`createPipelineJourney` stamps both, from `activeVendorFor(cv)` — i.e. from the
+live 90-day lock (§8) — **once, at journey creation**, and nothing re-reads it
+afterwards. Reading it once at that moment is what makes the rule work in both
+directions:
+
+- a vendor whose lock lapsed years ago is **not** pulled onto a candidate found
+  later by keyword search (the cc leak RT reported on 2026-07-22);
+- a lock lapsing **mid-journey** does not cut a vendor off from a journey they
+  started.
+
+Before M6 this gate was dead: `source` was only ever `'screening_shortlist'`, so
+no vendor was ever notified about anything.
+
+### 18. What a vendor is allowed to be told (Q5 / Q29)
+
+The vendor receives **their own email**, never a cc on the candidate's.
+[`vendorNotification.service.js`](../../backend/src/services/vendorNotification.service.js)
+has no subject or body parameter at all: callers pass a structured `eventType`,
+and every word is generated from a vendor template plus a fixed status
+vocabulary.
+
+That is the mechanism, not a convention. A cc'd vendor reads the whole candidate
+body — including whatever a recruiter typed into the outcome modal or the ad-hoc
+email box — so "status-only, no figures" could not be true of a cc no matter what
+the comment above it said.
+
+| Stage | Vendor is told | Why |
+|---|---|---|
+| Documents | **Nothing at all** | The stage is the candidate's personal paperwork |
+| Offer | A **content-free milestone** — "an offer has been extended", "the candidate accepted" | Q29, answered 2026-08-12. No figures, no joining date, no remarks, no letter |
+| Every other stage | The ordinary status line — stage + outcome | |
+
+Any stage an admin adds through the config screen discloses normally; a stage
+that should be sensitive must be added to `VENDOR_STAGE_POLICY` deliberately.
+
+**Coverage.** Stage outcomes, closure, ad-hoc contact (M1); Evalground invites
+(M2); interview scheduled / rescheduled / cancelled (M3); offer shared and the
+candidate's decision (M5). Documents (M4) send nothing, by construction.
+
+Closure notifies the vendor even for the outcomes that are silent to the
+candidate (`joined`, `backed_out`, …): the candidate already lived through those,
+but their vendor did not, and "did this placement land?" is the question they are
+tracking.
+
+Every vendor send is logged to `rpa_email_messages` + `rpa_email_tracking` like
+any other, so Email Delivery monitoring counts it and the conversation view shows
+exactly what the vendor was told. Recipients resolve through the `vendorStatus`
+flow key, so staging mail goes to the test inbox like every other external send.
+
+### 19. Cooling-off advisory on vendor uploads (M6)
+
+Two different windows, deliberately (`utils/rejectionCooldown.js`):
+
+- **90 days** — a *search* exclusion. A recently-rejected candidate is hidden
+  from Candidate Screening results so recruiters don't keep rediscovering them.
+- **6 months** — a *policy* gate. Creating a new pipeline journey for someone
+  rejected at Stage 1+ inside the window is refused (409).
+
+They are not reconciled because they answer different questions: the shorter one
+stops accidental rediscovery, the longer one stops deliberate re-entry. A
+candidate at month 4 is findable by name but cannot re-enter the pipeline.
+
+The 6-month gate used to fire only at shortlisting — after a recruiter had read
+the CV and decided. Vendor duplicates now carry an `rpa_upload_jobs.advisory`
+note, shown as a **Note** chip on the Upload Status table, naming the stage and
+date of the prior rejection.
+
+**Advisory, not a block.** A vendor re-submitting someone rejected in March is
+not doing anything wrong and usually has no way to know. The resume is still
+queued for review — the recruiter just gets the fact before spending time on it.
 
 ---
 

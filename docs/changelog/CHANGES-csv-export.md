@@ -137,7 +137,8 @@ cannot drift per-endpoint.
 
 | Screen | Endpoint |
 |---|---|
-| MRF | `GET /api/mrf/export` |
+| MRF — Records table | `GET /api/mrf/export` |
+| MRF — one requisition, from the details modal | `GET /api/mrf/:id/export` (see §6) |
 | Search Candidate · Dashboard · Vendor Dashboard | `GET /api/candidates/export` |
 | Candidate Pipeline | `GET /api/pipeline/export` |
 | Analytics — 4 pipeline tables | `GET /api/pipeline/analytics/export?table=…` |
@@ -189,6 +190,69 @@ pgvector columns cannot reach a file even by accident. This matters:
 `candidateService.search()` selects all ~80 `rpa_cv` columns, which is fine for
 a 20-row page and hundreds of MB unpaginated — hence a separate
 `findAllForExport()`.
+
+---
+
+## 6. Per-record export — the MRF details modal (added 2026-08-11)
+
+Everything above exports a **list**: one row per record, columns across. The MRF
+details modal needed the opposite — one requisition carrying ~65 fields, from
+`rpa_mrf_jd_send` (the request) *and* `rpa_mrf` (the form the Hiring Manager
+submitted). A 65-column single-row file is unreadable, so
+`backend/src/exports/mrfDetail.export.js` transposes it:
+
+| Section | Field | Value |
+|---|---|---|
+| Workflow | MRF Raise Status | COMPLETED |
+| New MRF Request | Min Budget (INR) | 1200000 |
+| Submitted MRF — Position | Number of Positions | 3 |
+| AI-Parsed JD Summary | Experience Range (AI) | 3 - 7 years |
+
+Sections run in modal order: `Workflow` → `New MRF Request` → the five
+`Submitted MRF — <group>` sections → `AI-Parsed JD Summary`. The last six are
+omitted entirely for a requisition the HM has not submitted, exactly as the modal
+hides that section rather than rendering empty fields.
+
+The trade-off is explicit: two of these files do not stack into a table. A
+per-record sheet is read, printed and forwarded, not pivoted.
+
+**Three things this layout changes about the shared machinery:**
+
+- **Dates are formatted in the row builder**, not by the column spec. Every value
+  shares one `Value` column, so per-column `type: 'date'` is unavailable —
+  `formatDate`/`formatDateTime` are applied as rows are built.
+- **The row-count header is suppressed.** A "row" is a *field* here, so the
+  toast would read *"Exported 61 rows."* for one MRF. The controller passes
+  `headers: { 'X-Export-Row-Count': null }`; `runExport` spreads `headers` last
+  and `sendCsv` skips null values, so `downloadFile` reports `null` and
+  `ExportButton` falls back to *"Exported CSV."* — no component change needed.
+- **Injection guarding still applies** to the `Value` column, and budgets are
+  still plain: a Prisma `Decimal` is an object, not a string, so `buildCsv` never
+  apostrophe-prefixes it (`"1200000"`).
+
+**Labels mirror the modal, which differs from the list table.** §5 notes that
+status columns carry the displayed label; the wrinkle is that MRF has *two*
+displayed labels for one column — the table shows `managersubmitted` as
+"MANAGER SUBMITTED" (`mrfStatusLabel`), the modal tag shows "COMPLETED"
+(`getWorkflowSummaryTags`). This export mirrors the modal, via its own
+`mrfRaiseLabel`/`mrfApprovalLabel`. Both mappings are commented with the surface
+they serve.
+
+**The modal's conditional fields are honoured**: `roles_responsibilities_other`,
+`mandatory_skills_other` and `good_to_have_skills_other` are emitted only when
+their gating select reads "Other". Rows retain stale text from before a select
+was changed, and the modal hides it — exporting it unconditionally would put data
+in the file that nobody can see on screen.
+
+**Not in the file** (not modal-visible): `email_body_content` / `emailbody`,
+the attachment path columns, `existing_resource_allocation`, `submitter_email`
+(already carried as "Manager Email"). **Beyond the modal**: MRF Request ID,
+Linked MRF ID, CC Email — a file that has left the app must be traceable to its
+record.
+
+`backend/src/tests/mrfDetailExport.test.js` covers the pure row builder — 12
+tests, no DB (the spec's `fetch` is the only part that touches Prisma). Suite:
+107 passing.
 
 ---
 

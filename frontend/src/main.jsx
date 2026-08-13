@@ -7,6 +7,10 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './theme/index.css';
+// Design V2 layer. Imported after index.css deliberately — it overrides the
+// base glass classes, and CSS cascade order is what makes that work without an
+// !important on every rule. Remove this one line to revert the pilot entirely.
+import './theme/aurora-glass.css';
 
 /** React Query client with sensible defaults. */
 const queryClient = new QueryClient({

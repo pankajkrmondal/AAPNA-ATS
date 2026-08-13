@@ -134,13 +134,27 @@ export default function DocumentUpload() {
   const allDone = items.length > 0 && items.every((i) => i.status === 'verified');
   const outstanding = items.filter((i) => i.status !== 'verified').length;
 
+  // "Sent everything, waiting on us" is a THIRD state, distinct from verified.
+  // Without it the candidate submitted their files and was handed back the same
+  // checklist with a greyed-out button reading "Choose your files to continue" —
+  // the toast had already faded, so nothing on the page said the upload worked.
+  // Verification is an HR action that can take days; the acknowledgement cannot
+  // wait for it.
+  const nothingStaged = stagedIds.length === 0;
+  const awaitingReview = !allDone
+    && items.length > 0
+    && nothingStaged
+    && items.every((i) => i.status === 'uploaded' || i.status === 'verified');
+
   return (
     <PublicPageShell
       title="Upload your documents"
       subtitle={
         allDone
           ? 'Everything we asked for has been received and verified.'
-          : `Share the ${outstanding} document${outstanding === 1 ? '' : 's'} listed below so we can move your application forward.`
+          : awaitingReview
+            ? 'Everything has been received. Our team is reviewing it now.'
+            : `Share the ${outstanding} document${outstanding === 1 ? '' : 's'} listed below so we can move your application forward.`
       }
     >
       {(view?.candidate_name || view?.position) && (
@@ -179,6 +193,20 @@ export default function DocumentUpload() {
         />
       ) : (
         <>
+          {/* Acknowledgement stays ABOVE the checklist rather than replacing it —
+              a rejected document later flips one row back to actionable, and the
+              candidate needs to be able to see and replace it. */}
+          {awaitingReview && (
+            <Alert
+              type="success"
+              showIcon
+              icon={<CheckCircleOutlined />}
+              message="Documents received — thank you."
+              description="Everything on your checklist has been submitted. Our recruitment team will review it and get back to you. You can close this page; the link stays valid if we need anything else."
+              style={{ marginBottom: 18 }}
+            />
+          )}
+
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             {items.map((item) => (
               <DocumentRow
@@ -205,7 +233,7 @@ export default function DocumentUpload() {
             style={{ background: stagedIds.length ? BRAND.accent : undefined, borderColor: stagedIds.length ? BRAND.accent : undefined, fontWeight: 600 }}
           >
             {stagedIds.length === 0
-              ? 'Choose your files to continue'
+              ? (awaitingReview ? 'Nothing left to send' : 'Choose your files to continue')
               : `Submit ${stagedIds.length} document${stagedIds.length === 1 ? '' : 's'}`}
           </Button>
         </>

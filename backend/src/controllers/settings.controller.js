@@ -17,6 +17,7 @@ import {
   restartInterviewOccurrenceJob,
 } from '../jobs/interviewOccurrence.js';
 import { isAdminTier } from '../config/roles.js';
+import { describeFlowKeys, isKnownFlowKey, reloadEmailRecipients } from '../config/emailRecipients.js';
 import {
   getAssessmentAutomationSettings,
   saveAssessmentAutomationSettings,
@@ -326,5 +327,70 @@ export const saveAssessmentAutomation = catchAsync(async (req, res) => {
     assessment_deadline_days: result.deadlineDays,
     assessment_auto_advance_enabled: result.autoAdvanceEnabled,
   }, 'Assessment automation settings updated successfully');
+});
+
+/**
+ * @desc    List every email flow key and where its mail currently goes
+ * @route   GET /api/settings/flow-keys
+ * @access  Private — admin-tier only. Recipient lists carry internal staff
+ *          addresses, so this is not a read a recruiter needs.
+ */
+export const getFlowKeys = catchAsync(async (req, res) => {
+  if (!isAdminTier(req.user?.role)) {
+    throw new AppError('Admin access required to view email routing.', 403);
+  }
+  return success(res, describeFlowKeys(), 'Email flow keys retrieved successfully');
+});
+
+/**
+ * @desc    Update the to/cc for one email flow key
+ * @route   POST /api/settings/flow-keys
+ * @access  Private — admin-tier only.
+ *
+ * Writes the same `email_recipients.<flowKey>.to` / `.cc` rows
+ * loadEmailRecipients() reads at boot, then reloads the in-memory map so the
+ * change takes effect without a restart — the reason this could not simply be
+ * "let an admin run the UPDATE themselves".
+ *
+ * Unknown keys are refused: a typo would otherwise write a row that silently
+ * does nothing, which is worse than an error because it looks like it worked.
+ */
+export const saveFlowKey = catchAsync(async (req, res) => {
+  if (!isAdminTier(req.user?.role)) {
+    throw new AppError('Admin access required to change email routing.', 403);
+  }
+
+  const { flowKey, to = '', cc = '' } = req.body;
+  if (!flowKey) throw new AppError('flowKey is required.', 400);
+  if (!isKnownFlowKey(flowKey)) {
+    throw new AppError(`"${flowKey}" is not a flow this system sends under.`, 400);
+  }
+
+  // Light validation only. These lists are comma-separated and are routinely
+  // left blank on purpose (every dynamic flow resolves its recipient per-send),
+  // so an empty value is valid input, not a missing one.
+  const invalid = [to, cc]
+    .flatMap((list) => String(list).split(',').map((s) => s.trim()).filter(Boolean))
+    .filter((addr) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr));
+  if (invalid.length > 0) {
+    throw new AppError(`Not a valid email address: ${invalid.join(', ')}.`, 400);
+  }
+
+  await prisma.$transaction([
+    prisma.rpa_settings.upsert({
+      where: { key: `email_recipients.${flowKey}.to` },
+      create: { key: `email_recipients.${flowKey}.to`, value: String(to).trim() },
+      update: { value: String(to).trim() },
+    }),
+    prisma.rpa_settings.upsert({
+      where: { key: `email_recipients.${flowKey}.cc` },
+      create: { key: `email_recipients.${flowKey}.cc`, value: String(cc).trim() },
+      update: { value: String(cc).trim() },
+    }),
+  ]);
+
+  await reloadEmailRecipients();
+
+  return success(res, describeFlowKeys().find((f) => f.flowKey === flowKey), 'Email routing updated successfully');
 });
 

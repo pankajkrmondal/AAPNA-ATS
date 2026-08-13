@@ -22,11 +22,12 @@ import { finalStatusLabelFor } from '../config/pipelineStages.js';
  *     -> hard failure (logged, never thrown — a missing template must not
  *        block the stage-outcome transaction that already committed).
  *
- * Vendor dual-notification (Q5, RT 2026-07-13): vendor-sourced candidates get
- * a STATUS-ONLY cc — no figures, no attachments. The dispatcher itself does not
- * decide sensitivity; callers must not route Offer/Document-stage sends through
- * this dispatcher with anything beyond the confirmed status-only copy (Q29 is
- * still open on the bare-line-vs-nothing question for those two stages).
+ * Vendor dual-notification (Q5): this dispatcher is the CANDIDATE half only.
+ * The vendor half moved out to vendorNotification.service.js in M6
+ * (2026-08-12), because a cc could not deliver what Q5 promised — a cc'd vendor
+ * reads the whole candidate body, including anything a recruiter typed into the
+ * outcome modal. Nothing here takes a vendor address any more, so no candidate
+ * body can reach a vendor by any route through this file.
  *
  * Reuses the same building blocks as the legacy `updateCandidateStatus`
  * (screening.service.js ~line 2391): compileTemplate / sendGraphEmail /
@@ -175,7 +176,6 @@ export async function previewOutcomeEmail({ stageKey, outcomeKey, stageLabel, ca
  * @param {string} params.outcomeKey
  * @param {string} params.stageLabel - human label for {{stage_label}} interpolation
  * @param {{name: string, email: string}} params.candidate
- * @param {string|null} [params.vendorEmail] - cc'd status-only when vendor-sourced (Q5)
  * @param {string} [params.positionLabel]
  * @returns {Promise<{ sent: boolean, error: string|null, messageId: number|null }>}
  */
@@ -185,7 +185,6 @@ export async function sendStageOutcomeEmail({
   outcomeKey,
   stageLabel,
   candidate,
-  vendorEmail = null,
   positionLabel = 'the role',
   subjectOverride = null,
   bodyOverride = null,
@@ -208,16 +207,6 @@ export async function sendStageOutcomeEmail({
     // 'stageOutcome' flow key: dynamic recipient (candidate), staging redirect honored
     // automatically via emailRecipients.js's non-production rule.
     const { to: toEmail } = resolveRecipients('stageOutcome', candidate.email);
-    // Vendor gets a separate status-only cc, per Q5 — NOT merged into the same
-    // send as a full-content cc; this dispatcher only ever attaches it here,
-    // which callers must ensure is appropriate for the stage (never Offer/Documents
-    // until Q29 is answered).
-    //
-    // The cc does NOT come from resolveRecipients(), which clears cc outside
-    // production — so without this it would put a real external vendor address
-    // back on a staging send. Dropped explicitly here at the source; the
-    // sendGraphEmail guard would also catch it, but the intent belongs here.
-    const ccEmail = vendorEmail && !config.email.redirectInNonProd ? vendorEmail : '';
 
     if (!toEmail) {
       const msg = describeEmailError('No valid recipients');
@@ -255,7 +244,6 @@ export async function sendStageOutcomeEmail({
     const sendResult = await sendGraphEmail({
       sender: config.microsoft.defaultSender,
       to: toEmail,
-      cc: ccEmail,
       subject,
       html: injectTrackingPixel(brandedHtml, trackingToken),
     });
@@ -303,19 +291,23 @@ export async function sendStageOutcomeEmail({
 /**
  * Ad-hoc per-candidate email override (RT ask, 2026-07-14): a one-off send
  * that either uses a template as-is or a fully recruiter-edited subject/body.
- * Uses the same dispatcher plumbing (vendor cc rule, rpa_email_log/tracking,
- * staging redirect) as sendStageOutcomeEmail. Not wired to a route yet — the
- * pipeline.controller.js POST /:id/email endpoint calls this directly.
+ * Uses the same dispatcher plumbing (rpa_email_log/tracking, staging redirect)
+ * as sendStageOutcomeEmail. Called by pipeline.controller.js POST /:id/email.
+ *
+ * This is the send that made the old vendor cc indefensible: the body is
+ * whatever a recruiter typed, so cc'ing a vendor here could put salary
+ * negotiation or joining terms in front of them with nothing in the way. The
+ * vendor now gets a generated status line from vendorNotification.service.js
+ * instead, and this function has no vendor parameter at all.
  *
  * @param {object} params
  * @param {object} params.pipelineRow
  * @param {{name: string, email: string}} params.candidate
  * @param {string} params.subject
  * @param {string} params.body
- * @param {string|null} [params.vendorEmail]
  * @returns {Promise<{ sent: boolean, error: string|null, messageId: number|null }>}
  */
-export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject, body, vendorEmail = null }) {
+export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject, body }) {
   if (!candidate?.email) {
     return { sent: false, error: 'No candidate email on file.', messageId: null };
   }
@@ -333,8 +325,6 @@ export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject,
     const sendResult = await sendGraphEmail({
       sender: config.microsoft.defaultSender,
       to: toEmail,
-      // Same non-prod vendor-cc rule as sendStageOutcomeEmail above.
-      cc: vendorEmail && !config.email.redirectInNonProd ? vendorEmail : '',
       subject,
       html: injectTrackingPixel(brandedHtml, trackingToken),
     });

@@ -656,8 +656,11 @@ const INTERVIEW_SCHED_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
 <p>Please be available a few minutes early. Reply to this email if the time does not work for you.</p>
 <p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
 
-/** Interviewer/panel-facing notice. */
-const INTERVIEW_SCHED_PANEL_BODY = `<p>Hi,</p>
+/** Interviewer/panel-facing notice.
+ *  {{interviewer_name}} resolves to the booking's interviewer, to "all" when more
+ *  than one mailbox was invited, and to "there" when no name was captured — see
+ *  interviewerGreeting() in services/interviewSchedule.service.js. It is never blank. */
+const INTERVIEW_SCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
 <p>You are scheduled to take <strong>{{stage_label}}</strong> for <strong>{{candidate_name}}</strong> ({{position}}).</p>
 <p><strong>When:</strong> {{interview_when}}<br/><strong>Duration:</strong> {{duration}} minutes<br/>
    <strong>Candidate email:</strong> {{candidate_email}}</p>
@@ -672,7 +675,7 @@ const INTERVIEW_CANCEL_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
 <p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
 
 /** Interviewer/panel-facing cancellation notice. */
-const INTERVIEW_CANCEL_PANEL_BODY = `<p>Hi,</p>
+const INTERVIEW_CANCEL_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
 <p>The <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) scheduled for {{interview_when}} has been cancelled.</p>
 {{reason_line}}
 <p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
@@ -688,7 +691,7 @@ const INTERVIEW_RESCHED_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
 <p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
 
 /** Interviewer/panel-facing reschedule notice. */
-const INTERVIEW_RESCHED_PANEL_BODY = `<p>Hi,</p>
+const INTERVIEW_RESCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
 <p>The <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) has been <strong>rescheduled</strong>.</p>
 <p><strong>Previous time:</strong> <span style="text-decoration:line-through;color:#888;">{{previous_when}}</span><br/>
    <strong>New time:</strong> {{interview_when}}<br/>
@@ -909,7 +912,7 @@ const TEMPLATES = [
       category: 'interview',
       subject: 'Interview panel — {{stage_label}}: {{candidate_name}}',
       body_html: INTERVIEW_SCHED_PANEL_BODY,
-      placeholders: ['candidate_name', 'candidate_email', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line'],
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line'],
       is_active: true,
     },
   },
@@ -931,7 +934,7 @@ const TEMPLATES = [
       category: 'interview',
       subject: 'Interview cancelled — {{stage_label}}: {{candidate_name}}',
       body_html: INTERVIEW_CANCEL_PANEL_BODY,
-      placeholders: ['candidate_name', 'position', 'stage_label', 'interview_when', 'reason_line'],
+      placeholders: ['interviewer_name', 'candidate_name', 'position', 'stage_label', 'interview_when', 'reason_line'],
       is_active: true,
     },
   },
@@ -953,7 +956,7 @@ const TEMPLATES = [
       category: 'interview',
       subject: 'Interview rescheduled — {{stage_label}}: {{candidate_name}}',
       body_html: INTERVIEW_RESCHED_PANEL_BODY,
-      placeholders: ['candidate_name', 'candidate_email', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line'],
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line'],
       is_active: true,
     },
   },
@@ -1209,6 +1212,53 @@ const TEMPLATES = [
 <p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
 <p><a href="{{pipeline_link}}">Open the Candidate Pipeline</a></p>`,
       placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
+      is_active: true,
+    },
+  },
+  // Phase 3 Module 6 — the vendor half of the Q5 dual-notification. Sent by
+  // vendorNotification.service.js as its OWN message, never as a cc on the
+  // candidate's email, so nothing a recruiter types can reach a vendor.
+  //
+  // {{status_line}} is assembled server-side from a fixed vocabulary — it is
+  // the one field an admin editing this template must leave in place, since it
+  // is the only thing that says what actually happened.
+  //
+  // Requires the category CHECK constraint to include 'vendor_status' —
+  // see backend/prisma/ddl/2026-08-12-vendor-status-templates.sql.
+  {
+    find: { name: 'Vendor — Candidate Status Update' },
+    data: {
+      name: 'Vendor — Candidate Status Update',
+      category: 'vendor_status',
+      subject: 'Candidate update — {{candidate_name}} ({{position}})',
+      body_html: `<p>Hello {{vendor_name}},</p>
+<p>An update on the candidate you submitted for the {{position}} role:</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+  <tr><td style="color:#666">Candidate</td><td><strong>{{candidate_name}}</strong></td></tr>
+  <tr><td style="color:#666">Position</td><td>{{position}}</td></tr>
+  <tr><td style="color:#666">Status</td><td><strong>{{status_line}}</strong></td></tr>
+  <tr><td style="color:#666">Date</td><td>{{event_date}}</td></tr>
+</table>
+<p style="color:#666;font-size:12.5px">This is a status update only. Please contact the recruitment team for anything further.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['vendor_name', 'candidate_name', 'position', 'stage_label', 'status_line', 'event_date'],
+      is_active: true,
+    },
+  },
+  {
+    // The Offer stage's deliberately thin variant (Q29). Carries no figures, no
+    // joining date and no remarks — if you are editing this template, that
+    // absence IS the specification, not an oversight.
+    find: { name: 'Vendor — Candidate Milestone (No Detail)' },
+    data: {
+      name: 'Vendor — Candidate Milestone (No Detail)',
+      category: 'vendor_status',
+      subject: 'Candidate milestone — {{candidate_name}} ({{position}})',
+      body_html: `<p>Hello {{vendor_name}},</p>
+<p><strong>{{candidate_name}}</strong> ({{position}}) — {{status_line}}</p>
+<p style="color:#666;font-size:12.5px">Offer terms are handled directly between AAPNA Infotech and the candidate, so this note carries the milestone only. Please contact the recruitment team with any questions.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['vendor_name', 'candidate_name', 'position', 'status_line', 'event_date'],
       is_active: true,
     },
   },

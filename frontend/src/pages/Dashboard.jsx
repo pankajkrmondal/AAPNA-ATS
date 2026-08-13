@@ -1,14 +1,21 @@
 /**
- * Dashboard — Advanced recruiter command center.
+ * Dashboard — recruiter command centre.
  *
- * Built frontend-only on existing endpoints (see useDashboardData): animated hero with
- * global filters + ⌘K palette, KPI cards with sparklines/deltas, hiring trends, conversion
- * funnel, talent insights, action center, live activity feed, upcoming interviews, quick
- * actions, and the original recent-candidates table (preserved with its own pagination).
+ * Built frontend-only on existing endpoints (see useDashboardData). Composed as four
+ * bands, each a 24-column row: COMMAND (hero) · SIGNAL (four uniform KPIs) ·
+ * ANALYSIS (trends, action queue, funnel, talent, agenda) · ACTIVITY (recruiter
+ * breakdown, live feed, latest uploads, quick actions).
+ *
+ * Every widget has a fixed home. An earlier version moved widgets between rows
+ * depending on whether data existed, which made the page's shape change with the
+ * data — widgets own their empty states instead.
+ *
+ * Metric explanations live in constants/metricDefinitions.js and render through
+ * <MetricInfo>, not as inline tooltip prose.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Table, Button, Typography, Modal, Space, Tooltip } from 'antd';
+import { Row, Col, Card, Typography, Tooltip } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
@@ -23,18 +30,16 @@ import {
   CalendarOutlined,
   CheckCircleOutlined,
   ArrowRightOutlined,
-  InfoCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
-import candidateService from '../services/candidateService';
-import ExportButton from '../components/common/ExportButton';
+import useBrand from '../hooks/useBrand';
 import useDashboardData from '../hooks/useDashboardData';
 import useLiveActivity from '../hooks/useLiveActivity';
+import usePointerSpotlight from '../hooks/usePointerSpotlight';
 import {
   sparkSeries,
   weekOverWeek,
-  upcomingInterviews,
 } from '../utils/dashboardAggregations';
 
 import StatCard from '../components/common/StatCard';
@@ -46,6 +51,7 @@ import RecruiterBreakdownCard from '../components/dashboard/RecruiterBreakdownCa
 import ActionCenterCard from '../components/dashboard/ActionCenterCard';
 import LiveActivityFeed from '../components/dashboard/LiveActivityFeed';
 import UpcomingInterviews from '../components/dashboard/UpcomingInterviews';
+import LatestUploads from '../components/dashboard/LatestUploads';
 import CommandPalette from '../components/dashboard/CommandPalette';
 
 const { Title, Text } = Typography;
@@ -61,17 +67,20 @@ const QUICK_ACTIONS = [
   { label: 'System Configuration', url: '/settings', moduleKey: 'system_config', icon: <SettingOutlined />, color: '#b45309', desc: 'Configure system processes, automation rules, and recruitment settings.' },
 ];
 
-/** Detailed explanatory tooltip text for each KPI metric. */
-const KPI_TOOLTIPS = {
-  'Total Candidates': 'Every CV in the system across all roles and sources.',
-  'Active MRFs': 'Manpower Requisition Forms currently pending, awaiting, or approved.',
-  "Today's Uploads": 'Candidate CVs added to the system since midnight today.',
-  'Shortlisted': 'Candidates moved to a shortlisted / selected pipeline stage.',
-};
+// KPI_TOOLTIPS used to live here as a local const keyed by display string. Those
+// definitions now live in constants/metricDefinitions.js so that one registry covers
+// every number on the page (and every number the backend insight work will add),
+// rather than tooltip prose being scattered across ten widget files.
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { brand } = useBrand();
   const navigate = useNavigate();
+
+  /** Cursor-tracked spotlight for every `.spotlight` surface on the page. One
+   *  delegated listener here rather than a handler per card — see the hook. */
+  const pageRef = useRef(null);
+  usePointerSpotlight(pageRef);
 
   // ── Advanced data (existing endpoints, parallel) + live socket feed ──
   const {
@@ -97,55 +106,15 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // ── Recent candidates table (preserved: its own paginated fetch) ──
-  const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const pageSize = 10;
-
-  useEffect(() => {
-    const fetchCandidates = async () => {
-      setLoading(true);
-      try {
-        const res = await candidateService.search({}, page, pageSize);
-        const candidateList = Array.isArray(res.data?.data)
-          ? res.data.data
-          : (res.data?.data?.data || res.data?.data?.candidates || res.data || []);
-        const paginationObj = res.data?.pagination || res.data?.data?.pagination || {};
-        const totalCount = paginationObj.total || res.data?.total || candidateList.length;
-        setCandidates(candidateList);
-        setTotal(totalCount);
-      } catch (err) {
-        console.error('Failed to load recent candidates', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCandidates();
-  }, [page]);
+  // The dashboard's own paginated candidate fetch is gone: it duplicated
+  // /candidates (worse — no search, no filters) and ran a second query on every
+  // visit for decoration. LatestUploads now shows five rows from the purpose-built
+  // /dashboard/recent-uploads endpoint and links to the real records surface.
 
   // Module permission check (admins bypass)
   const isModuleEnabled = (moduleKey) => {
     if ((user?.role || '').toLowerCase() === 'admin') return true;
     return (user?.permissions || []).includes(moduleKey);
-  };
-
-  const handleDownloadResume = (cvFileUrl) => {
-    if (!cvFileUrl || cvFileUrl === 'null' || cvFileUrl === 'undefined' || String(cvFileUrl).trim() === '') {
-      Modal.warning({
-        title: '⚠️ Alert',
-        content: 'Resume is not available for this candidate right now.',
-      });
-      return;
-    }
-    const link = document.createElement('a');
-    link.href = cvFileUrl;
-    link.download = '';
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   // ── Normalize the aggregation batch (tolerate mapped OR raw DB field names) ──
@@ -165,7 +134,7 @@ export default function Dashboard() {
     return normCandidates.filter((c) => (c.position || '').toLowerCase() === r);
   }, [normCandidates, role]);
 
-  // KPI sparkline + week-over-week delta (candidate-based metrics only)
+  // Last-7-day series (drives the "in the last 7 days" footnote) + WoW delta.
   const spark = useMemo(() => sparkSeries(normCandidates, 7), [normCandidates]);
   const wow = useMemo(() => weekOverWeek(normCandidates), [normCandidates]);
 
@@ -177,95 +146,115 @@ export default function Dashboard() {
       (r) => r.interview_start_at && dayjs(r.interview_start_at).format('YYYY-MM-DD') === tk,
     ).length;
   }, [pipeline]);
-  const hasUpcoming = useMemo(() => upcomingInterviews(pipeline, 7).length > 0, [pipeline]);
+
+  /** KPI cards — UNIFORM anatomy: icon, delta chip, label, value, footnote, sparkline.
+   *
+   *  Every card carries a REAL 7-day series. The earlier version had a sparkline on
+   *  only two of four (the candidate-derived ones), because MRF and shortlist counts
+   *  weren't in the candidate batch — a row half-full of empty bands is what made it
+   *  read as unfinished.
+   *
+   *  Rather than drop the graphs or fabricate data, each series is derived from a
+   *  batch this page already fetches, and each metric's definition states exactly
+   *  what its line plots (see constants/metricDefinitions.js). Note the series is a
+   *  RATE (new per day) while the value above it is a running TOTAL — that is the
+   *  honest pairing available client-side, and the definition says so rather than
+   *  letting the reader assume the line is the total's history. */
+  const mrfSeries = useMemo(
+    () => sparkSeries(
+      (pendingMrfs || []).map((m) => ({ createdAt: m.created_at || m.createdAt })),
+      7,
+    ),
+    [pendingMrfs],
+  );
+  const shortlistSeries = useMemo(
+    () => sparkSeries(
+      (pipeline || []).map((p) => ({ createdAt: p.created_at || p.createdAt || p.modified_at })),
+      7,
+    ),
+    [pipeline],
+  );
+
+  const shortlistRate = funnel.sourced
+    ? Math.round((stats.shortlisted / funnel.sourced) * 100)
+    : null;
+  const last7 = spark.reduce((a, b) => a + (b || 0), 0);
 
   const kpiCards = [
-    { title: 'Total Candidates', value: stats.totalCandidates, icon: <TeamOutlined />, color: '#7a922e', sparklineData: spark, delta: wow.deltaPct !== null ? { value: wow.deltaPct } : null },
-    { title: 'Active MRFs', value: stats.activeMRFs, icon: <FileTextOutlined />, color: '#2563eb' },
-    { title: "Today's Uploads", value: stats.todayUploads, icon: <CalendarOutlined />, color: '#d97706', sparklineData: spark },
-    { title: 'Shortlisted', value: stats.shortlisted, icon: <CheckCircleOutlined />, color: '#16a34a' },
-  ];
-
-  const tableColumns = [
     {
-      title: 'Name',
-      key: 'name',
-      render: (_, record) => {
-        const nameVal = record.Name || record.name || '—';
-        const expVal = record.TotalExperienceYears || record.experience;
-        const qualVal = record.HighestQualification || record.education;
-        let subtext = '';
-        if (expVal) subtext += `${expVal} yrs`;
-        if (expVal && qualVal) subtext += ' • ';
-        if (qualVal) subtext += qualVal;
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <Text strong style={{ fontSize: 13.5, color: 'var(--text)' }}>{nameVal}</Text>
-            {subtext && <Text type="secondary" style={{ fontSize: 11.5, marginTop: 2 }}>{subtext}</Text>}
-          </div>
-        );
-      },
+      metric: 'totalCandidates',
+      title: 'Total Candidates',
+      value: stats.totalCandidates,
+      icon: <TeamOutlined />,
+      color: '#7a922e',
+      delta: wow.deltaPct !== null ? { value: wow.deltaPct } : null,
+      footnote: 'across all roles and sources',
+      sparklineData: spark,
     },
     {
-      title: 'Email',
-      key: 'email',
-      render: (_, record) => {
-        const emailVal = record.EmailID || record.email || '—';
-        return <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>{emailVal}</span>;
-      },
+      metric: 'activeMRFs',
+      title: 'Active MRFs',
+      value: stats.activeMRFs,
+      icon: <FileTextOutlined />,
+      color: '#2563eb',
+      footnote: `${stats.pendingApprovalMRFs} awaiting approval`,
+      sparklineData: mrfSeries,
     },
     {
-      title: 'Role',
-      key: 'role',
-      render: (_, record) => {
-        const roleVal = record.PositionApplied || record.position || '—';
-        return <span style={{ color: 'var(--text)', fontWeight: 500 }}>{roleVal}</span>;
-      },
+      metric: 'todayUploads',
+      title: "Today's Uploads",
+      value: stats.todayUploads,
+      icon: <CalendarOutlined />,
+      color: '#d97706',
+      footnote: `${last7} in the last 7 days`,
+      sparklineData: spark,
     },
     {
-      title: 'Applied On',
-      key: 'applied_on',
-      render: (_, record) => {
-        const dateVal = record.createdAt || record.created_at;
-        return (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text-2)' }}>
-            {dateVal ? dateVal.split('T')[0] : '—'}
-          </span>
-        );
-      },
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      align: 'right',
-      render: (_, record) => {
-        const fileUrl = record.cvFileUrl || record.cv_file_url || '';
-        const isResumeOk = fileUrl && fileUrl !== 'null' && fileUrl !== 'undefined' && String(fileUrl).trim() !== '';
-        return (
-          <Button
-            size="small"
-            icon={<FileTextOutlined />}
-            onClick={() => handleDownloadResume(fileUrl)}
-            style={{
-              borderRadius: 6,
-              background: isResumeOk ? 'var(--gold-bg)' : 'var(--ink-3)',
-              color: isResumeOk ? '#7a922e' : '#a0aa84',
-              borderColor: isResumeOk ? 'var(--gold-light)' : '#dde1df',
-            }}
-            title="Download Resume"
-          />
-        );
-      },
+      metric: 'shortlisted',
+      title: 'Shortlisted',
+      value: stats.shortlisted,
+      icon: <CheckCircleOutlined />,
+      color: '#16a34a',
+      footnote: shortlistRate !== null ? `${shortlistRate}% of sourced` : 'of all sourced candidates',
+      sparklineData: shortlistSeries,
     },
   ];
 
-  const firstName = user?.firstName || user?.username || 'there';
+
+  /** Greeting name — the person's FULL name as recorded, not just their first field.
+   *
+   *  History, because this has been wrong twice:
+   *   1. It was `user?.firstName || user?.username`. `firstName` (camelCase) does not
+   *      exist — /auth/me spreads the raw rpa_users row, so the fields are
+   *      `first_name` / `last_name`. It therefore always fell through to the username
+   *      and rendered "Good evening, harish.mopuri".
+   *   2. Fixing it to read `first_name` surfaced a second problem: some records hold an
+   *      abbreviated first name (e.g. "Har"), so greeting on that field alone still
+   *      looked truncated.
+   *
+   *  Using first + last shows everything on record. If the result still looks short,
+   *  the name in the user record itself is short — correct it in Admin Portal > Users;
+   *  no display logic can recover a name the row does not contain. */
+  const greetingName = useMemo(() => {
+    const first = (user?.first_name ?? user?.firstName ?? '').toString().trim();
+    const last = (user?.last_name ?? user?.lastName ?? '').toString().trim();
+    const full = [first, last].filter(Boolean).join(' ');
+    if (full) return full;
+
+    // No name on record: fall back to the login handle, but make it addressable —
+    // "harish.mopuri" becomes "Harish" rather than being shown raw.
+    const handle = (user?.username || '').trim();
+    if (!handle) return 'there';
+    const token = handle.split(/[._\-\s]+/).filter(Boolean)[0] || handle;
+    return token.charAt(0).toUpperCase() + token.slice(1);
+  }, [user]);
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 1320, margin: '0 auto' }}>
+    <div ref={pageRef} className="animate-fade-in" style={{ maxWidth: 1320, margin: '0 auto' }}>
       {/* ---- Hero ---- */}
       <DashboardHero
-        firstName={firstName}
+        firstName={greetingName}
+        eyebrow={brand.heroEyebrow}
         isModuleEnabled={isModuleEnabled}
         onNewMrf={() => navigate('/mrf')}
         onScreen={() => navigate('/filtering')}
@@ -277,35 +266,41 @@ export default function Dashboard() {
         onOpenCommand={() => setCmdOpen(true)}
       />
 
-      {/* ---- KPI cards ---- */}
-      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
+      {/* ---- SIGNAL BAND: four KPIs, identical anatomy ---- */}
+      <Row gutter={[20, 20]} className="dash-band">
         {kpiCards.map((kpi, idx) => (
-          <Col xs={24} sm={12} lg={6} key={kpi.title}>
-            <Tooltip title={KPI_TOOLTIPS[kpi.title]} mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 260 }}>
-              <div className={`animate-fade-in-up stagger-${idx + 1}`} style={{ height: '100%' }}>
-                <StatCard
-                  title={kpi.title}
-                  value={kpi.value}
-                  icon={kpi.icon}
-                  color={kpi.color}
-                  loading={statsLoading}
-                  sparklineData={kpi.sparklineData}
-                  delta={kpi.delta}
-                />
-              </div>
-            </Tooltip>
+          <Col xs={24} sm={12} xl={6} key={kpi.title}>
+            <div className={`animate-fade-in-up stagger-${idx + 1}`} style={{ height: '100%' }}>
+              <StatCard
+                metric={kpi.metric}
+                title={kpi.title}
+                value={kpi.value}
+                icon={kpi.icon}
+                color={kpi.color}
+                loading={statsLoading}
+                delta={kpi.delta}
+                footnote={kpi.footnote}
+                sparklineData={kpi.sparklineData}
+              />
+            </div>
           </Col>
         ))}
       </Row>
 
-      {/* ---- Trends + Action center ---- */}
-      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
-        <Col xs={24} lg={16}>
+      {/* ---- ANALYSIS BAND ----
+           Every band below is a 24-column row that sums to 24 at xl, on a repeating
+           16/8 rhythm with one 8/8/8. The previous layout changed shape four times
+           (16/8 → 8/8/8 → 24 → conditional 8/16) and moved widgets between rows
+           depending on whether data existed, which is what made the page read as
+           assembled rather than composed. Widgets now have fixed homes and render
+           their own empty states. */}
+      <Row gutter={[20, 20]} className="dash-band">
+        <Col xs={24} xl={16}>
           <HiringTrendsCard candidates={filteredCandidates} rangeDays={rangeDays} loading={statsLoading} />
         </Col>
-        <Col xs={24} lg={8}>
+        <Col xs={24} xl={8}>
           <ActionCenterCard
-            pendingMrfCount={pendingMrfs.length}
+            pendingMrfCount={stats.pendingApprovalMRFs}
             reviewCount={reviewCount}
             awaitingScreening={awaitingScreening}
             interviewsToday={interviewsToday}
@@ -314,139 +309,71 @@ export default function Dashboard() {
         </Col>
       </Row>
 
-      {/* ---- Funnel + Talent insights + Interviews ---- */}
-      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
-        <Col xs={24} lg={8}>
+      <Row gutter={[20, 20]} className="dash-band">
+        <Col xs={24} lg={12} xl={8}>
           <ConversionFunnelCard funnel={funnel} pipeline={pipeline} loading={statsLoading} />
         </Col>
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={12} xl={8}>
           <TopRolesSkillsCard candidates={filteredCandidates} />
         </Col>
-        <Col xs={24} lg={8}>
-          {hasUpcoming || pipeline.length > 0
-            ? <UpcomingInterviews pipeline={pipeline} onNavigate={navigate} />
-            : <LiveActivityFeed events={liveEvents} />}
+        <Col xs={24} xl={8}>
+          <UpcomingInterviews pipeline={pipeline} onNavigate={navigate} />
         </Col>
       </Row>
 
-      {/* ---- Recruiter Activity ---- */}
-      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
-        <Col xs={24}>
+      {/* ---- ACTIVITY BAND ---- */}
+      <Row gutter={[20, 20]} className="dash-band">
+        <Col xs={24} xl={16}>
           <RecruiterBreakdownCard data={recruiterBreakdown} />
         </Col>
+        <Col xs={24} xl={8}>
+          <LiveActivityFeed events={liveEvents} />
+        </Col>
       </Row>
 
-      {/* ---- Live activity + Quick actions ---- */}
-      <Row gutter={[20, 20]} style={{ marginBottom: 20 }}>
-        {(hasUpcoming || pipeline.length > 0) && (
-          <Col xs={24} lg={8}>
-            <LiveActivityFeed events={liveEvents} />
-          </Col>
-        )}
-        <Col xs={24} lg={(hasUpcoming || pipeline.length > 0) ? 16 : 24}>
-          <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+      <Row gutter={[20, 20]} className="dash-band">
+        <Col xs={24} xl={16}>
+          <LatestUploads onNavigate={navigate} />
+        </Col>
+        <Col xs={24} xl={8}>
+          {/* Quick actions as a single-column launcher. In a 2-column grid the seven
+              items always left a permanent empty cell; one column has no hole at any
+              count, and a vertical list is the better pattern for a launcher anyway. */}
+          <Card bordered={false} className="glass-card dash-chart-card spotlight" styles={{ body: { padding: 22 } }}>
             <div className="dash-card-head">
               <div>
                 <Title level={5} style={{ margin: 0 }}>Quick Actions</Title>
-                <Text type="secondary" style={{ fontSize: 12.5 }}>Jump into your recruitment modules</Text>
+                <Text type="secondary" style={{ fontSize: 12.5 }}>Jump into your modules</Text>
               </div>
             </div>
-            <Row gutter={[10, 10]} style={{ marginTop: 14 }}>
+            <div className="dash-qa">
               {QUICK_ACTIONS.map((action) => {
                 const enabled = isModuleEnabled(action.moduleKey);
                 const tip = enabled ? action.desc : `${action.desc} — you don't have access to this module.`;
                 return (
-                  <Col xs={24} sm={12} key={action.moduleKey}>
-                    <Tooltip title={tip} mouseEnterDelay={0.3} placement="top" overlayStyle={{ maxWidth: 260 }}>
-                      <div
-                        className={`quick-action-row ${enabled ? 'enabled' : ''}`}
-                        onClick={() => enabled && navigate(action.url)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12,
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: '1px solid var(--border-light)',
-                          cursor: enabled ? 'pointer' : 'not-allowed',
-                          opacity: enabled ? 1 : 0.5,
-                          background: 'var(--colorBgContainer)',
-                        }}
-                        onMouseEnter={(e) => { if (enabled) e.currentTarget.style.borderColor = action.color; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-light)'; }}
-                      >
-                        <div
-                          style={{
-                            width: 36, height: 36, borderRadius: 9,
-                            background: `linear-gradient(135deg, ${action.color} 0%, ${action.color}cc 100%)`,
-                            color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 16, flexShrink: 0, boxShadow: `0 3px 8px ${action.color}44`,
-                          }}
-                        >
-                          {action.icon}
-                        </div>
-                        <Text style={{ flex: 1, fontSize: 13.5, fontWeight: 500 }}>{action.label}</Text>
-                        {enabled
-                          ? <ArrowRightOutlined className="qa-arrow" style={{ color: action.color, fontSize: 12 }} />
-                          : <LockOutlined style={{ color: 'var(--text-2)', fontSize: 12 }} />}
-                      </div>
-                    </Tooltip>
-                  </Col>
+                  <Tooltip key={action.moduleKey} title={tip} mouseEnterDelay={0.3} placement="left" overlayStyle={{ maxWidth: 260 }}>
+                    <div
+                      className={`quick-action-row ${enabled ? 'enabled' : ''}`}
+                      role="button"
+                      tabIndex={enabled ? 0 : -1}
+                      aria-disabled={!enabled}
+                      onClick={() => enabled && navigate(action.url)}
+                      onKeyDown={(e) => { if (enabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); navigate(action.url); } }}
+                      style={{ '--qa-color': action.color, opacity: enabled ? 1 : 0.5, cursor: enabled ? 'pointer' : 'not-allowed' }}
+                    >
+                      <span className="quick-action-row__icon">{action.icon}</span>
+                      <Text style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{action.label}</Text>
+                      {enabled
+                        ? <ArrowRightOutlined className="qa-arrow" style={{ color: action.color, fontSize: 12 }} />
+                        : <LockOutlined style={{ color: 'var(--text-2)', fontSize: 12 }} />}
+                    </div>
+                  </Tooltip>
                 );
               })}
-            </Row>
+            </div>
           </Card>
         </Col>
       </Row>
-
-      {/* ---- Recent Candidates (preserved) ---- */}
-      <Card
-        bordered={false}
-        className="dash-chart-card"
-        style={{
-          background: 'var(--colorBgContainer)',
-          border: '1px solid var(--border-light)',
-          borderRadius: 12,
-          boxShadow: 'var(--shadow-sm)',
-        }}
-        styles={{ body: { padding: 24 } }}
-      >
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 16,
-        }}>
-          <Space size={6} align="center">
-            <Title level={5} style={{ margin: 0 }}>Recent Candidates</Title>
-            <Tooltip title="The most recently added candidates across all roles. Use the action button to download a résumé." mouseEnterDelay={0.3} overlayStyle={{ maxWidth: 280 }}>
-              <InfoCircleOutlined style={{ color: 'var(--text-2)', fontSize: 13, cursor: 'help' }} />
-            </Tooltip>
-          </Space>
-          {/* Exports every candidate, not just this table's page. */}
-          <ExportButton
-            request={(cfg) => candidateService.exportCsv({}, cfg)}
-            fallbackName="AAPNA-ATS_Candidates.csv"
-            rowCount={total}
-            size="small"
-          />
-        </div>
-        <Table
-          dataSource={candidates}
-          columns={tableColumns}
-          rowKey={(record) => record.id || record.EmailID || Math.random().toString()}
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize: pageSize,
-            total: total,
-            onChange: setPage,
-            showSizeChanger: false,
-          }}
-          size="middle"
-        />
-      </Card>
 
       {/* ---- ⌘K Command Palette ---- */}
       <CommandPalette

@@ -54,14 +54,23 @@ export function bucketByDay(candidates = [], days = 30) {
  * Returns `[{ name, value }]` sorted desc.
  */
 export function topByField(items = [], field = 'position', n = 6) {
-  const counts = new Map();
+  // Group on a NORMALISED key, not the raw string. Trimming alone (what this did
+  // before) still treats "Product Sales Executive", "product sales executive" and
+  // "Product  Sales Executive" as three different roles — which is exactly how the
+  // same job title appeared as two separate bars in Talent Insights. Case and
+  // internal whitespace are normalised for counting; the first spelling encountered
+  // is kept for display, so the label still reads the way recruiters typed it.
+  const counts = new Map(); // key -> { label, value }
   for (const it of items) {
-    const raw = (it?.[field] ?? '').toString().trim();
+    const raw = (it?.[field] ?? '').toString().trim().replace(/\s+/g, ' ');
     if (!raw) continue;
-    counts.set(raw, (counts.get(raw) || 0) + 1);
+    const key = raw.toLowerCase();
+    const hit = counts.get(key);
+    if (hit) hit.value += 1;
+    else counts.set(key, { label: raw, value: 1 });
   }
-  return [...counts.entries()]
-    .map(([name, value]) => ({ name, value }))
+  return [...counts.values()]
+    .map(({ label, value }) => ({ name: label, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, n);
 }

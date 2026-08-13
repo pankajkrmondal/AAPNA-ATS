@@ -52,6 +52,25 @@ const settingsService = {
   saveAssessmentAutomation(payload) {
     return api.post('/settings/assessment-automation', payload);
   },
+
+  /**
+   * Every email flow key and where its mail currently goes. Admin-tier only
+   * server-side — recipient lists carry internal staff addresses.
+   * @returns {Promise}
+   */
+  getFlowKeys() {
+    return api.get('/settings/flow-keys');
+  },
+
+  /**
+   * Update the to/cc for one flow key. Takes effect immediately — the server
+   * reloads its in-memory recipient map, no restart needed.
+   * @param {object} payload — { flowKey, to, cc }
+   * @returns {Promise}
+   */
+  saveFlowKey(payload) {
+    return api.post('/settings/flow-keys', payload);
+  },
 };
 
 export default settingsService;

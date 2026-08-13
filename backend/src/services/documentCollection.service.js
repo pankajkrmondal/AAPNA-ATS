@@ -234,7 +234,17 @@ export async function requestDocuments(pipelineId, { actedBy } = {}) {
   const request = await prisma.rpa_document_requests.upsert({
     where: { pipeline_id: pipeline.id },
     create: { pipeline_id: pipeline.id, requested_by: actedBy || null },
-    update: { token_status: 'active', requested_at: new Date(), modified_at: new Date() },
+    update: {
+      token_status: 'active',
+      requested_at: new Date(),
+      // A re-request restarts the chase. Without this reset the counters carried
+      // over from the previous round, so a candidate re-asked after three
+      // reminders fell permanently outside the sweep's `reminder_count < maxCount`
+      // filter — the request was reopened but nothing would ever follow it up.
+      reminder_count: 0,
+      last_reminded_at: null,
+      modified_at: new Date(),
+    },
   });
 
   // Seed a row per checklist item; skipDuplicates keeps an existing (possibly
@@ -267,14 +277,22 @@ export async function sendReminder(pipelineId, { actedBy } = {}) {
   if (!request) throw new AppError('No document request has been raised for this candidate yet.', 400);
 
   const sent = await sendDocumentEmail(TEMPLATE_NAMES.reminder, pipeline, request.token);
-  await prisma.rpa_document_requests.update({
-    where: { id: request.id },
-    data: {
-      last_reminded_at: new Date(),
-      reminder_count: { increment: 1 },
-      modified_at: new Date(),
-    },
-  });
+
+  // Only a reminder that actually WENT counts. The counters drive the automatic
+  // sweep (jobs/documentReminder.js selects on reminder_count < maxCount), so
+  // stamping them on a failed send burned the candidate's reminder budget on
+  // emails they never received — three bounces and they were never chased again.
+  // A failure leaves both untouched, so the sweep retries on its next pass.
+  if (sent) {
+    await prisma.rpa_document_requests.update({
+      where: { id: request.id },
+      data: {
+        last_reminded_at: new Date(),
+        reminder_count: { increment: 1 },
+        modified_at: new Date(),
+      },
+    });
+  }
 
   await auditNote(pipeline.id, `Document reminder ${sent ? 'sent' : 'attempted (email failed)'}`, actedBy);
   return getDocumentStatus(pipelineId);
@@ -508,6 +526,19 @@ export async function rejectDocument(documentId, { reason, actedBy } = {}) {
     rejected_document: label,
     rejection_reason: reason.trim(),
   });
+
+  // This IS a reminder as far as the candidate's inbox is concerned, so tell the
+  // sweep about it. It sends the same template on the same link; without the
+  // stamp the daily pass saw an untouched last_reminded_at and could chase them
+  // again hours after this one landed. Deliberately does NOT increment
+  // reminder_count — a rejection raised by HR should not eat the candidate's
+  // reminder budget.
+  if (sent) {
+    await prisma.rpa_document_requests.update({
+      where: { id: doc.request_id },
+      data: { last_reminded_at: new Date(), modified_at: new Date() },
+    });
+  }
 
   await auditNote(
     pipelineId,

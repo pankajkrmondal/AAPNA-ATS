@@ -14,6 +14,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { sendAdHocCandidateEmail } from './stageNotification.service.js';
+import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
 
 const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? Number(v) : v)));
@@ -77,13 +78,24 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
       },
       subject,
       body: plainTextToEmailHtml(body),
-      vendorEmail: pipeline.source === 'vendor' ? pipeline.vendor_email : null,
     });
     if (!emailResult.sent) {
       logger.error('Failed to send the Evalground invite email:', { error: emailResult.error });
       throw new AppError('Unable to send the assessment invite email right now. Please try again later.', 502);
     }
   }
+
+  // The vendor is told an assessment went out, not which link or what the
+  // recruiter wrote around it. Fires for the manual path too — from the
+  // vendor's side "their candidate has been invited to test" is the same fact
+  // however the link reached them.
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+    eventType: VENDOR_EVENTS.ASSESSMENT_INVITED,
+    stageKey: pipeline.current_stage_key,
+    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+  });
 
   const invite = await prisma.rpa_assessment_invites.create({
     data: {

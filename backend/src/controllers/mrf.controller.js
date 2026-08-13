@@ -14,6 +14,7 @@ import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } f
 import { isMrfFilled } from '../config/pipelineStages.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
+import mrfDetailExport from '../exports/mrfDetail.export.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -164,6 +165,26 @@ export const exportMrfRequests = catchAsync(async (req, res) => runExport(req, r
   columns: mrfExport.columns,
   filters: mrfExport.parseFilters(req),
   fetch: mrfExport.fetch,
+}));
+
+/**
+ * @desc    Export ONE requisition — the request plus the MRF the Hiring Manager
+ *          submitted — as a Section/Field/Value CSV. Backs the Export button in
+ *          the MRF details modal.
+ * @route   GET /api/mrf/:id/export
+ * @access  Private
+ */
+export const exportMrfDetail = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'mrf-detail',
+  label: `MRF-${req.params.id}`,
+  columns: mrfDetailExport.columns,
+  filters: mrfDetailExport.parseFilters(req),
+  fetch: mrfDetailExport.fetch,
+  // A "row" here is a FIELD of one requisition, not a record. Reporting ~65
+  // would have the client toast read "Exported 65 rows." for a single MRF, so
+  // the count is suppressed (sendCsv skips null-valued headers) and the toast
+  // falls back to "Exported CSV.".
+  headers: { 'X-Export-Row-Count': null },
 }));
 
 /**

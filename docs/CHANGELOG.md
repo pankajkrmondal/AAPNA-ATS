@@ -5,6 +5,84 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-13 — Placement vendor process: pre-push audit (4 issues logged, not yet fixed)
+**Why:** checked the staged M6 vendor changes against
+[docs/reference/VENDOR_PROCESS.md](./reference/VENDOR_PROCESS.md) before pushing. The 160-test
+unit suite passes clean, but it only covers the pure guard functions in isolation — the call
+sites wiring them together were not exercised. Full detail, failure scenarios and fix plan in
+[docs/changelog/CHANGES-2026-08-13-vendor-audit.md](./changelog/CHANGES-2026-08-13-vendor-audit.md).
+
+- **Closure notification silently dropped** when a journey closes while parked on the Documents
+  stage — `notifyVendor()` applies the Documents `'never'` stage policy to the `CLOSURE` event
+  too, contradicting §18's "closure notifies the vendor even for outcomes silent to the
+  candidate." (`vendorNotification.service.js`, `pipeline.service.js`)
+- **JOINED closure can freeze a stale/unrelated vendor's lock permanently** — the freeze check
+  only tests `VendorEmail: { not: null }`, not whether that lock is actually live or owned by the
+  vendor who sourced the hired candidate. (`pipeline.service.js`)
+- **Every vendor notification reads "Hello partner,"** — `pipelineRow.vendor_name` is always
+  `undefined` (no such column on `rpa_candidate_pipeline`; only `vendor_email` is stamped).
+  Cosmetic, no functional impact. (`vendorNotification.service.js`)
+- **`getVendorDashboard` re-implements vendor scoping** instead of calling
+  `enforceVendorScope()` like the candidate list and CSV export do — same "two implementations
+  drift apart" shape as the `b671236` export hole, on an untrimmed role comparison.
+  (`vendor.controller.js`)
+- **Status:** logged only, no code changed in this pass. Fix order: closure-suppression bug →
+  stale-lock freeze → dashboard scoping drift → vendor_name cosmetic fix.
+
+## 2026-08-11 — QA test-pass fixes (HR Upload → Zeko HR → pipeline)
+**Why:** the team's 118-case pass returned four defects. Two were real bugs; two were features
+that already shipped but looked absent. Full detail in
+[docs/changelog/CHANGES-2026-08-11-qa-testpass.md](./changelog/CHANGES-2026-08-11-qa-testpass.md)
+and items #19–#22 of
+[CHANGES-2026-08-07-candidate-pipeline-fixes.md](./changelog/CHANGES-2026-08-07-candidate-pipeline-fixes.md).
+
+- `backend/src/utils/experienceParser.js` (new) + `backend/src/services/hrUpload.service.js` —
+  **Total Experience was fabricated on every upload.** A resume with any employment history took
+  a date-computed total, and the date reader could not handle `Jun-2022` / `May'21` / `05.2022`,
+  so those candidates were stored as `"0"` years; with no history at all a hardcoded `"2"` was
+  written. `"0"` also passed the missing-data check, so it was never chased. The computed value
+  now wins only when it computed something. The other fabricated defaults in the same block
+  (`9876543210`, `B.Tech`, `Delhi`, `Software Developer`) are now null, five parsed-but-unstored
+  columns are written, and an out-of-range reading no longer throws away the whole candidate.
+  Two copies of the date logic collapsed into one tested module.
+- `backend/scripts/report-experience-anomalies.js` (new) — read-only diagnostic for how many
+  existing rows carry a fabricated value. **No backfill has been run.**
+- `backend/src/services/interviewSchedule.service.js`, `backend/prisma/seed-email-templates.js`,
+  `frontend/src/components/pipeline/PipelineDrawer.jsx` — **interviewer name now reaches the
+  invite email.** The name was already stored; the token map and the panel templates lacked it.
+  Threaded through the *preview* as well as the send, because the modal posts its compiled body
+  back and the server prefers it. ⚠️ Needs `seed-email-templates.js` re-run on deploy, which
+  overwrites HR's edits to those three templates.
+- `frontend/src/pages/DocumentUpload.jsx` — the submit button already existed; what was missing
+  was any acknowledgement until HR *verified* (days later). Added a submitted state.
+- `backend/src/services/documentCollection.service.js` — automatic document reminders already
+  existed; the panel never said so. Fixed the copy, plus two real counter bugs: a failed send
+  burned the candidate's reminder budget, and a re-request after three reminders was never
+  auto-chased again.
+- Verified: unit suite 122 passing (15 new), frontend build clean. Not yet exercised against a
+  running stack — see the re-test steps in the test-pass note.
+
+## 2026-08-11 — Export one requisition from the MRF details modal
+**Why:** MRF could only export the filtered **list**. Everything worth forwarding — the
+New MRF Request fields and the ~45-field MRF the Hiring Manager submitted — lives in the
+details modal, and there was no way to get it out short of a screenshot. Full detail in
+[docs/changelog/CHANGES-csv-export.md](./changelog/CHANGES-csv-export.md) §6 and
+[CHANGES-2026-08-07-candidate-pipeline-fixes.md](./changelog/CHANGES-2026-08-07-candidate-pipeline-fixes.md) #18.
+
+- `backend/src/exports/mrfDetail.export.js` (new) — export spec for a single requisition,
+  transposed to `Section, Field, Value` (one row per field) because a 65-column single-row
+  file is unreadable. Joins `rpa_mrf_jd_send` + `rpa_mrf`, groups and labels fields exactly
+  as the modal does, honours the modal's conditional "Other" fields, and mirrors the modal's
+  status tags — which differ from the list table's ("COMPLETED" vs "MANAGER SUBMITTED").
+- `backend/src/controllers/mrf.controller.js`, `backend/src/routes/mrf.routes.js` —
+  `GET /api/mrf/:id/export`, same `MRF_EXPORT_ROLES` + `exportLimiter` as the list export.
+  Suppresses `X-Export-Row-Count`, since a "row" here is a field, not a record.
+- `frontend/src/pages/MRF.jsx`, `frontend/src/services/mrfService.js` — `ExportButton` in the
+  modal footer, view mode only (the file is read from the DB, so it would disagree with
+  unsaved edits).
+- `backend/src/tests/mrfDetailExport.test.js` (new) — 12 DB-free tests over the pure row
+  builder. Verified: unit suite 107 passing, frontend production build clean.
+
 ## 2026-07-14 — Docs reorganization (`docs/reference/`, `docs/changelog/`, `docs/deployment/`)
 **Why:** the doc set had grown past 30 files flat under `docs/`, making it hard to tell living
 reference docs apart from dated session worklogs. Full detail in

@@ -119,8 +119,11 @@ const pipelineService = {
 
   /**
    * Compiled (not sent) candidate + panel invite emails for the Schedule modal.
+   * Pass interviewer_name/_email: the modal posts this compiled body back on
+   * submit and the server prefers it, so anything left out of the preview is
+   * left out of the email that actually goes.
    * @param {number} id - pipeline id
-   * @param {Object} params - { stage_key, start_at, duration_minutes }
+   * @param {Object} params - { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email }
    */
   getSchedulePreview(id, params) {
     return api.get(`/pipeline/${id}/interview-preview`, { params });
@@ -129,7 +132,7 @@ const pipelineService = {
   /**
    * Reschedules the current-round interview (cancels the old booking + rebooks).
    * @param {number} id - pipeline id
-   * @param {Object} payload - { stage_key, start_at, duration_minutes?, interviewer_email?, candidate_subject?, candidate_body?, panel_subject?, panel_body? }
+   * @param {Object} payload - { stage_key, start_at, duration_minutes?, interviewer_email?, interviewer_name?, candidate_subject?, candidate_body?, panel_subject?, panel_body? }
    */
   rescheduleInterview(id, payload) {
     return api.post(`/pipeline/${id}/interview/reschedule`, payload);
@@ -138,7 +141,7 @@ const pipelineService = {
   /**
    * Compiled (not sent) candidate + panel reschedule emails for the modal.
    * @param {number} id - pipeline id
-   * @param {Object} params - { stage_key, start_at, duration_minutes }
+   * @param {Object} params - { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email }
    */
   getReschedulePreview(id, params) {
     return api.get(`/pipeline/${id}/interview/reschedule-preview`, { params });
@@ -273,6 +276,14 @@ const pipelineService = {
   },
   updateReason(id, payload) {
     return api.put(`/pipeline/reasons/${id}`, payload);
+  },
+  /** Stage×outcome → email template mappings (M6 admin exposure). */
+  listStageTemplates() {
+    return api.get('/pipeline/stage-templates');
+  },
+  /** Set or clear one mapping; pass template_id: null to clear it. */
+  setStageTemplate(payload) {
+    return api.put('/pipeline/stage-templates', payload);
   },
 };
 

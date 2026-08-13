@@ -625,6 +625,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   const [interviewAt, setInterviewAt] = useState(null);
   const [interviewDuration, setInterviewDuration] = useState(60);
   const [interviewerEmail, setInterviewerEmail] = useState('');
+  // Greets the panel invite by name. Prefilled from the MRF where that column
+  // holds a real name, but editable: tech3 has no MRF interviewer column at all,
+  // and the MRF field is free text that is often a team rather than a person.
+  const [interviewerName, setInterviewerName] = useState('');
   // Only surface the "required" error once the field has been visited or a
   // submit attempted — an error on a pristine, never-touched field reads as broken.
   const [interviewerEmailTouched, setInterviewerEmailTouched] = useState(false);
@@ -785,12 +789,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   // with the date/duration the recruiter is entering. Uses the reschedule
   // endpoint in reschedule mode so the preview shows the old → new time.
   const { data: schedPreview } = useQuery({
-    queryKey: ['schedule-preview', interviewMode, pipelineId, pipeline?.current_stage_key, interviewAt?.toISOString(), interviewDuration],
+    queryKey: ['schedule-preview', interviewMode, pipelineId, pipeline?.current_stage_key, interviewAt?.toISOString(), interviewDuration, interviewerName, interviewerEmail],
     queryFn: async () => {
       const params = {
         stage_key: pipeline?.current_stage_key,
         start_at: interviewAt ? interviewAt.toISOString() : undefined,
         duration_minutes: interviewDuration,
+        // In the key as well as the params: the panel greeting is compiled from
+        // these, and this compiled body is what gets posted back and sent. A
+        // preview that ignored the name would send "Hi there," however the
+        // recruiter filled the field in.
+        interviewer_name: interviewerName || undefined,
+        interviewer_email: interviewerEmail || undefined,
       };
       const res = interviewMode === 'reschedule'
         ? await pipelineService.getReschedulePreview(pipelineId, params)
@@ -1014,12 +1024,13 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   // entered per booking, so the invite can actually be delivered. Serves both
   // fresh scheduling and rescheduling (cancel old + rebook) based on `mode`.
   const interviewMutation = useMutation({
-    mutationFn: ({ stageKey, startAt, duration, email, mode }) => {
+    mutationFn: ({ stageKey, startAt, duration, email, name, mode }) => {
       const payload = {
         stage_key: stageKey,
         start_at: startAt,
         duration_minutes: duration,
         interviewer_email: email,
+        interviewer_name: name,
         // The editable candidate + panel copy from the modal.
         candidate_subject: schedEmail.candidateSubject,
         candidate_body: schedEmail.candidateBody,
@@ -1037,6 +1048,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setInterviewOpen(false);
       setInterviewAt(null);
       setInterviewerEmail('');
+      setInterviewerName('');
       setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
       setSchedEmailForKey(null);
     },
@@ -1210,6 +1222,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     setInterviewAt(null);
     setInterviewDuration(60);
     setInterviewerEmail('');
+    // The MRF names who takes this round — start from that rather than making the
+    // recruiter retype what is already displayed above the field.
+    setInterviewerName(mrfInterviewHints?.interviewerName || '');
     setInterviewerEmailTouched(false);
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
@@ -1226,6 +1241,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       : 60;
     setInterviewDuration([30, 45, 60, 90].includes(mins) ? mins : 60);
     setInterviewerEmail(interviewSchedule?.interviewer_email || '');
+    setInterviewerName(interviewSchedule?.interviewer_name || mrfInterviewHints?.interviewerName || '');
     setInterviewerEmailTouched(false);
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
@@ -1251,6 +1267,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       startAt: interviewAt.toDate().toISOString(),
       duration: interviewDuration,
       email: interviewerEmail.trim(),
+      name: interviewerName.trim(),
       mode: interviewMode,
     });
   };
@@ -1265,10 +1282,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     cancelMutation.mutate(cancelReason.trim());
   };
 
-  // Mirrors the backend's vendorCcFor() (pipeline.service.js): the status-only
-  // vendor cc is vendor-sourced only — a stale vendor_email on a
-  // screening_shortlist journey must not promise a cc that won't be sent.
-  const vendorCc = pipeline?.source === 'vendor' ? pipeline?.vendor_email : null;
+  // Mirrors the backend's vendorForJourney() (vendorNotification.service.js):
+  // vendor-sourced journeys only, since a stale vendor_email on a
+  // screening_shortlist row must not promise mail that won't be sent.
+  //
+  // The vendor is NOT cc'd (M6) — they get their own generated status line, so
+  // nothing the recruiter types below can reach them. Named `vendorNotified`
+  // rather than `vendorCc` so this screen stops describing a cc that no longer
+  // exists.
+  const vendorNotified = pipeline?.source === 'vendor' ? pipeline?.vendor_email : null;
+  // Documents is the one stage that tells a vendor nothing at all (Q5).
+  const vendorSuppressedHere = selectedStageKey === 'documents';
 
   const isRejectOrHold = decisionOutcome === 'rejected' || decisionOutcome === 'hold';
   const selectedReason = reasons.find((r) => r.id === reasonId);
@@ -1785,13 +1809,19 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                   </Popconfirm>
                 </div>
               )}
+              {/* States what actually happens now (M6): two separate emails,
+                  the vendor's built from a fixed status vocabulary rather than
+                  from anything typed here. The old copy promised a cc, which
+                  would have meant the vendor reading the body below. */}
               <Alert
                 type="info"
                 showIcon
                 icon={<MailOutlined />}
-                message={vendorCc
-                  ? `Outcome emails go to the candidate AND ${vendorCc} (status-only note for sensitive stages).`
-                  : 'Outcome emails go to the candidate automatically, from the recruitment mailbox.'}
+                message={!vendorNotified
+                  ? 'Outcome emails go to the candidate automatically, from the recruitment mailbox.'
+                  : vendorSuppressedHere
+                    ? `The candidate is emailed automatically. ${vendorNotified} is told nothing at this stage — document requests never reach a vendor.`
+                    : `The candidate is emailed automatically. ${vendorNotified} separately receives a short status line — name, position, stage, outcome — never the message below.`}
               />
             </div>
           )}
@@ -1860,7 +1890,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
           />
           <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
-              <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Outcome email → candidate{vendorCc ? ` + ${vendorCc}` : ''}</Text>
+              {/* "→ candidate" with no vendor appended, even when one is
+                  notified: this header labels the box the recruiter is editing,
+                  and that text goes to the candidate alone. */}
+              <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Outcome email → candidate</Text>
               {previewData?.templateName
                 ? <Tag color="blue">Template — {previewData.templateName}{previewData.templateId ? ` (#${previewData.templateId})` : ''}</Tag>
                 : <Tag color="orange">Draft — no template yet</Tag>}
@@ -2121,6 +2154,24 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
                 Ends at {interviewAt.add(interviewDuration, 'minute').format('h:mm A')} · {interviewAt.format('ddd, DD MMM YYYY')}
               </Text>
             )}
+          </div>
+
+          {/* Optional, but it is what the panel invite greets them by — left
+              blank the email opens "Hi there,". Prefilled from the MRF above. */}
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Interviewer name</Text>
+            <Input
+              placeholder="Who is taking this round?"
+              value={interviewerName}
+              onChange={(e) => setInterviewerName(e.target.value)}
+              style={{ marginTop: 4 }}
+              allowClear
+            />
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              {parsedInterviewers.emails.length > 1
+                ? 'With more than one interviewer the invite opens “Hi all,”.'
+                : 'Used to address the interviewer’s invitation email.'}
+            </Text>
           </div>
 
           <div>
@@ -2426,8 +2477,15 @@ function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemi
       })}
 
       <Button size="small" type="link" icon={<MailOutlined />} loading={pending} onClick={onRemind} style={{ paddingLeft: 0 }}>
-        Send reminder
+        Send a reminder now
       </Button>
+      <Text type="secondary" style={{ fontSize: 11.5 }}>
+        {/* The daily sweep (jobs/documentReminder.js) has run since Phase 3 M4, but
+            this panel never said so — showing only a "Send reminder" button read as
+            "chasing is manual". The Offer panel already states its own schedule. */}
+        Reminders are automatic: the candidate is chased two days after the request and then daily,
+        up to three times, until everything is in. The button above sends one immediately.
+      </Text>
       <Text type="secondary" style={{ fontSize: 11.5 }}>
         The candidate uploads via a secure link — no login. Vendors never see documents or these emails.
         Completeness is automatic; authenticity stays with the recruitment team.

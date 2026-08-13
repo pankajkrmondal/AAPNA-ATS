@@ -6,6 +6,23 @@ the actual code and the live staging database, not against the planning docs.
 **Scope note:** Vendor completion / hardening (M6) is deliberately excluded — RT is
 picking that up separately.
 
+> **Superseded in part, 2026-08-12.** M6 has since been built and audited — see
+> [`CHANGES-phase3-m6-vendor.md`](../changelog/CHANGES-phase3-m6-vendor.md).
+> Excluding it here turned out to be costly: M6 was the only module never checked
+> against the code, and the check found that **the vendor dual-notification had
+> never fired once**. §2.4 below records the "vendor dual-send unit test" as
+> merely un-run; in fact the feature it would have tested was dead — gated on
+> `pipeline.source === 'vendor'`, a value nothing ever wrote. That single missing
+> write also left the vendor-performance analytics table permanently empty.
+>
+> Three further items below are now out of date:
+> - **"Admin config UI missing"** and **"`POST /templates` never added"** — both
+>   landed after this audit was written. M6 added the two that were still
+>   missing: stage→template mapping and the email flow keys.
+> - **"Vendor status-only notification at Offer is not implemented"** — Q29 was
+>   answered on 2026-08-12. Vendors now get a content-free milestone line at
+>   Offer and nothing at Documents.
+
 > **Why this exists:** the task tracker had drifted badly from reality. Most rows marked
 > *Yet-to-start* are in fact complete, while a handful marked *In-progress* were never
 > begun. This document is the corrected picture, so the tracker can be reconciled against
