@@ -84,10 +84,6 @@ const MENU_ITEMS = [
   // you can land on by accident.
   { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
-  // Preserved pre-rebrand page — operational fallback, not a primary surface.
-  // Shortened from "Recruitment Analytics (Legacy)", which truncated to
-  // "Recruitment Analyti…" in the 248px sidebar and read as a broken duplicate.
-  { key: '/analytics-legacy', icon: <BarChartOutlined />, label: 'Analytics (Legacy)' },
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
   { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
 ];
