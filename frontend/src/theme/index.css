@@ -1157,6 +1157,52 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ----- Candidate Screening polish ----- */
+
+/* Four surfaces below were written as inline `style` props on the JSX. An inline
+   style cannot be overridden by any stylesheet, so under Design V2 (`.ats-v2`)
+   they stayed flat opaque blocks bolted onto a glass card. The declarations move
+   here UNCHANGED — same values, same rendering outside `.ats-v2` — purely so the
+   aurora-glass.css rollout block can restyle them. Same move that was made for
+   `.premium-stat-card`'s inline background/border-top. `!important` throughout so
+   the `.ats-v2` overrides (higher specificity, also `!important`) win
+   deterministically rather than by cascade order against AntD's runtime styles. */
+
+/* Search-summary metrics bar, above the results list. */
+.screening-summary-bar {
+  background: var(--ink-3) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: 10px !important;
+}
+
+/* Select-this-page bar, directly above the candidate cards. */
+.screening-selectall-bar {
+  background: var(--ink-4) !important;
+  border-radius: 6px !important;
+}
+
+/* Education / qualification accordion panels in the keyword filter. */
+.screening-edu-panel {
+  background: var(--ink-3) !important;
+  border: 1px solid var(--border-secondary) !important;
+  border-radius: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+/* The selected role's JD context panel (JD Filtering tab). */
+.screening-role-card {
+  background: var(--color-primary-bg) !important;
+  border-color: var(--color-primary-border) !important;
+  border-radius: 10px !important;
+}
+
+/* ----- Candidate Detail ----- */
+/* Same story as the four above: the Professional Summary callout carried its
+   tint and radius inline. */
+.cd-summary {
+  background: var(--gold-subtle) !important;
+  border-radius: 12px !important;
+}
+
 /* Unified detail pill (location / experience / CTC) */
 .screening-pill {
   display: inline-flex;
@@ -2465,6 +2511,19 @@ h1, h2, h3, h4, h5, h6,
   background: var(--ink-3);
   border: 1px solid var(--border);
   color: var(--text-2);
+}
+/* Names the range control. Without it the 7d/30d/90d pills sit unlabelled next to a
+   role dropdown, and nothing on screen says the two are the page's global filters. */
+.dash-hero__filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: help;
 }
 
 /* ----- Shared widget card header ----- */

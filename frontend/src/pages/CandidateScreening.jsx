@@ -1082,14 +1082,10 @@ export default function CandidateScreening() {
                     {/* Role JD context details */}
                     {roleDetails && (
                       <Col xs={24}>
-                        <Card
-                          size="small"
-                          style={{
-                            background: 'var(--color-primary-bg)',
-                            borderColor: 'var(--color-primary-border)',
-                            borderRadius: 10
-                          }}
-                        >
+                        {/* Surface styling lives in CSS (.screening-role-card), not
+                            inline — under Design V2 this panel is restyled onto the
+                            glass tier, and no stylesheet can override an inline style. */}
+                        <Card size="small" className="screening-role-card">
                           <Row gutter={[16, 8]}>
                             <Col xs={24} sm={12} md={6}>
                               <Text type="secondary" style={{ fontSize: 12 }}>Open Role</Text>
@@ -1302,7 +1298,7 @@ export default function CandidateScreening() {
                             </div>
                           }
                           key="tech"
-                          style={{ background: 'var(--ink-3)', border: '1px solid var(--border-secondary)', borderRadius: 8, marginBottom: 8 }}
+                          className="screening-edu-panel"
                         >
                           <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
                             <Row gutter={[16, 8]}>
@@ -1337,7 +1333,7 @@ export default function CandidateScreening() {
                             </div>
                           }
                           key="fin"
-                          style={{ background: 'var(--ink-3)', border: '1px solid var(--border-secondary)', borderRadius: 8, marginBottom: 8 }}
+                          className="screening-edu-panel"
                         >
                           <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
                             <Row gutter={[16, 8]}>
@@ -1372,7 +1368,7 @@ export default function CandidateScreening() {
                             </div>
                           }
                           key="sales"
-                          style={{ background: 'var(--ink-3)', border: '1px solid var(--border-secondary)', borderRadius: 8, marginBottom: 8 }}
+                          className="screening-edu-panel"
                         >
                           <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
                             <Row gutter={[16, 8]}>
@@ -1420,9 +1416,12 @@ export default function CandidateScreening() {
 
         <Divider style={{ margin: '12px 0' }} />
 
-        {/* Search summary metrics bar */}
+        {/* Search summary metrics bar. Layout stays inline; the surface
+            (fill/border/radius) moved to .screening-summary-bar so Design V2 can
+            put it on the glass tier — a stylesheet cannot override an inline style. */}
         {summary && (
           <div
+            className="screening-summary-bar"
             style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -1430,9 +1429,6 @@ export default function CandidateScreening() {
               flexWrap: 'wrap',
               gap: 10,
               padding: '12px 16px',
-              background: 'var(--ink-3)',
-              border: '1px solid var(--border-light)',
-              borderRadius: 10,
               marginBottom: 16,
             }}
           >
@@ -1499,7 +1495,7 @@ export default function CandidateScreening() {
                 selecting hundreds of unseen candidates from a control that sits
                 above ten rows is how a bulk reject goes wrong. Selecting every
                 match is still available, but as a deliberate second click. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '6px 12px', background: 'var(--ink-4)', borderRadius: 6, marginBottom: 10 }}>
+            <div className="screening-selectall-bar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '6px 12px', marginBottom: 10 }}>
               <Checkbox
                 checked={pageCandidateIds.length > 0 && pageCandidateIds.every((id) => selectedCandidateKeys.includes(id))}
                 indeterminate={

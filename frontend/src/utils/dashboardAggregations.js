@@ -124,31 +124,96 @@ export function conversionStages(funnel = {}) {
 }
 
 /**
- * Week-over-week delta from candidate created dates: count in the last 7 days vs the
- * prior 7 days. Returns `{ thisWeek, lastWeek, deltaPct }` (deltaPct null when no base).
+ * Period-over-period delta: count in the last `days` days vs the `days` before that.
+ * Returns `{ current, previous, deltaPct }` (deltaPct null when there is no base to
+ * compare against).
+ *
+ * Takes a window because the dashboard's range control is global — a delta pinned to
+ * 7 days while the reader has selected 90 is comparing a different period from every
+ * other number on the card.
  */
-export function weekOverWeek(candidates = []) {
+export function periodOverPeriod(items = [], days = 7) {
   const now = Date.now();
-  const day = 24 * 60 * 60 * 1000;
-  let thisWeek = 0;
-  let lastWeek = 0;
-  for (const c of candidates) {
+  const span = Math.max(1, days) * 24 * 60 * 60 * 1000;
+  let current = 0;
+  let previous = 0;
+  for (const c of items) {
     const d = candidateDate(c);
     if (!d) continue;
     const age = now - d.getTime();
-    if (age < 7 * day) thisWeek++;
-    else if (age < 14 * day) lastWeek++;
+    if (age < 0) continue;
+    if (age < span) current++;
+    else if (age < 2 * span) previous++;
   }
-  const deltaPct = lastWeek === 0 ? (thisWeek > 0 ? 100 : null) : Math.round(((thisWeek - lastWeek) / lastWeek) * 100);
-  return { thisWeek, lastWeek, deltaPct };
+  const deltaPct = previous === 0
+    ? (current > 0 ? 100 : null)
+    : Math.round(((current - previous) / previous) * 100);
+  return { current, previous, deltaPct };
+}
+
+/** Week-over-week delta — `periodOverPeriod` over 7 days, in its original shape. */
+export function weekOverWeek(candidates = []) {
+  const { current, previous, deltaPct } = periodOverPeriod(candidates, 7);
+  return { thisWeek: current, lastWeek: previous, deltaPct };
 }
 
 /**
- * A small 7-point daily sparkline series (counts) for KPI cards, derived from candidate
- * created dates. Returns an array of numbers (oldest → newest).
+ * A daily sparkline series (counts) for KPI cards, derived from record created dates.
+ * Returns an array of numbers (oldest → newest).
  */
 export function sparkSeries(candidates = [], points = 7) {
   return bucketByDay(candidates, points).map((b) => b.count);
+}
+
+/**
+ * The same daily series, but LABELLED — `[{ date, label, value }]`, oldest → newest.
+ *
+ * The KPI sparklines take this rather than bare numbers so hovering a point can name
+ * the day it belongs to. A graph the reader cannot interrogate is decoration.
+ */
+export function sparkPoints(items = [], points = 7) {
+  return bucketByDay(items, points).map((b) => ({ date: b.date, label: b.label, value: b.count }));
+}
+
+/**
+ * True when the sample reaches back past the start of a `days`-long window — i.e. the
+ * oldest record we hold is older than the window, so every day inside it has a
+ * complete count.
+ *
+ * Guards `cumulativePoints`: a running total walked back through a window the sample
+ * only partly covers would understate the early days and draw a cliff that never
+ * happened.
+ */
+export function sampleCoversWindow(items = [], days = 7) {
+  if (!items.length) return false;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (Math.max(1, days) - 1));
+  let oldest = Infinity;
+  for (const c of items) {
+    const d = candidateDate(c);
+    if (d) oldest = Math.min(oldest, d.getTime());
+  }
+  return oldest < start.getTime();
+}
+
+/**
+ * A RUNNING TOTAL series ending at `endTotal` — `[{ date, label, value }]`.
+ *
+ * Walks the known per-day additions backwards from today's real total, so the line is
+ * the headline number's own history rather than the rate of new arrivals. Only valid
+ * when the sample covers the window (see `sampleCoversWindow`) and the daily counts
+ * are unfiltered relative to `endTotal`; the caller checks both.
+ */
+export function cumulativePoints(items = [], days = 7, endTotal = 0) {
+  const daily = bucketByDay(items, days);
+  const out = new Array(daily.length);
+  let running = Number(endTotal) || 0;
+  for (let i = daily.length - 1; i >= 0; i--) {
+    out[i] = { date: daily[i].date, label: daily[i].label, value: Math.max(0, running) };
+    running -= daily[i].count; // total as it stood at the end of the previous day
+  }
+  return out;
 }
 
 /**

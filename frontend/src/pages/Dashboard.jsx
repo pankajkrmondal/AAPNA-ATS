@@ -11,7 +11,16 @@
  * data — widgets own their empty states instead.
  *
  * Metric explanations live in constants/metricDefinitions.js and render through
- * <MetricInfo>, not as inline tooltip prose.
+ * <MetricInfo>, not as inline tooltip prose. Everything those tooltips show is written
+ * for the recruiter reading the screen — no endpoint paths, no table or column names,
+ * no roadmap notes. See the header of that file.
+ *
+ * THE GLOBAL FILTERS (range + role, both owned here) reach every graph on the page:
+ * the four KPI card sparklines, Hiring Trends, and Talent Insights. They deliberately
+ * do NOT change the KPI headline numbers, which are lifetime totals from the server —
+ * so each card's footnote and hover text say which period they are describing, and the
+ * range control's own tooltip says the totals stay put. A filter that silently moves
+ * some numbers and not others is worse than one that explains itself.
  */
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -38,8 +47,10 @@ import useDashboardData from '../hooks/useDashboardData';
 import useLiveActivity from '../hooks/useLiveActivity';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
 import {
-  sparkSeries,
-  weekOverWeek,
+  sparkPoints,
+  cumulativePoints,
+  sampleCoversWindow,
+  periodOverPeriod,
 } from '../utils/dashboardAggregations';
 
 import StatCard from '../components/common/StatCard';
@@ -134,9 +145,20 @@ export default function Dashboard() {
     return normCandidates.filter((c) => (c.position || '').toLowerCase() === r);
   }, [normCandidates, role]);
 
-  // Last-7-day series (drives the "in the last 7 days" footnote) + WoW delta.
-  const spark = useMemo(() => sparkSeries(normCandidates, 7), [normCandidates]);
-  const wow = useMemo(() => weekOverWeek(normCandidates), [normCandidates]);
+  // Daily series over the SELECTED window, from the role-filtered set — see the KPI
+  // note below for why both of those matter.
+  const addedPoints = useMemo(
+    () => sparkPoints(filteredCandidates, rangeDays),
+    [filteredCandidates, rangeDays],
+  );
+  const addedInRange = useMemo(
+    () => addedPoints.reduce((a, p) => a + p.value, 0),
+    [addedPoints],
+  );
+  const wow = useMemo(
+    () => periodOverPeriod(filteredCandidates, rangeDays),
+    [filteredCandidates, rangeDays],
+  );
 
   // Action-center derived counts
   const awaitingScreening = Math.max(0, (funnel.sourced || 0) - (funnel.aiScreened || 0));
@@ -149,36 +171,59 @@ export default function Dashboard() {
 
   /** KPI cards — UNIFORM anatomy: icon, delta chip, label, value, footnote, sparkline.
    *
-   *  Every card carries a REAL 7-day series. The earlier version had a sparkline on
-   *  only two of four (the candidate-derived ones), because MRF and shortlist counts
-   *  weren't in the candidate batch — a row half-full of empty bands is what made it
-   *  read as unfinished.
+   *  Every card carries a REAL series over the SELECTED window, derived from a batch
+   *  this page already fetches. Two things about that are load-bearing:
    *
-   *  Rather than drop the graphs or fabricate data, each series is derived from a
-   *  batch this page already fetches, and each metric's definition states exactly
-   *  what its line plots (see constants/metricDefinitions.js). Note the series is a
-   *  RATE (new per day) while the value above it is a running TOTAL — that is the
-   *  honest pairing available client-side, and the definition says so rather than
-   *  letting the reader assume the line is the total's history. */
-  const mrfSeries = useMemo(
-    () => sparkSeries(
-      (pendingMrfs || []).map((m) => ({ createdAt: m.created_at || m.createdAt })),
-      7,
-    ),
-    [pendingMrfs],
-  );
-  const shortlistSeries = useMemo(
-    () => sparkSeries(
-      (pipeline || []).map((p) => ({ createdAt: p.created_at || p.createdAt || p.modified_at })),
-      7,
-    ),
-    [pipeline],
+   *  1. THE GRAPHS FOLLOW THE FILTERS. They used to be pinned to `sparkSeries(…, 7)`
+   *     on the unfiltered candidate list, so moving the range control between 7d/30d/
+   *     90d or picking a role changed the chart below and left all four card graphs
+   *     sitting there identical. A control that visibly does nothing reads as a broken
+   *     page. Range and role now flow into every series, delta and footnote here.
+   *  2. NO TWO CARDS DRAW THE SAME LINE. Total Candidates and Today's Uploads were
+   *     handed the same array — literally the same variable — so half the row was a
+   *     duplicate. Total Candidates now plots the running TOTAL (the headline number's
+   *     own history), which is what that card's line should have been all along.
+   *
+   *  That running total is only truthful when the sample reaches back past the start
+   *  of the window and no role filter is narrowing it against an all-roles total, so
+   *  it falls back to the per-day rate when either fails. Whichever it is, the card's
+   *  `chart` sentence says so in words rather than leaving the reader to guess. */
+  const mrfPoints = useMemo(() => {
+    const rows = (pendingMrfs || [])
+      .filter((m) => !role || (m.role || '').toLowerCase() === role.toLowerCase())
+      .map((m) => ({ createdAt: m.created_at || m.createdAt }));
+    return sparkPoints(rows, rangeDays);
+  }, [pendingMrfs, rangeDays, role]);
+
+  const shortlistPoints = useMemo(() => {
+    const rows = (pipeline || [])
+      .filter((p) => !role || (p.job_title || p.role || '').toLowerCase() === role.toLowerCase())
+      .map((p) => ({ createdAt: p.created_at || p.createdAt || p.modified_at }));
+    return sparkPoints(rows, rangeDays);
+  }, [pipeline, rangeDays, role]);
+
+  // Running total for the Total Candidates card — see the note above for the guards.
+  const totalIsCumulative = !role && sampleCoversWindow(normCandidates, rangeDays);
+  const totalPoints = useMemo(
+    () => (totalIsCumulative
+      ? cumulativePoints(normCandidates, rangeDays, stats.totalCandidates)
+      : addedPoints),
+    [totalIsCumulative, normCandidates, rangeDays, stats.totalCandidates, addedPoints],
   );
 
   const shortlistRate = funnel.sourced
     ? Math.round((stats.shortlisted / funnel.sourced) * 100)
     : null;
-  const last7 = spark.reduce((a, b) => a + (b || 0), 0);
+
+  /** One phrasing of the selected period, so every footnote and hover on the row
+   *  describes it in the same words. */
+  const rangeLabel = `the last ${rangeDays} days`;
+  /** Appended ONLY to figures that are genuinely role-filtered. The counts that come
+   *  from the server (open requisitions, shortlist rate) cover all roles whatever the
+   *  picker says, and labelling them "Java Developer only" would be a plain untruth —
+   *  they carry "all roles" instead so the difference is visible rather than implied. */
+  const roleSuffix = role ? ` · ${role} only` : '';
+  const allRolesSuffix = role ? ' · all roles' : '';
 
   const kpiCards = [
     {
@@ -187,9 +232,18 @@ export default function Dashboard() {
       value: stats.totalCandidates,
       icon: <TeamOutlined />,
       color: '#7a922e',
-      delta: wow.deltaPct !== null ? { value: wow.deltaPct } : null,
-      footnote: 'across all roles and sources',
-      sparklineData: spark,
+      delta: wow.deltaPct !== null
+        ? {
+          value: wow.deltaPct,
+          label: `${wow.current} added in ${rangeLabel}, against ${wow.previous} in the ${rangeDays} days before that`,
+        }
+        : null,
+      footnote: `${addedInRange.toLocaleString()} added in ${rangeLabel}${roleSuffix}`,
+      sparklineData: totalPoints,
+      sparklineUnit: totalIsCumulative ? 'candidates in total' : 'added',
+      chart: totalIsCumulative
+        ? `How the total has grown day by day over ${rangeLabel}.`
+        : `New candidates added per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above covers all roles and all time.`,
     },
     {
       metric: 'activeMRFs',
@@ -197,8 +251,10 @@ export default function Dashboard() {
       value: stats.activeMRFs,
       icon: <FileTextOutlined />,
       color: '#2563eb',
-      footnote: `${stats.pendingApprovalMRFs} awaiting approval`,
-      sparklineData: mrfSeries,
+      footnote: `${stats.pendingApprovalMRFs} awaiting approval${allRolesSuffix}`,
+      sparklineData: mrfPoints,
+      sparklineUnit: 'raised',
+      chart: `New requisitions raised per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above is every open requisition, however old.`,
     },
     {
       metric: 'todayUploads',
@@ -206,8 +262,10 @@ export default function Dashboard() {
       value: stats.todayUploads,
       icon: <CalendarOutlined />,
       color: '#d97706',
-      footnote: `${last7} in the last 7 days`,
-      sparklineData: spark,
+      footnote: `${addedInRange.toLocaleString()} in ${rangeLabel}${roleSuffix}`,
+      sparklineData: addedPoints,
+      sparklineUnit: 'uploaded',
+      chart: `Uploads per day over ${rangeLabel}${role ? `, for ${role}` : ''}, so today reads in context.`,
     },
     {
       metric: 'shortlisted',
@@ -215,8 +273,10 @@ export default function Dashboard() {
       value: stats.shortlisted,
       icon: <CheckCircleOutlined />,
       color: '#16a34a',
-      footnote: shortlistRate !== null ? `${shortlistRate}% of sourced` : 'of all sourced candidates',
-      sparklineData: shortlistSeries,
+      footnote: shortlistRate !== null ? `${shortlistRate}% of sourced${allRolesSuffix}` : 'of all sourced candidates',
+      sparklineData: shortlistPoints,
+      sparklineUnit: 'entered the pipeline',
+      chart: `Candidates entering the interview pipeline per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above is everyone currently shortlisted.`,
     },
   ];
 
@@ -281,6 +341,9 @@ export default function Dashboard() {
                 delta={kpi.delta}
                 footnote={kpi.footnote}
                 sparklineData={kpi.sparklineData}
+                sparklineUnit={kpi.sparklineUnit}
+                sparklineSummary={kpi.chart}
+                chartNote={kpi.chart}
               />
             </div>
           </Col>
@@ -296,7 +359,7 @@ export default function Dashboard() {
            their own empty states. */}
       <Row gutter={[20, 20]} className="dash-band">
         <Col xs={24} xl={16}>
-          <HiringTrendsCard candidates={filteredCandidates} rangeDays={rangeDays} loading={statsLoading} />
+          <HiringTrendsCard candidates={filteredCandidates} rangeDays={rangeDays} role={role} loading={statsLoading} />
         </Col>
         <Col xs={24} xl={8}>
           <ActionCenterCard
