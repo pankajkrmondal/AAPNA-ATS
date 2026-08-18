@@ -5,6 +5,102 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 9: public pages + FINAL ACCEPTANCE
+
+**The rollout is complete.** Nine phases, every route converted.
+
+### Public token pages — one language, not three
+
+These render outside `MainLayout` under `<ForceLight>`, so `.ats-v2`
+structurally cannot reach them, and **glass would be wrong here anyway**:
+`PublicPageShell` deliberately mirrors the branded *email* a candidate clicks
+through from, and that continuity is a correct design decision. Per the plan,
+the shell is untouched.
+
+What was wrong was consistency. Of five public pages, **two used the shell and
+three hand-rolled their own logo header, footer and `auth-background`** — three
+visual languages on the surface most external people ever see of AAPNA.
+
+- `MissingJdUpload` and `MrfApprovalAction` (4 states each) now render through
+  `PublicPageShell`. Their hand-rolled copyright lines are gone — the shell
+  already renders one, so those pages had **two footers**.
+- `MrfSubmit` **keeps its own layout deliberately**: it is a long sectioned form
+  whose accent runs through section rules and required marks, and the shell's
+  narrow card is the wrong container. What it did get is the shared brand: its
+  local `#92a63c` was a **near-miss of the real brand green**, carried over from
+  the n8n form, so its header band was a visibly different green from the email
+  that links to it. Now imports `BRAND` from the shell.
+- **`AuthLayout` deliberately untouched**, per the plan — it is the pilot's own
+  pixel-diff non-regression anchor, and changing it means re-baselining that.
+
+### Fixed: dark theme leaked into the public pages
+
+Caught by rendering a public page in a dark session rather than by reading code.
+**`<ForceLight>` was not actually pinning AntD to light.** A nested
+`<ConfigProvider>` *inherits the parent's algorithm* when it does not declare
+one, and `lightTheme` declared none while `darkTheme` sets
+`algorithm: theme.darkAlgorithm`.
+
+The CSS custom properties were correctly light the whole time (`--text` resolved
+to `#2b2b2b`), which is why this survived: **the variables looked right and the
+components did not.** AntD emitted a dark-derived class, so a candidate opening
+an emailed link while an operator's session was dark got an `<Alert>` with
+**near-black text on a near-black fill** — unreadable. One line:
+`algorithm: theme.defaultAlgorithm` on `lightTheme`, with a comment saying why
+it must not be deleted as redundant.
+
+---
+
+## FINAL ACCEPTANCE
+
+The plan's own acceptance test: *"walk every sidebar route in both themes… no
+screen may read as belonging to a different product than the one before it."*
+
+Mechanised rather than eyeballed, because that is what the walk is actually
+looking for: **every converted route loads**, and **every surface class in the
+app is rendered together on one page** so a drift between two of them shows up
+as a mismatch instead of needing thirteen screenshots compared from memory.
+
+- Tier 2 — `glass-card`, `premium-stat-card`, `kpi-card`, `pipeline-column`,
+  `admin-stat` — all assert to the same `--glass-2-bg`.
+- Tier 3 — `glass-3`, `panel-shell`, `cp-candidate-card`, `cand-card` — all
+  assert to the same `--glass-3-bg`.
+- Tier 4 — the overlay — asserts to `--glass-4-bg`, and is the **only**
+  content-side surface allowed to blur.
+- Every page-level card asserts to `--radius-card`.
+- No tier-2 or tier-3 surface blurs.
+
+**52/52, both themes.** And it found a real one:
+
+> **`.premium-stat-card` was rendering at 18px while every other card was 16px.**
+> A hardcoded `border-radius: 18px !important` sat *after* the radius-scale rule
+> and silently beat it, so the dashboard's four KPI cards were 2px rounder than
+> the widget cards beside them. This is precisely the drift the scale was
+> collapsed to prevent, and it is invisible at a glance — 16 vs 18px is not
+> something the eye catches, it is something a walk across screens registers as
+> inconsistency without being able to name it. Removed, not re-escalated.
+
+### Full suite
+
+All nine phase suites re-run after that fix, on the final build:
+
+| phase | assertions |
+|---|---|
+| 1 — overlay tier + blur fix | 64/64 |
+| 2 — primitives + tokens | 48/48 |
+| 3 — `/candidates` | 34/34 |
+| 4 — `/pipeline` | 34/34 |
+| 5 — vendor/HR/MRF unit | 54/54 |
+| 6 — `/analytics` | 30/30 |
+| 7 — `/settings`, `/email` | 32/32 |
+| 8 — admin + prototype | 42/42 |
+| 9 — public pages | 56/56 |
+| **final acceptance** | **52/52** |
+
+**446/446, both themes, on one build.**
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 8: the Admin portal + the prototype
 
 The biggest structural departure, deliberately last so every pattern was proven

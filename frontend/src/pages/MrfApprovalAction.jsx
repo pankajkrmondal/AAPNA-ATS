@@ -3,6 +3,11 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, FileDoneOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
+// The shared public-page frame, mirroring the branded email the approver clicks
+// through from. This page hand-rolled its own logo header, footer and
+// `auth-background` shell, so an approver saw a different design from the mail
+// that sent them — on the one surface that is meant to feel continuous.
+import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -77,100 +82,70 @@ export default function MrfApprovalAction() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--ink)' }}>
-        <Spin size="large" />
-        <Text style={{ marginTop: 16, color: 'var(--text-secondary)' }}>Loading requisition details...</Text>
-      </div>
+      <PublicPageShell title="Review Requisition Request" subtitle="Loading requisition details…">
+        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+      </PublicPageShell>
     );
   }
 
   if (success) {
     const isApproved = successStatus === 'approved';
     return (
-      <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-        <Card className="glass animate-fade-in" style={{ width: '100%', maxWidth: 580, borderRadius: 20, padding: 24, boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.08)' }}>
-          <Result
-            status={isApproved ? 'success' : 'error'}
-            title={<span style={{ fontWeight: 700 }}>Requisition Request {isApproved ? 'Approved' : 'Declined'}!</span>}
-            subTitle={
-              <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                Thank you for your decision. The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has been marked as <strong>{successStatus.toUpperCase()}</strong>. Notification emails have been dispatched to the HR team.
-              </Paragraph>
-            }
-            extra={[
-              <Button
-                key="close"
-                type="primary"
-                onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
-              >
-                Close Window
-              </Button>
-            ]}
-          />
-        </Card>
-      </div>
+      <PublicPageShell
+        title={`Requisition ${isApproved ? 'approved' : 'declined'}`}
+        subtitle="Your decision has been recorded and the HR team notified."
+      >
+        <Result
+          status={isApproved ? 'success' : 'error'}
+          title={<span style={{ fontWeight: 700 }}>Requisition Request {isApproved ? 'Approved' : 'Declined'}!</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              Thank you for your decision. The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has been marked as <strong>{successStatus.toUpperCase()}</strong>. Notification emails have been dispatched to the HR team.
+            </Paragraph>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>
+          ]}
+        />
+      </PublicPageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-        <Card className="glass animate-fade-in" style={{ width: '100%', maxWidth: 540, borderRadius: 20, padding: '32px 28px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <img
-              src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-              alt="AAPNA Logo"
-              style={{ height: 36, objectFit: 'contain', margin: '0 auto 16px' }}
-            />
-            <Title level={4} style={{ color: '#c0392b', margin: 0, fontWeight: 700 }}>
-              Link Inactive or Invalid
-            </Title>
-          </div>
-          <Alert
-            message="Requisition Process Error"
-            description={error}
-            type="error"
-            showIcon
-            style={{ borderRadius: 10, marginBottom: 20 }}
-          />
-          <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-            If you believe this is an error, please reach out to the recruitment coordinator or HR team.
-          </Paragraph>
-        </Card>
-      </div>
+      <PublicPageShell
+        title="Link inactive or invalid"
+        subtitle="We could not open this requisition from your link."
+      >
+        <Alert
+          message="Requisition Process Error"
+          description={error}
+          type="error"
+          showIcon
+          style={{ borderRadius: 10, marginBottom: 20 }}
+        />
+        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+          If you believe this is an error, please reach out to the recruitment coordinator or HR team.
+        </Paragraph>
+      </PublicPageShell>
     );
   }
 
   const isApproveFlow = currentAction === 'approve';
 
   return (
-    <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
-      <Card
-        className="glass animate-fade-in"
-        style={{
-          width: '100%',
-          maxWidth: 850,
-          borderRadius: 20,
-          padding: '24px 32px',
-          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.08)',
-        }}
-      >
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img
-            src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-            alt="AAPNA Logo"
-            style={{ height: 40, objectFit: 'contain', margin: '0 auto 16px' }}
-          />
-          <Title level={3} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.02em' }}>
-            Review Requisition Request
-          </Title>
-          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
-            Review details of the Manpower Requisition Form (MRF) submitted by <strong>{mrfDetails?.hiring_manager_name}</strong>.
-          </Text>
-        </div>
-
+    <PublicPageShell
+      maxWidth={850}
+      title="Review Requisition Request"
+      subtitle={`Manpower Requisition Form submitted by ${mrfDetails?.hiring_manager_name || 'a hiring manager'}.`}
+    >
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
           <Descriptions
@@ -323,13 +298,8 @@ export default function MrfApprovalAction() {
           )}
         </div>
 
-        {/* Footer */}
-        <div style={{ textAlign: 'center', marginTop: 40 }}>
-          <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
-            © {new Date().getFullYear()} AAPNA Infotech · Secure Approvals Portal
-          </Text>
-        </div>
-      </Card>
-    </div>
+      {/* The hand-rolled copyright line is gone — PublicPageShell renders the
+          same footer the branded email does, so this page had two. */}
+    </PublicPageShell>
   );
 }

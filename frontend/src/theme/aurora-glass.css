@@ -528,7 +528,15 @@
 
 .ats-v2 .premium-stat-card {
   border-top: 4px solid var(--stat-color, var(--gold)) !important;
-  border-radius: 18px !important;
+  /* NO hardcoded radius. This carried `border-radius: 18px !important`, which
+     sat AFTER the radius-scale rule above and silently beat it — so the
+     dashboard's four KPI cards rendered 2px rounder than every other card in
+     the app, including the widget cards beside them. Exactly the drift the
+     scale was collapsed to prevent, and invisible at a glance: 16 vs 18px is
+     not something the eye catches, it is something a walk across screens feels
+     as inconsistency without being able to name it.
+     Found by the final acceptance check, which asserts every card class
+     resolves to `--radius-card`. Removed rather than re-escalated. */
   overflow: hidden;
   isolation: isolate;
 }

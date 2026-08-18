@@ -3,6 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Card, Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Space, Upload } from 'antd';
 import { SolutionOutlined, CheckCircleOutlined, ContactsOutlined, UploadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
+// The shared public-page frame — the same one DocumentUpload and
+// InterviewScorecard use, mirroring the branded email a candidate clicks
+// through from. This page previously hand-rolled its own logo header, footer
+// and `auth-background` shell, which made it a third visual language on a
+// surface that is supposed to feel continuous with the email.
+import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -245,69 +251,60 @@ export default function MissingJdUpload() {
   // 1. Loading State
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--ink)' }}>
-        <Spin size="large" />
-        <Text style={{ marginTop: 16, color: 'var(--text-secondary)' }}>Loading your profile session...</Text>
-      </div>
+      <PublicPageShell title="Complete your profile" subtitle="Loading your profile session…">
+        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+      </PublicPageShell>
     );
   }
 
   // 2. Success State
   if (success) {
     return (
-      <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-        <Card className="glass animate-fade-in" style={{ width: '100%', maxWidth: 580, borderRadius: 20, padding: 20 }}>
-          <Result
-            status="success"
-            title={<span style={{ fontWeight: 700 }}>Profile Updated Successfully!</span>}
-            subTitle={
-              <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                Thank you, <strong>{candidateInfo?.Name || 'Candidate'}</strong>. Your missing profile details have been received and logged. Your application is now marked active.
-              </Paragraph>
-            }
-            extra={[
-              <Button
-                key="close"
-                type="primary"
-                onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
-              >
-                Close Window
-              </Button>
-            ]}
-          />
-        </Card>
-      </div>
+      <PublicPageShell
+        title="Profile updated"
+        subtitle="Thank you — we have everything we need."
+      >
+        <Result
+          status="success"
+          title={<span style={{ fontWeight: 700 }}>Profile Updated Successfully!</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              Thank you, <strong>{candidateInfo?.Name || 'Candidate'}</strong>. Your missing profile details have been received and logged. Your application is now marked active.
+            </Paragraph>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>
+          ]}
+        />
+      </PublicPageShell>
     );
   }
 
   // 3. Error State
   if (error) {
     return (
-      <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-        <Card className="glass animate-fade-in" style={{ width: '100%', maxWidth: 540, borderRadius: 20, padding: '32px 28px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <img
-              src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-              alt="AAPNA Logo"
-              style={{ height: 36, objectFit: 'contain', margin: '0 auto 16px' }}
-            />
-            <Title level={4} style={{ color: '#c0392b', margin: 0, fontWeight: 700 }}>
-              Action Required: Link Issue
-            </Title>
-          </div>
-          <Alert
-            message="Error Accessing Page"
-            description={error}
-            type="error"
-            showIcon
-            style={{ borderRadius: 10, marginBottom: 20 }}
-          />
-          <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-            If you need assistance, please contact the AAPNA HR Team at support@aapnainfotech.com.
-          </Paragraph>
-        </Card>
-      </div>
+      <PublicPageShell
+        title="Link inactive or invalid"
+        subtitle="We could not open your profile from this link."
+      >
+        <Alert
+          message="Error Accessing Page"
+          description={error}
+          type="error"
+          showIcon
+          style={{ borderRadius: 10, marginBottom: 20 }}
+        />
+        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+          If you need assistance, please contact the AAPNA HR Team at support@aapnainfotech.com.
+        </Paragraph>
+      </PublicPageShell>
     );
   }
 
@@ -317,66 +314,39 @@ export default function MissingJdUpload() {
   // Early return if the profile is already complete
   if (missingKeys.length === 0) {
     return (
-      <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
-        <Card className="glass animate-fade-in" style={{ width: '100%', maxWidth: 580, borderRadius: 20, padding: '40px 36px 28px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <img
-              src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-              alt="AAPNA Logo"
-              style={{ height: 36, objectFit: 'contain', margin: '0 auto 16px' }}
-            />
-          </div>
-          <Result
-            status="info"
-            title={<span style={{ fontWeight: 700 }}>Profile Already Complete</span>}
-            subTitle={
-              <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                Hi <strong>{candidateInfo?.Name || 'Candidate'}</strong>, your profile information is fully complete. No further action is required from you.
-              </Paragraph>
-            }
-            extra={[
-              <Button
-                key="close"
-                type="primary"
-                onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
-              >
-                Close
-              </Button>
-            ]}
-          />
-        </Card>
-      </div>
+      <PublicPageShell
+        title="Nothing left to fill in"
+        subtitle="Your profile is already complete."
+      >
+        <Result
+          status="info"
+          title={<span style={{ fontWeight: 700 }}>Profile Already Complete</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              Hi <strong>{candidateInfo?.Name || 'Candidate'}</strong>, your profile information is fully complete. No further action is required from you.
+            </Paragraph>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close
+            </Button>
+          ]}
+        />
+      </PublicPageShell>
     );
   }
 
   return (
-    <div className="auth-background" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
-      <Card
-        className="glass animate-fade-in"
-        style={{
-          width: '100%',
-          maxWidth: 620,
-          borderRadius: 20,
-          padding: '40px 36px 28px',
-          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.08)'
-        }}
-      >
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img
-            src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-            alt="AAPNA Logo"
-            style={{ height: 42, objectFit: 'contain', margin: '0 auto 20px' }}
-          />
-          <Title level={3} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.02em' }}>
-            Complete Your Profile
-          </Title>
-          <Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
-            Hi <strong>{candidateInfo?.Name}</strong>, please fill in the missing details below to process your job application.
-          </Text>
-        </div>
-
+    <PublicPageShell
+      maxWidth={620}
+      title="Complete Your Profile"
+      subtitle={`Hi ${candidateInfo?.Name || 'there'} — please fill in the missing details below so we can process your application.`}
+    >
         <Form
           name="missing-jd"
           layout="vertical"
@@ -466,22 +436,16 @@ export default function MissingJdUpload() {
                 borderRadius: 10,
                 fontWeight: 600,
                 fontSize: 15,
-                background: '#7a922e',
-                borderColor: '#7a922e'
+                background: BRAND.accent,
+                borderColor: BRAND.accent
               }}
             >
               Submit Profile Details
             </Button>
           </Form.Item>
         </Form>
-
-        {/* Footer */}
-        <div style={{ textAlign: 'center', marginTop: 32 }}>
-          <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
-            © {new Date().getFullYear()} AAPNA · Secure Candidate Portal
-          </Text>
-        </div>
-      </Card>
-    </div>
+      {/* The hand-rolled copyright line is gone: PublicPageShell renders the
+          same footer the branded email does, so this page had two. */}
+    </PublicPageShell>
   );
 }

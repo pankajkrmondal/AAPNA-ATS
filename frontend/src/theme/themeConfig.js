@@ -29,6 +29,22 @@ const sharedTokens = {
 
 /** Light mode theme */
 export const lightTheme = {
+  /**
+   * STATED EXPLICITLY, and load-bearing — do not remove as redundant.
+   *
+   * A nested <ConfigProvider> INHERITS the parent's algorithm when it does not
+   * declare one. `<ForceLight>` (App.jsx) nests a `lightTheme` provider inside
+   * the app-wide one to pin the public token pages light; with no algorithm
+   * here, `darkAlgorithm` leaked through from the parent during a dark session.
+   * The CSS variables were correctly light, so text stayed dark — but AntD's
+   * generated component styles were dark-derived, and a candidate opening an
+   * emailed link while the operator's session was dark got, for example, an
+   * <Alert> with near-black text on a near-black fill.
+   *
+   * `defaultAlgorithm` is what AntD would use anyway with nothing set; naming it
+   * makes this provider authoritative rather than dependent on its parent.
+   */
+  algorithm: theme.defaultAlgorithm,
   token: {
     ...sharedTokens,
     colorPrimary: '#7a922e',
