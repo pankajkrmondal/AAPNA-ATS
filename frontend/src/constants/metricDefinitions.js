@@ -224,6 +224,58 @@ export const METRICS = {
       + 'genuinely different one (keep both). Until then they are not in the candidate database.',
     source: 'The upload tracker.', // dev: duplicates awaiting review, upload job tracker
   },
+  // ── /analytics headline tiles (Phase 6) ─────────────────────────────────
+  // These six had no explanation of any kind. They also carry no date window,
+  // which the page says in small print above them — repeated in each caveat
+  // here, because the tile is what gets screenshotted into a status report.
+  analyticsShortlisted: {
+    label: 'Shortlisted',
+    short: 'Candidates a recruiter has shortlisted from screening, all time.',
+    formula: 'Counts candidates marked shortlisted, whether or not they have since '
+      + 'moved further along or been closed out.',
+    source: 'Your screening decisions.', // dev: GET /screening/analytics · tiles.shortlisted
+    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+  },
+  analyticsRejected: {
+    label: 'Rejected',
+    short: 'Candidates rejected at any stage, all time.',
+    source: 'Your screening and pipeline decisions.',
+    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+  },
+  analyticsOnHold: {
+    label: 'On Hold',
+    short: 'Candidates currently parked on hold — not progressing, not rejected.',
+    formula: 'Counts the ones on hold right now, at whatever stage they were paused.',
+    source: 'Your pipeline records.',
+    caveat: 'This is a snapshot of today, not a total over time — it goes down as '
+      + 'holds are resolved.',
+  },
+  analyticsTotal: {
+    label: 'Total',
+    short: 'Every candidate that has entered screening, all time.',
+    formula: 'The denominator for the other tiles: shortlisted, rejected and on-hold '
+      + 'are all subsets of this.',
+    source: 'Your candidate database.',
+    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+  },
+  analyticsZekoSent: {
+    label: 'Zeko Sent',
+    short: 'Assessment invitations sent to candidates through Zeko.',
+    formula: 'Counts invitations sent, not candidates — a candidate re-invited after '
+      + 'a lapsed link counts twice.',
+    source: 'Your Zeko assessment records.',
+  },
+  analyticsZekoPassed: {
+    label: 'Zeko Passed',
+    short: 'Candidates who took a Zeko assessment and met the passing score.',
+    formula: 'Only counts assessments whose score has synced back. A candidate who has '
+      + 'sat the test but whose result has not arrived is in neither this nor a '
+      + 'failed count yet.',
+    source: 'Your Zeko assessment records.',
+    caveat: 'Read against Zeko Sent rather than on its own — sent includes people who '
+      + 'never opened the invitation.',
+  },
+
   totalUploads: {
     label: 'Total Uploads',
     short: 'Every resume sent through this screen, whatever happened to it afterwards.',

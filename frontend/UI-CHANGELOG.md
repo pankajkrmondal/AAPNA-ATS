@@ -5,6 +5,76 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 6: `/analytics`
+
+The page the plan singles out as breaking the "just widen the boolean" premise.
+It was right.
+
+### The `.glass` landmine
+
+The main tab container carried `className="glass"`. Bare `.glass` is defined in
+`index.css` and is **never touched by `aurora-glass.css`** — so adding
+`/analytics` to the route gate and doing nothing else would have left the
+page's principal container **flat under glass chrome**, which is worse than
+leaving the route alone. Renamed to `glass-3` (it holds five tables, so tier 3
+is also the correct tier), and its inline radius/border/shadow dropped since the
+class owns them. The verification renders **both** classes side by side and
+asserts they resolve differently, so the rename is a checked fact rather than a
+claim in a changelog.
+
+### `.panel-shell` earns its keep
+
+Phase 2 moved the duplicated `PANEL_STYLE` object into a shared class, and the
+argument for doing so was "a stylesheet can reach it later". Later is now: **one
+rule gives 16 surfaces the tier-3 material** — four of this page's five tables
+plus both `DeliveryMonitoring` tables and their panels. That would have been 16
+inline objects to edit otherwise.
+
+The rule set is the one Phase 3 verified for `.glass-3` (table root, header
+cells, body cells, placeholder, row hover), rewritten against `.panel-shell`
+because these tables are not inside a `.glass-3` element — the panel *is* the
+surface.
+
+### `.screening-tabs`, the shared class
+
+Shared with `CandidateScreening` (`/filtering`), where Phase 1 styled it. Those
+rules were **inert on this page and activate now**. Nothing new was written for
+it deliberately: a per-page tab treatment is exactly the drift a shared class
+exists to prevent. Verified by computing the strip on both screens and asserting
+they are identical.
+
+### Metrics: the tiles answer a hover for the first time
+
+The plan called for swapping ad-hoc `tile.bg`/`tile.color` tiles for `StatCard`.
+That premise is out of date — the tiles already use the shared `KpiCard`. What
+they genuinely lacked was the **explanation**: not one of the ten numbers on
+this page could say what it counted.
+
+- **`KpiCard` gained an optional `metric` prop**, rendering the same
+  `MetricInfo` affordance `StatCard` has had. Optional, so every existing caller
+  is unchanged — but it now exists for the vendor and upload KPIs too.
+- **Ten metric definitions wired up**: the six headline tiles (new, written this
+  phase) and the four Pipeline Insights KPIs (written in Phase 2, unused until
+  now). The headline tiles' caveats say the counts are lifetime totals that do
+  **not** follow the page's date controls — the tile is what gets screenshotted
+  into a status report.
+
+### Tokens
+
+**14 raw hexes → the `--kpi-*` palette from Phase 5.** The page's own `ACCENT`
+map was a sixth copy of the same six accents; it now aliases the tokens, so a
+tile, a tag and a table cell for one concept cannot drift apart *and* the page
+finally has dark-mode values for them.
+
+### Verified
+
+`npm run build` clean. **30/30 computed-style assertions, both themes** — the
+landmine both ways, the shared tab strip identical across two screens, all four
+AntD fills inside `.panel-shell` transparent, row hover translucent, and
+`prefers-reduced-transparency` opaque on both the panels and the tab container.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 5: `/hr-upload`, `/vendor`, `/vendor-dashboard`, `/mrf`
 
 **Shipped as one unit, deliberately.** Per `VENDOR_ALLOWED_PATHS`, `/vendor` and

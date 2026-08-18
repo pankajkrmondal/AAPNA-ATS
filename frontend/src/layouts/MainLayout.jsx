@@ -114,10 +114,14 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *            Per VENDOR_ALLOWED_PATHS above, /vendor and /vendor-dashboard are
  *            the entire reachable app for the `vendor` role, so converting one
  *            alone would flip a vendor's chrome between glass and flat on every
- *            click. Do not split them. */
+ *            click. Do not split them.
+ *  Phase 6 — /analytics. Needed a JSX change the gate could not make on its
+ *            own: its tab container carried the bare `.glass` class, which
+ *            aurora-glass.css never touches. */
 const V2_ROUTES = [
   '/dashboard', '/filtering', '/candidates', '/pipeline',
   '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
+  '/analytics',
 ];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */

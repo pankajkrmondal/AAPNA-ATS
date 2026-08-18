@@ -1166,6 +1166,49 @@
   background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
 }
 
+/* ============================================================
+   ROLLOUT PHASE 6 — /analytics
+   ------------------------------------------------------------
+   The page that breaks the "just widen the boolean" premise: its main tab
+   container carried the bare `.glass` class, which index.css styles and this
+   file never touches, so the gate alone would have left it flat under glass
+   chrome. That is fixed in the JSX (renamed to `.glass-3`); what is left is
+   here.
+   ============================================================ */
+
+/* `.panel-shell` (Phase 2) is this page's repeated panel, wrapping four of its
+   five tables and both DeliveryMonitoring tables — 16 surfaces from one rule.
+   Tier 3: they are dense data, and they are the page's content, not its
+   feature. Styling the shared class rather than each Card is the whole reason
+   Phase 2 moved PANEL_STYLE out of an inline object. */
+.ats-v2 .panel-shell {
+  background: var(--glass-3-bg) !important;
+  border: 1px solid var(--glass-3-border) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--depth-1), var(--glass-hilite) !important;
+}
+.ats-v2 .panel-shell .ant-card-head { background: transparent; border-bottom-color: var(--glass-2-border); }
+
+/* AntD's fills inside those panels, same set Phase 3 verified for `.glass-3`.
+   Written against `.panel-shell` too because these tables are NOT inside a
+   `.glass-3` element — the panel is the surface. */
+.ats-v2 .panel-shell .ant-table,
+.ats-v2 .panel-shell .ant-table-thead > tr > th,
+.ats-v2 .panel-shell .ant-table-tbody > tr > td,
+.ats-v2 .panel-shell .ant-table-placeholder,
+.ats-v2 .panel-shell .ant-table-placeholder > td { background: transparent; }
+.ats-v2 .panel-shell .ant-table-thead > tr > th,
+.ats-v2 .panel-shell .ant-table-tbody > tr > td { border-bottom-color: var(--border-light); }
+.ats-v2 .panel-shell .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
+/* The tab strip. `.screening-tabs` is SHARED with CandidateScreening (/filtering),
+   where Phase 1 already styled it — those rules were inert here and activate
+   now. Nothing is added for it deliberately: if this page needed its own tab
+   treatment, the two screens would have drifted apart, which is the thing the
+   shared class exists to prevent. Verified against /filtering. */
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -1230,6 +1273,15 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 6 (/analytics). One entry covers all 16 panels on the page. */
+  .ats-v2 .panel-shell {
+    background: var(--colorBgContainer) !important;
+    border-color: var(--border) !important;
+  }
+  .ats-v2 .panel-shell .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+
   /* Phase 5 (upload / vendor / MRF). `.kpi-card` and the two card tiers are
      already in the list above; these are the surfaces with their own fills. */
   .ats-v2 .upload-page .ant-upload-drag,
