@@ -26,7 +26,7 @@ import {
   sendDifferentVendorDuplicateAlert,
   sendResumeErrorAlert
 } from './emailNotification.service.js';
-import { setJobStatus, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
+import { setJobStatus, updateJob, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
 import { activeVendorFor, vendorLockExpiry } from '../utils/vendorLock.js';
 import { findRecentRejection } from './pipeline.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
@@ -1136,6 +1136,12 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
           logger.warn(`OneDrive: Failed to upload to OneDrive for file ${file.originalname}, using local fallback: ${odErr.message}`);
         }
         jobInfo.file_url = cvUrl;
+        // Persist the resume link as soon as we have it. Held only in memory until
+        // the per-file aggregate, it was lost whenever a run died mid-file — taking
+        // with it the one field that ties a stranded job to the rpa_cv_tmp row it
+        // already created, which is what the dashboard's orphan recovery matches on.
+        await updateJob(executionId, file.originalname, { file_url: cvUrl })
+          .catch((e) => logger.warn(`Failed to persist file_url for ${file.originalname}: ${e.message}`));
 
         // Process each item (row or file text)
         for (const item of candidateItems) {
@@ -1339,6 +1345,25 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               jobInfo.candidate_name = parsed.Name || 'Candidate';
               jobInfo.candidate_email = emailToSearch;
               jobInfo.cv_tmp_id = tempCandidate.id;
+
+              // Commit the duplicate outcome NOW, not at the per-file aggregate ~250
+              // lines below. Everything between here and there can outlive or kill the
+              // run — the advisory lookup, the alert email, OneDrive, a worker restart,
+              // a dropped DB connection — and the aggregate write is the ONLY thing
+              // that moves the row off "Processing". When it was skipped the dashboard
+              // showed a spinner forever while the recruiter had already been emailed
+              // about the duplicate, with no row to act on and no way to reprocess.
+              // Writing it here makes the review queue and the dashboard agree the
+              // moment the rpa_cv_tmp record exists; the aggregate write still runs and
+              // simply re-affirms the same status.
+              await setJobStatus(executionId, file.originalname, JOB_STATUS.DUPLICATE_PENDING_REVIEW, {
+                candidate_name: jobInfo.candidate_name,
+                candidate_email: jobInfo.candidate_email,
+                cv_tmp_id: jobInfo.cv_tmp_id,
+                file_url: jobInfo.file_url || null,
+                is_duplicate: true,
+                action_required: true,
+              }).catch((e) => logger.warn(`Failed to persist early duplicate status for ${file.originalname}: ${e.message}`));
 
               // COOLING-OFF ADVISORY (M6 audit, 2026-08-12). The 6-month
               // re-application gate lived only in createPipelineJourney, so it

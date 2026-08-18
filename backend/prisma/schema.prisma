@@ -663,6 +663,7 @@ model rpa_upload_jobs {
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
   reviewed_by     String?
   review_action   String?
+  advisory        String?
 
   @@index([action_required], map: "idx_upload_jobs_action")
   @@index([execution_id], map: "idx_upload_jobs_exec")
