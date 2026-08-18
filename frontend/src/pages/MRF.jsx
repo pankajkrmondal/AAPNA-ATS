@@ -588,21 +588,20 @@ export default function MRF() {
 
   return (
     <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
-      {/* MRF Create Request Form Card */}
+      {/* MRF Create Request Form Card — tier 2, this page's feature surface.
+          Radius and shadow now come from `.glass-card`; the green `borderTop`
+          rail goes for the same reason it went on /candidates — a flat bar under
+          a gradient rim is the pre-glass vocabulary showing through. */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #7a922e',
-          marginBottom: 28,
-        }}
+        className="glass-card"
+        style={{ marginBottom: 28 }}
       >
         <div style={{ marginBottom: 24 }}>
           <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 4px 0' }}>
             New MRF Request
           </Title>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e' }}>
+          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)' }}>
             Hiring Manager Details
           </Text>
         </div>
@@ -741,20 +740,18 @@ export default function MRF() {
         </Form>
       </Card>
 
-      {/* Submitted MRF Records Listing Table Card */}
+      {/* Submitted MRF Records Listing Table Card — tier 3, reusing exactly what
+          Phase 3 verified on /candidates. */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-        }}
+        className="glass-3 no-lift"
         styles={{ body: { padding: 0 } }}
       >
         {/* Table Toolbar */}
         <div
           style={{
             padding: '18px 24px',
-            borderBottom: '1px solid #dde2d0',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -819,7 +816,7 @@ export default function MRF() {
       <Modal
         title={
           selectedRecord && (
-            <div style={{ paddingBottom: 10, borderBottom: '1px solid #f3f4f6' }}>
+            <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border-light)' }}>
               <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--text)' }}>
                 {selectedRecord.first_name} {selectedRecord.last_name} — {selectedRecord.role}
               </div>
@@ -852,7 +849,7 @@ export default function MRF() {
                 request={(cfg) => mrfService.exportDetailCsv(selectedRecord?.id, cfg)}
                 fallbackName={`AAPNA-ATS_MRF-${selectedRecord?.id}.csv`}
               />
-              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: '#7a922e', borderColor: '#7a922e', fontWeight: 600 }}>
+              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', fontWeight: 600 }}>
                 Edit
               </Button>
               <Button onClick={() => setDetailsOpen(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
@@ -866,7 +863,7 @@ export default function MRF() {
         {selectedRecord && (
           <div>
             {/* Section 1: Workflow Summary */}
-            <div style={{ background: 'var(--ink-4)', padding: '16px 24px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
+            <div style={{ background: 'var(--ink-4)', padding: '16px 24px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 24 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
                 Workflow Summary
               </div>
@@ -903,7 +900,7 @@ export default function MRF() {
             </div>
 
             {/* Section 2: New MRF Request Info */}
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e', marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)', marginBottom: 16 }}>
               New MRF Request Info
             </div>
 
@@ -987,10 +984,10 @@ export default function MRF() {
                           alignItems: 'center',
                           height: 32,
                           background: 'var(--ink-4)',
-                          border: '1px solid #d1d5db',
+                          border: '1px solid var(--border)',
                           borderRadius: 6,
                           padding: '0 12px',
-                          color: '#2563eb',
+                          color: 'var(--info-strong)',
                           fontWeight: 600,
                           fontSize: 12,
                           width: '100%',
@@ -1047,9 +1044,9 @@ export default function MRF() {
 
             {/* Section 3: Submitted MRF Details (rpa_mrf) — only when HM has submitted */}
             {selectedRecord.mrf_id && (
-              <div style={{ marginTop: 28, borderTop: '1px solid #f3f4f6', paddingTop: 20 }}>
+              <div style={{ marginTop: 28, borderTop: '1px solid var(--border-light)', paddingTop: 20 }}>
                 <div style={{ marginBottom: 16 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#7a922e' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)' }}>
                     Submitted MRF Details
                   </span>
                 </div>
@@ -1099,7 +1096,7 @@ export default function MRF() {
                     ))}
 
                     {mainMrf.parsed_jd_json && (
-                      <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px dashed #e5e7eb' }}>
+                      <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px dashed var(--border-light)' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--text-3)', margin: '4px 0 10px' }}>
                           AI-Parsed JD Summary
                         </div>

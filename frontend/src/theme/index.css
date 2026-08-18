@@ -251,6 +251,28 @@
   --stage-offer: #4a7c59;
   --stage-offer-2: #6ba57d;
 
+  /* ----- KPI accent palette (Phase 5) -----
+     The four upload/vendor screens each re-declared the same four accents as
+     hex literals (colour + tint + gradient, twelve values per screen). Named
+     once here. Semantic like the status palette: blue is "in flight", green is
+     "done", red is "failed" — they do not follow a tenant's brand.
+     `--kpi-a-*` is the exception, and is aliased to the brand deliberately. */
+  --kpi-a: var(--brand-primary);
+  --kpi-a-2: var(--brand-primary-hover);
+  --kpi-a-tint: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  --kpi-b: #2f6f9f;
+  --kpi-b-2: #4f93c4;
+  --kpi-b-tint: rgba(47, 111, 159, 0.12);
+  --kpi-c: #4a7c59;
+  --kpi-c-2: #6aa67c;
+  --kpi-c-tint: rgba(74, 124, 89, 0.12);
+  --kpi-d: #c0392b;
+  --kpi-d-2: #e0654f;
+  --kpi-d-tint: rgba(192, 57, 43, 0.12);
+  --kpi-e: #b6883a;
+  --kpi-e-2: #d2a85a;
+  --kpi-e-tint: rgba(182, 136, 58, 0.14);
+
   /* Avatar palette — deterministic per name, so it only has to be distinguishable,
      not meaningful. Six hues that stay apart at 28px. */
   --avatar-1: #7a922e;
@@ -401,6 +423,19 @@
   --stage-document-2: #f78fcb;
   --stage-offer: #6ba57d;
   --stage-offer-2: #8ec49f;
+
+  /* KPI accents (dark). Lifted for the same reason as the status palette: these
+     are a 34px numeral and a 3px accent bar, and the light-mode values read as
+     muddy against a dark card. `--kpi-a` follows the brand, which already has
+     its own dark value, so it needs no override. */
+  --kpi-b: #5aa3d8;
+  --kpi-b-2: #7fbde8;
+  --kpi-c: #5a9c6e;
+  --kpi-c-2: #7fbd91;
+  --kpi-d: #e7614f;
+  --kpi-d-2: #f08a7b;
+  --kpi-e: #d2a85a;
+  --kpi-e-2: #e3c283;
 
   --avatar-1: #a8c24a;
   --avatar-2: #5b7ff0;

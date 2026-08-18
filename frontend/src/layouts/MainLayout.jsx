@@ -109,8 +109,16 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *            the separate regex that used to sit in `isV2` is gone.
  *  Phase 4 — /pipeline. Note this does NOT pull in
  *            /candidate-pipeline-prototype, which shares the `.cp-*` classes;
- *            the scoped rules stay inert there until Phase 8 decides its fate. */
-const V2_ROUTES = ['/dashboard', '/filtering', '/candidates', '/pipeline'];
+ *            the scoped rules stay inert there until Phase 8 decides its fate.
+ *  Phase 5 — /hr-upload, /vendor, /vendor-dashboard, /mrf, SHIPPED AS ONE UNIT.
+ *            Per VENDOR_ALLOWED_PATHS above, /vendor and /vendor-dashboard are
+ *            the entire reachable app for the `vendor` role, so converting one
+ *            alone would flip a vendor's chrome between glass and flat on every
+ *            click. Do not split them. */
+const V2_ROUTES = [
+  '/dashboard', '/filtering', '/candidates', '/pipeline',
+  '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
+];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];

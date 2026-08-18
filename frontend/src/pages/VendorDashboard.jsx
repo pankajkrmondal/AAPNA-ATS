@@ -68,25 +68,25 @@ const KPI_CARDS = [
     key: 'total',
     label: 'Total Candidates',
     icon: <TeamOutlined />,
-    color: '#7a922e',
-    tint: 'rgba(122,146,46,0.12)',
-    accent: 'linear-gradient(90deg,#7a922e,#92a63c)',
+    color: 'var(--kpi-a)',
+    tint: 'var(--kpi-a-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
   },
   {
     key: 'thisMonth',
     label: 'Added This Month',
     icon: <RiseOutlined />,
-    color: '#4a7c59',
-    tint: 'rgba(74,124,89,0.12)',
-    accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)',
+    color: 'var(--kpi-c)',
+    tint: 'var(--kpi-c-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))',
   },
   {
     key: 'withPosition',
     label: 'With Position Applied',
     icon: <AimOutlined />,
-    color: '#b6883a',
-    tint: 'rgba(182,136,58,0.14)',
-    accent: 'linear-gradient(90deg,#b6883a,#d2a85a)',
+    color: 'var(--kpi-e)',
+    tint: 'var(--kpi-e-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))',
   },
 ];
 
@@ -95,9 +95,9 @@ const PENDING_REVIEW_CARD = {
   key: 'pendingReview',
   label: 'Pending Review',
   icon: <WarningOutlined />,
-  color: '#c0392b',
-  tint: 'rgba(192,57,43,0.12)',
-  accent: 'linear-gradient(90deg,#c0392b,#e0654f)',
+  color: 'var(--kpi-d)',
+  tint: 'var(--kpi-d-tint)',
+  accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))',
 };
 
 /**
@@ -160,12 +160,15 @@ function statusColor(status) {
   }
 }
 
-/** Pipeline stage tiles — order, label, colour, icon. */
+/** Pipeline stage tiles — order, label, colour, icon.
+ *  Colours come from the shared `--status-*` palette (theme/index.css), the same
+ *  one the real board uses, so "On Hold" is the same amber in both places. They
+ *  used to be four independent hexes here with no dark-mode values. */
 const PIPELINE_STAGES = [
-  { key: 'selected', label: 'Selected / Joined', color: '#4a7c59', icon: <CheckCircleOutlined /> },
-  { key: 'inProcess', label: 'In Process', color: '#7a922e', icon: <SyncOutlined /> },
-  { key: 'onHold', label: 'On Hold', color: '#b6883a', icon: <PauseCircleOutlined /> },
-  { key: 'rejected', label: 'Rejected / Dropped', color: '#c0392b', icon: <CloseCircleOutlined /> },
+  { key: 'selected', label: 'Selected / Joined', color: 'var(--status-approved)', icon: <CheckCircleOutlined /> },
+  { key: 'inProcess', label: 'In Process', color: 'var(--brand-primary)', icon: <SyncOutlined /> },
+  { key: 'onHold', label: 'On Hold', color: 'var(--status-hold)', icon: <PauseCircleOutlined /> },
+  { key: 'rejected', label: 'Rejected / Dropped', color: 'var(--status-rejected)', icon: <CloseCircleOutlined /> },
   { key: 'pending', label: 'Awaiting Screening', color: 'var(--text-3)', icon: <ClockCircleOutlined /> },
 ];
 
@@ -361,8 +364,11 @@ export default function VendorDashboard() {
           </Row>
 
           {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
-          <Card className="section-card animate-fade-in-up stagger-2" bordered={false} styles={{ body: { padding: 0 } }}>
-            <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
+          {/* Tier 2 — the pipeline summary is a feature surface, not a records
+              list. `.section-card` stays for the shape it carries outside
+              `.ats-v2`; `.glass-card` supplies the material inside it. */}
+          <Card className="section-card glass-card no-lift animate-fade-in-up stagger-2" bordered={false} styles={{ body: { padding: 0 } }}>
+            <div style={{ height: 3, background: 'linear-gradient(90deg, var(--stage-interview), var(--stage-offer))' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
                 style={{
@@ -498,7 +504,8 @@ export default function VendorDashboard() {
           </Card>
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
-          <Card className="section-card animate-fade-in-up stagger-4" bordered={false} style={{ marginBottom: 0 }}>
+          {/* Tier 3 — recent submissions is a records table. */}
+          <Card className="section-card glass-3 no-lift animate-fade-in-up stagger-4" bordered={false} style={{ marginBottom: 0 }}>
             <div style={{
               display: 'flex',
               alignItems: 'flex-start',

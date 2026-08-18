@@ -5,6 +5,70 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 5: `/hr-upload`, `/vendor`, `/vendor-dashboard`, `/mrf`
+
+**Shipped as one unit, deliberately.** Per `VENDOR_ALLOWED_PATHS`, `/vendor` and
+`/vendor-dashboard` are the *entire* reachable app for the `vendor` role —
+converting either alone would flip a vendor's chrome between glass and flat on
+every click. The gate comment now says so, so a later phase does not split them.
+
+- **`.kpi-card`'s glass rules activate here for the first time.** They were
+  written in Phase 0 and have been inert since — no converted route used the
+  class. The plan predicted they would light up with **zero JSX change**; that
+  is now verified rather than assumed (see below).
+- `HRUpload` and `VendorPortal` share `.upload-page` and are near-identical, so
+  they got **one treatment applied twice**: tier-2 dropzone card, tier-3 records
+  table. Both lose the same `borderTop: 4px solid #7a922e` rail `/candidates`
+  lost in Phase 3.
+- **The dropzone is tier 3** by the nesting rule, and stays clearly readable as
+  a target rather than dissolving into the pane — it is the one thing on the
+  page the user aims at.
+- `VendorDashboard`: pipeline summary → tier 2, recent submissions → tier 3.
+- `MRF`: request form → tier 2, records table → tier 3, reusing exactly what
+  Phase 3 verified.
+
+### A specificity tie worth stating out loud
+
+`.section-card` (added in Phase 2) declares an **opaque** `--colorBgContainer`
+fill, and both `VendorDashboard` cards now carry it *alongside* a glass class.
+Two single-class selectors **tie** on specificity, so source order would have
+decided which fill won — not something to leave to chance across future edits.
+`.ats-v2 .section-card.glass-card` / `.glass-3` now name the winner explicitly,
+and it is asserted in both themes.
+
+### Token sweep
+
+**~58 raw hexes across the four files → named tokens**, all with dark-mode
+values:
+
+- **`--kpi-a…e`** (colour / `-2` / `-tint`). The same four KPI accents were
+  re-declared as twelve hex literals *per screen*, in three screens. Semantic,
+  not brand — blue is "in flight", green is "done", red is "failed" — except
+  `--kpi-a`, which aliases the brand on purpose.
+- `VendorDashboard`'s five pipeline-stage tiles now use the **`--status-*`
+  palette from Phase 4**, so "On Hold" is the same amber on the vendor summary
+  as on the real board. They were four unrelated hexes with no dark values.
+- Assorted one-offs → `--brand-primary`, `--red`, `--border`, `--border-light`,
+  `--info-strong`, `--gold-bg`, `--gold-dark`.
+
+### Verified
+
+`npm run build` clean. **54/54 computed-style assertions, both themes.** The
+load-bearing ones: **`.kpi-card` resolves to `--glass-2-bg` at `--radius-card`
+with no blur and a real shadow** — the inert-rules claim, tested; the
+`.section-card`/glass tie resolves to glass in both directions; all six page
+surfaces land on their intended tier; every new token is asserted to *resolve*
+(an unset custom property paints nothing, which is invisible in a screenshot);
+and the dark palette is asserted **different** from the light one, so "lifted
+for the dark board" is a checked claim rather than a comment.
+
+One test bug found and fixed while writing it: the dropzone carries a 0.3s
+`background` transition, so sampling 150ms after toggling
+`prefers-reduced-transparency` caught it mid-fade and reported a translucent
+value for a rule that does land.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 4: `/pipeline`, and the Failure B fix
 
 `/pipeline` joins `V2_ROUTES`. This does **not** pull in

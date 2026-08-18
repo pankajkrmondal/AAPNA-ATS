@@ -1130,6 +1130,42 @@
   border-inline-end-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
 }
 
+/* ============================================================
+   ROLLOUT PHASE 5 — /hr-upload, /vendor, /vendor-dashboard, /mrf
+   ------------------------------------------------------------
+   Shipped as one unit: /vendor and /vendor-dashboard are the ENTIRE reachable
+   app for the `vendor` role (see VENDOR_ALLOWED_PATHS in MainLayout), so
+   converting either alone would flip a vendor's chrome between glass and flat
+   on every click. HRUpload and VendorPortal share `.upload-page` and are
+   near-identical, so they get one treatment applied twice, by construction.
+   ============================================================ */
+
+/* The dropzone is nested inside a tier-2 card, so it is tier 3 — and it is the
+   one surface on these pages a user is meant to aim at, so it stays clearly
+   readable as a target rather than dissolving into the pane behind it. */
+.ats-v2 .upload-page .ant-upload-drag {
+  background: var(--glass-3-bg) !important;
+  border-color: var(--glass-2-border) !important;
+}
+.ats-v2 .upload-page .ant-upload-drag:hover {
+  background: var(--gold-bg) !important;
+  border-color: var(--brand-primary) !important;
+}
+
+/* `.section-card` (Phase 2) declares an OPAQUE `--colorBgContainer` fill. Both
+   VendorDashboard cards carry it alongside a glass class, and single class
+   selectors tie on specificity — so source order would decide, which is not
+   something to leave to chance. State the winner explicitly. */
+.ats-v2 .section-card.glass-card { background: var(--glass-2-bg) !important; }
+.ats-v2 .section-card.glass-3 { background: var(--glass-3-bg) !important; }
+
+/* Records tables on these pages are the same tier-3 tables Phase 3 verified on
+   /candidates; `.glass-3` already covers them. What it does not cover is
+   `.upload-page`'s own row-hover rule, which paints an opaque tint. */
+.ats-v2 .upload-page .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -1194,6 +1230,21 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 5 (upload / vendor / MRF). `.kpi-card` and the two card tiers are
+     already in the list above; these are the surfaces with their own fills. */
+  .ats-v2 .upload-page .ant-upload-drag,
+  .ats-v2 .section-card.glass-card,
+  .ats-v2 .section-card.glass-3 {
+    background: var(--colorBgContainer) !important;
+    border-color: var(--border) !important;
+  }
+  /* The dropzone keeps a visible hover: it is the page's one drop target, and
+     "can I drop here?" is state, not decoration. Opaque, but still distinct. */
+  .ats-v2 .upload-page .ant-upload-drag:hover,
+  .ats-v2 .upload-page .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+
   /* Phase 4 (/pipeline). The toolbar and columns are `.glass-card`, already
      covered above. The candidate cards need their own entry because the rule
      that styles them uses the per-side properties, not `background` alone —
