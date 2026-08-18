@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Col,
@@ -31,12 +31,8 @@ dayjs.extend(relativeTime);
 
 const { Text } = Typography;
 
-/** Panel shell shared with the other Analytics tabs, so radius/shadow match. */
-const PANEL_STYLE = {
-  borderRadius: 14,
-  border: '1px solid var(--border-light)',
-  boxShadow: 'var(--shadow-sm)',
-};
+/* Panel shell is the shared `.panel-shell` class in theme/index.css — the same
+   values this file and pages/Analytics.jsx each declared separately. */
 
 /** Coloured rule + title, mirroring SectionTitle on the Analytics page. */
 function PanelTitle({ children, accent }) {
@@ -52,7 +48,7 @@ function PanelTitle({ children, accent }) {
 }
 
 /**
- * Email delivery monitoring view — surfaces the send/tracking data that the
+ * Email delivery monitoring view â€” surfaces the send/tracking data that the
  * backend has been recording (rpa_email_log.status, rpa_email_tracking) but no
  * UI displayed. Rendered as the "Email Delivery" tab on the Analytics page.
  * Stat tiles carry meaning via icon + label (not color alone); detail lives in
@@ -72,7 +68,7 @@ export default function DeliveryMonitoring() {
       setData(res.data?.data || res.data || null);
     } catch {
       // A swallowed failure here rendered every tile as 0, which reads as a
-      // clean month with no failures and no bounces — the worst possible
+      // clean month with no failures and no bounces â€” the worst possible
       // failure mode for a monitoring tab. Say the request failed instead.
       setData(null);
       setErrored(true);
@@ -104,7 +100,7 @@ export default function DeliveryMonitoring() {
       value: summary.opened,
       icon: <EyeOutlined />,
       tone: '#4a7c59',
-      hint: 'Opens are a positive signal, not an exact count — mail clients proxy or block tracking images.',
+      hint: 'Opens are a positive signal, not an exact count â€” mail clients proxy or block tracking images.',
     },
     {
       key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? '#7a922e' : undefined,
@@ -139,7 +135,7 @@ export default function DeliveryMonitoring() {
       dataIndex: 'sent_at',
       key: 'sent_at',
       width: 150,
-      render: (v) => (v ? dayjs(v).format('DD MMM, HH:mm') : '—'),
+      render: (v) => (v ? dayjs(v).format('DD MMM, HH:mm') : 'â€”'),
     },
     { title: 'Type', dataIndex: 'email_type', key: 'email_type', width: 150 },
     { title: 'Recipient', dataIndex: 'recipient_email', key: 'recipient_email', ellipsis: true },
@@ -166,7 +162,7 @@ export default function DeliveryMonitoring() {
         <Col>{pollerSummary}</Col>
         <Col>
           <Space>
-            <Tooltip title="How far back these email figures look. Every count and both tables below cover only this period — widen it to see older sends and failures.">
+            <Tooltip title="How far back these email figures look. Every count and both tables below cover only this period â€” widen it to see older sends and failures.">
               <Select
                 size="small"
                 value={days}
@@ -179,7 +175,7 @@ export default function DeliveryMonitoring() {
                 style={{ cursor: 'help' }}
               />
             </Tooltip>
-            <Tooltip title="Re-checks the mail records now. Email figures are not live — use this after a send to see whether it went out or failed.">
+            <Tooltip title="Re-checks the mail records now. Email figures are not live â€” use this after a send to see whether it went out or failed.">
               <Button size="small" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
                 Refresh
               </Button>
@@ -225,7 +221,7 @@ export default function DeliveryMonitoring() {
                     )}
                   </Space>
                 )}
-                value={errored ? '—' : (t.value ?? 0)}
+                value={errored ? 'â€”' : (t.value ?? 0)}
                 valueStyle={{ color: t.tone || 'var(--text)', fontWeight: 800, fontSize: 26 }}
                 loading={loading}
               />
@@ -240,10 +236,10 @@ export default function DeliveryMonitoring() {
             size="small"
             title={<PanelTitle accent="linear-gradient(90deg,#2f6f9f,#4f93c4)">By email type</PanelTitle>}
             bordered={false}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <ExportButton
-                tooltip="Downloads sent and failed counts for every kind of email in this period — useful for spotting one template failing while the rest are fine."
+                tooltip="Downloads sent and failed counts for every kind of email in this period â€” useful for spotting one template failing while the rest are fine."
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', days, cfg)}
                 fallbackName="AAPNA-ATS_Email-Delivery-By-Type.csv"
                 rowCount={data?.by_type?.length ?? null}
@@ -268,14 +264,14 @@ export default function DeliveryMonitoring() {
             size="small"
             title={<PanelTitle accent="linear-gradient(90deg,#c0392b,#e0654f)">Recent failures</PanelTitle>}
             bordered={false}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <ExportButton
-                tooltip="Downloads every failed send in this period with its recipient and the full error message — the file to attach when reporting an email problem."
+                tooltip="Downloads every failed send in this period with its recipient and the full error message â€” the file to attach when reporting an email problem."
                 request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', days, cfg)}
                 fallbackName="AAPNA-ATS_Email-Delivery-Failures.csv"
                 rowCount={data?.recent_failures?.length ?? null}
-                fullSetNote="This is every failure in the window — the table above shows only the 20 most recent."
+                fullSetNote="This is every failure in the window â€” the table above shows only the 20 most recent."
                 label="Export"
                 size="small"
               />
@@ -289,7 +285,7 @@ export default function DeliveryMonitoring() {
               loading={loading}
               pagination={false}
               scroll={{ y: 260 }}
-              locale={{ emptyText: 'No failed sends in this window 🎉' }}
+              locale={{ emptyText: 'No failed sends in this window ðŸŽ‰' }}
               expandable={{
                 // Full error text for truncated rows.
                 expandedRowRender: (row) => (

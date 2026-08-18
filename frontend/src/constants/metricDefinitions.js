@@ -154,6 +154,83 @@ export const METRICS = {
     caveat: 'The big numbers on the cards cover all roles and do not change. The card graphs, '
       + 'Hiring Trends and Talent Insights all follow this filter.',
   },
+
+  // ── Analytics page (/analytics) ──────────────────────────────────────────
+  // Added in Phase 2 of the Aurora Glass rollout, ahead of Phase 6 swapping the
+  // page's ad-hoc tiles for the shared StatCard. Those four tiles carry no
+  // explanation of any kind today — the numbers most likely to be challenged in
+  // a review meeting are the ones with nothing behind them.
+  activeInPipeline: {
+    label: 'Active in pipeline',
+    short: 'Candidates currently moving through a hiring process — not yet hired, rejected or withdrawn.',
+    formula: 'A count of candidates sitting at any live stage. Anyone whose journey has closed, '
+      + 'whichever way it closed, drops out of this number.',
+    source: 'Your pipeline records.', // dev: GET /screening/analytics · tiles.active_in_pipeline
+  },
+  awaitingFeedback: {
+    label: 'Awaiting feedback',
+    short: 'Candidates who have been interviewed but whose interviewer has not submitted a scorecard yet.',
+    formula: 'Counts candidates, not scorecards. A panel round issues one card per interviewer, '
+      + 'so the number of outstanding cards can be higher than the number of candidates — when it '
+      + 'is, the card count is shown beside the tile.',
+    source: 'Your interview scorecards.', // dev: tiles.awaiting_feedback / awaiting_feedback_cards
+    caveat: 'This is who you are waiting on, not how late they are. A scorecard issued an hour ago '
+      + 'counts the same as one issued last week.',
+  },
+  onHoldOverThreshold: {
+    label: 'On hold too long',
+    short: 'Candidates parked on hold for longer than the threshold you pick beside the tile.',
+    formula: 'Counts candidates whose hold has lasted more than the selected number of days — '
+      + 'the ones likely to need chasing. Lower the threshold to catch holds sooner, raise it to '
+      + 'see only the worst cases.',
+    source: 'Your pipeline records.', // dev: tiles.on_hold_over_threshold · hold_threshold_days
+    caveat: 'The threshold affects this tile only. Nothing else on the page changes with it.',
+  },
+  offersPending: {
+    label: 'Offers pending',
+    short: 'Offers that have gone out and are still waiting on the candidate to accept or decline.',
+    formula: 'Counts candidates at the offer stage whose offer has neither been accepted nor turned down.',
+    source: 'Your pipeline records.', // dev: tiles.offers_pending
+  },
+
+  // ── Vendor / HR upload screens ───────────────────────────────────────────
+  // For Phase 5. The vendor screens are the entire reachable app for the
+  // `vendor` role, and today not one of their KPIs explains itself.
+  vendorTotalCandidates: {
+    label: 'Total Candidates',
+    short: 'Every candidate you have submitted, across all roles and all time.',
+    formula: 'A count of your own submissions only — it never includes candidates sourced by '
+      + 'anyone else.',
+    source: 'Your submissions.', // dev: GET /vendor/dashboard · stats.total
+  },
+  vendorAddedThisMonth: {
+    label: 'Added This Month',
+    short: 'Candidates you have submitted since the first of the current calendar month.',
+    formula: 'Resets on the 1st. Early in a month this will naturally look low next to the total.',
+    source: 'Your submissions.', // dev: stats.thisMonth
+  },
+  vendorWithPosition: {
+    label: 'With Position Applied',
+    short: 'How many of your submissions name the role they are for.',
+    formula: 'Counts submissions that have a position recorded against them.',
+    source: 'Your submissions.', // dev: stats.withPosition
+    caveat: 'A submission with no position still counts towards your total. It just takes longer '
+      + 'to route to the right recruiter.',
+  },
+  vendorPendingReview: {
+    label: 'Pending Review',
+    short: 'Uploads held back because the candidate already appears to exist in the database.',
+    formula: 'A recruiter has to decide whether each of these is the same person (merge) or a '
+      + 'genuinely different one (keep both). Until then they are not in the candidate database.',
+    source: 'The upload tracker.', // dev: duplicates awaiting review, upload job tracker
+  },
+  totalUploads: {
+    label: 'Total Uploads',
+    short: 'Every resume sent through this screen, whatever happened to it afterwards.',
+    formula: 'Counts upload attempts, including ones that were rejected or are still processing — '
+      + 'so it is normally higher than the number of candidates that reached the database.',
+    source: 'The upload tracker.',
+  },
 };
 
 /**

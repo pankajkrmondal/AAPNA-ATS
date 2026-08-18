@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Card,
   Tabs,
@@ -40,7 +40,7 @@ const { Title, Text } = Typography;
 
 /**
  * Semantic palette, shared with the Dashboard / HR Upload / Vendor screens.
- * Colour carries MEANING here rather than decoration — gold reads as positive,
+ * Colour carries MEANING here rather than decoration â€” gold reads as positive,
  * red as rejected/failed, blue as in-flight, amber as waiting on someone. Kept
  * as one map so a tile, a tag and a table cell for the same concept cannot
  * drift to different colours.
@@ -75,19 +75,16 @@ function SectionTitle({ children, accent = ACCENT.positive, hint }) {
   );
 }
 
-/** Shared shell for every panel on the page, so radius/shadow stay consistent. */
-const PANEL_STYLE = {
-  borderRadius: 14,
-  border: '1px solid var(--border-light)',
-  boxShadow: 'var(--shadow-sm)',
-};
+/* The panel shell (radius / border / shadow) is now the shared `.panel-shell`
+   class in theme/index.css — same values, but reachable by a stylesheet. It was
+   duplicated byte-for-byte here and in components/email/DeliveryMonitoring.jsx. */
 
 /**
- * Analytics.jsx — "Recruitment Analytics", the curated analytics-only page.
+ * Analytics.jsx â€” "Recruitment Analytics", the curated analytics-only page.
  *
  * Rebuilt from the pre-rebrand "Recruitment Screening Analytics" page by
- * dropping everything operational — candidate search/status editing, Zeko
- * interview scheduling/cancelling, the Outlook conversation viewer — and
+ * dropping everything operational â€” candidate search/status editing, Zeko
+ * interview scheduling/cancelling, the Outlook conversation viewer â€” and
  * keeping only what is genuinely analytics. That old page survived for a while
  * at /analytics-legacy as a fallback and was deleted on 2026-08-12; its
  * operational features live on the screens that own them (Candidate Screening,
@@ -95,7 +92,7 @@ const PANEL_STYLE = {
  *
  * "Pipeline Insights" and "Recruiter Insights" below are wired to the real
  * Phase 3 Module 1 backend (/api/pipeline/analytics, pipeline.service.js's
- * getPipelineAnalytics) — they replaced the hardcoded mock data that lived
+ * getPipelineAnalytics) â€” they replaced the hardcoded mock data that lived
  * here before Module 1 shipped.
  */
 
@@ -104,11 +101,11 @@ const PANEL_STYLE = {
 
 /**
  * These tables are ranked top-10 summaries on screen, but a 10-row CSV is
- * useless for the analysis someone exports in order to do — so the export
+ * useless for the analysis someone exports in order to do â€” so the export
  * returns the complete ranked list. Said out loud in the success toast rather
  * than left to be discovered as a discrepancy.
  */
-const TOP_TEN_NOTE = 'This is the complete list — the table on screen shows only the top 10.';
+const TOP_TEN_NOTE = 'This is the complete list â€” the table on screen shows only the top 10.';
 
 /**
  * The analysis parameters the backend has always accepted but nothing sent.
@@ -129,7 +126,7 @@ const HOLD_THRESHOLD_OPTIONS = daysOptions([7, 30, 60, 90]);
 const REJECTION_WINDOW_OPTIONS = daysOptions([7, 30, 90]);
 
 /**
- * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
+ * PipelineInsights â€” stage funnel, stuck candidates, rejection reasons.
  * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
  */
 function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
@@ -146,7 +143,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
     <>
       <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <KpiCard
               index={0}
               icon={<ApartmentOutlined />}
@@ -157,7 +154,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <div style={{ position: 'relative' }}>
               <KpiCard
                 index={1}
@@ -172,16 +169,16 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
               >
                 interviewer scorecard still outstanding
                 {/* A panel round issues one card per interviewer, so the card
-                    count can exceed the candidate count — said out loud so the
+                    count can exceed the candidate count â€” said out loud so the
                     tile does not look undercounted on the scorecard screen. */}
                 {tiles.awaiting_feedback_cards > (tiles.awaiting_feedback ?? 0)
-                  && ` · ${tiles.awaiting_feedback_cards} cards`}
+                  && ` Â· ${tiles.awaiting_feedback_cards} cards`}
               </Text>
             </div>
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <div style={{ position: 'relative' }}>
               <KpiCard
                 index={2}
@@ -191,7 +188,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {...ACCENT.negative}
               />
               <div style={{ padding: '6px 24px 0' }}>
-                <Tooltip title="How old a hold has to be before it is counted above. At 30 days the tile shows only candidates parked on hold for more than 30 days — the ones likely to need chasing. Lower it to catch holds sooner; raise it to see only the worst cases. Affects this tile only.">
+                <Tooltip title="How old a hold has to be before it is counted above. At 30 days the tile shows only candidates parked on hold for more than 30 days â€” the ones likely to need chasing. Lower it to catch holds sooner; raise it to see only the worst cases. Affects this tile only.">
                   <Select
                     size="small"
                     variant="borderless"
@@ -206,7 +203,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <KpiCard
               index={3}
               icon={<FileDoneOutlined />}
@@ -221,21 +218,21 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
       <Card
         title={(
           <SectionTitle accent={ACCENT.positive}>
-            {funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+            {funnel.mrf_label ? `Stage funnel â€” ${funnel.mrf_label}` : 'Stage funnel'}
           </SectionTitle>
         )}
         loading={loading}
-        style={{ ...PANEL_STYLE, marginBottom: 16 }}
+        className="panel-shell" style={{ marginBottom: 16 }}
         extra={availableMrfs.length > 0 && (
           <Space size={8}>
             {/* An auto-picked requisition presented silently reads as "the"
-                funnel rather than one of several — say which it is. */}
+                funnel rather than one of several â€” say which it is. */}
             {funnel.auto_selected && (
               <Text type="secondary" style={{ fontSize: 12 }}>
                 showing the requisition with the most candidates
               </Text>
             )}
-            <Tooltip title="Which requisition this funnel shows. The funnel covers one role at a time — the number after each name is how many candidates it has. Type to search. Affects the funnel only; the tiles and tables below cover every requisition.">
+            <Tooltip title="Which requisition this funnel shows. The funnel covers one role at a time â€” the number after each name is how many candidates it has. Type to search. Affects the funnel only; the tiles and tables below cover every requisition.">
               <Select
                 size="small"
                 showSearch
@@ -245,7 +242,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 onChange={(v) => onParamsChange({ mrf_id: v })}
                 options={availableMrfs.map((m) => ({
                   value: m.mrf_id,
-                  label: `${m.label} · ${m.journey_count}`,
+                  label: `${m.label} Â· ${m.journey_count}`,
                 }))}
               />
             </Tooltip>
@@ -267,7 +264,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   </Col>
                   <Col flex="auto">
                     {/* Track behind the bar gives the funnel a shape to read
-                        against — a bare bar on white loses its scale. */}
+                        against â€” a bare bar on white loses its scale. */}
                     <div style={{
                       height: 22, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
                     }}
@@ -314,13 +311,13 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             // list looked like "all stuck candidates" rather than a cut-off.
             title={(
               <SectionTitle accent={ACCENT.waiting} hint="from the Candidate Pipeline">
-                {`Stuck candidates — ${params.stuck_threshold_days}+ days`}
+                {`Stuck candidates â€” ${params.stuck_threshold_days}+ days`}
               </SectionTitle>
             )}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <Space size={8}>
-                <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage — notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
+                <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage â€” notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
                   <Select
                     size="small"
                     value={params.stuck_threshold_days}
@@ -330,7 +327,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   />
                 </Tooltip>
                 <ExportButton
-                  tooltip="Downloads every candidate stuck past the day threshold — name, stage, days waiting and status — so you can chase them offline."
+                  tooltip="Downloads every candidate stuck past the day threshold â€” name, stage, days waiting and status â€” so you can chase them offline."
                   request={(cfg) => pipelineService.exportAnalytics('stuck', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Stuck-Candidates.csv"
                   rowCount={data?.stuckCandidates?.length ?? null}
@@ -391,10 +388,10 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           <Card
             title={(
               <SectionTitle accent={ACCENT.negative} hint="from the Candidate Pipeline">
-                {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+                {`Rejection reasons â€” last ${data?.rejectionWindowDays ?? 30} days`}
               </SectionTitle>
             )}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <Space size={8}>
                 <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
@@ -407,7 +404,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   />
                 </Tooltip>
                 <ExportButton
-                  tooltip="Downloads why candidates were rejected in the selected window — each reason, how often it occurred, and the stage it happens at most."
+                  tooltip="Downloads why candidates were rejected in the selected window â€” each reason, how often it occurred, and the stage it happens at most."
                   request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Rejection-Reasons.csv"
                   rowCount={data?.rejectionReasons?.length ?? null}
@@ -453,7 +450,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
 }
 
 /**
- * RecruiterInsights — time-to-hire, vendor performance, source-of-hire.
+ * RecruiterInsights â€” time-to-hire, vendor performance, source-of-hire.
  * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
  */
 function RecruiterInsights({ data, loading, errored, params }) {
@@ -474,7 +471,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
             title={<SectionTitle accent={ACCENT.progress}>Time-to-hire</SectionTitle>}
             extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
             loading={loading}
-            style={{ ...PANEL_STYLE, marginBottom: 16 }}
+            className="panel-shell" style={{ marginBottom: 16 }}
           >
             <div style={{
               background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
@@ -521,12 +518,12 @@ function RecruiterInsights({ data, loading, errored, params }) {
         <Col xs={24} lg={12}>
           <Card
             title={<SectionTitle accent={ACCENT.waiting}>Vendor performance</SectionTitle>}
-            style={{ ...PANEL_STYLE, marginBottom: 16 }}
+            className="panel-shell" style={{ marginBottom: 16 }}
             extra={(
               <Space size={8}>
                 <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
                 <ExportButton
-                  tooltip="Downloads each vendor's candidates — how many are in the pipeline, hired and rejected — for comparing vendor quality."
+                  tooltip="Downloads each vendor's candidates â€” how many are in the pipeline, hired and rejected â€” for comparing vendor quality."
                   request={(cfg) => pipelineService.exportAnalytics('vendor_performance', { ...cfg, params })}
                   fallbackName="AAPNA-ATS_Pipeline-Vendor-Performance.csv"
                   rowCount={vendorPerformance?.length ?? null}
@@ -572,12 +569,12 @@ function RecruiterInsights({ data, loading, errored, params }) {
       </Row>
       <Card
         title={<SectionTitle accent={ACCENT.success}>Source of hire</SectionTitle>}
-        style={PANEL_STYLE}
+        className="panel-shell"
         extra={(
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
             <ExportButton
-              tooltip="Downloads how each intake route converts — candidates submitted, in progress, hired, rejected and on hold, per source."
+              tooltip="Downloads how each intake route converts â€” candidates submitted, in progress, hired, rejected and on hold, per source."
               request={(cfg) => pipelineService.exportAnalytics('source_of_hire', { ...cfg, params })}
               fallbackName="AAPNA-ATS_Pipeline-Source-Of-Hire.csv"
               rowCount={sourceOfHire?.length ?? null}
@@ -695,7 +692,7 @@ export default function Analytics() {
   //
   // isInitialAnalyticsLoad separates the two cases: on first paint the cards
   // are skeletons and a scrim on top of them would be noise, but on a control
-  // change the user is looking at real numbers that are about to be replaced —
+  // change the user is looking at real numbers that are about to be replaced â€”
   // that needs the overlay, or the swap reads as "nothing happened".
   const isInitialAnalyticsLoad = useRef(true);
   useEffect(() => {
@@ -732,7 +729,7 @@ export default function Analytics() {
    * Merge one control's new value into the current analysis window.
    *
    * Re-selecting the value that is already showing returns the SAME state
-   * object, so React bails out and the effect below never re-runs — no request,
+   * object, so React bails out and the effect below never re-runs â€” no request,
    * no spinner, no flash. Picking your current requisition out of the dropdown
    * should be a no-op, not a reload of identical data.
    */
@@ -826,7 +823,7 @@ export default function Analytics() {
     }
   ];
 
-  // Headline tiles — the shared KpiCard used by Dashboard / HR Upload / Vendor,
+  // Headline tiles â€” the shared KpiCard used by Dashboard / HR Upload / Vendor,
   // so this page speaks the same visual language as the rest of the app.
   const tilesData = [
     { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, ...ACCENT.positive },
@@ -841,7 +838,7 @@ export default function Analytics() {
     <div className="stagger-children" style={{ maxWidth: 1400, margin: '0 auto' }}>
       {/* Blocking scrim while a control change re-queries. Matches the Candidate
           Screening page so a wait looks the same everywhere in the app. */}
-      <LoadingOverlay open={refetching} message="Updating analytics…" />
+      <LoadingOverlay open={refetching} message="Updating analyticsâ€¦" />
 
       {/* Page Header. No "Refresh Data" button: the page already refetches
           whenever a control changes, and the Email Delivery tab carries its own
@@ -854,7 +851,7 @@ export default function Analytics() {
           Track recruitment performance and hiring trends across roles, sources, and vendors.
         </Text>
         <br />
-        {/* These six counts have no date window — saying so beats letting
+        {/* These six counts have no date window â€” saying so beats letting
             them be read as "this month". */}
         <Text type="secondary" style={{ fontSize: 12 }}>
           Headline counts below are <strong>all time</strong>, across every requisition.
@@ -862,13 +859,13 @@ export default function Analytics() {
       </div>
 
       {/* Headline tiles. Until the first payload lands there is nothing true to
-          count up to, so the strip is skeletoned rather than animating from 0 —
+          count up to, so the strip is skeletoned rather than animating from 0 â€”
           a confident "0" mid-fetch is a wrong answer, not a slow one. */}
       <Row gutter={[16, 16]} style={{ marginBottom: 28 }}>
         {tilesData.map((tile, idx) => (
           <Col xs={12} sm={12} md={8} lg={4} key={tile.title}>
             {loading && !data.tiles ? (
-              <Card bordered={false} loading style={{ ...PANEL_STYLE, height: '100%' }} />
+              <Card bordered={false} loading className="panel-shell" style={{ height: '100%' }} />
             ) : (
               <KpiCard
                 index={idx}
@@ -916,7 +913,7 @@ export default function Analytics() {
                       Role summary
                     </SectionTitle>
                     <ExportButton
-                      tooltip="Downloads one row per role — shortlisted, rejected, on-hold and total candidates for every requisition."
+                      tooltip="Downloads one row per role â€” shortlisted, rejected, on-hold and total candidates for every requisition."
                       request={(cfg) => screeningService.exportRoleSummary(cfg)}
                       fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
                       rowCount={roleStats.length}
@@ -935,7 +932,7 @@ export default function Analytics() {
               )
             },
             {
-              // Phase 3 Module 1 — real pipeline analytics (GET /api/pipeline/analytics).
+              // Phase 3 Module 1 â€” real pipeline analytics (GET /api/pipeline/analytics).
               key: 'pipeline',
               label: (
                 <span>

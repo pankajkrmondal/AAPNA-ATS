@@ -157,6 +157,30 @@
   --space-7: 48px;
   --space-8: 64px;
 
+  /* ----- Density scale (Aurora Glass rollout, Phase 2) -----
+     Control heights, table row padding and card padding were being chosen per
+     page, so the same table rendered at three different row heights depending
+     on which screen you opened. Three steps, one meaning each:
+
+       compact  — dense data the user scans (tables inside a tier-3 card)
+       default  — everything else
+       relaxed  — feature surfaces with room to breathe (hero, KPI cards)
+
+     Theme-independent (a row is not taller in dark mode), so these live only
+     here and are NOT repeated in the [data-theme='dark'] block. */
+  --control-h-compact: 28px;
+  --control-h: 36px;
+  --control-h-relaxed: 44px;
+
+  --row-py-compact: 8px;    /* table cell block padding */
+  --row-py: 12px;
+  --row-py-relaxed: 16px;
+  --row-px: 16px;           /* table cell inline padding, all densities */
+
+  --card-pad-compact: 16px;
+  --card-pad: 20px;
+  --card-pad-relaxed: 28px;
+
   /* Layout */
   --sidebar-width: 260px;
   --sidebar-collapsed: 80px;
@@ -856,6 +880,125 @@ h1, h2, h3, h4, h5, h6,
   color: var(--kpi-color, var(--text));
   font-variant-numeric: tabular-nums;
 }
+
+/* ----- Shared surface shells (Aurora Glass rollout, Phase 2) -------------
+   Two shapes were being repeated as inline style objects across pages. Inline
+   styles cannot be restyled by a stylesheet, so every one of them would have
+   become a flat slab stuck to the glass as its page converted (the "Failure A"
+   case in the rollout plan). Moved here with BYTE-IDENTICAL values, so nothing
+   moves by a pixel today and the `.ats-v2` rules can reach them tomorrow. */
+
+/* Was PANEL_STYLE, duplicated verbatim in pages/Analytics.jsx and
+   components/email/DeliveryMonitoring.jsx. */
+.panel-shell {
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Was SECTION_CARD_STYLE in pages/VendorDashboard.jsx, which the Vendor Upload
+   screen mirrors by hand. `margin-bottom` is part of the original object and is
+   kept so the swap is a no-op; it is the one property here that is layout
+   rather than chrome. */
+.section-card {
+  background: var(--colorBgContainer);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* ----- PageHeader (Phase 2) ---------------------------------------------
+   The component previously rendered an AntD <Title level={3}> inside an inline
+   style object. It is a plain <h2> now with the styles here, for two reasons:
+   a stylesheet can restyle this (an inline object cannot be overridden), and
+   `level={3}` emitted an <h3> while acting as the page's top heading. The
+   values below reproduce what Title was painting, so nothing shifts. */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.page-header__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.page-header__subtitle {
+  font-size: 14px;
+  margin-top: var(--space-1);
+  color: var(--text-2);
+}
+
+/* ----- Empty / error state primitives (Phase 2) -------------------------
+   One shape for every "there is nothing here" and "this failed" surface, so a
+   table, a board column and a chart all explain themselves the same way. The
+   components live in components/common/. Sized by a `data-size` attribute
+   rather than a modifier class so a caller passes one prop.
+
+   Deliberately NOT translucent: these render INSIDE an already-translucent
+   card, and a second glass layer over the first reads as a smudge. They are
+   type, spacing and one icon — the surface beneath them is the material. */
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  color: var(--text-2);
+}
+.state-block[data-size='sm'] { padding: var(--space-5) var(--space-4); gap: var(--space-2); }
+.state-block[data-size='lg'] { padding: var(--space-7) var(--space-5); }
+
+.state-block__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  font-size: 20px;
+  color: var(--state-accent, var(--text-3));
+  background: color-mix(in srgb, var(--state-accent, var(--text-3)) 10%, transparent);
+}
+.state-block[data-size='sm'] .state-block__icon { width: 36px; height: 36px; font-size: 16px; }
+
+.state-block__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.state-block[data-size='sm'] .state-block__title { font-size: 13.5px; }
+
+/* The line that does the actual work: why this is empty, or what failed. Capped
+   so it stays a readable measure inside a wide table. */
+.state-block__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 46ch;
+}
+
+.state-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-1);
+}
+
+/* Error is the same block with the accent switched — same shape, so a failed
+   panel and an empty one do not read as two different systems. */
+.state-block--error { --state-accent: var(--red); }
 
 /* Glassmorphism */
 .glass {

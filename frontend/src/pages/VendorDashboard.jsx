@@ -37,15 +37,9 @@ import KpiCard from '../components/common/KpiCard';
 
 const { Title, Text } = Typography;
 
-/** Shared card chrome — matches the Vendor Upload (VendorPortal) screen. */
-const SECTION_CARD_STYLE = {
-  background: 'var(--colorBgContainer)',
-  border: '1px solid var(--border-light)',
-  borderRadius: 12,
-  marginBottom: 24,
-  boxShadow: 'var(--shadow-sm)',
-  overflow: 'hidden',
-};
+/* Card chrome is the shared `.section-card` class in theme/index.css — same
+   values, but a stylesheet can reach it, which an inline object cannot. The
+   Vendor Upload (VendorPortal) screen mirrors the same shape. */
 
 const EMPTY_STATS = {
   total: 0,
@@ -367,7 +361,7 @@ export default function VendorDashboard() {
           </Row>
 
           {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
-          <Card className="animate-fade-in-up stagger-2" bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
+          <Card className="section-card animate-fade-in-up stagger-2" bordered={false} styles={{ body: { padding: 0 } }}>
             <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
@@ -504,7 +498,7 @@ export default function VendorDashboard() {
           </Card>
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
-          <Card className="animate-fade-in-up stagger-4" bordered={false} style={{ ...SECTION_CARD_STYLE, marginBottom: 0 }}>
+          <Card className="section-card animate-fade-in-up stagger-4" bordered={false} style={{ marginBottom: 0 }}>
             <div style={{
               display: 'flex',
               alignItems: 'flex-start',

@@ -5,6 +5,96 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 2: primitives and the token sweep
+
+Additive by design — no converted route changes appearance. This phase exists so
+phases 3–8 apply rules instead of inventing them.
+
+### Empty and error states — one shape each
+
+The app had ~30 ad-hoc empty states, most of them a bare `<Empty description="No
+data" />`. That is not an answer on an enterprise screen: it says nothing about
+*why* the list is empty (nothing uploaded yet? a filter excluded everything?) and
+offers no way forward.
+
+- **`components/common/EmptyState.jsx`** — icon, title, a body line saying why,
+  and an action. The body is not decoration: the component's docblock spells out
+  the two shapes it exists for ("nothing exists yet" vs "your filters hid it").
+- **`components/common/ErrorState.jsx`** — the same block with the accent
+  switched to `--red`, so a failed panel and an empty one read as one system
+  rather than two. `onRetry` is the point of it; an error you cannot act on is a
+  dead end. A raw exception is accepted but rendered only as small print, since
+  "Request failed with status code 500" tells a recruiter nothing.
+- Both are `.state-block` in `index.css` and are **deliberately not
+  translucent** — they render inside an already-glass card, and glass over glass
+  reads as a smudge.
+
+### Loading skeletons shaped like what is arriving
+
+`LoadingSkeleton` gained `list`, `board`, `chart` and `form` alongside the
+existing `table` / `cards` / `detail`. The app still has ~25 centred `<Spin>`s
+that collapse the layout and snap it back; the shapes they need now exist, so
+converting a page is a swap rather than an invention. The chart skeleton is a
+bar silhouette, not one grey rectangle — a flat block reads as a broken image.
+
+### PageHeader, audited
+
+It existed but **one page used it**, which is why title sizes and header spacing
+varied per route. The layout was a single inline style object, which no
+stylesheet can override — the exact trap the rollout plan calls Failure A. Now
+`.page-header` in CSS, values unchanged except the bottom margin (28px →
+`--space-6`/32px) so it lands on the scale. Also changed `Typography.Title
+level={3}` to a plain `<h2>`: `level={3}` emitted an `<h3>` while acting as the
+page's top heading.
+
+### Density scale
+
+`--control-h-compact/·/-relaxed`, `--row-py-*`, `--row-px`, `--card-pad-*`.
+Table sizes and control heights were being chosen per page, so the same table
+rendered at three different row heights depending on the screen. Theme-independent,
+so they are defined once and not repeated in the dark block.
+
+### Shared shells (the inline-style sweep)
+
+- **`PANEL_STYLE` was duplicated byte-for-byte** in `Analytics.jsx` and
+  `email/DeliveryMonitoring.jsx`. Both deleted; **14 call sites** now use
+  `.panel-shell`.
+- **`SECTION_CARD_STYLE`** (`VendorDashboard.jsx`, 2 sites) → `.section-card`.
+
+Both classes carry values identical to the objects they replaced, so nothing
+moves today — and Phase 6 can restyle them, which it could not have done while
+they were inline.
+
+### metricDefinitions extended
+
+Ten entries added for metrics phases 5–6 will surface: the four `/analytics`
+tiles (`activeInPipeline`, `awaitingFeedback`, `onHoldOverThreshold`,
+`offersPending`) and the vendor/HR KPIs. **None of these numbers explains itself
+anywhere in the product today**, and the vendor screens are the entire reachable
+app for the `vendor` role. Written for recruiters, with provenance kept in
+`// dev:` comments, per the file's existing convention.
+
+### Verified
+
+`npm run build` clean. **48/48 computed-style assertions, both themes.** The
+load-bearing ones: `.panel-shell` and `.section-card` are asserted *identical to
+the inline objects they replaced*, property by property, rendered side by side —
+that equivalence is the whole safety argument for the swap. Density tokens are
+asserted ordered compact < default < relaxed. Primitives are checked for
+resolved (not fallen-back) colours in both themes, and PageHeader for the 24px/700
+title, 4px subtitle gap and 32px bottom margin. Screenshots of the primitives
+inside a real tier-2 card, both themes.
+
+### Deliberately left
+
+The primitives are **built, not yet adopted** — the ~30 existing `<Empty>` call
+sites and ~25 `<Spin>`s are replaced by the phase that converts each route, so
+this phase stays additive and no converted screen shifts. `PageHeader` is
+likewise not retro-fitted onto pages that hand-roll their headers; each route
+phase does its own.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 1: the overlay tier (tier 4) + the glass-card blur fix
 
 Follows `docs/design/AURORA-GLASS-ROLLOUT-PLAN.md`. Phase 1 of 9.
