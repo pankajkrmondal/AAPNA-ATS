@@ -84,6 +84,18 @@
   --glass-3-bg: rgba(255, 255, 255, 0.90);   /* data: tables, dense lists */
   --glass-3-border: rgba(255, 255, 255, 0.70);
 
+  /* Tier 4 — overlays (modals, drawers, dropdowns, popovers, tooltips).
+     More opaque than tier 2 on purpose: a dialog has to stay readable over
+     arbitrary page content, and unlike tiers 2–3 it is transient and sits above
+     everything, so it is the one content-side surface where a real blur both
+     reads and costs nothing on scroll. The scrim replaces AntD's flat black
+     mask with a brand-hued one so the page behind recedes rather than dims. */
+  --glass-4-bg: rgba(255, 255, 255, 0.86);
+  --glass-4-border: rgba(255, 255, 255, 0.72);
+  --glass-4-blur: blur(22px) saturate(180%);
+  --glass-4-scrim: rgb(var(--shade-rgb) / 0.30);
+  --radius-overlay: 18px;
+
   /* The three details that make glass read as a physical pane rather than a
      transparent rectangle: a top edge that catches light, a diagonal specular
      sheen, and a gradient rim that is bright where light lands, brand-tinted
@@ -242,6 +254,15 @@
   --glass-2-border: rgba(168, 194, 74, 0.16);
   --glass-3-bg: rgba(18, 24, 22, 0.92);
   --glass-3-border: rgba(35, 51, 48, 0.75);
+
+  /* Tier 4 (dark). Slightly *less* opaque than light's 0.86 for the same reason
+     tiers 1–3 are: there is no white haze to fight, so the aurora reads through
+     as colour rather than washing the pane out. The scrim goes near-black —
+     a brand-tinted scrim over an already-dark ground reads as a green fog. */
+  --glass-4-bg: rgba(21, 28, 25, 0.90);
+  --glass-4-border: rgba(168, 194, 74, 0.18);
+  --glass-4-blur: blur(24px) saturate(150%);
+  --glass-4-scrim: rgba(6, 10, 8, 0.62);
 
   /* A 0.65-alpha white catch-light on a dark pane reads as cheap plastic —
      dark glass gets a whisper of one, and leans on the brand-tinted rim instead. */
@@ -1728,9 +1749,14 @@ h1, h2, h3, h4, h5, h6,
   transition: all var(--transition-fast) !important;
 }
 
-/* AntD Modal glassmorphism */
+/* Baseline modal radius. The `!important` this carried until the overlay-tier
+   work was doing real damage: it outranked the per-modal radii below it, so
+   `.dash-cmdk`'s 16px never applied (it rendered at --border-radius-lg like
+   everything else) and the tier-4 overlay radius could not apply either. There
+   is nothing to fight here — AntD sets this radius via a low-specificity token
+   rule — so plain specificity is enough and the bespoke radii win again. */
 .ant-modal-content {
-  border-radius: var(--border-radius-lg) !important;
+  border-radius: var(--border-radius-lg);
 }
 
 /* Modal widths are set in px per modal (see components/pipeline/modalWidths.js).

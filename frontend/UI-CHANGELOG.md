@@ -5,6 +5,93 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 1: the overlay tier (tier 4) + the glass-card blur fix
+
+Follows `docs/design/AURORA-GLASS-ROLLOUT-PLAN.md`. Phase 1 of 9.
+
+### Tier 4 — one material for every dialog, dropdown and popover
+
+The app has ~40 dialogs (37 `<Modal>` + 3 `<Drawer>`; `PipelineDrawer.jsx` alone
+has 10 + 1). Every one of them portals into `document.body`, which is
+structurally outside the `.ats-v2` wrapper — so no route gate reached them and
+no scoped rule could style them. On a glass app they all opened as flat white
+boxes. That was the single largest visual gap in the product.
+
+- **`OVERLAY_CONFIG` in `App.jsx`** stamps `ats-overlay` / `ats-overlay-mask` /
+  `ats-overlay-popup` / `ats-overlay-tip` onto every instance via
+  `ConfigProvider` — modal, drawer, select, datePicker, dropdown, tooltip,
+  popover, popconfirm. **No per-file JSX edits and no `getContainer` changes.**
+  Slot names were verified against the installed antd (`content`/`mask` on
+  rc-dialog + rc-drawer, `classNames.popup.root` on Select/DatePicker).
+- **`dropdown` is a plain `ComponentStyleConfig`** (className only, no slots) —
+  the plan assumed slots. Its className lands on the popup root, which is the
+  element we wanted, so the same mechanism works.
+- **The tier-4 block in `aurora-glass.css` is deliberately UNSCOPED**, the third
+  documented exception in that file, for the portal reason above. The file
+  header now lists all three rather than claiming one.
+- **`Modal.confirm`/`.warning` bypass ConfigProvider entirely** (9 call sites,
+  static methods, no context). They are matched directly via
+  `.ant-modal-confirm .ant-modal-content` so they don't stay flat.
+- **Tooltips deliberately opt out of the material** and stay a solid chip. A
+  tooltip is a two-line label under the cursor over arbitrary content;
+  translucency there costs legibility and buys no depth cue at that size. It
+  takes the tier's radius and shadow, not its fill.
+- The mask is now a scrim mixed from `--shade-rgb` (the brand mid-tone the depth
+  ramp already uses) instead of AntD's flat black 45%, so the page recedes
+  rather than dimming. Dark mode's goes near-black — a brand-tinted scrim over
+  an already-dark ground reads as green fog.
+- Drawers keep the edge they are anchored to square, per placement.
+
+### The `.glass-card` blur fix
+
+`aurora-glass.css` documented "NO backdrop-filter on scrolling content
+surfaces", but the unscoped base rule at `index.css:850` set
+`backdrop-filter: blur(12px)` and the `.ats-v2` override never cancelled it —
+**every tier-2 card in the app was quietly blurring**, paying for a blur the
+design had explicitly declined. Cancelled on `.ats-v2 .glass-card` (not in
+index.css, so surfaces outside the scope keep what they shipped with).
+
+### Fixed along the way
+
+**`.ant-modal-content` carried `border-radius: … !important`** (`index.css`),
+which outranked every per-modal radius below it. `.dash-cmdk`'s 16px had
+therefore *never* applied — it had been rendering at `--border-radius-lg` since
+it was written. The `!important` had nothing to fight (AntD sets that radius
+through a low-specificity token rule), so it was removed; the bespoke radii and
+the tier-4 radius both apply now. Found by the verification below, not by eye.
+
+**`package.json` pinned `antd ^5.17.0` while 5.29.3 was installed.** The overlay
+tier needs ≥5.19 for the `modal`/`drawer` ConfigProvider config, so a clean
+`npm install` on another machine would have silently produced an app with no
+overlay tier. Pin bumped to `^5.29.3` to match reality.
+
+### Verified
+
+`npm run build` clean. **64/64 computed-style assertions, both themes**
+(Playwright + real AntD DOM against the shipped stylesheet): tier-4 fill
+resolves to `--glass-4-bg` on modal / drawer / confirm / select / dropdown /
+popover / picker; header, footer and drawer body transparent; radius 18px;
+drawer edge square; tooltip confirmed opaque; mask is not black-45.
+Non-regression: `.conv-modal` and `.dash-cmdk` keep `padding: 0` and their own
+radii, and the `.ant-modal` viewport caps still hold at 1366×768
+(`max-width: 1334px`, body `max-height: 548px`, `overflow-y: auto`) — the fix
+that keeps footer buttons reachable on a small laptop. Blur fix asserted both
+ways: `.glass-card` inside `.ats-v2` is `none`, the same class outside it still
+blurs. `prefers-reduced-transparency: reduce` (via CDP — Playwright cannot
+emulate it) confirmed opaque with no blur on overlays, popups, confirms and the
+mask. Screenshots of the tier over a live aurora canvas in both themes.
+
+### Deliberately left
+
+Tier 4 is global by construction, so dialogs on **unconverted** routes get it
+too — intended, not a leak: it is the one tier where half-conversion is
+impossible. `PipelineDrawer`'s 10 modals and the other in-app dialogs inherit it
+with no file edits, so they were not walked one by one; the material is proven
+at the CSS contract instead. Everything else in the plan (primitives, routes)
+is phases 2–9.
+
+---
+
 ## 2026-08-13 — Dashboard: card graphs follow the filters, and hover text written for users
 
 Two reported faults on the redesigned `/dashboard`, both fixed here.

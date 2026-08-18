@@ -10,7 +10,11 @@
    `.glass-sidebar` are also used by CandidateDetail, CandidateScreening,
    Analytics and LoadingSkeleton — screens with no aurora behind them, where
    heavier translucency would read as washed out. Nothing here may be written
-   unscoped, with one deliberate exception noted at .premium-stat-card.
+   unscoped, with three deliberate exceptions, each noted at its own block:
+     - .premium-stat-card
+     - .glass-3's base rule (the name is introduced by this file)
+     - the whole TIER 4 / OVERLAY block near the end of the file, because AntD
+       portals overlays into document.body, structurally outside .ats-v2.
 
    To roll out app-wide: drop the route check in MainLayout, not the scope here.
 
@@ -273,6 +277,16 @@
   background: var(--glass-2-bg) !important;
   border: 1px solid transparent !important;
   box-shadow: var(--depth-2), var(--glass-hilite) !important;
+  /* The comment above says tiers 2–3 never blur. Until now the code disagreed:
+     the unscoped base `.glass-card` in index.css sets `backdrop-filter:
+     blur(12px)` and nothing here cancelled it, so every tier-2 card in the app
+     was quietly blurring — paying for a blur the design explicitly declined and
+     that buys nothing over a soft-gradient backdrop. Cancelled here rather than
+     in index.css so surfaces OUTSIDE `.ats-v2` keep the behaviour they shipped
+     with. Matters increasingly as the rollout adds surfaces: the ~8 board
+     columns in the /pipeline phase would each have blurred. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* The gradient rim. A plain 1px border cannot fade, so we paint a gradient into
@@ -852,6 +866,168 @@
 .ats-v2 .ant-descriptions-bordered .ant-descriptions-row > td,
 .ats-v2 .ant-descriptions-bordered .ant-descriptions-row { border-color: var(--glass-2-border); }
 
+/* ============================================================
+   TIER 4 — THE OVERLAY MATERIAL  (modals, drawers, popups)
+   ------------------------------------------------------------
+   SCOPE EXCEPTION — read this before editing.
+
+   Everything above is scoped to `.ats-v2` on purpose (see the file header).
+   This block is deliberately UNSCOPED, and it is the second such exception
+   after `.glass-3`'s base rule. The reason is structural, not stylistic:
+   AntD portals every overlay into `document.body`, which is outside the
+   `.ats-v2` wrapper by construction. A `.ats-v2 .ant-modal` selector matches
+   nothing, on any route, ever.
+
+   That makes the overlay tier global — a dialog opened from an UNCONVERTED
+   route gets it too. That is intended, not a leak: it is the one tier where
+   half-conversion is impossible, so it is also the one that closes the app's
+   largest visual gap in a single step.
+
+   The hooks are the `ats-overlay*` classes stamped on by OVERLAY_CONFIG in
+   App.jsx. Everything else here keys off AntD's own classes.
+
+   Tier 4 vs tiers 2–3: MORE opaque (a dialog must stay readable over arbitrary
+   content) and it DOES carry a real backdrop-filter. Tiers 2–3 decline the blur
+   because they scroll; an overlay is transient and sits above everything, so the
+   blur reads and costs nothing per scroll frame.
+   ============================================================ */
+
+.ats-overlay,
+.ant-modal-confirm .ant-modal-content {
+  background: var(--glass-4-bg) !important;
+  backdrop-filter: var(--glass-4-blur);
+  -webkit-backdrop-filter: var(--glass-4-blur);
+  border: 1px solid var(--glass-4-border);
+  box-shadow: var(--depth-3);
+}
+
+/* Radius: modals and confirms take the overlay radius. Drawers are edge-anchored
+   — a drawer flush to the viewport edge must not round the two corners that meet
+   it, or it reads as a floating card that failed to reach the side. Handled per
+   placement below rather than with a blanket radius. */
+.ant-modal .ats-overlay,
+.ant-modal-confirm .ant-modal-content {
+  border-radius: var(--radius-overlay);
+}
+
+/* The gradient rim, same construction as tier 2 (paint into the padding box,
+   mask out the interior). Skipped on drawers: their rim would run down a single
+   full-height edge, where a gradient reads as a lighting error rather than a
+   lit edge. */
+.ant-modal .ats-overlay::before,
+.ant-modal-confirm .ant-modal-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-ring);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
+/* `.ant-modal-content` is already `position: relative` in AntD; the confirm
+   variant relies on that for the rim above. Assert it rather than assume it. */
+.ats-overlay,
+.ant-modal-confirm .ant-modal-content { position: relative; }
+
+/* AntD paints the header and footer with their own container fill, which would
+   sit as two opaque bands inside a translucent pane. The pane IS the surface. */
+.ats-overlay .ant-modal-header,
+.ats-overlay .ant-modal-footer,
+.ats-overlay .ant-drawer-header,
+.ats-overlay .ant-drawer-footer,
+.ats-overlay .ant-drawer-body,
+.ant-modal-confirm .ant-modal-content .ant-modal-header,
+.ant-modal-confirm .ant-modal-content .ant-modal-footer {
+  background: transparent;
+}
+.ats-overlay .ant-modal-header,
+.ats-overlay .ant-drawer-header { border-bottom-color: var(--glass-2-border); }
+.ats-overlay .ant-modal-footer,
+.ats-overlay .ant-drawer-footer { border-top-color: var(--glass-2-border); }
+
+/* Drawer: keep the edge it is anchored to square. */
+.ant-drawer-right .ats-overlay { border-radius: var(--radius-overlay) 0 0 var(--radius-overlay); }
+.ant-drawer-left .ats-overlay { border-radius: 0 var(--radius-overlay) var(--radius-overlay) 0; }
+.ant-drawer-top .ats-overlay { border-radius: 0 0 var(--radius-overlay) var(--radius-overlay); }
+.ant-drawer-bottom .ats-overlay { border-radius: var(--radius-overlay) var(--radius-overlay) 0 0; }
+
+/* ----- The scrim ---------------------------------------------------------
+   AntD's default mask is flat black at 45%. Under a brand-hued app that reads as
+   a grey wash dropped over the page. Tier 4 replaces it with a scrim mixed from
+   `--shade-rgb` (the same saturated brand mid-tone the depth ramp uses), so the
+   page behind RECEDES rather than dimming. Light mode gets a light blur with it;
+   dark mode's scrim is near-black already and needs none. */
+.ats-overlay-mask,
+.ant-modal-confirm ~ .ant-modal-mask,
+.ant-modal-root .ant-modal-mask {
+  background: var(--glass-4-scrim) !important;
+}
+.ats-overlay-mask { backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+
+/* ----- Popups: dropdowns, selects, date panels, popovers -----------------
+   Same material, one step tighter: these are small, land near the pointer and
+   are dismissed in a second, so they take a smaller radius and a lighter shadow
+   than a modal. `.ant-select-dropdown`/`.ant-picker-dropdown` are named
+   alongside the stamped class because the inner panel paints its own fill. */
+.ats-overlay-popup,
+.ats-overlay-popup .ant-select-dropdown,
+.ats-overlay-popup .ant-picker-panel-container,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  background: var(--glass-4-bg) !important;
+  backdrop-filter: var(--glass-4-blur);
+  -webkit-backdrop-filter: var(--glass-4-blur);
+  box-shadow: var(--depth-2) !important;
+}
+.ats-overlay-popup,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  border: 1px solid var(--glass-4-border);
+  border-radius: 12px;
+}
+/* The panel nested inside a stamped popup root must not repaint the border, or
+   two rims stack a pixel apart. */
+.ats-overlay-popup .ant-select-dropdown,
+.ats-overlay-popup .ant-picker-panel-container,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  border: none;
+  box-shadow: none !important;
+}
+.ats-overlay-popup .ant-picker-panel { background: transparent; border: none; }
+.ats-overlay-popup .ant-popover-arrow::before { background: var(--glass-4-bg); }
+
+/* Tooltips stay a solid chip. A tooltip is a 2-line label that appears under the
+   cursor over arbitrary content — translucency there costs legibility and buys
+   no depth cue at that size. It gets the radius and shadow of the tier, not the
+   material. This is the one deliberate opt-out in tier 4. */
+.ats-overlay-tip .ant-tooltip-inner {
+  border-radius: 9px;
+  box-shadow: var(--depth-2);
+}
+
+/* ----- What must keep winning ------------------------------------------
+   Three treatments predate this tier and stay correct. Asserted here rather
+   than left to specificity luck, because a future edit to the block above
+   would silently take them out.
+
+   1. `.conv-modal` and `.dash-cmdk` set `padding: 0` on the content so their
+      own headers can run edge to edge. Tier 4 must not reintroduce padding,
+      and their radii are their own.
+   2. The `.ant-modal` viewport caps (index.css) keep footer buttons reachable
+      at 1366×768. Those live on `.ant-modal` / `.ant-modal-body`, which this
+      block never touches — but the drawer body and confirm body get the same
+      guarantee stated explicitly. */
+.conv-modal .ant-modal-content.ats-overlay { padding: 0; border-radius: 14px; }
+.dash-cmdk .ant-modal-content.ats-overlay { padding: 0; border-radius: 16px; }
+.conv-modal .ant-modal-content.ats-overlay::before,
+.dash-cmdk .ant-modal-content.ats-overlay::before { border-radius: inherit; }
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -863,7 +1039,17 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .ats-v2 .glass-sidebar,
   .ats-v2 .glass-sidebar .ant-layout-sider-children,
-  .ats-v2 .ant-layout-header.glass {
+  .ats-v2 .ant-layout-header.glass,
+  /* Tier 4 relies on the blur the same way the chrome does — at 0.86/0.90 alpha
+     with nothing blurred behind it, page content reads through a dialog. These
+     are unscoped for the same portal reason as the tier-4 block itself. */
+  .ats-overlay,
+  .ats-overlay-popup,
+  .ats-overlay-popup .ant-select-dropdown,
+  .ats-overlay-popup .ant-picker-panel-container,
+  .ats-overlay-popup .ant-dropdown-menu,
+  .ats-overlay-popup .ant-popover-inner,
+  .ant-modal-confirm .ant-modal-content {
     background: var(--colorBgContainer) !important;
   }
 }
@@ -906,6 +1092,30 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Tier 4. Unscoped, like the tier itself — a portaled dialog is outside
+     `.ats-v2` whether or not the route behind it is converted, and a user who
+     asked for less transparency means it app-wide, not per route. The scrim
+     keeps its colour but goes fully opaque in intent: no blur behind it. */
+  .ats-overlay,
+  .ats-overlay-popup,
+  .ats-overlay-popup .ant-select-dropdown,
+  .ats-overlay-popup .ant-picker-panel-container,
+  .ats-overlay-popup .ant-dropdown-menu,
+  .ats-overlay-popup .ant-popover-inner,
+  .ant-modal-confirm .ant-modal-content {
+    background: var(--colorBgContainer) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+  .ats-overlay-mask,
+  .ant-modal-root .ant-modal-mask {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  /* The overlay rim is decoration on an opaque pane. */
+  .ant-modal .ats-overlay::before,
+  .ant-modal-confirm .ant-modal-content::before { display: none; }
   .ats-v2 .ant-descriptions-bordered .ant-descriptions-item-label {
     background: var(--ink-3);
   }
