@@ -1075,6 +1075,61 @@
 .conv-modal .ant-modal-content.ats-overlay::before,
 .dash-cmdk .ant-modal-content.ats-overlay::before { border-radius: inherit; }
 
+/* ============================================================
+   ROLLOUT PHASE 4 — /pipeline (the board)
+   ------------------------------------------------------------
+   The board is the app's one horizontally-scrolling surface, which changes two
+   things: the perf question is about the COLUMN CONTAINER, not the window, and
+   the nesting rule bites harder than anywhere else (cards inside columns
+   inside a scroller).
+   ============================================================ */
+
+/* Toolbar — tier 2. Holds the header, freshness/refresh/export, NL search and
+   filters, which were previously bare on the page. AntD controls paint their
+   own opaque fills, so unanchored they floated over the aurora as a scatter of
+   white rectangles. */
+.ats-v2 .pipeline-toolbar .ant-input-affix-wrapper,
+.ats-v2 .pipeline-toolbar .ant-select-selector,
+.ats-v2 .pipeline-toolbar .ant-input-group-addon,
+.ats-v2 .pipeline-toolbar .ant-btn-default {
+  background: var(--glass-3-bg);
+  border-color: var(--glass-2-border);
+}
+
+/* Columns — tier 2, and NOT lifted on hover. The cards inside a column are the
+   hoverable things; the column is their container. `no-lift` in the JSX cancels
+   the base `.ant-card:not(.no-lift):hover` rise, and this cancels the shadow
+   change that goes with it (same treatment as `.dash-chart-card`). */
+.ats-v2 .pipeline-column:hover {
+  transform: none;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+/* The column header sits on the pane, not on a band of its own. */
+.ats-v2 .pipeline-column > .ant-card-head {
+  background: transparent;
+  border-bottom-color: var(--glass-2-border);
+}
+
+/* Candidate cards — tier 3 by the nesting rule: a surface inside a tier-2 card
+   is tier 3. They are also the densest thing on the board (up to ~20 per
+   column), which is the case tier 3 exists for.
+
+   THE BORDER HERE CARRIES DATA. `--cp-accent` is the candidate's status. Never
+   use the `border` or `border-color` shorthand on this class — set
+   `border-block` / `border-inline-end` and leave the leading edge alone. The
+   base rule in index.css owns `border-inline-start`. */
+.ats-v2 .cp-candidate-card {
+  background: var(--glass-3-bg) !important;
+  border-block-color: var(--glass-3-border) !important;
+  border-inline-end-color: var(--glass-3-border) !important;
+  box-shadow: var(--depth-1) !important;
+}
+.ats-v2 .cp-candidate-card:hover {
+  box-shadow: var(--depth-2) !important;
+  border-block-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
+  border-inline-end-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
+}
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -1139,6 +1194,18 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 4 (/pipeline). The toolbar and columns are `.glass-card`, already
+     covered above. The candidate cards need their own entry because the rule
+     that styles them uses the per-side properties, not `background` alone —
+     and, critically, the STATUS ACCENT IS NOT CANCELLED HERE. It is the only
+     cue for a candidate's state, so it survives the way the selected
+     `.cand-card`'s brand border does; what goes is the translucency. */
+  .ats-v2 .cp-candidate-card {
+    background: var(--colorBgContainer) !important;
+    border-block-color: var(--border) !important;
+    border-inline-end-color: var(--border) !important;
+  }
+
   /* Phase 3 (/candidates). The tier-3 pane itself is already covered by
      `.glass-3` in the list above, and the empty/error primitives are opaque by
      design. What is left is the row hover, which is the one place this route

@@ -5,6 +5,82 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 4: `/pipeline`, and the Failure B fix
+
+`/pipeline` joins `V2_ROUTES`. This does **not** pull in
+`/candidate-pipeline-prototype`, which shares the `.cp-*` classes — the scoped
+rules stay inert there until Phase 8 decides its fate.
+
+### Failure B: the status border that was being silently erased
+
+`.cp-candidate-card`'s leading border **encodes candidate status**. It is data,
+not decoration. It was painted as an inline `borderInlineStart`, and the hover
+rule in `index.css` answered it with the **`border-color` shorthand plus
+`!important`** — which set all four sides and **wiped the status colour off
+every hovered card**. No error, no console warning, nothing on screen to say
+that information had gone missing. The rollout plan predicted this exact failure
+on this exact class; it was already happening in production.
+
+- The accent is now a `--cp-accent` custom property and **CSS owns the
+  property** (`border-inline-start` in the base rule). Same pattern as
+  `--stat-color` / `--kpi-color`.
+- The hover rule sets `border-block-color` and `border-inline-end-color` — the
+  three decorative sides — and never touches the leading edge. A comment on the
+  rule says why, because the next person to write `border-color:` here would
+  reintroduce it.
+
+### The board
+
+- **One tier-2 toolbar card** now holds the header, freshness/refresh/export, NL
+  search and filters. These sat bare on the page; that was fine on a flat
+  background, but on the aurora each AntD control paints its own opaque fill, so
+  a dozen of them floated unanchored over the gradient.
+- **Columns → `glass-card no-lift pipeline-column`.** `no-lift` is load-bearing:
+  the base `.ant-card:not(.no-lift):hover` rule raises the card, and a whole
+  column bouncing as the pointer crosses it is wrong — the cards inside are the
+  hoverable things.
+- **Candidate cards → tier 3** by the nesting rule, and they are the densest
+  thing on the board (~20 per column).
+- **Loading → a board-shaped skeleton**, so the columns' horizontal rhythm
+  exists before the data does. **Error → `ErrorState` with a retry** (was a
+  full-width `<Alert>`). **Empty columns → `EmptyState`** that distinguishes
+  "your filters excluded everyone" from "nobody has reached this stage".
+- **32 raw hexes → a named palette.** New `--status-*` (5) and `--stage-*` (10)
+  and `--avatar-*` (6) tokens, **in both themes**. These are deliberately
+  **semantic, not brand**: "Rejected" is red because it is rejected, and a tenant
+  whose brand is red would otherwise turn every card's status the same colour.
+  Dark values are **lifted, not the light hexes at lower alpha** — a 3px rule in
+  `#2f54eb` is nearly invisible on the dark board, and being readable at a glance
+  across a column is the entire point of the rule.
+- Board scroll arrows keep their brand gradient: they portal to `body`, outside
+  `.ats-v2`, and that is intentional per the plan.
+
+### Verified
+
+`npm run build` clean. **34/34 computed-style assertions, both themes**, with a
+card rendered per status so a regression in one branch cannot hide. The
+load-bearing ones: each accent resolves to its own `--status-*` token; the other
+three sides are asserted **different** from the accent (a shorthand would make
+them equal); **the accent survives hover** while hover still recolours the other
+sides; and under `prefers-reduced-transparency` the **accent survives** —
+it is the only cue for status, so translucency goes and the cue stays.
+
+**Scroll perf — and a measurement trap worth recording.** The board scrolls
+horizontally, so the probe scrolls the *board container*, not the window. First
+runs reported 8.3ms for the control and 16.7ms for glass and I read that as an
+8.4ms regression. It was not. Medians only ever landed on **exactly 8.3 or
+exactly 16.7 with nothing between** — including for arms that were byte-identical
+— which is a variable-refresh display halving from 120Hz to 60Hz, one discrete
+step, not paint cost accumulating. An idle blank page measured 8.3ms, confirming
+120Hz; a later run of the same probe reported the display itself at 60Hz.
+
+Re-run with the arms interleaved and repeated, counting **how often each arm held
+the display's full rate**: control 5/5, glass 5/5. A 9-arm bisect (rim, sheen,
+shadows, opacity, aurora, grain) put **full glass at 5/5** and the only dropped
+passes on arms that *remove* glass — i.e. random. No measurable cost.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 3: `/candidates`, and `.glass-3` finally rendered
 
 `/candidates` joins `V2_ROUTES`. The route gate's separate `/candidates/:id`

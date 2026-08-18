@@ -221,6 +221,45 @@
   --warning: #d4a017;
   --gold-dark: #5a6e1f;
 
+  /* ----- Pipeline status + stage palette (Aurora Glass rollout, Phase 4) -----
+     The board encodes candidate status in a card's leading border and stage type
+     in a column's top rule. Both were raw hex literals in Pipeline.jsx (and
+     again in the prototype), which meant they could not be tuned for dark mode
+     and did not exist as a named idea anywhere.
+
+     SEMANTIC, NOT BRAND: these must not follow a tenant's palette. "Rejected" is
+     red because it is rejected, and a tenant whose brand is red would otherwise
+     turn every card's status the same colour. Only `--stage-interview` overlaps
+     the brand, and it is fixed here for the same reason.
+
+     Dark-mode values are lifted, not the same hex at lower alpha: a 3px rule at
+     these light-mode values disappears against the dark board. */
+  --status-closed: #c9cdc7;    /* final_outcome set — the journey is over */
+  --status-rejected: var(--red);
+  --status-hold: #d4a017;
+  --status-approved: #27ae60;
+  --status-active: #5b7ff0;    /* invited / scheduled / in progress */
+
+  --stage-zeko: #2f54eb;
+  --stage-zeko-2: #5b7ff0;
+  --stage-manual: #13c2c2;
+  --stage-manual-2: #36d6d6;
+  --stage-interview: #7a922e;
+  --stage-interview-2: #92a63c;
+  --stage-document: #eb2f96;
+  --stage-document-2: #f062b4;
+  --stage-offer: #4a7c59;
+  --stage-offer-2: #6ba57d;
+
+  /* Avatar palette — deterministic per name, so it only has to be distinguishable,
+     not meaningful. Six hues that stay apart at 28px. */
+  --avatar-1: #7a922e;
+  --avatar-2: #2f54eb;
+  --avatar-3: #13c2c2;
+  --avatar-4: #eb2f96;
+  --avatar-5: #d4a017;
+  --avatar-6: #4a7c59;
+
   /* Semantic status colors for text/borders on tinted panels */
   --color-primary-border: rgba(122, 146, 46, 0.35);
   --warn-bg: #fff7e6;
@@ -336,6 +375,39 @@
   /* Accent tones with theme-specific values */
   --warning: #f0b429;
   --gold-dark: #bcd566;
+
+  /* Pipeline status + stage palette (dark). Lifted values, not the light hexes
+     at lower alpha — a 3px status rule in #2f54eb is nearly invisible against
+     the dark board, and the point of the rule is that it is readable at a
+     glance across a column. `--status-rejected` follows `--red`, which already
+     has its own dark value. */
+  --status-closed: #565f5c;
+  /* Restated for readability beside the other four. It would resolve correctly
+     without this line — `var(--red)` is substituted at use time against this
+     block's `--red` — but a status palette that lists four of five colours
+     invites someone to assume the fifth was forgotten. */
+  --status-rejected: var(--red);
+  --status-hold: #f0b429;
+  --status-approved: #4ade80;
+  --status-active: #7c9cf5;
+
+  --stage-zeko: #5b7ff0;
+  --stage-zeko-2: #8ba6f5;
+  --stage-manual: #36d6d6;
+  --stage-manual-2: #6ee7e7;
+  --stage-interview: #a8c24a;
+  --stage-interview-2: #bcd566;
+  --stage-document: #f062b4;
+  --stage-document-2: #f78fcb;
+  --stage-offer: #6ba57d;
+  --stage-offer-2: #8ec49f;
+
+  --avatar-1: #a8c24a;
+  --avatar-2: #5b7ff0;
+  --avatar-3: #36d6d6;
+  --avatar-4: #f062b4;
+  --avatar-5: #f0b429;
+  --avatar-6: #6ba57d;
 
   /* Semantic status colors for text/borders on tinted panels */
   --color-primary-border: rgba(168, 194, 74, 0.45);
@@ -3137,6 +3209,11 @@ html.theme-transition *::after {
     box-shadow 0.25s var(--ease-out-quint),
     border-color 0.25s var(--ease-out-quint);
   animation: fadeInUp 0.4s var(--ease-out-quint) both;
+  /* The status accent. `--cp-accent` is published by the card component
+     (Pipeline.jsx / CandidatePipelinePrototype.jsx) and CSS owns the property,
+     so the hover rule below can restyle the other three sides without the
+     `border-color` shorthand wiping out the one that carries meaning. */
+  border-inline-start: 3px solid var(--cp-accent, var(--border));
 }
 
 /* Floating left/right scrollers for the Pipeline board (Pipeline.jsx).
@@ -3154,7 +3231,12 @@ html.theme-transition *::after {
 .cp-candidate-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
-  border-color: var(--gold-light) !important;
+  /* NOT `border-color` — that shorthand sets all four sides, and the inline
+     edge carries the candidate's status. This rule used to wipe it out on every
+     hover with no error and no visual clue that information had gone missing.
+     Set the three decorative sides and leave the leading edge alone. */
+  border-block-color: var(--gold-light) !important;
+  border-inline-end-color: var(--gold-light) !important;
 }
 .cp-avatar {
   width: 28px;

@@ -106,8 +106,11 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *  Phase 0 — CSS groundwork only, no route.
  *  Phase 1 — /filtering, plus the candidate detail view.
  *  Phase 3 — /candidates. The prefix match now covers /candidates/:id too, so
- *            the separate regex that used to sit in `isV2` is gone. */
-const V2_ROUTES = ['/dashboard', '/filtering', '/candidates'];
+ *            the separate regex that used to sit in `isV2` is gone.
+ *  Phase 4 — /pipeline. Note this does NOT pull in
+ *            /candidate-pipeline-prototype, which shares the `.cp-*` classes;
+ *            the scoped rules stay inert there until Phase 8 decides its fate. */
+const V2_ROUTES = ['/dashboard', '/filtering', '/candidates', '/pipeline'];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
