@@ -1,16 +1,20 @@
 /**
  * AntD 5.x Theme Configuration
  * Maps AAPNA design tokens to Ant Design's token system.
- * Supports both light and dark mode, using the Workable-inspired teal/forest-green color system.
+ * Supports both light and dark mode, using the violet brand system sourced from the
+ * mera.work product chrome (primary #4f2fb8, hover/accent #6c62d2 → #8b7bea).
+ *
+ * NOTE: `--gold` / `--green` are historical alias names kept to avoid a repo-wide
+ * rename (see theme/brands.js). Read them as brand roles, not as hues.
  *
  * Design Tokens:
- *   --ink: #f7f6f3    (light bg)
- *   --gold: #7a922e   (primary brand)
+ *   --ink: #f8f7fc     (light bg)
+ *   --gold: #4f2fb8    (primary brand)
  *   --ink-2: #ffffff   (card bg)
- *   --gold-light: #92a63c (primary hover)
- *   --text: #2b2b2b   (primary text)
+ *   --gold-light: #6c62d2 (primary hover)
+ *   --text: #2b2b2b    (primary text)
  *   --text-2: #5f6664  (secondary text)
- *   --green: #4a7c59   (success)
+ *   --green: #4f2fb8   (brand companion — avatars/gradients, NOT success)
  *   --red: #c0392b     (error)
  */
 import { theme } from 'antd';
@@ -31,27 +35,30 @@ const sharedTokens = {
 export const lightTheme = {
   token: {
     ...sharedTokens,
-    colorPrimary: '#7a922e',
-    colorPrimaryHover: '#92a63c',
-    colorPrimaryActive: '#5f7424',
-    colorPrimaryBg: '#eef3da',
-    colorPrimaryBgHover: '#e3ecc8',
-    colorSuccess: '#4a7c59',
+    colorPrimary: '#4f2fb8',
+    colorPrimaryHover: '#6c62d2',
+    colorPrimaryActive: '#3d2196',
+    colorPrimaryBg: '#e7e3f7',
+    colorPrimaryBgHover: '#dbd5f2',
+    colorSuccess: '#17c653',
     colorError: '#c0392b',
     colorWarning: '#d4a017',
-    colorInfo: '#2980b9',
+    // Blue, not violet: the brand primary is violet, so an "info" state in violet
+    // would be indistinguishable from a primary action. This is mera.work's own
+    // link/utility blue, which sits alongside its violet chrome for exactly this role.
+    colorInfo: '#1b84ff',
     colorBgContainer: '#ffffff',
     colorBgElevated: '#ffffff',
-    colorBgLayout: '#f7f6f3',
-    colorBgSpotlight: '#7a922e',
+    colorBgLayout: '#f8f7fc',
+    colorBgSpotlight: '#4f2fb8',
     colorText: '#2b2b2b',
     colorTextSecondary: '#5f6664',
     colorTextTertiary: '#6f7671',
     colorTextQuaternary: '#b4bcba',
-    colorBorder: '#dde1df',
-    colorBorderSecondary: '#eaebe8',
-    colorFill: 'rgba(122, 146, 46, 0.06)',
-    colorFillSecondary: 'rgba(122, 146, 46, 0.04)',
+    colorBorder: '#e0dcec',
+    colorBorderSecondary: '#ebe8f4',
+    colorFill: 'rgba(79, 47, 184, 0.06)',
+    colorFillSecondary: 'rgba(79, 47, 184, 0.04)',
     controlHeight: 40,
     controlHeightLG: 48,
     controlHeightSM: 32,
@@ -62,49 +69,50 @@ export const lightTheme = {
     fontSizeHeading3: 22,
     fontSizeHeading4: 18,
     lineHeight: 1.6,
-    boxShadow: '0 1px 3px rgba(16, 24, 20, 0.06)',
-    boxShadowSecondary: '0 10px 28px rgba(16, 24, 20, 0.10)',
+    boxShadow: '0 1px 3px rgba(22, 16, 40, 0.06)',
+    boxShadowSecondary: '0 10px 28px rgba(22, 16, 40, 0.10)',
   },
   components: {
     Button: {
-      primaryShadow: '0 4px 14px rgba(122, 146, 46, 0.30)',
+      primaryShadow: '0 4px 14px rgba(79, 47, 184, 0.30)',
       controlHeight: 40,
       borderRadius: 8,
       fontWeight: 600,
     },
     Card: {
       borderRadiusLG: 14,
-      boxShadowTertiary: '0 1px 3px rgba(16, 24, 20, 0.06)',
+      boxShadowTertiary: '0 1px 3px rgba(22, 16, 40, 0.06)',
     },
     Table: {
-      headerBg: '#f7f6f3',
+      headerBg: '#f8f7fc',
       headerColor: '#2b2b2b',
-      rowHoverBg: 'rgba(122, 146, 46, 0.04)',
-      borderColor: '#eaebe8',
+      rowHoverBg: 'rgba(79, 47, 184, 0.04)',
+      borderColor: '#ebe8f4',
       cellPaddingBlock: 12,
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: 'rgba(122, 146, 46, 0.10)',
-      itemSelectedColor: '#7a922e',
-      itemHoverBg: 'rgba(122, 146, 46, 0.05)',
-      itemHoverColor: '#92a63c',
-      itemActiveBg: 'rgba(122, 146, 46, 0.15)',
+      // Selected nav row is a solid brand pill with white text (see aurora-glass.css).
+      itemSelectedBg: '#4f2fb8',
+      itemSelectedColor: '#ffffff',
+      itemHoverBg: 'rgba(79, 47, 184, 0.05)',
+      itemHoverColor: '#6c62d2',
+      itemActiveBg: 'rgba(79, 47, 184, 0.15)',
       iconSize: 18,
       itemBorderRadius: 8,
     },
     Layout: {
       siderBg: '#ffffff',
       headerBg: '#ffffff',
-      bodyBg: '#f7f6f3',
+      bodyBg: '#f8f7fc',
     },
     Input: {
-      activeBorderColor: '#7a922e',
-      hoverBorderColor: '#92a63c',
-      activeShadow: '0 0 0 2px rgba(122, 146, 46, 0.15)',
+      activeBorderColor: '#4f2fb8',
+      hoverBorderColor: '#6c62d2',
+      activeShadow: '0 0 0 2px rgba(79, 47, 184, 0.15)',
     },
     Select: {
-      optionSelectedBg: 'rgba(122, 146, 46, 0.10)',
+      optionSelectedBg: 'rgba(79, 47, 184, 0.10)',
     },
     Tag: {
       borderRadiusSM: 6,
@@ -113,14 +121,14 @@ export const lightTheme = {
       dotSize: 8,
     },
     Tabs: {
-      inkBarColor: '#7a922e',
-      itemSelectedColor: '#7a922e',
-      itemHoverColor: '#92a63c',
+      inkBarColor: '#4f2fb8',
+      itemSelectedColor: '#4f2fb8',
+      itemHoverColor: '#6c62d2',
     },
     Breadcrumb: {
       lastItemColor: '#2b2b2b',
       linkColor: '#5f6664',
-      linkHoverColor: '#7a922e',
+      linkHoverColor: '#4f2fb8',
       separatorColor: '#b4bcba',
     },
   },
@@ -134,20 +142,21 @@ export const darkTheme = {
   algorithm: theme.darkAlgorithm,
   token: {
     ...sharedTokens,
-    colorPrimary: '#a8c24a',
-    colorPrimaryHover: '#bcd566',
-    colorPrimaryActive: '#94ad3f',
-    colorPrimaryBg: 'rgba(168, 194, 74, 0.12)',
-    colorPrimaryBgHover: 'rgba(168, 194, 74, 0.18)',
-    colorSuccess: '#5a9c6e',
+    colorPrimary: '#a99cf0',
+    colorPrimaryHover: '#c4baf7',
+    colorPrimaryActive: '#8b7bea',
+    colorPrimaryBg: 'rgba(169, 156, 240, 0.12)',
+    colorPrimaryBgHover: 'rgba(169, 156, 240, 0.18)',
+    colorSuccess: '#3ddc7f',
     colorError: '#e74c3c',
     colorWarning: '#f0b429',
-    colorInfo: '#3498db',
-    colorBgContainer: '#121816',
-    colorBgElevated: '#1a221f',
-    colorBgLayout: '#0a0e0c',
-    // Tooltip background — dark neutral (brand green + white text fails contrast on dark).
-    colorBgSpotlight: '#26302c',
+    // See lightTheme colorInfo — blue keeps info distinct from the violet primary.
+    colorInfo: '#4d9fff',
+    colorBgContainer: '#161327',
+    colorBgElevated: '#1e1a33',
+    colorBgLayout: '#0d0b16',
+    // Tooltip background — dark neutral (brand violet + white text fails contrast on dark).
+    colorBgSpotlight: '#2a2545',
     colorBgMask: 'rgba(0, 0, 0, 0.6)',
     colorText: '#eaeae6',
     colorTextSecondary: '#9ca5a2',
@@ -156,18 +165,18 @@ export const darkTheme = {
     colorTextPlaceholder: '#6f7875',
     colorIcon: '#9ca5a2',
     colorIconHover: '#eaeae6',
-    colorLink: '#a8c24a',
-    colorLinkHover: '#bcd566',
-    colorLinkActive: '#94ad3f',
-    colorBorder: '#233330',
-    colorBorderSecondary: '#1b2624',
-    colorSplit: '#1b2624',
-    colorFill: 'rgba(168, 194, 74, 0.10)',
-    colorFillSecondary: 'rgba(168, 194, 74, 0.06)',
-    colorFillTertiary: 'rgba(168, 194, 74, 0.04)',
+    colorLink: '#a99cf0',
+    colorLinkHover: '#c4baf7',
+    colorLinkActive: '#8b7bea',
+    colorBorder: '#2b2547',
+    colorBorderSecondary: '#1c1833',
+    colorSplit: '#1c1833',
+    colorFill: 'rgba(169, 156, 240, 0.10)',
+    colorFillSecondary: 'rgba(169, 156, 240, 0.06)',
+    colorFillTertiary: 'rgba(169, 156, 240, 0.04)',
     colorFillQuaternary: 'rgba(255, 255, 255, 0.03)',
-    controlItemBgHover: 'rgba(168, 194, 74, 0.08)',
-    controlItemBgActive: 'rgba(168, 194, 74, 0.18)',
+    controlItemBgHover: 'rgba(169, 156, 240, 0.08)',
+    controlItemBgActive: 'rgba(169, 156, 240, 0.18)',
     controlHeight: 40,
     controlHeightLG: 48,
     controlHeightSM: 32,
@@ -183,7 +192,7 @@ export const darkTheme = {
   },
   components: {
     Button: {
-      primaryShadow: '0 4px 14px rgba(168, 194, 74, 0.30)',
+      primaryShadow: '0 4px 14px rgba(169, 156, 240, 0.30)',
       controlHeight: 40,
       borderRadius: 8,
       fontWeight: 600,
@@ -193,37 +202,38 @@ export const darkTheme = {
       boxShadowTertiary: '0 1px 3px rgba(0, 0, 0, 0.22)',
     },
     Table: {
-      headerBg: '#151e1b',
+      headerBg: '#191630',
       headerColor: '#eaeae6',
-      rowHoverBg: 'rgba(168, 194, 74, 0.06)',
-      borderColor: '#233330',
+      rowHoverBg: 'rgba(169, 156, 240, 0.06)',
+      borderColor: '#2b2547',
       cellPaddingBlock: 12,
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: 'rgba(168, 194, 74, 0.18)',
-      itemSelectedColor: '#a8c24a',
-      itemHoverBg: 'rgba(168, 194, 74, 0.08)',
-      itemHoverColor: '#a8c24a',
-      itemActiveBg: 'rgba(168, 194, 74, 0.22)',
+      // Solid pill in dark mode too; the light-violet primary takes dark ink.
+      itemSelectedBg: '#a99cf0',
+      itemSelectedColor: '#16132a',
+      itemHoverBg: 'rgba(169, 156, 240, 0.08)',
+      itemHoverColor: '#a99cf0',
+      itemActiveBg: 'rgba(169, 156, 240, 0.22)',
       darkItemBg: 'transparent',
-      darkItemSelectedBg: 'rgba(168, 194, 74, 0.18)',
-      darkItemSelectedColor: '#a8c24a',
+      darkItemSelectedBg: '#a99cf0',
+      darkItemSelectedColor: '#16132a',
       iconSize: 18,
       itemBorderRadius: 8,
     },
     Layout: {
-      siderBg: '#121816',
-      headerBg: '#121816',
-      bodyBg: '#0a0e0c',
+      siderBg: '#161327',
+      headerBg: '#161327',
+      bodyBg: '#0d0b16',
     },
     Input: {
-      activeBorderColor: '#a8c24a',
-      hoverBorderColor: '#bcd566',
-      activeShadow: '0 0 0 2px rgba(168, 194, 74, 0.2)',
+      activeBorderColor: '#a99cf0',
+      hoverBorderColor: '#c4baf7',
+      activeShadow: '0 0 0 2px rgba(169, 156, 240, 0.2)',
     },
     Select: {
-      optionSelectedBg: 'rgba(168, 194, 74, 0.18)',
+      optionSelectedBg: 'rgba(169, 156, 240, 0.18)',
     },
     Tag: {
       borderRadiusSM: 6,
@@ -232,25 +242,25 @@ export const darkTheme = {
       dotSize: 8,
     },
     Modal: {
-      contentBg: '#1a221f',
-      headerBg: '#1a221f',
+      contentBg: '#1e1a33',
+      headerBg: '#1e1a33',
     },
     Drawer: {
-      colorBgElevated: '#1a221f',
+      colorBgElevated: '#1e1a33',
     },
     Tooltip: {
-      colorBgSpotlight: '#26302c',
+      colorBgSpotlight: '#2a2545',
       colorTextLightSolid: '#eaeae6',
     },
     Tabs: {
-      inkBarColor: '#a8c24a',
-      itemSelectedColor: '#a8c24a',
-      itemHoverColor: '#bcd566',
+      inkBarColor: '#a99cf0',
+      itemSelectedColor: '#a99cf0',
+      itemHoverColor: '#c4baf7',
     },
     Breadcrumb: {
       lastItemColor: '#eaeae6',
       linkColor: '#9ca5a2',
-      linkHoverColor: '#a8c24a',
+      linkHoverColor: '#a99cf0',
       separatorColor: '#454e4b',
     },
   },

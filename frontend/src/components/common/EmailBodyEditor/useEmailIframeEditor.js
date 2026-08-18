@@ -9,8 +9,8 @@ const contentCss = (compact) => `
   /* Degraded (no-wrapper) mode only — the branded shell supplies its own padding. */
   body:not(:has([data-editable-body])) { padding: ${compact ? '12px' : '16px'}; font-family: Arial, Helvetica, sans-serif; font-size: ${compact ? '13px' : '14px'}; -webkit-font-smoothing: antialiased; }
   /* Make the editable region visibly the only editable part. */
-  [data-editable-body] { outline: 1px dashed rgba(122,146,46,0.55); outline-offset: 6px; border-radius: 2px; min-height: 60px; }
-  [data-editable-body]:focus { outline: 2px solid rgba(122,146,46,0.85); }
+  [data-editable-body] { outline: 1px dashed rgba(79,47,184,0.55); outline-offset: 6px; border-radius: 2px; min-height: 60px; }
+  [data-editable-body]:focus { outline: 2px solid rgba(79,47,184,0.85); }
   img { max-width: 100%; }
 `;
 

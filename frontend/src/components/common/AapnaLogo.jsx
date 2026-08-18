@@ -55,7 +55,7 @@ export default function AapnaLogo({ tone = 'brand', title, className, style, ...
     >
       {title && <title>{title}</title>}
       <path d={D_BLADES} fill="currentColor" />
-      <path d={D_WEDGE} fill={mono ? 'currentColor' : 'var(--brand-accent, #92a339)'} />
+      <path d={D_WEDGE} fill={mono ? 'currentColor' : 'var(--brand-accent, #6c62d2)'} />
     </svg>
   );
 }

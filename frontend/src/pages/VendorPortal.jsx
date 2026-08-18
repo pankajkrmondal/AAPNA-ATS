@@ -464,7 +464,12 @@ export default function VendorPortal() {
             )}
             {r.file_url && (
               <Tooltip title="View Resume">
-                <Button size="small" icon={<FileTextOutlined />} onClick={() => openCV(r.file_url)} />
+                <Button
+                  size="small"
+                  icon={<FileTextOutlined />}
+                  onClick={() => openCV(r.file_url)}
+                  style={{ borderRadius: 6, background: '#4f2fb8', borderColor: '#4f2fb8', color: '#fff' }}
+                />
               </Tooltip>
             )}
           </Space>
@@ -533,7 +538,7 @@ export default function VendorPortal() {
       </div>
 
       {/* ═══════ UPLOAD CARD ═══════ */}
-      <Card className="animate-fade-in-up" bordered={false} style={{ borderRadius: 12, marginBottom: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.06)', borderTop: '4px solid #7a922e' }}
+      <Card className="animate-fade-in-up" bordered={false} style={{ borderRadius: 12, marginBottom: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.06)', borderTop: '4px solid #4f2fb8' }}
         styles={{ body: { padding: 0 } }}>
         <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
           <UploadCelebration show={celebrate} />
@@ -547,9 +552,9 @@ export default function VendorPortal() {
                     borderRadius: 16,
                     padding: '4px 12px',
                     fontSize: 13,
-                    background: 'rgba(122,146,46,0.1)',
-                    border: '1px solid #7a922e',
-                    color: '#5e7325',
+                    background: 'rgba(79,47,184,0.1)',
+                    border: '1px solid #4f2fb8',
+                    color: '#3d2196',
                   }}
                 >
                   Uploading for: <strong>{vendors.find((v) => v.email === selectedVendor)?.name || selectedVendor}</strong>
@@ -575,7 +580,7 @@ export default function VendorPortal() {
             style={{ marginBottom: 14 }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
-              <InboxOutlined className="upload-inbox-icon" style={{ color: '#7a922e', fontSize: 30 }} />
+              <InboxOutlined className="upload-inbox-icon" style={{ color: '#4f2fb8', fontSize: 30 }} />
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>Click or drag files to upload</div>
                 <div style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
@@ -589,15 +594,15 @@ export default function VendorPortal() {
             loading={uploading} onClick={handleUpload}
             disabled={fileList.length === 0 || (isStaff && !selectedVendor)}
             style={{ height: 44, fontWeight: 600, borderRadius: 10,
-              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e',
-              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e' }}
+              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#4f2fb8',
+              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#4f2fb8' }}
           >
             Upload Resumes
           </Button>
 
           {uploading && uploadPct > 0 && (
             <Progress percent={uploadPct} size="small" status="active"
-              strokeColor={{ from: '#7a922e', to: '#92a63c' }} style={{ marginTop: 12 }} />
+              strokeColor={{ from: '#4f2fb8', to: '#6c62d2' }} style={{ marginTop: 12 }} />
           )}
 
           {uploadMsg && (
@@ -641,7 +646,7 @@ export default function VendorPortal() {
         <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
           <Col xs={12} md={6}>
             <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll}
-              color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
+              color="#4f2fb8" tint="rgba(79,47,184,0.12)" accent="linear-gradient(90deg,#4f2fb8,#6c62d2)" />
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={1} icon={<SyncOutlined />} label="Processing" value={processingCount}
@@ -649,7 +654,7 @@ export default function VendorPortal() {
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={2} icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount}
-              color="#4a7c59" tint="rgba(74,124,89,0.12)" accent="linear-gradient(90deg,#4a7c59,#6aa67c)" />
+              color="#4f2fb8" tint="rgba(79,47,184,0.12)" accent="linear-gradient(90deg,#4f2fb8,#8b7bea)" />
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={3} icon={<WarningOutlined />} label="Pending Review" value={actionCount}

@@ -74,17 +74,17 @@ const KPI_CARDS = [
     key: 'total',
     label: 'Total Candidates',
     icon: <TeamOutlined />,
-    color: '#7a922e',
-    tint: 'rgba(122,146,46,0.12)',
-    accent: 'linear-gradient(90deg,#7a922e,#92a63c)',
+    color: '#4f2fb8',
+    tint: 'rgba(79,47,184,0.12)',
+    accent: 'linear-gradient(90deg,#4f2fb8,#6c62d2)',
   },
   {
     key: 'thisMonth',
     label: 'Added This Month',
     icon: <RiseOutlined />,
-    color: '#4a7c59',
-    tint: 'rgba(74,124,89,0.12)',
-    accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)',
+    color: '#4f2fb8',
+    tint: 'rgba(79,47,184,0.12)',
+    accent: 'linear-gradient(90deg,#4f2fb8,#8b7bea)',
   },
   {
     key: 'withPosition',
@@ -168,8 +168,8 @@ function statusColor(status) {
 
 /** Pipeline stage tiles — order, label, colour, icon. */
 const PIPELINE_STAGES = [
-  { key: 'selected', label: 'Selected / Joined', color: '#4a7c59', icon: <CheckCircleOutlined /> },
-  { key: 'inProcess', label: 'In Process', color: '#7a922e', icon: <SyncOutlined /> },
+  { key: 'selected', label: 'Selected / Joined', color: '#4f2fb8', icon: <CheckCircleOutlined /> },
+  { key: 'inProcess', label: 'In Process', color: '#4f2fb8', icon: <SyncOutlined /> },
   { key: 'onHold', label: 'On Hold', color: '#b6883a', icon: <PauseCircleOutlined /> },
   { key: 'rejected', label: 'Rejected / Dropped', color: '#c0392b', icon: <CloseCircleOutlined /> },
   { key: 'pending', label: 'Awaiting Screening', color: 'var(--text-3)', icon: <ClockCircleOutlined /> },
@@ -368,7 +368,7 @@ export default function VendorDashboard() {
 
           {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
           <Card className="animate-fade-in-up stagger-2" bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
-            <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
+            <div style={{ height: 3, background: 'linear-gradient(90deg, #4f2fb8, #4f2fb8)' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
                 style={{
@@ -391,7 +391,7 @@ export default function VendorDashboard() {
                     <Progress
                       type="dashboard"
                       percent={selectionRate}
-                      strokeColor="#4a7c59"
+                      strokeColor="#4f2fb8"
                       trailColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
                       size={130}
                       format={(p) => (

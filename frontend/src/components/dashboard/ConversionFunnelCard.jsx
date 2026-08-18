@@ -12,7 +12,7 @@ const { Title, Text } = Typography;
 
 const STAGE_GRADIENTS = {
   sourced: 'linear-gradient(90deg, #0284c7 0%, #0ea5e9 100%)',
-  aiScreened: 'linear-gradient(90deg, #7a922e 0%, #92a63c 100%)',
+  aiScreened: 'linear-gradient(90deg, #4f2fb8 0%, #6c62d2 100%)',
   shortlisted: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)',
   hired: 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)',
 };

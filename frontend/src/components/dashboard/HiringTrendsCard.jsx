@@ -69,8 +69,8 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
             <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -18 }}>
               <defs>
                 <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#7a922e" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#7a922e" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#4f2fb8" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#4f2fb8" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" vertical={false} />
@@ -93,13 +93,13 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
               <Area
                 type="monotone"
                 dataKey="count"
-                stroke="#7a922e"
+                stroke="#4f2fb8"
                 strokeWidth={2.5}
                 fill="url(#trendFill)"
                 isAnimationActive={!prefersReducedMotion()}
                 animationDuration={900}
                 dot={false}
-                activeDot={{ r: 4, fill: '#7a922e', stroke: '#fff', strokeWidth: 2 }}
+                activeDot={{ r: 4, fill: '#4f2fb8', stroke: '#fff', strokeWidth: 2 }}
               />
             </AreaChart>
           </ResponsiveContainer>

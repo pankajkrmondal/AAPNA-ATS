@@ -85,7 +85,7 @@ export default function ForgotPassword() {
           style={{ marginBottom: 28 }}
         >
           <Input
-            prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<UserOutlined style={{ color: 'rgba(79, 47, 184, 0.55)', marginRight: 4 }} />}
             placeholder="Enter your username or email"
             autoComplete="off"
             style={{ borderRadius: 10, height: 46 }}

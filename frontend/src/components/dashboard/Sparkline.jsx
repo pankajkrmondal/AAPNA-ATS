@@ -29,7 +29,7 @@ const prefersReducedMotion = () => typeof window !== 'undefined'
  * @param {string} [props.color]
  * @param {number} [props.height]
  */
-export default function Sparkline({ data = [], color = '#7a922e', height = 34 }) {
+export default function Sparkline({ data = [], color = '#4f2fb8', height = 34 }) {
   const uid = useId().replace(/:/g, '');
   const series = (data || []).map((v, i) => ({ i, v: Number(v) || 0 }));
   // A single point cannot describe a trend; below that there is genuinely nothing

@@ -36,7 +36,7 @@ const { Title, Text } = Typography;
 const brandTagStyle = {
   background: 'var(--gold-subtle)',
   color: 'var(--gold)',
-  border: '1px solid rgba(122, 146, 46, 0.25)',
+  border: '1px solid rgba(79, 47, 184, 0.25)',
   borderRadius: 6,
   fontWeight: 600,
   margin: 0,
@@ -72,7 +72,7 @@ const dummyReplacements = {
   interview_when: '28 July 2026 at 11:00 AM IST',
   previous_when: '25 July 2026 at 03:00 PM IST',
   duration: '60',
-  teams_line: '<p style="margin:16px 0;"><a href="https://teams.microsoft.com/l/meetup-join/sample" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Join the Microsoft Teams meeting</a></p>',
+  teams_line: '<p style="margin:16px 0;"><a href="https://teams.microsoft.com/l/meetup-join/sample" style="background:#4f2fb8;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Join the Microsoft Teams meeting</a></p>',
   reason_line: '<p><strong>Reason:</strong> Interviewer unavailable</p>',
 };
 

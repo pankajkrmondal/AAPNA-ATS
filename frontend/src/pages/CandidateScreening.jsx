@@ -1467,13 +1467,13 @@ export default function CandidateScreening() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(activeTab === 'jd'
                 ? [
-                    { label: '5★', value: summary.fiveStar || 0, color: '#4a7c59' },
-                    { label: '4★', value: summary.fourStar || 0, color: '#7a922e' },
+                    { label: '5★', value: summary.fiveStar || 0, color: '#4f2fb8' },
+                    { label: '4★', value: summary.fourStar || 0, color: '#4f2fb8' },
                     { label: '3★', value: summary.threeStar || 0, color: '#d4a017' },
                   ]
                 : [
-                    { label: 'Strong', value: summary.high || 0, color: '#4a7c59' },
-                    { label: 'Moderate', value: summary.medium || 0, color: '#7a922e' },
+                    { label: 'Strong', value: summary.high || 0, color: '#4f2fb8' },
+                    { label: 'Moderate', value: summary.medium || 0, color: '#4f2fb8' },
                     { label: 'Weak', value: summary.low || 0, color: '#d4a017' },
                   ]
               ).map((s) => (
@@ -1610,8 +1610,8 @@ export default function CandidateScreening() {
                                   fontWeight: 800,
                                   fontSize: '9px',
                                   padding: '1px 6px',
-                                  border: '1px solid rgba(122, 146, 46, 0.25)',
-                                  background: 'rgba(122, 146, 46, 0.06)',
+                                  border: '1px solid rgba(79, 47, 184, 0.25)',
+                                  background: 'rgba(79, 47, 184, 0.06)',
                                   color: 'var(--gold)',
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1962,8 +1962,8 @@ export default function CandidateScreening() {
                     }}
                     style={{
                       borderRadius: '6px',
-                      backgroundColor: '#6d7e3d',
-                      borderColor: '#6d7e3d',
+                      backgroundColor: '#5a4fbe',
+                      borderColor: '#5a4fbe',
                       opacity: isSel ? 0.75 : 1
                     }}
                   >
@@ -1997,9 +1997,9 @@ export default function CandidateScreening() {
                     let bgColor = 'rgba(230,126,34,0.08)';
                     let textColor = '#e67e22';
                     if (label.startsWith('Yes')) {
-                      borderColor = 'rgba(74,124,89,0.35)';
-                      bgColor = 'rgba(74,124,89,0.08)';
-                      textColor = '#4a7c59';
+                      borderColor = 'rgba(79,47,184,0.35)';
+                      bgColor = 'rgba(79,47,184,0.08)';
+                      textColor = '#4f2fb8';
                     } else if (label.startsWith('No')) {
                       borderColor = 'rgba(192,57,43,0.3)';
                       bgColor = 'rgba(192,57,43,0.06)';
@@ -2019,8 +2019,8 @@ export default function CandidateScreening() {
                               lineHeight: '1.7',
                               marginBottom: '14px',
                               padding: '14px 16px',
-                              background: 'linear-gradient(135deg, rgba(109,126,61,0.08), transparent)',
-                              borderLeft: '3px solid #6d7e3d',
+                              background: 'linear-gradient(135deg, rgba(90,79,190,0.08), transparent)',
+                              borderLeft: '3px solid #5a4fbe',
                               borderRadius: '0 8px 8px 0'
                             }}>
                               {selectedCandidate.profile.summary}
@@ -2075,10 +2075,10 @@ export default function CandidateScreening() {
                           
                           {selectedCandidate.profile.skillGap.mandatory?.present?.length > 0 && (
                             <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#4a7c59', fontWeight: 600, marginBottom: '4px' }}>✓ Mandatory — Present</div>
+                              <div style={{ fontSize: '9px', color: '#4f2fb8', fontWeight: 600, marginBottom: '4px' }}>✓ Mandatory — Present</div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                 {selectedCandidate.profile.skillGap.mandatory.present.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(74,124,89,0.12)', color: '#4a7c59', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(74,124,89,0.25)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(79,47,184,0.12)', color: '#4f2fb8', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(79,47,184,0.25)', fontWeight: 500 }}>{s}</span>
                                 ))}
                               </div>
                             </div>
@@ -2097,10 +2097,10 @@ export default function CandidateScreening() {
                           
                           {selectedCandidate.profile.skillGap.goodToHave?.present?.length > 0 && (
                             <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#6d7e3d', fontWeight: 600, marginBottom: '4px' }}>✓ Good to Have — Present</div>
+                              <div style={{ fontSize: '9px', color: '#5a4fbe', fontWeight: 600, marginBottom: '4px' }}>✓ Good to Have — Present</div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                 {selectedCandidate.profile.skillGap.goodToHave.present.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(109,126,61,0.12)', color: '#6d7e3d', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(109,126,61,0.25)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(90,79,190,0.12)', color: '#5a4fbe', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(90,79,190,0.25)', fontWeight: 500 }}>{s}</span>
                                 ))}
                               </div>
                             </div>
@@ -2181,7 +2181,7 @@ export default function CandidateScreening() {
                           {/* Score visual breakdown row */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', marginBottom: '14px' }}>
                             <div>{renderStars(selectedCandidate.starRating.stars)}</div>
-                            <span style={{ fontSize: '22px', fontWeight: 700, color: '#6d7e3d', fontFamily: 'monospace', lineHeight: 1 }}>
+                            <span style={{ fontSize: '22px', fontWeight: 700, color: '#5a4fbe', fontFamily: 'monospace', lineHeight: 1 }}>
                               {Math.round(selectedCandidate.starRating.finalScore)}
                             </span>
                             {(() => {
@@ -2191,13 +2191,13 @@ export default function CandidateScreening() {
                               let bgColor = 'rgba(230,126,34,0.08)';
                               let textColor = '#e67e22';
                               if (val >= 8) {
-                                borderColor = 'rgba(74,124,89,0.35)';
-                                bgColor = 'rgba(74,124,89,0.08)';
-                                textColor = '#4a7c59';
+                                borderColor = 'rgba(79,47,184,0.35)';
+                                bgColor = 'rgba(79,47,184,0.08)';
+                                textColor = '#4f2fb8';
                               } else if (val >= 6) {
-                                borderColor = 'rgba(109,126,61,0.35)';
-                                bgColor = 'rgba(109,126,61,0.08)';
-                                textColor = '#6d7e3d';
+                                borderColor = 'rgba(90,79,190,0.35)';
+                                bgColor = 'rgba(90,79,190,0.08)';
+                                textColor = '#5a4fbe';
                               } else if (val >= 4) {
                                 borderColor = 'rgba(61,107,138,0.35)';
                                 bgColor = 'rgba(61,107,138,0.08)';
@@ -2234,13 +2234,13 @@ export default function CandidateScreening() {
                               let bgColor = 'rgba(192,57,43,0.05)';
                               let borderColor = 'rgba(192,57,43,0.15)';
                               if (scoreVal >= 8) {
-                                color = '#4a7c59'; // Green
-                                bgColor = 'rgba(74,124,89,0.07)';
-                                borderColor = 'rgba(74,124,89,0.15)';
+                                color = '#4f2fb8'; // Green
+                                bgColor = 'rgba(79,47,184,0.07)';
+                                borderColor = 'rgba(79,47,184,0.15)';
                               } else if (scoreVal >= 6) {
-                                color = '#6d7e3d'; // Olive
-                                bgColor = 'rgba(109,126,61,0.07)';
-                                borderColor = 'rgba(109,126,61,0.15)';
+                                color = '#5a4fbe'; // Olive
+                                bgColor = 'rgba(90,79,190,0.07)';
+                                borderColor = 'rgba(90,79,190,0.15)';
                               } else if (scoreVal >= 4) {
                                 color = '#3d6b8a'; // Blue
                                 bgColor = 'rgba(61,107,138,0.07)';

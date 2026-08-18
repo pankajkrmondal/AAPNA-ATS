@@ -494,22 +494,22 @@ export default function Candidates() {
               onClick={() => handleDownloadResume(fileUrl)}
               style={{
                 borderRadius: 6,
-                background: hasCv ? '#7a922e' : 'var(--ink-4)',
-                borderColor: hasCv ? '#7a922e' : 'var(--border)',
+                background: hasCv ? '#4f2fb8' : 'var(--ink-4)',
+                borderColor: hasCv ? '#4f2fb8' : 'var(--border)',
                 color: hasCv ? '#fff' : 'var(--text-3)',
               }}
             />
             <Button
               size="small"
               onClick={() => handleOpenView(record)}
-              style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)', fontWeight: 500 }}
+              style={{ borderRadius: 6, background: '#4f2fb8', borderColor: '#4f2fb8', color: '#fff', fontWeight: 500 }}
             >
               View
             </Button>
             <Button
               size="small"
               onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: '#7a922e', borderColor: '#7a922e', color: '#fff', fontWeight: 500 }}
+              style={{ borderRadius: 6, background: '#4f2fb8', borderColor: '#4f2fb8', color: '#fff', fontWeight: 500 }}
             >
               Edit
             </Button>
@@ -539,7 +539,7 @@ export default function Candidates() {
         style={{
           borderRadius: 12,
           boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #7a922e',
+          borderTop: '4px solid #4f2fb8',
           marginBottom: 28,
         }}
       >
@@ -1216,7 +1216,7 @@ export default function Candidates() {
                 <div
                   key={email.id}
                   style={{
-                    border: '1px solid #dde2d0',
+                    border: '1px solid #e2def0',
                     borderRadius: 8,
                     padding: 12,
                     background: isOutbound ? 'var(--ink-4)' : 'var(--colorBgContainer)',
@@ -1242,7 +1242,7 @@ export default function Candidates() {
           <div
             style={{
               background: 'var(--ink-4)',
-              border: '1px dashed #dde2d0',
+              border: '1px dashed #e2def0',
               borderRadius: 8,
               padding: '44px 20px',
               textAlign: 'center',

@@ -56,12 +56,12 @@ const sourceLabel = (card) => (card.source === 'vendor' ? (card.vendor_email || 
 const STAGE_ACCENT = {
   zeko: 'linear-gradient(90deg, #2f54eb, #5b7ff0)',
   manual: 'linear-gradient(90deg, #13c2c2, #36d6d6)',
-  scheduled_interview: 'linear-gradient(90deg, #7a922e, #92a63c)',
+  scheduled_interview: 'linear-gradient(90deg, #4f2fb8, #6c62d2)',
   document: 'linear-gradient(90deg, #eb2f96, #f062b4)',
-  offer: 'linear-gradient(90deg, #4a7c59, #6ba57d)',
+  offer: 'linear-gradient(90deg, #4f2fb8, #8b7bea)',
 };
 
-const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
+const AVATAR_PALETTE = ['#4f2fb8', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4f2fb8'];
 const initials = (name) => (name || '?').split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...(name || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
 
@@ -297,8 +297,8 @@ function BoardScroller({ children }) {
     // Brand green gradient + glow (same treatment as the primary buttons), with
     // a white icon so it reads as an action and stands out over the cards.
     border: '2px solid #fff',
-    background: 'var(--gradient-primary, linear-gradient(135deg, #7a922e, #92a63c))',
-    boxShadow: 'var(--glow-accent, 0 4px 14px rgba(122,146,46,0.30)), 0 2px 8px rgba(0,0,0,0.18)',
+    background: 'var(--gradient-primary, linear-gradient(135deg, #4f2fb8, #6c62d2))',
+    boxShadow: 'var(--glow-accent, 0 4px 14px rgba(79,47,184,0.30)), 0 2px 8px rgba(0,0,0,0.18)',
     color: '#fff',
     display: 'flex',
     alignItems: 'center',
@@ -495,7 +495,7 @@ export default function Pipeline() {
       <Input.Search
         allowClear
         placeholder='Ask the board — e.g. "vendor candidates stuck on hold"'
-        prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
+        prefix={<RobotOutlined style={{ color: 'var(--gold, #4f2fb8)' }} />}
         style={{ maxWidth: 520, marginBottom: 8 }}
         value={nlQuery}
         onChange={(e) => { setNlQuery(e.target.value); if (!e.target.value.trim()) handleNlSearch(''); }}
@@ -565,7 +565,7 @@ export default function Pipeline() {
                       />
                     </Tooltip>
                   )}
-                  <Badge count={col.cards.length} showZero color="#7a922e" />
+                  <Badge count={col.cards.length} showZero color="#4f2fb8" />
                 </Space>
               )}
               styles={{ body: { padding: 10, background: 'transparent' } }}

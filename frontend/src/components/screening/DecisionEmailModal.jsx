@@ -245,7 +245,7 @@ export default function DecisionEmailModal({
         )}
 
         {!roleReady ? (
-          <Text type="secondary" style={{ fontSize: 12.5, borderTop: '1px solid var(--border-light, #eaebe8)', paddingTop: 10, display: 'block' }}>
+          <Text type="secondary" style={{ fontSize: 12.5, borderTop: '1px solid var(--border-light, #ebe8f4)', paddingTop: 10, display: 'block' }}>
             Tag a role above to preview the notification email.
           </Text>
         ) : (
@@ -255,7 +255,7 @@ export default function DecisionEmailModal({
             </Checkbox>
 
             {sendEmail && (
-              <div style={{ borderTop: '1px solid var(--border-light, #eaebe8)', paddingTop: 10 }}>
+              <div style={{ borderTop: '1px solid var(--border-light, #ebe8f4)', paddingTop: 10 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
                   <Text strong style={{ fontSize: 12.5 }}>
                     <MailOutlined style={{ marginInlineEnd: 4 }} /> Email

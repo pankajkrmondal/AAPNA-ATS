@@ -46,12 +46,12 @@ const { Title, Text } = Typography;
  * drift to different colours.
  */
 const ACCENT = {
-  positive: { color: '#7a922e', tint: 'rgba(122,146,46,0.12)', accent: 'linear-gradient(90deg,#7a922e,#92a63c)' },
+  positive: { color: '#4f2fb8', tint: 'rgba(79,47,184,0.12)', accent: 'linear-gradient(90deg,#4f2fb8,#6c62d2)' },
   negative: { color: '#c0392b', tint: 'rgba(192,57,43,0.12)', accent: 'linear-gradient(90deg,#c0392b,#e0654f)' },
   progress: { color: '#2f6f9f', tint: 'rgba(47,111,159,0.12)', accent: 'linear-gradient(90deg,#2f6f9f,#4f93c4)' },
   waiting: { color: '#b6883a', tint: 'rgba(182,136,58,0.14)', accent: 'linear-gradient(90deg,#b6883a,#d2a85a)' },
   neutral: { color: '#5f6664', tint: 'rgba(95,102,100,0.12)', accent: 'linear-gradient(90deg,#5f6664,#828b88)' },
-  success: { color: '#4a7c59', tint: 'rgba(74,124,89,0.12)', accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)' },
+  success: { color: '#17c653', tint: 'rgba(23,198,83,0.12)', accent: 'linear-gradient(90deg,#17c653,#4ade80)' },
 };
 
 /**
@@ -275,7 +275,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                       <div style={{
                         height: '100%',
                         width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`,
-                        background: 'linear-gradient(90deg,#7a922e,#a8c24a)',
+                        background: 'linear-gradient(90deg,#4f2fb8,#a99cf0)',
                         borderRadius: 6,
                         transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
                       }}
@@ -292,8 +292,8 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                           border: 'none',
                           // A steep drop between stages is the thing worth
                           // noticing, so it is tinted rather than left neutral.
-                          background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(122,146,46,0.12)',
-                          color: conversion < 50 ? '#c0392b' : '#5c7022',
+                          background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(79,47,184,0.12)',
+                          color: conversion < 50 ? '#c0392b' : '#3d2196',
                         }}
                       >
                         {conversion}%
@@ -555,7 +555,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
                   dataIndex: 'hired',
                   align: 'center',
                   width: 90,
-                  render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+                  render: (n) => <Text strong style={{ color: n > 0 ? '#4f2fb8' : 'var(--text-2)' }}>{n}</Text>,
                 },
                 {
                   title: 'Rejected',
@@ -620,7 +620,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
               title: 'Hired',
               dataIndex: 'hired',
               align: 'center',
-              render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text strong style={{ color: n > 0 ? '#4f2fb8' : 'var(--text-2)' }}>{n}</Text>,
             },
             {
               title: 'Rejected',
@@ -643,8 +643,8 @@ function RecruiterInsights({ data, loading, errored, params }) {
                   style={{
                     border: 'none',
                     fontWeight: 600,
-                    background: rate > 0 ? 'rgba(74,124,89,0.12)' : 'var(--ink-3)',
-                    color: rate > 0 ? '#4a7c59' : 'var(--text-2)',
+                    background: rate > 0 ? 'rgba(79,47,184,0.12)' : 'var(--ink-3)',
+                    color: rate > 0 ? '#4f2fb8' : 'var(--text-2)',
                   }}
                 >
                   {rate}%

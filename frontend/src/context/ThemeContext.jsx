@@ -16,7 +16,7 @@ export const ThemeContext = createContext(null);
 
 const STORAGE_KEY = 'ats_theme';
 const MODES = ['light', 'dark', 'system'];
-const THEME_COLOR = { light: '#7a922e', dark: '#0a0e0c' };
+const THEME_COLOR = { light: '#4f2fb8', dark: '#0d0b16' };
 
 /**
  * Reads the initial mode: valid localStorage value → that mode, else 'light'.

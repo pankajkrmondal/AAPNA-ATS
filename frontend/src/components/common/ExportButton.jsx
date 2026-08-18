@@ -119,7 +119,7 @@ export default function ExportButton({
           style={{
             borderRadius: 6,
             fontWeight: 600,
-            ...(isDisabled ? { pointerEvents: 'none' } : { color: '#7a922e', borderColor: '#7a922e' }),
+            ...(isDisabled ? { pointerEvents: 'none' } : { color: '#4f2fb8', borderColor: '#4f2fb8' }),
             ...style,
           }}
         >

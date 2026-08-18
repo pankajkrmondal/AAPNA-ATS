@@ -9,7 +9,7 @@ const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 // Brand colours pulled from the n8n form.
-const BRAND = '#92a63c';
+const BRAND = '#6c62d2';
 const HELP = 'rgb(12, 136, 42)';
 const REQUIRED = '#bc2f32';
 

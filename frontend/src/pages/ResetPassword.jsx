@@ -104,7 +104,7 @@ export default function ResetPassword() {
           style={{ marginBottom: 20 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined style={{ color: 'rgba(79, 47, 184, 0.55)', marginRight: 4 }} />}
             placeholder="Min 8 characters"
             autoComplete="new-password"
             style={{ borderRadius: 10, height: 46 }}
@@ -129,7 +129,7 @@ export default function ResetPassword() {
           style={{ marginBottom: 28 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined style={{ color: 'rgba(79, 47, 184, 0.55)', marginRight: 4 }} />}
             placeholder="Re-enter new password"
             autoComplete="new-password"
             style={{ borderRadius: 10, height: 46 }}

@@ -23,7 +23,7 @@ export default function StatCard({
   value,
   trend,
   trendLabel = 'vs last month',
-  color = '#7a922e',
+  color = '#4f2fb8',
   loading = false,
   style,
   sparklineData = null,
@@ -35,7 +35,7 @@ export default function StatCard({
 }) {
   const isPositive = trend > 0;
   const isNegative = trend < 0;
-  const trendColor = isPositive ? '#4a7c59' : isNegative ? '#c0392b' : '#5f6664';
+  const trendColor = isPositive ? '#4f2fb8' : isNegative ? '#c0392b' : '#5f6664';
   const displayValue = useCountUp(value);
 
   // Week-over-week delta badge (independent of the optional `trend` prop).

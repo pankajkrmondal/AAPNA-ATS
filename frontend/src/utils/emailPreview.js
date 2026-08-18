@@ -15,7 +15,7 @@
  */
 
 const LOGO = 'https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png';
-const ACCENT = '#7a922e';
+const ACCENT = '#4f2fb8';
 
 /**
  * True when the HTML already carries its own document shell — mirrors
@@ -63,7 +63,7 @@ export function wrapBrandedPreview(bodyHtml, { title = '', subtitle = 'AAPNA Inf
     + `<tr><td style="background:${ACCENT};padding:32px 40px;text-align:center">`
     + `<img src="${LOGO}" width="190" alt="AAPNA Infotech" style="display:block;margin:0 auto 16px auto">`
     + (safeTitle ? `<h1 style="margin:0;font-size:22px;color:#ffffff;font-weight:800">${safeTitle}</h1>` : '')
-    + `<p style="margin:6px 0 0 0;color:#e7f0c5;font-size:13px">${escapeHtml(subtitle)}</p>`
+    + `<p style="margin:6px 0 0 0;color:#e0dbf4;font-size:13px">${escapeHtml(subtitle)}</p>`
     + `</td></tr>`
     + `<tr><td style="padding:32px 40px 24px 40px;font-size:15px;color:#374151;line-height:1.8">${body}</td></tr>`
     + `<tr><td style="background:#f3f4f6;padding:16px;text-align:center;font-size:12px;color:#9ca3af">`

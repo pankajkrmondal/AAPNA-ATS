@@ -7,7 +7,7 @@
     <meta name="description" content="AAPNA ATS - Modern Applicant Tracking System for streamlined recruitment process automation" />
     <meta name="keywords" content="ATS, Recruitment, Hiring, Applicant Tracking, HR, AAPNA" />
     <meta name="author" content="AAPNA" />
-    <meta name="theme-color" content="#7a922e" />
+    <meta name="theme-color" content="#4f2fb8" />
 
     <!-- Anti-FOUC: apply the saved theme before first paint. Default is LIGHT;
          the OS preference is honored only when the user explicitly chose "system". -->
@@ -29,7 +29,7 @@
         el.setAttribute('data-theme', theme);
         el.style.colorScheme = theme;
         var meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.setAttribute('content', dark ? '#0a0e0c' : '#7a922e');
+        if (meta) meta.setAttribute('content', dark ? '#0d0b16' : '#4f2fb8');
       })();
     </script>
 
@@ -38,8 +38,13 @@
     <meta property="og:description" content="Modern Applicant Tracking System for streamlined recruitment" />
     <meta property="og:type" content="website" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Favicon — the AAPNA rotor mark knocked out of a brand-violet tile.
+         Generated from the same path data as src/components/common/AapnaLogo.jsx,
+         so the tab icon and the in-app logo cannot drift apart. A tile rather than
+         the bare mark because the outline blades disappear at 16px and the mark is
+         invisible against a dark tab strip. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
 
     <!-- Google Fonts: Inter + Sora + DM Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

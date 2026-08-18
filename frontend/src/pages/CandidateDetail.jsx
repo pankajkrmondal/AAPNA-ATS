@@ -281,8 +281,8 @@ export default function CandidateDetail() {
         <div className="animate-fade-in" style={{ padding: '24px 0' }}>
           <Timeline
             items={[
-              { color: '#7a922e', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
-              { color: '#92a63c', children: <><Text strong>AI screening completed</Text> — Score: {data.score || 92}%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
+              { color: '#4f2fb8', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
+              { color: '#6c62d2', children: <><Text strong>AI screening completed</Text> — Score: {data.score || 92}%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
               { color: '#2980b9', children: <><Text strong>Shortlisted</Text> by HR Admin<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 3:15 PM</Text></> },
               { color: 'gray', children: <><Text type="secondary">Awaiting interview scheduling</Text></> },
             ]}
@@ -340,8 +340,8 @@ export default function CandidateDetail() {
                     fontFamily: "'DM Mono', monospace",
                     fontSize: 14,
                     border: 'none',
-                    background: data.score >= 90 ? '#4a7c5920' : '#d4a01720',
-                    color: data.score >= 90 ? '#4a7c59' : '#d4a017',
+                    background: data.score >= 90 ? '#4f2fb820' : '#d4a01720',
+                    color: data.score >= 90 ? '#4f2fb8' : '#d4a017',
                   }}
                 >
                   {data.score}% Match

@@ -212,9 +212,9 @@ const stageIdx = (key) => STAGES.findIndex((s) => s.key === key);
 const STAGE_ACCENT = {
   zeko: 'linear-gradient(90deg, #2f54eb, #5b7ff0)',
   assessment: 'linear-gradient(90deg, #13c2c2, #36d6d6)',
-  interview: 'linear-gradient(90deg, #7a922e, #92a63c)',
+  interview: 'linear-gradient(90deg, #4f2fb8, #6c62d2)',
   docs: 'linear-gradient(90deg, #eb2f96, #f062b4)',
-  offer: 'linear-gradient(90deg, #4a7c59, #6ba57d)',
+  offer: 'linear-gradient(90deg, #4f2fb8, #8b7bea)',
 };
 
 const REASONS = {
@@ -929,10 +929,10 @@ const FUNNEL = [
  * KpiCard styling (animated count-up, glow, hover lift), same as
  * Dashboard.jsx / VendorDashboard.jsx, instead of plain Statistic boxes. */
 const PIPELINE_TILES = [
-  { key: 'active', label: 'Active in pipeline', value: 52, icon: <TeamOutlined />, color: 'var(--gold, #7a922e)', tint: 'rgba(122, 146, 46, 0.12)', accent: 'linear-gradient(90deg, #7a922e, #92a63c)' },
+  { key: 'active', label: 'Active in pipeline', value: 52, icon: <TeamOutlined />, color: 'var(--gold, #4f2fb8)', tint: 'rgba(79, 47, 184, 0.12)', accent: 'linear-gradient(90deg, #4f2fb8, #6c62d2)' },
   { key: 'pending', label: 'Invite pending', value: 5, icon: <MailOutlined />, color: '#6b7280', tint: 'rgba(107, 114, 128, 0.12)', accent: 'linear-gradient(90deg, #6b7280, #9198a3)' },
   { key: 'awaiting', label: 'In progress (interview / Zeko / test)', value: 6, icon: <ClockCircleOutlined />, color: '#d4a017', tint: 'rgba(212, 160, 23, 0.12)', accent: 'linear-gradient(90deg, #d4a017, #e8b93a)' },
-  { key: 'ready', label: 'Ready for decision (feedback / score / result in)', value: 13, icon: <CheckCircleOutlined />, color: '#27ae60', tint: 'rgba(39, 174, 96, 0.12)', accent: 'linear-gradient(90deg, #27ae60, #4a7c59)' },
+  { key: 'ready', label: 'Ready for decision (feedback / score / result in)', value: 13, icon: <CheckCircleOutlined />, color: '#27ae60', tint: 'rgba(39, 174, 96, 0.12)', accent: 'linear-gradient(90deg, #27ae60, #4f2fb8)' },
   { key: 'hold', label: 'On hold', value: 5, icon: <PauseCircleOutlined />, color: '#8b938a', tint: 'rgba(139, 147, 138, 0.14)', accent: 'linear-gradient(90deg, #8b938a, #aeb5ab)' },
   { key: 'offers', label: 'Offers awaiting candidate decision', value: 1, icon: <FileTextOutlined />, color: '#185fa5', tint: 'rgba(24, 95, 165, 0.12)', accent: 'linear-gradient(90deg, #185fa5, #2f78c9)' },
 ];
@@ -962,7 +962,7 @@ export function CandidatePipelineAnalyticsPreview() {
               <Col flex="180px" style={{ textAlign: 'right' }}><Text type="secondary" style={{ fontSize: 12.5 }}>{name}</Text></Col>
               <Col flex="auto">
                 <Tooltip title={`${v} candidates${i ? ` · ${Math.round((v / FUNNEL[i - 1][1]) * 100)}% of previous round` : ''}`}>
-                  <div style={{ height: 20, width: `${Math.max((v / FUNNEL[0][1]) * 100, 2)}%`, background: 'var(--gold, #7a922e)', borderRadius: '0 4px 4px 0', opacity: 0.88 }} />
+                  <div style={{ height: 20, width: `${Math.max((v / FUNNEL[0][1]) * 100, 2)}%`, background: 'var(--gold, #4f2fb8)', borderRadius: '0 4px 4px 0', opacity: 0.88 }} />
                 </Tooltip>
               </Col>
               <Col flex="110px"><Text strong>{v}</Text>{i > 0 && <Text type="secondary" style={{ fontSize: 12 }}> · {Math.round((v / FUNNEL[i - 1][1]) * 100)}%</Text>}</Col>
@@ -1030,7 +1030,7 @@ const CHIP_ACCENT = {
   await: '#d4a017', feedback: '#27ae60', hold: '#d4a017', docs: '#5b7ff0', offer_sent: '#5b7ff0',
 };
 
-const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
+const AVATAR_PALETTE = ['#4f2fb8', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4f2fb8'];
 const initials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
 const fmtWindow = (w) => (w ? `${dayjs(w.start).format('DD MMM, HH:mm')}–${dayjs(w.end).format('HH:mm')}` : '');
@@ -1553,7 +1553,7 @@ export default function CandidatePipelinePrototype() {
   const board = (
     <>
       <Input.Search allowClear placeholder='Ask the board — e.g. "vendor candidates stuck on hold" (mocked keyword matching)'
-        prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
+        prefix={<RobotOutlined style={{ color: 'var(--gold, #4f2fb8)' }} />}
         style={{ maxWidth: 520, marginBottom: 8 }} value={nlQuery}
         onChange={(e) => { setNlQuery(e.target.value); if (!e.target.value.trim()) handleNlSearch(''); }}
         onSearch={handleNlSearch} enterButton={<SearchOutlined />} />
@@ -1593,7 +1593,7 @@ export default function CandidatePipelinePrototype() {
                         <Button size="small" icon={<ImportOutlined />} onClick={() => setImportOpen(true)} />
                       </Tooltip>
                     )}
-                    <Badge count={list.length} showZero color="var(--gold, #7a922e)" />
+                    <Badge count={list.length} showZero color="var(--gold, #4f2fb8)" />
                   </Space>
                 )}
                 styles={{ body: { padding: 10, background: 'transparent' } }}
@@ -1724,7 +1724,7 @@ export default function CandidatePipelinePrototype() {
         } else if (off.shared && off.decision === 'Awaiting decision' && isCurrent) {
           extras[2] = (
             <Space size={6}>
-              <Button size="small" style={{ color: 'var(--green, #4a7c59)', borderColor: 'var(--green, #4a7c59)' }}
+              <Button size="small" style={{ color: 'var(--green, #4f2fb8)', borderColor: 'var(--green, #4f2fb8)' }}
                 onClick={() => message.success('Offer marked Accepted — closure options unlocked; record auto-closes 90 days after Joined (Q12)')}>Mark Accepted</Button>
               <Button size="small" danger onClick={() => message.warning('Offer marked Rejected — reason captured')}>Mark Rejected</Button>
             </Space>
@@ -1802,7 +1802,7 @@ export default function CandidatePipelinePrototype() {
           </>
         )}
         {isCurrent && stage.type !== 'offer' && (
-          <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
+          <div style={{ borderTop: '1px solid var(--border-2, #ebe8f4)', margin: '12px -12px 12px', paddingTop: 12, paddingInline: 12 }}>
             <Space wrap>
               <Button type="primary" icon={<CheckOutlined />} className="cta-primary btn-sheen"
                 onClick={() => openOutcomeModal('approved')}>Approve round</Button>
@@ -1836,7 +1836,7 @@ export default function CandidatePipelinePrototype() {
         message="Evalground_Results_08Jul2026.csv"
         description="38 rows · uploaded by Priya (RT) · no column mapping step — AI read every row's raw text regardless of column order/headers and picked out email, GA score and Technical score (same schema-free row-reading pattern as the HR bulk resume upload)." />
       <Row gutter={[10, 10]} style={{ marginBottom: 12 }}>
-        <Col span={6}><Card size="small"><Statistic title="Matched" value={34} valueStyle={{ color: 'var(--green, #4a7c59)', fontSize: 20 }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="Matched" value={34} valueStyle={{ color: 'var(--green, #4f2fb8)', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Unmatched" value={3} valueStyle={{ color: '#d4a017', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Malformed" value={1} valueStyle={{ color: 'var(--red, #c0392b)', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Total rows" value={38} valueStyle={{ fontSize: 20 }} /></Card></Col>
@@ -1974,7 +1974,7 @@ export default function CandidatePipelinePrototype() {
                 options={(REASONS[outcome] || []).map((r) => ({ value: r, label: r }))} />
             </div>
             <Input.TextArea rows={2} placeholder="Notes — internal, shown on the round; not sent to the candidate" />
-            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
+            <div style={{ borderTop: '1px solid var(--border-2, #ebe8f4)', paddingTop: 10 }}>
               <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Outcome email → {mailAudience(current)}</Text>
                 {emailTpl
@@ -2009,7 +2009,7 @@ export default function CandidatePipelinePrototype() {
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Text type="secondary">{current.name} · closing as <Text strong>{closeStatus}</Text></Text>
             <Alert type="warning" showIcon message="This removes the candidate from the active board — reversible only by re-adding them (prototype has no undo)." />
-            <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
+            <div style={{ borderTop: '1px solid var(--border-2, #ebe8f4)', paddingTop: 10 }}>
               <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Closure email → {mailAudience(current)}</Text>
                 <Tag color="orange">Draft — no template yet</Tag>
@@ -2062,7 +2062,7 @@ export default function CandidatePipelinePrototype() {
               description="Automated reminders (Q7) — candidate 30 min before · interviewer 30 min before · feedback form link right after the interview, then one reminder per day until submitted." />
             <Card size="small" style={{ background: 'var(--ink-3)' }}>
               <Checkbox checked={prepBriefOn} onChange={(e) => setPrepBriefOn(e.target.checked)}>
-                <Space size={6}><RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} /><Text strong style={{ fontSize: 13 }}>Attach AI interviewer prep brief</Text></Space>
+                <Space size={6}><RobotOutlined style={{ color: 'var(--gold, #4f2fb8)' }} /><Text strong style={{ fontSize: 13 }}>Attach AI interviewer prep brief</Text></Space>
               </Checkbox>
               <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginInlineStart: 24 }}>
                 On by default — a one-page summary sent to the interviewer alongside the invite: candidate snapshot, scores so far

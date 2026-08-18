@@ -1888,7 +1888,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-          <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
+          <div style={{ borderTop: '1px solid var(--border-2, #ebe8f4)', paddingTop: 10 }}>
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
               {/* "→ candidate" with no vendor appended, even when one is
                   notified: this header labels the box the recruiter is editing,

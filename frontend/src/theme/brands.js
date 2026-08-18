@@ -17,6 +17,11 @@
  * legacy names onto these (`--gold: var(--brand-primary)`), so a brand switch
  * repaints the whole app while every existing reference keeps working.
  *
+ * NOTE ON NAMES: `--gold` / `--green` are historical. The primary brand colour is now
+ * violet (see the `aapna` block below); the legacy alias names were kept
+ * deliberately for the reason above. Read `--gold` as "the primary brand colour",
+ * not as a hue.
+ *
  * NEXT SESSION (server-driven themes): nothing here needs to change structurally.
  * A company's token overrides can be stored as a JSON blob — the existing
  * `rpa_settings` key/value table takes `theme.company.<id>` with no migration — and
@@ -47,46 +52,46 @@ const aapna = {
    *  hardcoded in the hero, so a tenant theme replaces it too. */
   heroEyebrow: 'AAPNA ATS Platform',
   light: {
-    '--brand-primary': '#7a922e',
-    '--brand-primary-hover': '#92a63c',
-    '--brand-primary-active': '#5f7424',
-    '--brand-accent': '#92a339',
-    '--brand-primary-bg': '#eef3da',
-    '--brand-canvas': '#f7f6f3',
+    '--brand-primary': '#4f2fb8',
+    '--brand-primary-hover': '#6c62d2',
+    '--brand-primary-active': '#3d2196',
+    '--brand-accent': '#6c62d2',
+    '--brand-primary-bg': '#e7e3f7',
+    '--brand-canvas': '#f8f7fc',
     '--brand-surface': '#ffffff',
     // Deeper canvas used ONLY behind the glass dashboard. Light mode's problem was
     // value contrast: near-white cards on a near-white page have nothing to separate
     // against, so the glass read as flat no matter how it was styled — while dark
     // mode worked because its panes glow against a dark ground. Dropping the ground
     // ~9% in value is what lets a white pane actually read as a pane.
-    '--brand-canvas-deep': '#fbfcf7',
-    // Ambient canvas (see aurora-glass.css). Olive-led on purpose: one analogous
-    // companion and one warm accent, no violet — that is what keeps it reading as
-    // AAPNA rather than as a generic AI product. Light mode carries MORE saturation
+    '--brand-canvas-deep': '#fcfbfe',
+    // Ambient canvas (see aurora-glass.css). Violet-led on purpose: one analogous
+    // companion and one cool accent, no warm hues — that is what keeps it reading as
+    // a calm product surface rather than a gradient soup. Light mode carries MORE saturation
     // than instinct suggests: over a light ground the eye needs real chroma before a
     // wash registers at all.
-    '--aurora-1': 'rgba(122, 146, 46, 0.13)',
-    '--aurora-2': 'rgba(146, 163, 57, 0.11)',
-    '--aurora-3': 'rgba(146, 163, 57, 0.08)',
-    '--aurora-4': 'rgba(122, 146, 46, 0.06)',
+    '--aurora-1': 'rgba(79, 47, 184, 0.13)',
+    '--aurora-2': 'rgba(108, 98, 210, 0.11)',
+    '--aurora-3': 'rgba(108, 98, 210, 0.08)',
+    '--aurora-4': 'rgba(79, 47, 184, 0.06)',
     '--aurora-opacity': '1',
     '--watermark-opacity': '0.075',
     // Shadow hue for light mode (see light3 note): coloured, not black.
-    '--shade-rgb': '86 104 52',
+    '--shade-rgb': '58 40 120',
   },
   dark: {
-    '--brand-primary': '#a8c24a',
-    '--brand-primary-hover': '#bcd566',
-    '--brand-primary-active': '#94ad3f',
-    '--brand-accent': '#a8c24a',
-    '--brand-primary-bg': 'rgba(168, 194, 74, 0.12)',
-    '--brand-canvas': '#0a0e0c',
-    '--brand-canvas-deep': '#0a0e0c', // dark mode already has the contrast it needs
-    '--brand-surface': '#121816',
-    '--aurora-1': 'rgba(168, 194, 74, 0.32)',
-    '--aurora-2': 'rgba(53, 194, 173, 0.24)',
-    '--aurora-3': 'rgba(212, 160, 23, 0.16)',
-    '--aurora-4': 'rgba(122, 146, 46, 0.38)',
+    '--brand-primary': '#a99cf0',
+    '--brand-primary-hover': '#c4baf7',
+    '--brand-primary-active': '#8b7bea',
+    '--brand-accent': '#a99cf0',
+    '--brand-primary-bg': 'rgba(169, 156, 240, 0.12)',
+    '--brand-canvas': '#0d0b16',
+    '--brand-canvas-deep': '#0d0b16', // dark mode already has the contrast it needs
+    '--brand-surface': '#161327',
+    '--aurora-1': 'rgba(169, 156, 240, 0.32)',
+    '--aurora-2': 'rgba(90, 79, 190, 0.24)',
+    '--aurora-3': 'rgba(108, 98, 210, 0.16)',
+    '--aurora-4': 'rgba(79, 47, 184, 0.38)',
     '--aurora-opacity': '0.92',
     '--watermark-opacity': '0.075',
   },
@@ -174,7 +179,7 @@ export function resolveBrandId() {
  * where the theme scoping already works.
  *
  * @param {string} brandId
- * @returns {Record<string, string>} e.g. { '--brand-primary-light': '#7a922e', … }
+ * @returns {Record<string, string>} e.g. { '--brand-primary-light': '#4f2fb8', … }
  */
 export function brandTokens(brandId) {
   const brand = BRANDS[brandId] || BRANDS[DEFAULT_BRAND_ID];

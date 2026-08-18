@@ -26,7 +26,7 @@ export default function EmailPreviewPane({ subject, bodyHtml, wrapper, variant =
 
   if (variant === 'compact') {
     return (
-      <div style={{ border: '1px solid var(--border-light, #eaebe8)', borderRadius: 6, overflow: 'hidden' }}>
+      <div style={{ border: '1px solid var(--border-light, #ebe8f4)', borderRadius: 6, overflow: 'hidden' }}>
         <div style={{ padding: '6px 10px', background: 'var(--ink-4, #f4f6f9)', fontSize: 12, fontWeight: 600 }}>
           {subject}
         </div>

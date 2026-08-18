@@ -652,7 +652,7 @@ export default function AdminDashboard() {
                     <Title level={2} className="admin-stat-num">{stats.total}</Title>
                     <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
                   </div>
-                  <div className="admin-stat-icon" style={{ color: 'var(--gold)', background: 'rgba(122,146,46,0.10)' }}>
+                  <div className="admin-stat-icon" style={{ color: 'var(--gold)', background: 'rgba(79,47,184,0.10)' }}>
                     <TeamOutlined />
                   </div>
                 </div>
@@ -719,7 +719,7 @@ export default function AdminDashboard() {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #dde2d0',
+                borderBottom: '1px solid #e2def0',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -1013,7 +1013,7 @@ export default function AdminDashboard() {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #dde2d0',
+                borderBottom: '1px solid #e2def0',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -1145,7 +1145,7 @@ export default function AdminDashboard() {
             <Input placeholder="Leave blank to use the email address" />
           </Form.Item>
 
-          <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+          <hr style={{ border: 'none', borderTop: '1px solid #e2def0', margin: '16px 0' }} />
 
           <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
             Account Settings
@@ -1186,7 +1186,7 @@ export default function AdminDashboard() {
 
           {!editingUser ? (
             <div>
-              <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+              <hr style={{ border: 'none', borderTop: '1px solid #e2def0', margin: '16px 0' }} />
               <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Set Password
               </Text>
@@ -1239,14 +1239,14 @@ export default function AdminDashboard() {
               {/* Password reset: self or lower roles only — never a peer superadmin. */}
               {(editingUser?.role || '').toLowerCase() === 'superadmin' && editingUser?.id !== currentUser?.id ? (
                 <>
-                  <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+                  <hr style={{ border: 'none', borderTop: '1px solid #e2def0', margin: '16px 0' }} />
                   <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginBottom: 12 }}>
                     🔒 A Super Admin&apos;s password can only be changed by the account owner.
                   </Text>
                 </>
               ) : (
               <>
-              <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+              <hr style={{ border: 'none', borderTop: '1px solid #e2def0', margin: '16px 0' }} />
               <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Change Password (Optional)
               </Text>

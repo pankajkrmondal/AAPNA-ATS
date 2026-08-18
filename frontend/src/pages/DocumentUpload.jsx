@@ -259,7 +259,7 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
         border: `1px solid ${stagedFile ? BRAND.accent : '#e8eaec'}`,
         borderRadius: 10,
         padding: '14px 16px',
-        background: stagedFile ? 'rgba(122,146,46,0.04)' : '#fff',
+        background: stagedFile ? 'rgba(79,47,184,0.04)' : '#fff',
         transition: 'border-color .2s, background .2s',
       }}
     >

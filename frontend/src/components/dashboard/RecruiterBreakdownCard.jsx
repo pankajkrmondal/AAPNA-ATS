@@ -13,7 +13,7 @@ import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip as RTooltip, XAxis,
 
 const { Title, Text } = Typography;
 
-const ADDED_COLOR = '#7a922e';
+const ADDED_COLOR = '#4f2fb8';
 const SHORTLISTED_COLOR = '#2563eb';
 
 // Special-case labels that aren't real recruiter names — explained on hover

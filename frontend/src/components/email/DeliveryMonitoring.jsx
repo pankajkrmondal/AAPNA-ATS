@@ -103,11 +103,11 @@ export default function DeliveryMonitoring() {
       title: 'Opened',
       value: summary.opened,
       icon: <EyeOutlined />,
-      tone: '#4a7c59',
+      tone: '#4f2fb8',
       hint: 'Opens are a positive signal, not an exact count — mail clients proxy or block tracking images.',
     },
     {
-      key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? '#7a922e' : undefined,
+      key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? '#4f2fb8' : undefined,
     },
     {
       key: 'bounced', title: 'Bounced', value: summary.bounced, icon: <StopOutlined />, tone: summary.bounced > 0 ? '#c0392b' : undefined,

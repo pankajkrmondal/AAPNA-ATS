@@ -19,7 +19,7 @@ const { Text } = Typography;
 
 /** Mirrors BRAND in backend/src/services/emailLayout.service.js — keep in step. */
 export const BRAND = Object.freeze({
-  accent: '#7a922e',
+  accent: '#4f2fb8',
   page: '#f4f6f9',
   card: '#ffffff',
   footerBg: '#f3f4f6',
@@ -64,7 +64,7 @@ export default function PublicPageShell({ title, subtitle, maxWidth = 680, child
             </h1>
           )}
           {subtitle && (
-            <p style={{ margin: '7px 0 0 0', color: '#e7f0c5', fontSize: 13.5, lineHeight: 1.5 }}>
+            <p style={{ margin: '7px 0 0 0', color: '#e0dbf4', fontSize: 13.5, lineHeight: 1.5 }}>
               {subtitle}
             </p>
           )}

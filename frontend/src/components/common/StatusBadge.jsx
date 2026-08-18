@@ -8,10 +8,10 @@ import { Tag } from 'antd';
 /** Map status keys to display labels and colors. */
 const STATUS_MAP = {
   new:          { label: 'New',          color: '#2980b9' },
-  screening:    { label: 'Screening',    color: '#92a63c' },
-  shortlisted:  { label: 'Shortlisted',  color: '#7a922e' },
+  screening:    { label: 'Screening',    color: '#6c62d2' },
+  shortlisted:  { label: 'Shortlisted',  color: '#4f2fb8' },
   interview:    { label: 'Interview',    color: '#d4a017' },
-  offered:      { label: 'Offered',      color: '#4a7c59' },
+  offered:      { label: 'Offered',      color: '#4f2fb8' },
   hired:        { label: 'Hired',        color: '#27ae60' },
   rejected:     { label: 'Rejected',     color: '#c0392b' },
   onhold:       { label: 'On Hold',      color: '#95a5a6' },

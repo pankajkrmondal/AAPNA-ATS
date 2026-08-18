@@ -174,7 +174,7 @@ export default function MissingJdUpload() {
     }
 
     if (key === 'EnglishCommunicationRating') {
-      return <Rate count={5} style={{ color: '#4a7c59' }} />;
+      return <Rate count={5} style={{ color: '#4f2fb8' }} />;
     }
 
     // Number Inputs
@@ -270,7 +270,7 @@ export default function MissingJdUpload() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#4f2fb8', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close Window
               </Button>
@@ -339,7 +339,7 @@ export default function MissingJdUpload() {
                 key="close"
                 type="primary"
                 onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: '#7a922e', border: 'none', fontWeight: 600, paddingInline: 32 }}
+                style={{ height: 44, borderRadius: 8, background: '#4f2fb8', border: 'none', fontWeight: 600, paddingInline: 32 }}
               >
                 Close
               </Button>
@@ -466,8 +466,8 @@ export default function MissingJdUpload() {
                 borderRadius: 10,
                 fontWeight: 600,
                 fontSize: 15,
-                background: '#7a922e',
-                borderColor: '#7a922e'
+                background: '#4f2fb8',
+                borderColor: '#4f2fb8'
               }}
             >
               Submit Profile Details

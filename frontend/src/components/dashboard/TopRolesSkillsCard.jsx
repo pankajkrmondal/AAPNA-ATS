@@ -10,7 +10,7 @@ import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
 
-const ROLE_COLORS = ['#7a922e', '#2563eb', '#d97706', '#16a34a', '#e11d48', '#4f46e5', '#0891b2', '#b45309'];
+const ROLE_COLORS = ['#4f2fb8', '#2563eb', '#d97706', '#16a34a', '#e11d48', '#4f46e5', '#0891b2', '#b45309'];
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&

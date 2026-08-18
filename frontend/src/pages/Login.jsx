@@ -68,7 +68,7 @@ export default function Login() {
           style={{ marginBottom: 20 }}
         >
           <Input
-            prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<UserOutlined style={{ color: 'rgba(79, 47, 184, 0.55)', marginRight: 4 }} />}
             placeholder="Enter username or email"
             autoComplete="off"
             style={{ borderRadius: 10, height: 46 }}
@@ -82,7 +82,7 @@ export default function Login() {
           style={{ marginBottom: 28 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined style={{ color: 'rgba(79, 47, 184, 0.55)', marginRight: 4 }} />}
             placeholder="Enter password"
             autoComplete="new-password"
             style={{ borderRadius: 10, height: 46 }}
