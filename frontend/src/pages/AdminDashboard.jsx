@@ -45,12 +45,25 @@ import useAuth from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
 
+/**
+ * Per-module identity colours.
+ *
+ * DELIBERATELY RAW HEX, and the one set in this file the Aurora Glass token
+ * sweep left alone. These are nine arbitrary hues whose only job is to be
+ * *distinguishable from each other* in a grid of module chips — they carry no
+ * semantic meaning (nothing here is "success" or "warning") and they must not
+ * follow a tenant's brand, because a tenant-tinted set would collapse toward
+ * one hue and stop doing the only thing it exists to do.
+ *
+ * Every other colour in this file is now a token. If these ever need theming,
+ * they want their own `--module-*` scale, not the semantic palette.
+ */
 const MODULES_INFO = [
   { key: 'new_mrf',             label: '+ New MRF Request',                 desc: 'Create and submit Manpower Requisition Forms',      icon: '📋', color: '#1890ff' },
   { key: 'search_candidates',   label: 'Search & Edit Candidates',         desc: 'Search, update and manage candidate profiles',      icon: '🔍', color: '#52c41a' },
   { key: 'hr_manual_upload',    label: 'HR Manual Upload',                 desc: 'Upload candidate resumes for future hiring',        icon: '📤', color: '#faad14' },
   { key: 'system_config',       label: 'System Configuration',             desc: 'Manage configuration and automation settings',      icon: '⚙️', color: '#722ed1' },
-  { key: 'vendor_upload',       label: 'Vendor Manual Upload',             desc: 'Upload vendor-sourced candidate resumes',           icon: '🏢', color: '#fa8c16' },
+  { key: 'vendor_upload',       label: 'Vendor Manual Upload',             desc: 'Upload vendor-sourced candidate resumes',           icon: '🏢', color: 'var(--warning)' },
   { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: '#2f54eb' },
   { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: '#13c2c2' },
   { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: '#eb2f96' },
@@ -518,7 +531,7 @@ export default function AdminDashboard() {
               width: 5,
               height: 5,
               borderRadius: '50%',
-              background: record.is_active ? '#52c41a' : '#ff4d4f',
+              background: record.is_active ? 'var(--status-approved)' : 'var(--red)',
               marginRight: 6,
               verticalAlign: 'middle',
             }}
@@ -573,7 +586,7 @@ export default function AdminDashboard() {
                   disabled={!canToggle}
                   icon={<PoweroffOutlined />}
                   onClick={() => openToggleModal(record)}
-                  style={{ color: !canToggle ? 'var(--border)' : '#fa8c16' }}
+                  style={{ color: !canToggle ? 'var(--border)' : 'var(--warning)' }}
                 />
               </span>
             </Tooltip>
@@ -585,7 +598,7 @@ export default function AdminDashboard() {
                   disabled={!canDelete}
                   icon={<DeleteOutlined />}
                   onClick={() => openDeleteModal(record)}
-                  style={{ color: !canDelete ? 'var(--border)' : '#ff4d4f' }}
+                  style={{ color: !canDelete ? 'var(--border)' : 'var(--red)' }}
                 />
               </span>
             </Tooltip>
@@ -692,12 +705,12 @@ export default function AdminDashboard() {
                   <div className="admin-stat-body">
                     <div>
                       <Text type="secondary" className="admin-stat-label">Companies</Text>
-                      <Title level={2} className="admin-stat-num" style={{ color: '#1d6fb8' }}>{companies.length}</Title>
+                      <Title level={2} className="admin-stat-num" style={{ color: 'var(--kpi-b)' }}>{companies.length}</Title>
                       <Text type="secondary" style={{ fontSize: 11 }}>
                         {companies.filter((c) => c.is_active).length} active tenants
                       </Text>
                     </div>
-                    <div className="admin-stat-icon" style={{ color: '#1d6fb8', background: 'rgba(29,111,184,0.10)' }}>
+                    <div className="admin-stat-icon" style={{ color: 'var(--kpi-b)', background: 'var(--kpi-b-tint)' }}>
                       <BankOutlined />
                     </div>
                   </div>
@@ -719,7 +732,7 @@ export default function AdminDashboard() {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #dde2d0',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -841,7 +854,7 @@ export default function AdminDashboard() {
                         style={{
                           padding: '12px 16px',
                           cursor: 'pointer',
-                          borderBottom: '1px solid #f0f2eb',
+                          borderBottom: '1px solid var(--border-light)',
                           background: selected ? 'var(--gold-bg)' : 'transparent',
                           borderLeft: selected ? '3px solid var(--gold)' : '3px solid transparent',
                           display: 'flex',
@@ -1013,7 +1026,7 @@ export default function AdminDashboard() {
             <div
               style={{
                 padding: '16px 20px',
-                borderBottom: '1px solid #dde2d0',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -1086,7 +1099,7 @@ export default function AdminDashboard() {
                         <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} style={{ color: 'var(--gold)' }} />
                       </Tooltip>
                       <Tooltip title={r.is_active ? 'Deactivate' : 'Activate'}>
-                        <Button type="text" size="small" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} style={{ color: '#fa8c16' }} />
+                        <Button type="text" size="small" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} style={{ color: 'var(--warning)' }} />
                       </Tooltip>
                     </Space>
                   ),
@@ -1145,7 +1158,7 @@ export default function AdminDashboard() {
             <Input placeholder="Leave blank to use the email address" />
           </Form.Item>
 
-          <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+          <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
 
           <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
             Account Settings
@@ -1186,7 +1199,7 @@ export default function AdminDashboard() {
 
           {!editingUser ? (
             <div>
-              <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
               <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Set Password
               </Text>
@@ -1239,14 +1252,14 @@ export default function AdminDashboard() {
               {/* Password reset: self or lower roles only — never a peer superadmin. */}
               {(editingUser?.role || '').toLowerCase() === 'superadmin' && editingUser?.id !== currentUser?.id ? (
                 <>
-                  <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
                   <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginBottom: 12 }}>
                     🔒 A Super Admin&apos;s password can only be changed by the account owner.
                   </Text>
                 </>
               ) : (
               <>
-              <hr style={{ border: 'none', borderTop: '1px solid #dde2d0', margin: '16px 0' }} />
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
               <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
                 Change Password (Optional)
               </Text>
@@ -1310,8 +1323,8 @@ export default function AdminDashboard() {
       >
         <div style={{ padding: '10px 0' }}>
           {userToToggle?.is_active ? (
-            <div style={{ background: 'var(--warn-bg)', border: '1px solid #ffd591', borderRadius: 6, padding: '12px 14px' }}>
-              <Text style={{ fontSize: 13.5, color: '#d46b08', display: 'block', fontWeight: 600, marginBottom: 4 }}>
+            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', borderRadius: 6, padding: '12px 14px' }}>
+              <Text style={{ fontSize: 13.5, color: 'var(--warn-text)', display: 'block', fontWeight: 600, marginBottom: 4 }}>
                 {userToToggle?.first_name} {userToToggle?.last_name} ({userToToggle?.email})
               </Text>
               <Text style={{ fontSize: 13, color: 'var(--text)' }}>

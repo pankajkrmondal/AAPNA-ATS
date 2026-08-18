@@ -5,6 +5,70 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 8: the Admin portal + the prototype
+
+The biggest structural departure, deliberately last so every pattern was proven
+elsewhere first. **With this in, every route the sidebar can reach is converted.**
+
+### The admin portal is a separate shell
+
+`MainLayout`'s `isAdminPath` branch has its own `admin-topbar`, **no Sider**, its
+own `.admin-stat` card family and its own `--admin-bg`. Widening `V2_ROUTES`
+never did anything for it, because the branch **never rendered `.ats-v2` and
+never mounted the canvas** — which is why it is not in `V2_ROUTES` even now; the
+branch applies the class itself.
+
+- `.ats-v2` on the admin `<Layout>` + `<AmbientBackdrop/>`, and both the Layout
+  and Content go `background: transparent` — the `--admin-bg` fill would
+  otherwise sit on top of the canvas. Content is `z-index: 1` over the fixed
+  backdrop.
+- **The header-only shape is kept on purpose.** Adding a Sider is a *navigation*
+  redesign; this is a visual rollout.
+- `admin-topbar` → tier-1 chrome, including the light-mode rule the rest of the
+  app follows: **opaque white, not tinted glass**.
+- `.admin-stat` → tier 2, mirroring the `.kpi-card` approach. It is a *third*
+  stat-card component after `.premium-stat-card` and `.kpi-card`; they are not
+  unified here, because consolidating three components is a refactor and this is
+  the last phase before acceptance. What matters for the acceptance walk is that
+  it now *matches* them.
+- The portal's scoped `.admin-portal .ant-table-*` rules are **reconciled**, not
+  removed: fills go transparent, but the uppercase tinted header survives
+  because it is the portal's own voice.
+- **~23 raw hexes → tokens.** The nine per-module identity colours are
+  **deliberately left as hex and documented**: they are arbitrary hues whose only
+  job is to be distinguishable from each other, they carry no semantic meaning,
+  and a tenant-tinted set would collapse toward one hue and stop working.
+
+### The prototype: converted (decision recorded)
+
+The plan left "convert or retire?" as a team decision. **Decision: convert.** It
+stays live at `/candidate-pipeline-prototype` for client walkthroughs, and a
+walkthrough that crosses from the real board to a flat demo shows two products.
+
+- The Phase 4 `.cp-*` rules **activate on it as predicted**, so the board
+  material came free; the columns needed the same
+  `glass-card no-lift pipeline-column` classes the real board carries.
+- **Failure B is fixed here too.** The prototype had the identical inline
+  `borderInlineStart` carrying chip status, so it had the identical silent-wipe
+  bug. Same `--cp-accent` remedy, verified with the same hover assertion.
+- Its `STAGE_ACCENT`, `CHIP_ACCENT` and `AVATAR_PALETTE` now use the shared
+  Phase 4 tokens, so the demo and the real board **cannot drift apart on
+  colour** — and both get dark-mode values that stay legible at a 3px rule.
+- **All 26 bare hexes gone** (values already written as `var(--token, #fallback)`
+  were left alone — those are correct).
+
+### Verified
+
+`npm run build` clean. **42/42 computed-style assertions, both themes.** The
+load-bearing ones: the canvas is actually mounted on a shell that had none; the
+admin topbar is **opaque white in light and blurred glass in dark**, asserted
+per theme rather than with one loose check; the admin table header keeps its
+tint while every other fill goes transparent; the prototype's column and card
+land on the same tiers as the real board; and **Failure B is re-asserted on the
+prototype**, at rest, on hover, and under `prefers-reduced-transparency`.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 7: `/settings`, `/email`
 
 - **`/settings`** — four settings panels → `glass-card` (tier 2: they are the

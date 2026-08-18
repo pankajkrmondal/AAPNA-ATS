@@ -1209,6 +1209,88 @@
    treatment, the two screens would have drifted apart, which is the thing the
    shared class exists to prevent. Verified against /filtering. */
 
+/* ============================================================
+   ROLLOUT PHASE 8 — the Admin portal
+   ------------------------------------------------------------
+   The biggest structural departure in the app, left until last so every
+   pattern here was proven elsewhere first.
+
+   MainLayout's `isAdminPath` branch is a SEPARATE SHELL: its own `admin-topbar`,
+   NO Sider, its own `.admin-stat` card family, its own `--admin-bg`. Widening
+   the route gate did nothing for it, because the branch never rendered
+   `.ats-v2` nor mounted the canvas. Phase 8 adds both in the JSX; everything
+   below is the material.
+
+   THE HEADER-ONLY SHAPE IS KEPT ON PURPOSE. Giving the admin portal a Sider
+   would be a navigation redesign, and this is a visual rollout.
+   ============================================================ */
+
+/* Topbar — tier 1, the same chrome the recruitment shell's header wears. It is
+   sticky and rasterised once, so it is one of only two tiers that may blur. */
+.ats-v2 .admin-topbar {
+  background: var(--glass-1-bg) !important;
+  backdrop-filter: var(--glass-1-blur);
+  -webkit-backdrop-filter: var(--glass-1-blur);
+  border-bottom: 1px solid var(--glass-1-border) !important;
+  box-shadow: var(--depth-1);
+  position: relative;
+  z-index: 2;
+}
+/* Light mode's chrome is OPAQUE WHITE, not tinted glass — the same rule the
+   sidebar and main topbar follow. A translucent pane is only ever as neutral as
+   what shows through it, and that cannot be fixed by lowering alpha. */
+[data-theme='light'] .ats-v2 .admin-topbar {
+  background: #ffffff !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+
+/* `.admin-stat` is the portal's own KPI family — a third stat-card component
+   after `.premium-stat-card` and `.kpi-card`. Not unified with them here:
+   consolidating three components is a refactor, and this phase is the last one
+   before final acceptance. It gets the tier-2 material so it MATCHES them,
+   which is what the acceptance walk actually checks.
+   Mirrors the `.kpi-card` approach: the base rule already sets a
+   `--gradient-card` fill with `!important`, so this answers it in kind. */
+.ats-v2 .admin-portal .admin-stat {
+  background: var(--glass-2-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+.ats-v2 .admin-portal .admin-stat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-3), var(--glass-hilite) !important;
+}
+
+/* Tables. The portal's scoped `.admin-portal .ant-table-*` rules paint an
+   opaque header fill and an opaque hover — reconciled to tier 3 rather than
+   removed, because the uppercase header treatment is the portal's own voice
+   and worth keeping. The `!important` on both sides is inherited from those
+   existing rules, not introduced here. */
+.ats-v2 .admin-portal .ant-table,
+.ats-v2 .admin-portal .ant-table-tbody > tr > td,
+.ats-v2 .admin-portal .ant-table-placeholder,
+.ats-v2 .admin-portal .ant-table-placeholder > td { background: transparent; }
+.ats-v2 .admin-portal .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent) !important;
+}
+.ats-v2 .admin-portal .ant-table-tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+/* The wrapper clips to a radius, so it must not paint its own ground. */
+.ats-v2 .admin-portal .ant-table-wrapper { background: transparent; }
+
+/* The portal's plain container cards — the toolbar and companies panels — take
+   tier 2 so they sit on the canvas rather than floating as white slabs. */
+.ats-v2 .admin-portal > .ant-card,
+.ats-v2 .admin-portal .admin-tabbar {
+  background: var(--glass-2-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  box-shadow: var(--depth-1), var(--glass-hilite) !important;
+}
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -1221,6 +1303,8 @@
   .ats-v2 .glass-sidebar,
   .ats-v2 .glass-sidebar .ant-layout-sider-children,
   .ats-v2 .ant-layout-header.glass,
+  /* The admin portal's topbar is tier-1 chrome too (Phase 8). */
+  .ats-v2 .admin-topbar,
   /* Tier 4 relies on the blur the same way the chrome does — at 0.86/0.90 alpha
      with nothing blurred behind it, page content reads through a dialog. These
      are unscoped for the same portal reason as the tier-4 block itself. */
@@ -1273,6 +1357,23 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 8 (admin portal). The topbar is tier-1 chrome, so it goes opaque with
+     the other chrome; the stat cards and container panels follow the tier-2
+     surfaces above. */
+  .ats-v2 .admin-topbar,
+  .ats-v2 .admin-portal .admin-stat,
+  .ats-v2 .admin-portal > .ant-card,
+  .ats-v2 .admin-portal .admin-tabbar {
+    background: var(--colorBgContainer) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+  .ats-v2 .admin-portal .ant-table-thead > tr > th,
+  .ats-v2 .admin-portal .ant-table-tbody > tr:hover > td {
+    background: var(--ink-3) !important;
+  }
+
   /* Phase 6 (/analytics). One entry covers all 16 panels on the page. */
   .ats-v2 .panel-shell {
     background: var(--colorBgContainer) !important;

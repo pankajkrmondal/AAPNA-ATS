@@ -119,11 +119,17 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *            own: its tab container carried the bare `.glass` class, which
  *            aurora-glass.css never touches.
  *  Phase 7 — /settings, /email. `/email`'s three panes carried the same bare
- *            `.glass` landmine and were renamed the same way. */
+ *            `.glass` landmine and were renamed the same way.
+ *  Phase 8 — /candidate-pipeline-prototype, plus the ADMIN PORTAL, which is not
+ *            in this list: it is a separate shell handled by the `isAdminPath`
+ *            branch below, which now applies `.ats-v2` itself.
+ *
+ *  With Phase 8 in, every route the sidebar can reach is converted. */
 const V2_ROUTES = [
   '/dashboard', '/filtering', '/candidates', '/pipeline',
   '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
   '/analytics', '/settings', '/email',
+  '/candidate-pipeline-prototype',
 ];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
@@ -252,8 +258,20 @@ export default function MainLayout() {
   }
 
   if (isAdminPath) {
+    // The admin portal is a SEPARATE SHELL — its own topbar, no Sider, its own
+    // `.admin-stat` card family and its own `--admin-bg`. Widening `isV2` does
+    // nothing here, because this branch never rendered `.ats-v2` and never
+    // mounted the canvas; that is why the rollout left it until last.
+    //
+    // Phase 8 keeps the header-only shape deliberately. Adding a Sider would be
+    // a NAVIGATION redesign, which is out of scope for a visual rollout. What it
+    // gains is the material: the canvas behind it, `.ats-v2` so every scoped
+    // rule in aurora-glass.css reaches this tree too, and tier-1 chrome on the
+    // topbar. `background: transparent` lets the canvas show through — the
+    // `--admin-bg` fill would otherwise sit on top of it.
     return (
-      <Layout style={{ minHeight: '100vh', background: 'var(--admin-bg)' }}>
+      <Layout className="ats-v2" style={{ minHeight: '100vh', background: 'transparent' }}>
+        <AmbientBackdrop />
         <Header className="admin-topbar">
           {/* Left: Logo + Sep + Title cluster */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -341,7 +359,9 @@ export default function MainLayout() {
             </Button>
           </div>
         </Header>
-        <Content style={{ minHeight: 'calc(100vh - 64px)', background: 'var(--admin-bg)' }}>
+        {/* Transparent for the same reason as the Layout above, and z-indexed
+            over the fixed canvas so content is not painted underneath it. */}
+        <Content style={{ minHeight: 'calc(100vh - 64px)', background: 'transparent', position: 'relative', zIndex: 1 }}>
           {/* Keyed by path so the entrance animation replays on every navigation
               (a persistent wrapper would only animate on first mount). */}
           <div className="page-enter" key={location.pathname}>
