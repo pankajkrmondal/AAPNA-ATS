@@ -149,7 +149,7 @@ export default function MrfApprovalAction() {
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
           <Descriptions
-            title={<span style={{ color: '#7a922e', fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
+            title={<span style={{ color: BRAND.accent, fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
             bordered
             column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
             size="small"
@@ -162,7 +162,7 @@ export default function MrfApprovalAction() {
             <Descriptions.Item label="Hiring Manager">{mrfDetails?.hiring_manager_name} ({mrfDetails?.hiring_manager_designation})</Descriptions.Item>
             <Descriptions.Item label="Submitter Email">{mrfDetails?.submitter_email}</Descriptions.Item>
             <Descriptions.Item label="Number of Positions">
-              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: '#7a922e' }} />
+              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: BRAND.accent }} />
             </Descriptions.Item>
             <Descriptions.Item label="Required Timeline">{mrfDetails?.required_in}</Descriptions.Item>
             <Descriptions.Item label="Reports To">{mrfDetails?.position_reports_to || 'Not Specified'}</Descriptions.Item>
@@ -184,7 +184,7 @@ export default function MrfApprovalAction() {
             )}
             <Descriptions.Item label="Job Description (JD)" span={2}>
               {mrfDetails?.jd_document_link ? (
-                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: '#7a922e' }}>
+                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: BRAND.accent }}>
                   View Uploaded Job Description File →
                 </Button>
               ) : (
@@ -197,7 +197,7 @@ export default function MrfApprovalAction() {
         {mrfDetails?.parsed_jd_json && (
           <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
             <Descriptions
-              title={<span style={{ color: '#7a922e', fontSize: 16, fontWeight: 700 }}>AI-Parsed JD Summary</span>}
+              title={<span style={{ color: BRAND.accent, fontSize: 16, fontWeight: 700 }}>AI-Parsed JD Summary</span>}
               bordered
               column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
               size="small"
@@ -222,7 +222,7 @@ export default function MrfApprovalAction() {
         
         <div style={{ marginTop: 12 }}>
           <Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageOutlined style={{ color: '#7a922e' }} /> Add Review Comments (Optional)
+            <MessageOutlined style={{ color: BRAND.accent }} /> Add Review Comments (Optional)
           </Title>
           <TextArea
             value={comments}
@@ -248,8 +248,8 @@ export default function MrfApprovalAction() {
                     borderRadius: 10,
                     fontWeight: 700,
                     fontSize: 15,
-                    background: '#7a922e',
-                    borderColor: '#7a922e',
+                    background: BRAND.accent,
+                    borderColor: BRAND.accent,
                   }}
                 >
                   Confirm Requisition Approval

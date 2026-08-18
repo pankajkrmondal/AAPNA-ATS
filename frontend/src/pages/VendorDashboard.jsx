@@ -391,7 +391,7 @@ export default function VendorDashboard() {
                     <Progress
                       type="dashboard"
                       percent={selectionRate}
-                      strokeColor="#4a7c59"
+                      strokeColor="var(--kpi-c)"
                       trailColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
                       size={130}
                       format={(p) => (

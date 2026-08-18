@@ -180,7 +180,7 @@ export default function MissingJdUpload() {
     }
 
     if (key === 'EnglishCommunicationRating') {
-      return <Rate count={5} style={{ color: '#4a7c59' }} />;
+      return <Rate count={5} style={{ color: 'var(--kpi-c)' }} />;
     }
 
     // Number Inputs
