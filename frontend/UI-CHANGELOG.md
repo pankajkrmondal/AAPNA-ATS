@@ -5,6 +5,36 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 7: `/settings`, `/email`
+
+- **`/settings`** — four settings panels → `glass-card` (tier 2: they are the
+  page's content, not dense data). Inline radius/shadow dropped, and the two
+  `borderTop: 4px solid var(--gold)` rails go the same way the ones on
+  `/candidates`, `/mrf` and the upload screens did. The plan called this file
+  clean at 0 hexes; that held.
+- **`/email`** — the three `email-pane-card`s carried the **same bare-`.glass`
+  landmine `/analytics` had**, which the plan flagged for `/analytics` but not
+  here. All three renamed to `glass-3 no-lift`; the `no-lift` already present
+  had been signalling tier-3 intent that the bare class never delivered.
+- **Empty state**: "No templates found." became the shared `EmptyState` in its
+  two shapes — search/category excluded everything (offers to clear them) vs.
+  genuinely no templates (explains what templates are for).
+- **CodeMirror: verified, not rebuilt**, per the plan. `EmailEditorTabs` already
+  passes `theme={isDark ? 'dark' : 'light'}` through to the editor.
+- The one `#7a922e` left in `EmailManagement.jsx` is **deliberately literal**:
+  it is inside a sample HTML email body that renders in a mail client, where a
+  CSS custom property would not resolve.
+
+### Verified
+
+`npm run build` clean. **32/32 computed-style assertions, both themes** — the
+landmine asserted both ways again, all three email panes asserted to agree with
+each other, the settings green rail asserted gone (4px → the 1px transparent
+border the gradient rim hangs on), and `prefers-reduced-transparency` opaque on
+both pages.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 6: `/analytics`
 
 The page the plan singles out as breaking the "just widen the boolean" premise.

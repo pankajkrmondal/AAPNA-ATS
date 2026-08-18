@@ -117,11 +117,13 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *            click. Do not split them.
  *  Phase 6 — /analytics. Needed a JSX change the gate could not make on its
  *            own: its tab container carried the bare `.glass` class, which
- *            aurora-glass.css never touches. */
+ *            aurora-glass.css never touches.
+ *  Phase 7 — /settings, /email. `/email`'s three panes carried the same bare
+ *            `.glass` landmine and were renamed the same way. */
 const V2_ROUTES = [
   '/dashboard', '/filtering', '/candidates', '/pipeline',
   '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
-  '/analytics',
+  '/analytics', '/settings', '/email',
 ];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
