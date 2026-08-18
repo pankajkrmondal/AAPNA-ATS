@@ -43,6 +43,11 @@
   --text-3: #8b938a;
   --green: #4a7c59;
   --red: #c0392b;
+  /* Conversations / email-thread accent. Sat as a lone `#7c3aed` on the
+     Candidates action column with no dark-mode pair, so it stayed a deep violet
+     against a dark ground where it barely read. Semantic, not brand: it does not
+     move when a tenant swaps their palette. */
+  --violet: #7c3aed;
 
   /* Extended Palette */
   --gold-bg: var(--brand-primary-bg);
@@ -83,6 +88,18 @@
   --glass-2-border: rgba(255, 255, 255, 0.62);
   --glass-3-bg: rgba(255, 255, 255, 0.90);   /* data: tables, dense lists */
   --glass-3-border: rgba(255, 255, 255, 0.70);
+
+  /* Tier 4 — overlays (modals, drawers, dropdowns, popovers, tooltips).
+     More opaque than tier 2 on purpose: a dialog has to stay readable over
+     arbitrary page content, and unlike tiers 2–3 it is transient and sits above
+     everything, so it is the one content-side surface where a real blur both
+     reads and costs nothing on scroll. The scrim replaces AntD's flat black
+     mask with a brand-hued one so the page behind recedes rather than dims. */
+  --glass-4-bg: rgba(255, 255, 255, 0.86);
+  --glass-4-border: rgba(255, 255, 255, 0.72);
+  --glass-4-blur: blur(22px) saturate(180%);
+  --glass-4-scrim: rgb(var(--shade-rgb) / 0.30);
+  --radius-overlay: 18px;
 
   /* The three details that make glass read as a physical pane rather than a
      transparent rectangle: a top edge that catches light, a diagonal specular
@@ -145,6 +162,30 @@
   --space-7: 48px;
   --space-8: 64px;
 
+  /* ----- Density scale (Aurora Glass rollout, Phase 2) -----
+     Control heights, table row padding and card padding were being chosen per
+     page, so the same table rendered at three different row heights depending
+     on which screen you opened. Three steps, one meaning each:
+
+       compact  — dense data the user scans (tables inside a tier-3 card)
+       default  — everything else
+       relaxed  — feature surfaces with room to breathe (hero, KPI cards)
+
+     Theme-independent (a row is not taller in dark mode), so these live only
+     here and are NOT repeated in the [data-theme='dark'] block. */
+  --control-h-compact: 28px;
+  --control-h: 36px;
+  --control-h-relaxed: 44px;
+
+  --row-py-compact: 8px;    /* table cell block padding */
+  --row-py: 12px;
+  --row-py-relaxed: 16px;
+  --row-px: 16px;           /* table cell inline padding, all densities */
+
+  --card-pad-compact: 16px;
+  --card-pad: 20px;
+  --card-pad-relaxed: 28px;
+
   /* Layout */
   --sidebar-width: 260px;
   --sidebar-collapsed: 80px;
@@ -179,6 +220,67 @@
   /* Accent tones with theme-specific values */
   --warning: #d4a017;
   --gold-dark: #5a6e1f;
+
+  /* ----- Pipeline status + stage palette (Aurora Glass rollout, Phase 4) -----
+     The board encodes candidate status in a card's leading border and stage type
+     in a column's top rule. Both were raw hex literals in Pipeline.jsx (and
+     again in the prototype), which meant they could not be tuned for dark mode
+     and did not exist as a named idea anywhere.
+
+     SEMANTIC, NOT BRAND: these must not follow a tenant's palette. "Rejected" is
+     red because it is rejected, and a tenant whose brand is red would otherwise
+     turn every card's status the same colour. Only `--stage-interview` overlaps
+     the brand, and it is fixed here for the same reason.
+
+     Dark-mode values are lifted, not the same hex at lower alpha: a 3px rule at
+     these light-mode values disappears against the dark board. */
+  --status-closed: #c9cdc7;    /* final_outcome set — the journey is over */
+  --status-rejected: var(--red);
+  --status-hold: #d4a017;
+  --status-approved: #27ae60;
+  --status-active: #5b7ff0;    /* invited / scheduled / in progress */
+
+  --stage-zeko: #2f54eb;
+  --stage-zeko-2: #5b7ff0;
+  --stage-manual: #13c2c2;
+  --stage-manual-2: #36d6d6;
+  --stage-interview: #7a922e;
+  --stage-interview-2: #92a63c;
+  --stage-document: #eb2f96;
+  --stage-document-2: #f062b4;
+  --stage-offer: #4a7c59;
+  --stage-offer-2: #6ba57d;
+
+  /* ----- KPI accent palette (Phase 5) -----
+     The four upload/vendor screens each re-declared the same four accents as
+     hex literals (colour + tint + gradient, twelve values per screen). Named
+     once here. Semantic like the status palette: blue is "in flight", green is
+     "done", red is "failed" — they do not follow a tenant's brand.
+     `--kpi-a-*` is the exception, and is aliased to the brand deliberately. */
+  --kpi-a: var(--brand-primary);
+  --kpi-a-2: var(--brand-primary-hover);
+  --kpi-a-tint: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  --kpi-b: #2f6f9f;
+  --kpi-b-2: #4f93c4;
+  --kpi-b-tint: rgba(47, 111, 159, 0.12);
+  --kpi-c: #4a7c59;
+  --kpi-c-2: #6aa67c;
+  --kpi-c-tint: rgba(74, 124, 89, 0.12);
+  --kpi-d: #c0392b;
+  --kpi-d-2: #e0654f;
+  --kpi-d-tint: rgba(192, 57, 43, 0.12);
+  --kpi-e: #b6883a;
+  --kpi-e-2: #d2a85a;
+  --kpi-e-tint: rgba(182, 136, 58, 0.14);
+
+  /* Avatar palette — deterministic per name, so it only has to be distinguishable,
+     not meaningful. Six hues that stay apart at 28px. */
+  --avatar-1: #7a922e;
+  --avatar-2: #2f54eb;
+  --avatar-3: #13c2c2;
+  --avatar-4: #eb2f96;
+  --avatar-5: #d4a017;
+  --avatar-6: #4a7c59;
 
   /* Semantic status colors for text/borders on tinted panels */
   --color-primary-border: rgba(122, 146, 46, 0.35);
@@ -215,6 +317,7 @@
   --text-3: #6f7875;
   --green: #5a9c6e;
   --red: #e74c3c;
+  --violet: #a78bfa;   /* lifted for a dark ground; #7c3aed reads near-black there */
 
   --gold-bg: var(--brand-primary-bg);
   --gold-subtle: color-mix(in srgb, var(--brand-primary) 8%, transparent);
@@ -242,6 +345,15 @@
   --glass-2-border: rgba(168, 194, 74, 0.16);
   --glass-3-bg: rgba(18, 24, 22, 0.92);
   --glass-3-border: rgba(35, 51, 48, 0.75);
+
+  /* Tier 4 (dark). Slightly *less* opaque than light's 0.86 for the same reason
+     tiers 1–3 are: there is no white haze to fight, so the aurora reads through
+     as colour rather than washing the pane out. The scrim goes near-black —
+     a brand-tinted scrim over an already-dark ground reads as a green fog. */
+  --glass-4-bg: rgba(21, 28, 25, 0.90);
+  --glass-4-border: rgba(168, 194, 74, 0.18);
+  --glass-4-blur: blur(24px) saturate(150%);
+  --glass-4-scrim: rgba(6, 10, 8, 0.62);
 
   /* A 0.65-alpha white catch-light on a dark pane reads as cheap plastic —
      dark glass gets a whisper of one, and leans on the brand-tinted rim instead. */
@@ -285,6 +397,52 @@
   /* Accent tones with theme-specific values */
   --warning: #f0b429;
   --gold-dark: #bcd566;
+
+  /* Pipeline status + stage palette (dark). Lifted values, not the light hexes
+     at lower alpha — a 3px status rule in #2f54eb is nearly invisible against
+     the dark board, and the point of the rule is that it is readable at a
+     glance across a column. `--status-rejected` follows `--red`, which already
+     has its own dark value. */
+  --status-closed: #565f5c;
+  /* Restated for readability beside the other four. It would resolve correctly
+     without this line — `var(--red)` is substituted at use time against this
+     block's `--red` — but a status palette that lists four of five colours
+     invites someone to assume the fifth was forgotten. */
+  --status-rejected: var(--red);
+  --status-hold: #f0b429;
+  --status-approved: #4ade80;
+  --status-active: #7c9cf5;
+
+  --stage-zeko: #5b7ff0;
+  --stage-zeko-2: #8ba6f5;
+  --stage-manual: #36d6d6;
+  --stage-manual-2: #6ee7e7;
+  --stage-interview: #a8c24a;
+  --stage-interview-2: #bcd566;
+  --stage-document: #f062b4;
+  --stage-document-2: #f78fcb;
+  --stage-offer: #6ba57d;
+  --stage-offer-2: #8ec49f;
+
+  /* KPI accents (dark). Lifted for the same reason as the status palette: these
+     are a 34px numeral and a 3px accent bar, and the light-mode values read as
+     muddy against a dark card. `--kpi-a` follows the brand, which already has
+     its own dark value, so it needs no override. */
+  --kpi-b: #5aa3d8;
+  --kpi-b-2: #7fbde8;
+  --kpi-c: #5a9c6e;
+  --kpi-c-2: #7fbd91;
+  --kpi-d: #e7614f;
+  --kpi-d-2: #f08a7b;
+  --kpi-e: #d2a85a;
+  --kpi-e-2: #e3c283;
+
+  --avatar-1: #a8c24a;
+  --avatar-2: #5b7ff0;
+  --avatar-3: #36d6d6;
+  --avatar-4: #f062b4;
+  --avatar-5: #f0b429;
+  --avatar-6: #6ba57d;
 
   /* Semantic status colors for text/borders on tinted panels */
   --color-primary-border: rgba(168, 194, 74, 0.45);
@@ -835,6 +993,125 @@ h1, h2, h3, h4, h5, h6,
   color: var(--kpi-color, var(--text));
   font-variant-numeric: tabular-nums;
 }
+
+/* ----- Shared surface shells (Aurora Glass rollout, Phase 2) -------------
+   Two shapes were being repeated as inline style objects across pages. Inline
+   styles cannot be restyled by a stylesheet, so every one of them would have
+   become a flat slab stuck to the glass as its page converted (the "Failure A"
+   case in the rollout plan). Moved here with BYTE-IDENTICAL values, so nothing
+   moves by a pixel today and the `.ats-v2` rules can reach them tomorrow. */
+
+/* Was PANEL_STYLE, duplicated verbatim in pages/Analytics.jsx and
+   components/email/DeliveryMonitoring.jsx. */
+.panel-shell {
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Was SECTION_CARD_STYLE in pages/VendorDashboard.jsx, which the Vendor Upload
+   screen mirrors by hand. `margin-bottom` is part of the original object and is
+   kept so the swap is a no-op; it is the one property here that is layout
+   rather than chrome. */
+.section-card {
+  background: var(--colorBgContainer);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* ----- PageHeader (Phase 2) ---------------------------------------------
+   The component previously rendered an AntD <Title level={3}> inside an inline
+   style object. It is a plain <h2> now with the styles here, for two reasons:
+   a stylesheet can restyle this (an inline object cannot be overridden), and
+   `level={3}` emitted an <h3> while acting as the page's top heading. The
+   values below reproduce what Title was painting, so nothing shifts. */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.page-header__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.page-header__subtitle {
+  font-size: 14px;
+  margin-top: var(--space-1);
+  color: var(--text-2);
+}
+
+/* ----- Empty / error state primitives (Phase 2) -------------------------
+   One shape for every "there is nothing here" and "this failed" surface, so a
+   table, a board column and a chart all explain themselves the same way. The
+   components live in components/common/. Sized by a `data-size` attribute
+   rather than a modifier class so a caller passes one prop.
+
+   Deliberately NOT translucent: these render INSIDE an already-translucent
+   card, and a second glass layer over the first reads as a smudge. They are
+   type, spacing and one icon — the surface beneath them is the material. */
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  color: var(--text-2);
+}
+.state-block[data-size='sm'] { padding: var(--space-5) var(--space-4); gap: var(--space-2); }
+.state-block[data-size='lg'] { padding: var(--space-7) var(--space-5); }
+
+.state-block__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  font-size: 20px;
+  color: var(--state-accent, var(--text-3));
+  background: color-mix(in srgb, var(--state-accent, var(--text-3)) 10%, transparent);
+}
+.state-block[data-size='sm'] .state-block__icon { width: 36px; height: 36px; font-size: 16px; }
+
+.state-block__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.state-block[data-size='sm'] .state-block__title { font-size: 13.5px; }
+
+/* The line that does the actual work: why this is empty, or what failed. Capped
+   so it stays a readable measure inside a wide table. */
+.state-block__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 46ch;
+}
+
+.state-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-1);
+}
+
+/* Error is the same block with the accent switched — same shape, so a failed
+   panel and an empty one do not read as two different systems. */
+.state-block--error { --state-accent: var(--red); }
 
 /* Glassmorphism */
 .glass {
@@ -1728,9 +2005,14 @@ h1, h2, h3, h4, h5, h6,
   transition: all var(--transition-fast) !important;
 }
 
-/* AntD Modal glassmorphism */
+/* Baseline modal radius. The `!important` this carried until the overlay-tier
+   work was doing real damage: it outranked the per-modal radii below it, so
+   `.dash-cmdk`'s 16px never applied (it rendered at --border-radius-lg like
+   everything else) and the tier-4 overlay radius could not apply either. There
+   is nothing to fight here — AntD sets this radius via a low-specificity token
+   rule — so plain specificity is enough and the bespoke radii win again. */
 .ant-modal-content {
-  border-radius: var(--border-radius-lg) !important;
+  border-radius: var(--border-radius-lg);
 }
 
 /* Modal widths are set in px per modal (see components/pipeline/modalWidths.js).
@@ -2962,6 +3244,11 @@ html.theme-transition *::after {
     box-shadow 0.25s var(--ease-out-quint),
     border-color 0.25s var(--ease-out-quint);
   animation: fadeInUp 0.4s var(--ease-out-quint) both;
+  /* The status accent. `--cp-accent` is published by the card component
+     (Pipeline.jsx / CandidatePipelinePrototype.jsx) and CSS owns the property,
+     so the hover rule below can restyle the other three sides without the
+     `border-color` shorthand wiping out the one that carries meaning. */
+  border-inline-start: 3px solid var(--cp-accent, var(--border));
 }
 
 /* Floating left/right scrollers for the Pipeline board (Pipeline.jsx).
@@ -2979,7 +3266,12 @@ html.theme-transition *::after {
 .cp-candidate-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
-  border-color: var(--gold-light) !important;
+  /* NOT `border-color` — that shorthand sets all four sides, and the inline
+     edge carries the candidate's status. This rule used to wipe it out on every
+     hover with no error and no visual clue that information had gone missing.
+     Set the three decorative sides and leave the leading edge alone. */
+  border-block-color: var(--gold-light) !important;
+  border-inline-end-color: var(--gold-light) !important;
 }
 .cp-avatar {
   width: 28px;

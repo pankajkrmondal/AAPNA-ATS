@@ -5,11 +5,25 @@ import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import dayjs from 'dayjs';
 
+import { BRAND as PUBLIC_BRAND } from '../components/common/PublicPageShell';
+
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 // Brand colours pulled from the n8n form.
-const BRAND = '#92a63c';
+//
+// `BRAND` is now the SHARED public-page accent rather than this file's own
+// `#92a63c`. That hex was a near-miss of the real brand green (#7a922e) carried
+// over from the n8n form, so this page's header band was a visibly different
+// green from the branded email that links to it and from the other public
+// pages — on the surface where continuity is the entire point.
+//
+// The page keeps its own layout deliberately. Unlike the other public pages,
+// this is a long sectioned form whose accent is woven through section rules and
+// required-field marks; reframing it in PublicPageShell would be a rewrite of
+// the form, not a restyle, and the shell's narrow card is the wrong container
+// for it. Aligning the colour is the part that actually closes the visual gap.
+const BRAND = PUBLIC_BRAND.accent;
 const HELP = 'rgb(12, 136, 42)';
 const REQUIRED = '#bc2f32';
 
@@ -350,7 +364,7 @@ export default function MrfSubmit() {
 
   if (success) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: '#f3f5ea' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: PUBLIC_BRAND.page }}>
         <Card style={{ width: '100%', maxWidth: 650, borderRadius: 14, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
           <Result
             status="success"
@@ -448,7 +462,7 @@ export default function MrfSubmit() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 14px', background: '#f3f5ea' }}>
+    <div style={{ minHeight: '100vh', padding: '40px 14px', background: PUBLIC_BRAND.page }}>
       <div style={{ maxWidth: 920, margin: '0 auto' }}>
         {/* Header */}
         <div style={{ background: BRAND, borderRadius: '14px 14px 0 0', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>

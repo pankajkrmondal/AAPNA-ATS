@@ -16,12 +16,15 @@
  * Retained as-is: the view/edit/conversations modals and CSV export. Export takes the
  * same filter object as the table, so it exports exactly what is on screen.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin } from 'antd';
-import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import ExportButton from '../components/common/ExportButton';
+import EmptyState from '../components/common/EmptyState';
+import LoadingSkeleton from '../components/common/LoadingSkeleton';
+import usePointerSpotlight from '../hooks/usePointerSpotlight';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -33,6 +36,14 @@ export default function Candidates() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  /** Cursor-tracked spotlight for the search card, the page's one `.spotlight`
+   *  surface. One delegated listener on the page root, as on the dashboard.
+   *  Safe here because this component has a single return — the loading state is
+   *  rendered inside the same root, so the node the listener is bound to is never
+   *  swapped out (the trap documented on CandidateDetail, which does branch). */
+  const rootRef = useRef(null);
+  usePointerSpotlight(rootRef);
 
   // The only filters this page offers: the three identifiers a recruiter actually
   // searches by. There used to be a free-text "quick search" box AND a collapsible
@@ -466,8 +477,12 @@ export default function Candidates() {
               onClick={() => handleDownloadResume(fileUrl)}
               style={{
                 borderRadius: 6,
-                background: hasCv ? '#7a922e' : 'var(--ink-4)',
-                borderColor: hasCv ? '#7a922e' : 'var(--border)',
+                // --brand-primary, not a literal #7a922e: per-org theming works by
+                // swapping the brand layer, and a hardcoded hex is invisible to it.
+                background: hasCv ? 'var(--brand-primary)' : 'var(--ink-4)',
+                borderColor: hasCv ? 'var(--brand-primary)' : 'var(--border)',
+                // #fff stays literal: it is the foreground ON the brand fill, not a
+                // brand colour itself, and the app writes it that way throughout.
                 color: hasCv ? '#fff' : 'var(--text-3)',
               }}
             />
@@ -481,7 +496,7 @@ export default function Candidates() {
             <Button
               size="small"
               onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: '#7a922e', borderColor: '#7a922e', color: '#fff', fontWeight: 500 }}
+              style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff', fontWeight: 500 }}
             >
               Edit
             </Button>
@@ -494,7 +509,7 @@ export default function Candidates() {
                 borderRadius: 6,
                 background: 'var(--ink-4)',
                 borderColor: 'var(--border)',
-                color: '#7c3aed',
+                color: 'var(--violet)',
               }}
             />
           </Space>
@@ -504,16 +519,20 @@ export default function Candidates() {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
-      {/* 3-Field Candidate Search Card */}
+    <div ref={rootRef} style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
+      {/* 3-Field Candidate Search Card — tier 2, and this page's one feature
+          surface, so it takes the spotlight (the same way /candidates/:id spends
+          it on its header card and the dashboard on exactly one widget).
+
+          The inline radius and shadow are gone because `.glass-card` owns both;
+          leaving them would have pinned a 12px radius and a flat black shadow
+          under the glass treatment. The `borderTop: 4px solid #7a922e` rail is
+          gone for a design reason rather than a token one — a flat green bar
+          under a gradient rim is the pre-glass vocabulary showing through. */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          borderTop: '4px solid #7a922e',
-          marginBottom: 28,
-        }}
+        className="glass-card spotlight"
+        style={{ marginBottom: 28 }}
       >
         <div style={{ marginBottom: 18 }}>
           <Title level={3} style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, margin: '0 0 4px 0' }}>
@@ -568,23 +587,31 @@ export default function Candidates() {
       </Card>
 
       {/* Initial load only — subsequent page/filter changes use the table's own
-          loading overlay so rows don't disappear and jump the scroll position. */}
+          loading overlay so rows don't disappear and jump the scroll position.
+
+          A skeleton in the table's own shape rather than the centred <Spin> that
+          was here: the spinner occupied ~100px, then the table replaced it and
+          shoved the page down several hundred. The skeleton holds the space. */}
       {loading && candidates.length === 0 && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-          <Spin size="large" />
-        </div>
+        <Card bordered={false} className="glass-3 no-lift" styles={{ body: { padding: 12 } }}>
+          <LoadingSkeleton type="table" rows={8} />
+        </Card>
       )}
 
       {/* The table renders unconditionally once anything has loaded — it owns its own
           empty state. The page previously hid the whole card until a search had run,
-          which is why it looked broken on arrival. */}
+          which is why it looked broken on arrival.
+
+          Tier 3 — a paginated table of up to 100 rows is exactly the dense-data
+          case tier 3 exists for, and this is the first real consumer of
+          `.glass-3` in the app (it was written for a dashboard card that was
+          replaced before it shipped). `no-lift` cancels the base
+          `.ant-card:not(.no-lift):hover` rise: a whole records table bobbing as
+          the pointer crosses it is wrong. Radius and shadow come from the class. */}
       {(!loading || candidates.length > 0) && (
         <Card
           bordered={false}
-          style={{
-            borderRadius: 12,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-          }}
+          className="glass-3 no-lift"
           styles={{ body: { padding: 12 } }}
         >
           <div style={{
@@ -615,9 +642,27 @@ export default function Candidates() {
               loading={loading}
               onChange={handleTableChange}
               locale={{
-                emptyText: hasFilters
-                  ? 'No candidates match this search. Try fewer details, or Reset to browse all.'
-                  : 'No candidates in the database yet.',
+                // The Phase 2 EmptyState, in its two real shapes: a search that
+                // matched nothing (recoverable — offer the reset) versus a
+                // genuinely empty database (nothing to recover, so no button
+                // that would do nothing).
+                emptyText: hasFilters ? (
+                  <EmptyState
+                    size="sm"
+                    icon={<SearchOutlined />}
+                    title="No candidates match this search"
+                    body="Try searching on fewer details — a partial name or just the email domain usually finds it."
+                    actionLabel="Reset search"
+                    onAction={handleClearFilters}
+                  />
+                ) : (
+                  <EmptyState
+                    size="sm"
+                    icon={<InboxOutlined />}
+                    title="No candidates in the database yet"
+                    body="Candidates appear here once resumes have been uploaded and parsed."
+                  />
+                ),
               }}
               pagination={{
                 current: page,
@@ -855,7 +900,7 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <div style={{ background: 'var(--ink-4)', padding: '14px 18px', borderRadius: 8, border: '1px solid #e5e7eb', marginBottom: 24 }}>
+          <div style={{ background: 'var(--ink-4)', padding: '14px 18px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 24 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Current Company</span>
             <Row gutter={12}>
               <Col span={12}>
@@ -959,7 +1004,7 @@ export default function Candidates() {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }) => (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
                     <Form.Item
                       {...restField}
                       name={[name, 'CompanyName']}
@@ -1152,7 +1197,7 @@ export default function Candidates() {
                 <div
                   key={email.id}
                   style={{
-                    border: '1px solid #dde2d0',
+                    border: '1px solid var(--border)',
                     borderRadius: 8,
                     padding: 12,
                     background: isOutbound ? 'var(--ink-4)' : 'var(--colorBgContainer)',
@@ -1178,7 +1223,7 @@ export default function Candidates() {
           <div
             style={{
               background: 'var(--ink-4)',
-              border: '1px dashed #dde2d0',
+              border: '1px dashed var(--border)',
               borderRadius: 8,
               padding: '44px 20px',
               textAlign: 'center',

@@ -210,11 +210,11 @@ const stageIdx = (key) => STAGES.findIndex((s) => s.key === key);
  * round you're looking at, reusing hues already used elsewhere in the app
  * (AdminDashboard's module colours) rather than inventing a new palette. */
 const STAGE_ACCENT = {
-  zeko: 'linear-gradient(90deg, #2f54eb, #5b7ff0)',
-  assessment: 'linear-gradient(90deg, #13c2c2, #36d6d6)',
-  interview: 'linear-gradient(90deg, #7a922e, #92a63c)',
-  docs: 'linear-gradient(90deg, #eb2f96, #f062b4)',
-  offer: 'linear-gradient(90deg, #4a7c59, #6ba57d)',
+  zeko: 'linear-gradient(90deg, var(--stage-zeko), var(--stage-zeko-2))',
+  assessment: 'linear-gradient(90deg, var(--stage-manual), var(--stage-manual-2))',
+  interview: 'linear-gradient(90deg, var(--stage-interview), var(--stage-interview-2))',
+  docs: 'linear-gradient(90deg, var(--stage-document), var(--stage-document-2))',
+  offer: 'linear-gradient(90deg, var(--stage-offer), var(--stage-offer-2))',
 };
 
 const REASONS = {
@@ -929,12 +929,12 @@ const FUNNEL = [
  * KpiCard styling (animated count-up, glow, hover lift), same as
  * Dashboard.jsx / VendorDashboard.jsx, instead of plain Statistic boxes. */
 const PIPELINE_TILES = [
-  { key: 'active', label: 'Active in pipeline', value: 52, icon: <TeamOutlined />, color: 'var(--gold, #7a922e)', tint: 'rgba(122, 146, 46, 0.12)', accent: 'linear-gradient(90deg, #7a922e, #92a63c)' },
-  { key: 'pending', label: 'Invite pending', value: 5, icon: <MailOutlined />, color: '#6b7280', tint: 'rgba(107, 114, 128, 0.12)', accent: 'linear-gradient(90deg, #6b7280, #9198a3)' },
-  { key: 'awaiting', label: 'In progress (interview / Zeko / test)', value: 6, icon: <ClockCircleOutlined />, color: '#d4a017', tint: 'rgba(212, 160, 23, 0.12)', accent: 'linear-gradient(90deg, #d4a017, #e8b93a)' },
-  { key: 'ready', label: 'Ready for decision (feedback / score / result in)', value: 13, icon: <CheckCircleOutlined />, color: '#27ae60', tint: 'rgba(39, 174, 96, 0.12)', accent: 'linear-gradient(90deg, #27ae60, #4a7c59)' },
-  { key: 'hold', label: 'On hold', value: 5, icon: <PauseCircleOutlined />, color: '#8b938a', tint: 'rgba(139, 147, 138, 0.14)', accent: 'linear-gradient(90deg, #8b938a, #aeb5ab)' },
-  { key: 'offers', label: 'Offers awaiting candidate decision', value: 1, icon: <FileTextOutlined />, color: '#185fa5', tint: 'rgba(24, 95, 165, 0.12)', accent: 'linear-gradient(90deg, #185fa5, #2f78c9)' },
+  { key: 'active', label: 'Active in pipeline', value: 52, icon: <TeamOutlined />, color: 'var(--kpi-a)', tint: 'var(--kpi-a-tint)', accent: 'linear-gradient(90deg, var(--kpi-a), var(--kpi-a-2))' },
+  { key: 'pending', label: 'Invite pending', value: 5, icon: <MailOutlined />, color: 'var(--text-2)', tint: 'color-mix(in srgb, var(--text-2) 12%, transparent)', accent: 'linear-gradient(90deg, var(--text-2), var(--text-3))' },
+  { key: 'awaiting', label: 'In progress (interview / Zeko / test)', value: 6, icon: <ClockCircleOutlined />, color: 'var(--status-hold)', tint: 'var(--kpi-e-tint)', accent: 'linear-gradient(90deg, var(--kpi-e), var(--kpi-e-2))' },
+  { key: 'ready', label: 'Ready for decision (feedback / score / result in)', value: 13, icon: <CheckCircleOutlined />, color: 'var(--status-approved)', tint: 'var(--kpi-c-tint)', accent: 'linear-gradient(90deg, var(--kpi-c), var(--kpi-c-2))' },
+  { key: 'hold', label: 'On hold', value: 5, icon: <PauseCircleOutlined />, color: 'var(--text-3)', tint: 'color-mix(in srgb, var(--text-3) 14%, transparent)', accent: 'linear-gradient(90deg, var(--text-3), var(--text-2))' },
+  { key: 'offers', label: 'Offers awaiting candidate decision', value: 1, icon: <FileTextOutlined />, color: 'var(--kpi-b)', tint: 'var(--kpi-b-tint)', accent: 'linear-gradient(90deg, var(--kpi-b), var(--kpi-b-2))' },
 ];
 
 /**
@@ -1026,11 +1026,21 @@ const sourceLabel = (c) => (c.src === 'Vendor' ? c.vendor : c.src === 'HR' ? 'HR
  * reading the tag text (green = act now, gold = in motion, grey = not
  * started, blue = booked). */
 const CHIP_ACCENT = {
-  pending: '#c9cdc7', review: '#c9cdc7', invited: '#5b7ff0', scheduled: '#5b7ff0',
-  await: '#d4a017', feedback: '#27ae60', hold: '#d4a017', docs: '#5b7ff0', offer_sent: '#5b7ff0',
+  pending: 'var(--status-closed)', review: 'var(--status-closed)',
+  invited: 'var(--status-active)', scheduled: 'var(--status-active)',
+  await: 'var(--status-hold)', feedback: 'var(--status-approved)',
+  hold: 'var(--status-hold)', docs: 'var(--status-active)', offer_sent: 'var(--status-active)',
 };
 
-const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
+/* The same `--status-*` / `--stage-*` / `--avatar-*` tokens the real board uses
+   (theme/index.css, added in Phase 4). The demo and the real thing must not
+   drift apart on colour — that is exactly what a client walkthrough would
+   notice — and these tokens are the only way either screen gets dark-mode
+   values that stay legible at a 3px rule. */
+const AVATAR_PALETTE = [
+  'var(--avatar-1)', 'var(--avatar-2)', 'var(--avatar-3)',
+  'var(--avatar-4)', 'var(--avatar-5)', 'var(--avatar-6)',
+];
 const initials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
 const fmtWindow = (w) => (w ? `${dayjs(w.start).format('DD MMM, HH:mm')}–${dayjs(w.end).format('HH:mm')}` : '');
@@ -1509,7 +1519,11 @@ export default function CandidatePipelinePrototype() {
       <Card key={c.id} size="small" hoverable onClick={() => openCandidate(c.id)}
         className="cp-candidate-card"
         styles={{ body: { padding: '9px 11px' } }}
-        style={{ marginBottom: 8, borderInlineStart: `3px solid ${CHIP_ACCENT[c.chip] || 'var(--border)'}` }}>
+        // Same Failure B fix as the real board (Pipeline.jsx): the leading
+        // border encodes status, so it is passed as a custom property and CSS
+        // owns the property. Painted inline it was being wiped by the hover
+        // rule's `border-color` shorthand, silently, on every hover.
+        style={{ marginBottom: 8, '--cp-accent': CHIP_ACCENT[c.chip] || 'var(--border)' }}>
         <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
           <div className="cp-avatar" style={{ background: avatarColor(c.name) }}>{initials(c.name)}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1596,6 +1610,10 @@ export default function CandidatePipelinePrototype() {
                     <Badge count={list.length} showZero color="var(--gold, #7a922e)" />
                   </Space>
                 )}
+                // Tier 2 + no-lift, exactly as Pipeline.jsx does it — the demo
+                // and the real board must be the same material, or a client
+                // walkthrough that crosses between them shows two products.
+                className="glass-card no-lift pipeline-column"
                 styles={{ body: { padding: 10, background: 'transparent' } }}
                 style={{ borderTop: 0, overflow: 'hidden' }}
                 >
@@ -1806,7 +1824,7 @@ export default function CandidatePipelinePrototype() {
             <Space wrap>
               <Button type="primary" icon={<CheckOutlined />} className="cta-primary btn-sheen"
                 onClick={() => openOutcomeModal('approved')}>Approve round</Button>
-              <Button icon={<PauseCircleOutlined />} style={{ color: '#d4a017', borderColor: '#d4a017' }}
+              <Button icon={<PauseCircleOutlined />} style={{ color: 'var(--status-hold)', borderColor: 'var(--status-hold)' }}
                 onClick={() => openOutcomeModal('hold')}>Hold</Button>
               <Button danger icon={<CloseOutlined />} onClick={() => openOutcomeModal('rejected')}>Reject</Button>
             </Space>
@@ -1837,7 +1855,7 @@ export default function CandidatePipelinePrototype() {
         description="38 rows · uploaded by Priya (RT) · no column mapping step — AI read every row's raw text regardless of column order/headers and picked out email, GA score and Technical score (same schema-free row-reading pattern as the HR bulk resume upload)." />
       <Row gutter={[10, 10]} style={{ marginBottom: 12 }}>
         <Col span={6}><Card size="small"><Statistic title="Matched" value={34} valueStyle={{ color: 'var(--green, #4a7c59)', fontSize: 20 }} /></Card></Col>
-        <Col span={6}><Card size="small"><Statistic title="Unmatched" value={3} valueStyle={{ color: '#d4a017', fontSize: 20 }} /></Card></Col>
+        <Col span={6}><Card size="small"><Statistic title="Unmatched" value={3} valueStyle={{ color: 'var(--status-hold)', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Malformed" value={1} valueStyle={{ color: 'var(--red, #c0392b)', fontSize: 20 }} /></Card></Col>
         <Col span={6}><Card size="small"><Statistic title="Total rows" value={38} valueStyle={{ fontSize: 20 }} /></Card></Col>
       </Row>

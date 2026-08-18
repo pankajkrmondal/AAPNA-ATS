@@ -221,6 +221,40 @@ function ComingSoon({ title }) {
 /* ---- Theme-Aware App Shell ---- */
 
 /**
+ * OVERLAY_CONFIG — the tier-4 (overlay) glass, applied app-wide in one place.
+ *
+ * Modals, drawers and every popup panel portal into `document.body`, which puts
+ * them structurally OUTSIDE the `.ats-v2` wrapper MainLayout applies. No route
+ * gate can reach them and no stylesheet scoped to `.ats-v2` can style them, so
+ * the ~40 dialogs in the app opened as flat white boxes on a glass page.
+ *
+ * Rather than edit 40 call sites (and re-edit every new one), ConfigProvider
+ * stamps the class onto every instance wherever it portals to. The matching
+ * rules live UNSCOPED in aurora-glass.css — a deliberate scope exception,
+ * documented there, because portals are outside the scope by construction.
+ *
+ * Slot names verified against the installed antd 5.29.3: `content`/`mask` on
+ * rc-dialog's ModalClassNames and rc-drawer's DrawerClassNames;
+ * `classNames.popup.root` on Select/DatePicker; `classNames.root` on
+ * Tooltip/Popover/Popconfirm. `dropdown` is a plain ComponentStyleConfig
+ * (className only, no slots) — its className lands on the popup root, which is
+ * the element we want, so it works the same way.
+ *
+ * To revert the overlay tier entirely: delete this object, its five spreads
+ * below, and the tier-4 block in aurora-glass.css.
+ */
+const OVERLAY_CONFIG = {
+  modal: { classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } },
+  drawer: { classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } },
+  select: { classNames: { popup: { root: 'ats-overlay-popup' } } },
+  datePicker: { classNames: { popup: { root: 'ats-overlay-popup' } } },
+  dropdown: { className: 'ats-overlay-popup' },
+  tooltip: { classNames: { root: 'ats-overlay-tip' } },
+  popover: { classNames: { root: 'ats-overlay-popup' } },
+  popconfirm: { classNames: { root: 'ats-overlay-popup' } },
+};
+
+/**
  * ForceLight — pins a subtree to the light theme regardless of the app theme.
  * Used for public token-link pages (candidate/approver-facing forms opened
  * from emails) that are designed light and offer no theme toggle. The
@@ -261,7 +295,11 @@ function AppShell() {
   }, [isAuthenticated, user, queryClient]);
 
   return (
-    <ConfigProvider theme={currentTheme}>
+    // `{...OVERLAY_CONFIG}` is the tier-4 overlay glass — see the constant above.
+    // The ForceLight provider wrapping the public token routes is nested under
+    // this one and leaves these keys undefined, so it inherits them: dialogs on
+    // the public pages get the same material, resolved against light tokens.
+    <ConfigProvider theme={currentTheme} {...OVERLAY_CONFIG}>
       <AntApp>
         <BrowserRouter>
           <Routes>

@@ -5,6 +5,666 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 9: public pages + FINAL ACCEPTANCE
+
+**The rollout is complete.** Nine phases, every route converted.
+
+### Public token pages — one language, not three
+
+These render outside `MainLayout` under `<ForceLight>`, so `.ats-v2`
+structurally cannot reach them, and **glass would be wrong here anyway**:
+`PublicPageShell` deliberately mirrors the branded *email* a candidate clicks
+through from, and that continuity is a correct design decision. Per the plan,
+the shell is untouched.
+
+What was wrong was consistency. Of five public pages, **two used the shell and
+three hand-rolled their own logo header, footer and `auth-background`** — three
+visual languages on the surface most external people ever see of AAPNA.
+
+- `MissingJdUpload` and `MrfApprovalAction` (4 states each) now render through
+  `PublicPageShell`. Their hand-rolled copyright lines are gone — the shell
+  already renders one, so those pages had **two footers**.
+- `MrfSubmit` **keeps its own layout deliberately**: it is a long sectioned form
+  whose accent runs through section rules and required marks, and the shell's
+  narrow card is the wrong container. What it did get is the shared brand: its
+  local `#92a63c` was a **near-miss of the real brand green**, carried over from
+  the n8n form, so its header band was a visibly different green from the email
+  that links to it. Now imports `BRAND` from the shell.
+- **`AuthLayout` deliberately untouched**, per the plan — it is the pilot's own
+  pixel-diff non-regression anchor, and changing it means re-baselining that.
+
+### Fixed: dark theme leaked into the public pages
+
+Caught by rendering a public page in a dark session rather than by reading code.
+**`<ForceLight>` was not actually pinning AntD to light.** A nested
+`<ConfigProvider>` *inherits the parent's algorithm* when it does not declare
+one, and `lightTheme` declared none while `darkTheme` sets
+`algorithm: theme.darkAlgorithm`.
+
+The CSS custom properties were correctly light the whole time (`--text` resolved
+to `#2b2b2b`), which is why this survived: **the variables looked right and the
+components did not.** AntD emitted a dark-derived class, so a candidate opening
+an emailed link while an operator's session was dark got an `<Alert>` with
+**near-black text on a near-black fill** — unreadable. One line:
+`algorithm: theme.defaultAlgorithm` on `lightTheme`, with a comment saying why
+it must not be deleted as redundant.
+
+---
+
+## FINAL ACCEPTANCE
+
+The plan's own acceptance test: *"walk every sidebar route in both themes… no
+screen may read as belonging to a different product than the one before it."*
+
+Mechanised rather than eyeballed, because that is what the walk is actually
+looking for: **every converted route loads**, and **every surface class in the
+app is rendered together on one page** so a drift between two of them shows up
+as a mismatch instead of needing thirteen screenshots compared from memory.
+
+- Tier 2 — `glass-card`, `premium-stat-card`, `kpi-card`, `pipeline-column`,
+  `admin-stat` — all assert to the same `--glass-2-bg`.
+- Tier 3 — `glass-3`, `panel-shell`, `cp-candidate-card`, `cand-card` — all
+  assert to the same `--glass-3-bg`.
+- Tier 4 — the overlay — asserts to `--glass-4-bg`, and is the **only**
+  content-side surface allowed to blur.
+- Every page-level card asserts to `--radius-card`.
+- No tier-2 or tier-3 surface blurs.
+
+**52/52, both themes.** And it found a real one:
+
+> **`.premium-stat-card` was rendering at 18px while every other card was 16px.**
+> A hardcoded `border-radius: 18px !important` sat *after* the radius-scale rule
+> and silently beat it, so the dashboard's four KPI cards were 2px rounder than
+> the widget cards beside them. This is precisely the drift the scale was
+> collapsed to prevent, and it is invisible at a glance — 16 vs 18px is not
+> something the eye catches, it is something a walk across screens registers as
+> inconsistency without being able to name it. Removed, not re-escalated.
+
+### Full suite
+
+All nine phase suites re-run after that fix, on the final build:
+
+| phase | assertions |
+|---|---|
+| 1 — overlay tier + blur fix | 64/64 |
+| 2 — primitives + tokens | 48/48 |
+| 3 — `/candidates` | 34/34 |
+| 4 — `/pipeline` | 34/34 |
+| 5 — vendor/HR/MRF unit | 54/54 |
+| 6 — `/analytics` | 30/30 |
+| 7 — `/settings`, `/email` | 32/32 |
+| 8 — admin + prototype | 42/42 |
+| 9 — public pages | 56/56 |
+| **final acceptance** | **52/52** |
+
+**446/446, both themes, on one build.**
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 8: the Admin portal + the prototype
+
+The biggest structural departure, deliberately last so every pattern was proven
+elsewhere first. **With this in, every route the sidebar can reach is converted.**
+
+### The admin portal is a separate shell
+
+`MainLayout`'s `isAdminPath` branch has its own `admin-topbar`, **no Sider**, its
+own `.admin-stat` card family and its own `--admin-bg`. Widening `V2_ROUTES`
+never did anything for it, because the branch **never rendered `.ats-v2` and
+never mounted the canvas** — which is why it is not in `V2_ROUTES` even now; the
+branch applies the class itself.
+
+- `.ats-v2` on the admin `<Layout>` + `<AmbientBackdrop/>`, and both the Layout
+  and Content go `background: transparent` — the `--admin-bg` fill would
+  otherwise sit on top of the canvas. Content is `z-index: 1` over the fixed
+  backdrop.
+- **The header-only shape is kept on purpose.** Adding a Sider is a *navigation*
+  redesign; this is a visual rollout.
+- `admin-topbar` → tier-1 chrome, including the light-mode rule the rest of the
+  app follows: **opaque white, not tinted glass**.
+- `.admin-stat` → tier 2, mirroring the `.kpi-card` approach. It is a *third*
+  stat-card component after `.premium-stat-card` and `.kpi-card`; they are not
+  unified here, because consolidating three components is a refactor and this is
+  the last phase before acceptance. What matters for the acceptance walk is that
+  it now *matches* them.
+- The portal's scoped `.admin-portal .ant-table-*` rules are **reconciled**, not
+  removed: fills go transparent, but the uppercase tinted header survives
+  because it is the portal's own voice.
+- **~23 raw hexes → tokens.** The nine per-module identity colours are
+  **deliberately left as hex and documented**: they are arbitrary hues whose only
+  job is to be distinguishable from each other, they carry no semantic meaning,
+  and a tenant-tinted set would collapse toward one hue and stop working.
+
+### The prototype: converted (decision recorded)
+
+The plan left "convert or retire?" as a team decision. **Decision: convert.** It
+stays live at `/candidate-pipeline-prototype` for client walkthroughs, and a
+walkthrough that crosses from the real board to a flat demo shows two products.
+
+- The Phase 4 `.cp-*` rules **activate on it as predicted**, so the board
+  material came free; the columns needed the same
+  `glass-card no-lift pipeline-column` classes the real board carries.
+- **Failure B is fixed here too.** The prototype had the identical inline
+  `borderInlineStart` carrying chip status, so it had the identical silent-wipe
+  bug. Same `--cp-accent` remedy, verified with the same hover assertion.
+- Its `STAGE_ACCENT`, `CHIP_ACCENT` and `AVATAR_PALETTE` now use the shared
+  Phase 4 tokens, so the demo and the real board **cannot drift apart on
+  colour** — and both get dark-mode values that stay legible at a 3px rule.
+- **All 26 bare hexes gone** (values already written as `var(--token, #fallback)`
+  were left alone — those are correct).
+
+### Verified
+
+`npm run build` clean. **42/42 computed-style assertions, both themes.** The
+load-bearing ones: the canvas is actually mounted on a shell that had none; the
+admin topbar is **opaque white in light and blurred glass in dark**, asserted
+per theme rather than with one loose check; the admin table header keeps its
+tint while every other fill goes transparent; the prototype's column and card
+land on the same tiers as the real board; and **Failure B is re-asserted on the
+prototype**, at rest, on hover, and under `prefers-reduced-transparency`.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 7: `/settings`, `/email`
+
+- **`/settings`** — four settings panels → `glass-card` (tier 2: they are the
+  page's content, not dense data). Inline radius/shadow dropped, and the two
+  `borderTop: 4px solid var(--gold)` rails go the same way the ones on
+  `/candidates`, `/mrf` and the upload screens did. The plan called this file
+  clean at 0 hexes; that held.
+- **`/email`** — the three `email-pane-card`s carried the **same bare-`.glass`
+  landmine `/analytics` had**, which the plan flagged for `/analytics` but not
+  here. All three renamed to `glass-3 no-lift`; the `no-lift` already present
+  had been signalling tier-3 intent that the bare class never delivered.
+- **Empty state**: "No templates found." became the shared `EmptyState` in its
+  two shapes — search/category excluded everything (offers to clear them) vs.
+  genuinely no templates (explains what templates are for).
+- **CodeMirror: verified, not rebuilt**, per the plan. `EmailEditorTabs` already
+  passes `theme={isDark ? 'dark' : 'light'}` through to the editor.
+- The one `#7a922e` left in `EmailManagement.jsx` is **deliberately literal**:
+  it is inside a sample HTML email body that renders in a mail client, where a
+  CSS custom property would not resolve.
+
+### Verified
+
+`npm run build` clean. **32/32 computed-style assertions, both themes** — the
+landmine asserted both ways again, all three email panes asserted to agree with
+each other, the settings green rail asserted gone (4px → the 1px transparent
+border the gradient rim hangs on), and `prefers-reduced-transparency` opaque on
+both pages.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 6: `/analytics`
+
+The page the plan singles out as breaking the "just widen the boolean" premise.
+It was right.
+
+### The `.glass` landmine
+
+The main tab container carried `className="glass"`. Bare `.glass` is defined in
+`index.css` and is **never touched by `aurora-glass.css`** — so adding
+`/analytics` to the route gate and doing nothing else would have left the
+page's principal container **flat under glass chrome**, which is worse than
+leaving the route alone. Renamed to `glass-3` (it holds five tables, so tier 3
+is also the correct tier), and its inline radius/border/shadow dropped since the
+class owns them. The verification renders **both** classes side by side and
+asserts they resolve differently, so the rename is a checked fact rather than a
+claim in a changelog.
+
+### `.panel-shell` earns its keep
+
+Phase 2 moved the duplicated `PANEL_STYLE` object into a shared class, and the
+argument for doing so was "a stylesheet can reach it later". Later is now: **one
+rule gives 16 surfaces the tier-3 material** — four of this page's five tables
+plus both `DeliveryMonitoring` tables and their panels. That would have been 16
+inline objects to edit otherwise.
+
+The rule set is the one Phase 3 verified for `.glass-3` (table root, header
+cells, body cells, placeholder, row hover), rewritten against `.panel-shell`
+because these tables are not inside a `.glass-3` element — the panel *is* the
+surface.
+
+### `.screening-tabs`, the shared class
+
+Shared with `CandidateScreening` (`/filtering`), where Phase 1 styled it. Those
+rules were **inert on this page and activate now**. Nothing new was written for
+it deliberately: a per-page tab treatment is exactly the drift a shared class
+exists to prevent. Verified by computing the strip on both screens and asserting
+they are identical.
+
+### Metrics: the tiles answer a hover for the first time
+
+The plan called for swapping ad-hoc `tile.bg`/`tile.color` tiles for `StatCard`.
+That premise is out of date — the tiles already use the shared `KpiCard`. What
+they genuinely lacked was the **explanation**: not one of the ten numbers on
+this page could say what it counted.
+
+- **`KpiCard` gained an optional `metric` prop**, rendering the same
+  `MetricInfo` affordance `StatCard` has had. Optional, so every existing caller
+  is unchanged — but it now exists for the vendor and upload KPIs too.
+- **Ten metric definitions wired up**: the six headline tiles (new, written this
+  phase) and the four Pipeline Insights KPIs (written in Phase 2, unused until
+  now). The headline tiles' caveats say the counts are lifetime totals that do
+  **not** follow the page's date controls — the tile is what gets screenshotted
+  into a status report.
+
+### Tokens
+
+**14 raw hexes → the `--kpi-*` palette from Phase 5.** The page's own `ACCENT`
+map was a sixth copy of the same six accents; it now aliases the tokens, so a
+tile, a tag and a table cell for one concept cannot drift apart *and* the page
+finally has dark-mode values for them.
+
+### Verified
+
+`npm run build` clean. **30/30 computed-style assertions, both themes** — the
+landmine both ways, the shared tab strip identical across two screens, all four
+AntD fills inside `.panel-shell` transparent, row hover translucent, and
+`prefers-reduced-transparency` opaque on both the panels and the tab container.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 5: `/hr-upload`, `/vendor`, `/vendor-dashboard`, `/mrf`
+
+**Shipped as one unit, deliberately.** Per `VENDOR_ALLOWED_PATHS`, `/vendor` and
+`/vendor-dashboard` are the *entire* reachable app for the `vendor` role —
+converting either alone would flip a vendor's chrome between glass and flat on
+every click. The gate comment now says so, so a later phase does not split them.
+
+- **`.kpi-card`'s glass rules activate here for the first time.** They were
+  written in Phase 0 and have been inert since — no converted route used the
+  class. The plan predicted they would light up with **zero JSX change**; that
+  is now verified rather than assumed (see below).
+- `HRUpload` and `VendorPortal` share `.upload-page` and are near-identical, so
+  they got **one treatment applied twice**: tier-2 dropzone card, tier-3 records
+  table. Both lose the same `borderTop: 4px solid #7a922e` rail `/candidates`
+  lost in Phase 3.
+- **The dropzone is tier 3** by the nesting rule, and stays clearly readable as
+  a target rather than dissolving into the pane — it is the one thing on the
+  page the user aims at.
+- `VendorDashboard`: pipeline summary → tier 2, recent submissions → tier 3.
+- `MRF`: request form → tier 2, records table → tier 3, reusing exactly what
+  Phase 3 verified.
+
+### A specificity tie worth stating out loud
+
+`.section-card` (added in Phase 2) declares an **opaque** `--colorBgContainer`
+fill, and both `VendorDashboard` cards now carry it *alongside* a glass class.
+Two single-class selectors **tie** on specificity, so source order would have
+decided which fill won — not something to leave to chance across future edits.
+`.ats-v2 .section-card.glass-card` / `.glass-3` now name the winner explicitly,
+and it is asserted in both themes.
+
+### Token sweep
+
+**~58 raw hexes across the four files → named tokens**, all with dark-mode
+values:
+
+- **`--kpi-a…e`** (colour / `-2` / `-tint`). The same four KPI accents were
+  re-declared as twelve hex literals *per screen*, in three screens. Semantic,
+  not brand — blue is "in flight", green is "done", red is "failed" — except
+  `--kpi-a`, which aliases the brand on purpose.
+- `VendorDashboard`'s five pipeline-stage tiles now use the **`--status-*`
+  palette from Phase 4**, so "On Hold" is the same amber on the vendor summary
+  as on the real board. They were four unrelated hexes with no dark values.
+- Assorted one-offs → `--brand-primary`, `--red`, `--border`, `--border-light`,
+  `--info-strong`, `--gold-bg`, `--gold-dark`.
+
+### Verified
+
+`npm run build` clean. **54/54 computed-style assertions, both themes.** The
+load-bearing ones: **`.kpi-card` resolves to `--glass-2-bg` at `--radius-card`
+with no blur and a real shadow** — the inert-rules claim, tested; the
+`.section-card`/glass tie resolves to glass in both directions; all six page
+surfaces land on their intended tier; every new token is asserted to *resolve*
+(an unset custom property paints nothing, which is invisible in a screenshot);
+and the dark palette is asserted **different** from the light one, so "lifted
+for the dark board" is a checked claim rather than a comment.
+
+One test bug found and fixed while writing it: the dropzone carries a 0.3s
+`background` transition, so sampling 150ms after toggling
+`prefers-reduced-transparency` caught it mid-fade and reported a translucent
+value for a rule that does land.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 4: `/pipeline`, and the Failure B fix
+
+`/pipeline` joins `V2_ROUTES`. This does **not** pull in
+`/candidate-pipeline-prototype`, which shares the `.cp-*` classes — the scoped
+rules stay inert there until Phase 8 decides its fate.
+
+### Failure B: the status border that was being silently erased
+
+`.cp-candidate-card`'s leading border **encodes candidate status**. It is data,
+not decoration. It was painted as an inline `borderInlineStart`, and the hover
+rule in `index.css` answered it with the **`border-color` shorthand plus
+`!important`** — which set all four sides and **wiped the status colour off
+every hovered card**. No error, no console warning, nothing on screen to say
+that information had gone missing. The rollout plan predicted this exact failure
+on this exact class; it was already happening in production.
+
+- The accent is now a `--cp-accent` custom property and **CSS owns the
+  property** (`border-inline-start` in the base rule). Same pattern as
+  `--stat-color` / `--kpi-color`.
+- The hover rule sets `border-block-color` and `border-inline-end-color` — the
+  three decorative sides — and never touches the leading edge. A comment on the
+  rule says why, because the next person to write `border-color:` here would
+  reintroduce it.
+
+### The board
+
+- **One tier-2 toolbar card** now holds the header, freshness/refresh/export, NL
+  search and filters. These sat bare on the page; that was fine on a flat
+  background, but on the aurora each AntD control paints its own opaque fill, so
+  a dozen of them floated unanchored over the gradient.
+- **Columns → `glass-card no-lift pipeline-column`.** `no-lift` is load-bearing:
+  the base `.ant-card:not(.no-lift):hover` rule raises the card, and a whole
+  column bouncing as the pointer crosses it is wrong — the cards inside are the
+  hoverable things.
+- **Candidate cards → tier 3** by the nesting rule, and they are the densest
+  thing on the board (~20 per column).
+- **Loading → a board-shaped skeleton**, so the columns' horizontal rhythm
+  exists before the data does. **Error → `ErrorState` with a retry** (was a
+  full-width `<Alert>`). **Empty columns → `EmptyState`** that distinguishes
+  "your filters excluded everyone" from "nobody has reached this stage".
+- **32 raw hexes → a named palette.** New `--status-*` (5) and `--stage-*` (10)
+  and `--avatar-*` (6) tokens, **in both themes**. These are deliberately
+  **semantic, not brand**: "Rejected" is red because it is rejected, and a tenant
+  whose brand is red would otherwise turn every card's status the same colour.
+  Dark values are **lifted, not the light hexes at lower alpha** — a 3px rule in
+  `#2f54eb` is nearly invisible on the dark board, and being readable at a glance
+  across a column is the entire point of the rule.
+- Board scroll arrows keep their brand gradient: they portal to `body`, outside
+  `.ats-v2`, and that is intentional per the plan.
+
+### Verified
+
+`npm run build` clean. **34/34 computed-style assertions, both themes**, with a
+card rendered per status so a regression in one branch cannot hide. The
+load-bearing ones: each accent resolves to its own `--status-*` token; the other
+three sides are asserted **different** from the accent (a shorthand would make
+them equal); **the accent survives hover** while hover still recolours the other
+sides; and under `prefers-reduced-transparency` the **accent survives** —
+it is the only cue for status, so translucency goes and the cue stays.
+
+**Scroll perf — and a measurement trap worth recording.** The board scrolls
+horizontally, so the probe scrolls the *board container*, not the window. First
+runs reported 8.3ms for the control and 16.7ms for glass and I read that as an
+8.4ms regression. It was not. Medians only ever landed on **exactly 8.3 or
+exactly 16.7 with nothing between** — including for arms that were byte-identical
+— which is a variable-refresh display halving from 120Hz to 60Hz, one discrete
+step, not paint cost accumulating. An idle blank page measured 8.3ms, confirming
+120Hz; a later run of the same probe reported the display itself at 60Hz.
+
+Re-run with the arms interleaved and repeated, counting **how often each arm held
+the display's full rate**: control 5/5, glass 5/5. A 9-arm bisect (rim, sheen,
+shadows, opacity, aurora, grain) put **full glass at 5/5** and the only dropped
+passes on arms that *remove* glass — i.e. random. No measurable cost.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 3: `/candidates`, and `.glass-3` finally rendered
+
+`/candidates` joins `V2_ROUTES`. The route gate's separate `/candidates/:id`
+regex is gone — the prefix match covers the detail view now, which is why the
+regex existed only as a workaround for the split.
+
+- **Search card → `glass-card spotlight`** — tier 2, and this page's one feature
+  surface, matching how `/candidates/:id` spends the spotlight on its header
+  card. Its inline `borderRadius`/`boxShadow` are dropped (the class owns both).
+  **The `borderTop: 4px solid #7a922e` rail is dropped too** — a flat green bar
+  under a gradient rim is the pre-glass vocabulary showing through.
+  `usePointerSpotlight` is wired to the page root; safe here because the
+  component has a single return, unlike `CandidateDetail` where the loading
+  branch has to return an identical root or the listener detaches.
+- **Table card → `glass-3 no-lift`** — tier 3, the dense-data tier. `no-lift`
+  cancels the base `.ant-card:not(.no-lift):hover` rise; a records table bobbing
+  as the pointer crosses it is wrong.
+- **Empty state** adopts the Phase 2 `EmptyState`, in its two real shapes: a
+  search that matched nothing (recoverable — offers Reset) versus a genuinely
+  empty database (nothing to recover, so no button that would do nothing).
+- **The initial-load `<Spin>` became a table skeleton.** The spinner occupied
+  ~100px and the table then shoved the page down several hundred.
+- **12 raw brand hexes → tokens.** The two remaining `#fff` are the foreground
+  *on* a brand fill, which is how the app writes it throughout, and are
+  commented as deliberate.
+- **New `--violet` token** (both themes). `#7c3aed` was a lone hex on the
+  Conversations action with no dark-mode pair, so it sat near-black on a dark
+  ground. Semantic, not brand — it does not move when a tenant swaps palette.
+
+### `.glass-3` was never rendered before this phase
+
+It was written in Phase 0 for a "Recent Candidates" card that was replaced by
+`LatestUploads` before shipping, so **no AntD table had ever been rendered
+against it.** Rendering one turned up two things:
+
+1. **The rules covered two surfaces out of six.** AntD paints an opaque fill on
+   the table root, header cells, **body cells, the hover row, the empty
+   placeholder and the pagination** — each from a different token. Only the
+   first two were handled; the rest would each have been a white block floating
+   on the tinted pane. All six are now transparent, row hover is a brand tint at
+   7% (AntD's default `colorFillAlter` is an opaque grey bar over the pane), and
+   the empty placeholder no longer highlights on hover — an empty table
+   suggesting a clickable row is a lie.
+2. **`.glass-3`'s `border-radius: 18px` was dead the day it was written.** The
+   radius-scale rule sets `--radius-card` (16px) on `.glass-3` with `!important`
+   and wins. With no consumer, nothing ever rendered to reveal the contradiction.
+   16px is correct — the scale exists so cards don't drift — so the dead
+   declaration was removed rather than escalated.
+
+### Verified
+
+`npm run build` clean. **34/34 computed-style assertions, both themes**, against
+real AntD table DOM: tier-3 pane resolves to `--glass-3-bg` (0.90 light / 0.92
+dark) and does not blur; tier 2 and tier 3 assert they *share one radius*; all
+six AntD fills assert transparent; row hover asserts translucent (read from
+`color(srgb … / a)`, which is how Chrome serialises a `color-mix` — an
+rgba-only check reports a tint as opaque). Under
+`prefers-reduced-transparency`, hover **survives as a cue** and only loses its
+translucency — it is a real affordance on a clickable row.
+
+**Scroll perf, continuous rAF, one `scrollBy` per frame** (the wheel-then-wait
+probe reports phantom drops here), 100-row table, two arms:
+
+| arm | median | p95 | dropped |
+|---|---|---|---|
+| control (no glass) | 8.3ms | 8.8ms | 1/235 (0.4%) |
+| tier-3 glass | 8.4ms | 16.9ms | 4/235 (1.7%) |
+
+The control being healthy at 0.4% is what makes the comparison meaningful — a
+previous session's ~99%-on-every-arm result was a throttled host measuring
+nothing. Glass costs 1.3 percentage points here, inside frame budget.
+
+### Fixed along the way
+
+**Four files were briefly corrupted by a PowerShell `Set-Content -Encoding
+utf8`**, which double-encoded every non-ASCII character (em-dashes → `â€"`) and
+added a BOM. Repaired by inverting the cp1252/UTF-8 round trip and verified
+against the pre-damage commit: the diff is now exactly the intended edits and
+nothing else. `VendorDashboard.jsx` was restored from git instead, since it had
+not been mojibake and the repair would have damaged it.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 2: primitives and the token sweep
+
+Additive by design — no converted route changes appearance. This phase exists so
+phases 3–8 apply rules instead of inventing them.
+
+### Empty and error states — one shape each
+
+The app had ~30 ad-hoc empty states, most of them a bare `<Empty description="No
+data" />`. That is not an answer on an enterprise screen: it says nothing about
+*why* the list is empty (nothing uploaded yet? a filter excluded everything?) and
+offers no way forward.
+
+- **`components/common/EmptyState.jsx`** — icon, title, a body line saying why,
+  and an action. The body is not decoration: the component's docblock spells out
+  the two shapes it exists for ("nothing exists yet" vs "your filters hid it").
+- **`components/common/ErrorState.jsx`** — the same block with the accent
+  switched to `--red`, so a failed panel and an empty one read as one system
+  rather than two. `onRetry` is the point of it; an error you cannot act on is a
+  dead end. A raw exception is accepted but rendered only as small print, since
+  "Request failed with status code 500" tells a recruiter nothing.
+- Both are `.state-block` in `index.css` and are **deliberately not
+  translucent** — they render inside an already-glass card, and glass over glass
+  reads as a smudge.
+
+### Loading skeletons shaped like what is arriving
+
+`LoadingSkeleton` gained `list`, `board`, `chart` and `form` alongside the
+existing `table` / `cards` / `detail`. The app still has ~25 centred `<Spin>`s
+that collapse the layout and snap it back; the shapes they need now exist, so
+converting a page is a swap rather than an invention. The chart skeleton is a
+bar silhouette, not one grey rectangle — a flat block reads as a broken image.
+
+### PageHeader, audited
+
+It existed but **one page used it**, which is why title sizes and header spacing
+varied per route. The layout was a single inline style object, which no
+stylesheet can override — the exact trap the rollout plan calls Failure A. Now
+`.page-header` in CSS, values unchanged except the bottom margin (28px →
+`--space-6`/32px) so it lands on the scale. Also changed `Typography.Title
+level={3}` to a plain `<h2>`: `level={3}` emitted an `<h3>` while acting as the
+page's top heading.
+
+### Density scale
+
+`--control-h-compact/·/-relaxed`, `--row-py-*`, `--row-px`, `--card-pad-*`.
+Table sizes and control heights were being chosen per page, so the same table
+rendered at three different row heights depending on the screen. Theme-independent,
+so they are defined once and not repeated in the dark block.
+
+### Shared shells (the inline-style sweep)
+
+- **`PANEL_STYLE` was duplicated byte-for-byte** in `Analytics.jsx` and
+  `email/DeliveryMonitoring.jsx`. Both deleted; **14 call sites** now use
+  `.panel-shell`.
+- **`SECTION_CARD_STYLE`** (`VendorDashboard.jsx`, 2 sites) → `.section-card`.
+
+Both classes carry values identical to the objects they replaced, so nothing
+moves today — and Phase 6 can restyle them, which it could not have done while
+they were inline.
+
+### metricDefinitions extended
+
+Ten entries added for metrics phases 5–6 will surface: the four `/analytics`
+tiles (`activeInPipeline`, `awaitingFeedback`, `onHoldOverThreshold`,
+`offersPending`) and the vendor/HR KPIs. **None of these numbers explains itself
+anywhere in the product today**, and the vendor screens are the entire reachable
+app for the `vendor` role. Written for recruiters, with provenance kept in
+`// dev:` comments, per the file's existing convention.
+
+### Verified
+
+`npm run build` clean. **48/48 computed-style assertions, both themes.** The
+load-bearing ones: `.panel-shell` and `.section-card` are asserted *identical to
+the inline objects they replaced*, property by property, rendered side by side —
+that equivalence is the whole safety argument for the swap. Density tokens are
+asserted ordered compact < default < relaxed. Primitives are checked for
+resolved (not fallen-back) colours in both themes, and PageHeader for the 24px/700
+title, 4px subtitle gap and 32px bottom margin. Screenshots of the primitives
+inside a real tier-2 card, both themes.
+
+### Deliberately left
+
+The primitives are **built, not yet adopted** — the ~30 existing `<Empty>` call
+sites and ~25 `<Spin>`s are replaced by the phase that converts each route, so
+this phase stays additive and no converted screen shifts. `PageHeader` is
+likewise not retro-fitted onto pages that hand-roll their headers; each route
+phase does its own.
+
+---
+
+## 2026-08-18 — Aurora Glass rollout, Phase 1: the overlay tier (tier 4) + the glass-card blur fix
+
+Follows `docs/design/AURORA-GLASS-ROLLOUT-PLAN.md`. Phase 1 of 9.
+
+### Tier 4 — one material for every dialog, dropdown and popover
+
+The app has ~40 dialogs (37 `<Modal>` + 3 `<Drawer>`; `PipelineDrawer.jsx` alone
+has 10 + 1). Every one of them portals into `document.body`, which is
+structurally outside the `.ats-v2` wrapper — so no route gate reached them and
+no scoped rule could style them. On a glass app they all opened as flat white
+boxes. That was the single largest visual gap in the product.
+
+- **`OVERLAY_CONFIG` in `App.jsx`** stamps `ats-overlay` / `ats-overlay-mask` /
+  `ats-overlay-popup` / `ats-overlay-tip` onto every instance via
+  `ConfigProvider` — modal, drawer, select, datePicker, dropdown, tooltip,
+  popover, popconfirm. **No per-file JSX edits and no `getContainer` changes.**
+  Slot names were verified against the installed antd (`content`/`mask` on
+  rc-dialog + rc-drawer, `classNames.popup.root` on Select/DatePicker).
+- **`dropdown` is a plain `ComponentStyleConfig`** (className only, no slots) —
+  the plan assumed slots. Its className lands on the popup root, which is the
+  element we wanted, so the same mechanism works.
+- **The tier-4 block in `aurora-glass.css` is deliberately UNSCOPED**, the third
+  documented exception in that file, for the portal reason above. The file
+  header now lists all three rather than claiming one.
+- **`Modal.confirm`/`.warning` bypass ConfigProvider entirely** (9 call sites,
+  static methods, no context). They are matched directly via
+  `.ant-modal-confirm .ant-modal-content` so they don't stay flat.
+- **Tooltips deliberately opt out of the material** and stay a solid chip. A
+  tooltip is a two-line label under the cursor over arbitrary content;
+  translucency there costs legibility and buys no depth cue at that size. It
+  takes the tier's radius and shadow, not its fill.
+- The mask is now a scrim mixed from `--shade-rgb` (the brand mid-tone the depth
+  ramp already uses) instead of AntD's flat black 45%, so the page recedes
+  rather than dimming. Dark mode's goes near-black — a brand-tinted scrim over
+  an already-dark ground reads as green fog.
+- Drawers keep the edge they are anchored to square, per placement.
+
+### The `.glass-card` blur fix
+
+`aurora-glass.css` documented "NO backdrop-filter on scrolling content
+surfaces", but the unscoped base rule at `index.css:850` set
+`backdrop-filter: blur(12px)` and the `.ats-v2` override never cancelled it —
+**every tier-2 card in the app was quietly blurring**, paying for a blur the
+design had explicitly declined. Cancelled on `.ats-v2 .glass-card` (not in
+index.css, so surfaces outside the scope keep what they shipped with).
+
+### Fixed along the way
+
+**`.ant-modal-content` carried `border-radius: … !important`** (`index.css`),
+which outranked every per-modal radius below it. `.dash-cmdk`'s 16px had
+therefore *never* applied — it had been rendering at `--border-radius-lg` since
+it was written. The `!important` had nothing to fight (AntD sets that radius
+through a low-specificity token rule), so it was removed; the bespoke radii and
+the tier-4 radius both apply now. Found by the verification below, not by eye.
+
+**`package.json` pinned `antd ^5.17.0` while 5.29.3 was installed.** The overlay
+tier needs ≥5.19 for the `modal`/`drawer` ConfigProvider config, so a clean
+`npm install` on another machine would have silently produced an app with no
+overlay tier. Pin bumped to `^5.29.3` to match reality.
+
+### Verified
+
+`npm run build` clean. **64/64 computed-style assertions, both themes**
+(Playwright + real AntD DOM against the shipped stylesheet): tier-4 fill
+resolves to `--glass-4-bg` on modal / drawer / confirm / select / dropdown /
+popover / picker; header, footer and drawer body transparent; radius 18px;
+drawer edge square; tooltip confirmed opaque; mask is not black-45.
+Non-regression: `.conv-modal` and `.dash-cmdk` keep `padding: 0` and their own
+radii, and the `.ant-modal` viewport caps still hold at 1366×768
+(`max-width: 1334px`, body `max-height: 548px`, `overflow-y: auto`) — the fix
+that keeps footer buttons reachable on a small laptop. Blur fix asserted both
+ways: `.glass-card` inside `.ats-v2` is `none`, the same class outside it still
+blurs. `prefers-reduced-transparency: reduce` (via CDP — Playwright cannot
+emulate it) confirmed opaque with no blur on overlays, popups, confirms and the
+mask. Screenshots of the tier over a live aurora canvas in both themes.
+
+### Deliberately left
+
+Tier 4 is global by construction, so dialogs on **unconverted** routes get it
+too — intended, not a leak: it is the one tier where half-conversion is
+impossible. `PipelineDrawer`'s 10 modals and the other in-app dialogs inherit it
+with no file edits, so they were not walked one by one; the material is proven
+at the CSS contract instead. Everything else in the plan (primitives, routes)
+is phases 2–9.
+
+---
+
 ## 2026-08-13 — Dashboard: card graphs follow the filters, and hover text written for users
 
 Two reported faults on the redesigned `/dashboard`, both fixed here.

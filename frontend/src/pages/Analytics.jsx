@@ -46,12 +46,12 @@ const { Title, Text } = Typography;
  * drift to different colours.
  */
 const ACCENT = {
-  positive: { color: '#7a922e', tint: 'rgba(122,146,46,0.12)', accent: 'linear-gradient(90deg,#7a922e,#92a63c)' },
-  negative: { color: '#c0392b', tint: 'rgba(192,57,43,0.12)', accent: 'linear-gradient(90deg,#c0392b,#e0654f)' },
-  progress: { color: '#2f6f9f', tint: 'rgba(47,111,159,0.12)', accent: 'linear-gradient(90deg,#2f6f9f,#4f93c4)' },
-  waiting: { color: '#b6883a', tint: 'rgba(182,136,58,0.14)', accent: 'linear-gradient(90deg,#b6883a,#d2a85a)' },
-  neutral: { color: '#5f6664', tint: 'rgba(95,102,100,0.12)', accent: 'linear-gradient(90deg,#5f6664,#828b88)' },
-  success: { color: '#4a7c59', tint: 'rgba(74,124,89,0.12)', accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)' },
+  positive: { color: 'var(--kpi-a)', tint: 'var(--kpi-a-tint)', accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))' },
+  negative: { color: 'var(--kpi-d)', tint: 'var(--kpi-d-tint)', accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))' },
+  progress: { color: 'var(--kpi-b)', tint: 'var(--kpi-b-tint)', accent: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))' },
+  waiting: { color: 'var(--kpi-e)', tint: 'var(--kpi-e-tint)', accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))' },
+  neutral: { color: 'var(--text-2)', tint: 'color-mix(in srgb, var(--text-2) 12%, transparent)', accent: 'linear-gradient(90deg,var(--text-2),var(--text-3))' },
+  success: { color: 'var(--kpi-c)', tint: 'var(--kpi-c-tint)', accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))' },
 };
 
 /**
@@ -75,12 +75,9 @@ function SectionTitle({ children, accent = ACCENT.positive, hint }) {
   );
 }
 
-/** Shared shell for every panel on the page, so radius/shadow stay consistent. */
-const PANEL_STYLE = {
-  borderRadius: 14,
-  border: '1px solid var(--border-light)',
-  boxShadow: 'var(--shadow-sm)',
-};
+/* The panel shell (radius / border / shadow) is now the shared `.panel-shell`
+   class in theme/index.css — same values, but reachable by a stylesheet. It was
+   duplicated byte-for-byte here and in components/email/DeliveryMonitoring.jsx. */
 
 /**
  * Analytics.jsx — "Recruitment Analytics", the curated analytics-only page.
@@ -146,23 +143,25 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
     <>
       <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <KpiCard
               index={0}
               icon={<ApartmentOutlined />}
               label="Active in pipeline"
+                metric="activeInPipeline"
               value={tiles.active_in_pipeline ?? 0}
               {...ACCENT.progress}
             />
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <div style={{ position: 'relative' }}>
               <KpiCard
                 index={1}
                 icon={<SolutionOutlined />}
                 label="Awaiting feedback"
+                metric="awaitingFeedback"
                 value={tiles.awaiting_feedback ?? 0}
                 {...ACCENT.waiting}
               />
@@ -181,12 +180,13 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <div style={{ position: 'relative' }}>
               <KpiCard
                 index={2}
                 icon={<ClockCircleOutlined />}
                 label={`On hold > ${tiles.hold_threshold_days ?? 30} days`}
+                metric="onHoldOverThreshold"
                 value={tiles.on_hold_over_threshold ?? 0}
                 {...ACCENT.negative}
               />
@@ -206,11 +206,12 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading style={PANEL_STYLE} /> : (
+          {loading ? <Card loading className="panel-shell" /> : (
             <KpiCard
               index={3}
               icon={<FileDoneOutlined />}
               label="Offers pending"
+                metric="offersPending"
               value={tiles.offers_pending ?? 0}
               {...ACCENT.positive}
             />
@@ -225,7 +226,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           </SectionTitle>
         )}
         loading={loading}
-        style={{ ...PANEL_STYLE, marginBottom: 16 }}
+        className="panel-shell" style={{ marginBottom: 16 }}
         extra={availableMrfs.length > 0 && (
           <Space size={8}>
             {/* An auto-picked requisition presented silently reads as "the"
@@ -275,7 +276,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                       <div style={{
                         height: '100%',
                         width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`,
-                        background: 'linear-gradient(90deg,#7a922e,#a8c24a)',
+                        background: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
                         borderRadius: 6,
                         transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
                       }}
@@ -293,7 +294,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                           // A steep drop between stages is the thing worth
                           // noticing, so it is tinted rather than left neutral.
                           background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(122,146,46,0.12)',
-                          color: conversion < 50 ? '#c0392b' : '#5c7022',
+                          color: conversion < 50 ? 'var(--kpi-d)' : 'var(--gold-dark)',
                         }}
                       >
                         {conversion}%
@@ -317,7 +318,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {`Stuck candidates — ${params.stuck_threshold_days}+ days`}
               </SectionTitle>
             )}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <Space size={8}>
                 <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage — notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
@@ -362,7 +363,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   // The longer someone has been stuck, the harder the number
                   // should be to skim past.
                   render: (d) => (
-                    <Text strong style={{ color: d >= 20 ? '#c0392b' : d >= 14 ? '#b6883a' : 'var(--text-2)' }}>
+                    <Text strong style={{ color: d >= 20 ? 'var(--kpi-d)' : d >= 14 ? 'var(--kpi-e)' : 'var(--text-2)' }}>
                       {d}d
                     </Text>
                   ),
@@ -375,7 +376,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                       style={{
                         border: 'none',
                         background: b?.includes('Hold') ? 'rgba(192,57,43,0.10)' : 'rgba(182,136,58,0.14)',
-                        color: b?.includes('Hold') ? '#c0392b' : '#8a6427',
+                        color: b?.includes('Hold') ? 'var(--kpi-d)' : 'var(--kpi-e)',
                       }}
                     >
                       {b}
@@ -394,7 +395,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
               </SectionTitle>
             )}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <Space size={8}>
                 <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
@@ -432,7 +433,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   width: 72,
                   align: 'center',
                   render: (c) => (
-                    <Tag style={{ border: 'none', background: 'rgba(192,57,43,0.10)', color: '#c0392b', fontWeight: 600 }}>
+                    <Tag style={{ border: 'none', background: 'var(--kpi-d-tint)', color: 'var(--kpi-d)', fontWeight: 600 }}>
                       {c}
                     </Tag>
                   ),
@@ -474,7 +475,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
             title={<SectionTitle accent={ACCENT.progress}>Time-to-hire</SectionTitle>}
             extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
             loading={loading}
-            style={{ ...PANEL_STYLE, marginBottom: 16 }}
+            className="panel-shell" style={{ marginBottom: 16 }}
           >
             <div style={{
               background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
@@ -484,7 +485,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
                 title="Average days, shortlist to offer"
                 value={timeToHire.total_days}
                 suffix="days"
-                valueStyle={{ color: '#2f6f9f', fontWeight: 800 }}
+                valueStyle={{ color: 'var(--kpi-b)', fontWeight: 800 }}
               />
             </div>
             {timeToHire.stages.length === 0 ? (
@@ -504,7 +505,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
                         <div style={{
                           height: '100%',
                           width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`,
-                          background: 'linear-gradient(90deg,#2f6f9f,#4f93c4)',
+                          background: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))',
                           borderRadius: 6,
                           transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
                         }}
@@ -521,7 +522,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
         <Col xs={24} lg={12}>
           <Card
             title={<SectionTitle accent={ACCENT.waiting}>Vendor performance</SectionTitle>}
-            style={{ ...PANEL_STYLE, marginBottom: 16 }}
+            className="panel-shell" style={{ marginBottom: 16 }}
             extra={(
               <Space size={8}>
                 <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
@@ -555,14 +556,14 @@ function RecruiterInsights({ data, loading, errored, params }) {
                   dataIndex: 'hired',
                   align: 'center',
                   width: 90,
-                  render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+                  render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
                 },
                 {
                   title: 'Rejected',
                   dataIndex: 'rejected',
                   align: 'center',
                   width: 100,
-                  render: (n) => <Text style={{ color: n > 0 ? '#c0392b' : 'var(--text-2)' }}>{n}</Text>,
+                  render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
                 },
               ]}
               dataSource={vendorPerformance}
@@ -572,7 +573,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
       </Row>
       <Card
         title={<SectionTitle accent={ACCENT.success}>Source of hire</SectionTitle>}
-        style={PANEL_STYLE}
+        className="panel-shell"
         extra={(
           <Space size={8}>
             <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
@@ -614,25 +615,25 @@ function RecruiterInsights({ data, loading, errored, params }) {
               title: 'In progress',
               dataIndex: 'in_progress',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? '#2f6f9f' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-b)' : 'var(--text-2)' }}>{n}</Text>,
             },
             {
               title: 'Hired',
               dataIndex: 'hired',
               align: 'center',
-              render: (n) => <Text strong style={{ color: n > 0 ? '#4a7c59' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
             },
             {
               title: 'Rejected',
               dataIndex: 'rejected',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? '#c0392b' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
             },
             {
               title: 'On Hold',
               dataIndex: 'on_hold',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? '#b6883a' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-e)' : 'var(--text-2)' }}>{n}</Text>,
             },
             {
               title: 'Hire rate',
@@ -644,7 +645,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
                     border: 'none',
                     fontWeight: 600,
                     background: rate > 0 ? 'rgba(74,124,89,0.12)' : 'var(--ink-3)',
-                    color: rate > 0 ? '#4a7c59' : 'var(--text-2)',
+                    color: rate > 0 ? 'var(--kpi-c)' : 'var(--text-2)',
                   }}
                 >
                   {rate}%
@@ -829,12 +830,12 @@ export default function Analytics() {
   // Headline tiles — the shared KpiCard used by Dashboard / HR Upload / Vendor,
   // so this page speaks the same visual language as the rest of the app.
   const tilesData = [
-    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, ...ACCENT.positive },
-    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, ...ACCENT.negative },
-    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, ...ACCENT.waiting },
-    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, ...ACCENT.neutral },
-    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, ...ACCENT.progress },
-    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, ...ACCENT.success },
+    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, metric: 'analyticsShortlisted', ...ACCENT.positive },
+    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, metric: 'analyticsRejected', ...ACCENT.negative },
+    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, metric: 'analyticsOnHold', ...ACCENT.waiting },
+    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, metric: 'analyticsTotal', ...ACCENT.neutral },
+    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, metric: 'analyticsZekoSent', ...ACCENT.progress },
+    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, metric: 'analyticsZekoPassed', ...ACCENT.success },
   ];
 
   return (
@@ -868,7 +869,7 @@ export default function Analytics() {
         {tilesData.map((tile, idx) => (
           <Col xs={12} sm={12} md={8} lg={4} key={tile.title}>
             {loading && !data.tiles ? (
-              <Card bordered={false} loading style={{ ...PANEL_STYLE, height: '100%' }} />
+              <Card bordered={false} loading className="panel-shell" style={{ height: '100%' }} />
             ) : (
               <KpiCard
                 index={idx}
@@ -878,14 +879,24 @@ export default function Analytics() {
                 color={tile.color}
                 tint={tile.tint}
                 accent={tile.accent}
+                // These six tiles explained nothing before Phase 6 — they are the
+                // numbers most likely to be quoted in a review meeting and the
+                // ones with nothing behind them.
+                metric={tile.metric}
               />
             )}
           </Col>
         ))}
       </Row>
 
-      {/* Main Tabs Container */}
-      <Card className="glass" style={{ borderRadius: 16, border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-md)' }}>
+      {/* Main Tabs Container — `glass-3`, NOT the bare `glass` this carried.
+          `.glass` is defined in index.css and is never touched by
+          aurora-glass.css, so widening the route gate without renaming it would
+          have left this container flat under glass chrome — the one change on
+          this page that the gate alone could not make. It holds five tables, so
+          tier 3 is also the right tier for it. Radius, border and shadow now
+          come from the class. */}
+      <Card className="glass-3 no-lift">
         <Tabs
           className="screening-tabs"
           activeKey={activeTab}

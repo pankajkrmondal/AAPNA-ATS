@@ -240,14 +240,13 @@ export default function Settings() {
 
   return (
     <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto' }} className="stagger-children">
-      {/* Appearance */}
+      {/* Appearance. Every card on this page is a settings panel — tier 2, the
+          page's content rather than dense data — so they all take `.glass-card`
+          and drop their inline radius/shadow, which the class owns. */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: 'var(--shadow-md)',
-          marginBottom: 24,
-        }}
+        className="glass-card"
+        style={{ marginBottom: 24 }}
       >
         <div style={{ marginBottom: 16 }}>
           <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
@@ -270,7 +269,8 @@ export default function Settings() {
       {/* Interview reminder scheduler — on/off + how often the job checks */}
       <Card
         bordered={false}
-        style={{ borderRadius: 12, boxShadow: 'var(--shadow-md)', marginBottom: 24 }}
+        className="glass-card"
+        style={{ marginBottom: 24 }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px' }}>
@@ -388,13 +388,12 @@ export default function Settings() {
         </div>
       </Card>
 
+      {/* The `borderTop: 4px solid var(--gold)` rail goes, as it did on
+          /candidates, /mrf and the upload screens — a flat bar under a gradient
+          rim is the pre-glass vocabulary showing through. */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: 'var(--shadow-md)',
-          borderTop: '4px solid var(--gold)',
-        }}
+        className="glass-card"
       >
         <div style={{ marginBottom: 24 }}>
           <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
@@ -520,12 +519,8 @@ export default function Settings() {
       {/* Assessment Automation — Evalground invite deadline + auto-advance/reject toggle */}
       <Card
         bordered={false}
-        style={{
-          borderRadius: 12,
-          boxShadow: 'var(--shadow-md)',
-          borderTop: '4px solid var(--gold)',
-          marginTop: 24,
-        }}
+        className="glass-card"
+        style={{ marginTop: 24 }}
       >
         <div style={{ marginBottom: 24 }}>
           <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>

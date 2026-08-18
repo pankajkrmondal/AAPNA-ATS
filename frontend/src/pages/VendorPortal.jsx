@@ -515,7 +515,7 @@ export default function VendorPortal() {
                 marginBottom: 6,
               }}
             >
-              On behalf of vendor <span style={{ color: '#c0392b' }}>*</span>
+              On behalf of vendor <span style={{ color: 'var(--red)' }}>*</span>
             </Text>
             <Select
               showSearch
@@ -533,7 +533,9 @@ export default function VendorPortal() {
       </div>
 
       {/* ═══════ UPLOAD CARD ═══════ */}
-      <Card className="animate-fade-in-up" bordered={false} style={{ borderRadius: 12, marginBottom: 24, boxShadow: '0 4px 24px rgba(0,0,0,0.06)', borderTop: '4px solid #7a922e' }}
+      {/* Tier 2. Identical treatment to HRUpload — the two screens share
+          `.upload-page` and are near-identical by construction. */}
+      <Card className="glass-card animate-fade-in-up" bordered={false} style={{ marginBottom: 24 }}
         styles={{ body: { padding: 0 } }}>
         <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
           <UploadCelebration show={celebrate} />
@@ -547,9 +549,9 @@ export default function VendorPortal() {
                     borderRadius: 16,
                     padding: '4px 12px',
                     fontSize: 13,
-                    background: 'rgba(122,146,46,0.1)',
-                    border: '1px solid #7a922e',
-                    color: '#5e7325',
+                    background: 'var(--gold-bg)',
+                    border: '1px solid var(--brand-primary)',
+                    color: 'var(--gold-dark)',
                   }}
                 >
                   Uploading for: <strong>{vendors.find((v) => v.email === selectedVendor)?.name || selectedVendor}</strong>
@@ -557,7 +559,7 @@ export default function VendorPortal() {
               ) : (
                 <Tag
                   icon={<ShopOutlined />}
-                  style={{ borderRadius: 16, padding: '4px 12px', fontSize: 13, background: 'rgba(192,57,43,0.06)', border: '1px solid #e0b4ad', color: '#c0392b' }}
+                  style={{ borderRadius: 16, padding: '4px 12px', fontSize: 13, background: 'color-mix(in srgb, var(--red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--red) 40%, transparent)', color: 'var(--red)' }}
                 >
                   Select a vendor (top right) to upload on their behalf
                 </Tag>
@@ -575,7 +577,7 @@ export default function VendorPortal() {
             style={{ marginBottom: 14 }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
-              <InboxOutlined className="upload-inbox-icon" style={{ color: '#7a922e', fontSize: 30 }} />
+              <InboxOutlined className="upload-inbox-icon" style={{ color: 'var(--brand-primary)', fontSize: 30 }} />
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>Click or drag files to upload</div>
                 <div style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
@@ -589,15 +591,15 @@ export default function VendorPortal() {
             loading={uploading} onClick={handleUpload}
             disabled={fileList.length === 0 || (isStaff && !selectedVendor)}
             style={{ height: 44, fontWeight: 600, borderRadius: 10,
-              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e',
-              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : '#7a922e' }}
+              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : 'var(--brand-primary)',
+              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : 'var(--brand-primary)' }}
           >
             Upload Resumes
           </Button>
 
           {uploading && uploadPct > 0 && (
             <Progress percent={uploadPct} size="small" status="active"
-              strokeColor={{ from: '#7a922e', to: '#92a63c' }} style={{ marginTop: 12 }} />
+              strokeColor={{ from: 'var(--brand-primary)', to: 'var(--brand-primary-hover)' }} style={{ marginTop: 12 }} />
           )}
 
           {uploadMsg && (
@@ -608,7 +610,8 @@ export default function VendorPortal() {
       </Card>
 
       {/* ═══════ PERSISTENT JOB DASHBOARD ═══════ */}
-      <Card className="animate-fade-in-up stagger-2" bordered={false} style={{ borderRadius: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
+      {/* Tier 3 — the upload-status records table. */}
+      <Card className="glass-3 no-lift animate-fade-in-up stagger-2" bordered={false}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <div>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
@@ -641,19 +644,19 @@ export default function VendorPortal() {
         <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
           <Col xs={12} md={6}>
             <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll}
-              color="#7a922e" tint="rgba(122,146,46,0.12)" accent="linear-gradient(90deg,#7a922e,#92a63c)" />
+              color="var(--kpi-a)" tint="var(--kpi-a-tint)" accent="linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))" />
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={1} icon={<SyncOutlined />} label="Processing" value={processingCount}
-              color="#2f6f9f" tint="rgba(47,111,159,0.12)" accent="linear-gradient(90deg,#2f6f9f,#4f93c4)" />
+              color="var(--kpi-b)" tint="var(--kpi-b-tint)" accent="linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))" />
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={2} icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount}
-              color="#4a7c59" tint="rgba(74,124,89,0.12)" accent="linear-gradient(90deg,#4a7c59,#6aa67c)" />
+              color="var(--kpi-c)" tint="var(--kpi-c-tint)" accent="linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))" />
           </Col>
           <Col xs={12} md={6}>
             <KpiCard index={3} icon={<WarningOutlined />} label="Pending Review" value={actionCount}
-              color="#c0392b" tint="rgba(192,57,43,0.12)" accent="linear-gradient(90deg,#c0392b,#e0654f)" />
+              color="var(--kpi-d)" tint="var(--kpi-d-tint)" accent="linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))" />
           </Col>
         </Row>
 

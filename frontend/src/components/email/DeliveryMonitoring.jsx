@@ -31,12 +31,8 @@ dayjs.extend(relativeTime);
 
 const { Text } = Typography;
 
-/** Panel shell shared with the other Analytics tabs, so radius/shadow match. */
-const PANEL_STYLE = {
-  borderRadius: 14,
-  border: '1px solid var(--border-light)',
-  boxShadow: 'var(--shadow-sm)',
-};
+/* Panel shell is the shared `.panel-shell` class in theme/index.css — the same
+   values this file and pages/Analytics.jsx each declared separately. */
 
 /** Coloured rule + title, mirroring SectionTitle on the Analytics page. */
 function PanelTitle({ children, accent }) {
@@ -240,7 +236,7 @@ export default function DeliveryMonitoring() {
             size="small"
             title={<PanelTitle accent="linear-gradient(90deg,#2f6f9f,#4f93c4)">By email type</PanelTitle>}
             bordered={false}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <ExportButton
                 tooltip="Downloads sent and failed counts for every kind of email in this period — useful for spotting one template failing while the rest are fine."
@@ -268,7 +264,7 @@ export default function DeliveryMonitoring() {
             size="small"
             title={<PanelTitle accent="linear-gradient(90deg,#c0392b,#e0654f)">Recent failures</PanelTitle>}
             bordered={false}
-            style={PANEL_STYLE}
+            className="panel-shell"
             extra={(
               <ExportButton
                 tooltip="Downloads every failed send in this period with its recipient and the full error message — the file to attach when reporting an email problem."

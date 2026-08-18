@@ -27,13 +27,16 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Badge, Button, Card, Checkbox, Empty, Input, Select, Space, Spin, Tag, Tooltip, Typography, App as AntApp,
+  Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 import ExportButton from '../components/common/ExportButton';
+import EmptyState from '../components/common/EmptyState';
+import ErrorState from '../components/common/ErrorState';
+import LoadingSkeleton from '../components/common/LoadingSkeleton';
 
 const { Text, Title } = Typography;
 
@@ -54,14 +57,21 @@ const sourceLabel = (card) => (card.source === 'vendor' ? (card.vendor_email || 
  * seeded type strings ('zeko' | 'manual' | 'scheduled_interview' |
  * 'document' | 'offer') rather than the prototype's mock-only ones. */
 const STAGE_ACCENT = {
-  zeko: 'linear-gradient(90deg, #2f54eb, #5b7ff0)',
-  manual: 'linear-gradient(90deg, #13c2c2, #36d6d6)',
-  scheduled_interview: 'linear-gradient(90deg, #7a922e, #92a63c)',
-  document: 'linear-gradient(90deg, #eb2f96, #f062b4)',
-  offer: 'linear-gradient(90deg, #4a7c59, #6ba57d)',
+  zeko: 'linear-gradient(90deg, var(--stage-zeko), var(--stage-zeko-2))',
+  manual: 'linear-gradient(90deg, var(--stage-manual), var(--stage-manual-2))',
+  scheduled_interview: 'linear-gradient(90deg, var(--stage-interview), var(--stage-interview-2))',
+  document: 'linear-gradient(90deg, var(--stage-document), var(--stage-document-2))',
+  offer: 'linear-gradient(90deg, var(--stage-offer), var(--stage-offer-2))',
 };
 
-const AVATAR_PALETTE = ['#7a922e', '#2f54eb', '#13c2c2', '#eb2f96', '#d4a017', '#4a7c59'];
+/* Tokens rather than hexes so the board is legible in dark mode: the dark
+   values are lifted, not the same colours at lower alpha, because a 3px rule in
+   the light-mode blues all but disappears on the dark board. Defined in
+   theme/index.css and shared with CandidatePipelinePrototype.jsx. */
+const AVATAR_PALETTE = [
+  'var(--avatar-1)', 'var(--avatar-2)', 'var(--avatar-3)',
+  'var(--avatar-4)', 'var(--avatar-5)', 'var(--avatar-6)',
+];
 const initials = (name) => (name || '?').split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...(name || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
 
@@ -75,20 +85,20 @@ const avatarColor = (name) => AVATAR_PALETTE[[...(name || '?')].reduce((a, ch) =
  * non-Zeko stages.
  */
 function cardStatus(card) {
-  if (card.final_outcome) return { label: card.final_outcome.replace(/_/g, ' '), color: 'default', accent: '#c9cdc7' };
-  if (card.current_stage_status === 'rejected') return { label: 'Rejected', color: 'red', accent: '#c0392b' };
-  if (card.current_stage_status === 'hold') return { label: 'On Hold', color: 'gold', accent: '#d4a017' };
-  if (card.current_stage_status === 'approved') return { label: 'Approved', color: 'green', accent: '#27ae60' };
-  if (card.ready_for_decision) return { label: 'Ready for decision', color: 'green', accent: '#27ae60' };
+  if (card.final_outcome) return { label: card.final_outcome.replace(/_/g, ' '), color: 'default', accent: 'var(--status-closed)' };
+  if (card.current_stage_status === 'rejected') return { label: 'Rejected', color: 'red', accent: 'var(--status-rejected)' };
+  if (card.current_stage_status === 'hold') return { label: 'On Hold', color: 'gold', accent: 'var(--status-hold)' };
+  if (card.current_stage_status === 'approved') return { label: 'Approved', color: 'green', accent: 'var(--status-approved)' };
+  if (card.ready_for_decision) return { label: 'Ready for decision', color: 'green', accent: 'var(--status-approved)' };
   // Technical rounds: a booked interview reads as "Scheduled" (distinct from the
   // Zeko "Invited"). Both use the same blue accent as the active-but-not-done look.
-  if (card.scheduled) return { label: 'Scheduled', color: 'blue', accent: '#5b7ff0' };
-  if (card.invited) return { label: 'Invited', color: 'blue', accent: '#5b7ff0' };
+  if (card.scheduled) return { label: 'Scheduled', color: 'blue', accent: 'var(--status-active)' };
+  if (card.invited) return { label: 'Invited', color: 'blue', accent: 'var(--status-active)' };
   // Phase 3 M2 — Evalground bulk-CSV import: no result has landed for this
   // journey yet. Never expires/clears itself; only an import (or a decision)
   // moves the card past this state (RT: "test pending" is shown indefinitely).
-  if (card.assessment_pending) return { label: 'Evalground test pending', color: 'gold', accent: '#d4a017' };
-  return { label: 'In progress', color: 'blue', accent: '#5b7ff0' };
+  if (card.assessment_pending) return { label: 'Evalground test pending', color: 'gold', accent: 'var(--status-hold)' };
+  return { label: 'In progress', color: 'blue', accent: 'var(--status-active)' };
 }
 
 /**
@@ -129,7 +139,14 @@ function CandidateCard({ card, onOpen }) {
       onClick={() => onOpen(card.id)}
       className="cp-candidate-card"
       styles={{ body: { padding: '9px 11px' } }}
-      style={{ marginBottom: 8, borderInlineStart: `3px solid ${status.accent}` }}
+      // The left border encodes STATUS — it is data, not decoration. It used to
+      // be painted here as an inline `borderInlineStart`, which a stylesheet can
+      // only beat with `!important`; the hover rule in index.css did exactly
+      // that with the `border-color` shorthand and silently wiped the status
+      // colour off every hovered card. Passing it as a custom property hands the
+      // property to CSS, which can then set the other three sides without ever
+      // touching this one. Same pattern as --stat-color / --kpi-color.
+      style={{ marginBottom: 8, '--cp-accent': status.accent }}
     >
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
         <div className="cp-avatar" style={{ background: avatarColor(card.candidate_name) }}>{initials(card.candidate_name)}</div>
@@ -445,22 +462,28 @@ export default function Pipeline() {
   };
 
   if (isLoading) {
+    // A board-shaped skeleton, not a centred spinner: the columns' horizontal
+    // rhythm is there before the data is, so the board does not snap into
+    // existence and shift the page under the pointer.
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-        <Spin size="large" />
+      <div style={{ padding: 24 }}>
+        <LoadingSkeleton type="board" columns={5} rows={3} />
       </div>
     );
   }
 
   if (isError) {
     return (
-      <Alert
-        type="error"
-        showIcon
-        message="Failed to load the Candidate Pipeline"
-        description={error?.response?.data?.message || error?.message || 'Unknown error.'}
-        style={{ margin: 24 }}
-      />
+      <div style={{ padding: 24 }}>
+        <Card bordered={false} className="glass-card no-lift">
+          <ErrorState
+            title="Failed to load the Candidate Pipeline"
+            body="The board could not be fetched. Nothing has changed — retry, or check that the backend is reachable."
+            error={error?.response?.data?.message || error?.message}
+            onRetry={refreshBoard}
+          />
+        </Card>
+      </div>
     );
   }
 
@@ -470,6 +493,15 @@ export default function Pipeline() {
 
   return (
     <div style={{ padding: 24 }}>
+      {/* One tier-2 toolbar card holding the header, the freshness/refresh/export
+          controls, the NL search and the filters.
+
+          These sat bare on the page before. That worked on a flat background, but
+          on the aurora every AntD control paints its own opaque fill, so a dozen
+          of them floated unanchored over the gradient with nothing tying them
+          together. Grouping them onto one pane also states what they are: the
+          board's controls, distinct from the board. */}
+      <Card bordered={false} className="glass-card no-lift pipeline-toolbar" styles={{ body: { padding: 18 } }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
           <Title level={3} style={{ margin: 0 }}>Candidate Pipeline</Title>
@@ -510,7 +542,7 @@ export default function Pipeline() {
         </div>
       )}
 
-      <Space wrap style={{ marginBottom: 14 }}>
+      <Space wrap>
         <Select
           allowClear
           placeholder="Position"
@@ -541,6 +573,9 @@ export default function Pipeline() {
           {anyFilterActive ? `${filteredTotal} of ${total} candidates` : `${total} candidates`}
         </Text>
       </Space>
+      </Card>
+
+      <div style={{ height: 18 }} />
 
       <BoardScroller>
         {columns.map((col) => (
@@ -565,15 +600,32 @@ export default function Pipeline() {
                       />
                     </Tooltip>
                   )}
-                  <Badge count={col.cards.length} showZero color="#7a922e" />
+                  <Badge count={col.cards.length} showZero color="var(--brand-primary)" />
                 </Space>
               )}
+              // Tier 2. `no-lift` is load-bearing: the base
+              // `.ant-card:not(.no-lift):hover` rule raises the card, and a whole
+              // board column bouncing as the pointer crosses it is wrong — the
+              // cards inside it are the things you hover. Same reasoning as
+              // `.dash-chart-card` on the dashboard.
+              className="glass-card no-lift pipeline-column"
               styles={{ body: { padding: 10, background: 'transparent' } }}
               style={{ borderTop: 0, overflow: 'hidden' }}
             >
               <div style={{ height: 3, margin: '-1px -1px 10px', background: STAGE_ACCENT[col.stage_type] || 'var(--border)' }} />
               {col.cards.length === 0 ? (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No candidates" style={{ margin: '4px 0' }} />
+                // Was a bare "No candidates". A column is empty for a reason the
+                // reader can act on — usually a filter, not an empty pipeline —
+                // so say which.
+                <EmptyState
+                  size="sm"
+                  icon={<InboxOutlined />}
+                  title="No candidates here"
+                  body={anyFilterActive
+                    ? 'No one in this stage matches the current filters.'
+                    : 'Candidates appear in this stage as they progress.'}
+                  style={{ padding: '18px 8px' }}
+                />
               ) : (
                 col.cards.map((card) => (
                   <CandidateCard key={card.id} card={card} onOpen={setOpenPipelineId} />

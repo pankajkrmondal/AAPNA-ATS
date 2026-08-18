@@ -24,6 +24,7 @@ import {
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import PageHeader from '../components/common/PageHeader';
+import EmptyState from '../components/common/EmptyState';
 import emailTemplateService from '../services/emailTemplateService';
 import useTheme from '../hooks/useTheme';
 import { EmailEditorTabs, FULL_TOOLBAR, sanitizeDoc } from '../components/common/EmailBodyEditor';
@@ -310,12 +311,12 @@ export default function EmailManagement() {
         {/* Left Side: Templates List */}
         <Col xs={24} md={8}>
           <Card
-            className="glass no-lift email-pane-card email-list-card"
-            style={{
-              borderRadius: 'var(--border-radius-lg)',
-              border: '1px solid var(--border-light)',
-              boxShadow: 'var(--shadow-sm)',
-            }}
+            // `glass-3`, not the bare `glass` this carried. Same landmine as
+            // /analytics: `.glass` is styled by index.css and never touched by
+            // aurora-glass.css, so the route gate alone would have left all
+            // three panes flat. The `no-lift` already here signalled tier-3
+            // intent; this makes it true. Radius/border/shadow come from the class.
+            className="glass-3 no-lift email-pane-card email-list-card"
             styles={{
               body: {
                 padding: '16px 0',
@@ -360,9 +361,26 @@ export default function EmailManagement() {
                 </Text>
               </div>
             ) : filteredTemplates.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-2)' }}>
-                No templates found.
-              </div>
+              // Was a bare "No templates found." — which does not say whether the
+              // search excluded everything or there is genuinely nothing here.
+              // Two shapes, and the recoverable one offers the way back.
+              searchQuery || selectedCategory !== 'all' ? (
+                <EmptyState
+                  size="sm"
+                  icon={<SearchOutlined />}
+                  title="No templates match"
+                  body="Nothing matches the current search and category. Clear them to see every template."
+                  actionLabel="Clear filters"
+                  onAction={() => { setSearchQuery(''); setSelectedCategory('all'); }}
+                />
+              ) : (
+                <EmptyState
+                  size="sm"
+                  icon={<MailOutlined />}
+                  title="No email templates yet"
+                  body="Templates control the wording of every automated email the system sends."
+                />
+              )
             ) : (
               <List
                 dataSource={filteredTemplates}
@@ -421,12 +439,7 @@ export default function EmailManagement() {
         <Col xs={24} md={16}>
           {selectedTemplate ? (
             <Card
-              className="glass no-lift email-pane-card email-editor-card"
-              style={{
-                borderRadius: 'var(--border-radius-lg)',
-                border: '1px solid var(--border-light)',
-                boxShadow: 'var(--shadow-md)',
-              }}
+              className="glass-3 no-lift email-pane-card email-editor-card"
               styles={{
                 body: {
                   display: 'flex',
@@ -520,13 +533,8 @@ export default function EmailManagement() {
             </Card>
           ) : (
             <Card
-              className="glass no-lift email-pane-card email-placeholder-card"
-              style={{
-                borderRadius: 'var(--border-radius-lg)',
-                border: '1px solid var(--border-light)',
-                boxShadow: 'var(--shadow-sm)',
-                minHeight: '400px',
-              }}
+              className="glass-3 no-lift email-pane-card email-placeholder-card"
+              style={{ minHeight: '400px' }}
               styles={{
                 body: {
                   display: 'flex',

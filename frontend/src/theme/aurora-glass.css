@@ -10,7 +10,11 @@
    `.glass-sidebar` are also used by CandidateDetail, CandidateScreening,
    Analytics and LoadingSkeleton — screens with no aurora behind them, where
    heavier translucency would read as washed out. Nothing here may be written
-   unscoped, with one deliberate exception noted at .premium-stat-card.
+   unscoped, with three deliberate exceptions, each noted at its own block:
+     - .premium-stat-card
+     - .glass-3's base rule (the name is introduced by this file)
+     - the whole TIER 4 / OVERLAY block near the end of the file, because AntD
+       portals overlays into document.body, structurally outside .ats-v2.
 
    To roll out app-wide: drop the route check in MainLayout, not the scope here.
 
@@ -273,6 +277,16 @@
   background: var(--glass-2-bg) !important;
   border: 1px solid transparent !important;
   box-shadow: var(--depth-2), var(--glass-hilite) !important;
+  /* The comment above says tiers 2–3 never blur. Until now the code disagreed:
+     the unscoped base `.glass-card` in index.css sets `backdrop-filter:
+     blur(12px)` and nothing here cancelled it, so every tier-2 card in the app
+     was quietly blurring — paying for a blur the design explicitly declined and
+     that buys nothing over a soft-gradient backdrop. Cancelled here rather than
+     in index.css so surfaces OUTSIDE `.ats-v2` keep the behaviour they shipped
+     with. Matters increasingly as the rollout adds surfaces: the ~8 board
+     columns in the /pipeline phase would each have blurred. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* The gradient rim. A plain 1px border cannot fade, so we paint a gradient into
@@ -514,7 +528,15 @@
 
 .ats-v2 .premium-stat-card {
   border-top: 4px solid var(--stat-color, var(--gold)) !important;
-  border-radius: 18px !important;
+  /* NO hardcoded radius. This carried `border-radius: 18px !important`, which
+     sat AFTER the radius-scale rule above and silently beat it — so the
+     dashboard's four KPI cards rendered 2px rounder than every other card in
+     the app, including the widget cards beside them. Exactly the drift the
+     scale was collapsed to prevent, and invisible at a glance: 16 vs 18px is
+     not something the eye catches, it is something a walk across screens feels
+     as inconsistency without being able to name it.
+     Found by the final acceptance check, which asserts every card class
+     resolves to `--radius-card`. Removed rather than re-escalated. */
   overflow: hidden;
   isolation: isolate;
 }
@@ -719,14 +741,61 @@
   position: relative;
   background: var(--glass-3-bg) !important;
   border: 1px solid var(--glass-3-border) !important;
-  border-radius: 18px;
   box-shadow: var(--depth-2), var(--glass-hilite) !important;
+  /* No border-radius here. This rule carried `border-radius: 18px` from Phase 0,
+     which was dead the day it was written: the radius-scale rule above sets
+     `--radius-card` (16px) on `.glass-3` with `!important` and wins. Since the
+     class had no JSX consumer until Phase 3, nothing ever rendered to reveal
+     that the two disagreed. 16px is the correct value — the scale exists
+     precisely so cards do not drift apart — so the dead declaration is removed
+     rather than escalated. */
 }
 .ats-v2 .glass-3:hover { transform: none; box-shadow: var(--depth-2), var(--glass-hilite) !important; }
-/* Let the surface tint show through the table instead of AntD's opaque fills. */
+/* ----- Tier 3, tables -----------------------------------------------------
+   These rules were written in Phase 0 for a dashboard card that was replaced
+   before it shipped, so they had NEVER been rendered against a real AntD table.
+   Verified for the first time in Phase 3 on /candidates, which is what turned up
+   the four surfaces below that the original pair did not cover: AntD paints an
+   opaque fill on the table root, the header cells, the body cells, the hover
+   row, the empty placeholder AND the pagination — each from a different token.
+   Miss any one and it reads as a white block floating on the tinted pane. */
 .ats-v2 .glass-3 .ant-table,
-.ats-v2 .glass-3 .ant-table-thead > tr > th { background: transparent; }
+.ats-v2 .glass-3 .ant-table-thead > tr > th,
+.ats-v2 .glass-3 .ant-table-tbody > tr > td,
+.ats-v2 .glass-3 .ant-table-placeholder,
+.ats-v2 .glass-3 .ant-table-placeholder > td,
+.ats-v2 .glass-3 .ant-table-summary { background: transparent; }
+
 .ats-v2 .glass-3 .ant-table-thead > tr > th { border-bottom-color: var(--border-light); }
+.ats-v2 .glass-3 .ant-table-tbody > tr > td { border-bottom-color: var(--border-light); }
+
+/* Row hover. AntD's default is an opaque `colorFillAlter` laid over the cell,
+   which on a tinted pane reads as a grey bar rather than a highlight. A brand
+   tint at low alpha keeps the surface visible through it — the row lights up
+   instead of being covered. `.ant-table-cell-row-hover` is the class AntD puts
+   on each cell (not the row), so it has to be targeted at cell level. */
+.ats-v2 .glass-3 .ant-table-tbody > tr > td.ant-table-cell-row-hover,
+.ats-v2 .glass-3 .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
+/* The empty state sits inside the table, so the row it lives in must not paint
+   its own fill on hover either — an empty table highlighting on hover suggests
+   a row is there to click. */
+.ats-v2 .glass-3 .ant-table-placeholder:hover > td { background: transparent !important; }
+
+/* Pagination: the size-changer and page buttons carry container fills of their
+   own. They sit below the table, still inside the pane. */
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item,
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item-link,
+.ats-v2 .glass-3 .ant-pagination .ant-select-selector {
+  background: transparent;
+  border-color: var(--glass-2-border);
+}
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item-active {
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+}
 
 /* Quick-action rows: glassy, with the accent colour arriving on hover. */
 .ats-v2 .quick-action-row {
@@ -852,6 +921,384 @@
 .ats-v2 .ant-descriptions-bordered .ant-descriptions-row > td,
 .ats-v2 .ant-descriptions-bordered .ant-descriptions-row { border-color: var(--glass-2-border); }
 
+/* ============================================================
+   TIER 4 — THE OVERLAY MATERIAL  (modals, drawers, popups)
+   ------------------------------------------------------------
+   SCOPE EXCEPTION — read this before editing.
+
+   Everything above is scoped to `.ats-v2` on purpose (see the file header).
+   This block is deliberately UNSCOPED, and it is the second such exception
+   after `.glass-3`'s base rule. The reason is structural, not stylistic:
+   AntD portals every overlay into `document.body`, which is outside the
+   `.ats-v2` wrapper by construction. A `.ats-v2 .ant-modal` selector matches
+   nothing, on any route, ever.
+
+   That makes the overlay tier global — a dialog opened from an UNCONVERTED
+   route gets it too. That is intended, not a leak: it is the one tier where
+   half-conversion is impossible, so it is also the one that closes the app's
+   largest visual gap in a single step.
+
+   The hooks are the `ats-overlay*` classes stamped on by OVERLAY_CONFIG in
+   App.jsx. Everything else here keys off AntD's own classes.
+
+   Tier 4 vs tiers 2–3: MORE opaque (a dialog must stay readable over arbitrary
+   content) and it DOES carry a real backdrop-filter. Tiers 2–3 decline the blur
+   because they scroll; an overlay is transient and sits above everything, so the
+   blur reads and costs nothing per scroll frame.
+   ============================================================ */
+
+.ats-overlay,
+.ant-modal-confirm .ant-modal-content {
+  background: var(--glass-4-bg) !important;
+  backdrop-filter: var(--glass-4-blur);
+  -webkit-backdrop-filter: var(--glass-4-blur);
+  border: 1px solid var(--glass-4-border);
+  box-shadow: var(--depth-3);
+}
+
+/* Radius: modals and confirms take the overlay radius. Drawers are edge-anchored
+   — a drawer flush to the viewport edge must not round the two corners that meet
+   it, or it reads as a floating card that failed to reach the side. Handled per
+   placement below rather than with a blanket radius. */
+.ant-modal .ats-overlay,
+.ant-modal-confirm .ant-modal-content {
+  border-radius: var(--radius-overlay);
+}
+
+/* The gradient rim, same construction as tier 2 (paint into the padding box,
+   mask out the interior). Skipped on drawers: their rim would run down a single
+   full-height edge, where a gradient reads as a lighting error rather than a
+   lit edge. */
+.ant-modal .ats-overlay::before,
+.ant-modal-confirm .ant-modal-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--glass-ring);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
+/* `.ant-modal-content` is already `position: relative` in AntD; the confirm
+   variant relies on that for the rim above. Assert it rather than assume it. */
+.ats-overlay,
+.ant-modal-confirm .ant-modal-content { position: relative; }
+
+/* AntD paints the header and footer with their own container fill, which would
+   sit as two opaque bands inside a translucent pane. The pane IS the surface. */
+.ats-overlay .ant-modal-header,
+.ats-overlay .ant-modal-footer,
+.ats-overlay .ant-drawer-header,
+.ats-overlay .ant-drawer-footer,
+.ats-overlay .ant-drawer-body,
+.ant-modal-confirm .ant-modal-content .ant-modal-header,
+.ant-modal-confirm .ant-modal-content .ant-modal-footer {
+  background: transparent;
+}
+.ats-overlay .ant-modal-header,
+.ats-overlay .ant-drawer-header { border-bottom-color: var(--glass-2-border); }
+.ats-overlay .ant-modal-footer,
+.ats-overlay .ant-drawer-footer { border-top-color: var(--glass-2-border); }
+
+/* Drawer: keep the edge it is anchored to square. */
+.ant-drawer-right .ats-overlay { border-radius: var(--radius-overlay) 0 0 var(--radius-overlay); }
+.ant-drawer-left .ats-overlay { border-radius: 0 var(--radius-overlay) var(--radius-overlay) 0; }
+.ant-drawer-top .ats-overlay { border-radius: 0 0 var(--radius-overlay) var(--radius-overlay); }
+.ant-drawer-bottom .ats-overlay { border-radius: var(--radius-overlay) var(--radius-overlay) 0 0; }
+
+/* ----- The scrim ---------------------------------------------------------
+   AntD's default mask is flat black at 45%. Under a brand-hued app that reads as
+   a grey wash dropped over the page. Tier 4 replaces it with a scrim mixed from
+   `--shade-rgb` (the same saturated brand mid-tone the depth ramp uses), so the
+   page behind RECEDES rather than dimming. Light mode gets a light blur with it;
+   dark mode's scrim is near-black already and needs none. */
+.ats-overlay-mask,
+.ant-modal-confirm ~ .ant-modal-mask,
+.ant-modal-root .ant-modal-mask {
+  background: var(--glass-4-scrim) !important;
+}
+.ats-overlay-mask { backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+
+/* ----- Popups: dropdowns, selects, date panels, popovers -----------------
+   Same material, one step tighter: these are small, land near the pointer and
+   are dismissed in a second, so they take a smaller radius and a lighter shadow
+   than a modal. `.ant-select-dropdown`/`.ant-picker-dropdown` are named
+   alongside the stamped class because the inner panel paints its own fill. */
+.ats-overlay-popup,
+.ats-overlay-popup .ant-select-dropdown,
+.ats-overlay-popup .ant-picker-panel-container,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  background: var(--glass-4-bg) !important;
+  backdrop-filter: var(--glass-4-blur);
+  -webkit-backdrop-filter: var(--glass-4-blur);
+  box-shadow: var(--depth-2) !important;
+}
+.ats-overlay-popup,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  border: 1px solid var(--glass-4-border);
+  border-radius: 12px;
+}
+/* The panel nested inside a stamped popup root must not repaint the border, or
+   two rims stack a pixel apart. */
+.ats-overlay-popup .ant-select-dropdown,
+.ats-overlay-popup .ant-picker-panel-container,
+.ats-overlay-popup .ant-dropdown-menu,
+.ats-overlay-popup .ant-popover-inner {
+  border: none;
+  box-shadow: none !important;
+}
+.ats-overlay-popup .ant-picker-panel { background: transparent; border: none; }
+.ats-overlay-popup .ant-popover-arrow::before { background: var(--glass-4-bg); }
+
+/* Tooltips stay a solid chip. A tooltip is a 2-line label that appears under the
+   cursor over arbitrary content — translucency there costs legibility and buys
+   no depth cue at that size. It gets the radius and shadow of the tier, not the
+   material. This is the one deliberate opt-out in tier 4. */
+.ats-overlay-tip .ant-tooltip-inner {
+  border-radius: 9px;
+  box-shadow: var(--depth-2);
+}
+
+/* ----- What must keep winning ------------------------------------------
+   Three treatments predate this tier and stay correct. Asserted here rather
+   than left to specificity luck, because a future edit to the block above
+   would silently take them out.
+
+   1. `.conv-modal` and `.dash-cmdk` set `padding: 0` on the content so their
+      own headers can run edge to edge. Tier 4 must not reintroduce padding,
+      and their radii are their own.
+   2. The `.ant-modal` viewport caps (index.css) keep footer buttons reachable
+      at 1366×768. Those live on `.ant-modal` / `.ant-modal-body`, which this
+      block never touches — but the drawer body and confirm body get the same
+      guarantee stated explicitly. */
+.conv-modal .ant-modal-content.ats-overlay { padding: 0; border-radius: 14px; }
+.dash-cmdk .ant-modal-content.ats-overlay { padding: 0; border-radius: 16px; }
+.conv-modal .ant-modal-content.ats-overlay::before,
+.dash-cmdk .ant-modal-content.ats-overlay::before { border-radius: inherit; }
+
+/* ============================================================
+   ROLLOUT PHASE 4 — /pipeline (the board)
+   ------------------------------------------------------------
+   The board is the app's one horizontally-scrolling surface, which changes two
+   things: the perf question is about the COLUMN CONTAINER, not the window, and
+   the nesting rule bites harder than anywhere else (cards inside columns
+   inside a scroller).
+   ============================================================ */
+
+/* Toolbar — tier 2. Holds the header, freshness/refresh/export, NL search and
+   filters, which were previously bare on the page. AntD controls paint their
+   own opaque fills, so unanchored they floated over the aurora as a scatter of
+   white rectangles. */
+.ats-v2 .pipeline-toolbar .ant-input-affix-wrapper,
+.ats-v2 .pipeline-toolbar .ant-select-selector,
+.ats-v2 .pipeline-toolbar .ant-input-group-addon,
+.ats-v2 .pipeline-toolbar .ant-btn-default {
+  background: var(--glass-3-bg);
+  border-color: var(--glass-2-border);
+}
+
+/* Columns — tier 2, and NOT lifted on hover. The cards inside a column are the
+   hoverable things; the column is their container. `no-lift` in the JSX cancels
+   the base `.ant-card:not(.no-lift):hover` rise, and this cancels the shadow
+   change that goes with it (same treatment as `.dash-chart-card`). */
+.ats-v2 .pipeline-column:hover {
+  transform: none;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+/* The column header sits on the pane, not on a band of its own. */
+.ats-v2 .pipeline-column > .ant-card-head {
+  background: transparent;
+  border-bottom-color: var(--glass-2-border);
+}
+
+/* Candidate cards — tier 3 by the nesting rule: a surface inside a tier-2 card
+   is tier 3. They are also the densest thing on the board (up to ~20 per
+   column), which is the case tier 3 exists for.
+
+   THE BORDER HERE CARRIES DATA. `--cp-accent` is the candidate's status. Never
+   use the `border` or `border-color` shorthand on this class — set
+   `border-block` / `border-inline-end` and leave the leading edge alone. The
+   base rule in index.css owns `border-inline-start`. */
+.ats-v2 .cp-candidate-card {
+  background: var(--glass-3-bg) !important;
+  border-block-color: var(--glass-3-border) !important;
+  border-inline-end-color: var(--glass-3-border) !important;
+  box-shadow: var(--depth-1) !important;
+}
+.ats-v2 .cp-candidate-card:hover {
+  box-shadow: var(--depth-2) !important;
+  border-block-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
+  border-inline-end-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
+}
+
+/* ============================================================
+   ROLLOUT PHASE 5 — /hr-upload, /vendor, /vendor-dashboard, /mrf
+   ------------------------------------------------------------
+   Shipped as one unit: /vendor and /vendor-dashboard are the ENTIRE reachable
+   app for the `vendor` role (see VENDOR_ALLOWED_PATHS in MainLayout), so
+   converting either alone would flip a vendor's chrome between glass and flat
+   on every click. HRUpload and VendorPortal share `.upload-page` and are
+   near-identical, so they get one treatment applied twice, by construction.
+   ============================================================ */
+
+/* The dropzone is nested inside a tier-2 card, so it is tier 3 — and it is the
+   one surface on these pages a user is meant to aim at, so it stays clearly
+   readable as a target rather than dissolving into the pane behind it. */
+.ats-v2 .upload-page .ant-upload-drag {
+  background: var(--glass-3-bg) !important;
+  border-color: var(--glass-2-border) !important;
+}
+.ats-v2 .upload-page .ant-upload-drag:hover {
+  background: var(--gold-bg) !important;
+  border-color: var(--brand-primary) !important;
+}
+
+/* `.section-card` (Phase 2) declares an OPAQUE `--colorBgContainer` fill. Both
+   VendorDashboard cards carry it alongside a glass class, and single class
+   selectors tie on specificity — so source order would decide, which is not
+   something to leave to chance. State the winner explicitly. */
+.ats-v2 .section-card.glass-card { background: var(--glass-2-bg) !important; }
+.ats-v2 .section-card.glass-3 { background: var(--glass-3-bg) !important; }
+
+/* Records tables on these pages are the same tier-3 tables Phase 3 verified on
+   /candidates; `.glass-3` already covers them. What it does not cover is
+   `.upload-page`'s own row-hover rule, which paints an opaque tint. */
+.ats-v2 .upload-page .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
+/* ============================================================
+   ROLLOUT PHASE 6 — /analytics
+   ------------------------------------------------------------
+   The page that breaks the "just widen the boolean" premise: its main tab
+   container carried the bare `.glass` class, which index.css styles and this
+   file never touches, so the gate alone would have left it flat under glass
+   chrome. That is fixed in the JSX (renamed to `.glass-3`); what is left is
+   here.
+   ============================================================ */
+
+/* `.panel-shell` (Phase 2) is this page's repeated panel, wrapping four of its
+   five tables and both DeliveryMonitoring tables — 16 surfaces from one rule.
+   Tier 3: they are dense data, and they are the page's content, not its
+   feature. Styling the shared class rather than each Card is the whole reason
+   Phase 2 moved PANEL_STYLE out of an inline object. */
+.ats-v2 .panel-shell {
+  background: var(--glass-3-bg) !important;
+  border: 1px solid var(--glass-3-border) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--depth-1), var(--glass-hilite) !important;
+}
+.ats-v2 .panel-shell .ant-card-head { background: transparent; border-bottom-color: var(--glass-2-border); }
+
+/* AntD's fills inside those panels, same set Phase 3 verified for `.glass-3`.
+   Written against `.panel-shell` too because these tables are NOT inside a
+   `.glass-3` element — the panel is the surface. */
+.ats-v2 .panel-shell .ant-table,
+.ats-v2 .panel-shell .ant-table-thead > tr > th,
+.ats-v2 .panel-shell .ant-table-tbody > tr > td,
+.ats-v2 .panel-shell .ant-table-placeholder,
+.ats-v2 .panel-shell .ant-table-placeholder > td { background: transparent; }
+.ats-v2 .panel-shell .ant-table-thead > tr > th,
+.ats-v2 .panel-shell .ant-table-tbody > tr > td { border-bottom-color: var(--border-light); }
+.ats-v2 .panel-shell .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
+/* The tab strip. `.screening-tabs` is SHARED with CandidateScreening (/filtering),
+   where Phase 1 already styled it — those rules were inert here and activate
+   now. Nothing is added for it deliberately: if this page needed its own tab
+   treatment, the two screens would have drifted apart, which is the thing the
+   shared class exists to prevent. Verified against /filtering. */
+
+/* ============================================================
+   ROLLOUT PHASE 8 — the Admin portal
+   ------------------------------------------------------------
+   The biggest structural departure in the app, left until last so every
+   pattern here was proven elsewhere first.
+
+   MainLayout's `isAdminPath` branch is a SEPARATE SHELL: its own `admin-topbar`,
+   NO Sider, its own `.admin-stat` card family, its own `--admin-bg`. Widening
+   the route gate did nothing for it, because the branch never rendered
+   `.ats-v2` nor mounted the canvas. Phase 8 adds both in the JSX; everything
+   below is the material.
+
+   THE HEADER-ONLY SHAPE IS KEPT ON PURPOSE. Giving the admin portal a Sider
+   would be a navigation redesign, and this is a visual rollout.
+   ============================================================ */
+
+/* Topbar — tier 1, the same chrome the recruitment shell's header wears. It is
+   sticky and rasterised once, so it is one of only two tiers that may blur. */
+.ats-v2 .admin-topbar {
+  background: var(--glass-1-bg) !important;
+  backdrop-filter: var(--glass-1-blur);
+  -webkit-backdrop-filter: var(--glass-1-blur);
+  border-bottom: 1px solid var(--glass-1-border) !important;
+  box-shadow: var(--depth-1);
+  position: relative;
+  z-index: 2;
+}
+/* Light mode's chrome is OPAQUE WHITE, not tinted glass — the same rule the
+   sidebar and main topbar follow. A translucent pane is only ever as neutral as
+   what shows through it, and that cannot be fixed by lowering alpha. */
+[data-theme='light'] .ats-v2 .admin-topbar {
+  background: #ffffff !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: 1px solid var(--border-light) !important;
+}
+
+/* `.admin-stat` is the portal's own KPI family — a third stat-card component
+   after `.premium-stat-card` and `.kpi-card`. Not unified with them here:
+   consolidating three components is a refactor, and this phase is the last one
+   before final acceptance. It gets the tier-2 material so it MATCHES them,
+   which is what the acceptance walk actually checks.
+   Mirrors the `.kpi-card` approach: the base rule already sets a
+   `--gradient-card` fill with `!important`, so this answers it in kind. */
+.ats-v2 .admin-portal .admin-stat {
+  background: var(--glass-2-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--depth-2), var(--glass-hilite) !important;
+}
+.ats-v2 .admin-portal .admin-stat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-3), var(--glass-hilite) !important;
+}
+
+/* Tables. The portal's scoped `.admin-portal .ant-table-*` rules paint an
+   opaque header fill and an opaque hover — reconciled to tier 3 rather than
+   removed, because the uppercase header treatment is the portal's own voice
+   and worth keeping. The `!important` on both sides is inherited from those
+   existing rules, not introduced here. */
+.ats-v2 .admin-portal .ant-table,
+.ats-v2 .admin-portal .ant-table-tbody > tr > td,
+.ats-v2 .admin-portal .ant-table-placeholder,
+.ats-v2 .admin-portal .ant-table-placeholder > td { background: transparent; }
+.ats-v2 .admin-portal .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent) !important;
+}
+.ats-v2 .admin-portal .ant-table-tbody > tr:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+/* The wrapper clips to a radius, so it must not paint its own ground. */
+.ats-v2 .admin-portal .ant-table-wrapper { background: transparent; }
+
+/* The portal's plain container cards — the toolbar and companies panels — take
+   tier 2 so they sit on the canvas rather than floating as white slabs. */
+.ats-v2 .admin-portal > .ant-card,
+.ats-v2 .admin-portal .admin-tabbar {
+  background: var(--glass-2-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  box-shadow: var(--depth-1), var(--glass-hilite) !important;
+}
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -863,7 +1310,19 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .ats-v2 .glass-sidebar,
   .ats-v2 .glass-sidebar .ant-layout-sider-children,
-  .ats-v2 .ant-layout-header.glass {
+  .ats-v2 .ant-layout-header.glass,
+  /* The admin portal's topbar is tier-1 chrome too (Phase 8). */
+  .ats-v2 .admin-topbar,
+  /* Tier 4 relies on the blur the same way the chrome does — at 0.86/0.90 alpha
+     with nothing blurred behind it, page content reads through a dialog. These
+     are unscoped for the same portal reason as the tier-4 block itself. */
+  .ats-overlay,
+  .ats-overlay-popup,
+  .ats-overlay-popup .ant-select-dropdown,
+  .ats-overlay-popup .ant-picker-panel-container,
+  .ats-overlay-popup .ant-dropdown-menu,
+  .ats-overlay-popup .ant-popover-inner,
+  .ant-modal-confirm .ant-modal-content {
     background: var(--colorBgContainer) !important;
   }
 }
@@ -906,6 +1365,98 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 8 (admin portal). The topbar is tier-1 chrome, so it goes opaque with
+     the other chrome; the stat cards and container panels follow the tier-2
+     surfaces above. */
+  .ats-v2 .admin-topbar,
+  .ats-v2 .admin-portal .admin-stat,
+  .ats-v2 .admin-portal > .ant-card,
+  .ats-v2 .admin-portal .admin-tabbar {
+    background: var(--colorBgContainer) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+  .ats-v2 .admin-portal .ant-table-thead > tr > th,
+  .ats-v2 .admin-portal .ant-table-tbody > tr:hover > td {
+    background: var(--ink-3) !important;
+  }
+
+  /* Phase 6 (/analytics). One entry covers all 16 panels on the page. */
+  .ats-v2 .panel-shell {
+    background: var(--colorBgContainer) !important;
+    border-color: var(--border) !important;
+  }
+  .ats-v2 .panel-shell .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+
+  /* Phase 5 (upload / vendor / MRF). `.kpi-card` and the two card tiers are
+     already in the list above; these are the surfaces with their own fills. */
+  .ats-v2 .upload-page .ant-upload-drag,
+  .ats-v2 .section-card.glass-card,
+  .ats-v2 .section-card.glass-3 {
+    background: var(--colorBgContainer) !important;
+    border-color: var(--border) !important;
+  }
+  /* The dropzone keeps a visible hover: it is the page's one drop target, and
+     "can I drop here?" is state, not decoration. Opaque, but still distinct. */
+  .ats-v2 .upload-page .ant-upload-drag:hover,
+  .ats-v2 .upload-page .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+
+  /* Phase 4 (/pipeline). The toolbar and columns are `.glass-card`, already
+     covered above. The candidate cards need their own entry because the rule
+     that styles them uses the per-side properties, not `background` alone —
+     and, critically, the STATUS ACCENT IS NOT CANCELLED HERE. It is the only
+     cue for a candidate's state, so it survives the way the selected
+     `.cand-card`'s brand border does; what goes is the translucency. */
+  .ats-v2 .cp-candidate-card {
+    background: var(--colorBgContainer) !important;
+    border-block-color: var(--border) !important;
+    border-inline-end-color: var(--border) !important;
+  }
+
+  /* Phase 3 (/candidates). The tier-3 pane itself is already covered by
+     `.glass-3` in the list above, and the empty/error primitives are opaque by
+     design. What is left is the row hover, which is the one place this route
+     uses translucency: an alpha tint over the pane. It becomes an OPAQUE tint
+     rather than disappearing — hover is a real affordance on a clickable row,
+     so it has to survive; it is the translucency that goes, not the cue. */
+  .ats-v2 .glass-3 .ant-table-tbody > tr > td.ant-table-cell-row-hover,
+  .ats-v2 .glass-3 .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+  .ats-v2 .glass-3 .ant-pagination .ant-pagination-item-active {
+    background: var(--ink-3);
+    border-color: var(--brand-primary);
+  }
+
+  /* Tier 4. Unscoped, like the tier itself — a portaled dialog is outside
+     `.ats-v2` whether or not the route behind it is converted, and a user who
+     asked for less transparency means it app-wide, not per route. The scrim
+     keeps its colour but goes fully opaque in intent: no blur behind it. */
+  .ats-overlay,
+  .ats-overlay-popup,
+  .ats-overlay-popup .ant-select-dropdown,
+  .ats-overlay-popup .ant-picker-panel-container,
+  .ats-overlay-popup .ant-dropdown-menu,
+  .ats-overlay-popup .ant-popover-inner,
+  .ant-modal-confirm .ant-modal-content {
+    background: var(--colorBgContainer) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+  .ats-overlay-mask,
+  .ant-modal-root .ant-modal-mask {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  /* The overlay rim is decoration on an opaque pane. */
+  .ant-modal .ats-overlay::before,
+  .ant-modal-confirm .ant-modal-content::before { display: none; }
   .ats-v2 .ant-descriptions-bordered .ant-descriptions-item-label {
     background: var(--ink-3);
   }
