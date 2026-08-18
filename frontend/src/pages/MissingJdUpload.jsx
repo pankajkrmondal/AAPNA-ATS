@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Space, Upload } from 'antd';
-import { SolutionOutlined, CheckCircleOutlined, ContactsOutlined, UploadOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Upload } from 'antd';
+import { UploadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 // The shared public-page frame — the same one DocumentUpload and
 // InterviewScorecard use, mirroring the branded email a candidate clicks
@@ -10,7 +10,9 @@ import candidateService from '../services/candidateService';
 // surface that is supposed to feel continuous with the email.
 import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
 
-const { Title, Text, Paragraph } = Typography;
+// Title and Text went with the hand-rolled header this page used to render —
+// PublicPageShell owns the heading and subtitle now.
+const { Paragraph } = Typography;
 
 export default function MissingJdUpload() {
   const [searchParams] = useSearchParams();
