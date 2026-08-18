@@ -104,8 +104,10 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *  produces the worst of both worlds (glass chrome, opaque content).
  *
  *  Phase 0 — CSS groundwork only, no route.
- *  Phase 1 — /filtering, plus the candidate detail view handled below. */
-const V2_ROUTES = ['/dashboard', '/filtering'];
+ *  Phase 1 — /filtering, plus the candidate detail view.
+ *  Phase 3 — /candidates. The prefix match now covers /candidates/:id too, so
+ *            the separate regex that used to sit in `isV2` is gone. */
+const V2_ROUTES = ['/dashboard', '/filtering', '/candidates'];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
@@ -184,13 +186,9 @@ export default function MainLayout() {
    *  classes globally would wash out screens later phases have not reached yet.
    *
    *  Advance the rollout by adding to V2_ROUTES; revert it by emptying that list. */
-  const isV2 =
-    V2_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'))
-    // Phase 1 takes the candidate DETAIL view (/candidates/:id) but NOT /candidates
-    // itself — that is the records table, still flat, and belongs to Phase 2. A
-    // plain prefix match would drag it in, so the two are split here rather than
-    // by listing '/candidates' above.
-    || /^\/candidates\/[^/]+/.test(location.pathname);
+  const isV2 = V2_ROUTES.some(
+    (p) => location.pathname === p || location.pathname.startsWith(p + '/')
+  );
 
   /** Title for the current page, shown in the top bar. Vendors get their own
    *  labels (Upload Candidate / Dashboard) for their restricted surfaces. */

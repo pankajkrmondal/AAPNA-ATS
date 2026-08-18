@@ -733,14 +733,61 @@
   position: relative;
   background: var(--glass-3-bg) !important;
   border: 1px solid var(--glass-3-border) !important;
-  border-radius: 18px;
   box-shadow: var(--depth-2), var(--glass-hilite) !important;
+  /* No border-radius here. This rule carried `border-radius: 18px` from Phase 0,
+     which was dead the day it was written: the radius-scale rule above sets
+     `--radius-card` (16px) on `.glass-3` with `!important` and wins. Since the
+     class had no JSX consumer until Phase 3, nothing ever rendered to reveal
+     that the two disagreed. 16px is the correct value — the scale exists
+     precisely so cards do not drift apart — so the dead declaration is removed
+     rather than escalated. */
 }
 .ats-v2 .glass-3:hover { transform: none; box-shadow: var(--depth-2), var(--glass-hilite) !important; }
-/* Let the surface tint show through the table instead of AntD's opaque fills. */
+/* ----- Tier 3, tables -----------------------------------------------------
+   These rules were written in Phase 0 for a dashboard card that was replaced
+   before it shipped, so they had NEVER been rendered against a real AntD table.
+   Verified for the first time in Phase 3 on /candidates, which is what turned up
+   the four surfaces below that the original pair did not cover: AntD paints an
+   opaque fill on the table root, the header cells, the body cells, the hover
+   row, the empty placeholder AND the pagination — each from a different token.
+   Miss any one and it reads as a white block floating on the tinted pane. */
 .ats-v2 .glass-3 .ant-table,
-.ats-v2 .glass-3 .ant-table-thead > tr > th { background: transparent; }
+.ats-v2 .glass-3 .ant-table-thead > tr > th,
+.ats-v2 .glass-3 .ant-table-tbody > tr > td,
+.ats-v2 .glass-3 .ant-table-placeholder,
+.ats-v2 .glass-3 .ant-table-placeholder > td,
+.ats-v2 .glass-3 .ant-table-summary { background: transparent; }
+
 .ats-v2 .glass-3 .ant-table-thead > tr > th { border-bottom-color: var(--border-light); }
+.ats-v2 .glass-3 .ant-table-tbody > tr > td { border-bottom-color: var(--border-light); }
+
+/* Row hover. AntD's default is an opaque `colorFillAlter` laid over the cell,
+   which on a tinted pane reads as a grey bar rather than a highlight. A brand
+   tint at low alpha keeps the surface visible through it — the row lights up
+   instead of being covered. `.ant-table-cell-row-hover` is the class AntD puts
+   on each cell (not the row), so it has to be targeted at cell level. */
+.ats-v2 .glass-3 .ant-table-tbody > tr > td.ant-table-cell-row-hover,
+.ats-v2 .glass-3 .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent) !important;
+}
+
+/* The empty state sits inside the table, so the row it lives in must not paint
+   its own fill on hover either — an empty table highlighting on hover suggests
+   a row is there to click. */
+.ats-v2 .glass-3 .ant-table-placeholder:hover > td { background: transparent !important; }
+
+/* Pagination: the size-changer and page buttons carry container fills of their
+   own. They sit below the table, still inside the pane. */
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item,
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item-link,
+.ats-v2 .glass-3 .ant-pagination .ant-select-selector {
+  background: transparent;
+  border-color: var(--glass-2-border);
+}
+.ats-v2 .glass-3 .ant-pagination .ant-pagination-item-active {
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent);
+}
 
 /* Quick-action rows: glassy, with the accent colour arriving on hover. */
 .ats-v2 .quick-action-row {
@@ -1092,6 +1139,21 @@
   .ats-v2 .cand-card.is-selected {
     border-color: var(--brand-primary) !important;
   }
+  /* Phase 3 (/candidates). The tier-3 pane itself is already covered by
+     `.glass-3` in the list above, and the empty/error primitives are opaque by
+     design. What is left is the row hover, which is the one place this route
+     uses translucency: an alpha tint over the pane. It becomes an OPAQUE tint
+     rather than disappearing — hover is a real affordance on a clickable row,
+     so it has to survive; it is the translucency that goes, not the cue. */
+  .ats-v2 .glass-3 .ant-table-tbody > tr > td.ant-table-cell-row-hover,
+  .ats-v2 .glass-3 .ant-table-tbody > tr.ant-table-row:hover > td {
+    background: var(--ink-3) !important;
+  }
+  .ats-v2 .glass-3 .ant-pagination .ant-pagination-item-active {
+    background: var(--ink-3);
+    border-color: var(--brand-primary);
+  }
+
   /* Tier 4. Unscoped, like the tier itself — a portaled dialog is outside
      `.ats-v2` whether or not the route behind it is converted, and a user who
      asked for less transparency means it app-wide, not per route. The scrim

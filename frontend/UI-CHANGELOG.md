@@ -5,6 +5,89 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-18 — Aurora Glass rollout, Phase 3: `/candidates`, and `.glass-3` finally rendered
+
+`/candidates` joins `V2_ROUTES`. The route gate's separate `/candidates/:id`
+regex is gone — the prefix match covers the detail view now, which is why the
+regex existed only as a workaround for the split.
+
+- **Search card → `glass-card spotlight`** — tier 2, and this page's one feature
+  surface, matching how `/candidates/:id` spends the spotlight on its header
+  card. Its inline `borderRadius`/`boxShadow` are dropped (the class owns both).
+  **The `borderTop: 4px solid #7a922e` rail is dropped too** — a flat green bar
+  under a gradient rim is the pre-glass vocabulary showing through.
+  `usePointerSpotlight` is wired to the page root; safe here because the
+  component has a single return, unlike `CandidateDetail` where the loading
+  branch has to return an identical root or the listener detaches.
+- **Table card → `glass-3 no-lift`** — tier 3, the dense-data tier. `no-lift`
+  cancels the base `.ant-card:not(.no-lift):hover` rise; a records table bobbing
+  as the pointer crosses it is wrong.
+- **Empty state** adopts the Phase 2 `EmptyState`, in its two real shapes: a
+  search that matched nothing (recoverable — offers Reset) versus a genuinely
+  empty database (nothing to recover, so no button that would do nothing).
+- **The initial-load `<Spin>` became a table skeleton.** The spinner occupied
+  ~100px and the table then shoved the page down several hundred.
+- **12 raw brand hexes → tokens.** The two remaining `#fff` are the foreground
+  *on* a brand fill, which is how the app writes it throughout, and are
+  commented as deliberate.
+- **New `--violet` token** (both themes). `#7c3aed` was a lone hex on the
+  Conversations action with no dark-mode pair, so it sat near-black on a dark
+  ground. Semantic, not brand — it does not move when a tenant swaps palette.
+
+### `.glass-3` was never rendered before this phase
+
+It was written in Phase 0 for a "Recent Candidates" card that was replaced by
+`LatestUploads` before shipping, so **no AntD table had ever been rendered
+against it.** Rendering one turned up two things:
+
+1. **The rules covered two surfaces out of six.** AntD paints an opaque fill on
+   the table root, header cells, **body cells, the hover row, the empty
+   placeholder and the pagination** — each from a different token. Only the
+   first two were handled; the rest would each have been a white block floating
+   on the tinted pane. All six are now transparent, row hover is a brand tint at
+   7% (AntD's default `colorFillAlter` is an opaque grey bar over the pane), and
+   the empty placeholder no longer highlights on hover — an empty table
+   suggesting a clickable row is a lie.
+2. **`.glass-3`'s `border-radius: 18px` was dead the day it was written.** The
+   radius-scale rule sets `--radius-card` (16px) on `.glass-3` with `!important`
+   and wins. With no consumer, nothing ever rendered to reveal the contradiction.
+   16px is correct — the scale exists so cards don't drift — so the dead
+   declaration was removed rather than escalated.
+
+### Verified
+
+`npm run build` clean. **34/34 computed-style assertions, both themes**, against
+real AntD table DOM: tier-3 pane resolves to `--glass-3-bg` (0.90 light / 0.92
+dark) and does not blur; tier 2 and tier 3 assert they *share one radius*; all
+six AntD fills assert transparent; row hover asserts translucent (read from
+`color(srgb … / a)`, which is how Chrome serialises a `color-mix` — an
+rgba-only check reports a tint as opaque). Under
+`prefers-reduced-transparency`, hover **survives as a cue** and only loses its
+translucency — it is a real affordance on a clickable row.
+
+**Scroll perf, continuous rAF, one `scrollBy` per frame** (the wheel-then-wait
+probe reports phantom drops here), 100-row table, two arms:
+
+| arm | median | p95 | dropped |
+|---|---|---|---|
+| control (no glass) | 8.3ms | 8.8ms | 1/235 (0.4%) |
+| tier-3 glass | 8.4ms | 16.9ms | 4/235 (1.7%) |
+
+The control being healthy at 0.4% is what makes the comparison meaningful — a
+previous session's ~99%-on-every-arm result was a throttled host measuring
+nothing. Glass costs 1.3 percentage points here, inside frame budget.
+
+### Fixed along the way
+
+**Four files were briefly corrupted by a PowerShell `Set-Content -Encoding
+utf8`**, which double-encoded every non-ASCII character (em-dashes → `â€"`) and
+added a BOM. Repaired by inverting the cp1252/UTF-8 round trip and verified
+against the pre-damage commit: the diff is now exactly the intended edits and
+nothing else. `VendorDashboard.jsx` was restored from git instead, since it had
+not been mojibake and the repair would have damaged it.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 2: primitives and the token sweep
 
 Additive by design — no converted route changes appearance. This phase exists so
