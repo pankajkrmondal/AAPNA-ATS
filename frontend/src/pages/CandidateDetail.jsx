@@ -17,12 +17,13 @@ import {
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import candidateService from '../services/candidateService';
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
+import usePointerSpotlight from '../hooks/usePointerSpotlight';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -64,9 +65,19 @@ export default function CandidateDetail() {
 
   const data = candidate || MOCK_CANDIDATE;
 
-  if (isLoading) {
-    return <LoadingSkeleton type="detail" />;
-  }
+  /** Cursor-tracked spotlight for this page's `.spotlight` surface (the header
+   *  card), same delegated listener the dashboard uses.
+   *
+   *  LOAD-BEARING: the loading branch below must return the SAME root element —
+   *  `<div className="stagger-children" ref={rootRef}>` — as the loaded branch.
+   *  The hook attaches its `pointermove` listener to `rootRef.current` once and
+   *  only re-runs when the ref identity changes, never when the DOM node behind
+   *  it does. Two identical roots at the same position let React reuse the node
+   *  across the loading→loaded flip, so the listener survives. Return a Fragment
+   *  or a different element type from either branch and the node is swapped out,
+   *  leaving the listener bound to a detached div and the spotlight dead. */
+  const rootRef = useRef(null);
+  usePointerSpotlight(rootRef);
 
   // Custom validation helpers
   const contactNumberValidator = (_, value) => {
@@ -218,7 +229,10 @@ export default function CandidateDetail() {
             <Descriptions.Item label="Education">{data.education}</Descriptions.Item>
           </Descriptions>
 
-          <Card title="Professional Summary" size="small" bordered={false} style={{ background: 'var(--gold-subtle)', borderRadius: 12 }}>
+          {/* Tint and radius live in CSS (.cd-summary), not inline: under Design V2
+              this callout is restyled onto the glass tier, and an inline style
+              cannot be overridden by a stylesheet. */}
+          <Card title="Professional Summary" size="small" bordered={false} className="cd-summary">
             <Paragraph style={{ margin: 0, fontSize: 14, lineHeight: 1.8 }}>
               {data.summary || 'No professional summary available.'}
             </Paragraph>
@@ -292,8 +306,17 @@ export default function CandidateDetail() {
     },
   ];
 
+  if (isLoading) {
+    // Rendered inside the same root as the loaded view — see the rootRef note above.
+    return (
+      <div className="stagger-children" ref={rootRef}>
+        <LoadingSkeleton type="detail" />
+      </div>
+    );
+  }
+
   return (
-    <div className="stagger-children">
+    <div className="stagger-children" ref={rootRef}>
       {/* Back button */}
       <Button
         type="text"
@@ -310,10 +333,11 @@ export default function CandidateDetail() {
         {fromPage === 'analytics' ? 'Back to Analytics' : 'Back to Candidates'}
       </Button>
 
-      {/* Header card */}
+      {/* Header card — this page's hero-analog, so it carries the cursor
+          spotlight the dashboard puts on its one feature surface. */}
       <Card
         bordered={false}
-        className="glass-card"
+        className="glass-card spotlight"
         style={{ marginBottom: 24 }}
         styles={{ body: { padding: 28 } }}
       >

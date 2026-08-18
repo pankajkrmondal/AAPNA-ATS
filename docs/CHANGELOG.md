@@ -5,6 +5,40 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-17 — Search Candidate: three filters, fixed ordering, lighter list query
+**Why:** the page's filter and Advanced filter "don't make any sense" — keep Name, Email and
+Phone, nothing more; order by id descending; no sorting in the UI, only search. Full detail in
+[docs/changelog/CHANGES-2026-08-17-search-candidate-filter-simplification.md](./changelog/CHANGES-2026-08-17-search-candidate-filter-simplification.md).
+
+- `frontend/src/pages/Candidates.jsx` — **three overlapping ways to narrow the same table
+  collapsed into one.** The page carried a debounced free-text quick-search box, a collapsible
+  Advanced filters panel (email, name, phone, position, location) with an active-filter counter,
+  *and* per-column sort arrows. Now: one card with Candidate Name, Email ID, Phone / Contact
+  Number, plus Search and Reset. The quick-search box, the Advanced toggle, the counter strip and
+  the position/location fields are gone.
+- `frontend/src/pages/Candidates.jsx` — **sorting removed from the UI entirely.** `sorter: true`
+  dropped from Name, Email and Position; the `sort` state deleted; `loadCandidates()` always asks
+  for `sort: 'id', order: 'desc'` (newest first, first-ever-added last) and `handleTableChange`
+  handles pagination only. Sorting is removed from this page only — the API still accepts
+  `sort`/`order` for the CSV export and other callers.
+- `backend/src/services/candidate.service.js` — `resolveSortField()` gained an `id` branch. It
+  knew only name / email / position / modifiedAt and **silently fell back to `createdAt`**, so
+  without this the page would have asked for `id` and quietly got date order. `id` is also the
+  primary key: an index walk instead of sorting every matching row, where `createdAt` is
+  nullable and unindexed and sorted NULL-dated legacy rows to the top of page 1 under DESC.
+- `backend/src/services/candidate.service.js` — **`search()` no longer ships the two heaviest
+  columns.** The list was already paginated server-side (25/request, max 100 — it never pulled
+  4k), so the cost was per-row weight: `findMany` ran with no `select`, returning all ~80 `rpa_cv`
+  columns including `resume_full_text` (the whole resume as plain text) and `ai_profile_insights`.
+  Now omitted. Nothing on that path reads either — `mapCandidate()` references neither and
+  `screening.service.js` pulls both via its own raw SQL. Export untouched (already uses the
+  narrow `EXPORT_SELECT` allowlist).
+- **Known behaviour, not introduced here:** `buildWhereClause()` ORs name/email/phone *with each
+  other* (legacy "search by any identifier"), so filling two fields returns rows matching either,
+  not both. Left as-is — the same clause serves other callers and the export.
+- **Verified:** `npx vite build` clean (only the pre-existing >500kB chunk warning); 182/182
+  backend unit tests pass. Re-confirmed after the 2026-08-17 merge.
+
 ## 2026-08-13 — Placement vendor process: pre-push audit (4 issues logged, not yet fixed)
 **Why:** checked the staged M6 vendor changes against
 [docs/reference/VENDOR_PROCESS.md](./reference/VENDOR_PROCESS.md) before pushing. The 160-test

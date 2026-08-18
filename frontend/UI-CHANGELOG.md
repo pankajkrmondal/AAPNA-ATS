@@ -5,6 +5,203 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-13 — Dashboard: card graphs follow the filters, and hover text written for users
+
+Two reported faults on the redesigned `/dashboard`, both fixed here.
+
+### 1. The KPI card graphs never changed
+
+The four sparklines were built as `sparkSeries(normCandidates, 7)` — a **hardcoded 7 days**
+off the **unfiltered** candidate list. Moving the range control between 7d/30d/90d, or
+picking a role, redrew Hiring Trends and left all four card graphs identical. Worse, Total
+Candidates and Today's Uploads were handed *the same variable*, so two of the four were
+literally the same line. A filter that visibly does nothing reads as a broken page.
+
+- `pages/Dashboard.jsx` — every card series, delta and footnote now derives from
+  `rangeDays` and `role`. The MRF series filters on `mrf.role`, the shortlist series on
+  the pipeline's `job_title`.
+- **Total Candidates now plots a running total** (`cumulativePoints`) rather than a rate,
+  so it no longer duplicates Today's Uploads and the line is finally the headline number's
+  own history. Guarded two ways: it falls back to the per-day rate unless the candidate
+  sample reaches back past the window start (`sampleCoversWindow`) and no role filter is
+  narrowing it against an all-roles total.
+- Footnotes distinguish figures that ARE role-filtered (`· Java Developer only`) from the
+  server-side counts that are not (`· all roles`). Labelling a global count as one role's
+  would have been a plain untruth.
+- `weekOverWeek` → `periodOverPeriod(items, days)`: the delta chip compared 7 days against
+  7 while the reader had 90 selected. `weekOverWeek` remains as a thin wrapper.
+- New in `utils/dashboardAggregations.js`: `sparkPoints`, `cumulativePoints`,
+  `sampleCoversWindow`, `periodOverPeriod`.
+
+### 2. Hover text was missing, or written for developers
+
+The `<MetricInfo>` panel ended every definition with a monospaced `GET /dashboard/stats ·
+rpa_cv`, explained counts as `approval_status in (pending, waiting, approved)`, and carried
+roadmap notes ("server-side aggregation is planned") — a developer's answer to a recruiter's
+question, and the roadmap note actively undermined the number it described.
+
+- `constants/metricDefinitions.js` rewritten in plain English throughout. Endpoint and table
+  names moved to `// dev:` comments beside each entry. Labels changed from `How:` / `Chart:`
+  to `How it's counted:` / `The graph shows:` / `Where it comes from:` / `Good to know:`.
+- `MetricInfo` gained a `chart` prop, because a fixed definition cannot describe a graph
+  that follows a live date range — each card passes a sentence naming its own quantity and
+  the selected period.
+- **The KPI sparklines answer a hover for the first time.** They were the only charts on the
+  page that named nothing. The readout is an AntD tooltip driven by Recharts' hit-testing,
+  not a Recharts tooltip: the band is 54px and `overflow: hidden` (it bleeds to the card's
+  rounded corners), so a Recharts tooltip would be clipped inside it. It tracks the hovered
+  point horizontally via `align.offset`.
+- Hover text added or rewritten across the rest of the page: hero greeting, clock, live
+  badge, both CTAs, both global filters (each says what it changes **and** what it doesn't —
+  the card totals stay put, which otherwise looks like the control is broken), the stat
+  values and delta chips, funnel stages and step-conversion markers, recruiter bars, talent
+  bars, live-feed rows, latest-upload rows, interview rows, and the action-centre rows and
+  all-clear state. Row tooltips recover what the row truncates: full names, roles, emails,
+  exact times.
+- `ConversionFunnelCard` had a definition in the registry it never rendered — the one widget
+  describing the whole hiring process was the only one you couldn't hover for an
+  explanation. `RecruiterBreakdownCard` had its own hand-written duplicate explanation;
+  both now render `<MetricInfo>`.
+- The range control gained a "PERIOD" label (`.dash-hero__filter-label`) — the 7d/30d/90d
+  pills sat unlabelled next to a role dropdown with nothing saying they were global filters.
+
+**Verified:** `npm run build` clean; the new aggregation helpers exercised against a
+40-day fixture (cumulative series lands exactly on the real total and never goes negative;
+period deltas correct at 7d and 30d; empty and no-prior-period inputs return `null` rather
+than a fake 0%). **Not verified in a browser this pass** — no browser tooling in this
+environment; the running dev server on :5173 will have hot-reloaded it.
+
+---
+
+## 2026-08-13 — Aurora Glass rollout, Phase 1: `/candidates/:id` and `/filtering`
+
+The first two routes to actually join `.ats-v2`, per the phase list in the Phase 0 entry
+below. Both were chosen to lead because their page-level cards already carried
+`.glass-card`, so the tier-2 pane, gradient rim, specular sheen and depth ramp arrived
+with no JSX change at all.
+
+**The gate is now a list, not a prefix** (`MainLayout.jsx`). `isV2` was
+`location.pathname.startsWith('/dashboard')`; it is now a module-level `V2_ROUTES`
+array plus one regex. The regex exists for a specific reason: Phase 1 takes the candidate
+**detail** view but *not* `/candidates` itself, which is the records table and belongs to
+Phase 2. A plain prefix match would have dragged it in and given it glass chrome above
+flat, un-converted cards — the exact half-converted state the phased rollout exists to
+avoid. So `/candidates/:id` is matched as `/^\/candidates\/[^/]+/` rather than by listing
+the prefix.
+
+### Widening the boolean was the small half of the job
+
+The claim in the Phase 0 entry — that a route "just works" once its cards carry the right
+class names — held for the two page shells and for nothing nested inside them. Both pages
+put their real content in surfaces that painted **opaque fills inline**, and an inline
+style cannot be overridden by any stylesheet. Unfixed, each would have stayed a flat grey
+slab bolted onto a glass pane:
+
+| Surface | Was |
+|---|---|
+| Results list (`.cand-card`, up to 100 rows) | `--gradient-card !important` — tier-2 weight for a dense list |
+| Search-summary bar | inline `--ink-3` |
+| Select-this-page bar | inline `--ink-4` |
+| Education accordion (×3) | inline `--ink-3` |
+| Role JD context panel | inline `--color-primary-bg` |
+| Segmented tab track | opaque `--ink-3` capsule (`index.css`) |
+| Professional Summary callout | inline `--gold-subtle` |
+| `Descriptions bordered` | AntD's opaque `colorFillAlter` label column + solid container |
+
+Each inline case moves into a class in `index.css` whose declarations are **byte-identical
+to the values it replaces**, so nothing outside `.ats-v2` shifts by a pixel; only then can
+the `.ats-v2` block in `aurora-glass.css` restyle it. This is the same move already made
+for `.premium-stat-card`'s inline background and border-top, and for the same reason.
+`!important` is used on both sides so the two rules are settled by specificity rather than
+by cascade order against AntD's runtime-injected styles.
+
+**The results list is tier 3, not tier 2** — the one question the phase plan explicitly
+asked to confirm. A hundred-row stack is precisely the case tier 3 exists for: near-opaque,
+no `backdrop-filter`, `--depth-1` instead of `--depth-2`. Selected rows keep a brand tint
+over that tier rather than the base rule's opaque `--ink-2` gradient, so a selected row
+still reads as the same material as its neighbours.
+
+**The bordered `Descriptions` table** was the largest opaque rectangle on the detail page.
+Its container now goes fully transparent — the glass card beneath it *is* the surface — and
+the label column keeps a 7% brand tint so the label/value rhythm survives without a hard
+fill.
+
+### Shared-class audit (the non-regression the rollout requires)
+
+Every phase that touches a shared base class has to re-check the other pages using it:
+
+- **`.cand-card`** — CandidateScreening only. Safe.
+- **`.screening-tabs`** — also used by `Analytics.jsx`. Analytics is Phase 3 and not in
+  `.ats-v2`, so the new rule is inert there today; when Phase 3 lands it inherits the same
+  segmented treatment for free, which is the wanted outcome. **Known coupling — do not
+  "clean up" this rule during Phase 3 without checking both pages.**
+- **`.ant-descriptions-bordered`** — also used by `PipelineDrawer` (a portal, structurally
+  outside `.ats-v2`), `HRUpload`/`VendorPortal` (Phase 4) and `MrfApprovalAction` (a
+  `ForceLight` public page outside `MainLayout`). Scoped rule ⇒ no effect today.
+- The five new class names appear nowhere else in `src/`, which is asserted at the DOM on
+  `/login` rather than argued.
+
+### Deliberately left alone
+
+- **Everything inside the drawer and the two modals.** `CandidateScreening.jsx:1844`
+  onwards is `createPortal` / `Drawer` / `Modal` — all render into `document.body`, so
+  `.ats-v2` structurally cannot reach them. That includes the floating shortlist dock and
+  the ~10 `--ink-3`/`--ink-4` panels in the candidate drawer. Consistent with the standing
+  decision to leave AntD's modal/drawer chrome untouched app-wide until Phase 5 resolves it.
+- The 64px `--gold-subtle` disc in the screening empty state — a decorative brand mark, not
+  a surface; it reads correctly on glass as-is.
+- `CandidateDetail`'s read-only `--ink-4` inputs, which live in the edit modal (portal).
+
+### Also
+
+- **The header card on `/candidates/:id` gains the cursor spotlight**, this page's
+  hero-analog, matching how the dashboard spends it on exactly one feature surface.
+- That required moving the loading skeleton **inside** the page root rather than returning
+  it early. `usePointerSpotlight` binds its delegated listener to `rootRef.current` once and
+  re-runs only when the *ref* identity changes, never when the DOM node behind it does. Two
+  identical roots at the same position let React reuse the node across the loading→loaded
+  flip; a Fragment or a different element type in either branch would leave the listener
+  bound to a detached div and the spotlight silently dead. Noted in the code, because it is
+  the kind of thing a later tidy-up breaks without any visible error.
+- Every new surface is added to the `prefers-reduced-transparency: reduce` fallback. One
+  exception is carved out there: the selected `.cand-card` keeps a solid brand border rather
+  than going fully flat, because that border is the **only** cue for which rows are in the
+  bulk shortlist/reject set.
+
+**No changes to data fetching, screening/scoring logic, permissions, pagination, or the
+bulk shortlist/reject flow.** This phase is visual.
+
+**Verified:** `npm run build` clean, plus **44 automated checks green** against the live
+backend in both themes, asserting on computed styles rather than screenshots alone. Every
+surface resolves to its exact token — page shells `--glass-2-bg`
+(`rgba(255,255,255,0.62)` light / `rgba(19,26,23,0.72)` dark), results list, summary bar,
+select-all bar and tab track all `--glass-3-bg` (`0.90` / `0.92`), card radius 16px =
+`--radius-card`. Also asserted: the bordered `Descriptions` container computes
+`rgba(0,0,0,0)`; the spotlight publishes `--mx` on pointer move; `/dashboard` still carries
+exactly one `.ats-v2`; **`/candidates` carries none and mounts no `AmbientBackdrop`**, with
+its table still rendering; the portal shortlist dock is unaffected; and `/login` contains
+none of the five new class names. Under CDP-emulated `prefers-reduced-transparency: reduce`
+the aurora is gone and the shell computes a flat `rgb(255,255,255)`.
+
+Scroll performance on `/filtering` with a full result set, measured with the continuous
+rAF `scrollBy`-per-frame probe (a wheel-then-wait probe reports phantom drops here):
+**16.6ms median / 5% of frames >20ms in light, 16.7ms / 7.2% in dark** — 60fps, in line
+with the dashboard's post-fix 5.3% figure. Tier 3 carries no `backdrop-filter`, which is
+what keeps a 100-row list cheap.
+
+**Spotted while verifying, NOT fixed (pre-existing, unrelated to this phase):** on
+`/candidates/:id` the Professional Summary card renders a raw JSON blob —
+`{"EmailID":"…","id":290}` — for at least some records, i.e. the `summary` field holds
+serialised data rather than prose. The card is doing its job; the value it is handed is
+wrong. Needs a look at what writes `summary` during resume parsing. The same record also
+shows "0% Match" and an empty Notice Period.
+
+**Not built this pass:** Phases 2–6 (Candidates/Pipeline, both Analytics pages, the
+vendor/HR batch, Settings/Email/prototype, admin portal). Phase 0's `.kpi-card` block
+remains inert — re-confirmed that its five consumers (`Analytics`,
+`CandidatePipelinePrototype`, `HRUpload`, `VendorDashboard`, `VendorPortal`) all belong to
+later phases and none is in `V2_ROUTES`.
+
 ## 2026-08-13 — Aurora Glass rollout, Phase 0: `.kpi-card` glass tier (foundation only)
 
 First step of taking Aurora Glass beyond `/dashboard` app-wide (see the two Aurora Glass

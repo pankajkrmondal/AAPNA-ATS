@@ -250,6 +250,12 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { [dbSortField]: order },
+      // `rpa_cv` is ~80 columns wide and these two are by far the heaviest: the
+      // full plain-text resume and the AI insights blob. A list page reads
+      // neither — mapCandidate() ignores them, and the screening service pulls
+      // them through its own raw queries — so shipping them made every page of
+      // results far larger over the wire than the rows it actually renders.
+      omit: { resume_full_text: true, ai_profile_insights: true },
     }),
     prisma.rpa_cv.count({ where }),
   ]);
@@ -656,6 +662,7 @@ export const EXPORT_SELECT = {
  * @returns {string}
  */
 export function resolveSortField(sort) {
+  if (sort === 'id') return 'id';
   if (sort === 'name') return 'Name';
   if (sort === 'email') return 'EmailID';
   if (sort === 'position') return 'PositionApplied';

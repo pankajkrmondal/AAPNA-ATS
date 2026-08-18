@@ -7,9 +7,9 @@
  * display name — see dashboard.service.js's getRecruiterBreakdown().
  * Full-database counts via GET /api/dashboard/recruiter-breakdown.
  */
-import { Card, Typography, Tooltip, Empty } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { Card, Typography, Empty } from 'antd';
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
+import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
 
@@ -33,11 +33,21 @@ function BarTip({ active, payload, label }) {
   const added = payload.find((p) => p.dataKey === 'added')?.value ?? 0;
   const shortlisted = payload.find((p) => p.dataKey === 'shortlisted')?.value ?? 0;
   const note = LABEL_EXPLANATIONS[label];
+  // Share of what they added that they also put forward — the question the two bars
+  // side by side are really asking, spelled out rather than left to be eyeballed.
+  const rate = added > 0 ? Math.round((shortlisted / added) * 100) : null;
   return (
     <div className="dash-chart-tip">
       <div className="dash-chart-tip__label">{label}</div>
-      <div className="dash-chart-tip__value" style={{ color: ADDED_COLOR }}>Added: {added}</div>
-      <div className="dash-chart-tip__value" style={{ color: SHORTLISTED_COLOR }}>Shortlisted: {shortlisted}</div>
+      <div className="dash-chart-tip__value" style={{ color: ADDED_COLOR }}>
+        {added} candidate{added === 1 ? '' : 's'} added
+      </div>
+      <div className="dash-chart-tip__value" style={{ color: SHORTLISTED_COLOR }}>
+        {shortlisted} shortlisted to a role
+      </div>
+      {rate !== null && (
+        <div className="dash-chart-tip__note">{rate}% of what they added went forward</div>
+      )}
       {note && <div className="dash-chart-tip__note">{note}</div>}
     </div>
   );
@@ -51,11 +61,11 @@ export default function RecruiterBreakdownCard({ data = [] }) {
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
+          {/* This used to be its own <Tooltip> with its own wording, which is how the
+              same widget ended up explaining itself twice, differently. It now reads
+              from the shared registry like every other widget on the page. */}
           <Title level={5} style={{ margin: 0 }}>
-            Recruiter Activity{' '}
-            <Tooltip title="Added: candidates this person uploaded. Shortlisted: candidates this person shortlisted to a role. Matched to the same row wherever both can be resolved to the same account; full-database counts, not sampled.">
-              <InfoCircleOutlined style={{ fontSize: 12, color: 'var(--text-3)' }} />
-            </Tooltip>
+            Recruiter Activity <MetricInfo metric="recruiterActivity" size={12} />
           </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             Candidates added vs. shortlisted per recruiter

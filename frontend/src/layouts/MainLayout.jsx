@@ -97,6 +97,16 @@ const VENDOR_MENU_ITEMS = [
 /** Path prefixes a vendor is allowed to visit; anything else redirects. */
 const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
 
+/** Routes converted to Design V2 ("Aurora Glass") so far. The rollout is phased
+ *  route-by-route rather than flipped on in one shot — see the phase list in
+ *  UI-CHANGELOG.md. A route only belongs here once its cards actually carry the
+ *  class names aurora-glass.css targets; adding one whose page is still flat
+ *  produces the worst of both worlds (glass chrome, opaque content).
+ *
+ *  Phase 0 — CSS groundwork only, no route.
+ *  Phase 1 — /filtering, plus the candidate detail view handled below. */
+const V2_ROUTES = ['/dashboard', '/filtering'];
+
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
 const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <AuditOutlined />, label: 'Vendor Dashboard' };
@@ -166,16 +176,21 @@ export default function MainLayout() {
 
   /** Design V2 ("Aurora Glass") gate — see theme/aurora-glass.css.
    *
-   *  This one boolean is the entire pilot scope. `.ats-v2` on the outer <Layout>
+   *  This one boolean is the entire rollout scope. `.ats-v2` on the outer <Layout>
    *  wraps the Sider, Header AND the <Outlet />, so it scopes the shell chrome and
    *  the page's cards together. That containment is required, not cosmetic:
-   *  `.glass-card` / `.glass` are also used by CandidateDetail, CandidateScreening
-   *  and both Analytics pages, which have no ambient canvas behind them — styling
-   *  those classes globally would wash out five screens nobody asked us to touch.
+   *  `.glass-card` / `.glass` are also used by Analytics, EmailManagement and
+   *  LoadingSkeleton, which have no ambient canvas behind them — styling those
+   *  classes globally would wash out screens later phases have not reached yet.
    *
-   *  Roll out app-wide by widening (or deleting) this condition; revert the pilot
-   *  by deleting the constant. */
-  const isV2 = location.pathname.startsWith('/dashboard');
+   *  Advance the rollout by adding to V2_ROUTES; revert it by emptying that list. */
+  const isV2 =
+    V2_ROUTES.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'))
+    // Phase 1 takes the candidate DETAIL view (/candidates/:id) but NOT /candidates
+    // itself — that is the records table, still flat, and belongs to Phase 2. A
+    // plain prefix match would drag it in, so the two are split here rather than
+    // by listing '/candidates' above.
+    || /^\/candidates\/[^/]+/.test(location.pathname);
 
   /** Title for the current page, shown in the top bar. Vendors get their own
    *  labels (Upload Candidate / Dashboard) for their restricted surfaces. */

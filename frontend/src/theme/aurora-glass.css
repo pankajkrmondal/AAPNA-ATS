@@ -740,6 +740,118 @@
   box-shadow: var(--depth-1);
 }
 
+/* ============================================================
+   ROLLOUT PHASE 1 — /candidates/:id and /filtering
+   ------------------------------------------------------------
+   Both pages' page-level cards already carried `.glass-card`, so widening `isV2`
+   gave them the tier-2 pane, rim, sheen and shadow for free. What it could NOT
+   fix on its own is everything NESTED inside those cards: a dense result list, a
+   bordered Descriptions table, a segmented tab strip and four bars that were
+   painting solid `--ink-3` / `--ink-4` fills. On an opaque card those read as
+   quiet greys; on glass they read as slabs stuck to the pane.
+
+   The rule throughout: a surface nested inside a tier-2 card is tier 3 (dense,
+   near-opaque, no backdrop-filter), matching how the dashboard treats its own
+   nested rows (.dash-uploads__row, .quick-action-row).
+   ============================================================ */
+
+/* ----- Candidate Screening: the results list ---------------------------
+   The plan called for confirming this list is tier 3, not tier 2 — it is a dense
+   stack of up to 100 rows, which is exactly the case tier 3 exists for. The base
+   rule in index.css sets `background: var(--gradient-card) !important`, so this
+   needs !important to answer it; specificity settles the two cleanly. */
+.ats-v2 .cand-card {
+  background: var(--glass-3-bg) !important;
+  border: 1px solid var(--glass-3-border) !important;
+  box-shadow: var(--depth-1) !important;
+  border-radius: var(--radius-card) !important;
+}
+.ats-v2 .cand-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-2) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 34%, transparent) !important;
+}
+/* Selected: brand tint over the tier-3 pane rather than the opaque
+   `linear-gradient(..., var(--ink-2))` the base rule uses, so a selected row is
+   still visibly the same material as its neighbours. */
+.ats-v2 .cand-card.is-selected {
+  background: linear-gradient(145deg,
+    color-mix(in srgb, var(--brand-primary) 12%, transparent) 0%,
+    var(--glass-3-bg) 100%) !important;
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, transparent) !important;
+  box-shadow: var(--depth-2), 0 0 0 1px color-mix(in srgb, var(--brand-primary) 18%, transparent) !important;
+}
+
+/* ----- Candidate Screening: the four extracted bars ---------------------
+   All tier 3, all sitting directly on the page card. */
+.ats-v2 .screening-summary-bar,
+.ats-v2 .screening-selectall-bar,
+.ats-v2 .screening-edu-panel {
+  background: var(--glass-3-bg) !important;
+  border: 1px solid var(--glass-2-border) !important;
+}
+.ats-v2 .screening-summary-bar,
+.ats-v2 .screening-edu-panel { border-radius: 12px !important; }
+.ats-v2 .screening-selectall-bar { border-radius: 10px !important; }
+
+/* The role JD panel keeps its brand tint — it is a semantic callout ("this is the
+   role you are screening against"), not a neutral container — but the tint now
+   sits on glass instead of replacing it. */
+.ats-v2 .screening-role-card {
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--brand-primary) 10%, transparent) 0%,
+    var(--glass-3-bg) 100%) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--glass-hilite) !important;
+}
+
+/* ----- Candidate Screening: the segmented tab strip --------------------
+   `.screening-tabs .ant-tabs-nav-list` is an opaque --ink-3 capsule and the active
+   tab an opaque --colorBgContainer pill. Translucent track, near-solid thumb: the
+   selected tab has to stay the most solid thing in the control or the segmented
+   metaphor stops reading. */
+.ats-v2 .screening-tabs .ant-tabs-nav-list {
+  background: var(--glass-3-bg);
+  border: 1px solid var(--glass-2-border);
+  box-shadow: var(--glass-hilite);
+}
+.ats-v2 .screening-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--colorBgContainer);
+  box-shadow: var(--depth-1);
+}
+
+/* ----- Candidate Detail: Professional Summary callout ------------------ */
+.ats-v2 .cd-summary {
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--brand-primary) 10%, transparent) 0%,
+    var(--glass-3-bg) 100%) !important;
+  border: 1px solid var(--glass-2-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--glass-hilite) !important;
+}
+
+/* ----- Candidate Detail: the bordered Descriptions table ---------------
+   AntD paints an opaque `colorFillAlter` behind every label cell and a solid
+   container fill behind the whole table. Unchanged, it is the largest opaque
+   rectangle on the page, sitting inside a glass card. The container goes fully
+   transparent (the card beneath IS the surface) and the label column keeps a
+   faint tint so the label/value rhythm survives without a hard fill.
+   Scoped to `.ats-v2`, so every Descriptions on a route that has not been
+   converted yet is untouched. */
+.ats-v2 .ant-descriptions-bordered .ant-descriptions-view {
+  background: transparent;
+  border-color: var(--glass-2-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.ats-v2 .ant-descriptions-bordered .ant-descriptions-item-label {
+  background: color-mix(in srgb, var(--brand-primary) 7%, transparent);
+}
+.ats-v2 .ant-descriptions-bordered .ant-descriptions-row > th,
+.ats-v2 .ant-descriptions-bordered .ant-descriptions-row > td,
+.ats-v2 .ant-descriptions-bordered .ant-descriptions-row { border-color: var(--glass-2-border); }
+
 /* ----- Accessibility & capability fallbacks -----------------------------
    Motion is already handled app-wide by the prefers-reduced-motion guard in
    index.css, which zeroes every animation — the aurora, the sweep and the
@@ -771,11 +883,31 @@
   .ats-v2 .glass-sidebar,
   .ats-v2 .glass-sidebar .ant-layout-sider-children,
   .ats-v2 .ant-layout-header.glass,
-  .ats-v2 .kpi-card {
+  .ats-v2 .kpi-card,
+  /* Phase 1 surfaces. The three brand-tinted ones (role panel, summary callout,
+     selected result row) lose their gradient too — a gradient over an opaque
+     ground is decoration, and this media query is a request for less of it. */
+  .ats-v2 .cand-card,
+  .ats-v2 .cand-card.is-selected,
+  .ats-v2 .screening-summary-bar,
+  .ats-v2 .screening-selectall-bar,
+  .ats-v2 .screening-edu-panel,
+  .ats-v2 .screening-role-card,
+  .ats-v2 .cd-summary,
+  .ats-v2 .screening-tabs .ant-tabs-nav-list {
     background: var(--colorBgContainer) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     border-color: var(--border) !important;
+  }
+  /* The one Phase 1 surface that must NOT go flat: the selected result row is the
+     only cue that a row is in the bulk-action set, so it keeps a solid brand
+     border and drops only the translucency. */
+  .ats-v2 .cand-card.is-selected {
+    border-color: var(--brand-primary) !important;
+  }
+  .ats-v2 .ant-descriptions-bordered .ant-descriptions-item-label {
+    background: var(--ink-3);
   }
   .ats-v2 .glass-card::before,
   .ats-v2 .premium-stat-card::before,

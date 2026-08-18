@@ -31,10 +31,12 @@ export default function ActionCenterCard({
     // It was previously the LENGTH of a list fetched with status=pending, which mapped
     // onto `mrfstatus` (submission state) rather than approval state and was capped at
     // 50 — see dashboard.service.js getStats().
-    { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
-    { key: 'dup', label: 'Duplicates to review', desc: 'Resumes flagged as possible duplicates, detected live.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
-    { key: 'screen', label: 'Awaiting screening', desc: 'Sourced candidates not yet run through AI screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
-    { key: 'interview', label: 'Interviews today', desc: "Zeko-scheduled interviews with a start time today.", count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
+    // Each `desc` names both what the number counts and the screen the row opens —
+    // "Click to open" alone never said where you were about to be taken.
+    { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined. Opens MRF Requests.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
+    { key: 'dup', label: 'Duplicates to review', desc: 'CVs flagged as possible duplicates of someone already on file. Opens Search Candidates.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
+    { key: 'screen', label: 'Awaiting screening', desc: 'Candidates on file that the AI has not scored yet. Opens Candidate Screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
+    { key: 'interview', label: 'Interviews today', desc: 'Interviews with a start time falling today. Opens Recruitment Analytics.', count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
   ];
 
   const allClear = items.every((i) => !i.count);
@@ -50,13 +52,21 @@ export default function ActionCenterCard({
 
       <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
         {allClear ? (
-          <div className="dash-allclear">
-            <CheckCircleOutlined />
-            <span>All clear — nothing needs your attention right now.</span>
-          </div>
+          <Tooltip title="No requisitions are waiting on approval, no duplicates need reviewing, every candidate on file has been screened, and there are no interviews scheduled for today.">
+            <div className="dash-allclear">
+              <CheckCircleOutlined />
+              <span>All clear — nothing needs your attention right now.</span>
+            </div>
+          </Tooltip>
         ) : (
           items.map((it) => (
-            <Tooltip key={it.key} title={`${it.desc} Click to open.`} placement="left">
+            <Tooltip
+              key={it.key}
+              placement="left"
+              title={it.count
+                ? `${it.count} ${it.count === 1 ? 'item needs' : 'items need'} action. ${it.desc}`
+                : `Nothing waiting here. ${it.desc}`}
+            >
               <div
                 className={`dash-action-row ${it.count ? 'has-count' : 'is-empty'}`}
                 onClick={() => onNavigate?.(it.url)}

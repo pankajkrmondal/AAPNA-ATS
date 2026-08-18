@@ -3,7 +3,7 @@
  * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
  */
 import { useMemo, useState } from 'react';
-import { Card, Typography, Segmented, Empty } from 'antd';
+import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { topByField, topSkills } from '../../utils/dashboardAggregations';
 import MetricInfo from '../common/MetricInfo';
@@ -17,13 +17,18 @@ const prefersReducedMotion = () =>
   window.matchMedia &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function BarTip({ active, payload }) {
+function BarTip({ active, payload, mode }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <div className="dash-chart-tip">
+      {/* The label repeats in full because the axis truncates long ones with an
+          ellipsis — the hover is where a reader recovers the whole name. */}
       <div className="dash-chart-tip__label">{p.name}</div>
       <div className="dash-chart-tip__value">{p.value} candidate{p.value === 1 ? '' : 's'}</div>
+      <div className="dash-chart-tip__note">
+        {mode === 'roles' ? 'applied for this role' : 'list this skill on their profile'}
+      </div>
     </div>
   );
 }
@@ -50,7 +55,16 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           size="small"
           value={mode}
           onChange={setMode}
-          options={[{ label: 'Roles', value: 'roles' }, { label: 'Skills', value: 'skills' }]}
+          options={[
+            {
+              label: <Tooltip title="The roles candidates are applying for most often">Roles</Tooltip>,
+              value: 'roles',
+            },
+            {
+              label: <Tooltip title="The skills that appear most often across candidate profiles">Skills</Tooltip>,
+              value: 'skills',
+            },
+          ]}
         />
       </div>
       {/* Sampling caveat moved into this card's MetricInfo definition
@@ -77,7 +91,7 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
                 tickLine={false}
                 axisLine={false}
               />
-              <RTooltip content={<BarTip />} cursor={{ fill: 'var(--gold-subtle)' }} />
+              <RTooltip content={<BarTip mode={mode} />} cursor={{ fill: 'var(--gold-subtle)' }} />
               <Bar dataKey="value" radius={[0, 6, 6, 0]} isAnimationActive={!prefersReducedMotion()} animationDuration={800} barSize={16}>
                 {data.map((_, i) => (
                   <Cell key={i} fill={ROLE_COLORS[i % ROLE_COLORS.length]} />

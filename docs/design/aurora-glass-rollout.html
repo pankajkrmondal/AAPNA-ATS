@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aurora Glass Rollout — AAPNA ATS</title>
+<meta name="description" content="A nine-phase plan to roll the dashboard's Aurora Glass design system across the remaining 14 routes of the AAPNA ATS frontend.">
+<style>
+  /* Minimal reset — the hosted Artifact supplies one; a standalone file must not rely on it. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+  /* ─── Tokens: complete light palette on bare :root ─── */
+  :root {
+    --ground:      #f7f8f4;
+    --pane:        #ffffff;
+    --pane-2:      #eef1e7;
+    --rule:        #dbe0d0;
+    --rule-soft:   #e8ebe0;
+    --ink:         #1b201a;
+    --ink-2:       #3d443a;
+    --muted:       #61695c;
+    --faint:       #8b9184;
+    --brand:       #6b8129;
+    --brand-soft:  rgba(122,146,46,0.10);
+    --brand-edge:  rgba(122,146,46,0.32);
+    --warn:        #a8501f;
+    --warn-soft:   rgba(168,80,31,0.10);
+    --done:        #3a6547;
+    --done-soft:   rgba(58,101,71,0.10);
+    --shadow:      0 1px 2px rgba(60,70,45,.06), 0 12px 28px -14px rgba(60,70,45,.28);
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, "Times New Roman", serif;
+    --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --mono: Consolas, ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:     #12160f;
+      --pane:       #191e16;
+      --pane-2:     #202619;
+      --rule:       #2f382a;
+      --rule-soft:  #262e21;
+      --ink:        #e9ece1;
+      --ink-2:      #c3c9b9;
+      --muted:      #949c8a;
+      --faint:      #6f7768;
+      --brand:      #a8c24a;
+      --brand-soft: rgba(168,194,74,0.13);
+      --brand-edge: rgba(168,194,74,0.34);
+      --warn:       #d8853f;
+      --warn-soft:  rgba(216,133,63,0.13);
+      --done:       #7bb08d;
+      --done-soft:  rgba(123,176,141,0.13);
+      --shadow:     0 1px 2px rgba(0,0,0,.34), 0 14px 32px -14px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:     #12160f;
+    --pane:       #191e16;
+    --pane-2:     #202619;
+    --rule:       #2f382a;
+    --rule-soft:  #262e21;
+    --ink:        #e9ece1;
+    --ink-2:      #c3c9b9;
+    --muted:      #949c8a;
+    --faint:      #6f7768;
+    --brand:      #a8c24a;
+    --brand-soft: rgba(168,194,74,0.13);
+    --brand-edge: rgba(168,194,74,0.34);
+    --warn:       #d8853f;
+    --warn-soft:  rgba(216,133,63,0.13);
+    --done:       #7bb08d;
+    --done-soft:  rgba(123,176,141,0.13);
+    --shadow:     0 1px 2px rgba(0,0,0,.34), 0 14px 32px -14px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 120px; }
+
+  /* ─── Masthead ─── */
+  .mast { padding: 72px 0 0; }
+  .mast__eyebrow {
+    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--brand);
+    margin: 0 0 20px;
+  }
+  .mast h1 {
+    font-family: var(--serif); font-weight: 600;
+    font-size: clamp(38px, 6vw, 62px); line-height: 1.04;
+    letter-spacing: -.022em; margin: 0 0 22px; text-wrap: balance;
+  }
+  .mast__lede {
+    font-size: clamp(19px, 2.1vw, 22px); line-height: 1.5; color: var(--ink-2);
+    max-width: 34em; margin: 0 0 34px;
+  }
+
+  .status {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    margin-bottom: 30px;
+  }
+  .status__cell { flex: 1 1 160px; padding: 18px 22px 16px; border-right: 1px solid var(--rule-soft); }
+  .status__cell:last-child { border-right: 0; }
+  .status__k {
+    font-family: var(--sans); font-size: 10.5px; font-weight: 600;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--faint);
+    display: block; margin-bottom: 7px;
+  }
+  .status__v {
+    font-family: var(--serif); font-size: 27px; line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+  .status__v em { font-style: normal; color: var(--faint); font-size: 17px; }
+  .status__v.is-warn { color: var(--warn); }
+
+  .meta {
+    font-family: var(--sans); font-size: 13px; line-height: 1.75;
+    color: var(--muted); margin: 0 0 80px; max-width: 62ch;
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ─── Section scaffolding ─── */
+  section { margin-bottom: 82px; scroll-margin-top: 24px; }
+
+  .part {
+    font-family: var(--sans); font-size: 11px; font-weight: 700;
+    letter-spacing: .17em; text-transform: uppercase; color: var(--brand);
+    padding-bottom: 12px; margin-bottom: 26px; border-bottom: 2px solid var(--brand-edge);
+  }
+
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(27px, 3.2vw, 35px);
+    line-height: 1.15; letter-spacing: -.017em; margin: 0 0 14px; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--serif); font-weight: 600; font-size: 21px; line-height: 1.28;
+    letter-spacing: -.008em; margin: 44px 0 12px; text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--faint); margin: 32px 0 12px;
+  }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  .sub { color: var(--muted); max-width: 66ch; margin-bottom: 30px; }
+
+  a { color: var(--brand); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 3px;
+  }
+
+  code {
+    font-family: var(--mono); font-size: .84em;
+    background: var(--pane-2); color: var(--ink-2);
+    padding: .1em .38em; border-radius: 3px; word-break: break-word;
+  }
+  strong { font-weight: 600; color: var(--ink); }
+  ul, ol { margin: 0 0 16px; padding-left: 22px; max-width: 68ch; }
+  li { margin-bottom: 8px; }
+  li::marker { color: var(--faint); }
+
+  /* ─── Findings: the four corrections ─── */
+  .finds { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .find { background: var(--ground); padding: 24px 26px; display: grid; grid-template-columns: 42px 1fr; gap: 18px; }
+  .find__n {
+    font-family: var(--serif); font-size: 30px; line-height: .95; color: var(--brand);
+    font-variant-numeric: tabular-nums;
+  }
+  .find h3 { margin: 0 0 7px; font-size: 18.5px; }
+  .find p { margin: 0; font-size: 15.5px; line-height: 1.58; color: var(--ink-2); }
+
+  /* ─── Tier stack: the page made of its subject, once ─── */
+  .tiers { display: grid; gap: 10px; margin: 26px 0 8px; }
+  .tier {
+    display: grid; grid-template-columns: 30px 108px 1fr auto; gap: 20px; align-items: center;
+    padding: 17px 22px; border-radius: 13px; border: 1px solid var(--rule);
+    background: var(--pane); box-shadow: var(--shadow);
+  }
+  .tier--1 { background: color-mix(in srgb, var(--pane) 72%, transparent); }
+  .tier--2 { background: color-mix(in srgb, var(--pane) 86%, transparent); }
+  .tier--3 { background: var(--pane); }
+  .tier--4 { background: var(--pane); border-color: var(--brand-edge); box-shadow: 0 2px 6px rgba(60,70,45,.10), 0 22px 44px -16px rgba(60,70,45,.4); }
+  .tier__n {
+    font-family: var(--serif); font-size: 25px; color: var(--brand); line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .tier__name { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .tier__use { font-size: 15px; color: var(--muted); line-height: 1.42; }
+  .tier__blur {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; white-space: nowrap;
+    padding: 5px 10px; border-radius: 20px; border: 1px solid var(--rule);
+    color: var(--faint);
+  }
+  .tier__blur.on { color: var(--brand); border-color: var(--brand-edge); background: var(--brand-soft); }
+  .tier--4 .tier__name { color: var(--brand); }
+
+  /* ─── Callouts ─── */
+  .note {
+    border-left: 3px solid var(--brand); background: var(--brand-soft);
+    padding: 17px 22px; margin: 24px 0; border-radius: 0 8px 8px 0;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note--warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note__k {
+    font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--brand); display: block; margin-bottom: 7px;
+  }
+  .note--warn .note__k { color: var(--warn); }
+
+  /* ─── Failure modes, two-up ─── */
+  .fails { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; margin: 26px 0; }
+  .fail { border: 1px solid var(--rule); border-radius: 12px; padding: 22px 24px; background: var(--pane); }
+  .fail__k { font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--warn); margin-bottom: 9px; }
+  .fail h4 { font-family: var(--serif); font-size: 19px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0 0 9px; }
+  .fail p { font-size: 15px; color: var(--ink-2); margin: 0; line-height: 1.55; }
+  .fail__demo {
+    margin-top: 16px; border-radius: 9px; padding: 13px; border: 1px solid var(--rule-soft);
+    background: var(--pane-2); display: flex; align-items: center; gap: 11px;
+  }
+  .fail__slab { width: 78px; height: 30px; border-radius: 5px; background: var(--rule); flex: none; }
+  .fail__lost { width: 4px; height: 30px; border-radius: 2px; background: var(--warn); flex: none; }
+  .fail__lost.gone { background: repeating-linear-gradient(180deg, var(--rule) 0 3px, transparent 3px 6px); }
+  .fail__cap { font-family: var(--mono); font-size: 11px; color: var(--faint); line-height: 1.4; }
+
+  /* ─── Tables ─── */
+  .scroll { overflow-x: auto; margin: 22px 0; border: 1px solid var(--rule); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 480px; }
+  th {
+    font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--faint); text-align: left;
+    padding: 13px 18px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+    background: var(--pane-2);
+  }
+  td { padding: 12px 18px; border-bottom: 1px solid var(--rule-soft); color: var(--ink-2); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td code { background: transparent; padding: 0; color: var(--ink); }
+
+  /* debt bars */
+  .bar { display: block; height: 4px; border-radius: 2px; background: var(--brand); opacity: .55; margin-top: 5px; }
+
+  /* ─── Phases ─── */
+  .phase {
+    display: grid; grid-template-columns: 88px 1fr; gap: 30px;
+    padding: 32px 0; border-top: 1px solid var(--rule);
+  }
+  .phase:last-of-type { border-bottom: 1px solid var(--rule); }
+  .phase__rail { position: relative; }
+  .phase__n {
+    font-family: var(--serif); font-size: 44px; line-height: .88; color: var(--brand);
+    font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+  }
+  .phase__tag {
+    display: inline-block; margin-top: 11px;
+    font-family: var(--sans); font-size: 9.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; padding: 4px 8px; border-radius: 4px;
+    background: var(--pane-2); color: var(--muted); border: 1px solid var(--rule);
+  }
+  .phase__tag.is-key { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-edge); }
+  .phase__tag.is-risk { background: var(--warn-soft); color: var(--warn); border-color: rgba(168,80,31,.3); }
+  .phase h3 { margin: 0 0 10px; font-size: 24px; }
+  .phase__why { font-size: 15.5px; color: var(--muted); margin-bottom: 16px; }
+  .phase ul { font-size: 15.5px; }
+  .phase__files {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 11px 14px; background: var(--pane-2); border-radius: 7px;
+    margin-bottom: 16px; line-height: 1.7; word-break: break-word;
+  }
+
+  /* ─── Done checklist ─── */
+  .dod { counter-reset: d; list-style: none; padding: 0; max-width: 70ch; }
+  .dod li {
+    counter-increment: d; position: relative; padding-left: 38px; margin-bottom: 11px;
+    font-size: 15.5px; color: var(--ink-2);
+  }
+  .dod li::before {
+    content: counter(d); position: absolute; left: 0; top: 1px;
+    width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--mono); font-size: 11px; color: var(--brand);
+    background: var(--brand-soft); border: 1px solid var(--brand-edge);
+  }
+
+  /* ─── Open items ─── */
+  .opens { display: grid; gap: 14px; }
+  .open {
+    border: 1px solid var(--rule); border-left: 3px solid var(--warn);
+    border-radius: 0 10px 10px 0; padding: 19px 22px; background: var(--pane);
+  }
+  .open h4 { font-family: var(--serif); font-size: 17.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 0 0 6px; }
+  .open p { font-size: 15px; color: var(--ink-2); margin: 0; }
+
+  footer {
+    margin-top: 90px; padding-top: 26px; border-top: 1px solid var(--rule);
+    font-family: var(--sans); font-size: 13px; color: var(--faint); line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .wrap { padding: 0 18px 80px; }
+    .mast { padding-top: 46px; }
+    .phase { grid-template-columns: 1fr; gap: 14px; }
+    .phase__rail { display: flex; align-items: baseline; gap: 14px; }
+    .phase__n { font-size: 34px; }
+    .phase__tag { margin-top: 0; }
+    .tier { grid-template-columns: 26px 1fr; gap: 10px 14px; }
+    .tier__blur { grid-column: 2; justify-self: start; }
+    .find { grid-template-columns: 1fr; gap: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="mast__eyebrow">AAPNA ATS · Frontend Design Rollout</p>
+    <h1>Aurora Glass, everywhere else</h1>
+    <p class="mast__lede">
+      The dashboard is finished to an enterprise standard. Fourteen routes behind it are not.
+      This is the plan that closes the gap without ever shipping a half-converted screen.
+    </p>
+
+    <div class="status">
+      <div class="status__cell">
+        <span class="status__k">Routes converted</span>
+        <span class="status__v">3 <em>/ 17</em></span>
+      </div>
+      <div class="status__cell">
+        <span class="status__k">Dialogs unstyled</span>
+        <span class="status__v is-warn">40</span>
+      </div>
+      <div class="status__cell">
+        <span class="status__k">Inline-style debt</span>
+        <span class="status__v">560<em> decls</em></span>
+      </div>
+      <div class="status__cell">
+        <span class="status__k">Raw brand hex</span>
+        <span class="status__v">~250</span>
+      </div>
+      <div class="status__cell">
+        <span class="status__k">Phases</span>
+        <span class="status__v">9</span>
+      </div>
+    </div>
+
+    <p class="meta">
+      <b>Audience.</b> The developer executing this — you should be able to run any single phase end to end
+      from this document without asking questions.<br>
+      <b>Supersedes.</b> The “Phases 1–6” list in <code>frontend/UI-CHANGELOG.md</code> under the Phase 0 entry.
+      That plan is discarded; the four findings below are why.<br>
+      <b>Codebase state.</b> <code>/dashboard</code>, <code>/candidates/:id</code> and <code>/filtering</code> are
+      converted. Nothing else is. No Phase 2 work has been started.
+    </p>
+  </header>
+
+  <section>
+    <div class="part">Context</div>
+    <h2>Why this exists</h2>
+    <p class="sub">
+      The dashboard went through three passes — the V2 “Aurora Glass” pilot, a V3 composition and brand pass,
+      and a light-mode settle — and came out genuinely enterprise-grade: an ambient canvas, a three-tier glass
+      material system, a brand-derived token layer, real metric tooltips, measured 60fps scroll.
+    </p>
+    <p>
+      The rest of the app never moved. Today a user crossing from <code>/dashboard</code> to <code>/mrf</code>
+      watches the chrome stay glass while the content drops to flat cards — which is worse than either extreme.
+      The old phase list was also written to a narrower brief (“widen a boolean, fix what breaks”), and it has
+      since drifted from the code: it schedules a page that no longer exists, and it defers the single largest
+      visual gap in the app indefinitely.
+    </p>
+    <div class="note">
+      <span class="note__k">The brief</span>
+      <p>
+        Never trade design quality for rollout speed. Where the old plan deferred something awkward, this one
+        schedules it. Every surface a user can reach — page, dialog, control, empty state, public token page —
+        reads as one deliberately designed product, in both themes, with no half-converted screens at any point
+        in the sequence.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="part">Four corrections</div>
+    <h2>What the old plan got wrong</h2>
+    <p class="sub">Each of these was found by surveying the code, not by reading the previous plan.</p>
+
+    <div class="finds">
+      <div class="find">
+        <div class="find__n">1</div>
+        <div>
+          <h3>40 dialogs were deferred indefinitely</h3>
+          <p>
+            37 <code>&lt;Modal&gt;</code> and 3 <code>&lt;Drawer&gt;</code> across the app —
+            <code>PipelineDrawer.jsx</code> alone holds 10 modals and a drawer. They portal into
+            <code>document.body</code>, structurally outside <code>.ats-v2</code>, so the old plan’s answer was
+            “leave AntD’s default chrome untouched app-wide… open question.” On a glass app that means every
+            dialog opens as a flat white box. It is now <strong>Phase 1</strong>.
+          </p>
+        </div>
+      </div>
+      <div class="find">
+        <div class="find__n">2</div>
+        <div>
+          <h3><code>AnalyticsLegacy.jsx</code> does not exist</h3>
+          <p>
+            The old Phase 3 targets <code>/analytics-legacy</code>. There is no such route and no such file —
+            only <code>/analytics</code> is live. A phase was scheduled against a deleted page.
+          </p>
+        </div>
+      </div>
+      <div class="find">
+        <div class="find__n">3</div>
+        <div>
+          <h3><code>.glass-3</code> has zero consumers</h3>
+          <p>
+            The tier-3 class has never been used by any page — the Recent Candidates table it was written for
+            was replaced by <code>LatestUploads</code>. Its <code>.ant-table</code> rules are
+            <strong>unverified against a real table</strong>. The first phase that uses it must verify them.
+          </p>
+        </div>
+      </div>
+      <div class="find">
+        <div class="find__n">4</div>
+        <div>
+          <h3>Every <code>.glass-card</code> is silently blurring</h3>
+          <p>
+            <code>aurora-glass.css:256</code> documents “NO backdrop-filter on scrolling content surfaces,” but
+            the base rule at <code>index.css:850</code> sets <code>backdrop-filter: blur(12px)</code> and the
+            <code>.ats-v2</code> override never cancels it. The documented design and the shipped code disagree
+            today.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note note--warn">
+      <span class="note__k">Also corrected</span>
+      <p>
+        <code>package.json</code> pins <code>antd ^5.17.0</code>, but <strong>5.29.3 is installed</strong>.
+        This matters: the overlay tier depends on <code>ConfigProvider</code>’s <code>modal</code> /
+        <code>drawer</code> config, verified present in the installed
+        <code>config-provider/context.d.ts</code>. Bump the pin before Phase 1, or a clean
+        <code>npm install</code> on another machine breaks it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="part">Part I · The design system</div>
+    <h2>Material tiers</h2>
+    <p class="sub">
+      The core idea: a surface’s translucency is a function of its <strong>information density</strong>, not its
+      importance. A hero and a hundred-row table want opposite things from glass.
+    </p>
+
+    <div class="tiers">
+      <div class="tier tier--1">
+        <span class="tier__n">1</span>
+        <span class="tier__name">Chrome</span>
+        <span class="tier__use">Sidebar, topbar — sticky, rasterized once, never scrolls</span>
+        <span class="tier__blur on">blur</span>
+      </div>
+      <div class="tier tier--2">
+        <span class="tier__n">2</span>
+        <span class="tier__name">Feature</span>
+        <span class="tier__use">Hero, KPI cards, widget and panel cards, board columns</span>
+        <span class="tier__blur">no blur</span>
+      </div>
+      <div class="tier tier--3">
+        <span class="tier__n">3</span>
+        <span class="tier__name">Data</span>
+        <span class="tier__use">Tables, dense lists, any row nested inside a tier-2 card</span>
+        <span class="tier__blur">no blur</span>
+      </div>
+      <div class="tier tier--4">
+        <span class="tier__n">4</span>
+        <span class="tier__name">Overlay</span>
+        <span class="tier__use">Modals, drawers, popovers, dropdowns — new in Phase 1</span>
+        <span class="tier__blur on">blur</span>
+      </div>
+    </div>
+
+    <h4>Rules that follow, and are not negotiable per page</h4>
+    <ul>
+      <li><strong>A surface nested inside a tier-2 card is tier 3.</strong> Already established by
+        <code>.dash-uploads__row</code> and <code>.quick-action-row</code> on the dashboard, and by
+        <code>.cand-card</code> in the last phase.</li>
+      <li><strong>Only tiers 1 and 4 blur.</strong> Tiers 2 and 3 scroll, and a <code>backdrop-filter</code> on a
+        scrolling surface re-blurs its backdrop every frame — over soft gradients with 3% grain it buys nothing
+        visible. This is measured, not assumed.</li>
+      <li><strong>Light-mode chrome is opaque white, not tinted glass.</strong> A translucent pane is only ever
+        as neutral as what shows through it; lowering alpha cannot achieve this. Already shipped — do not
+        “fix” it back.</li>
+    </ul>
+
+    <h3>The inline-style law</h3>
+    <p>
+      This rule determines the effort of every phase, so read it once carefully. An inline
+      <code>style={{ background: … }}</code> <strong>cannot be overridden by any stylesheet</strong> without
+      <code>!important</code> — and <code>!important</code> in a stylesheet beats a non-important inline
+      declaration. That asymmetry produces two distinct failure modes, and you need to recognise both.
+    </p>
+
+    <div class="fails">
+      <div class="fail">
+        <div class="fail__k">Failure A</div>
+        <h4>The slab</h4>
+        <p>
+          A page card carries <code>.glass-card</code>, but a panel inside it paints an inline
+          <code>--ink-3</code> fill. The card goes translucent; the panel stays a flat rectangle stuck to the
+          glass. The last phase hit this on <em>every</em> nested surface of both its pages.
+        </p>
+        <div class="fail__demo">
+          <span class="fail__slab"></span>
+          <span class="fail__cap">opaque fill survives<br>on a translucent pane</span>
+        </div>
+      </div>
+      <div class="fail">
+        <div class="fail__k">Failure B</div>
+        <h4>The silent kill</h4>
+        <p>
+          A rule using the <code>border</code> shorthand with <code>!important</code> overrides an inline
+          <code>borderInlineStart</code> that was carrying <em>data</em> — a status colour. The information
+          disappears with no error. <strong>Phase 4 will hit this</strong> on
+          <code>.cp-candidate-card</code>.
+        </p>
+        <div class="fail__demo">
+          <span class="fail__lost gone"></span>
+          <span class="fail__cap">status accent erased<br>by a shorthand border</span>
+        </div>
+      </div>
+    </div>
+
+    <h4>The remedy, in the order you should reach for it</h4>
+    <ol>
+      <li>Move the declaration into a class whose values are <strong>byte-identical</strong> to what they
+        replace, so nothing outside <code>.ats-v2</code> shifts by a pixel. Only then can the scoped rule
+        restyle it.</li>
+      <li>If the value is <strong>data-derived</strong> — a status colour, a metric hue, an avatar colour — pass
+        it as a <strong>CSS custom property</strong> and let CSS own the property. Established twice already:
+        <code>--stat-color</code> on <code>StatCard</code>, <code>--kpi-color</code> on <code>KpiCard</code>.
+        This is the fix for Failure B.</li>
+      <li>Never use the <code>border</code> shorthand on a surface whose border encodes meaning. Set
+        <code>border-block</code> and <code>border-inline-end</code>, and leave the meaningful side alone.</li>
+    </ol>
+
+    <h4>Inline-style debt — this is your effort estimate</h4>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>File</th><th style="text-align:right">Inline decls</th><th style="text-align:right">Raw hex</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>CandidateScreening.jsx</code></td><td class="num">88<span class="bar" style="width:100%"></span></td><td class="num">39</td></tr>
+          <tr><td><code>Candidates.jsx</code></td><td class="num">78<span class="bar" style="width:89%"></span></td><td class="num">12</td></tr>
+          <tr><td><code>AdminDashboard.jsx</code></td><td class="num">61<span class="bar" style="width:69%"></span></td><td class="num">25</td></tr>
+          <tr><td><code>MRF.jsx</code></td><td class="num">47<span class="bar" style="width:53%"></span></td><td class="num">13</td></tr>
+          <tr><td><code>Settings.jsx</code></td><td class="num">29<span class="bar" style="width:33%"></span></td><td class="num">0</td></tr>
+          <tr><td><code>Analytics.jsx</code></td><td class="num">28<span class="bar" style="width:32%"></span></td><td class="num">37</td></tr>
+          <tr><td><code>EmailManagement.jsx</code></td><td class="num">24<span class="bar" style="width:27%"></span></td><td class="num">3</td></tr>
+          <tr><td><code>VendorPortal.jsx</code></td><td class="num">19<span class="bar" style="width:22%"></span></td><td class="num">23</td></tr>
+          <tr><td><code>VendorDashboard.jsx</code></td><td class="num">13<span class="bar" style="width:15%"></span></td><td class="num">19</td></tr>
+          <tr><td><code>HRUpload.jsx</code></td><td class="num">12<span class="bar" style="width:14%"></span></td><td class="num">16</td></tr>
+          <tr><td><code>Pipeline.jsx</code></td><td class="num">7<span class="bar" style="width:8%"></span></td><td class="num">32</td></tr>
+          <tr><td><code>CandidatePipelinePrototype.jsx</code></td><td class="num">15<span class="bar" style="width:17%"></span></td><td class="num">57</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Three shared style constants are high leverage — fixing each converts several surfaces at once:
+      <code>PANEL_STYLE</code> (duplicated in <code>Analytics.jsx:78</code> and
+      <code>DeliveryMonitoring.jsx:35</code> — consolidate), and <code>SECTION_CARD_STYLE</code>
+      (<code>VendorDashboard.jsx:41</code>).
+    </p>
+
+    <h3>Shared-class couplings</h3>
+    <p class="sub">
+      Any phase touching a shared base class must re-check every other page using it. These are verified.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Class</th><th>Consumers</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>.glass</code> <em>(bare)</em></td>
+            <td><code>Analytics.jsx:875</code>, topbar, <code>EmailManagement</code> ×3</td>
+            <td><strong>Landmine.</strong> Styled by <code>index.css:840</code>, never touched by
+              <code>aurora-glass.css</code>. Convert <code>/analytics</code> without renaming this and its main
+              tab container stays flat under glass chrome.</td>
+          </tr>
+          <tr>
+            <td><code>.screening-tabs</code></td>
+            <td><code>CandidateScreening</code>, <code>Analytics.jsx:877</code></td>
+            <td>Already styled; inert on Analytics today, <strong>activates</strong> the moment it joins.</td>
+          </tr>
+          <tr>
+            <td><code>.cp-candidate-card</code>, <code>.cp-avatar</code></td>
+            <td><code>Pipeline.jsx</code>, <code>CandidatePipelinePrototype.jsx</code></td>
+            <td>Scoped rules stay inert on the prototype until it joins.</td>
+          </tr>
+          <tr>
+            <td><code>.kpi-card</code></td>
+            <td>Vendor Dashboard, HR/Vendor upload, prototype</td>
+            <td>Pre-styled in Phase 0, <strong>still inert</strong> — activates in Phase 5.</td>
+          </tr>
+          <tr>
+            <td><code>.upload-page</code></td>
+            <td><code>HRUpload</code>, <code>VendorPortal</code></td>
+            <td>Near-identical structure — convert as one unit.</td>
+          </tr>
+          <tr>
+            <td><code>.glass-card</code></td>
+            <td>Dashboard widgets, <code>CandidateDetail</code>, <code>CandidateScreening</code>, <code>LoadingSkeleton</code></td>
+            <td>Base rule is <strong>unscoped</strong> at <code>index.css:848</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The overlay tier</h3>
+    <p>
+      Forty dialogs cannot be converted by hand without drift, and they are unreachable from
+      <code>.ats-v2</code>. Both problems have one solution — component-level config on the existing provider,
+      verified against the installed antd 5.29.3:
+    </p>
+    <div class="phase__files">&lt;ConfigProvider<br>
+    &nbsp;&nbsp;theme={currentTheme}<br>
+    &nbsp;&nbsp;modal={{ classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } }}<br>
+    &nbsp;&nbsp;drawer={{ classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } }}<br>
+    &gt;</div>
+    <p>
+      Every dialog in the app then carries the class wherever it portals to — <strong>no per-file JSX edits, no
+      <code>getContainer</code> changes.</strong> One CSS block, written <em>unscoped</em> on purpose, because
+      portals sit outside <code>.ats-v2</code> by construction. The same mechanism extends to
+      <code>Select</code>, <code>Dropdown</code>, <code>Tooltip</code>, <code>Popover</code> and
+      <code>DatePicker</code> panels, all of which portal to body and are flat today.
+    </p>
+    <div class="note note--warn">
+      <span class="note__k">Respect what exists</span>
+      <p>
+        Three dialogs have bespoke treatments that must survive: <code>.conv-modal</code>,
+        <code>.dash-cmdk</code>, and the global <code>.ant-modal</code> viewport caps at
+        <code>index.css:1741</code> — those caps are a real fix for footer buttons becoming unreachable on
+        small laptops. Do not regress them.
+      </p>
+    </div>
+
+    <h3>Primitives to build once, then reuse</h3>
+    <p class="sub">
+      The dashboard invented these; the rest of the app re-implements them ad hoc. Building them in Phase 2 is
+      what stops phases 3–8 from drifting.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Primitive</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>MetricInfo</code> + registry</td><td>Built, dashboard-only</td><td>Extend as phases surface new metrics. Analytics and Vendor KPIs have none today.</td></tr>
+          <tr><td><code>StatCard</code></td><td>Built</td><td>Adopt on <code>/analytics</code> in place of ad-hoc tiles — gains tooltips it lacks.</td></tr>
+          <tr><td><code>KpiCard</code></td><td>Glass rules <strong>inert</strong></td><td>Activates Phase 5 with zero JSX change.</td></tr>
+          <tr><td>Empty states</td><td>Ad hoc</td><td>One component. Explain <em>why</em> it’s empty, offer the next action. A bare “No data” is not acceptable.</td></tr>
+          <tr><td>Loading states</td><td>Mixed spinner / skeleton</td><td>Skeletons shaped like what’s loading, not a centred spinner that collapses layout.</td></tr>
+          <tr><td>Error states</td><td>Ad hoc <code>Alert</code></td><td>One component; actionable message plus retry.</td></tr>
+          <tr><td>Density scale</td><td>Undefined</td><td>Define once. Control heights and row padding vary per page for no reason.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>Motion.</strong> Every animation is <code>transform</code> / <code>opacity</code> only. Never
+      animate <code>background-position</code>. Never use <code>mix-blend-mode</code> on a full-viewport layer —
+      measured at <strong>23% of frames over 20ms</strong>, versus ~3% without. The app-wide
+      <code>prefers-reduced-motion</code> guard zeroes all of it for free.
+    </p>
+    <p>
+      <strong>Accessibility applies to every phase, not a final pass.</strong> Each phase adds its own new
+      surfaces to the existing <code>prefers-reduced-transparency</code> block. Carve-outs are allowed only
+      where translucency carries the <em>only</em> cue for state. Contrast holds in both themes — the dark-mode
+      sweep fixed ~200 hardcoded colours, and every phase re-checks its own screens before calling done.
+    </p>
+  </section>
+
+  <section>
+    <div class="part">Part II · Execution</div>
+    <h2>Nine phases</h2>
+    <p class="sub">
+      System before surfaces, then routes in ascending order of structural risk. Phase 1 removes the biggest
+      visual gap and unblocks everything after it; Phase 2 builds the primitives so phases 3–8 apply rules
+      rather than invent them. The numbering is a real dependency order, not a label.
+    </p>
+    <p>
+      The gate is <code>V2_ROUTES</code> at <code>MainLayout.jsx:108</code>.
+      <strong>Advance the rollout by adding to that array; revert any phase by removing its entry.</strong>
+    </p>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">1</div><span class="phase__tag is-key">Unblocks all</span></div>
+      <div>
+        <h3>The overlay tier, and the blur fix</h3>
+        <p class="phase__why">First because it is the biggest visual gap in the app, and every later phase inherits it instead of re-deferring it.</p>
+        <div class="phase__files">App.jsx · theme/aurora-glass.css · theme/index.css</div>
+        <ul>
+          <li>Add <code>--glass-4-*</code> tokens for both themes.</li>
+          <li>Add <code>modal</code> + <code>drawer</code> config to the provider at <code>App.jsx:264</code>.</li>
+          <li>Write the unscoped <code>.ats-overlay</code> block; document the scope exception in the file header.</li>
+          <li>Extend to <code>Select</code>, <code>Dropdown</code>, <code>Tooltip</code>, <code>Popover</code>, <code>DatePicker</code>.</li>
+          <li><strong>Apply the <code>.glass-card</code> blur fix</strong> — this touches <code>/dashboard</code>, so it gets its own before/after screenshots in both themes.</li>
+        </ul>
+        <p class="phase__why"><strong>Verify:</strong> open a dialog from a converted route and an unconverted one — both get the tier, since it is global by design. Walk <code>PipelineDrawer</code>’s eleven. Confirm footers stay reachable at 1366×768.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">2</div><span class="phase__tag is-key">Foundation</span></div>
+      <div>
+        <h3>Primitives and the token sweep</h3>
+        <p class="phase__why">Phases 3–8 get materially cheaper and cannot drift once these exist.</p>
+        <div class="phase__files">components/common/ · constants/metricDefinitions.js · theme/index.css</div>
+        <ul>
+          <li>Build the empty, loading and error primitives.</li>
+          <li>Audit and standardise <code>PageHeader</code>; define the density scale as tokens.</li>
+          <li>Consolidate the duplicated <code>PANEL_STYLE</code> into one shared class.</li>
+          <li>Extend <code>metricDefinitions</code> for the metrics phases 5–6 will surface.</li>
+        </ul>
+        <p class="phase__why"><strong>Verify:</strong> no visual change to converted routes — this phase is additive.</p>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">3</div><span class="phase__tag">Route</span></div>
+      <div>
+        <h3><code>/candidates</code></h3>
+        <div class="phase__files">pages/Candidates.jsx · MainLayout.jsx:108</div>
+        <ul>
+          <li>Search card → tier 2 with the spotlight, this page’s one feature surface. <strong>Drop the green
+            <code>borderTop</code></strong> — a flat rail under a gradient rim is the old vocabulary showing through.</li>
+          <li>Table card → tier 3. <strong>First real consumer of <code>.glass-3</code> in the app</strong> —
+            verify its untested <code>.ant-table</code> rules, plus what they don’t cover: placeholder, row hover, pagination.</li>
+          <li>Remove the now-redundant <code>/candidates/:id</code> regex at <code>MainLayout.jsx:193</code>.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">4</div><span class="phase__tag is-risk">Failure B</span></div>
+      <div>
+        <h3><code>/pipeline</code></h3>
+        <div class="phase__files">pages/Pipeline.jsx · theme/aurora-glass.css</div>
+        <ul>
+          <li>Header, search and filters → one tier-2 toolbar card; they float unanchored on the aurora today.</li>
+          <li>Stage columns → tier 2, <strong>hover lift cancelled</strong> — a whole column bouncing as the pointer crosses it is wrong.</li>
+          <li>Candidate cards → tier 3, by the nested-in-tier-2 rule.</li>
+          <li><strong>Failure B lives here.</strong> The card’s inline <code>borderInlineStart</code> encodes status. Move it to a <code>--cp-accent</code> custom property; never use the <code>border</code> shorthand on this class; preserve the accent on hover.</li>
+          <li>32 raw hexes in <code>STAGE_ACCENT</code> / <code>AVATAR_PALETTE</code> → tokens.</li>
+          <li><strong>The perf probe scrolls the board horizontally</strong>, not the window.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">5</div><span class="phase__tag is-risk">Ship as one</span></div>
+      <div>
+        <h3>HR upload, Vendor upload, Vendor dashboard, MRF</h3>
+        <p class="phase__why">
+          <code>/vendor</code> and <code>/vendor-dashboard</code> are the <em>entire</em> reachable app for the
+          vendor role — converting one alone flips a vendor’s chrome between glass and flat on every click.
+        </p>
+        <ul>
+          <li><code>HRUpload</code> and <code>VendorPortal</code> share <code>.upload-page</code> — one treatment, applied twice.</li>
+          <li><strong><code>.kpi-card</code>’s glass rules activate here for the first time.</strong> They should light up with no JSX change; verify that claim.</li>
+          <li><code>SECTION_CARD_STYLE</code> → shared class; records tables → tier 3, reusing what Phase 3 verified.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">6</div><span class="phase__tag is-risk">Rework</span></div>
+      <div>
+        <h3><code>/analytics</code></h3>
+        <p class="phase__why">The page that breaks the “just widen the boolean” premise.</p>
+        <ul>
+          <li><strong>Rename <code>className="glass"</code> → <code>glass-3</code></strong> at <code>Analytics.jsx:875</code>. Without this the main tab container stays flat under glass chrome.</li>
+          <li>Ad-hoc KPI tiles → shared <code>StatCard</code> — <strong>they gain tooltips they lack entirely today.</strong></li>
+          <li><code>.screening-tabs</code> rules <strong>activate here</strong>; verify against <code>/filtering</code>, which shares the class.</li>
+          <li>Five inner tables → tier 3. 37 raw hexes → tokens.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">7</div><span class="phase__tag">Low traffic</span></div>
+      <div>
+        <h3><code>/settings</code>, <code>/email</code></h3>
+        <ul>
+          <li><code>Settings.jsx</code> — no existing glass classes; 29 inline declarations, zero hex.</li>
+          <li><code>EmailManagement.jsx</code> — three <code>glass no-lift</code> panes → <code>glass-3 no-lift</code>; the existing <code>no-lift</code> already signals tier-3 intent.</li>
+          <li>CodeMirror is already theme-aware — verify, don’t rebuild.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">8</div><span class="phase__tag is-risk">Structural</span></div>
+      <div>
+        <h3>Admin portal, and the prototype</h3>
+        <p class="phase__why">Biggest structural departure — deliberately last, so every CSS pattern is proven elsewhere first.</p>
+        <ul>
+          <li>The <code>isAdminPath</code> branch is a <strong>separate shell</strong>: its own topbar, no Sider, its own <code>.admin-stat</code> family, its own background. Widening the gate does nothing here.</li>
+          <li>Approach: keep the header-only shell — adding a Sider is a <em>nav</em> redesign, out of scope — mount the backdrop, add the scope class, give the topbar tier-1 chrome, and add an <code>.admin-stat</code> block mirroring the <code>.kpi-card</code> approach.</li>
+          <li><code>AdminDashboard.jsx</code>: 61 inline, 25 hex, 4 modals, plus scoped table rules needing tier-3 reconciliation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase__rail"><div class="phase__n">9</div><span class="phase__tag is-risk">Decision</span></div>
+      <div>
+        <h3>Public pages and auth</h3>
+        <p class="phase__why">Currently outside the glass system by construction — and partly that is correct.</p>
+        <ul>
+          <li><strong>Public token pages</strong> render outside <code>MainLayout</code> under <code>ForceLight</code>. <code>PublicPageShell</code> deliberately mirrors the branded <em>email</em> shell so the click-through feels continuous — <strong>that is a correct decision and glass would break it.</strong> Recommendation: keep the shell, bring typography, spacing, density and the Phase 2 primitives into line. These are the only AAPNA surface most external people ever see.</li>
+          <li><strong>AuthLayout</strong> is a distinct tree, and <code>/login</code> is the pilot’s own pixel-diff non-regression anchor. Changing it means re-baselining that anchor — do it knowingly or not at all.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="part">Verification</div>
+    <h2>Definition of done</h2>
+    <p class="sub">Every phase, no exceptions. The per-phase checks guarantee no single phase regressed; the final walk is the actual acceptance test.</p>
+    <ol class="dod">
+      <li><code>npm run build</code> clean.</li>
+      <li>Verified in <strong>both</strong> themes.</li>
+      <li>New surfaces added to the <code>prefers-reduced-transparency</code> block.</li>
+      <li>Inline-style audit of every file touched — no Failure A slabs, no Failure B silent kills.</li>
+      <li>Raw brand hexes in touched files replaced with tokens.</li>
+      <li>Shared-class non-regression — assert on <strong>computed styles</strong>, not screenshots alone.</li>
+      <li>Scroll-perf probe for any table, list or board: <strong>continuous rAF, one <code>scrollBy</code> per frame.</strong> A wheel-then-wait probe reports phantom drops here — a documented trap.</li>
+      <li><code>UI-CHANGELOG.md</code> entry: what was built, what was deliberately left, what was verified.</li>
+    </ol>
+
+    <div class="note note--warn">
+      <span class="note__k">Run the perf probe on an idle machine</span>
+      <p>
+        A previous session returned ~99% dropped frames on <em>every</em> arm including the no-glass control.
+        That was a throttled host — the disk had hit zero bytes free — and it measures nothing. Uniform results
+        across all arms means the host, not the design.
+      </p>
+    </div>
+
+    <p>
+      <strong>Final acceptance, after Phase 8:</strong> walk every sidebar route in both themes, in one sitting,
+      opening at least one dialog per screen. No screen may read as belonging to a different product than the
+      one before it.
+    </p>
+
+    <h3>Explicitly out of scope</h3>
+    <p>
+      No phase touches data fetching, aggregation, permissions, pagination, scoring, the shortlist and reject
+      flow, or email sending. <strong>Every phase here is visual.</strong> <code>Pipeline.jsx</code> in
+      particular persists real data and sends real candidate emails — visual-only changes there, no exceptions.
+    </p>
+  </section>
+
+  <section>
+    <div class="part">Open items</div>
+    <h2>Decisions for the team</h2>
+    <div class="opens">
+      <div class="open">
+        <h4>Phase 8 — convert the prototype, or retire it?</h4>
+        <p>It is a demo page, off the sidebar, kept for client walkthroughs and cited as a design reference by
+          several components. Converting costs a phase; leaving it makes it look abandoned beside the real board.</p>
+      </div>
+      <div class="open">
+        <h4>Phase 9 — how far into the public pages?</h4>
+        <p>Recommendation above is typography, spacing and primitives only, keeping the email-mirroring shell intact.</p>
+      </div>
+      <div class="open">
+        <h4>Bump the antd pin before Phase 1</h4>
+        <p><code>package.json</code> says <code>^5.17.0</code>; 5.29.3 is installed. The overlay tier needs ≥5.19
+          for the provider config. A clean install elsewhere breaks it otherwise.</p>
+      </div>
+      <div class="open">
+        <h4>Pre-existing bug, unrelated but still open</h4>
+        <p><code>/candidates/:id</code> renders a raw JSON blob in Professional Summary for some records — the
+          <code>summary</code> column holds serialised data rather than prose. Needs a look at what writes it
+          during resume parsing.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    AAPNA ATS · frontend design rollout · supersedes the Phase 0–6 list in <code>UI-CHANGELOG.md</code><br>
+    Every claim in this document was verified against the codebase, not carried over from the previous plan.
+  </footer>
+
+</div>
+</body>
+</html>

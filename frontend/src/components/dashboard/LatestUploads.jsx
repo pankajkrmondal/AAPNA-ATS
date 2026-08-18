@@ -13,7 +13,7 @@
  * Candidate.
  */
 import { useEffect, useState } from 'react';
-import { Card, Typography, Skeleton, Empty } from 'antd';
+import { Card, Typography, Skeleton, Empty, Tooltip } from 'antd';
 import { ArrowRightOutlined } from '@ant-design/icons';
 import dashboardService from '../../services/dashboardService';
 import MetricInfo from '../common/MetricInfo';
@@ -53,15 +53,17 @@ export default function LatestUploads({ onNavigate }) {
           </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>The five most recent candidates</Text>
         </div>
-        <span
-          className="dash-card-link"
-          role="button"
-          tabIndex={0}
-          onClick={() => onNavigate('/candidates')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/candidates'); }}
-        >
-          Search all candidates <ArrowRightOutlined style={{ fontSize: 11 }} />
-        </span>
+        <Tooltip title="Open Search Candidates — the full database, with search and filters.">
+          <span
+            className="dash-card-link"
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('/candidates')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/candidates'); }}
+          >
+            Search all candidates <ArrowRightOutlined style={{ fontSize: 11 }} />
+          </span>
+        </Tooltip>
       </div>
 
       {loading ? (
@@ -71,21 +73,38 @@ export default function LatestUploads({ onNavigate }) {
       ) : (
         <div className="dash-uploads">
           {rows.map((r) => (
-            <div
+            /* Every row is clickable and nothing said where it went, or who the person
+               is beyond a truncated name — both live in the hover now. */
+            <Tooltip
               key={r.key ?? r.email ?? r.name}
-              className="dash-uploads__row"
-              role="button"
-              tabIndex={0}
-              onClick={() => onNavigate('/candidates')}
-              onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('/candidates'); }}
+              placement="left"
+              title={(
+                <span>
+                  <strong>{r.name || 'Unnamed candidate'}</strong>
+                  <br />
+                  {r.position || 'No role recorded'}
+                  {r.email ? <><br />{r.email}</> : null}
+                  {r.uploadedAt ? <><br />Added {r.uploadedAt}</> : null}
+                  <br />
+                  <em>Click to open Search Candidates</em>
+                </span>
+              )}
             >
-              <span className="dash-uploads__avatar">{initials(r.name)}</span>
-              <span className="dash-uploads__body">
-                <span className="dash-uploads__name">{r.name || '—'}</span>
-                <span className="dash-uploads__role">{r.position || 'Role not specified'}</span>
-              </span>
-              <span className="dash-uploads__time mono">{r.uploadedAt || ''}</span>
-            </div>
+              <div
+                className="dash-uploads__row"
+                role="button"
+                tabIndex={0}
+                onClick={() => onNavigate('/candidates')}
+                onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('/candidates'); }}
+              >
+                <span className="dash-uploads__avatar">{initials(r.name)}</span>
+                <span className="dash-uploads__body">
+                  <span className="dash-uploads__name">{r.name || '—'}</span>
+                  <span className="dash-uploads__role">{r.position || 'Role not specified'}</span>
+                </span>
+                <span className="dash-uploads__time mono">{r.uploadedAt || ''}</span>
+              </div>
+            </Tooltip>
           ))}
         </div>
       )}

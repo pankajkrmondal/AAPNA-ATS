@@ -27,15 +27,18 @@ const prefersReducedMotion = () =>
 
 function ChartTip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
+  const n = payload[0].value;
   return (
     <div className="dash-chart-tip">
       <div className="dash-chart-tip__label">{label}</div>
-      <div className="dash-chart-tip__value">{payload[0].value} added</div>
+      <div className="dash-chart-tip__value">
+        {n === 0 ? 'No candidates added' : `${n} candidate${n === 1 ? '' : 's'} added`}
+      </div>
     </div>
   );
 }
 
-export default function HiringTrendsCard({ candidates = [], rangeDays = 30, loading = false }) {
+export default function HiringTrendsCard({ candidates = [], rangeDays = 30, role = '', loading = false }) {
   const data = useMemo(() => bucketByDay(candidates, rangeDays), [candidates, rangeDays]);
   const total = useMemo(() => data.reduce((s, d) => s + d.count, 0), [data]);
   const peak = useMemo(() => data.reduce((m, d) => Math.max(m, d.count), 0), [data]);
@@ -45,11 +48,13 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
       <div className="dash-card-head">
         <div>
           <Title level={5} style={{ margin: 0 }}>Hiring Trends <MetricInfo metric="hiringTrends" size={12} /></Title>
+          {/* Naming the active role here, not just in the picker, is what tells the
+              reader why the shape of the chart just changed under them. */}
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            New candidates added · last {rangeDays} days
+            New candidates added · last {rangeDays} days{role ? ` · ${role}` : ''}
           </Text>
         </div>
-        <Tooltip title="Candidates entering the system across the selected range. Computed from the 200 most-recently-added profiles, so a range reaching further back than that window covers may under-count its earlier days.">
+        <Tooltip title={`${total.toLocaleString()} candidates were added in the last ${rangeDays} days — the sum of every day on this chart. Hover a point to see a single day; busiest day so far is ${peak}.`}>
           <div className="dash-card-metric">
             <span className="dash-card-metric__num">{total.toLocaleString()}</span>
             <span className="dash-card-metric__cap">total <InfoCircleOutlined /></span>
