@@ -1031,6 +1031,16 @@ candidates, MRF, candidates, dashboard stats and email templates.
 
 This is precisely what the M6 fix was for: module on, vendor still out.
 
+✅ **Cleanup done.** The toggle was revoked at 21:03 IST on 2026-08-20 and verified
+`is_enabled = false` against the database. The account keeps `vendor_upload` and `vendor_dashboard`,
+so the revoke did not overshoot. **No vendor over-privilege remains ahead of the demo.**
+
+⚠️ **One process note.** That flag changed four times in a day, including once *mid-pass* at 13:38 by
+someone outside this test run — which silently broke VEND-11's precondition and would have made the
+case pass for the wrong reason (refused by the module gate, never reaching `requireStaff`). It was
+caught only because the flag was re-checked against the database rather than trusted from a note
+written hours earlier. Any re-run of VEND-11 should begin with that check.
+
 ### DOC-05 re-run — ✅ PASS, both D6 and D7 confirmed dead
 
 | Payload | Result |
@@ -1182,20 +1192,17 @@ Both assert a **403**, and both can pass for the wrong reason:
 - **VEND-11** expects a vendor to be refused by `requireStaff` **even with** the pipeline module
   switched on — that is the whole point of the M6 fix.
 
-  ⚠️ **Updated 2026-08-20 19:09 — the precondition has since been undone.** `sahil.dubey673` (user 9)
-  now has `recruitment_pipeline: is_enabled = false`, revoked at 13:38 that day. Verified directly
-  against `rpa_user_module_permissions`.
+  ✅ **RESOLVED 2026-08-20.** VEND-11/13 ran with the module **enabled** and passed — refused at
+  `requireStaff` (`auth.js:200`), which is the case's whole point. The toggle was then revoked at
+  21:03 IST and verified `is_enabled = false`. See *Group 3 and the re-tests* below.
 
-  **Running VEND-11 in this state proves nothing:** the vendor would be stopped by
-  `checkModuleAccess` before `requireStaff` is ever reached — a 403 from the wrong guard, which is
-  exactly the failure mode this section was written to warn about. The module must be **re-enabled
-  for the duration of VEND-11/13 and revoked afterwards**.
+  ⚠️ **It was nearly tested wrong.** The flag was revoked mid-pass at 13:38 by someone outside this
+  run, which would have made the vendor fail at the module gate and never reach `requireStaff` — a
+  403 from the wrong guard, box ticked, nothing proved. Exactly the trap this section warns about.
+  Caught only by re-checking the database instead of trusting a note.
 
-  The good news is that the security worry is gone: there is no lingering vendor over-privilege
-  sitting on the system ahead of the demo.
-
-  **`biswajit.sur351` (PIPE-08) was checked at the same time and is fine** — `recruitment_pipeline`
-  is still enabled, so its 403 will genuinely come from `requireAdmin`.
+  **`biswajit.sur351` (PIPE-08) was checked alongside and is correct** — `recruitment_pipeline`
+  enabled, so its 403 genuinely comes from `requireAdmin`.
 
 ---
 

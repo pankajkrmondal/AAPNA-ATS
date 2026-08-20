@@ -33,7 +33,7 @@ behaviour was quoted rather than summarised.
 | ✅ | **Group 1 mailbox/calendar half** | PASS — two distinct attendees, 1 mail per side at each step. **Answered the open D4 question: yes, Exchange sends its own `Canceled:` notice** |
 | ✅ | **PIPE-08** — recruiter refused by `requireAdmin` | PASS — 5 writes refused at `auth.js:169`, reads still 200 |
 | ✅ | **VEND-11 / VEND-13** — vendor refused by `requireStaff` | PASS — 8 routes refused at `auth.js:200`, module **on**, vendor's own routes still 200 |
-| 🔴 | **CLEANUP — revoke `sahil.dubey673`'s pipeline toggle** | **CURRENTLY ON** — verified in the DB. Re-enabled 19:33 for the VEND-11 run. **Must be revoked before the demo** |
+| ✅ | **CLEANUP — revoke `sahil.dubey673`'s pipeline toggle** | **DONE** — revoked 2026-08-20 21:03 IST, verified `is_enabled = false` in the DB. Vendor keeps `vendor_upload` + `vendor_dashboard`; the revoke did not overshoot |
 | ✅ | DOC-05 re-run after the D6/D7 fixes | PASS — `.exe` → 400, renamed executable → 400, and **no alert email fired** (measured as a differential) |
 | ✅ | D9 re-test | PASS — reason reaches the audit line *and* the Outlook cancellation notice |
 | ⊘ | O7, SCHED-18, SCHED-11, ZEK-05…12 | Blocked — see *Cannot be run at all* |
@@ -57,13 +57,12 @@ behaviour was quoted rather than summarised.
 authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding, HR truncation,
 201-vs-200).
 
-### Two things that block a clean demo
+### What blocks a clean demo
 
-1. 🔴 **Revoke `sahil.dubey673`'s `recruitment_pipeline` toggle.** Verified **on** in the database
-   right now. It was re-enabled at 19:33 so VEND-11 could test the correct guard; that is done, and
-   the flag must not be live during the demo. **This is the only outstanding item that is a live
-   permissions issue rather than a test or a decision.**
-2. 🔴 **D4 + D10 together — and D4 is now worse than documented.** The Group 1 mailbox check
+✅ *The vendor over-privilege is resolved — `sahil.dubey673`'s `recruitment_pipeline` was revoked at
+21:03 IST on 2026-08-20 and verified off. No live permissions issue remains.*
+
+1. 🔴 **D4 + D10 together — and D4 is now worse than documented.** The Group 1 mailbox check
    confirmed that a reschedule sends the candidate **three** messages: the app's "rescheduled" mail,
    a fresh Exchange invite, and a `Canceled:` notice for the destroyed meeting. So the candidate is
    told the interview is cancelled at the same moment they are told it moved — and the drawer still
@@ -332,16 +331,14 @@ Eight routes refused — reads and writes alike (`GET /api/pipeline`, `/40`, `/s
 `/api/vendor/candidates`, `/api/mrf`, `/api/candidates`, `/api/dashboard/stats`,
 `/api/email/templates`. So the vendor account works; only staff-gated routes refuse.
 
-### 🔴 ☐ STEP 3 STILL OWED — revoke the toggle
+### ✅ Step 3 — toggle revoked
 
-**Verified live in the database 2026-08-20 19:5x: `recruitment_pipeline` is `is_enabled = true` for
-`sahil.dubey673` right now.**
+Done 2026-08-20 21:03 IST. Verified in the database: `is_enabled = false`, `updated_at 15:33:02Z`.
 
-This is the deliberate temporary over-privilege. VEND-11/13 are done, so it has served its purpose
-and **must be revoked before the demo**. It is the one outstanding item that is a live
-permissions issue rather than a test or a decision.
+The revoke was checked for overshoot as well — `sahil.dubey673` retains `vendor_upload` and
+`vendor_dashboard`, which the account legitimately needs, and `biswajit.sur351` was untouched.
 
-**Done:** ☐
+**Done:** ☑
 
 ---
 
@@ -353,22 +350,27 @@ rather than the module check. No action needed — checked at the same time as t
 
 ---
 
-### 🔴 ☐ CLEANUP — the vendor's pipeline toggle — **CURRENTLY ON, must be revoked**
+### ☑ CLEANUP — the vendor's pipeline toggle — **REVOKED AND VERIFIED**
 
-This flag has moved twice today, so trust the database rather than any note:
+Final state: `sahil.dubey673` `recruitment_pipeline` = **disabled**, `updated_at 15:33:02Z`
+(21:03 IST, 2026-08-20). Checked for overshoot too — the account keeps `vendor_upload` and
+`vendor_dashboard`, which it legitimately needs.
 
-| Time (IST) | State |
-|---|---|
-| 2026-08-19 | enabled, so VEND-11 would test the right guard |
-| 2026-08-20 13:38 | **revoked** by someone |
-| 2026-08-20 19:33 | **re-enabled** for the VEND-11 run |
-| 2026-08-20 ~19:5x | ✅ verified still **enabled** |
+The flag moved four times in one day, which is why every claim about it here is dated and sourced
+from the database rather than from memory:
 
-VEND-11/13 have now passed, so the flag has served its purpose. **Revoke it.** A vendor account
-holding `recruitment_pipeline` during a client demo is exactly the thing this whole case exists to
-guard against.
+| Time (IST) | State | Why |
+|---|---|---|
+| 2026-08-19 14:16 | enabled | so VEND-11 would test `requireStaff`, not the module gate |
+| 2026-08-20 13:38 | revoked | by someone mid-pass — silently broke VEND-11's precondition |
+| 2026-08-20 19:33 | re-enabled | for the VEND-11/13 run |
+| **2026-08-20 21:03** | **revoked** ✅ | cleanup, VEND-11/13 having passed |
 
-**Done:** ☐
+**Worth keeping:** a mid-pass permission change nearly made VEND-11 pass for the wrong reason — the
+vendor would have been stopped by the module gate instead of `requireStaff`. If this case is re-run,
+check the flag against the database first rather than trusting a note.
+
+**Done:** ☑
 
 ---
 
