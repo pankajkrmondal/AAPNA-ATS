@@ -30,12 +30,12 @@ behaviour was quoted rather than summarised.
 | ✅ | DOC-04 — client-side validation (O3) | PARTIAL — O3 confirmed, not silent, but see D8 |
 | ✅ | VEND-14/15 — vendor dashboard counts | PASS — reconciles exactly |
 | ✅ | DOC-11, OFFER-14, OFFER-15 | Automated instead — 12 cases, no browser needed |
-| ⏳ | **Group 1 mailbox/calendar half** | Two attendees on the event; mail counts; the Outlook "Meeting cancelled" question |
-| ⏳ | **PIPE-08** — recruiter refused by `requireAdmin` | Not started |
-| ⏳ | **VEND-11 / VEND-13** — vendor refused by `requireStaff` | Not started |
-| ✅ | ~~CLEANUP — revoke `sahil.dubey673`'s pipeline toggle~~ | **Already off** — verified in the DB 2026-08-20 19:09. Revoked at 13:38 today. ⚠️ But this now **breaks VEND-11's precondition** — see below |
-| ⏳ | DOC-05 re-run after the D6/D7 fixes | Expect **400** for a `.exe` and **400** for a renamed executable |
-| ⏳ | D9 re-test | Cancel with a reason, confirm it reaches the audit line |
+| ✅ | **Group 1 mailbox/calendar half** | PASS — two distinct attendees, 1 mail per side at each step. **Answered the open D4 question: yes, Exchange sends its own `Canceled:` notice** |
+| ✅ | **PIPE-08** — recruiter refused by `requireAdmin` | PASS — 5 writes refused at `auth.js:169`, reads still 200 |
+| ✅ | **VEND-11 / VEND-13** — vendor refused by `requireStaff` | PASS — 8 routes refused at `auth.js:200`, module **on**, vendor's own routes still 200 |
+| 🔴 | **CLEANUP — revoke `sahil.dubey673`'s pipeline toggle** | **CURRENTLY ON** — verified in the DB. Re-enabled 19:33 for the VEND-11 run. **Must be revoked before the demo** |
+| ✅ | DOC-05 re-run after the D6/D7 fixes | PASS — `.exe` → 400, renamed executable → 400, and **no alert email fired** (measured as a differential) |
+| ✅ | D9 re-test | PASS — reason reaches the audit line *and* the Outlook cancellation notice |
 | ⊘ | O7, SCHED-18, SCHED-11, ZEK-05…12 | Blocked — see *Cannot be run at all* |
 
 ### Defects — 10 found, 6 fixed
@@ -57,15 +57,17 @@ behaviour was quoted rather than summarised.
 authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding, HR truncation,
 201-vs-200).
 
-### One thing that blocks a clean demo
+### Two things that block a clean demo
 
-🔴 **D4 + D10 together.** Reschedule destroys the meeting, the emails do not carry the replacement,
-and the drawer keeps showing the dead one as live. Workaround for the drawer half: reopen it. No
-workaround for the email half.
-
-*(The `sahil.dubey673` over-privilege that used to sit here is resolved — the toggle was revoked on
-2026-08-20 at 13:38 and verified off. It now creates a testing problem rather than a security one;
-see VEND-11 in Group 3.)*
+1. 🔴 **Revoke `sahil.dubey673`'s `recruitment_pipeline` toggle.** Verified **on** in the database
+   right now. It was re-enabled at 19:33 so VEND-11 could test the correct guard; that is done, and
+   the flag must not be live during the demo. **This is the only outstanding item that is a live
+   permissions issue rather than a test or a decision.**
+2. 🔴 **D4 + D10 together — and D4 is now worse than documented.** The Group 1 mailbox check
+   confirmed that a reschedule sends the candidate **three** messages: the app's "rescheduled" mail,
+   a fresh Exchange invite, and a `Canceled:` notice for the destroyed meeting. So the candidate is
+   told the interview is cancelled at the same moment they are told it moved — and the drawer still
+   shows the dead link. Workaround for the drawer half: reopen it. None for the email half.
 
 ⚠️ **Nothing is committed.** Six fixes and five new test files are in the working tree only, and
 staging predates all of them.
@@ -307,27 +309,39 @@ the admin check is what refuses. Good as-is.
 
 ### ☐ VEND-11 / VEND-13 — vendor refused by `requireStaff`
 
-🔴 **STOP — the precondition is currently wrong. Read this before running.**
+### ✅ VEND-11 / VEND-13 — **PASS** (2026-08-20 evening)
 
-**Verified in the database 2026-08-20 19:09:** `sahil.dubey673` (user 9, role `vendor`) has
-`recruitment_pipeline: is_enabled = false`, revoked at **13:38 today**.
+Evidence: [phase3manualpassresults20260820.md](../test-claude-chrome/phase3manualpassresults20260820.md)
 
-**Running VEND-11 as things stand proves nothing.** The vendor would be refused by
-`checkModuleAccess` — because the module is off — and never reach `requireStaff`. You would see a
-403, tick the box, and have tested the wrong guard entirely. VEND-11 exists specifically to prove
-that a vendor is refused **even with the pipeline module switched on**, which is the whole point of
-the M6 fix.
+The toggle was re-enabled at **19:33 IST** (`updated_at 14:03:17Z`), so the precondition was correct
+for the run — the earlier "it's disabled, re-enable it first" warning had been overtaken by events.
 
-**Do this first:** re-enable `recruitment_pipeline` for `sahil.dubey673`, run VEND-11 and VEND-13,
-then revoke it again.
+**Exactly what M6 was meant to prove.** Pipeline module **on**, vendor still refused, and the refusal
+names itself in the stack:
 
-| Step | |
-|---|---|
-| ☐ 1. Re-enable `recruitment_pipeline` for `sahil.dubey673` | Admin → user modules |
-| ☐ 2. Run VEND-11 / VEND-13 — expect **403 from `requireStaff`**, not from `checkModuleAccess` | |
-| ☐ 3. **Revoke it again** | It must not be live during the demo |
+```
+Error: You do not have permission to perform this action.
+    at requireStaff (backend/src/middleware/auth.js:200:17)
+```
 
-**Observed:**
+Eight routes refused — reads and writes alike (`GET /api/pipeline`, `/40`, `/stages`, `/analytics`;
+`POST /40/advance`, `/40/outcome`, `/40/interview`, `/stages`). `POST /stages` stops at
+`requireStaff` and never reaches `requireAdmin`, which is the correct ordering.
+
+**Not a blanket refusal** — the same session returns 200 on `/api/vendor/dashboard`,
+`/api/vendor/candidates`, `/api/mrf`, `/api/candidates`, `/api/dashboard/stats`,
+`/api/email/templates`. So the vendor account works; only staff-gated routes refuse.
+
+### 🔴 ☐ STEP 3 STILL OWED — revoke the toggle
+
+**Verified live in the database 2026-08-20 19:5x: `recruitment_pipeline` is `is_enabled = true` for
+`sahil.dubey673` right now.**
+
+This is the deliberate temporary over-privilege. VEND-11/13 are done, so it has served its purpose
+and **must be revoked before the demo**. It is the one outstanding item that is a live
+permissions issue rather than a test or a decision.
+
+**Done:** ☐
 
 ---
 
@@ -339,14 +353,22 @@ rather than the module check. No action needed — checked at the same time as t
 
 ---
 
-### ☑ CLEANUP — the vendor's pipeline toggle — **already revoked**
+### 🔴 ☐ CLEANUP — the vendor's pipeline toggle — **CURRENTLY ON, must be revoked**
 
-Verified in the database on 2026-08-20 at 19:09: `sahil.dubey673` has `recruitment_pipeline`
-**disabled**, revoked at 13:38 the same day.
+This flag has moved twice today, so trust the database rather than any note:
 
-So there is no lingering over-privilege to worry about before the demo. The catch is the opposite
-one, covered above: **VEND-11 now needs the toggle switched back on temporarily** to test the right
-guard, and switched off again afterwards. Step 3 of that sequence is this cleanup.
+| Time (IST) | State |
+|---|---|
+| 2026-08-19 | enabled, so VEND-11 would test the right guard |
+| 2026-08-20 13:38 | **revoked** by someone |
+| 2026-08-20 19:33 | **re-enabled** for the VEND-11 run |
+| 2026-08-20 ~19:5x | ✅ verified still **enabled** |
+
+VEND-11/13 have now passed, so the flag has served its purpose. **Revoke it.** A vendor account
+holding `recruitment_pipeline` during a client demo is exactly the thing this whole case exists to
+guard against.
+
+**Done:** ☐
 
 ---
 

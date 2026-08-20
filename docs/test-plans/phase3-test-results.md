@@ -12,7 +12,7 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**74 of 122 cases executed. Ten real defects found — six fixed, four open.**
+**79 of 122 cases executed. Ten real defects found — six fixed, four open.**
 
 🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
 so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
@@ -93,7 +93,7 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D1** | 🔴 **High** | `mrfClosure.service.js` `countAcceptedHires()` | **No requisition could ever auto-close on acceptance.** Double-hiring risk. | ✅ Fixed |
 | **D2** | 🟡 Medium | `offer.service.js` `recordCandidateDecision()` | A truthy *string* passed the `amend` guard, so a recorded acceptance could be silently overwritten. | ✅ Fixed |
 | **D3** | 🔴 **High** | `pipeline.service.js` `setStageOutcome()` + `pipeline.controller.js` | **A stale browser tab can advance a candidate a second time**, skipping a stage entirely and sending two outcome emails. The concurrency guard only catches simultaneous requests, not stale ones. | ✅ Fixed |
-| **D4** | 🟡 Medium | `interviewSchedule.service.js` `rescheduleInterviewRound()` | **Rescheduling mints a new Teams meeting instead of patching the existing event** — everyone holding the original invite has a dead join link. | 🔴 Open |
+| **D4** | 🟠 **High** (raised 2026-08-20) | `interviewSchedule.service.js` `rescheduleInterviewRound()` | **Rescheduling destroys the Teams meeting instead of patching it.** The join link dies, **neither reschedule email carries the new one**, and **Exchange sends the candidate its own `Canceled:` notice** — so they are told the interview is cancelled at the same moment they are told it moved. | 🔴 Open |
 | **D5** | 🟡 Medium | `rpa_candidate_pipeline.candidate_email` (denormalised at shortlist time) | **Editing a candidate's email does not reach a live journey**, and no UI path can correct it — invites keep going to the stale address. | 🔴 Open |
 | **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
 | **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
@@ -314,10 +314,29 @@ SEND -> pkmondal@   subject "Interview Rescheduled — Panel"       ┘
 sends no mail of ours. The audit line reads `22 August 2026 at 03:21 pm IST → …`, one entry, exactly
 the `previous → new` form the plan asks for.
 
-⚠️ **One thing this cannot see, and it is the reason to still check a mailbox:** Graph's `/cancel`
-makes **Exchange** notify the event's attendees itself. That notice is sent by Outlook, not by this
-app, so it never appears in our logs. Whether a human sees a stray "Meeting cancelled" alongside the
-reschedule mail is a genuine inbox question — and it is the remaining half of D4's user impact.
+🔴 **ANSWERED 2026-08-20 evening — Exchange DOES send its own notice, and it reaches the candidate.**
+Confirmed by reading both mailboxes. Evidence:
+`docs/test-claude-chrome/phase3manualpassresults20260820.md`.
+
+| When | Subject | Body opens with |
+|---|---|---|
+| the **reschedule** | `Canceled: Technical Round 1 — Phase3 Midflow Candidate (…)` | *"This interview has been rescheduled."* |
+| a cancel | `Canceled: Technical Round 1 (rescheduled) — …` | *"This interview has been cancelled."* |
+| a cancel with a reason | `Canceled: Technical Round 1 — …` | *"D9 re-test - interviewer unavailable"* — the reason, verbatim |
+
+**So a reschedule sends the candidate THREE messages, not one:** the app's *"Technical Round 1
+rescheduled"* mail, a fresh Exchange invite for the new event, and a `Canceled:` notice for the
+destroyed one. The candidate is told the interview is cancelled at the same moment they are told it
+moved. The third message is invisible to `rpa_email_messages` and to `email/monitoring`, which is
+why only a mailbox check could find it.
+
+⚠️ **The panel escaped it only by accident.** Every `Canceled:` message in `pkmondal@` sits in **Sent
+Items**, not the Inbox — because that mailbox is `MS_CALENDAR_MAILBOX`, the organiser. Book a
+*different* interviewer and they become a real attendee, receiving both the Exchange invite and the
+`Canceled:` notice. **Worth checking before anyone books a colleague.**
+
+This is the strongest argument yet for fixing D4 by patching the event rather than replacing it: the
+duplicate-and-contradictory candidate mail disappears entirely if the event is never cancelled.
 
 **Harness note worth keeping.** The first version of this test counted rows in
 `rpa_email_messages` — the table the vendor tests use — and found **zero**, failing on its own
@@ -978,6 +997,73 @@ does not — that asymmetry is the bug in miniature.
 
 **To close O7:** check `assessment_deadline_days`, send one invite, confirm `deadline_at` lands
 non-null. Five minutes, worth doing before the demo.
+
+---
+
+## Group 3 and the re-tests — evening session 2026-08-20
+
+Evidence: `docs/test-claude-chrome/phase3manualpassresults20260820.md`. Five items, all passing.
+
+### PIPE-08 — recruiter refused by `requireAdmin` ✅ PASS
+
+`biswajit.sur351` (recruiter). Five config writes refused — `POST /stages`, `PUT /stages/tech1`,
+`POST /stages/tech1/outcomes`, `POST /reasons`, `PUT /stage-templates` — all 403
+*"Admin access required to change this configuration."* from `auth.js:169`.
+
+**Proved it is the admin gate, not the module gate**, three ways: reads on the same router return
+200, so the module check passes; the message is the admin sentence, not the generic permission one;
+and the frame is `auth.js:169`, distinct from `auth.js:105` (module) and `auth.js:200`
+(`requireStaff`). This is exactly the "passes for the wrong reason" trap the plan warned about, and
+it was avoided.
+
+### VEND-11 / VEND-13 — vendor refused by `requireStaff` ✅ PASS
+
+`sahil.dubey673` (vendor), **with `recruitment_pipeline` enabled** — the precondition that makes the
+case meaningful. Eight pipeline routes refused, reads and writes alike, every one naming the guard:
+
+```
+at requireStaff (backend/src/middleware/auth.js:200:17)
+```
+
+`POST /api/pipeline/stages` stops at `requireStaff` and never reaches `requireAdmin` — correct
+ordering. Not a blanket refusal: the same session returns 200 on the vendor dashboard, vendor
+candidates, MRF, candidates, dashboard stats and email templates.
+
+This is precisely what the M6 fix was for: module on, vendor still out.
+
+### DOC-05 re-run — ✅ PASS, both D6 and D7 confirmed dead
+
+| Payload | Result |
+|---|---|
+| real `.exe` | **400** — *"File type .exe is not allowed…"* |
+| **MZ bytes renamed `.pdf`, `application/pdf` MIME** | **400** — *"That file is not a valid PDF…"* ← the D7 bypass, now closed |
+| real PDF bytes named `.exe` | **400** — extension gate fires first |
+
+**D6's alert-email half was measured as a differential, not assumed:** `backend_error_alert`
+sent/failed was `30/0` before a rejected upload and `30/0` four seconds after. No alert fired.
+
+No side effects — the checklist row stayed `pending`, nothing written to OneDrive.
+
+### D9 re-test — ✅ FIXED, end to end
+
+Audit line, verbatim: `Technical Round 1 interview cancelled: D9 re-test - interviewer unavailable`.
+The reason also appears at the top of the Exchange cancellation notice delivered to the candidate,
+confirming the helper text's promise. State separation verified — `cancelReason` and
+`interviewCancelReason` are distinct, no collision with the Zeko modal.
+
+### Group 1 mailbox/calendar half — ✅ COMPLETE
+
+| Check | Result |
+|---|---|
+| Two distinct attendees on the event | ✅ **Phase3 Midflow Candidate** (→ staging inbox) and **Pankaj Kumar Mondal**. No collapse — the interviewer-address precondition worked |
+| Candidate invite | ✅ 1 |
+| Panel invite | ✅ 1 |
+| Reschedule notices | ✅ 1 per side |
+| Cancellation mails | ✅ 1 per side |
+| Extra Outlook `Canceled:` notice | 🔴 **Yes** — see D4 above |
+
+**Not a defect:** the OWA event editor renders times in UTC while the calendar grid and the
+candidate's Gmail both show IST correctly. Display-only, and correct everywhere a candidate looks.
 
 ---
 
