@@ -13,26 +13,64 @@ behaviour was quoted rather than summarised.
 
 ---
 
-## Status at a glance — updated 2026-08-20
+## ✅ DONE / ⏳ PENDING — the whole picture
+
+*Single source of truth for where Phase 3 stands. Updated 2026-08-20, end of day.*
+
+### Test cases
 
 | | Case | State |
 |---|---|---|
-| ✅ | **DOC-03** — public upload | PASS, evidenced |
-| ✅ | **N5** — 409 message | PASS (after finding and fixing defect D3) |
-| ☐ | **SCHED-01** — book a tech1 interview | Needs a re-run — see the interviewer-address warning |
-| ☐ | **SCHED-06** — reschedule | App-email half **settled ✅**; one mailbox question left |
-| ☐ | **SCHED-07** — cancel | Not yet run |
-| ✅ | **Group 2** — browser-only checks | 3 of 5 done; O7 and SCHED-18 not runnable here (moved to blocked) |
-| ☐ | Group 3 — the 403 pair + cleanup | Blocks the demo if the cleanup is missed |
+| ✅ | DOC-03 — public upload | PASS, evidenced |
+| ✅ | N5 — 409 shows the server's message | PASS (found D3 on the way) |
+| ✅ | SCHED-01 — book a tech1 interview | PASS on every machine-checkable assertion |
+| ✅ | SCHED-06 — reschedule | PASS (found D4 is worse than written) |
+| ✅ | SCHED-07 — cancel | PASS (found D9) |
+| ✅ | DOC-05 — server-side file rejection | Was FAIL → both defects now fixed. **Needs one re-run to confirm** |
+| ✅ | DOC-04 — client-side validation (O3) | PARTIAL — O3 confirmed, not silent, but see D8 |
+| ✅ | VEND-14/15 — vendor dashboard counts | PASS — reconciles exactly |
+| ✅ | DOC-11, OFFER-14, OFFER-15 | Automated instead — 12 cases, no browser needed |
+| ⏳ | **Group 1 mailbox/calendar half** | Two attendees on the event; mail counts; the Outlook "Meeting cancelled" question |
+| ⏳ | **PIPE-08** — recruiter refused by `requireAdmin` | Not started |
+| ⏳ | **VEND-11 / VEND-13** — vendor refused by `requireStaff` | Not started |
+| ✅ | ~~CLEANUP — revoke `sahil.dubey673`'s pipeline toggle~~ | **Already off** — verified in the DB 2026-08-20 19:09. Revoked at 13:38 today. ⚠️ But this now **breaks VEND-11's precondition** — see below |
+| ⏳ | DOC-05 re-run after the D6/D7 fixes | Expect **400** for a `.exe` and **400** for a renamed executable |
+| ⏳ | D9 re-test | Cancel with a reason, confirm it reaches the audit line |
+| ⊘ | O7, SCHED-18, SCHED-11, ZEK-05…12 | Blocked — see *Cannot be run at all* |
 
-**Found by this manual pass so far — six defects:** D3 (stale-tab double-advance, **fixed**),
-D4 (reschedule kills the Teams join link, **open**), D5 (candidate email edits never reach a live
-journey, **open**), D6 (rejected upload returned 500 and emailed the team, **fixed**),
-🔴 **D7 (file validation was extension-only — an executable renamed `.pdf` uploaded to OneDrive
-through the public endpoint, fixed)**, D8 (upload page discards the server's reason, **open**).
+### Defects — 10 found, 6 fixed
 
-⚠️ **Everything is uncommitted.** D1, D2, D3, both UX fixes and the new test files are in the working
-tree only. Staging must be restarted to reflect any of them.
+| | # | What | Where |
+|---|---|---|---|
+| ✅ | D1 | No requisition could ever auto-close on acceptance | `mrfClosure.service.js` |
+| ✅ | D2 | A truthy string passed the `amend` guard | `offer.service.js` |
+| ✅ | D3 | Stale tab advanced a candidate twice, skipping a stage | `pipeline.service.js` |
+| ✅ | D6 | Rejected upload → 500 + alert email to the team | `document.routes.js` |
+| ✅ | D7 | 🔴 Executable renamed `.pdf` uploaded to OneDrive (public endpoint) | `document.routes.js` + new `fileSignature.js` |
+| ✅ | D9 | No cancellation reason could be entered | `PipelineDrawer.jsx` |
+| 🔴 | **D4** | Reschedule kills the Teams link — **and neither email carries the new one** | `interviewSchedule.service.js` |
+| 🔴 | **D5** | Candidate email edits never reach a live journey | denormalised `candidate_email` |
+| 🔴 | **D8** | Public upload page discards the server's reason | frontend upload page |
+| 🔴 | **D10** | Drawer shows the dead Teams link after a reschedule | `PipelineDrawer.jsx` — mechanism unproven |
+
+**Also pending, not defects:** wire `fileSignature.js` into the other four upload routes (all
+authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding, HR truncation,
+201-vs-200).
+
+### One thing that blocks a clean demo
+
+🔴 **D4 + D10 together.** Reschedule destroys the meeting, the emails do not carry the replacement,
+and the drawer keeps showing the dead one as live. Workaround for the drawer half: reopen it. No
+workaround for the email half.
+
+*(The `sahil.dubey673` over-privilege that used to sit here is resolved — the toggle was revoked on
+2026-08-20 at 13:38 and verified off. It now creates a testing problem rather than a security one;
+see VEND-11 in Group 3.)*
+
+⚠️ **Nothing is committed.** Six fixes and five new test files are in the working tree only, and
+staging predates all of them.
+
+---
 
 ## Before you start
 
@@ -49,7 +87,36 @@ afterwards. Note which build you tested against if you skip the restart.
 
 ---
 
-## Group 1 — Teams / Outlook round trip (demo-critical)
+## Group 1 — Teams / Outlook round trip — ✅ **RUN 2026-08-20 18:20 IST**
+
+All three passed the machine-checkable half, on journey 40 through the real drawer. Evidence:
+[sched010607results.md](../test-claude-chrome/sched010607results.md). Full detail in
+[phase3-test-results.md](phase3-test-results.md) under *Group 1*.
+
+**What the run established:** SCHED-01 books correctly (200, row written, Teams meeting minted,
+audit line, invite dispatched). SCHED-06 produces exactly one audit line reading `previous → new`,
+with two reschedule notices and no cancellation. SCHED-07 cancels cleanly and leaves the round
+rebookable.
+
+**What it found:** D4 is worse than written (**neither reschedule email carries the new join link**),
+plus two new defects — D9 and D10, both in the drawer.
+
+**☐ What is still owed — the mailbox and calendar half only:**
+
+| Check | Expected |
+|---|---|
+| ☐ Calendar event on `pkmondal@` has **two distinct attendees** | candidate → staging test inbox, interviewer → `pkmondal@`. The precondition is now right, so this can finally be judged |
+| ☐ Candidate invite in the test inbox | 1 |
+| ☐ Panel invite at `pkmondal@` | 1 (not redirected — expected) |
+| ☐ Reschedule notices | 1 per side |
+| ☐ **Any extra "Meeting cancelled" notice from Outlook?** | the open D4 question — Exchange sends this itself, invisible to our logs |
+| ☐ Cancellation mails | 1 per side |
+
+The original instructions are kept below for the re-run.
+
+---
+
+### The original three steps (kept for reference / re-runs)
 
 These three are one continuous sequence on a single booking. Do them in order.
 
@@ -240,23 +307,46 @@ the admin check is what refuses. Good as-is.
 
 ### ☐ VEND-11 / VEND-13 — vendor refused by `requireStaff`
 
-**Do:** As `sahil.dubey673` (a vendor), attempt the pipeline routes.
+🔴 **STOP — the precondition is currently wrong. Read this before running.**
 
-**Expect:** 403 from `requireStaff` **even though** that account currently has
-`recruitment_pipeline: true`. That toggle is deliberate — it is the entire point of the M6 fix.
+**Verified in the database 2026-08-20 19:09:** `sahil.dubey673` (user 9, role `vendor`) has
+`recruitment_pipeline: is_enabled = false`, revoked at **13:38 today**.
+
+**Running VEND-11 as things stand proves nothing.** The vendor would be refused by
+`checkModuleAccess` — because the module is off — and never reach `requireStaff`. You would see a
+403, tick the box, and have tested the wrong guard entirely. VEND-11 exists specifically to prove
+that a vendor is refused **even with the pipeline module switched on**, which is the whole point of
+the M6 fix.
+
+**Do this first:** re-enable `recruitment_pipeline` for `sahil.dubey673`, run VEND-11 and VEND-13,
+then revoke it again.
+
+| Step | |
+|---|---|
+| ☐ 1. Re-enable `recruitment_pipeline` for `sahil.dubey673` | Admin → user modules |
+| ☐ 2. Run VEND-11 / VEND-13 — expect **403 from `requireStaff`**, not from `checkModuleAccess` | |
+| ☐ 3. **Revoke it again** | It must not be live during the demo |
 
 **Observed:**
 
 ---
 
-### ☐ ⚠️ CLEANUP — remove the vendor's pipeline toggle
+### ☐ PIPE-08's precondition — verified good
 
-**Once VEND-11 and VEND-13 have been run**, revoke `recruitment_pipeline` from `sahil.dubey673`.
+`biswajit.sur351` (user 7, role `recruiter`) **does** hold `recruitment_pipeline: true` (set
+2026-08-19 14:16, still on as of 19:09 today). So its 403 will genuinely come from `requireAdmin`
+rather than the module check. No action needed — checked at the same time as the vendor account.
 
-It is a deliberate, temporary over-privilege that exists only to make VEND-11 meaningful. It must
-not outlive this test pass, and it must not be live during the client demo.
+---
 
-**Done:** ☐
+### ☑ CLEANUP — the vendor's pipeline toggle — **already revoked**
+
+Verified in the database on 2026-08-20 at 19:09: `sahil.dubey673` has `recruitment_pipeline`
+**disabled**, revoked at 13:38 the same day.
+
+So there is no lingering over-privilege to worry about before the demo. The catch is the opposite
+one, covered above: **VEND-11 now needs the toggle switched back on temporarily** to test the right
+guard, and switched off again afterwards. Step 3 of that sequence is this cleanup.
 
 ---
 
@@ -286,6 +376,39 @@ Three possible fixes, and they are not equivalent: resolve the address at send t
 edits to open journeys; or expose an editable recipient on the send form.
 
 ☐ **Decide which**, since other consumers read the denormalised copy.
+
+### ✅ D9 — FIXED 2026-08-20
+
+The cancel modal now carries a `Cancel reason (optional)` box, on **its own state** so it cannot
+collide with the Zeko modal that shares its title. `cancel_reason` goes in the payload; the endpoint
+already honoured it.
+
+☐ **Re-test on the next staging restart:** cancel an interview with a reason, confirm it lands in the
+audit line (`Technical Round 1 interview cancelled: <your reason>`).
+
+### D10 — the drawer shows the dead Teams link after a reschedule
+
+After a successful reschedule the drawer keeps rendering the old time, old meeting ID and old
+passcode. Reopening it shows the truth, so only the view is stale.
+
+**Read this together with D4.** The meeting on screen has just been destroyed. A recruiter copying
+that Join button or passcode to a candidate hands over a dead link, from a screen that just confirmed
+success.
+
+**Investigated 2026-08-20, not fixed.** Four causes ruled out: the invalidation is present and
+identical to the working cancel path; there is no `staleTime`; `interviewMode` is reset on every
+open; the query is enabled throughout. The likely remaining explanation is the state cascade in the
+same `onSuccess` — it clears four values that are all in the `schedule-preview` query key, firing a
+second query while the detail refetch is still in flight. That is a hypothesis, and confirming it
+needs React Query devtools on a live reschedule.
+
+⚠️ The field report's suggested fix — "copy the cancel mutation's invalidation" — **would be a
+no-op**; that invalidation already exists. Fixing blind risks hiding a re-render ordering problem
+behind a forced refetch.
+
+☐ **Decide:** debug properly before the demo, or accept it?
+✅ **Interim mitigation:** close and reopen the drawer after any reschedule — the data is correct on
+reopen, only the immediate post-action render is stale.
 
 ### D8 — the public upload page throws away the server's error message
 

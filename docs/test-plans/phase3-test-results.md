@@ -12,16 +12,20 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**71 of 122 cases executed. Eight real defects found — five fixed, three open.**
+**74 of 122 cases executed. Ten real defects found — six fixed, four open.**
 
 🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
 so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
 **public, unauthenticated** candidate endpoint, where the only credential is a token sent by email.
 Fixed on the document route; the other four upload routes share the pattern and are authenticated.
 
-**Still open:** D4 (reschedule kills the Teams join link), D5 (candidate email edits never reach a
-live journey), D8 (the public upload page discards the server's error message). Each needs a
-decision rather than an obvious fix — see their entries.
+**Still open:** D4 (reschedule kills the Teams join link — **and neither reschedule email carries the
+new one**), D5 (candidate email edits never reach a live journey), D8 (public upload page discards
+the server's error message), D10 (the drawer shows the dead Teams link after a reschedule —
+investigated, four causes ruled out, mechanism still unproven).
+
+⚠️ **D4 + D10 together are the demo risk.** The reschedule destroys the meeting, the emails do not
+carry the replacement, and the drawer keeps displaying the dead one as though it were live.
 
 **Every defect after D2 was found by manual testing, not by the automated suite** — and the suite was
 green throughout. D1 hid behind a unit test that asserted a constant instead of running the query;
@@ -94,6 +98,8 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
 | **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
 | **D8** | 🟡 Medium | `frontend` public upload page | The page **discards the server's precise reason** and tells the candidate *"Please try those again"* — advice that cannot work. | 🔴 Open |
+| **D9** | 🟡 Medium | `PipelineDrawer.jsx` `interviewCancelMutation` | **A cancellation reason cannot be supplied from the UI at all** — the modal has no reason field, so every recruiter cancellation records *that* a round was cancelled, never *why*. | ✅ Fixed |
+| **D10** | 🟠 High (with D4) | `PipelineDrawer.jsx` — schedule / reschedule view refresh | After a successful reschedule the drawer keeps showing the **old time, old meeting ID and old passcode** — a meeting D4 has just destroyed. The recruiter is looking at a live-seeming Join button that is dead. | 🔴 Open |
 
 ### D1 — MRF never auto-closed (the significant one)
 
@@ -788,6 +794,152 @@ integration file. Expect a handful of reminder and approval-nudge mails per run.
 
 ---
 
+## Group 1 — SCHED-01 / 06 / 07, the Teams round trip
+
+Run 2026-08-20 ~18:20 IST through the **real Pipeline drawer**, journey 40, interviewer
+`pkmondal@aapnainfotech.com` — deliberately not in `EMAIL_STAGING_RECIPIENTS`, so the attendee-collapse
+artifact that invalidated the earlier run could not recur. Local dev server against the shared
+staging database. Evidence: `docs/test-claude-chrome/sched010607results.md`.
+
+| Case | Verdict |
+|---|---|
+| **SCHED-01** | ✅ **PASS** on every machine-checkable assertion |
+| **SCHED-06** | ✅ **PASS** — one audit line, `previous → new`; D4 reproduced |
+| **SCHED-07** | ⚠️ **PASS with defect D9** — cancels correctly, but no reason can be supplied |
+
+**SCHED-01 detail.** `POST /api/pipeline/40/interview` → **200** (confirming the plan's 201 is wrong,
+third independent observation). Row 104, `status='scheduled'`, times stored correctly
+(`2026-08-21T05:30:00Z` = 11:00 IST), Teams meeting `473448322235179` minted, `invite_sent_at`
+stamped, audit line written.
+
+**SCHED-06 detail.** Row 105 live, exactly **one** audit line reading
+*"Technical Round 1 rescheduled: 21 August 2026 at 11:00 am IST → 21 August 2026 at 03:00 pm IST"*.
+Both emails composed as reschedule notices, neither a cancellation — consistent with the instrumented
+run.
+
+### 🔴 D4 is worse than its original write-up: neither reschedule email carries a join link
+
+Read from the modal previews before sending. The candidate email contains previous time, new time and
+duration. The panel email contains previous time, new time and the candidate's address. **Neither
+contains a Teams link.**
+
+So after a reschedule the only join link either party holds is the one from the original invite — and
+D4 has just killed it. The new link exists *only inside the app*. That moves D4 from "stale calendar
+entries left behind" to **"both parties are actively holding a dead link and were never sent the live
+one"**, which is a materially worse failure and raises the case for fixing it before the demo.
+
+### Correction to this document's own earlier wording
+
+The instrumented-run entry above describes both mails as titled *"Interview Rescheduled — Candidate"*
+and *"— Panel"*. **Those were the test's own labels, not the real subjects.** What actually sends is:
+
+- candidate — `Technical Round 1 rescheduled — Phase3 Test Role (1 opening)`
+- panel — `Interview rescheduled — Technical Round 1: Phase3 Midflow Candidate`
+
+The count and the "neither is a cancellation" conclusion are unaffected.
+
+### D9 — a cancellation reason cannot be supplied from the UI (OPEN)
+
+`rpa_interview_schedule.cancel_reason` is null for **every** cancellation a recruiter performs. The
+audit trail records that a round was cancelled but never why.
+
+**Confirmed in code.** `cancel_reason` appears exactly **once** in `PipelineDrawer.jsx` — line 1021,
+on the *Zeko* cancel path. `interviewCancelMutation` (line 1087) sends only the four email fields:
+
+```js
+pipelineService.cancelInterview(interviewSchedule.id, {
+  candidate_subject, candidate_body, panel_subject, panel_body,   // no cancel_reason
+})
+```
+
+**Why it was missed until now — two modals share one title.** Both are titled *"Confirm Cancel
+Interview"*: the Zeko one (`open: cancelOpen`) **has** a reason `TextArea`; the scheduled-interview
+one (`open: interviewCancelOpen`) does not. Searching for a reason field finds one and stops.
+
+The endpoint honours `cancel_reason` — proved during this run's cleanup call, which wrote
+*"Technical Round 1 interview cancelled: CLEANUP-SCHED-PREP: …"* into the audit trail. Two
+cancellations minutes apart on the same journey, one with a reason (API) and one without (UI), is the
+cleanest possible demonstration.
+
+**✅ FIXED 2026-08-20.** A `Cancel reason (optional)` `TextArea` on the `interviewCancelOpen` modal,
+backed by its **own** `interviewCancelReason` state — deliberately not `cancelReason`, which belongs
+to the Zeko modal that shares this one's title; reusing it would leak a reason typed in one dialog
+into the other. `cancel_reason` now goes in the mutation payload and the state is cleared on success.
+
+**One thing I got wrong while fixing it, corrected before shipping.** The helper text first read
+*"Not included in the emails below."* That is false: the service passes `reason` into
+`buildInterviewEmails('cancel', …)` (`interviewSchedule.service.js:724`) **and** into the Graph
+`/cancel` comment (line 701), so it can reach both the cancellation emails and the Outlook notice.
+The label now says so, and notes that the reason must be typed *before* the email previews are
+generated if it is to appear in them.
+
+**Frontend build after the change: exit 0, 4101 modules.**
+
+### D10 — the drawer shows a dead Teams link after a reschedule (OPEN)
+
+| | Drawer after the success toast | Actual row |
+|---|---|---|
+| Time | 21 Aug, 11:00 am | 21 Aug, **03:00 pm** |
+| Meeting ID | `473448322235179` | `482189874798031` |
+| Passcode | `tg3k3Eg7` | `vo2Jo6e5` |
+
+Closing and reopening the drawer shows the correct values, so the write is fine and the view is
+stale. **Compounds D4:** the meeting on screen has just been destroyed, and the recruiter is looking
+at a Join button, meeting ID and passcode that no longer work — on a screen that just said the
+reschedule succeeded. Copying any of it hands over a dead link.
+
+⚠️ **The field report's proposed cause is wrong, and the fix it suggests would not work.** It says the
+cancel mutation refreshes correctly and the schedule mutation should copy its invalidation. But
+`interviewMutation.onSuccess` (line 1071) **already** invalidates `['pipeline-detail', pipelineId]`,
+identically to `interviewCancelMutation` (line 1094). The query has no `staleTime`, and
+`interviewSchedule` is read straight off that query's data. So the invalidation is present and
+correct, and the stale render has some other cause — most likely the modal-close and state-reset
+sequence in the same `onSuccess`, or a race between the refetch and the re-render.
+
+**Do not "fix" this by adding an invalidation that is already there.** The symptom is real (observed
+twice, with the concrete values above); the mechanism needs a debugger session, not a code read.
+
+**Investigated 2026-08-20, not fixed — the mechanism is still unproven.** What was ruled out:
+
+| Hypothesis | Verdict |
+|---|---|
+| Missing `invalidateQueries` on the schedule path | ❌ ruled out — line 1071 invalidates `['pipeline-detail', pipelineId]`, identical to the cancel path at 1094 |
+| A `staleTime` holding the cached row | ❌ ruled out — the `pipeline-detail` query sets none |
+| `interviewMode` left as `'reschedule'` and poisoning a query key | ❌ ruled out — both `openInterviewModal` and `openRescheduleModal` set it explicitly on open |
+| `enabled: open` suppressing the refetch | ❌ ruled out — `open = !!pipelineId`, true throughout |
+
+The most likely remaining explanation is the **state cascade inside the same `onSuccess`**: it closes
+the modal and clears `interviewAt`, `interviewerEmail`, `interviewerName` and `schedEmail` in the
+same tick as the invalidation. Those four are all in the `schedule-preview` query key, so clearing
+them fires a *different* query while the detail refetch is still in flight. The cancel path clears
+far less, which fits it not showing the bug.
+
+That is a hypothesis, not a diagnosis. **Fixing it blind risks papering over the symptom** — for
+example by forcing a `refetch()` that hides a re-render ordering problem rather than resolving it.
+It needs React Query devtools on a live reschedule to confirm which query settles last.
+
+**Interim mitigation if the demo includes a reschedule:** close and reopen the drawer afterwards. The
+data is correct on reopen — only the immediate post-action render is stale.
+
+### Four smaller observations from the same run — not scored, worth knowing
+
+1. **`interview-preview` fires once per keystroke — 42 calls to fill one form.** 13 while typing the
+   interviewer's name, 26 while typing their address. Each call compiles two HTML email templates
+   server-side. No debounce. The name and address also travel in the **query string**, so they land
+   in access logs. Not a defect, but it is the kind of thing that looks bad in a network tab during a
+   demo, and it is a real server cost per keystroke.
+2. **The time picker rejects `03:00 PM` but accepts `3:00 PM`.** A zero-padded hour yields "No data"
+   and the field silently stays empty — easy to mistake for the form being broken.
+3. **"Emails in this round" shows only the live booking's mail.** After a reschedule the original
+   invite line disappears rather than the reschedule notice being appended, so the round's email
+   history is replaced, not accumulated.
+4. **A past booking has no UI cancel path.** Once the start time passes the drawer offers only Mark
+   as Held / Mark No-show / Reschedule. A recruiter with a stale past booking has to reschedule it
+   into the future before they can cancel it. This is why the run's own preparation step needed a
+   direct API call.
+
+---
+
 ## Group 2 — browser-only checks
 
 Run 2026-08-20 ~16:50 IST against the **local dev server** (current working tree, so including the
@@ -942,9 +1094,22 @@ Both assert a **403**, and both can pass for the wrong reason:
   different guard, box ticked having proven nothing. `biswajit.sur351` now **has** the module
   (granted 2026-08-19), so the 403 will genuinely come from `requireAdmin`. Good.
 - **VEND-11** expects a vendor to be refused by `requireStaff` **even with** the pipeline module
-  switched on — that is the whole point of the M6 fix. `sahil.dubey673` currently has
-  `recruitment_pipeline: true` precisely so this case is meaningful. **Remove that toggle once
-  VEND-11 and VEND-13 have been run** — it is a deliberate, temporary over-privilege.
+  switched on — that is the whole point of the M6 fix.
+
+  ⚠️ **Updated 2026-08-20 19:09 — the precondition has since been undone.** `sahil.dubey673` (user 9)
+  now has `recruitment_pipeline: is_enabled = false`, revoked at 13:38 that day. Verified directly
+  against `rpa_user_module_permissions`.
+
+  **Running VEND-11 in this state proves nothing:** the vendor would be stopped by
+  `checkModuleAccess` before `requireStaff` is ever reached — a 403 from the wrong guard, which is
+  exactly the failure mode this section was written to warn about. The module must be **re-enabled
+  for the duration of VEND-11/13 and revoked afterwards**.
+
+  The good news is that the security worry is gone: there is no lingering vendor over-privilege
+  sitting on the system ahead of the demo.
+
+  **`biswajit.sur351` (PIPE-08) was checked at the same time and is fine** — `recruitment_pipeline`
+  is still enabled, so its 403 will genuinely come from `requireAdmin`.
 
 ---
 
