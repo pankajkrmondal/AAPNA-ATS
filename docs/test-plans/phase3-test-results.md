@@ -12,7 +12,21 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**68 of 122 cases executed, all passing. Three real defects found and fixed.**
+**71 of 122 cases executed. Eight real defects found — five fixed, three open.**
+
+🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
+so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
+**public, unauthenticated** candidate endpoint, where the only credential is a token sent by email.
+Fixed on the document route; the other four upload routes share the pattern and are authenticated.
+
+**Still open:** D4 (reschedule kills the Teams join link), D5 (candidate email edits never reach a
+live journey), D8 (the public upload page discards the server's error message). Each needs a
+decision rather than an obvious fix — see their entries.
+
+**Every defect after D2 was found by manual testing, not by the automated suite** — and the suite was
+green throughout. D1 hid behind a unit test that asserted a constant instead of running the query;
+D3 needed two tabs minutes apart, which `Promise.allSettled` cannot simulate; D7 needed someone to
+rename a file rather than follow the written step.
 
 **D3, found 2026-08-20 during the manual pass, is the one worth reading.** A stale browser tab could
 advance a candidate a *second* time — skipping a stage nobody chose to skip, sending two outcome
@@ -75,6 +89,11 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D1** | 🔴 **High** | `mrfClosure.service.js` `countAcceptedHires()` | **No requisition could ever auto-close on acceptance.** Double-hiring risk. | ✅ Fixed |
 | **D2** | 🟡 Medium | `offer.service.js` `recordCandidateDecision()` | A truthy *string* passed the `amend` guard, so a recorded acceptance could be silently overwritten. | ✅ Fixed |
 | **D3** | 🔴 **High** | `pipeline.service.js` `setStageOutcome()` + `pipeline.controller.js` | **A stale browser tab can advance a candidate a second time**, skipping a stage entirely and sending two outcome emails. The concurrency guard only catches simultaneous requests, not stale ones. | ✅ Fixed |
+| **D4** | 🟡 Medium | `interviewSchedule.service.js` `rescheduleInterviewRound()` | **Rescheduling mints a new Teams meeting instead of patching the existing event** — everyone holding the original invite has a dead join link. | 🔴 Open |
+| **D5** | 🟡 Medium | `rpa_candidate_pipeline.candidate_email` (denormalised at shortlist time) | **Editing a candidate's email does not reach a live journey**, and no UI path can correct it — invites keep going to the stale address. | 🔴 Open |
+| **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
+| **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
+| **D8** | 🟡 Medium | `frontend` public upload page | The page **discards the server's precise reason** and tells the candidate *"Please try those again"* — advice that cannot work. | 🔴 Open |
 
 ### D1 — MRF never auto-closed (the significant one)
 
@@ -241,6 +260,170 @@ this fix; a clean full-suite pass should be re-confirmed before sign-off.
 **No `N5` re-run needed to prove the message renders** — `api.js:55-63` normalises
 `response.data.message` onto `.message`, and `PipelineDrawer.jsx:872` reads `err?.message`, so the
 server's sentence surfaces. See the corrected N5 note below.
+
+---
+
+### D4 — reschedule mints a new Teams meeting (found 2026-08-20, OPEN)
+
+**Found by:** the SCHED-05/06 manual run.
+Evidence: `docs/test-claude-chrome/SCHED0506findings.md`.
+
+Rescheduling pipeline 40 from 16:00 to 15:00 IST replaced the online meeting outright:
+
+| | Meeting ID | Passcode |
+|---|---|---|
+| before | `468843751163904` | `Hp79cg77` |
+| after | `471591962995564` | `3mi22z8C` |
+
+**Root cause — confirmed in code.** `rescheduleInterviewRound()` (`interviewSchedule.service.js:897`)
+deliberately cancels the old Graph event and creates a fresh one:
+
+```js
+await cancelInterviewEvent(oldRow.graph_event_id, 'This interview has been rescheduled.');
+// … then a brand-new createInterviewEvent() at :928
+```
+
+The stated reason is to free the unique "one live booking per round" index. That justifies replacing
+the **database row** — it does not require replacing the **calendar event**. The two can be
+decoupled: keep the Graph event and `PATCH` its time, while still cancelling and re-creating the row.
+
+**Consequence:** anyone holding the original invite has a dead join link, and stale calendar entries
+point at a retired meeting for any party not re-invited.
+
+✅ **SCHED-06 is NOT affected — resolved 2026-08-20, D4 stays Medium.** The worry was that a
+cancel-then-create on the Graph event would produce a cancellation email plus a fresh invite, which
+is the pattern the case forbids. It does not. Verified by instrumented run
+(`rescheduleEmails.test.js`), counting every `sendGraphEmail` call:
+
+```
+SEND -> <candidate, redirected to test inbox>      ┐ booking:    2
+SEND -> pkmondal@aapnainfotech.com                 ┘
+CALENDAR CANCEL                                      ← Graph event only, NO email
+SEND -> <candidate>  subject "Interview Rescheduled — Candidate"  ┐ reschedule: 2
+SEND -> pkmondal@   subject "Interview Rescheduled — Panel"       ┘
+```
+
+**Exactly 2 emails per operation, both titled "Interview Rescheduled", neither a cancellation.**
+`cancelInterviewEvent()` POSTs to Graph's `/cancel` endpoint — it removes the calendar event and
+sends no mail of ours. The audit line reads `22 August 2026 at 03:21 pm IST → …`, one entry, exactly
+the `previous → new` form the plan asks for.
+
+⚠️ **One thing this cannot see, and it is the reason to still check a mailbox:** Graph's `/cancel`
+makes **Exchange** notify the event's attendees itself. That notice is sent by Outlook, not by this
+app, so it never appears in our logs. Whether a human sees a stray "Meeting cancelled" alongside the
+reschedule mail is a genuine inbox question — and it is the remaining half of D4's user impact.
+
+**Harness note worth keeping.** The first version of this test counted rows in
+`rpa_email_messages` — the table the vendor tests use — and found **zero**, failing on its own
+precondition while the logs showed mail going out fine. That table is written by the stage-outcome
+path; interview scheduling calls `sendGraphEmail()` directly and records nothing there. A spy was
+tried next and abandoned: `interviewSchedule.service.js:26` uses a named import, and ES module
+bindings are immutable. Anyone re-testing email counts on the scheduling path should read the run
+log, not the table.
+
+### D5 — a candidate's email edit never reaches a live journey (found 2026-08-20, OPEN)
+
+`rpa_candidate_pipeline` holds a **denormalised copy** of `candidate_email`, taken at shortlist time.
+
+Repro from the manual run:
+1. Journey 36 (HARISH MP) holds `candidate_email = harishmp1345@example.com`
+2. Search Candidate → Edit → change to `aiautomationn8nuser@gmail.com` → saves, toast confirms
+3. Full reload, re-open the journey
+4. `GET /api/pipeline/36` **still returns the old address**
+
+Neither the Schedule nor the Reschedule modal exposes a candidate "To" override, so **there is no
+path through the UI** to correct a wrong candidate address on an in-flight journey. Invites keep
+going to the stale address.
+
+**Three possible fixes, and the choice is a design decision:** resolve the candidate address at send
+time; propagate record edits to open journeys; or expose an editable recipient on the send form.
+Not fixed here — picking one affects other consumers of the denormalised copy.
+
+### D7 — file validation was extension-only (found 2026-08-20, FIXED)
+
+**The most serious finding of the pass.** Found by going beyond the script: DOC-05 asked only whether
+a `.exe` is rejected — it is. The tester then **renamed the executable to `.pdf`** and it uploaded
+successfully.
+
+| Payload | Before | After |
+|---|---|---|
+| `totally_safe.exe`, MZ header | 500 (rejected, wrong code — D6) | **400**, rejected |
+| `huge.pdf`, 11 MB | 413, `isOperational` ✅ | unchanged |
+| **`malware.pdf` — MZ executable bytes, `.pdf` name** | **200 `Document uploaded`** 🔴 | **400**, rejected |
+
+`multer`'s `fileFilter` read `path.extname(file.originalname)` and nothing else — no MIME check, no
+magic bytes. **Renaming was the entire attack.** The row was written and the binary pushed to
+OneDrive under the candidate's folder.
+
+**Worse than first reported: all FIVE upload routes share the pattern** — `document.routes.js`,
+`hrUpload.routes.js`, `candidate.routes.js`, `assessmentImport.routes.js`, `vendor.routes.js`. The
+document route is the critical one because it is the only **public, unauthenticated** upload: the
+sole credential is a token emailed to a candidate.
+
+**Fix.** New `utils/fileSignature.js` verifies the bytes on disk against the claimed extension, wired
+into `document.controller.js` before the file reaches OneDrive.
+
+Two design points worth keeping:
+- **It runs in the controller, not `fileFilter`.** `fileFilter` fires before any bytes are written —
+  `file.path` exists but the file is empty, so there is nothing to sniff.
+- **Unverifiable formats pass.** `.csv` is plain text with no signature; absence of a signature is
+  not disproof, and the caller's extension allowlist remains the control there.
+
+**Known limit, accepted:** `.docx`/`.xlsx`/`.zip` are all zip containers, so `PK\x03\x04` is the
+honest signature for each. This stops an executable renamed to `.docx`; it does not inspect the
+archive. It is **not** a virus scanner — a malicious PDF still passes, and real malware scanning is a
+separate control.
+
+**Tests:** `src/tests/unit/fileSignature.test.js` — **12 cases, all passing**, including the exact
+bypass payload, a truncated file (an off-by-one would wave a 2-byte file through as a PNG), and an
+empty file.
+
+⚠️ **The other four routes are NOT yet fixed.** They are authenticated, so the risk is far lower, but
+the helper is shared and wiring them up is a small follow-up.
+
+### D6 — a rejected upload emailed the team (found 2026-08-20, FIXED)
+
+`fileFilter` rejected with a **plain `Error`**, which carries no `statusCode` and no `isOperational`
+flag. The global handler therefore treated a candidate picking the wrong file type as a server fault:
+
+| | Before | After |
+|---|---|---|
+| Status | **500** | **400** |
+| Message in production | **discarded** — `sendProdError` only forwards messages for operational errors, so the candidate would get a generic error with no hint | preserved |
+| Team alert | **"Backend Error Alert" email fired** (`errorHandler.js:153` alerts on any 5xx) | none — 4xx never alerts |
+
+Contrast the size limit, which was already modelled correctly: 413, operational, no alert.
+
+**Fix:** `cb(new AppError(…, 400))` instead of `cb(new Error(…))`.
+
+**One correction to the field report.** It stated *"my five probes generated five alerts"*. There is
+a **5-minute cooldown** keyed on `code/name + route` (`emailNotification.service.js:1624`). A plain
+`Error` has no `code`, so the signature was constant per route — but the URL contains the token, so
+a *different* candidate's token is a different signature. Repeated probes on one token would have
+been throttled to one alert per 5 minutes. This softens "page the team on demand" but changes
+nothing about the wrong status code or the lost production message.
+
+### D8 — the upload page discards the server's reason (found 2026-08-20, OPEN)
+
+The server says exactly what is wrong and how to fix it:
+
+> `File type .exe is not allowed. Accepted: .pdf, .docx, .doc, .jpg, .jpeg, .png.`
+
+The candidate is told:
+
+> `1 of 1 could not be sent. Please try those again.`
+
+The advice is actively wrong — retrying is the one thing that cannot work, and each retry previously
+fired another alert email (D6).
+
+**This is N5's defect on the candidate-facing surface.** N5 was scoped as "does the UI render the
+*server's* message"; it passed on PipelineDrawer and the authenticated screens, all of which read
+`err.response?.data?.message` (or `err.message`, normalised by `api.js`). The **public upload page
+does not** — it is outside the authenticated app and does not use that shared client. N5's screen
+list should include it.
+
+Not fixed here: it is a frontend change on a page with its own error-handling shape, and worth doing
+alongside the O3 client-side validation gap (DOC-04) rather than piecemeal.
 
 ---
 
@@ -602,6 +785,91 @@ integration file. Expect a handful of reminder and approval-nudge mails per run.
 
 **Staging verified clean afterwards:** 0 leaked sweep MRFs, base fixture intact (3 CVs / 2 MRFs),
 0 fixture MRFs left filled, 23 journeys — the documented baseline.
+
+---
+
+## Group 2 — browser-only checks
+
+Run 2026-08-20 ~16:50 IST against the **local dev server** (current working tree, so including the
+D3 and 409 UX fixes) — *not* staging. Journey 27, SAHIL SARMA. Evidence:
+`docs/test-claude-chrome/group2manualpassresults.md`.
+
+| Case | Verdict | Note |
+|---|---|---|
+| **DOC-05** | ⚠️ **FAIL → now fixed** | `.exe` rejected but with 500 (**D6**); extension check bypassed by rename (**D7**). Both fixed |
+| **DOC-04** | ⚠️ **PARTIAL** | O3 confirmed: the hidden input carries `accept=""`, nothing enforces the stated formats until submit. **It does not fail silently** — the toast reads *"1 of 1 could not be sent. Please try those again."* But the server's precise reason is discarded (**D8**) |
+| **VEND-14/15** | ✅ **PASS** | `byStage` reconciles exactly: 2 + 1 + closed 0 + untracked 14 = **17** = `stats.total`. Candidates with no journey land in `untracked` rather than vanishing. UI labels that bucket *"Not in pipeline"* — wording differs from the plan, same thing |
+| **O7** | ⊘ **Not reproducible — but confirmed in code** | See below |
+| **SCHED-18 (UI)** | ⊘ **Not runnable** | No submitted scorecard exists anywhere. Moved to the blocked list |
+
+### O7 — the null-deadline day count is real, and worse than the finding says
+
+Not observable in this database: **0 candidates at `assessment`**, and `invited` is false across all
+23 journeys, so the code path never executes. But it was verified by simulation at
+`PipelineDrawer.jsx:425`:
+
+| `deadline_at` | rendered `daysLeft` |
+|---|---|
+| `null` | **-20685** |
+| `undefined` | **NaN** |
+| `''` | **NaN** |
+
+**The important part the original finding missed:** `daysLeft` is used in **both** branches of the
+ternary, not only the overdue one. So this does not depend on `isOverdue` being wrongly true — the
+ordinary path renders *"deadline in -20685 day(s)"*.
+
+**How a null could arise is a configuration question, not an exotic one.** The live
+`AssessmentInviteModal` has no date picker and never sends `deadline_at`; the server computes it from
+the `assessment_deadline_days` setting. If that setting is ever absent, every invite gets a null
+deadline. Note the modal's own email body degrades gracefully (`deadlineDays || 2`) while the drawer
+does not — that asymmetry is the bug in miniature.
+
+**To close O7:** check `assessment_deadline_days`, send one invite, confirm `deadline_at` lands
+non-null. Five minutes, worth doing before the demo.
+
+---
+
+## Two SCHED findings that are NOT defects — recorded so they are not re-investigated
+
+Both came out of the 2026-08-20 SCHED-05/06 run (`docs/test-claude-chrome/SCHED0506findings.md`) and
+were reported as bugs. Neither is. Each is written up because the reasoning is not obvious and
+somebody will otherwise find them again.
+
+### "One calendar attendee, candidate's name on the interviewer's address" — a STAGING ARTIFACT
+
+**Reported as High.** The Graph event carried exactly one attendee, displayed as *"Phase3 Midflow
+Candidate"* but resolving to `n8npankajmondal@gmail.com` — the interviewer's mailbox.
+
+**The attendee-building code is correct.** `interviewSchedule.service.js:534` pairs
+`candidate.candidate_email` with `candidate.candidate_name`, and maps panel addresses separately.
+Name and address are *not* sourced from different objects.
+
+**What actually happened.** `calendarCandidateEmail()` → `nonProdSafeCandidateEmail()`
+(`config/emailRecipients.js:301`) **replaces every candidate address with the first entry in
+`EMAIL_STAGING_RECIPIENTS`** outside production. That first entry is `n8npankajmondal@gmail.com` —
+**the same address the tester used as the interviewer**. So both attendees resolved to one mailbox,
+Outlook collapsed them into a single entry, and kept the candidate's display name.
+
+That guard exists precisely because **Outlook, not this app, sends calendar invites**, so they
+bypass every mail protection we own. Without it a real candidate would receive a genuine interview
+invite from staging. It is working exactly as designed.
+
+⚠️ **The real lesson is about test method.** Using an interviewer address that is also the first
+staging recipient makes the two-attendee behaviour **unobservable on staging** — the guard collapses
+it every time. **Re-test with an interviewer address that is NOT in `EMAIL_STAGING_RECIPIENTS`**
+(e.g. `pkmondal@aapnainfotech.com`) and confirm two distinct attendees appear. Until then, SCHED-01's
+attendee assertion is untested, not passed.
+
+### "Scheduling endpoints return 200, not 201" — the TEST PLAN is wrong
+
+`POST /interview` and `POST /interview/reschedule` both return **200**. The plan expects 201.
+
+Both controllers end in the shared `success(res, result, …)` helper, which returns 200 for every
+endpoint in the API. There is no 201 anywhere in this codebase. The plan's expectation was written
+against an assumption the code never adopted.
+
+**Correct the plan, not the code.** Changing these two endpoints to 201 would make them inconsistent
+with every other write endpoint in the app, and any client checking `=== 200` would break.
 
 ---
 

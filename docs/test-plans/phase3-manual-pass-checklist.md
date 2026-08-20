@@ -1,17 +1,38 @@
 # Phase 3 — Manual Pass Checklist
 
-**For:** the ~30–45 minutes of Phase 3 that cannot be automated — anything needing a real browser,
-a real mailbox, or a real Teams/OneDrive round trip.
+**For:** the part of Phase 3 that cannot be automated — anything needing a real browser, a real
+mailbox, or a real Teams/OneDrive round trip.
 
 **Why these and not others:** every case here touches a surface outside the service layer. The
-automated pass ([phase3-test-results.md](phase3-test-results.md)) covered 64 cases against the live
-database; these are what is left that a machine cannot reach.
+automated pass ([phase3-test-results.md](phase3-test-results.md)) now covers 68 cases against the
+live database; these are what is left that a machine cannot reach.
 
 Tick the boxes and fill the **Observed** column as you go. Anything that fails, write down the
-*exact* string or status code — the automated pass found two real defects precisely because
-observed behaviour was quoted rather than summarised.
+*exact* string or status code — this pass found **three** real defects precisely because observed
+behaviour was quoted rather than summarised.
 
 ---
+
+## Status at a glance — updated 2026-08-20
+
+| | Case | State |
+|---|---|---|
+| ✅ | **DOC-03** — public upload | PASS, evidenced |
+| ✅ | **N5** — 409 message | PASS (after finding and fixing defect D3) |
+| ☐ | **SCHED-01** — book a tech1 interview | Needs a re-run — see the interviewer-address warning |
+| ☐ | **SCHED-06** — reschedule | App-email half **settled ✅**; one mailbox question left |
+| ☐ | **SCHED-07** — cancel | Not yet run |
+| ✅ | **Group 2** — browser-only checks | 3 of 5 done; O7 and SCHED-18 not runnable here (moved to blocked) |
+| ☐ | Group 3 — the 403 pair + cleanup | Blocks the demo if the cleanup is missed |
+
+**Found by this manual pass so far — six defects:** D3 (stale-tab double-advance, **fixed**),
+D4 (reschedule kills the Teams join link, **open**), D5 (candidate email edits never reach a live
+journey, **open**), D6 (rejected upload returned 500 and emailed the team, **fixed**),
+🔴 **D7 (file validation was extension-only — an executable renamed `.pdf` uploaded to OneDrive
+through the public endpoint, fixed)**, D8 (upload page discards the server's reason, **open**).
+
+⚠️ **Everything is uncommitted.** D1, D2, D3, both UX fixes and the new test files are in the working
+tree only. Staging must be restarted to reflect any of them.
 
 ## Before you start
 
@@ -20,11 +41,11 @@ observed behaviour was quoted rather than summarised.
 | Fixture is still seeded | `node src/tests/helpers/fixture.js status` — expect 3 CVs, 2 MRFs, 3 journeys. ⚠️ These are **fixture-tagged rows only**, found by `FIXTURE_TAG`. They are not database totals: a populated dev DB holds ~198 CVs and ~124 MRFs, which is normal. Do not compare against `/api/candidates` or `/api/mrf` pagination totals |
 | Or use a real journey instead | The fixture is a convenience, not a requirement. Any live journey sitting on the right stage is **better** evidence — it exercises real data. Note which journey you used |
 | You know which inbox to watch | Candidate mail → the **staging test inbox** (`n8npankajmondal@gmail.com`, `hmopuri@`, `saukumar@`). Never the candidate's real address |
-| You are using **your own** address as interviewer | `interviewScheduledPanel` and `scorecardInvite` are `OPERATOR_ADDRESSED` — they are **not** redirected. Whatever address you type receives real mail. Do not type a colleague's |
+| You are using **your own** address as interviewer | `interviewScheduledPanel` and `scorecardInvite` are `OPERATOR_ADDRESSED` — they are **not** redirected. Whatever address you type receives real mail. Do not type a colleague's. ⚠️ And **not** `n8npankajmondal@gmail.com` — see the warning in Group 1 |
 
-⚠️ **Staging is running the old code.** The D1 and D2 fixes are in the working tree, uncommitted and
-not deployed. If you want SCHED/DOC results to reflect the fixed build, restart staging first —
-otherwise note which build you tested against.
+⚠️ **Restart staging before this session.** It was last restarted at ~12:00 on 2026-08-20, which
+picked up the D3 fix but **not** the 409 UX fix (drawer auto-close + background dim) that landed
+afterwards. Note which build you tested against if you skip the restart.
 
 ---
 
@@ -32,14 +53,28 @@ otherwise note which build you tested against.
 
 These three are one continuous sequence on a single booking. Do them in order.
 
+### ⚠️ Before you book — pick the interviewer address carefully
+
+**Do NOT use `n8npankajmondal@gmail.com`.** It is the first entry in `EMAIL_STAGING_RECIPIENTS`, and
+the non-prod guard rewrites every *candidate* address to that same inbox before handing the event to
+Outlook. Use it as the interviewer and both attendees collapse into one — which is exactly what
+invalidated the first SCHED-05/06 run on 2026-08-20.
+
+**Use `pkmondal@aapnainfotech.com`** (or any address not in `EMAIL_STAGING_RECIPIENTS`).
+
 ### ☐ SCHED-01 — Book a tech1 interview
 
 **Do:** Pipeline drawer → a journey sitting on `tech1` → Schedule Interview. Your own address as
-interviewer, a future `start_at`.
+interviewer (see the warning above), a future `start_at`.
 
 **Expect:**
-- 201, `rpa_interview_schedule` row `status='scheduled'`
+- **200** (not 201 — the plan says 201, but every write endpoint in this API returns 200; the plan
+  is wrong, confirmed 2026-08-20)
+- `rpa_interview_schedule` row `status='scheduled'`
 - Teams meeting + calendar event on `MS_CALENDAR_MAILBOX` (`pkmondal@aapnainfotech.com`)
+- **TWO distinct attendees on the calendar event** — candidate's name → the staging test inbox,
+  interviewer → your address. One attendee means you used a clashing interviewer address; see the
+  warning above
 - Candidate email in the **test inbox** — not the candidate's address
 - Panel email at **your** address (not redirected — this is expected, not a bug)
 
@@ -47,18 +82,29 @@ interviewer, a future `start_at`.
 
 ---
 
-### ☐ SCHED-06 — Reschedule it — **the one most likely to fail**
+### ☐ SCHED-06 — Reschedule it — **mostly settled; one mailbox question left**
 
 **Do:** Reschedule the booking from SCHED-01 to a new time.
 
 **Expect:**
-- Old row → `status='cancelled'`, new row created
-- Graph event **updated**, not deleted-and-recreated
+- Old row → `status='cancelled'` with `cancel_reason='Rescheduled'`, one new row live
 - **Exactly ONE "rescheduled" email per side**, showing `previous → new`
+- ⚠️ The Graph event **is** deleted and recreated, not patched — that is **defect D4**, already known
+  and accepted as Medium. The Teams join link and passcode will change. Do not re-report it
 
-**Watch for:** a cancellation email *plus* a separate fresh invite. That is the failure mode. Two
-emails per side = fail, even though the booking itself ends up correct. Count the mails in the
-inbox before deciding.
+✅ **The app-email half is already settled — verified by instrumented run, 2026-08-20.** Exactly
+**one email per side**, both titled *"Interview Rescheduled"*, neither a cancellation. The Graph
+`/cancel` call removes the calendar event and sends no mail of ours. Audit line shows
+`previous → new`. See SCHED-06 in [phase3-test-results.md](phase3-test-results.md).
+
+**So what is left for you is the mailbox half only:**
+
+| What to check | |
+|---|---|
+| Total mails in the test inbox from one reschedule (expect **1** candidate-side) | |
+| Mail at `pkmondal@` (expect **1**, "Interview Rescheduled — Panel") | |
+| ⚠️ **Any EXTRA "Meeting cancelled" notice from Outlook?** Exchange sends this itself when the event is cancelled — invisible to our logs. This is the open question | |
+| Is the old Teams join link now dead? (expect yes — defect D4) | |
 
 **Observed:**
 
@@ -68,8 +114,14 @@ inbox before deciding.
 
 **Do:** Cancel the rescheduled booking, supplying a `cancel_reason`.
 
-**Expect:** `status='cancelled'`; **one** cancellation email; the calendar event disappears from the
-mailbox.
+**Expect:** `status='cancelled'`; **one** cancellation email per side; the calendar event disappears
+from the mailbox.
+
+ℹ️ **The cancel path was exercised once already**, on 2026-08-20, clearing the leftover journey-36
+booking (row 94). It behaved correctly: Graph event cancelled, row stamped with `cancelled_at` and
+the reason, and **two** emails sent — one candidate-side (`interviewCancelled`, redirected to the
+test inbox) and one panel-side (`interviewCancelledPanel`). That was a cleanup, not a scored run —
+this case still needs doing properly as the third step of the SCHED-01 → 06 → 07 sequence.
 
 **Observed:**
 
@@ -114,23 +166,22 @@ remain `pending`); DOC-07's auto-close fires on the **last** item. Not a miss.
 
 ---
 
-### ☑ N5 — A 409 shows the *server's* message — ⚠️ **NOT SCORED — blocked by defect D3**
+### ☑ N5 — A 409 shows the *server's* message — ✅ **PASS** (20 Aug 2026, 12:03)
 
-**Run 2026-08-20.** Evidence: [409conflictspotcheck.html](../test-claude-chrome/409conflictspotcheck.html)
+**The highest-value case in this checklist.** Scoped as a copy check; found a High-severity defect a
+182-test green suite could not see.
 
-**Outcome: no 409 could be produced from the UI at all**, so there was nothing to spot-check. The
-two-tab test found something more important instead — **defect D3**: a stale tab's approval is
-*accepted* (200) and advances the candidate a **second time**, skipping a stage and sending two
-outcome emails.
+**First run — blocked.** No 409 could be produced from the UI at all, so there was nothing to
+spot-check. Evidence: [409conflictspotcheck.html](../test-claude-chrome/409conflictspotcheck.html).
+The two-tab test instead found **defect D3**: a stale tab's approval was *accepted* (200) and
+advanced the candidate a **second time**, skipping a stage and sending two outcome emails.
 
-The backend guard is real (`pipeline.service.js:635` throws the expected sentence, and PIPE-03
-proved it fires) — but it only catches *simultaneous* requests, not *stale* ones, because the stage
-it checks is read from the DB rather than sent by the client. Full write-up: D3 in
-[phase3-test-results.md](phase3-test-results.md).
+The backend guard was real all along (`pipeline.service.js:635`, and PIPE-03 proved it fires) — but
+it only caught *simultaneous* requests, not *stale* ones, because the stage it compared was read
+from the database rather than sent by the client. PIPE-03 fires both approvals at once, so it could
+only ever exercise the concurrent window.
 
-### ☑ N5 — re-run after the D3 fix — ✅ **PASS** (20 Aug 2026, 12:03)
-
-D3 was fixed the same day and staging restarted. The two-tab test now behaves correctly.
+**Second run — PASS.** D3 fixed the same day, staging restarted.
 
 | Screen | Message rendered? |
 |---|---|
@@ -151,15 +202,22 @@ error copying from the test plan. Use `EmailManagement` instead.
 
 ---
 
-## Group 2 — Browser-only checks (quick, do if time allows)
+## Group 2 — Browser-only checks — ✅ **RUN 2026-08-20**
 
-| ☐ | Case | What to check | Observed |
+Evidence: [group2manualpassresults.md](../test-claude-chrome/group2manualpassresults.md).
+Ran against the **local dev server**, not staging.
+
+| | Case | Verdict | Observed |
 |---|---|---|---|
-| ☐ | **DOC-04** | Finding **O3** — `beforeUpload` returns false unconditionally, no type/size check. Pick a `.exe` on the upload page: does it fail *silently*? | |
-| ☐ | **SCHED-18 (UI)** | API is verified ✅ — confirm the PipelineDrawer report **modal actually renders** it | |
-| ☐ | **O7** | Open a candidate whose assessment invite has no `deadline_at` — confirm no nonsense day count ("NaN days", "-19710 days") | |
-| ☐ | **VEND-14/15** | Vendor dashboard stage counts come from `current_stage_key`; candidates with no journey show as `untracked`, not dropped | |
-| ☐ | **DOC-05** | POST a `.exe` and a >10 MB file straight to `/api/documents/:token/upload`. Multer must reject both — **record the actual status code** | |
+| ☑ | **DOC-05** | ⚠️ **FAIL → fixed** | `.exe` rejected but with **500** (D6). And the killer: `malware.pdf` — **MZ executable bytes with a `.pdf` name — uploaded successfully, 200** (D7). Both now fixed |
+| ☑ | **DOC-04** | ⚠️ **PARTIAL** | O3 confirmed — the hidden input has `accept=""`, nothing enforces the stated formats until submit. **Not silent**: toast reads *"1 of 1 could not be sent. Please try those again."* But the server's real reason is discarded (**D8**) |
+| ☑ | **VEND-14/15** | ✅ **PASS** | `2 + 1 + 0 + 14 = 17` = `stats.total`. Reconciles exactly; `untracked` bucket present (UI calls it *"Not in pipeline"*) |
+| ⊘ | **O7** | Moved to blocked | No assessment invite exists to open. **Defect confirmed in code** — `null` renders `-20685`, and `daysLeft` is used in *both* ternary branches, so it does not need `isOverdue` to be wrong |
+| ⊘ | **SCHED-18 (UI)** | Moved to blocked | No submitted scorecard exists anywhere to render |
+
+⚠️ **DOC-04 and DOC-05 were run before the D6/D7 fixes and against dev, not staging.** Re-run DOC-05
+on staging after a restart if the build matters for sign-off — the expected result is now **400** for
+a `.exe` and **400** for a renamed executable.
 
 ---
 
@@ -202,6 +260,57 @@ not outlive this test pass, and it must not be live during the client demo.
 
 ---
 
+## Open defects and follow-ups — decisions needed, not testing
+
+Both found on 2026-08-20 and written up in [phase3-test-results.md](phase3-test-results.md). Neither
+is fixed, and neither should be fixed without a decision first.
+
+### D4 — reschedule kills the Teams join link
+
+Rescheduling cancels the Graph event and creates a new one, so the join link and passcode change.
+Anyone holding the original invite has a dead link.
+
+The fix is to `PATCH` the existing event instead. The database row still needs replacing (the unique
+"one live booking per round" index requires it) — so the change is to **decouple the calendar event
+from the booking row**, which is a small design decision rather than a one-liner.
+
+☐ **Decide:** fix before the demo, or accept and document?
+
+### D5 — a candidate's email edit never reaches a live journey
+
+`rpa_candidate_pipeline` holds a denormalised `candidate_email` copied at shortlist time. Editing the
+candidate record does not update it, and no UI path can correct it, so invites keep going to the
+stale address.
+
+Three possible fixes, and they are not equivalent: resolve the address at send time; propagate record
+edits to open journeys; or expose an editable recipient on the send form.
+
+☐ **Decide which**, since other consumers read the denormalised copy.
+
+### D8 — the public upload page throws away the server's error message
+
+The server says *"File type .exe is not allowed. Accepted: .pdf, .docx, …"*. The candidate sees
+*"1 of 1 could not be sent. Please try those again."* — advice that cannot work.
+
+This is **N5's defect on the candidate-facing surface**. The authenticated screens all pass N5
+because they read the server's message through the shared `api.js` client; the public upload page
+sits outside that app and does not.
+
+☐ **Worth fixing alongside DOC-04's O3 gap** (the page also has `accept=""` and validates nothing
+client-side) rather than patching each separately.
+
+### ⚠️ D7 follow-up — four upload routes still unfixed
+
+`document.routes.js` is fixed. The same extension-only pattern remains in `hrUpload.routes.js`,
+`candidate.routes.js`, `assessmentImport.routes.js` and `vendor.routes.js`.
+
+All four are **authenticated**, so the exposure is far lower than the public document endpoint. The
+shared helper (`utils/fileSignature.js`) already exists — wiring each up is a few lines.
+
+☐ **Decide:** now, or as post-demo hardening?
+
+---
+
 ## Cannot be run at all — not your problem today
 
 Listed so nothing looks forgotten:
@@ -210,15 +319,39 @@ Listed so nothing looks forgotten:
 |---|---|
 | SCHED-11 (Teams attendance sweep) | Graph `OnlineMeetingArtifact.Read.All` grant still pending with IT. ⚠️ When it lands, specifically check the "auto-no-showed every staging interview" regression — silent, every-row failure class |
 | ZEK-05 … ZEK-12 | `ZEKO_API_URL` blank in all four env files; no published Zeko job to test against |
+| **SCHED-18 (UI)** | No submitted scorecard exists on any journey. An interviewer has to actually submit one first — not a quick UI check, and not a UI bug |
+| **O7** | No assessment invite exists to open (0 candidates at `assessment`). ☐ **Five-minute alternative:** check what `assessment_deadline_days` is set to, send one invite, confirm `deadline_at` lands non-null. Worth doing before the demo — if that setting is ever absent, every invite row renders *"deadline in -20685 day(s)"* |
 
 ---
 
-## Two decisions someone needs to make (not bugs)
+## Three decisions someone needs to make (not bugs)
 
-Both were recorded rather than judged during the automated pass. Neither blocks the demo, but both
-are places where the plan and the code disagree:
+Recorded rather than judged. None blocks the demo, but each is a place where the plan and the code
+disagree:
 
 1. **Scorecard ratings round instead of rejecting.** `2.3` becomes `2.5`. The plan expected a 400.
    Rounding every off-step rating upward is a small systematic bias in interviewers' scores.
 2. **HR fields truncate silently.** 400 characters capped to 100/255 with no warning. The plan asks
    whether that or a 400 is the right UX.
+3. **The test plan expects 201 from the scheduling endpoints; they return 200.** The plan is wrong —
+   every write endpoint in this API returns 200 through the shared `success()` helper, and there is
+   no 201 anywhere in the codebase. **Correct the plan, not the code**: changing these two endpoints
+   would make them inconsistent with every other write endpoint and break any client checking
+   `=== 200`.
+
+---
+
+## What has already been automated — do NOT re-test by hand
+
+Recorded so nobody spends browser time on something now covered by a test:
+
+| Case | Where |
+|---|---|
+| DOC-11 — reminder sweep selection (5 cases) | `sweepJobs.test.js` |
+| OFFER-14 — approval nudge, incl. once-per-day (3 cases) | `sweepJobs.test.js` |
+| OFFER-15 — post-joining auto-close, incl. "recruiter's closure wins" (4 cases) | `sweepJobs.test.js` |
+| D3 — stale-tab double-advance (4 cases) | `pipelineStageEngine.test.js` |
+| SCHED-06 — booking rows + audit line + D4's meeting replacement | `rescheduleEmails.test.js` |
+
+These were all reachable without cron or a browser: the sweeps are pure DB polling, so backdating
+the timestamps they select on is enough to drive them through their real exported functions.
