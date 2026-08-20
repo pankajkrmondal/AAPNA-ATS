@@ -12,7 +12,7 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**65 of 122 cases executed, all passing. Three real defects found and fixed.**
+**68 of 122 cases executed, all passing. Three real defects found and fixed.**
 
 **D3, found 2026-08-20 during the manual pass, is the one worth reading.** A stale browser tab could
 advance a candidate a *second* time — skipping a stage nobody chose to skip, sending two outcome
@@ -57,15 +57,16 @@ further code reading.
 |---|---|---|---|---|---|---|
 | A — M1 Pipeline (PIPE) | 16 | 14 | 14 | 0 | 0 | 2 (manual/UI) |
 | B — M3a Scheduling (SCHED) | 19 | 15 | 15 | 0 | 0 | 4 (manual/Graph) |
-| C — M4 Documents (DOC) | 13 | 9 | 9 | 0 | 0 | 4 (manual) |
-| D — M5 Offer (OFFER) | 16 | 12 | 12 | 0 | 0 | 4 |
+| C — M4 Documents (DOC) | 13 | 10 | 10 | 0 | 0 | 3 (manual) |
+| D — M5 Offer (OFFER) | 16 | 14 | 14 | 0 | 0 | 2 |
 | E — M6 Vendor (VEND) | 16 | 9 | 9 | 0 | 0 | 7 |
 | F — Cross-module (E2E) | 5 | 5 | 5 | 0 | 0 | 0 |
 | N — Negative/resilience | 5 | 1 | 1 | 0 | 0 | 4 |
 | G — Companion plan | 32 | 0 | — | — | — | 32 |
-| **Total** | **122** | **65** | **65** | **0** | **0** | **57** |
+| **Total** | **122** | **68** | **68** | **0** | **0** | **54** |
 
-Block C rose by one on 2026-08-20: **DOC-03** run manually against a live journey (details in Block C).
+**2026-08-20 additions:** DOC-03 (manual, live journey), N5 (manual — found defect D3), and DOC-11 /
+OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assertions).
 
 ## 🔴 Product defects found: 3 — two fixed, one open
 
@@ -545,6 +546,65 @@ exactly as after any automated round — a live upload token issued normally.
 
 ---
 
+## Block G — the scheduled sweeps (DOC-11, OFFER-14, OFFER-15)
+
+Run 2026-08-20. **12 cases, all passed on the first run.**
+`backend/src/tests/integration/sweepJobs.test.js`
+
+These three were recorded as "cannot run / not attempted" because they are cron jobs. **They did not
+need cron.** All three are pure DB polling, so backdating the timestamps the sweep selects on puts a
+row into the state it is looking for, and the exported `run*()` functions can be called directly.
+The real job function runs, against real rows, with nothing stubbed or mocked.
+
+**Why the selection query is the whole test.** DOC-10 already proved reminders send. What was never
+verified is whether the sweep picks the *right* rows — and a sweep that reminds everybody, or
+nobody, would still pass a "did it send" assertion. Each case below is asserted on its own request's
+counter, so unrelated rows on shared staging cannot influence the result.
+
+### DOC-11 — reminder sweep selection ✅ 5/5
+
+| Case | Result |
+|---|---|
+| Aged past `DOCUMENT_REMINDER_AFTER_DAYS`, never reminded | ✅ reminded once, `last_reminded_at` stamped |
+| Requested just now | ✅ **not** chased — inside the quiet window |
+| Already at `DOCUMENT_REMINDER_MAX_COUNT` | ✅ **not** chased — the sweep gives up and leaves it to a human |
+| Every document `verified` | ✅ **not** chased — nothing left to ask for |
+| Journey closed underneath an open request | ✅ **not** chased — the specific case the `final_outcome: null` guard exists for |
+
+### OFFER-14 — approval nudge ✅ 3/3
+
+| Case | Result |
+|---|---|
+| Pending approval, never nudged | ✅ nudged, `approval_nudged_at` stamped |
+| **Second run the same day** | ✅ **not** re-nudged — the timestamp is identical to the first run. Daily, not per-run |
+| Nudged yesterday | ✅ nudged again today |
+| Already `approved` | ✅ never nudged |
+
+The same-day case is the one worth having: the cron is daily *now*, but the cadence is configurable
+(`OFFER_SWEEP_CRON`). Someone tightening it to hourly would spam the approver every hour if the
+`startOfToday()` clause were ever dropped.
+
+### OFFER-15 — post-joining auto-close ✅ 4/4
+
+| Case | Result |
+|---|---|
+| Joined longer ago than `OFFER_AUTO_CLOSE_AFTER_DAYS` (90) | ✅ closed as `joined`, `closed_at` stamped |
+| Joined recently | ✅ stays open |
+| **Already closed by a recruiter as `joined_and_left`** | ✅ **left alone** — the sweep does not relabel a human's closure as `joined` |
+| Accepted, but no `joining_date` | ✅ never closes — the clock never started |
+
+That third case is the one that matters. Overwriting a recruiter's `joined_and_left` with `joined`
+would quietly turn an attrition record into a successful hire, corrupting the conversion analytics
+that `HIRE_OUTCOMES` feeds.
+
+⚠️ **These tests send real email** — redirected to the staging test inbox like every other
+integration file. Expect a handful of reminder and approval-nudge mails per run.
+
+**Staging verified clean afterwards:** 0 leaked sweep MRFs, base fixture intact (3 CVs / 2 MRFs),
+0 fixture MRFs left filled, 23 journeys — the documented baseline.
+
+---
+
 ## Test-harness bugs found and fixed (not product defects)
 
 Recorded deliberately — each looked like a failure and was investigated against the source before
@@ -602,8 +662,8 @@ listed here with what to do so the pass can be finished properly.
 |---|---|
 | **SCHED-11** (occurrence sweep, Teams attendance) | Graph `OnlineMeetingArtifact.Read.All` + Teams policy still pending with IT (readiness §2.4). The **nudge fallback** half is testable; the automatic-attendance half is not. ⚠️ Verify the "auto-no-showed every staging interview" regression specifically when the grant lands — it is a silent, every-row class of failure |
 | **ZEK-05 … ZEK-12** | `ZEKO_API_URL` is blank in all four env files (readiness §2.3). No published Zeko job with a `primary_interview_id` exists to test against |
-| **DOC-11** (reminder sweep selection) | Needs four request states aged across days. Achievable by backdating `requested_at`, but not attempted this session |
-| **OFFER-14/15** (nudge + 90-day auto-close) | Callable directly via `runApprovalNudges()` / `runPostJoiningAutoClose()`; not attempted this session |
+| ~~**DOC-11**~~ | ✅ **DONE 2026-08-20** — automated, 5 cases. See Block G below |
+| ~~**OFFER-14/15**~~ | ✅ **DONE 2026-08-20** — automated, 7 cases. See Block G below |
 
 ### ⚠️ PIPE-08 and VEND-11 need a specific setup or they prove nothing
 
