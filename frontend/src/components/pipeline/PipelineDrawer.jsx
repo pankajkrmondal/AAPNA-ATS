@@ -597,7 +597,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   };
 }
 
-export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
+export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -871,14 +871,30 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     onError: (err) => {
       // api.js normalises response.data.message onto .message, so the server's
       // own sentence renders here — not a generic fallback (N5).
-      message.error(err?.message || 'Failed to record outcome.');
-      // A 409 means this tab is looking at stale state (defect D3). Telling the
-      // recruiter to "reopen the candidate" and then leaving the stale screen up
-      // invites the same click again, so refresh it for them — the message
-      // explains what happened, the refresh makes the drawer true.
-      if (err?.status === 409) {
+      //
+      // A stale-conflict message is two sentences and asks the recruiter to do
+      // something, so it gets longer than the 3s default — and the parent holds
+      // its scrim for the same STALE_CONFLICT_TOAST_SECONDS. Change one, change
+      // both.
+      const isStale = err?.status === 409;
+      message.error(err?.message || 'Failed to record outcome.', isStale ? 5 : undefined);
+      // A 409 means this tab is looking at stale state (defect D3). The message
+      // says "reopen the candidate to see where they are now", so DO exactly
+      // that: dismiss the decision modal and the stale drawer, and refresh the
+      // board underneath. Leaving them open contradicts the instruction the
+      // recruiter is reading and invites the same click again — and every
+      // control still on screen was computed from a stage the candidate has
+      // already left.
+      if (isStale) {
+        setDecisionOutcome(null);
+        setOutcomeModalOpen(false);
+        onClose?.();
         queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
-        onChanged?.();
+        // Deliberately NOT onChanged() — that one also pops a "Pipeline updated."
+        // success toast, which would sit next to the error saying the opposite.
+        // The parent owns the scrim, because this drawer unmounts on the line
+        // above and an unmounted component cannot keep anything on screen.
+        onStaleConflict?.();
       }
     },
   });

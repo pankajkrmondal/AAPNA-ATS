@@ -128,20 +128,23 @@ proved it fires) — but it only catches *simultaneous* requests, not *stale* on
 it checks is read from the DB rather than sent by the client. Full write-up: D3 in
 [phase3-test-results.md](phase3-test-results.md).
 
-**✅ D3 was fixed the same day.** The two-tab test will now produce a real 409, so this check is
-unblocked and ready to re-run. ⚠️ **Restart staging first** — the fix is in the working tree, not
-deployed.
+### ☑ N5 — re-run after the D3 fix — ✅ **PASS** (20 Aug 2026, 12:03)
 
-**Re-run as:**
+D3 was fixed the same day and staging restarted. The two-tab test now behaves correctly.
 
 | Screen | Message rendered? |
 |---|---|
-| PipelineDrawer — expect *"Someone else moved this candidate while you were deciding…"*, and the drawer should **refresh itself** to the true stage | |
-| CandidateDetail | |
-| | |
+| **PipelineDrawer** | ✅ Exact server sentence: *"Someone else moved this candidate while you were deciding. Reopen the candidate to see where they are now."* — not a generic fallback |
+| **Candidate state** | ✅ Senthamil Selvi advanced to Functional Screening (Zeko) **once**. No double-advance — D3 confirmed fixed at the browser surface |
+| CandidateDetail | (not re-checked — propagation path verified in code via `api.js`) |
 
-Expected to pass: `api.js` normalises the server's message onto `err.message` for every call, so the
-propagation path is verified in code. This is confirming it on screen.
+**UX issue found during this run, now fixed.** The drawer and the decision modal stayed open behind
+the error, contradicting the message's own instruction to "reopen the candidate" and leaving Approve
+/ Hold / Reject live on a stage the candidate had already left. A `"Pipeline updated."` success toast
+also appeared next to the error. Both fixed: on a 409 the drawer now closes and the board refreshes
+without the success toast.
+
+⚠️ **Needs another staging restart** to see the UX fix — it landed after the run above.
 
 **Note:** `AnalyticsLegacy` was in the original screen list **and does not exist** — that was my
 error copying from the test plan. Use `EmailManagement` instead.

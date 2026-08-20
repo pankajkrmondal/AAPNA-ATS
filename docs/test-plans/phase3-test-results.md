@@ -177,7 +177,39 @@ scored High on the pipeline path specifically.
 | `pipeline.service.js:545` | `setStageOutcome` takes an optional `expectedStageKey` and 409s when it disagrees with `current_stage_key`, before any work is done |
 | `pipeline.controller.js:149` | Reads `expected_stage_key` off the body and passes it through |
 | `PipelineDrawer.jsx` (submit) | Sends `expected_stage_key: pipeline?.current_stage_key` — the stage the drawer is **rendering**, deliberately not a fresh read, which would defeat the purpose |
-| `PipelineDrawer.jsx` (onError) | On a 409, invalidates the detail query so the stale drawer refreshes itself. The message says "reopen the candidate"; leaving the stale screen up invites the same click again |
+| `PipelineDrawer.jsx` (onError) | On a 409: dismiss the decision modal, **close the drawer**, and refresh the board. The message says "reopen the candidate to see where they are now" — so the UI does exactly that |
+| `Pipeline.jsx` | New `onStaleConflict` prop — refreshes the board **without** the "Pipeline updated." success toast that `onChanged` carries |
+
+**UX follow-up, same day (found by the recruiter running N5).** The first version left the drawer and
+the decision modal open behind the error. Two problems with that:
+
+1. It **contradicted its own message.** The toast says "reopen the candidate", and the candidate was
+   still sitting there open, with Approve / Hold / Reject buttons inviting the identical click.
+2. Every control on screen had been computed from a stage the candidate had **already left** — the
+   stage strip, the "Record outcome — current stage" panel, the whole right-hand pane.
+
+Worse, the first version called `onChanged()` to refresh the board — but that callback also fires a
+`"Pipeline updated."` **success** toast, so a failed action rendered a success message directly
+beside the error saying the opposite. Hence the separate `onStaleConflict` prop: same board refresh,
+no success toast.
+
+**Second UX pass, same day (also from the recruiter running N5).** With the drawer closing correctly,
+the board behind it was still fully legible and interactive while the error was up — and it visibly
+re-sorted as the refresh landed, so a card jumping columns behind a toast read as *another* event
+rather than as the correction to the one just refused.
+
+The board is now **dimmed and blurred for exactly as long as the message is up**, then returns to
+normal:
+
+| Piece | Detail |
+|---|---|
+| Treatment | `var(--overlay-scrim)` + `blur(4px)` — **the same tokens `LoadingOverlay` already uses**, so a blocked board looks identical across the app, and both values are theme-aware (light and dark are defined separately in `index.css`) |
+| Where it lives | `Pipeline.jsx`, not the drawer — the drawer unmounts itself on conflict and an unmounted component cannot hold anything on screen |
+| Layering | `zIndex: 1500`, deliberately **below** antd's message layer (2010), so the toast stays crisp on top of the blur rather than being blurred with everything else |
+| Timing | Scrim lifetime and toast duration are both `5s` and documented as one interaction — the error is two sentences and asks the recruiter to act, so the 3s default was too short |
+| Input | `pointer-events` blocked — the board underneath is precisely the state the recruiter was wrong about |
+
+**Frontend build after both changes: `npm run build` → exit 0, 4101 modules transformed.**
 
 **The existing conditional claim was NOT touched.** It is still correct and still needed — D3 added a
 second guard, it did not replace the first. The two cover different windows, which the new tests
