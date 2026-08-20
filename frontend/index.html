@@ -38,8 +38,12 @@
     <meta property="og:description" content="Modern Applicant Tracking System for streamlined recruitment" />
     <meta property="og:type" content="website" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Favicon. Points at a real file in public/ — the old /vite.svg only ever
+         resolved because the Vite dev server serves its own copy; no such file is
+         emitted into dist, so every deployed environment fell through to the SPA
+         catch-all, received index.html as "the icon", and showed the default globe. -->
+    <link rel="icon" type="image/jpeg" href="/brand/aapna-mark.jpg" />
+    <link rel="apple-touch-icon" href="/brand/aapna-mark.jpg" />
 
     <!-- Google Fonts: Inter + Sora + DM Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

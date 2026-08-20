@@ -57,7 +57,20 @@ export async function countAcceptedHires(mrfId) {
         // journey was later closed as backed-out / did-not-join / joined-and-left,
         // the seat is free again — otherwise a candidate who never turned up
         // would keep the requisition shut for good.
-        NOT: { final_outcome: { in: [...VACATING_OUTCOMES] } },
+        //
+        // Written as an explicit NULL branch rather than NOT IN (…) because of
+        // SQL three-valued logic: for an OPEN journey final_outcome IS NULL, and
+        // `NULL IN (…)` evaluates to NULL, so `NOT (NULL)` is NULL — not TRUE.
+        // The row is therefore excluded, and since every in-flight journey is
+        // null here, this counted ZERO accepted hires in the one case that
+        // matters. No requisition could ever auto-close on acceptance.
+        // Found by PIPE/OFFER-08 in the 2026-08-19 test pass; the unit test
+        // covering this only asserted the VACATING_OUTCOMES constant, which is
+        // why a green suite never saw it.
+        OR: [
+          { final_outcome: null },
+          { final_outcome: { notIn: [...VACATING_OUTCOMES] } },
+        ],
       },
     },
   });

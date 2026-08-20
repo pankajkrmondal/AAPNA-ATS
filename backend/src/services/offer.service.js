@@ -255,7 +255,14 @@ export async function recordCandidateDecision(pipelineId, { decision, remarks = 
 
   const previousDecision = existing.candidate_decision;
   const alreadyDecided = previousDecision === 'accepted' || previousDecision === 'rejected';
-  if (alreadyDecided && !amend) {
+  // Strict boolean, not truthiness. pipeline.controller.js already narrows the
+  // HTTP body with `amend === true`, but this service is called directly too
+  // (jobs, scripts, tests), and there `amend: "false"` — or any non-empty
+  // string off a form post or query param — is truthy and would silently
+  // overwrite a recorded acceptance. Defence in depth on the one flag whose
+  // whole purpose is "the caller has to mean it". Found by OFFER-11 in the
+  // 2026-08-19 test pass.
+  if (alreadyDecided && amend !== true) {
     throw new AppError(
       `The candidate's decision is already recorded as "${previousDecision}". Amend it explicitly if it needs to change.`,
       409
