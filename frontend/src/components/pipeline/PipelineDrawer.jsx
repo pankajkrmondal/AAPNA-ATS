@@ -869,7 +869,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       setOutcomeModalOpen(false);
     },
     onError: (err) => {
+      // api.js normalises response.data.message onto .message, so the server's
+      // own sentence renders here — not a generic fallback (N5).
       message.error(err?.message || 'Failed to record outcome.');
+      // A 409 means this tab is looking at stale state (defect D3). Telling the
+      // recruiter to "reopen the candidate" and then leaving the stale screen up
+      // invites the same click again, so refresh it for them — the message
+      // explains what happened, the refresh makes the drawer true.
+      if (err?.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+        onChanged?.();
+      }
     },
   });
 
@@ -1341,6 +1351,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       email_subject: emailSubject,
       email_body: emailBody,
       skip_optional_next: showOptionalNextChoice ? skipOptionalNext : undefined,
+      // The stage THIS DRAWER is displaying. If someone else moved the candidate
+      // while this tab sat open, the server 409s instead of silently advancing
+      // them a second time (defect D3). Sent from the rendered pipeline, not
+      // re-fetched — a fresh read here would defeat the entire point.
+      expected_stage_key: pipeline?.current_stage_key,
     });
   };
 

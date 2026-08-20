@@ -536,10 +536,13 @@ export async function getOutcomePreview(pipelineId, outcomeKey) {
  * @param {boolean} [params.skipOptionalNext] - when approving and the resolved next stage is
  *   optional, land two stages ahead instead of one and log the bypassed stage as a 'skip'
  *   event (02-BUSINESS-DESIGN.md §2 rule 2) rather than 'entered'. Ignored otherwise.
+ * @param {string|null} [params.expectedStageKey] - the stage the CLIENT was displaying when the
+ *   recruiter decided. Guards against a stale tab; see the note below. Optional for backwards
+ *   compatibility with direct service callers (jobs, scripts, tests).
  * @param {number} params.actedBy - rpa_users.id
  * @returns {Promise<object>} the updated pipeline row + event
  */
-export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, skipOptionalNext = false, actedBy }) {
+export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, skipOptionalNext = false, expectedStageKey = null, actedBy }) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: true },
@@ -548,6 +551,40 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
     throw new AppError('Pipeline journey not found.', 404);
   }
   assertJourneyOpen(pipeline, 'record another outcome');
+
+  // STALE-TAB GUARD (defect D3, 2026-08-20).
+  //
+  // Distinct from the conditional claim further down, and BOTH are needed —
+  // they close different windows:
+  //
+  //   - The claim below compares the row against what THIS REQUEST read a few
+  //     milliseconds earlier. That catches two requests interleaving inside the
+  //     transaction window (PIPE-03), and nothing else.
+  //   - This check compares the row against what the USER'S SCREEN was showing.
+  //     That catches a tab left open while someone else acted — seconds or
+  //     minutes, not milliseconds.
+  //
+  // Without this, a stale tab's approval was accepted with 200 and advanced the
+  // candidate a SECOND time: zeko_hr -> assessment (tab A), then
+  // assessment -> zeko_fn (tab B, still displaying zeko_hr). A stage was skipped
+  // with nobody deciding to skip it, two outcome emails went to the candidate,
+  // and the audit trail recorded an HR-screening decision that advanced past a
+  // stage the candidate never entered. The claim could not see it: by the time
+  // tab B arrived nothing was racing, and its request was internally consistent.
+  //
+  // The stage has to come from the CLIENT for this to mean anything — deriving
+  // it from the database is what made the original guard blind to staleness.
+  // scheduleInterview() already takes stage_key from the client for the same
+  // reason (SCHED-03).
+  //
+  // Optional by design: omitting it keeps the old behaviour for direct service
+  // callers. Only the HTTP path (a real browser with a real screen) sends it.
+  if (expectedStageKey && expectedStageKey !== pipeline.current_stage_key) {
+    throw new AppError(
+      'Someone else moved this candidate while you were deciding. Reopen the candidate to see where they are now.',
+      409
+    );
+  }
 
   const outcome = await prisma.rpa_stage_outcomes.findUnique({
     where: { stage_key_outcome_key: { stage_key: pipeline.current_stage_key, outcome_key: outcomeKey } },

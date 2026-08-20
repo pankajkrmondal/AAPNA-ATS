@@ -1,0 +1,60 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>ATS Document Collection — E2E Evidence</title>
+<style>
+body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;max-width:900px;margin:2rem auto;padding:0 1.2rem;color:#1c1f23}
+h1{font-size:1.5rem;margin-bottom:.2rem}h2{font-size:1.05rem;margin-top:1.8rem;border-bottom:1px solid #e5e7eb;padding-bottom:.3rem}
+.sub{color:#6b7280;margin-top:0}
+table{border-collapse:collapse;width:100%;margin:.6rem 0}
+td,th{border:1px solid #e5e7eb;padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#f6f8fa;font-weight:600;width:34%}
+code{background:#f3f4f6;padding:.1rem .3rem;border-radius:3px;font-size:.88em;word-break:break-all}
+.pass{color:#15803d;font-weight:600}.fail{color:#b91c1c;font-weight:600}
+</style></head><body>
+<h1>ATS — Candidate Document Upload, end-to-end check</h1>
+<p class="sub">Run 20 Aug 2026, 09:15 IST · app at http://localhost:5173</p>
+
+<h2>1. Fixture seed counts <span class="fail">MISMATCH</span></h2>
+<table>
+<tr><th>Expected</th><td>3 CVs · 2 MRFs · 3 journeys</td></tr>
+<tr><th>Actual (live DB)</th><td>198 candidates/CVs · 124 MRFs · 23 open pipeline journeys</td></tr>
+<tr><th>Source</th><td><code>/api/candidates</code> pagination.total = 198<br><code>/api/mrf</code> pagination.total = 124<br><code>/api/pipeline</code> total = 23</td></tr>
+</table>
+<p>This is a fully populated dev database, not the minimal fixture. Per-stage journey counts:
+zeko_hr 11 · assessment 2 · zeko_fn 4 · tech1 1 · tech2 1 · tech3 0 · hr_round 2 · ceo 0 · client 0 · <b>documents 1</b> · offer 1.</p>
+
+<h2>2. Journey at the documents stage</h2>
+<table>
+<tr><th>Journey (pipeline) id</th><td>27</td></tr>
+<tr><th>Candidate</th><td>SAHIL SARMA (cv_id 31)</td></tr>
+<tr><th>Position / MRF</th><td>Dot Net / mrf_id 63</td></tr>
+<tr><th>Stage</th><td>documents — in_progress, 7 days in stage</td></tr>
+<tr><th>Upload link (per-journey)</th><td><code>http://localhost:5173/documents/ef644b47-9017-4ae9-b6de-7cccf447cf75</code><br>request id 3, token_status <code>active</code>, 3 reminders sent</td></tr>
+</table>
+
+<h2>3. Unauthenticated candidate access <span class="pass">PASS</span></h2>
+<p>Auth keys cleared from browser storage, then the link was loaded in a fresh tab. The portal rendered
+the candidate name, position and 3-item checklist with no login prompt and no redirect.</p>
+
+<h2>4. Upload <span class="pass">PASS — HTTP 200</span></h2>
+<table>
+<tr><th>Checklist item</th><td>Last 3 months' payslips (<code>payslips_last_3_months</code>, id 1)</td></tr>
+<tr><th>File sent</th><td><code>payslips-last-3-months.pdf</code> — 800 bytes, valid PDF 1.4 (%PDF-1.4 header, xref table, %%EOF)</td></tr>
+<tr><th>Request</th><td>POST <code>/api/documents/{token}/upload</code></td></tr>
+<tr><th>Status</th><td class="pass">200</td></tr>
+<tr><th>Response</th><td><code>{"status":"success","message":"Document uploaded","data":{"id":7,"status":"uploaded","original_name":"payslips-last-3-months.pdf"}}</code></td></tr>
+<tr><th>UI result</th><td>toast "Document submitted." · badge changed to "Uploaded — under review"</td></tr>
+</table>
+
+<h2>5. OneDrive landing <span class="pass">CONFIRMED</span></h2>
+<table>
+<tr><th>Folder</th><td>My files › Resume_Test › <b>Document Collection</b> › <b>SAHIL SARMA (cv-31)</b></td></tr>
+<tr><th>Stored filename</th><td><code>payslips_last_3_months_1787197525.pdf</code></td></tr>
+<tr><th>Size</th><td>800 bytes (byte-identical to the file sent)</td></tr>
+<tr><th>Created / modified</th><td>2026-08-20T03:45:26Z — 09:15:26 IST</td></tr>
+<tr><th>Modified by</th><td>SharePoint App (service principal, as expected)</td></tr>
+<tr><th>Verified via</th><td>OneDrive web UI + SharePoint REST <code>GetFolderByServerRelativeUrl(...)/Files</code></td></tr>
+</table>
+<p><b>Note:</b> the folder pattern matches <code>Document Collection/{name} (cv-{id})/</code>, but it sits under a
+<code>Resume_Test/</code> root rather than at the drive root. The candidate-supplied filename is discarded and replaced
+with <code>{item_key}_{unix_ts}.pdf</code>; the original name is kept only in the database
+(<code>rpa_candidate_documents.original_name</code>).</p>
+</body></html>

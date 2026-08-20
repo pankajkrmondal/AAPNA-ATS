@@ -142,11 +142,16 @@ export const getOutcomePreview = catchAsync(async (req, res) => {
  * stage. Approve auto-advances to the next active stage in the same call.
  * If that next stage is optional, `skip_optional_next: true` lands on the
  * stage after it instead, logging the bypassed stage as a skip.
+ *
+ * `expected_stage_key` is the stage the client was DISPLAYING when the recruiter
+ * decided. Sending it turns a stale-tab decision into a 409 instead of a second
+ * silent advance (defect D3) — see setStageOutcome() for why the server cannot
+ * work this out on its own.
  */
 export const setStageOutcome = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
-  const { outcome_key, reason_id, other_text, notes, email_subject, email_body, skip_optional_next } = req.body;
+  const { outcome_key, reason_id, other_text, notes, email_subject, email_body, skip_optional_next, expected_stage_key } = req.body;
   if (!outcome_key) throw new AppError('outcome_key is required.', 400);
 
   const result = await pipelineService.setStageOutcome(id, {
@@ -157,6 +162,7 @@ export const setStageOutcome = catchAsync(async (req, res) => {
     emailSubject: email_subject || null,
     emailBody: email_body || null,
     skipOptionalNext: !!skip_optional_next,
+    expectedStageKey: expected_stage_key || null,
     actedBy: req.user?.id,
   });
   return success(res, result, 'Stage outcome recorded successfully');

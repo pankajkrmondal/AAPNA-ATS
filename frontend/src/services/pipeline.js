@@ -93,7 +93,12 @@ const pipelineService = {
    * Records Approve/Reject/Hold (or any configured outcome) on the current
    * stage. Approve auto-advances to the next active stage in the same call.
    * @param {number} id
-   * @param {Object} payload - { outcome_key, reason_id?, other_text?, notes?, email_subject?, email_body?, skip_optional_next? }
+   * @param {Object} payload - { outcome_key, reason_id?, other_text?, notes?, email_subject?,
+   *   email_body?, skip_optional_next?, expected_stage_key? }
+   *
+   * `expected_stage_key` is the stage the caller was DISPLAYING. Send it and a
+   * stale decision comes back 409 instead of silently advancing the candidate a
+   * second time (defect D3).
    */
   setStageOutcome(id, payload) {
     return api.post(`/pipeline/${id}/outcome`, payload);
