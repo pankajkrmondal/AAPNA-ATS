@@ -633,6 +633,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // submit attempted — an error on a pristine, never-touched field reads as broken.
   const [interviewerEmailTouched, setInterviewerEmailTouched] = useState(false);
   const [interviewCancelOpen, setInterviewCancelOpen] = useState(false);
+  // Deliberately NOT `cancelReason` — that belongs to the Zeko cancel modal,
+  // which shares this one's "Confirm Cancel Interview" title. Reusing it would
+  // leak a reason typed in one dialog into the other (defect D9, 2026-08-20).
+  const [interviewCancelReason, setInterviewCancelReason] = useState('');
   // No-show modal (which side missed + reason) for the occurrence gate.
   const [noShowOpen, setNoShowOpen] = useState(false);
   const [noShowParty, setNoShowParty] = useState('candidate');
@@ -1085,6 +1089,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
   const interviewCancelMutation = useMutation({
     mutationFn: () => pipelineService.cancelInterview(interviewSchedule.id, {
+      // The endpoint has always honoured cancel_reason and writes it into the
+      // stage-event audit line — the drawer simply never sent it, so every
+      // recruiter cancellation recorded THAT a round was cancelled and never
+      // WHY (defect D9, 2026-08-20).
+      cancel_reason: interviewCancelReason.trim() || undefined,
       candidate_subject: cxlEmail.candidateSubject,
       candidate_body: cxlEmail.candidateBody,
       panel_subject: cxlEmail.panelSubject,
@@ -1095,6 +1104,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       onChanged?.();
       message.success('Interview cancelled — candidate notified.');
       setInterviewCancelOpen(false);
+      setInterviewCancelReason('');
       setCxlEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
       setCxlEmailForKey(null);
     },
@@ -2300,6 +2310,20 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             {interviewSchedule.interviewer_name && (
               <Text type="secondary" style={{ fontSize: 12.5 }}>with {interviewSchedule.interviewer_name}</Text>
             )}
+          </div>
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Cancel reason (optional)</Text>
+            <TextArea
+              rows={3}
+              placeholder="e.g. Interviewer unavailable, candidate withdrew…"
+              value={interviewCancelReason}
+              onChange={(e) => setInterviewCancelReason(e.target.value)}
+              style={{ marginTop: 4 }}
+            />
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              Recorded on the candidate&apos;s timeline, and used in the Outlook cancellation notice.
+              Type it before the emails are generated if you want it to appear in them.
+            </Text>
           </div>
           <div>
             <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
