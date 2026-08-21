@@ -427,22 +427,11 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     });
   }
 
-  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
-  // already complete (statusActive = ACTIVE). This keeps the dashboard correct no matter
-  // which path resolved the missing data (public form, recruiter edit, merge, re-upload),
-  // and covers candidates with multiple job rows. Cheap (filtered on status) and best-effort.
-  try {
-    await prisma.$executeRaw`
-      UPDATE rpa_upload_jobs AS j
-      SET status = 'Completed', action_required = false, updated_at = now()
-      FROM rpa_cv AS c
-      WHERE j.cv_id = c.id
-        AND j.status = 'Missing_Information'
-        AND c."statusActive" = 'ACTIVE'
-    `;
-  } catch (e) {
-    logger.warn(`Upload-job self-heal skipped: ${e.message}`);
-  }
+  // Heal rows no live run will advance again. This endpoint previously only ran the
+  // missing-info self-heal, so a vendor whose batch died mid-run watched "Processing"
+  // forever: the reaper existed, but only on the HR dashboard, so recovery depended on
+  // an admin happening to open a different page.
+  await uploadJobService.reconcileStaleJobs('Vendor upload-job');
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
   const role = (req.user.role || '').toLowerCase();

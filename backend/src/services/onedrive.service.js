@@ -6,6 +6,13 @@ import config from '../config/index.js'; // updated env config with gemini and l
 let cachedToken = null;
 let tokenExpiry = null;
 
+// Node's fetch has no default timeout. These calls sit inside the sequential
+// per-file resume loop, so a half-open connection to Graph would stall not just
+// this upload but every remaining file in the batch. Metadata/token calls are
+// small and quick; the file PUT gets a longer budget.
+const GRAPH_METADATA_TIMEOUT_MS = 30_000;
+const GRAPH_UPLOAD_TIMEOUT_MS = 90_000;
+
 /**
  * Request an access token from Microsoft Identity Platform using Client Credentials.
  */
@@ -34,7 +41,8 @@ export async function getAccessToken() {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
     },
-    body: params.toString()
+    body: params.toString(),
+    signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS)
   });
 
   if (!response.ok) {
@@ -92,7 +100,10 @@ async function ensureChildFolder(accessToken, parentId, folderName) {
   const byPathUrl = `${driveBase}/items/${parentId}:/${encodeURIComponent(folderName)}?$select=id,folder`;
 
   const lookup = async () => {
-    const res = await fetch(byPathUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const res = await fetch(byPathUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const item = await res.json();
     return item?.folder ? item.id : null;
@@ -111,6 +122,7 @@ async function ensureChildFolder(accessToken, parentId, folderName) {
       // folder, not create "Name 1" alongside "Name".
       '@microsoft.graph.conflictBehavior': 'fail',
     }),
+    signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
   });
 
   if (createRes.ok) {
@@ -187,7 +199,8 @@ export async function uploadFileToOneDrive(localFilePath, originalName, { folder
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/octet-stream'
       },
-      body: fileBuffer
+      body: fileBuffer,
+      signal: AbortSignal.timeout(GRAPH_UPLOAD_TIMEOUT_MS)
     });
 
     if (!response.ok) {

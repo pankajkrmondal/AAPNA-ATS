@@ -26,7 +26,7 @@ import {
   sendDifferentVendorDuplicateAlert,
   sendResumeErrorAlert
 } from './emailNotification.service.js';
-import { setJobStatus, updateJob, JOB_STATUS, updateJobByCvTmpId, jobsModelReady } from './uploadJob.service.js';
+import { setJobStatus, updateJob, JOB_STATUS, updateJobByCvTmpId, jobsModelReady, failPendingJobs } from './uploadJob.service.js';
 import { activeVendorFor, vendorLockExpiry } from '../utils/vendorLock.js';
 import { findRecentRejection } from './pipeline.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
@@ -1057,640 +1057,668 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
 
   await (async () => {
     logger.info(`Starting background resume parsing for batch: ${executionId}`);
-    
+
     let successCount = 0;
     let duplicateCount = 0;
     let failedCount = 0;
     let rejectedCount = 0; // resumes rejected for no valid email/phone — NOT processing failures
     const batchErrors = []; // accumulates per-file errors across the whole batch for the error alert
 
-    for (const file of files) {
-      const rowErrors = [];
-      const rowDuplicates = [];
-      const rowRejected = [];
-      // Per-file job-tracking state (last candidate item wins for multi-row files).
-      const jobInfo = {
-        candidate_name: null,
-        candidate_email: null,
-        cv_id: null,
-        cv_tmp_id: null,
-        missingInfo: false,
-      };
+    try {
+      for (const file of files) {
+        const rowErrors = [];
+        const rowDuplicates = [];
+        const rowRejected = [];
+        // Per-file job-tracking state (last candidate item wins for multi-row files).
+        const jobInfo = {
+          candidate_name: null,
+          candidate_email: null,
+          cv_id: null,
+          cv_tmp_id: null,
+          missingInfo: false,
+        };
 
-      try {
-        // 1) Set log + job to processing
-        await prisma.rpa_upload_log.update({
-          where: {
-            execution_id_file_name: {
-              execution_id: executionId,
-              file_name: file.originalname,
-            }
-          },
-          data: { status: 'processing' }
-        });
-        await setJobStatus(executionId, file.originalname, JOB_STATUS.PROCESSING).catch(() => {});
-
-        // 2) Determine if file is Excel
-        const ext = path.extname(file.originalname).toLowerCase();
-        const isExcel = ext === '.xlsx';
-        let candidateItems = [];
-
-        if (isExcel) {
-          try {
-            const workbook = XLSX.readFile(file.path);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(worksheet);
-            if (rows.length === 0) {
-              throw new Error('Spreadsheet contains no data.');
-            }
-            candidateItems = rows.map((row, idx) => {
-              const text = Object.entries(row)
-                .map(([k, v]) => `${k}: ${v ?? ''}`)
-                .join('\n');
-              return {
-                text,
-                filename: `${file.originalname} (Row ${idx + 2})`
-              };
-            });
-            logger.info(`Excel: Read ${candidateItems.length} candidate rows from file ${file.originalname}`);
-          } catch (xlsxErr) {
-            throw new Error(`Failed to read spreadsheet: ${xlsxErr.message}`);
-          }
-        } else {
-          const text = await extractTextFromFile(file.path, file.originalname);
-          if (!text || text.trim().length === 0) {
-            throw new Error('Extracted resume text was empty.');
-          }
-          candidateItems = [{ text, filename: file.originalname }];
-        }
-
-        // Upload original file to OneDrive once
-        let cvUrl = `/uploads/${path.basename(file.path)}`;
         try {
-          const onedriveUrl = await onedriveService.uploadFileToOneDrive(file.path, file.originalname);
-          if (onedriveUrl) {
-            cvUrl = onedriveUrl;
-          }
-        } catch (odErr) {
-          logger.warn(`OneDrive: Failed to upload to OneDrive for file ${file.originalname}, using local fallback: ${odErr.message}`);
-        }
-        jobInfo.file_url = cvUrl;
-        // Persist the resume link as soon as we have it. Held only in memory until
-        // the per-file aggregate, it was lost whenever a run died mid-file — taking
-        // with it the one field that ties a stranded job to the rpa_cv_tmp row it
-        // already created, which is what the dashboard's orphan recovery matches on.
-        await updateJob(executionId, file.originalname, { file_url: cvUrl })
-          .catch((e) => logger.warn(`Failed to persist file_url for ${file.originalname}: ${e.message}`));
+          // 1) Set log + job to processing
+          await prisma.rpa_upload_log.update({
+            where: {
+              execution_id_file_name: {
+                execution_id: executionId,
+                file_name: file.originalname,
+              }
+            },
+            data: { status: 'processing' }
+          });
+          await setJobStatus(executionId, file.originalname, JOB_STATUS.PROCESSING).catch(() => {});
 
-        // Process each item (row or file text)
-        for (const item of candidateItems) {
-          let parsed = null;
-          try {
-            // Pass ONLY a real vendor attribution (null for HR). Never feed the uploader's
-            // own email/name — the LLM would otherwise leak it into EmailID/unique_key and
-            // a candidate with no email would inherit the recruiter's address.
-            parsed = await parseResumeWithOpenRouter(item.text, item.filename, attrEmail, attrName);
-            logger.info(`Successfully parsed candidate using OpenRouter: ${item.filename}`);
-          } catch (err) {
-            logger.error(`Gemini parsing failed for ${item.filename}: ${err.message}`);
-            rowErrors.push(`${item.filename}: ${err.message}`);
-            failedCount++;
-            continue;
-          }
+          // 2) Determine if file is Excel
+          const ext = path.extname(file.originalname).toLowerCase();
+          const isExcel = ext === '.xlsx';
+          let candidateItems = [];
 
-          // 4) Compute experience history and calculate years.
-          //
-          // The dates win when they can be read, because a sum of real employment
-          // spans beats whatever the model asserted — but only when they actually
-          // produced something. This block used to take the computed value whenever
-          // the history array was non-empty, so a CV whose dates were in a format
-          // the parser could not read (Jun-2022, May'21, 05.2022) was saved as
-          // "0 years": the resume said 8, the Search Candidate page said 0, and
-          // because "0" is a non-empty string getMissingFields() never flagged it.
-          const historyInput = Array.isArray(parsed.EmploymentHistory) ? parsed.EmploymentHistory : [];
-          const { companies, totalMonths, lastCompanyMonths } = summariseEmploymentHistory(historyInput);
-
-          // Resolution rule lives in utils/experienceParser.js and is unit-tested
-          // there. A genuine "Fresher"/"0" passes through untouched —
-          // parseExperienceNumeric() maps fresher variants to 0.0 downstream.
-          parsed.TotalExperienceYears = resolveExperienceYears(totalMonths, parsed.TotalExperienceYears);
-          parsed.LastCompanyExperienceYears = resolveExperienceYears(lastCompanyMonths, parsed.LastCompanyExperienceYears);
-
-          const formattedHistory = companies;
-          const employmentHistoryDb = {
-            companies: formattedHistory,
-            total_companies: formattedHistory.length
-          };
-
-          const fullText = (item.text || '').trim();
-          const resume_text_quality = fullText.length === 0 ? 'failed' : (fullText.length < 200 ? 'lossy' : 'extracted');
-          const rawTerms = parsed.ResumeTechnicalTerms;
-          let resume_technical_terms = [];
-          if (Array.isArray(rawTerms) && rawTerms.length > 0 && fullText.length > 0) {
-            const fullTextLower = fullText.toLowerCase();
-            resume_technical_terms = rawTerms
-              .map(term => {
-                const safeTerm = String(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(`\\b${safeTerm}\\b`, 'gi');
-                const matches = fullTextLower.match(regex);
-                return {
-                  term: String(term),
-                  count: matches ? matches.length : 1
-                };
-              })
-              .sort((a, b) => b.count - a.count);
-          }
-          const resume_term_updated_at = resume_technical_terms.length > 0 ? new Date() : null;
-
-          const missingFields = getMissingFields(parsed);
           if (isExcel) {
-            missingFields.uploadResume = 'Null';
-          }
-          const missingDataJson = JSON.stringify(missingFields);
-          const statusActive = Object.keys(missingFields).length > 0 ? 'INACTIVE' : 'ACTIVE';
-
-          // 5) Build dedupe keys from validated identifiers (drops non-email junk that the
-          //    parser may have echoed into unique_key, the uploader's/vendor's own email,
-          //    and the placeholder phone default).
-          // Then VERIFY each identifier actually appears in the resume text — the parser
-          // sometimes fabricates a plausible email from the name (e.g. firstname.lastname@example.com)
-          // or returns the placeholder phone; those won't be present in the source text.
-          const resumeTextLower = fullText.toLowerCase();
-          const resumeDigits = fullText.replace(/\D/g, '');
-          const cleanEmails = sanitizeMatchEmails(parsed.EmailID || parsed.unique_key, [email, attrEmail])
-            .filter((e) => resumeTextLower.includes(e));
-          const cleanContactNumbers = sanitizeMatchContacts(parsed.ContactNumber)
-            .filter((n) => {
-              const digits = n.replace(/\D/g, '');
-              return digits.length > 0 && resumeDigits.includes(digits);
-            });
-
-          // Reject rule: a resume with no valid email cannot receive the missing-data
-          // collection link (its token is base64 of the email), so reject it as
-          // "Rejected by System" even when a phone number is present.
-          if (cleanEmails.length === 0) {
-            logger.warn(`Candidate has no valid email address for ${item.filename} (source: ${source}). Rejecting...`);
-            // Identify who submitted the rejected resume: vendor attribution wins
-            // (covers vendor self-uploads and staff uploading on behalf of a vendor),
-            // then the intake sender, then the HR uploader.
-            const uploadedBy = attr
-              ? `Vendor — ${attrName || 'Unknown vendor'}${attrEmail ? ` (${attrEmail})` : ''}`
-              : source === 'email_intake'
-                ? `Email Intake — received from ${email}`
-                : `HR Upload — ${fullName} (${email})`;
-            sendEmailIdNullAlert(parsed.Name || item.filename, email, uploadedBy).catch(mailErr => {
-              logger.error(`Failed to send EmailID NULL alert: ${mailErr.message}`);
-            });
-            rowRejected.push(`${item.filename}: No valid email address found in resume`);
-            rejectedCount++;
-            continue;
-          }
-
-          // EmailID stored on the candidate uses only the validated emails (always
-          // non-empty here — email-less resumes were rejected above).
-          const emailToSearch = cleanEmails.join(', ');
-
-          let existingCandidate = null;
-          if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
-            const matches = await prisma.$queryRaw`
-              SELECT id FROM public.rpa_cv
-              WHERE
-                (
-                  coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
-                  string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
-                ) OR (
-                  coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
-                  string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
-                )
-              LIMIT 1
-            `;
-            if (matches && matches.length > 0) {
-              existingCandidate = await prisma.rpa_cv.findUnique({
-                where: { id: matches[0].id }
+            try {
+              const workbook = XLSX.readFile(file.path);
+              const sheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[sheetName];
+              const rows = XLSX.utils.sheet_to_json(worksheet);
+              if (rows.length === 0) {
+                throw new Error('Spreadsheet contains no data.');
+              }
+              candidateItems = rows.map((row, idx) => {
+                const text = Object.entries(row)
+                  .map(([k, v]) => `${k}: ${v ?? ''}`)
+                  .join('\n');
+                return {
+                  text,
+                  filename: `${file.originalname} (Row ${idx + 2})`
+                };
               });
+              logger.info(`Excel: Read ${candidateItems.length} candidate rows from file ${file.originalname}`);
+            } catch (xlsxErr) {
+              throw new Error(`Failed to read spreadsheet: ${xlsxErr.message}`);
             }
+          } else {
+            const text = await extractTextFromFile(file.path, file.originalname);
+            if (!text || text.trim().length === 0) {
+              throw new Error('Extracted resume text was empty.');
+            }
+            candidateItems = [{ text, filename: file.originalname }];
           }
 
-          if (existingCandidate) {
-            if (source === 'vendor_portal' || source === 'hr_manual_upload') {
-              // Duplicate of an existing candidate → route to the rpa_cv_tmp review
-              // queue for recruiter Merge/Cancel. Vendor uploads carry their vendor
-              // attribution so a later merge stamps VendorEmail + the 90-day lock.
-              const isVendorSource = source === 'vendor_portal';
-              const tempCandidate = await prisma.rpa_cv_tmp.create({
+          // Upload original file to OneDrive once
+          let cvUrl = `/uploads/${path.basename(file.path)}`;
+          try {
+            const onedriveUrl = await onedriveService.uploadFileToOneDrive(file.path, file.originalname);
+            if (onedriveUrl) {
+              cvUrl = onedriveUrl;
+            }
+          } catch (odErr) {
+            logger.warn(`OneDrive: Failed to upload to OneDrive for file ${file.originalname}, using local fallback: ${odErr.message}`);
+          }
+          jobInfo.file_url = cvUrl;
+          // Persist the resume link as soon as we have it. Held only in memory until
+          // the per-file aggregate, it was lost whenever a run died mid-file — taking
+          // with it the one field that ties a stranded job to the rpa_cv_tmp row it
+          // already created, which is what the dashboard's orphan recovery matches on.
+          await updateJob(executionId, file.originalname, { file_url: cvUrl })
+            .catch((e) => logger.warn(`Failed to persist file_url for ${file.originalname}: ${e.message}`));
+
+          // Process each item (row or file text)
+          for (const item of candidateItems) {
+            let parsed = null;
+            try {
+              // Pass ONLY a real vendor attribution (null for HR). Never feed the uploader's
+              // own email/name — the LLM would otherwise leak it into EmailID/unique_key and
+              // a candidate with no email would inherit the recruiter's address.
+              parsed = await parseResumeWithOpenRouter(item.text, item.filename, attrEmail, attrName);
+              logger.info(`Successfully parsed candidate using OpenRouter: ${item.filename}`);
+            } catch (err) {
+              logger.error(`Gemini parsing failed for ${item.filename}: ${err.message}`);
+              rowErrors.push(`${item.filename}: ${err.message}`);
+              failedCount++;
+              continue;
+            }
+
+            // 4) Compute experience history and calculate years.
+            //
+            // The dates win when they can be read, because a sum of real employment
+            // spans beats whatever the model asserted — but only when they actually
+            // produced something. This block used to take the computed value whenever
+            // the history array was non-empty, so a CV whose dates were in a format
+            // the parser could not read (Jun-2022, May'21, 05.2022) was saved as
+            // "0 years": the resume said 8, the Search Candidate page said 0, and
+            // because "0" is a non-empty string getMissingFields() never flagged it.
+            const historyInput = Array.isArray(parsed.EmploymentHistory) ? parsed.EmploymentHistory : [];
+            const { companies, totalMonths, lastCompanyMonths } = summariseEmploymentHistory(historyInput);
+
+            // Resolution rule lives in utils/experienceParser.js and is unit-tested
+            // there. A genuine "Fresher"/"0" passes through untouched —
+            // parseExperienceNumeric() maps fresher variants to 0.0 downstream.
+            parsed.TotalExperienceYears = resolveExperienceYears(totalMonths, parsed.TotalExperienceYears);
+            parsed.LastCompanyExperienceYears = resolveExperienceYears(lastCompanyMonths, parsed.LastCompanyExperienceYears);
+
+            const formattedHistory = companies;
+            const employmentHistoryDb = {
+              companies: formattedHistory,
+              total_companies: formattedHistory.length
+            };
+
+            const fullText = (item.text || '').trim();
+            const resume_text_quality = fullText.length === 0 ? 'failed' : (fullText.length < 200 ? 'lossy' : 'extracted');
+            const rawTerms = parsed.ResumeTechnicalTerms;
+            let resume_technical_terms = [];
+            if (Array.isArray(rawTerms) && rawTerms.length > 0 && fullText.length > 0) {
+              const fullTextLower = fullText.toLowerCase();
+              resume_technical_terms = rawTerms
+                .map(term => {
+                  const safeTerm = String(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const regex = new RegExp(`\\b${safeTerm}\\b`, 'gi');
+                  const matches = fullTextLower.match(regex);
+                  return {
+                    term: String(term),
+                    count: matches ? matches.length : 1
+                  };
+                })
+                .sort((a, b) => b.count - a.count);
+            }
+            const resume_term_updated_at = resume_technical_terms.length > 0 ? new Date() : null;
+
+            const missingFields = getMissingFields(parsed);
+            if (isExcel) {
+              missingFields.uploadResume = 'Null';
+            }
+            const missingDataJson = JSON.stringify(missingFields);
+            const statusActive = Object.keys(missingFields).length > 0 ? 'INACTIVE' : 'ACTIVE';
+
+            // 5) Build dedupe keys from validated identifiers (drops non-email junk that the
+            //    parser may have echoed into unique_key, the uploader's/vendor's own email,
+            //    and the placeholder phone default).
+            // Then VERIFY each identifier actually appears in the resume text — the parser
+            // sometimes fabricates a plausible email from the name (e.g. firstname.lastname@example.com)
+            // or returns the placeholder phone; those won't be present in the source text.
+            const resumeTextLower = fullText.toLowerCase();
+            const resumeDigits = fullText.replace(/\D/g, '');
+            const cleanEmails = sanitizeMatchEmails(parsed.EmailID || parsed.unique_key, [email, attrEmail])
+              .filter((e) => resumeTextLower.includes(e));
+            const cleanContactNumbers = sanitizeMatchContacts(parsed.ContactNumber)
+              .filter((n) => {
+                const digits = n.replace(/\D/g, '');
+                return digits.length > 0 && resumeDigits.includes(digits);
+              });
+
+            // Reject rule: a resume with no valid email cannot receive the missing-data
+            // collection link (its token is base64 of the email), so reject it as
+            // "Rejected by System" even when a phone number is present.
+            if (cleanEmails.length === 0) {
+              logger.warn(`Candidate has no valid email address for ${item.filename} (source: ${source}). Rejecting...`);
+              // Identify who submitted the rejected resume: vendor attribution wins
+              // (covers vendor self-uploads and staff uploading on behalf of a vendor),
+              // then the intake sender, then the HR uploader.
+              const uploadedBy = attr
+                ? `Vendor — ${attrName || 'Unknown vendor'}${attrEmail ? ` (${attrEmail})` : ''}`
+                : source === 'email_intake'
+                  ? `Email Intake — received from ${email}`
+                  : `HR Upload — ${fullName} (${email})`;
+              sendEmailIdNullAlert(parsed.Name || item.filename, email, uploadedBy).catch(mailErr => {
+                logger.error(`Failed to send EmailID NULL alert: ${mailErr.message}`);
+              });
+              rowRejected.push(`${item.filename}: No valid email address found in resume`);
+              rejectedCount++;
+              continue;
+            }
+
+            // EmailID stored on the candidate uses only the validated emails (always
+            // non-empty here — email-less resumes were rejected above).
+            const emailToSearch = cleanEmails.join(', ');
+
+            let existingCandidate = null;
+            if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
+              const matches = await prisma.$queryRaw`
+                SELECT id FROM public.rpa_cv
+                WHERE
+                  (
+                    coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
+                    string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
+                  ) OR (
+                    coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
+                    string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
+                  )
+                LIMIT 1
+              `;
+              if (matches && matches.length > 0) {
+                existingCandidate = await prisma.rpa_cv.findUnique({
+                  where: { id: matches[0].id }
+                });
+              }
+            }
+
+            if (existingCandidate) {
+              if (source === 'vendor_portal' || source === 'hr_manual_upload') {
+                // Duplicate of an existing candidate → route to the rpa_cv_tmp review
+                // queue for recruiter Merge/Cancel. Vendor uploads carry their vendor
+                // attribution so a later merge stamps VendorEmail + the 90-day lock.
+                const isVendorSource = source === 'vendor_portal';
+                const tempCandidate = await prisma.rpa_cv_tmp.create({
+                  data: {
+                    // Falls back to the EXISTING candidate's value (this is a duplicate,
+                    // so that value is about the same person) and then to null — never
+                    // to an invented one. The old "9876543210" / "Software Engineer" /
+                    // "B.Tech" / "3" tail put fabricated data in front of the recruiter
+                    // making the Merge/Cancel call.
+                    Name: parsed.Name || "Candidate",
+                    EmailID: emailToSearch,
+                    ContactNumber: parsed.ContactNumber || existingCandidate.ContactNumber || null,
+                    PositionApplied: parsed.PositionApplied || existingCandidate.PositionApplied || null,
+                    HighestQualification: parsed.HighestQualification || existingCandidate.HighestQualification || null,
+                    TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : (existingCandidate.TotalExperienceYears || null),
+                    LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : (existingCandidate.LastCompanyExperienceYears || null),
+                    CurrentLocation: parsed.CurrentLocation || existingCandidate.CurrentLocation || null,
+                    CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || existingCandidate.CurrentCompany || null),
+                    Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || existingCandidate.Top5KeySkills || ""),
+                    // Same omission the main create carried: parsed, but never stored,
+                    // so a merge could not restore them either.
+                    NoticePeriod: parsed.NoticePeriod || existingCandidate.NoticePeriod || null,
+                    CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : (existingCandidate.CTC_LPA || null),
+                    ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : (existingCandidate.ExpectedCTC_LPA || null),
+                    JobSource: parsed.JobSource || existingCandidate.JobSource || null,
+                    RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || existingCandidate.RecruiterInfoAAPNA || null,
+                    EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || existingCandidate.EducationalScoresPercentage || null),
+                    a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : (existingCandidate.a10th || null),
+                    a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : (existingCandidate.a12th || null),
+                    graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : (existingCandidate.graduation || null),
+                    postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : (existingCandidate.postGraduation || null),
+                    graduationdegree: parsed.GraduationDegree || existingCandidate.graduationdegree || null,
+                    graduationspecialization: parsed.GraduationSpecialization || existingCandidate.graduationspecialization || null,
+                    postgraduationdegree: parsed.PostGraduationDegree || existingCandidate.postgraduationdegree || null,
+                    postgraduationspecialization: parsed.PostGraduationSpecialization || existingCandidate.postgraduationspecialization || null,
+                    employment_history: historyInput.length > 0 ? employmentHistoryDb : (existingCandidate.employment_history || null),
+                    Gender: parsed.Gender || existingCandidate.Gender || null,
+                    EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : (existingCandidate.EnglishCommunicationRating || null),
+                    PreferredShift: parsed.PreferredShift || existingCandidate.PreferredShift || null,
+                    ReasonForJobChange: parsed.ReasonForJobChange || existingCandidate.ReasonForJobChange || null,
+                    WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || existingCandidate.WillingToTakeOnlineTest || null,
+                    HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || existingCandidate.HasLaptopForInitialDays || null,
+                    LinkedInProfile: parsed.LinkedInProfile || existingCandidate.LinkedInProfile || null,
+                    cvFileUrl: cvUrl,
+                    uploadedByHRName: fullName,
+                    uploadSource: isVendorSource ? 'Vendor Portal' : 'HR Manual Upload',
+                    // New review-queue columns — only sent when provisioned (table + client).
+                    ...(jobsModelReady() ? { source, reviewStatus: 'pending_review' } : {}),
+                    VendorEmail: isVendorSource ? attrEmail : null,
+                    vendorName: isVendorSource ? attrName : null,
+                    last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
+                    last_action_context: source,
+                    statusActive: statusActive,
+                    missingData: missingDataJson,
+                    resume_full_text: fullText,
+                    resume_text_quality: resume_text_quality,
+                    resume_technical_terms: resume_technical_terms,
+                    resume_term_updated_at: resume_term_updated_at,
+                    createdAt: new Date(),
+                    modifiedAt: new Date(),
+                  }
+                });
+
+                logger.info(`Duplicate resume routed to review queue (rpa_cv_tmp ID: ${tempCandidate.id}, source: ${source})`);
+                rowDuplicates.push(`${item.filename}: Duplicate - pending recruiter review`);
+                duplicateCount++;
+                jobInfo.candidate_name = parsed.Name || 'Candidate';
+                jobInfo.candidate_email = emailToSearch;
+                jobInfo.cv_tmp_id = tempCandidate.id;
+
+                // Commit the duplicate outcome NOW, not at the per-file aggregate ~250
+                // lines below. Everything between here and there can outlive or kill the
+                // run — the advisory lookup, the alert email, OneDrive, a worker restart,
+                // a dropped DB connection — and the aggregate write is the ONLY thing
+                // that moves the row off "Processing". When it was skipped the dashboard
+                // showed a spinner forever while the recruiter had already been emailed
+                // about the duplicate, with no row to act on and no way to reprocess.
+                // Writing it here makes the review queue and the dashboard agree the
+                // moment the rpa_cv_tmp record exists; the aggregate write still runs and
+                // simply re-affirms the same status.
+                await setJobStatus(executionId, file.originalname, JOB_STATUS.DUPLICATE_PENDING_REVIEW, {
+                  candidate_name: jobInfo.candidate_name,
+                  candidate_email: jobInfo.candidate_email,
+                  cv_tmp_id: jobInfo.cv_tmp_id,
+                  file_url: jobInfo.file_url || null,
+                  is_duplicate: true,
+                  action_required: true,
+                }).catch((e) => logger.warn(`Failed to persist early duplicate status for ${file.originalname}: ${e.message}`));
+
+                // COOLING-OFF ADVISORY (M6 audit, 2026-08-12). The 6-month
+                // re-application gate lived only in createPipelineJourney, so it
+                // fired at shortlisting — after a recruiter had already read the
+                // CV and made the call. Nothing warned them at the point the
+                // duplicate landed.
+                //
+                // Advisory, NOT a block: a vendor re-submitting someone we
+                // rejected in March is not doing anything wrong, and usually has
+                // no way to know. The resume is still queued for review; the
+                // recruiter just gets the fact before they spend time on it,
+                // instead of hitting a 409 at the end.
+                try {
+                  const priorRejection = await findRecentRejection(existingCandidate.id);
+                  if (priorRejection) {
+                    jobInfo.advisory = `Rejected at "${priorRejection.current_stage_key}" on `
+                      + `${priorRejection.modified_at.toISOString().slice(0, 10)} — still inside the `
+                      + `${REAPPLICATION_COOLING_OFF_MONTHS}-month re-application cooling-off period. `
+                      + 'Merging is allowed, but this candidate cannot re-enter the pipeline until it lapses.';
+                    logger.info(`Cooling-off advisory raised on duplicate for cv ${existingCandidate.id} (job ${item.filename}).`);
+                  }
+                } catch (err) {
+                  // Advisory only — never let it break an upload.
+                  logger.warn(`Cooling-off advisory lookup failed for cv ${existingCandidate.id}: ${err.message}`);
+                }
+
+                // Notify recruiter/HR by email; the in-app socket notification fires via
+                // the job's action_required transition at the per-file aggregate below.
+                const serialTemp = { ...tempCandidate, id: Number(tempCandidate.id) };
+                const onMailErr = (label) => (mailErr) => {
+                  logger.error(`Failed to send ${label} email: ${mailErr.message}`);
+                };
+
+                if (isVendorSource) {
+                  // Vendor duplicate: pick the alert by comparing the incoming vendor to
+                  // the existing candidate's current vendor (VENDOR_PROCESS.md §6).
+                  const incomingVendor = (attrEmail || '').trim().toLowerCase();
+                  const existingVendor = (existingCandidate.VendorEmail || '').trim().toLowerCase();
+                  const vendorPayload = {
+                    candidateName: parsed.Name || 'Candidate',
+                    candidateEmail: emailToSearch,
+                    vendorEmail: attrEmail,
+                    vendorName: attrName,
+                  };
+
+                  if (!existingVendor) {
+                    // Existing candidate has no vendor → internal HR alert.
+                    sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
+                  } else if (existingVendor === incomingVendor) {
+                    // Same vendor re-submitted the candidate.
+                    sendSameVendorDuplicateAlert(vendorPayload).catch(onMailErr('same vendor duplicate'));
+                  } else {
+                    // A different vendor submitted an already-owned candidate.
+                    sendDifferentVendorDuplicateAlert({
+                      ...vendorPayload,
+                      existingVendorEmail: existingCandidate.VendorEmail,
+                    }).catch(onMailErr('different vendor duplicate'));
+                  }
+                } else {
+                  // hr_manual_upload duplicate → generic internal HR alert.
+                  sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
+                }
+              } else {
+                // Outlook Trigger or other automated email ingest: directly update the existing candidate in public.rpa_cv
+                logger.info(`Duplicate resume found from Outlook/other source. Directly updating candidate ID ${existingCandidate.id}`);
+              
+                const updateData = {};
+                for (const field of CV_SHARED_FIELDS) {
+                  if (field === 'ContactNumber') {
+                    updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber);
+                  } else if (field === 'EmailID') {
+                    updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch);
+                  } else if (field === 'employment_history') {
+                    updateData.employment_history = employmentHistoryDb;
+                  } else {
+                    // Keep vendor fields from the existing candidate
+                    if (field === 'vendorName' || field === 'VendorEmail') {
+                      updateData[field] = existingCandidate[field];
+                    } else {
+                      const val = prefer(parsed[field], existingCandidate[field]);
+                      if (val !== null && val !== undefined) {
+                        if (['ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore'].includes(field)) {
+                          updateData[field] = val;
+                        } else {
+                          updateData[field] = String(val);
+                        }
+                      } else {
+                        updateData[field] = null;
+                      }
+                    }
+                  }
+                }
+
+                // Preserve existing vendor email and name (don't overwrite them)
+                updateData.VendorEmail = existingCandidate.VendorEmail;
+                updateData.vendorName = existingCandidate.vendorName;
+                updateData.cvFileUrl = cvUrl;
+
+                // Recompute missing fields against the MERGED record so a sparser resubmission
+                // does not re-flag fields already stored on the existing candidate (which would
+                // wrongly mark the row INACTIVE and re-ask the candidate for data we already have).
+                const mergedForMissing = { ...parsed };
+                const FIELDS_FROM_EXISTING = [
+                  'Name', 'NoticePeriod', 'ContactNumber', 'EmailID', 'HighestQualification',
+                  'TotalExperienceYears', 'LastCompanyExperienceYears', 'CurrentLocation', 'CTC_LPA',
+                  'ExpectedCTC_LPA', 'JobSource', 'RecruiterInfoAAPNA', 'PositionApplied', 'Top5KeySkills',
+                  'CurrentCompany', 'Gender', 'EnglishCommunicationRating',
+                  'graduationdegree', 'graduationspecialization', 'postgraduationdegree', 'postgraduationspecialization',
+                  'PreferredShift', 'ReasonForJobChange', 'WillingToTakeOnlineTest', 'HasLaptopForInitialDays', 'LinkedInProfile',
+                ];
+                for (const f of FIELDS_FROM_EXISTING) {
+                  mergedForMissing[f] = prefer(parsed[f], existingCandidate[f]);
+                }
+                // EducationalScoresPercentage is an object in parsed but split across
+                // a10th/a12th/graduation/postGraduation columns on the existing row — merge per score.
+                const parsedEdu = parsed.EducationalScoresPercentage || {};
+                mergedForMissing.EducationalScoresPercentage = {
+                  '10th': prefer(parsedEdu['10th'], existingCandidate.a10th),
+                  '12th': prefer(parsedEdu['12th'], existingCandidate.a12th),
+                  'Graduation': prefer(parsedEdu['Graduation'], existingCandidate.graduation),
+                  'PostGraduation': prefer(parsedEdu['PostGraduation'], existingCandidate.postGraduation),
+                };
+                const mergedMissing = getMissingFields(mergedForMissing);
+                updateData.statusActive = Object.keys(mergedMissing).length > 0 ? 'INACTIVE' : 'ACTIVE';
+                updateData.missingData = JSON.stringify(mergedMissing);
+                updateData.modifiedAt = new Date();
+                updateData.last_action_by = isSelfApplied ? SELF_APPLIED_TAG : email;
+                updateData.last_action_context = source;
+                updateData.TotalExperienceYearsNumeric = safeExperienceNumeric(updateData.TotalExperienceYears, item.filename);
+                updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
+                updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
+                updateData.resume_full_text = fullText;
+                updateData.resume_text_quality = resume_text_quality;
+                updateData.resume_technical_terms = (resume_technical_terms.length > 0) ? resume_technical_terms : existingCandidate.resume_technical_terms;
+                updateData.resume_term_updated_at = (resume_technical_terms.length > 0) ? resume_term_updated_at : existingCandidate.resume_term_updated_at;
+
+                const updatedCv = await prisma.rpa_cv.update({
+                  where: { id: existingCandidate.id },
+                  data: updateData
+                });
+
+                successCount++;
+                jobInfo.candidate_name = parsed.Name || updatedCv.Name || 'Candidate';
+                jobInfo.candidate_email = emailToSearch;
+                jobInfo.cv_id = updatedCv.id;
+                jobInfo.missingInfo = Object.keys(mergedMissing).length > 0;
+                runPostProcessing(updatedCv.id, parsed, source, fullName, email, mergedMissing, attr);
+              }
+            } else {
+              // New candidate! Create directly in main rpa_cv table
+              const newCv = await prisma.rpa_cv.create({
                 data: {
-                  // Falls back to the EXISTING candidate's value (this is a duplicate,
-                  // so that value is about the same person) and then to null — never
-                  // to an invented one. The old "9876543210" / "Software Engineer" /
-                  // "B.Tech" / "3" tail put fabricated data in front of the recruiter
-                  // making the Merge/Cancel call.
+                  // NOTHING here is invented. These columns used to fall back to
+                  // "9876543210" / "Software Developer" / "B.Tech" / "Delhi" / "2",
+                  // which put fabricated data into the candidate table and — worse —
+                  // made it look complete: getMissingFields() runs on `parsed`, so it
+                  // correctly flagged the gap, but the row itself then showed a real-
+                  // looking phone number and 2 years of experience to every recruiter
+                  // who opened it. A blank is honest and is what the existing
+                  // missing-data email exists to chase.
                   Name: parsed.Name || "Candidate",
                   EmailID: emailToSearch,
-                  ContactNumber: parsed.ContactNumber || existingCandidate.ContactNumber || null,
-                  PositionApplied: parsed.PositionApplied || existingCandidate.PositionApplied || null,
-                  HighestQualification: parsed.HighestQualification || existingCandidate.HighestQualification || null,
-                  TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : (existingCandidate.TotalExperienceYears || null),
-                  LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : (existingCandidate.LastCompanyExperienceYears || null),
-                  CurrentLocation: parsed.CurrentLocation || existingCandidate.CurrentLocation || null,
-                  CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || existingCandidate.CurrentCompany || null),
-                  Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || existingCandidate.Top5KeySkills || ""),
-                  // Same omission the main create carried: parsed, but never stored,
-                  // so a merge could not restore them either.
-                  NoticePeriod: parsed.NoticePeriod || existingCandidate.NoticePeriod || null,
-                  CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : (existingCandidate.CTC_LPA || null),
-                  ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : (existingCandidate.ExpectedCTC_LPA || null),
-                  JobSource: parsed.JobSource || existingCandidate.JobSource || null,
-                  RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || existingCandidate.RecruiterInfoAAPNA || null,
-                  EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || existingCandidate.EducationalScoresPercentage || null),
-                  a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : (existingCandidate.a10th || null),
-                  a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : (existingCandidate.a12th || null),
-                  graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : (existingCandidate.graduation || null),
-                  postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : (existingCandidate.postGraduation || null),
-                  graduationdegree: parsed.GraduationDegree || existingCandidate.graduationdegree || null,
-                  graduationspecialization: parsed.GraduationSpecialization || existingCandidate.graduationspecialization || null,
-                  postgraduationdegree: parsed.PostGraduationDegree || existingCandidate.postgraduationdegree || null,
-                  postgraduationspecialization: parsed.PostGraduationSpecialization || existingCandidate.postgraduationspecialization || null,
-                  employment_history: historyInput.length > 0 ? employmentHistoryDb : (existingCandidate.employment_history || null),
-                  Gender: parsed.Gender || existingCandidate.Gender || null,
-                  EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : (existingCandidate.EnglishCommunicationRating || null),
-                  PreferredShift: parsed.PreferredShift || existingCandidate.PreferredShift || null,
-                  ReasonForJobChange: parsed.ReasonForJobChange || existingCandidate.ReasonForJobChange || null,
-                  WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || existingCandidate.WillingToTakeOnlineTest || null,
-                  HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || existingCandidate.HasLaptopForInitialDays || null,
-                  LinkedInProfile: parsed.LinkedInProfile || existingCandidate.LinkedInProfile || null,
+                  ContactNumber: parsed.ContactNumber || null,
+                  PositionApplied: parsed.PositionApplied || null,
+                  HighestQualification: parsed.HighestQualification || null,
+                  TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : null,
+                  LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : null,
+                  CurrentLocation: parsed.CurrentLocation || null,
+                  CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || null),
+                  Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || ""),
+                  // Parsed, and until now used ONLY to derive the numeric shadow
+                  // columns below — the display strings themselves were never written,
+                  // so View Details showed blank Notice Period / CTC while
+                  // NoticePeriodDays and ExpectedCTCNumeric held real values.
+                  NoticePeriod: parsed.NoticePeriod || null,
+                  CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : null,
+                  ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null,
+                  JobSource: parsed.JobSource || null,
+                  RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || null,
+                  EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || null),
+                  a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : null,
+                  a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : null,
+                  graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : null,
+                  postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : null,
+                  graduationdegree: parsed.GraduationDegree || null,
+                  graduationspecialization: parsed.GraduationSpecialization || null,
+                  postgraduationdegree: parsed.PostGraduationDegree || null,
+                  postgraduationspecialization: parsed.PostGraduationSpecialization || null,
+                  employment_history: employmentHistoryDb,
+                  Gender: parsed.Gender || null,
+                  EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : null,
+                  PreferredShift: parsed.PreferredShift || null,
+                  ReasonForJobChange: parsed.ReasonForJobChange || null,
+                  WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || null,
+                  HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || null,
+                  LinkedInProfile: parsed.LinkedInProfile || null,
                   cvFileUrl: cvUrl,
-                  uploadedByHRName: fullName,
-                  uploadSource: isVendorSource ? 'Vendor Portal' : 'HR Manual Upload',
-                  // New review-queue columns — only sent when provisioned (table + client).
-                  ...(jobsModelReady() ? { source, reviewStatus: 'pending_review' } : {}),
-                  VendorEmail: isVendorSource ? attrEmail : null,
-                  vendorName: isVendorSource ? attrName : null,
-                  last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
-                  last_action_context: source,
                   statusActive: statusActive,
                   missingData: missingDataJson,
+                  VendorEmail: attrEmail,
+                  vendorName: attrName,
+                  last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
+                  last_action_context: source,
+                  createdAt: new Date(),
+                  modifiedAt: new Date(),
+                  TotalExperienceYearsNumeric: safeExperienceNumeric(parsed.TotalExperienceYears, item.filename),
+                  ExpectedCTCNumeric: parseExpectedCTCNumeric(parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null),
+                  NoticePeriodDays: parseNoticePeriodDays(parsed.NoticePeriod ? String(parsed.NoticePeriod) : null),
                   resume_full_text: fullText,
                   resume_text_quality: resume_text_quality,
                   resume_technical_terms: resume_technical_terms,
                   resume_term_updated_at: resume_term_updated_at,
-                  createdAt: new Date(),
-                  modifiedAt: new Date(),
                 }
-              });
-
-              logger.info(`Duplicate resume routed to review queue (rpa_cv_tmp ID: ${tempCandidate.id}, source: ${source})`);
-              rowDuplicates.push(`${item.filename}: Duplicate - pending recruiter review`);
-              duplicateCount++;
-              jobInfo.candidate_name = parsed.Name || 'Candidate';
-              jobInfo.candidate_email = emailToSearch;
-              jobInfo.cv_tmp_id = tempCandidate.id;
-
-              // Commit the duplicate outcome NOW, not at the per-file aggregate ~250
-              // lines below. Everything between here and there can outlive or kill the
-              // run — the advisory lookup, the alert email, OneDrive, a worker restart,
-              // a dropped DB connection — and the aggregate write is the ONLY thing
-              // that moves the row off "Processing". When it was skipped the dashboard
-              // showed a spinner forever while the recruiter had already been emailed
-              // about the duplicate, with no row to act on and no way to reprocess.
-              // Writing it here makes the review queue and the dashboard agree the
-              // moment the rpa_cv_tmp record exists; the aggregate write still runs and
-              // simply re-affirms the same status.
-              await setJobStatus(executionId, file.originalname, JOB_STATUS.DUPLICATE_PENDING_REVIEW, {
-                candidate_name: jobInfo.candidate_name,
-                candidate_email: jobInfo.candidate_email,
-                cv_tmp_id: jobInfo.cv_tmp_id,
-                file_url: jobInfo.file_url || null,
-                is_duplicate: true,
-                action_required: true,
-              }).catch((e) => logger.warn(`Failed to persist early duplicate status for ${file.originalname}: ${e.message}`));
-
-              // COOLING-OFF ADVISORY (M6 audit, 2026-08-12). The 6-month
-              // re-application gate lived only in createPipelineJourney, so it
-              // fired at shortlisting — after a recruiter had already read the
-              // CV and made the call. Nothing warned them at the point the
-              // duplicate landed.
-              //
-              // Advisory, NOT a block: a vendor re-submitting someone we
-              // rejected in March is not doing anything wrong, and usually has
-              // no way to know. The resume is still queued for review; the
-              // recruiter just gets the fact before they spend time on it,
-              // instead of hitting a 409 at the end.
-              try {
-                const priorRejection = await findRecentRejection(existingCandidate.id);
-                if (priorRejection) {
-                  jobInfo.advisory = `Rejected at "${priorRejection.current_stage_key}" on `
-                    + `${priorRejection.modified_at.toISOString().slice(0, 10)} — still inside the `
-                    + `${REAPPLICATION_COOLING_OFF_MONTHS}-month re-application cooling-off period. `
-                    + 'Merging is allowed, but this candidate cannot re-enter the pipeline until it lapses.';
-                  logger.info(`Cooling-off advisory raised on duplicate for cv ${existingCandidate.id} (job ${item.filename}).`);
-                }
-              } catch (err) {
-                // Advisory only — never let it break an upload.
-                logger.warn(`Cooling-off advisory lookup failed for cv ${existingCandidate.id}: ${err.message}`);
-              }
-
-              // Notify recruiter/HR by email; the in-app socket notification fires via
-              // the job's action_required transition at the per-file aggregate below.
-              const serialTemp = { ...tempCandidate, id: Number(tempCandidate.id) };
-              const onMailErr = (label) => (mailErr) => {
-                logger.error(`Failed to send ${label} email: ${mailErr.message}`);
-              };
-
-              if (isVendorSource) {
-                // Vendor duplicate: pick the alert by comparing the incoming vendor to
-                // the existing candidate's current vendor (VENDOR_PROCESS.md §6).
-                const incomingVendor = (attrEmail || '').trim().toLowerCase();
-                const existingVendor = (existingCandidate.VendorEmail || '').trim().toLowerCase();
-                const vendorPayload = {
-                  candidateName: parsed.Name || 'Candidate',
-                  candidateEmail: emailToSearch,
-                  vendorEmail: attrEmail,
-                  vendorName: attrName,
-                };
-
-                if (!existingVendor) {
-                  // Existing candidate has no vendor → internal HR alert.
-                  sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
-                } else if (existingVendor === incomingVendor) {
-                  // Same vendor re-submitted the candidate.
-                  sendSameVendorDuplicateAlert(vendorPayload).catch(onMailErr('same vendor duplicate'));
-                } else {
-                  // A different vendor submitted an already-owned candidate.
-                  sendDifferentVendorDuplicateAlert({
-                    ...vendorPayload,
-                    existingVendorEmail: existingCandidate.VendorEmail,
-                  }).catch(onMailErr('different vendor duplicate'));
-                }
-              } else {
-                // hr_manual_upload duplicate → generic internal HR alert.
-                sendDuplicateAlertEmail(serialTemp, email).catch(onMailErr('duplicate alert'));
-              }
-            } else {
-              // Outlook Trigger or other automated email ingest: directly update the existing candidate in public.rpa_cv
-              logger.info(`Duplicate resume found from Outlook/other source. Directly updating candidate ID ${existingCandidate.id}`);
-              
-              const updateData = {};
-              for (const field of CV_SHARED_FIELDS) {
-                if (field === 'ContactNumber') {
-                  updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber);
-                } else if (field === 'EmailID') {
-                  updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch);
-                } else if (field === 'employment_history') {
-                  updateData.employment_history = employmentHistoryDb;
-                } else {
-                  // Keep vendor fields from the existing candidate
-                  if (field === 'vendorName' || field === 'VendorEmail') {
-                    updateData[field] = existingCandidate[field];
-                  } else {
-                    const val = prefer(parsed[field], existingCandidate[field]);
-                    if (val !== null && val !== undefined) {
-                      if (['ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore'].includes(field)) {
-                        updateData[field] = val;
-                      } else {
-                        updateData[field] = String(val);
-                      }
-                    } else {
-                      updateData[field] = null;
-                    }
-                  }
-                }
-              }
-
-              // Preserve existing vendor email and name (don't overwrite them)
-              updateData.VendorEmail = existingCandidate.VendorEmail;
-              updateData.vendorName = existingCandidate.vendorName;
-              updateData.cvFileUrl = cvUrl;
-
-              // Recompute missing fields against the MERGED record so a sparser resubmission
-              // does not re-flag fields already stored on the existing candidate (which would
-              // wrongly mark the row INACTIVE and re-ask the candidate for data we already have).
-              const mergedForMissing = { ...parsed };
-              const FIELDS_FROM_EXISTING = [
-                'Name', 'NoticePeriod', 'ContactNumber', 'EmailID', 'HighestQualification',
-                'TotalExperienceYears', 'LastCompanyExperienceYears', 'CurrentLocation', 'CTC_LPA',
-                'ExpectedCTC_LPA', 'JobSource', 'RecruiterInfoAAPNA', 'PositionApplied', 'Top5KeySkills',
-                'CurrentCompany', 'Gender', 'EnglishCommunicationRating',
-                'graduationdegree', 'graduationspecialization', 'postgraduationdegree', 'postgraduationspecialization',
-                'PreferredShift', 'ReasonForJobChange', 'WillingToTakeOnlineTest', 'HasLaptopForInitialDays', 'LinkedInProfile',
-              ];
-              for (const f of FIELDS_FROM_EXISTING) {
-                mergedForMissing[f] = prefer(parsed[f], existingCandidate[f]);
-              }
-              // EducationalScoresPercentage is an object in parsed but split across
-              // a10th/a12th/graduation/postGraduation columns on the existing row — merge per score.
-              const parsedEdu = parsed.EducationalScoresPercentage || {};
-              mergedForMissing.EducationalScoresPercentage = {
-                '10th': prefer(parsedEdu['10th'], existingCandidate.a10th),
-                '12th': prefer(parsedEdu['12th'], existingCandidate.a12th),
-                'Graduation': prefer(parsedEdu['Graduation'], existingCandidate.graduation),
-                'PostGraduation': prefer(parsedEdu['PostGraduation'], existingCandidate.postGraduation),
-              };
-              const mergedMissing = getMissingFields(mergedForMissing);
-              updateData.statusActive = Object.keys(mergedMissing).length > 0 ? 'INACTIVE' : 'ACTIVE';
-              updateData.missingData = JSON.stringify(mergedMissing);
-              updateData.modifiedAt = new Date();
-              updateData.last_action_by = isSelfApplied ? SELF_APPLIED_TAG : email;
-              updateData.last_action_context = source;
-              updateData.TotalExperienceYearsNumeric = safeExperienceNumeric(updateData.TotalExperienceYears, item.filename);
-              updateData.ExpectedCTCNumeric = parseExpectedCTCNumeric(updateData.ExpectedCTC_LPA);
-              updateData.NoticePeriodDays = parseNoticePeriodDays(updateData.NoticePeriod);
-              updateData.resume_full_text = fullText;
-              updateData.resume_text_quality = resume_text_quality;
-              updateData.resume_technical_terms = (resume_technical_terms.length > 0) ? resume_technical_terms : existingCandidate.resume_technical_terms;
-              updateData.resume_term_updated_at = (resume_technical_terms.length > 0) ? resume_term_updated_at : existingCandidate.resume_term_updated_at;
-
-              const updatedCv = await prisma.rpa_cv.update({
-                where: { id: existingCandidate.id },
-                data: updateData
               });
 
               successCount++;
-              jobInfo.candidate_name = parsed.Name || updatedCv.Name || 'Candidate';
+              jobInfo.candidate_name = parsed.Name || 'Candidate';
               jobInfo.candidate_email = emailToSearch;
-              jobInfo.cv_id = updatedCv.id;
-              jobInfo.missingInfo = Object.keys(mergedMissing).length > 0;
-              runPostProcessing(updatedCv.id, parsed, source, fullName, email, mergedMissing, attr);
+              jobInfo.cv_id = newCv.id;
+              jobInfo.missingInfo = Object.keys(missingFields).length > 0;
+
+              // Persist the candidate link the moment it exists, for the same reason
+              // file_url is persisted above: cv_id / candidate_email are the keys every
+              // recovery path matches on (the dashboard self-heal, updateJobByCvId), and
+              // holding them in memory until the per-file aggregate meant a run that died
+              // mid-file stranded a row that nothing could ever repair.
+              await updateJob(executionId, file.originalname, {
+                cv_id: jobInfo.cv_id,
+                candidate_name: jobInfo.candidate_name,
+                candidate_email: jobInfo.candidate_email,
+              }).catch((e) => logger.warn(`Failed to persist candidate link for ${file.originalname}: ${e.message}`));
+
+              // Run post-processing asynchronously (non-blocking)
+              runPostProcessing(newCv.id, parsed, source, fullName, email, missingFields, attr);
             }
-          } else {
-            // New candidate! Create directly in main rpa_cv table
-            const newCv = await prisma.rpa_cv.create({
+          }
+        } catch (err) {
+          logger.error(`Error processing file ${file.originalname} in batch ${executionId}`, { error: err.message });
+          rowErrors.push(err.message);
+          failedCount++;
+        } finally {
+          // Everything below runs in a `finally` so the row always reaches a terminal
+          // status. It used to sit after the catch, which looked equivalent but was not:
+          // any throw from the catch block itself, or any non-local exit, skipped the
+          // write and left the job stuck on "Processing" forever — with cv_id NULL, so
+          // no self-heal path could reach it either.
+
+          // Update file log to final aggregate status
+          let finalStatus = 'success';
+          if (rowRejected.length > 0) {
+            finalStatus = 'rejected';
+          } else if (rowErrors.length > 0) {
+            finalStatus = 'failed';
+          } else if (rowDuplicates.length > 0) {
+            finalStatus = 'duplicate';
+          }
+
+          // Accumulate failures for the batch-level error alert
+          if (rowErrors.length > 0) {
+            batchErrors.push(`${file.originalname}: ${rowErrors.join(' | ')}`);
+          }
+
+          // Map the per-file outcome to a persistent job status + emit live update.
+          // Rejected (no valid email/phone) is distinct from a processing Failure.
+          let jobStatus;
+          if (rowRejected.length > 0) jobStatus = JOB_STATUS.REJECTED_SYSTEM;
+          else if (rowErrors.length > 0) jobStatus = JOB_STATUS.FAILED;
+          else if (rowDuplicates.length > 0) jobStatus = JOB_STATUS.DUPLICATE_PENDING_REVIEW;
+          else if (jobInfo.missingInfo) jobStatus = JOB_STATUS.MISSING_INFORMATION;
+          else jobStatus = JOB_STATUS.COMPLETED;
+
+          await setJobStatus(executionId, file.originalname, jobStatus, {
+            candidate_name: jobInfo.candidate_name,
+            candidate_email: jobInfo.candidate_email,
+            cv_id: jobInfo.cv_id,
+            cv_tmp_id: jobInfo.cv_tmp_id,
+            file_url: jobInfo.file_url || null,
+            is_duplicate: rowDuplicates.length > 0,
+            action_required: jobStatus === JOB_STATUS.DUPLICATE_PENDING_REVIEW,
+            error_message: rowRejected.length > 0
+              ? rowRejected.join(' | ')
+              : (rowErrors.length > 0 ? rowErrors.join(' | ') : null),
+            // Context the recruiter should have before deciding, distinct from
+            // error_message: the row succeeded, there is just something to know
+            // about it (currently only the cooling-off notice).
+            advisory: jobInfo.advisory || null,
+          }).catch((e) => logger.warn(`Failed to update upload job status: ${e.message}`));
+
+          try {
+            await prisma.rpa_upload_log.update({
+              where: {
+                execution_id_file_name: {
+                  execution_id: executionId,
+                  file_name: file.originalname,
+                }
+              },
               data: {
-                // NOTHING here is invented. These columns used to fall back to
-                // "9876543210" / "Software Developer" / "B.Tech" / "Delhi" / "2",
-                // which put fabricated data into the candidate table and — worse —
-                // made it look complete: getMissingFields() runs on `parsed`, so it
-                // correctly flagged the gap, but the row itself then showed a real-
-                // looking phone number and 2 years of experience to every recruiter
-                // who opened it. A blank is honest and is what the existing
-                // missing-data email exists to chase.
-                Name: parsed.Name || "Candidate",
-                EmailID: emailToSearch,
-                ContactNumber: parsed.ContactNumber || null,
-                PositionApplied: parsed.PositionApplied || null,
-                HighestQualification: parsed.HighestQualification || null,
-                TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : null,
-                LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : null,
-                CurrentLocation: parsed.CurrentLocation || null,
-                CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || null),
-                Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || ""),
-                // Parsed, and until now used ONLY to derive the numeric shadow
-                // columns below — the display strings themselves were never written,
-                // so View Details showed blank Notice Period / CTC while
-                // NoticePeriodDays and ExpectedCTCNumeric held real values.
-                NoticePeriod: parsed.NoticePeriod || null,
-                CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : null,
-                ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null,
-                JobSource: parsed.JobSource || null,
-                RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || null,
-                EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || null),
-                a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : null,
-                a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : null,
-                graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : null,
-                postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : null,
-                graduationdegree: parsed.GraduationDegree || null,
-                graduationspecialization: parsed.GraduationSpecialization || null,
-                postgraduationdegree: parsed.PostGraduationDegree || null,
-                postgraduationspecialization: parsed.PostGraduationSpecialization || null,
-                employment_history: employmentHistoryDb,
-                Gender: parsed.Gender || null,
-                EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : null,
-                PreferredShift: parsed.PreferredShift || null,
-                ReasonForJobChange: parsed.ReasonForJobChange || null,
-                WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || null,
-                HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || null,
-                LinkedInProfile: parsed.LinkedInProfile || null,
-                cvFileUrl: cvUrl,
-                statusActive: statusActive,
-                missingData: missingDataJson,
-                VendorEmail: attrEmail,
-                vendorName: attrName,
-                last_action_by: isSelfApplied ? SELF_APPLIED_TAG : email,
-                last_action_context: source,
-                createdAt: new Date(),
-                modifiedAt: new Date(),
-                TotalExperienceYearsNumeric: safeExperienceNumeric(parsed.TotalExperienceYears, item.filename),
-                ExpectedCTCNumeric: parseExpectedCTCNumeric(parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null),
-                NoticePeriodDays: parseNoticePeriodDays(parsed.NoticePeriod ? String(parsed.NoticePeriod) : null),
-                resume_full_text: fullText,
-                resume_text_quality: resume_text_quality,
-                resume_technical_terms: resume_technical_terms,
-                resume_term_updated_at: resume_term_updated_at,
+                status: finalStatus,
+                processed_at: new Date()
               }
             });
 
-            successCount++;
-            jobInfo.candidate_name = parsed.Name || 'Candidate';
-            jobInfo.candidate_email = emailToSearch;
-            jobInfo.cv_id = newCv.id;
-            jobInfo.missingInfo = Object.keys(missingFields).length > 0;
-
-            // Run post-processing asynchronously (non-blocking)
-            runPostProcessing(newCv.id, parsed, source, fullName, email, missingFields, attr);
-          }
-        }
-      } catch (err) {
-        logger.error(`Error processing file ${file.originalname} in batch ${executionId}`, { error: err.message });
-        rowErrors.push(err.message);
-        failedCount++;
-      }
-
-      // Update file log to final aggregate status
-      let finalStatus = 'success';
-      if (rowRejected.length > 0) {
-        finalStatus = 'rejected';
-      } else if (rowErrors.length > 0) {
-        finalStatus = 'failed';
-      } else if (rowDuplicates.length > 0) {
-        finalStatus = 'duplicate';
-      }
-
-      // Accumulate failures for the batch-level error alert
-      if (rowErrors.length > 0) {
-        batchErrors.push(`${file.originalname}: ${rowErrors.join(' | ')}`);
-      }
-
-      // Map the per-file outcome to a persistent job status + emit live update.
-      // Rejected (no valid email/phone) is distinct from a processing Failure.
-      let jobStatus;
-      if (rowRejected.length > 0) jobStatus = JOB_STATUS.REJECTED_SYSTEM;
-      else if (rowErrors.length > 0) jobStatus = JOB_STATUS.FAILED;
-      else if (rowDuplicates.length > 0) jobStatus = JOB_STATUS.DUPLICATE_PENDING_REVIEW;
-      else if (jobInfo.missingInfo) jobStatus = JOB_STATUS.MISSING_INFORMATION;
-      else jobStatus = JOB_STATUS.COMPLETED;
-
-      await setJobStatus(executionId, file.originalname, jobStatus, {
-        candidate_name: jobInfo.candidate_name,
-        candidate_email: jobInfo.candidate_email,
-        cv_id: jobInfo.cv_id,
-        cv_tmp_id: jobInfo.cv_tmp_id,
-        file_url: jobInfo.file_url || null,
-        is_duplicate: rowDuplicates.length > 0,
-        action_required: jobStatus === JOB_STATUS.DUPLICATE_PENDING_REVIEW,
-        error_message: rowRejected.length > 0
-          ? rowRejected.join(' | ')
-          : (rowErrors.length > 0 ? rowErrors.join(' | ') : null),
-        // Context the recruiter should have before deciding, distinct from
-        // error_message: the row succeeded, there is just something to know
-        // about it (currently only the cooling-off notice).
-        advisory: jobInfo.advisory || null,
-      }).catch((e) => logger.warn(`Failed to update upload job status: ${e.message}`));
-
-      try {
-        await prisma.rpa_upload_log.update({
-          where: {
-            execution_id_file_name: {
-              execution_id: executionId,
-              file_name: file.originalname,
-            }
-          },
-          data: {
-            status: finalStatus,
-            processed_at: new Date()
-          }
-        });
-
-        // Store aggregate status/error in batch details
-        const batchObj = await prisma.rpa_upload_batch_summary.findUnique({
-          where: { execution_id: executionId }
-        });
-        if (batchObj && batchObj.details) {
-          const details = typeof batchObj.details === 'string' ? JSON.parse(batchObj.details) : batchObj.details;
-          if (Array.isArray(details.files)) {
-            const fileItem = details.files.find(f => f.name === file.originalname);
-            if (fileItem) {
-              fileItem.status = finalStatus;
-              if (rowRejected.length > 0) {
-                fileItem.error = rowRejected.join(' | ');
-              } else if (rowErrors.length > 0) {
-                fileItem.error = rowErrors.join(' | ');
-              } else if (rowDuplicates.length > 0) {
-                fileItem.error = rowDuplicates.join(' | ');
+            // Store aggregate status/error in batch details
+            const batchObj = await prisma.rpa_upload_batch_summary.findUnique({
+              where: { execution_id: executionId }
+            });
+            if (batchObj && batchObj.details) {
+              const details = typeof batchObj.details === 'string' ? JSON.parse(batchObj.details) : batchObj.details;
+              if (Array.isArray(details.files)) {
+                const fileItem = details.files.find(f => f.name === file.originalname);
+                if (fileItem) {
+                  fileItem.status = finalStatus;
+                  if (rowRejected.length > 0) {
+                    fileItem.error = rowRejected.join(' | ');
+                  } else if (rowErrors.length > 0) {
+                    fileItem.error = rowErrors.join(' | ');
+                  } else if (rowDuplicates.length > 0) {
+                    fileItem.error = rowDuplicates.join(' | ');
+                  }
+                }
               }
+              await prisma.rpa_upload_batch_summary.update({
+                where: { execution_id: executionId },
+                data: { details }
+              });
             }
+          } catch (logErr) {
+            logger.error('Failed to update upload log status in database', { error: logErr.message });
           }
-          await prisma.rpa_upload_batch_summary.update({
-            where: { execution_id: executionId },
-            data: { details }
-          });
-        }
-      } catch (logErr) {
-        logger.error('Failed to update upload log status in database', { error: logErr.message });
-      }
 
-      // 6) Incrementally update batch summary stats
-      try {
-        await prisma.rpa_upload_batch_summary.update({
-          where: { execution_id: executionId },
-          data: {
-            success_count: successCount,
-            duplicate_count: duplicateCount,
-            failed_count: failedCount,
+          // 6) Incrementally update batch summary stats
+          try {
+            await prisma.rpa_upload_batch_summary.update({
+              where: { execution_id: executionId },
+              data: {
+                success_count: successCount,
+                duplicate_count: duplicateCount,
+                failed_count: failedCount,
+              }
+            });
+          } catch (sumErr) {
+            logger.error('Failed to update incremental batch summary stats', { error: sumErr.message });
           }
-        });
-      } catch (sumErr) {
-        logger.error('Failed to update incremental batch summary stats', { error: sumErr.message });
-      }
+        } // end finally — terminal status is now guaranteed for this file
+      } // end per-file loop
+    } catch (batchErr) {
+      // The per-file try/finally contains ordinary failures, so reaching here means
+      // something escaped the loop machinery itself and every remaining file was
+      // skipped. Those rows would otherwise sit on Uploaded/Processing forever.
+      logger.error(`Batch parsing aborted for ${executionId}: ${batchErr.message}`, { stack: batchErr.stack });
+      await failPendingJobs(
+        executionId,
+        `Batch processing stopped unexpectedly: ${batchErr.message}`
+      ).catch((e) => logger.warn(`Failed to fail-out pending jobs for ${executionId}: ${e.message}`));
     }
 
     logger.info(`Completed background resume parsing for batch: ${executionId}. Success: ${successCount}, Duplicates: ${duplicateCount}, Failed: ${failedCount}, Rejected: ${rejectedCount}`);

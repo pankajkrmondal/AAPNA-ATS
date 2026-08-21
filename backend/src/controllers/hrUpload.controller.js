@@ -15,14 +15,6 @@ import runExport from '../exports/runExport.js';
 import uploadJobsExport from '../exports/uploadJobs.export.js';
 
 /**
- * How long a job may sit in an in-flight status (Processing/Queued/Uploaded) before
- * the reaper in getUploadJobs treats it as stranded. Comfortably longer than a real
- * run — a single resume is an AI parse plus a OneDrive upload, seconds to a minute —
- * so only genuinely dead runs are recovered, never a slow one still in progress.
- */
-const STALE_JOB_MINUTES = Number(process.env.UPLOAD_JOB_STALE_MINUTES || 15);
-
-/**
  * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
  * archives are unpacked into this list, never parsed as resumes themselves.
  *
@@ -224,88 +216,10 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     });
   }
 
-  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
-  // already complete (statusActive = ACTIVE). Keeps the dashboard correct regardless of
-  // which path resolved the missing data. Cheap (filtered on status) and best-effort.
-  try {
-    await prisma.$executeRaw`
-      UPDATE rpa_upload_jobs AS j
-      SET status = 'Completed', action_required = false, updated_at = now()
-      FROM rpa_cv AS c
-      WHERE j.cv_id = c.id
-        AND j.status = 'Missing_Information'
-        AND c."statusActive" = 'ACTIVE'
-    `;
-  } catch (e) {
-    logger.warn(`HR upload-job self-heal skipped: ${e.message}`);
-  }
-
-  // Reap stranded in-flight jobs. A run that dies between "Processing" and its
-  // terminal write (worker restart, dropped DB connection, unhandled throw) leaves
-  // a row spinning on the dashboard forever — with no Action button, because the
-  // review affordance keys off action_required + cv_tmp_id. Nothing else ever
-  // revisits those rows.
-  //
-  // Recovery is driven by what the run actually managed to persist, so we never
-  // invent an outcome: a staging row means the duplicate was queued for review (the
-  // recruiter has already been emailed about it), a candidate row means it saved,
-  // and neither means the work was lost and the file must be reprocessed. Only rows
-  // idle past the grace window are touched, so healthy in-flight uploads — a slow AI
-  // parse, a large PDF — are never disturbed mid-run.
-  // First, re-link orphans. When the run died after writing rpa_cv_tmp but before
-  // stamping cv_tmp_id onto the job, the staging row exists and the recruiter has
-  // been emailed about it — but the job row still points at nothing, so the reaper
-  // below would call it Failed and invite a reprocess that files the SAME duplicate
-  // a second time. Adopting the existing staging row instead keeps the queue honest.
-  //
-  // Matched on the resume URL, which both rows carry verbatim from the same upload,
-  // and only for a staging row still awaiting review that was created after the job
-  // started — so a merged/rejected row, or an unrelated older submission of the same
-  // candidate, is never adopted.
-  try {
-    const relinked = await prisma.$executeRawUnsafe(`
-      UPDATE rpa_upload_jobs AS j
-      SET cv_tmp_id = t.id,
-          candidate_name = COALESCE(j.candidate_name, t."Name"),
-          candidate_email = COALESCE(j.candidate_email, t."EmailID"),
-          updated_at = now()
-      FROM rpa_cv_tmp AS t
-      WHERE j.status IN ('Processing', 'Queued', 'Uploaded')
-        AND j.cv_tmp_id IS NULL
-        AND j.cv_id IS NULL
-        AND j.file_url IS NOT NULL
-        AND t."cvFileUrl" = j.file_url
-        AND t."reviewStatus" = 'pending_review'
-        AND t."createdAt" >= j.created_at
-        AND j.updated_at < now() - ($1 || ' minutes')::interval
-    `, String(STALE_JOB_MINUTES));
-    if (relinked > 0) logger.warn(`HR upload-job reaper: re-linked ${relinked} orphaned duplicate(s) to their review-queue row.`);
-  } catch (e) {
-    logger.warn(`HR upload-job orphan re-link skipped: ${e.message}`);
-  }
-
-  try {
-    const reaped = await prisma.$executeRawUnsafe(`
-      UPDATE rpa_upload_jobs
-      SET status = CASE
-            WHEN cv_tmp_id IS NOT NULL THEN 'Duplicate_Pending_Review'
-            WHEN cv_id     IS NOT NULL THEN 'Missing_Information'
-            ELSE 'Failed'
-          END,
-          action_required = (cv_tmp_id IS NOT NULL),
-          error_message = CASE
-            WHEN cv_tmp_id IS NULL AND cv_id IS NULL
-              THEN 'Processing did not finish (worker restarted or connection lost). Reprocess this file.'
-            ELSE error_message
-          END,
-          updated_at = now()
-      WHERE status IN ('Processing', 'Queued', 'Uploaded')
-        AND updated_at < now() - ($1 || ' minutes')::interval
-    `, String(STALE_JOB_MINUTES));
-    if (reaped > 0) logger.warn(`HR upload-job reaper: recovered ${reaped} stranded job(s).`);
-  } catch (e) {
-    logger.warn(`HR upload-job reaper skipped: ${e.message}`);
-  }
+  // Heal rows no live run will advance again (stale in-flight jobs, orphaned
+  // duplicates, resolved missing-info). Shared with the vendor dashboard so both
+  // surfaces recover the same way.
+  await uploadJobService.reconcileStaleJobs('HR upload-job');
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
 

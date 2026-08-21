@@ -19,6 +19,12 @@ const FALLBACK_MODELS = [
 
 const uniqueModels = [...new Set(FALLBACK_MODELS.filter(Boolean))];
 
+// Node's fetch has no default timeout, so a half-open connection to the provider
+// hangs the await forever. The resume parser runs inside a sequential per-file loop,
+// so one hung call stalls every remaining file in the batch — a bounded failure that
+// falls through to Gemini is always better than an unbounded wait.
+const OPENROUTER_TIMEOUT_MS = 120_000;
+
 /**
  * Call Gemini (with OpenRouter try first) with robust fallback and retry on 429/503/Quota issues.
  * @param {string} prompt - The prompt to send
@@ -52,7 +58,8 @@ export async function generateContentWithFallback(prompt, options = {}) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS)
       });
 
       if (!response.ok) {
