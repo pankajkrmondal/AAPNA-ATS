@@ -342,6 +342,19 @@ export const recordInterviewOccurrence = catchAsync(async (req, res) => {
 });
 
 /**
+ * GET /api/pipeline/interviews/unresolved
+ * Interviews that have ended with no held/no_show verdict — the work queue for
+ * rounds that cannot progress until someone rules on whether they happened.
+ */
+export const listUnresolvedInterviews = catchAsync(async (req, res) => {
+  const graceMin = parseInt(req.query.grace_min, 10);
+  const rows = await pipelineService.listUnresolvedInterviews({
+    graceMin: Number.isInteger(graceMin) && graceMin >= 0 ? graceMin : undefined,
+  });
+  return success(res, rows, 'Unresolved interviews fetched');
+});
+
+/**
  * POST /api/pipeline/interview/:scheduleId/send-scorecard
  * Manually dispatches the scorecard link (only meaningful once the interview is
  * confirmed held). Idempotent — a second call is a no-op.

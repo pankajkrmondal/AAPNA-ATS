@@ -27,7 +27,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
+  Alert, Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
 import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
@@ -432,7 +432,24 @@ export default function Pipeline() {
     refetchOnWindowFocus: true,
   });
 
-  const refreshBoard = () => queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+  // Interviews that ended without anyone recording held/no_show. Nothing moves
+  // for these rounds — the scorecard link only goes out on 'held' — and until
+  // now nothing told a recruiter they existed, so they sat on "Awaiting Results"
+  // indefinitely. Same slow cadence as the board.
+  const { data: unresolvedInterviews } = useQuery({
+    queryKey: ['unresolved-interviews'],
+    queryFn: async () => {
+      const res = await pipelineService.getUnresolvedInterviews();
+      return res.data?.data || res.data || [];
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const refreshBoard = () => {
+    queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+    queryClient.invalidateQueries({ queryKey: ['unresolved-interviews'] });
+  };
 
   /**
    * A stale-tab decision was refused (409, defect D3). The drawer has already
@@ -601,6 +618,56 @@ export default function Pipeline() {
         </Text>
       </Space>
       </Card>
+
+      {/* Interviews that ended with no verdict. Deliberately a banner rather
+          than a column on the board: these are not a pipeline stage, they are a
+          blockage — every one is a round that cannot send its scorecard until a
+          human says whether the interview happened. Clicking a row opens that
+          candidate's drawer, where Mark as Held / Mark No-show already live. */}
+      {unresolvedInterviews?.length > 0 && (
+        <>
+          <div style={{ height: 18 }} />
+          <Alert
+            type="warning"
+            showIcon
+            icon={<WarningOutlined />}
+            message={`${unresolvedInterviews.length} interview${unresolvedInterviews.length === 1 ? '' : 's'} awaiting confirmation`}
+            description={
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  These rounds ended without anyone recording whether they happened. No scorecard
+                  is requested until one is marked held.
+                </Text>
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {unresolvedInterviews.map((iv) => (
+                    <div key={iv.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Button
+                        size="small"
+                        type="link"
+                        style={{ padding: 0, height: 'auto' }}
+                        onClick={() => setOpenPipelineId(iv.pipeline_id)}
+                      >
+                        {iv.candidate_name || `Journey ${iv.pipeline_id}`}
+                      </Button>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {iv.stage_label}
+                        {iv.interviewer_name ? ` · ${iv.interviewer_name}` : ''}
+                        {' · ended '}
+                        {iv.hours_overdue < 24
+                          ? `${iv.hours_overdue}h ago`
+                          : `${Math.floor(iv.hours_overdue / 24)}d ago`}
+                      </Text>
+                      {iv.occurrence_status === 'unconfirmed' && (
+                        <Tag color="default" style={{ marginInlineStart: 0 }}>never confirmed</Tag>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            }
+          />
+        </>
+      )}
 
       <div style={{ height: 18 }} />
 

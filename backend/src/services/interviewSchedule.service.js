@@ -75,11 +75,28 @@ export const stageSendsInvites = (stageKey) => SCHEDULABLE_STAGES[stageKey]?.aut
  * than three: the unresolved state is the absence of a value, not a member.
  * HELD is the gate the scorecard is released under (see dispatchScorecards),
  * so anything counting outstanding feedback must filter on it.
+ *
+ * These two are the only valid OUTCOMES a caller may record. OCCURRENCE_UNCONFIRMED
+ * below is deliberately not a member: it is a bookkeeping marker, not a verdict.
  */
 export const OCCURRENCE_STATUS = Object.freeze({
   HELD: 'held',
   NO_SHOW: 'no_show',
 });
+
+/**
+ * Terminal marker for an interview nobody ever confirmed.
+ *
+ * The occurrence sweep writes this after ATTENDANCE_RECHECK_DAYS so the row stops
+ * being re-examined and stops reading as pending in the drawer. It is NOT an
+ * outcome: markInterviewOccurrence still accepts a real held/no_show verdict on
+ * top of it, and dispatchScorecards stays closed against it (that gate only ever
+ * opens for 'held').
+ *
+ * Lives here rather than in the job so the service can reference it without a
+ * circular import — jobs/interviewOccurrence.js imports this module.
+ */
+export const OCCURRENCE_UNCONFIRMED = 'unconfirmed';
 
 /** The shape createInterviewEvent() returns when no meeting was created. */
 const NO_CALENDAR = Object.freeze({
@@ -245,6 +262,80 @@ export async function getLiveSchedule(pipelineId, stageKey) {
     orderBy: { created_at: 'desc' },
   });
   return serialize(row);
+}
+
+/**
+ * Every round's live booking for one journey, keyed by stage_key.
+ *
+ * The drawer used to load only the CURRENT stage's booking, so once a candidate
+ * moved tech1 → tech2 the finished tech1 column lost its schedule and fell back
+ * to "Not scheduled yet" — wrong for a round that demonstrably happened. One
+ * query for the whole journey costs no more than the single-stage lookup did.
+ *
+ * @param {number|bigint} pipelineId
+ * @returns {Promise<Record<string, object>>} stage_key -> serialized row (newest wins).
+ */
+export async function getSchedulesByStage(pipelineId) {
+  const rows = await prisma.rpa_interview_schedule.findMany({
+    where: { pipeline_id: BigInt(pipelineId), status: { not: 'cancelled' } },
+    orderBy: { created_at: 'asc' },
+  });
+  // Ascending order means a later booking for the same round overwrites the
+  // earlier one, leaving the newest per stage — matching getLiveSchedule().
+  return Object.fromEntries(rows.map((r) => [r.stage_key, serialize(r)]));
+}
+
+/**
+ * Interviews that have ended but still have no held/no_show verdict.
+ *
+ * These are the rows nothing can move: scorecards only dispatch on 'held', so
+ * until someone rules, the round shows "Awaiting Results" indefinitely. The
+ * occurrence sweep chases them by email for three days and reads Teams
+ * attendance for two weeks, but when both come up empty a human has to decide —
+ * and previously nothing told anyone which interviews those were.
+ *
+ * Includes rows already written off as 'unconfirmed' so they stay actionable
+ * rather than disappearing into a terminal state nobody sees.
+ *
+ * @param {object} [opts]
+ * @param {number} [opts.graceMin=15] - Ignore interviews that only just ended.
+ * @returns {Promise<object[]>} Newest-ended first, with candidate + stage context.
+ */
+export async function listUnresolvedInterviews({ graceMin = 15 } = {}) {
+  const cutoff = new Date(Date.now() - graceMin * 60 * 1000);
+
+  const rows = await prisma.rpa_interview_schedule.findMany({
+    where: {
+      status: { notIn: ['cancelled', 'completed', 'no_show'] },
+      scheduled_end_at: { lt: cutoff },
+      OR: [{ occurrence_status: null }, { occurrence_status: OCCURRENCE_UNCONFIRMED }],
+    },
+    include: {
+      rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: true } },
+    },
+    orderBy: { scheduled_end_at: 'desc' },
+  });
+
+  return rows.map((r) => {
+    const candidate = r.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
+    return {
+      id: Number(r.id),
+      pipeline_id: Number(r.pipeline_id),
+      stage_key: r.stage_key,
+      stage_label: SCHEDULABLE_STAGES[r.stage_key]?.label || r.stage_key,
+      candidate_name: candidate?.candidate_name || null,
+      candidate_email: candidate?.candidate_email || null,
+      interviewer_name: r.interviewer_name,
+      interviewer_email: r.interviewer_email,
+      scheduled_start_at: r.scheduled_start_at,
+      scheduled_end_at: r.scheduled_end_at,
+      occurrence_status: r.occurrence_status,
+      attendance_checked_at: r.attendance_checked_at,
+      occurrence_nudge_at: r.occurrence_nudge_at,
+      // Drives the "how stale is this?" column in the UI.
+      hours_overdue: Math.floor((Date.now() - new Date(r.scheduled_end_at).getTime()) / 3_600_000),
+    };
+  });
 }
 
 const IST = 'Asia/Kolkata';
@@ -1114,7 +1205,12 @@ export async function markInterviewOccurrence(scheduleId, { outcome, source, con
   }
 
   // Already resolved → return the existing verdict unchanged (idempotent).
-  if (schedule.occurrence_status) {
+  //
+  // 'unconfirmed' is NOT a verdict: the occurrence sweep writes it after two
+  // weeks of nobody confirming, only so the row stops looking pending. A real
+  // held/no_show decision must still be able to land on top of it, otherwise a
+  // written-off interview could never dispatch its scorecard.
+  if (schedule.occurrence_status && schedule.occurrence_status !== OCCURRENCE_UNCONFIRMED) {
     return { status: schedule.status, occurrence_status: schedule.occurrence_status, alreadyResolved: true };
   }
 

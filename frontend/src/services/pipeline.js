@@ -189,6 +189,15 @@ const pipelineService = {
   },
 
   /**
+   * Interviews that have ended with no held/no_show verdict recorded. These
+   * rounds cannot progress — no scorecard is sent until someone confirms the
+   * interview happened — so they are surfaced as a work queue.
+   */
+  getUnresolvedInterviews() {
+    return api.get('/pipeline/interviews/unresolved');
+  },
+
+  /**
    * Per-round submitted scorecards + overall sum/average for a candidate.
    * @param {number} id - pipeline id
    */
