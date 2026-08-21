@@ -51,7 +51,7 @@ behaviour was quoted rather than summarised.
 | 🔴 | **D4** | Reschedule kills the Teams link — **and neither email carries the new one** | `interviewSchedule.service.js` |
 | 🔴 | **D5** | Candidate email edits never reach a live journey | denormalised `candidate_email` |
 | 🔴 | **D8** | Public upload page discards the server's reason | frontend upload page |
-| 🔴 | **D10** | Drawer shows the dead Teams link after a reschedule | `PipelineDrawer.jsx` — mechanism unproven |
+| ⚠️ | **D10** | Drawer showed the dead Teams link after a reschedule — **not reproducible** on re-test (twice, no reopen, matched the DB). No code changed in between, so this was never fixed; most likely a timing artifact in the original observation. Left open pending sign-off rather than closed | `PipelineDrawer.jsx` |
 
 **Also pending, not defects:** wire `fileSignature.js` into the other four upload routes (all
 authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding, HR truncation,
@@ -62,11 +62,19 @@ authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding,
 ✅ *The vendor over-privilege is resolved — `sahil.dubey673`'s `recruitment_pipeline` was revoked at
 21:03 IST on 2026-08-20 and verified off. No live permissions issue remains.*
 
-1. 🔴 **D4 + D10 together — and D4 is now worse than documented.** The Group 1 mailbox check
-   confirmed that a reschedule sends the candidate **three** messages: the app's "rescheduled" mail,
-   a fresh Exchange invite, and a `Canceled:` notice for the destroyed meeting. So the candidate is
-   told the interview is cancelled at the same moment they are told it moved — and the drawer still
-   shows the dead link. Workaround for the drawer half: reopen it. None for the email half.
+1. 🔴 **D4 — and it is worse than first documented, in three compounding ways.**
+   - The Teams meeting is destroyed and recreated on every reschedule (confirmed three times).
+   - **Neither reschedule email carries a join link** — captured pre-send from the modal's own HTML
+     tab. Not the new link, not even the old one.
+   - **Exchange sends the candidate its own `Canceled:` notice**, so they are told the interview is
+     cancelled at the same moment they are told it moved.
+
+   ⚠️ **And D10 not reproducing makes this *more* dangerous, not less.** The stale drawer was the
+   recruiter's only visual cue that the meeting had changed underneath them. With the drawer
+   updating correctly, they see a live Join button while the candidate holds a dead one. The failure
+   is now silent on the operator's side.
+
+   **One fix resolves all three:** `PATCH` the Graph event instead of cancelling and recreating it.
 
 ⚠️ **Nothing is committed.** Six fixes and five new test files are in the working tree only, and
 staging predates all of them.

@@ -99,7 +99,7 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
 | **D8** | 🟡 Medium | `frontend` public upload page | The page **discards the server's precise reason** and tells the candidate *"Please try those again"* — advice that cannot work. | 🔴 Open |
 | **D9** | 🟡 Medium | `PipelineDrawer.jsx` `interviewCancelMutation` | **A cancellation reason cannot be supplied from the UI at all** — the modal has no reason field, so every recruiter cancellation records *that* a round was cancelled, never *why*. | ✅ Fixed |
-| **D10** | 🟠 High (with D4) | `PipelineDrawer.jsx` — schedule / reschedule view refresh | After a successful reschedule the drawer keeps showing the **old time, old meeting ID and old passcode** — a meeting D4 has just destroyed. The recruiter is looking at a live-seeming Join button that is dead. | 🔴 Open |
+| **D10** | 🟡 Downgraded | `PipelineDrawer.jsx` — schedule / reschedule view refresh | Drawer appeared to keep the **old time, meeting ID and passcode** after a reschedule. **Not reproducible on re-test** (twice, no reopen, values matched the DB exactly) — and no code changed in between. Most likely an observation timing artifact in the original run. | ⚠️ Not reproducible |
 
 ### D1 — MRF never auto-closed (the significant one)
 
@@ -338,6 +338,36 @@ Items**, not the Inbox — because that mailbox is `MS_CALENDAR_MAILBOX`, the or
 This is the strongest argument yet for fixing D4 by patching the event rather than replacing it: the
 duplicate-and-contradictory candidate mail disappears entirely if the event is never cancelled.
 
+### D4 re-confirmed 2026-08-20 21:33 — and D10's non-reproduction makes it worse
+
+Two consecutive reschedules, every identifier changing each time:
+
+| | Row | Meeting ID | Passcode |
+|---|---|---|---|
+| book | 107 | `471138124881060` | `oM9s7Bi2` |
+| reschedule #1 | 108 | `450766067167142` | `sQ3Mi7nY` |
+| reschedule #2 | 109 | `482011056442070` | `Bd2wd9NL` |
+
+`graph_event_id`, `teams_join_url`, `online_meeting_id`, `teams_meeting_id` and `teams_passcode` all
+differ between consecutive rows. Delete-and-recreate, confirmed a third time.
+
+**The link-free emails were captured pre-send**, from the modal's own HTML tab — the exact payload
+dispatched. Both bodies carry previous time, new time and duration; **neither contains a join URL, a
+meeting ID or a passcode.** Not the new one, and not even the old one. So the app's own mail cannot
+repair the link it just broke.
+
+**The reschedule modal now discloses the behaviour** to the recruiter:
+
+> *"Picking a new time below cancels this slot and books the new one — both parties are emailed the
+> change."*
+
+Honest, but it is disclosure to the operator, not a fix, and **the candidate never sees it**.
+
+⚠️ **The sharpest point in the re-test.** With D10 not reproducing, the recruiter now sees a correct,
+live Join button immediately after rescheduling — while the candidate holds a dead one and receives
+no replacement link in either app email. **D10 was the recruiter's only visual cue that something had
+changed underneath them.** Without it, the failure is entirely silent on the operator's side.
+
 **Harness note worth keeping.** The first version of this test counted rows in
 `rpa_email_messages` — the table the vendor tests use — and found **zero**, failing on its own
 precondition while the logs showed mail going out fine. That table is written by the stage-outcome
@@ -363,6 +393,26 @@ going to the stale address.
 **Three possible fixes, and the choice is a design decision:** resolve the candidate address at send
 time; propagate record edits to open journeys; or expose an editable recipient on the send form.
 Not fixed here — picking one affects other consumers of the denormalised copy.
+
+**Re-confirmed 2026-08-20 21:33, and one of the three options is now ruled out.**
+`PATCH /api/candidates/292` → 200. Read back in the same second:
+
+| Read | Value |
+|---|---|
+| Candidate record | `…+d5probe@gmail.com` ✅ updated |
+| Shortlist row `candidate_email` | old address 🔴 |
+| Pipeline board card | old address 🔴 |
+| **Interview panel email preview — the `Candidate email:` line the interviewer reads** | old address 🔴 |
+
+That last row is decisive: **the send path resolves the denormalised copy**, so "it already resolves
+at send time" is disproved rather than merely unimplemented. Two options remain — propagate edits to
+open journeys, or expose an editable recipient on the send form.
+
+Probe reverted; CV 292 and its shortlist row both verified back at `claudepankajmondal@gmail.com`.
+
+Also noted: the only candidate-update route on this build is `PATCH /api/candidates/:id`, and the
+Search Candidate modal is read-only — so the edit surface is effectively API-only today, which
+narrows who can hit this in practice.
 
 ### D7 — file validation was extension-only (found 2026-08-20, FIXED)
 
@@ -449,6 +499,23 @@ list should include it.
 
 Not fixed here: it is a frontend change on a page with its own error-handling shape, and worth doing
 alongside the O3 client-side validation gap (DOC-04) rather than piecemeal.
+
+**Re-confirmed 2026-08-20 21:33** with a 600-byte real-MZ `d8probe.exe` against journey 27's public
+portal:
+
+| | Result |
+|---|---|
+| Client-side filter | 🔴 still none — all three `input[type=file]` carry `accept=""`, the `.exe` was accepted and the item flipped to *"Ready to submit"*. **O3 unchanged** |
+| Server verdict | ✅ **400** — the D6/D7 fixes hold on the public endpoint |
+| What the candidate sees | 🔴 `1 of 1 could not be sent. Please try those again.` — byte-identical to before |
+
+**Verified no residue:** `rpa_candidate_documents` for request 3 still reads item 1 `uploaded`
+(DOC-03's genuine PDF) and items 2 and 3 `pending`, with null `file_url`. The rejected executable
+wrote nothing and reached no OneDrive folder — the 400 path is clean.
+
+This pairs the two halves neatly: **the server is now right and the page is still wrong.** A
+candidate is told to retry the one thing that cannot succeed, which is why D8 and O3 belong in the
+same change.
 
 ---
 
@@ -939,6 +1006,36 @@ It needs React Query devtools on a live reschedule to confirm which query settle
 
 **Interim mitigation if the demo includes a reschedule:** close and reopen the drawer afterwards. The
 data is correct on reopen — only the immediate post-action render is stale.
+
+### ⚠️ D10 RE-TEST 2026-08-20 21:33 — not reproducible, and NOT because it was fixed
+
+Evidence: `docs/test-claude-chrome/d4d5d8d10retest20260820.md`. Two consecutive reschedules on
+journey 40, deliberately without reopening the drawer:
+
+| | Drawer after, no reopen | DB row |
+|---|---|---|
+| Reschedule #1 | 25 Aug 09:00 · `450766067167142` · `sQ3Mi7nY` | row 108 — matches |
+| Reschedule #2 | 26 Aug 09:00 · `482011056442070` · `Bd2wd9NL` | row 109 — matches |
+
+Compared programmatically against `/api/pipeline/40` — `drawerMatchesDb: true`. The second was
+captured ~4 s after the modal closed and was already correct.
+
+🔴 **The report scores this "✅ FIXED". It is not fixed — nothing was fixed.** `git log` confirms no
+code changed between the original observation and this re-test: the last commit touching
+`PipelineDrawer.jsx` is `d47b0ad` (the D9 reason field), which does not touch the schedule or
+reschedule mutations. **The same build produced both results.**
+
+That distinction matters, because "fixed" and "not reproducible" call for opposite actions. It
+supports the conclusion already reached above — that the four structural causes were correctly ruled
+out and the original symptom was most likely an **observation timing artifact**: a screenshot or DOM
+read taken in the window between the mutation resolving and React committing the re-render.
+
+**Downgraded to "not reproducible" rather than closed.** Two clean runs do not disprove an
+intermittent render race, and the original observation was specific and twice-repeated with concrete
+values. If it never recurs it can be closed at sign-off; it should not be closed on this evidence
+alone.
+
+**Do not "re-fix" it.** There is nothing to revert and nothing was applied.
 
 ### Four smaller observations from the same run — not scored, worth knowing
 
