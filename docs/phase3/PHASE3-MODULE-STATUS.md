@@ -103,7 +103,7 @@ Two of the four screens and one of the four decisions are also closed — see §
 
 | Item | Effect today |
 |---|---|
-| ~~"Create email template" screen~~ | ✅ **Built** — `POST /api/email/templates`, admin-gated. |
+| ~~"Create email template" screen~~ | ✅ **Built.** The API (`POST /api/email/templates`, admin-gated) landed first; this row claimed the *screen* was done when only the endpoint was, and nothing in the UI could reach it. The admin-gated **New Template** button and modal on the Email Templates screen shipped 2026-08-21, so `PipelineConfigPanel`'s "Create new templates on the Email Templates screen" is finally true. |
 | ~~Stage → email template mapping screen~~ | ✅ **Built in M6** — *Outcome Emails* tab on the Pipeline Configuration screen. Unmapped pairs are shown too, since they are the ones falling back to the generic template. |
 | "Amend offer decision" screen | Correcting a recorded acceptance/rejection needs a developer. |
 | Free/busy availability display | The scheduling window does not yet show when the interviewer is busy. |
