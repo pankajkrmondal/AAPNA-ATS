@@ -2437,7 +2437,11 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId, stage = Z
     create: {
       candidate_id: candidateId,
       zeko_job_id: String(zekoJobId),
-      pipeline_id: String(zekoJobId), // Defaults to job ID if not specified yet
+      // Placeholder only. The real value is Zeko's INTERVIEW id, which is not
+      // known until scheduleInterview() resolves the job's primary_interview_id
+      // and overwrites this. Nothing may call the results/cancel endpoints with
+      // this seeded value — those key on the interview id and 404 on a job id.
+      pipeline_id: String(zekoJobId),
       stage: roundStage,
       status: 'pending',
       candidate_email: shortlist.candidate_email,
@@ -2574,6 +2578,12 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   // Update pipeline status. Scoped to this round's row: a candidate can hold
   // both an 'hr' and a 'functional' row against the same job, and scheduling
   // one round must not overwrite the other's window.
+  //
+  // pipeline_id is also corrected here. assignCandidateToZekoJob() seeds it to
+  // the JOB id as a placeholder, but Zeko's results/cancel endpoints key on the
+  // INTERVIEW id — GET /interview/<job id>/results answers 404 "Interview not
+  // found", which silently stalled every scheduled candidate at "Awaiting
+  // Results". Now that we know the interview id, store it.
   const pipeline = await prisma.rpa_zeko_candidate_pipeline.updateMany({
     where: {
       candidate_id: shortlistId,
@@ -2581,6 +2591,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
       stage: roundStage,
     },
     data: {
+      pipeline_id: String(interviewId),
       interview_start_at: roundedStart,
       interview_end_at: roundedEnd,
       status: 'sent',
@@ -2684,7 +2695,15 @@ export async function cancelInterview(pipelineId, reason, user) {
   // scheduleInterview above) — cancelling by the real address in non-prod would
   // not match the booking Zeko actually holds, and would leave the test-inbox
   // booking live.
-  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${pipeline.pipeline_id}/cancel-scheduled-candidates`;
+  //
+  // Rows scheduled before the pipeline_id fix still hold the JOB id, which this
+  // endpoint rejects the same way /results does. Fall back to the job's
+  // primary_interview_id whenever the stored value is still the placeholder.
+  const cancelInterviewId =
+    pipeline.pipeline_id && pipeline.pipeline_id !== pipeline.zeko_job_id
+      ? pipeline.pipeline_id
+      : job?.primary_interview_id || pipeline.pipeline_id;
+  const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${cancelInterviewId}/cancel-scheduled-candidates`;
   const zekoCandidateEmail = nonProdSafeCandidateEmail(pipeline.candidate_email, 'zeko:cancel');
   const zekoPayload = {
     candidateEmails: [zekoCandidateEmail],

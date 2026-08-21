@@ -444,6 +444,11 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
         s3 = { state: 'done', detail: 'Feedback received — interviewer submitted the scorecard' };
       } else if (interviewSchedule.occurrence_status === 'held') {
         s3 = { state: 'active', detail: 'Interview held — scorecard link sent, awaiting the interviewer’s feedback' };
+      } else if (interviewSchedule.occurrence_status === 'unconfirmed') {
+        // Written off by the sweep after nobody confirmed it for two weeks. Not
+        // a failure state — the interview may well have happened — but nothing
+        // moves until a human says so, since scorecards only dispatch on 'held'.
+        s3 = { state: 'rejected', detail: 'Never confirmed — mark it held to request feedback, or reject' };
       } else {
         s3 = { state: 'active', detail: 'Awaiting the interview & feedback' };
       }
@@ -783,6 +788,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // Live interview booking for the current round (used by the cancel preview
   // query below and the modals); also re-read at the render site further down.
   const interviewSchedule = data?.interviewSchedule;
+  // Per-round bookings keyed by stage_key, so finished rounds keep their
+  // schedule instead of reverting to "Not scheduled yet".
+  const interviewSchedules = data?.interviewSchedules;
   // True once the scheduled window has passed — gates the "did it happen?"
   // controls so occurrence is only asked about after the interview time.
   const interviewEnded = interviewSchedule?.scheduled_end_at
@@ -1431,8 +1439,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       zekoHrPipeline: stage.stage_key === pipeline.current_stage_key ? zekoHrPipeline : null,
       zekoReportLink: stage.stage_key === pipeline.current_stage_key ? zekoReportLink : null,
       screening,
-      // Same rule for the interview booking + MRF hints.
-      interviewSchedule: stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null,
+      // Each round gets its OWN booking, so a finished tech1 keeps showing when
+      // the candidate has moved to tech2. Falls back to the current-stage row
+      // for older payloads that predate interviewSchedules.
+      interviewSchedule:
+        interviewSchedules?.[stage.stage_key] ||
+        (stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null),
+      // Hints are advice for booking the round that's up next, so they stay
+      // scoped to the current stage.
       mrfInterviewHints: stage.stage_key === pipeline.current_stage_key ? mrfInterviewHints : null,
       // Whether an interviewer has submitted a scorecard for THIS stage — flips
       // the "Awaiting Results" line to "Feedback received".
@@ -1580,7 +1594,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                       // Once the interview window has ended and its occurrence is
                       // still unresolved, the recruiter confirms held/no-show —
                       // the gate that releases (or blocks) the scorecard link.
-                      interviewEnded && !interviewSchedule.occurrence_status ? (
+                      //
+                      // 'unconfirmed' counts as unresolved: the sweep writes it
+                      // after two weeks of nobody confirming, purely so the row
+                      // stops looking pending. The verdict is still outstanding,
+                      // so the recruiter keeps the same buttons — without them an
+                      // unconfirmed round could never reach 'held' and would never
+                      // produce a scorecard.
+                      interviewEnded &&
+                      (!interviewSchedule.occurrence_status ||
+                        interviewSchedule.occurrence_status === 'unconfirmed') ? (
                         // Each button triggers an irreversible action that sends
                         // real email, so the tooltip spells out what happens
                         // BEFORE the click rather than after.

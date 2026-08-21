@@ -23,7 +23,7 @@ import config from '../config/index.js';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
-import { markInterviewOccurrence } from '../services/interviewSchedule.service.js';
+import { markInterviewOccurrence, OCCURRENCE_UNCONFIRMED } from '../services/interviewSchedule.service.js';
 import { getAttendanceOutcome, isAttendanceEnabled } from '../services/graphAttendance.service.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
 
@@ -56,6 +56,23 @@ const DEFAULTS = { enabled: false, intervalMin: 30, graceMin: 15 };
  */
 const NUDGE_REPEAT_HOURS = 24;
 const MAX_NUDGES = 3;
+
+/**
+ * How long the Teams attendance branch keeps re-checking, and when an interview
+ * nobody ever confirmed is finally written off.
+ *
+ * The nudge cap above and this one used to be the same bound, which quietly
+ * stranded bookings: once selection stopped at MAX_NUDGES × NUDGE_REPEAT_HOURS,
+ * the attendance branch stopped too, so a row whose Teams report published late
+ * — or whose recruiter simply missed three emails — kept occurrence_status=null
+ * forever. Because scorecard dispatch is gated on 'held', those interviews could
+ * never produce a result, and nothing surfaced them.
+ *
+ * Splitting the two lets the emails stay capped (they are a nag) while the free,
+ * silent attendance read keeps trying. The hard stop then closes the row out as
+ * OCCURRENCE_UNCONFIRMED instead of leaving it pending in perpetuity.
+ */
+const ATTENDANCE_RECHECK_DAYS = 14;
 
 /**
  * Reads the occurrence-sweep configuration from rpa_settings, with defaults.
@@ -151,12 +168,16 @@ export async function sweepInterviewOccurrence() {
   // ends, and the old one-shot filter meant we only ever asked once, usually too
   // early.
   //
-  // The cap is expressed as a window rather than a counter so it needs no new
-  // column: nudges land ~NUDGE_REPEAT_HOURS apart, and selection stops
+  // The nudge cap is expressed as a window rather than a counter so it needs no
+  // new column: nudges land ~NUDGE_REPEAT_HOURS apart, and emailing stops
   // MAX_NUDGES × NUDGE_REPEAT_HOURS after the interview ended. An interview
   // nobody has confirmed after three days is not going to be confirmed by a
   // fourth email.
-  const giveUpBefore = new Date(Date.now() - MAX_NUDGES * NUDGE_REPEAT_HOURS * 60 * 60 * 1000);
+  //
+  // Selection, however, runs to the much longer ATTENDANCE_RECHECK_DAYS bound so
+  // the attendance branch keeps looking after the emails stop (see the constant).
+  const nudgeUntil = new Date(Date.now() - MAX_NUDGES * NUDGE_REPEAT_HOURS * 60 * 60 * 1000);
+  const giveUpBefore = new Date(Date.now() - ATTENDANCE_RECHECK_DAYS * 24 * 60 * 60 * 1000);
   const nudgeAgainBefore = new Date(Date.now() - NUDGE_REPEAT_HOURS * 60 * 60 * 1000);
 
   const due = await prisma.rpa_interview_schedule.findMany({
@@ -164,10 +185,6 @@ export async function sweepInterviewOccurrence() {
       status: 'scheduled',
       occurrence_status: null,
       scheduled_end_at: { lt: cutoff, gt: giveUpBefore },
-      OR: [
-        { occurrence_nudge_at: null },
-        { occurrence_nudge_at: { lt: nudgeAgainBefore } },
-      ],
     },
     include: {
       rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },
@@ -175,7 +192,27 @@ export async function sweepInterviewOccurrence() {
     },
   });
 
-  if (due.length === 0) return { processed: 0, held: 0, noShow: 0, nudged: 0 };
+  // Anything older than the re-check window is written off in one statement, so
+  // it stops looking pending and drops out of every subsequent sweep.
+  const writtenOff = await prisma.rpa_interview_schedule.updateMany({
+    where: {
+      status: 'scheduled',
+      occurrence_status: null,
+      scheduled_end_at: { lt: giveUpBefore },
+    },
+    data: {
+      occurrence_status: OCCURRENCE_UNCONFIRMED,
+      occurrence_source: 'system',
+      occurrence_confirmed_at: new Date(),
+    },
+  });
+  if (writtenOff.count > 0) {
+    logger.warn(
+      `[Occurrence Sweep] ${writtenOff.count} interview(s) unconfirmed after ${ATTENDANCE_RECHECK_DAYS} days — marked '${OCCURRENCE_UNCONFIRMED}'. A recruiter can still mark them held or no-show by hand.`
+    );
+  }
+
+  if (due.length === 0) return { processed: 0, held: 0, noShow: 0, nudged: 0, unconfirmed: writtenOff.count };
   logger.info(`[Occurrence Sweep] ${due.length} interview(s) past end awaiting an occurrence verdict.`);
 
   let held = 0, noShow = 0, nudged = 0;
@@ -231,12 +268,23 @@ export async function sweepInterviewOccurrence() {
       }
     }
 
-    // (b) Fall back to a one-time human-confirmation nudge.
-    nudged += await sendConfirmationNudge(row, candidate) ? 1 : 0;
+    // (b) Fall back to a human-confirmation nudge — but only while the row is
+    // still inside the nudge window. The due-filter no longer enforces that
+    // (it now runs to the longer attendance bound), so the cap is applied here:
+    // keep reading Teams reports silently, stop emailing after MAX_NUDGES.
+    const endedAt = row.scheduled_end_at;
+    const withinNudgeWindow = endedAt && new Date(endedAt) > nudgeUntil;
+    const nudgeDue =
+      !row.occurrence_nudge_at || new Date(row.occurrence_nudge_at) < nudgeAgainBefore;
+    if (withinNudgeWindow && nudgeDue) {
+      nudged += await sendConfirmationNudge(row, candidate) ? 1 : 0;
+    }
   }
 
-  logger.info(`[Occurrence Sweep] held=${held} no_show=${noShow} nudged=${nudged}.`);
-  return { processed: due.length, held, noShow, nudged };
+  logger.info(
+    `[Occurrence Sweep] held=${held} no_show=${noShow} nudged=${nudged} unconfirmed=${writtenOff.count}.`
+  );
+  return { processed: due.length, held, noShow, nudged, unconfirmed: writtenOff.count };
 }
 
 /** Human-readable phrase for the side that failed to attend. */

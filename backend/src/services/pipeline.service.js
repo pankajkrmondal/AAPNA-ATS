@@ -13,7 +13,7 @@ import {
   isMrfFilled,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule, OCCURRENCE_STATUS } from './interviewSchedule.service.js';
+import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, OCCURRENCE_STATUS } from './interviewSchedule.service.js';
 import { SCORECARD_STATUS } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
@@ -39,6 +39,7 @@ export {
   previewCancelEmails,
   previewRescheduleEmails,
   markInterviewOccurrence,
+  listUnresolvedInterviews,
 } from './interviewSchedule.service.js';
 
 // Interviewer scorecard (Module 3) — dispatch + per-candidate report, re-exported
@@ -449,11 +450,17 @@ export async function getPipelineDetail(pipelineId) {
   // Scheduled interview rounds: the MRF names who interviews and their
   // preferred window — free text shown to the recruiter as hints — plus the
   // live booking, if one exists.
+  //
+  // Bookings for EVERY round are loaded, not just the current one: a finished
+  // tech1 still needs its schedule when the candidate has moved on to tech2,
+  // otherwise its column reads "Not scheduled yet". `interviewSchedule` stays
+  // as the current round's row so existing callers are unaffected.
+  const interviewSchedules = await getSchedulesByStage(pipeline.id);
   let interviewSchedule = null;
   let mrfInterviewHints = null;
   if (isSchedulableStage(pipeline.current_stage_key)) {
     mrfInterviewHints = mrfRoundHints(pipeline.rpa_shortlisted_candidates?.mrf, pipeline.current_stage_key);
-    interviewSchedule = await getLiveSchedule(pipeline.id, pipeline.current_stage_key);
+    interviewSchedule = interviewSchedules[pipeline.current_stage_key] || null;
   }
 
   // The offer record drives the Offer round's own action bar (request approval →
@@ -471,6 +478,7 @@ export async function getPipelineDetail(pipelineId) {
     zekoHrPipeline,
     zekoReportLink,
     interviewSchedule,
+    interviewSchedules,
     mrfInterviewHints,
     offer,
   });

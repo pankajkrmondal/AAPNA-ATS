@@ -61,6 +61,9 @@ router.get('/interview/:scheduleId/cancel-preview', pipelineController.getCancel
 router.post('/interview/:scheduleId/occurrence', pipelineController.recordInterviewOccurrence);
 /** Manually send the scorecard link (idempotent; only after 'held'). */
 router.post('/interview/:scheduleId/send-scorecard', pipelineController.sendScorecard);
+/** GET /api/pipeline/interviews/unresolved — ended interviews still awaiting a
+ * held/no_show verdict. Registered before "/:id" for the same reason as above. */
+router.get('/interviews/unresolved', pipelineController.listUnresolvedInterviews);
 /** Per-document verify/reject. Registered before "/:id" so "documents" is
  * never captured as a pipeline id. */
 router.post('/documents/:docId/verify', pipelineController.verifyDocument);

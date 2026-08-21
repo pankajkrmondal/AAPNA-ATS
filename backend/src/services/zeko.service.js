@@ -23,6 +23,52 @@ import { fetchMessagesSince } from './outlookReader.service.js';
 
 const SLEEP = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** A 'sent' interview older than this with no result is surfaced as a warning. */
+const RESULT_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Splits a stored candidate_email into comparable addresses.
+ *
+ * rpa_shortlisted_candidates.candidate_email sometimes holds several addresses
+ * in one column ("a@x.com, b@y.com"), and Zeko reports whichever single address
+ * the interview was booked against — so a plain equality test misses the match.
+ *
+ * @param {string|null} value - Raw column value, possibly comma/semicolon joined.
+ * @returns {string[]} Lower-cased, trimmed addresses.
+ */
+function emailCandidates(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/[,;]/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Picks the result belonging to one candidate out of an interview's results.
+ *
+ * GET /interview/<id>/results returns EVERY candidate booked against that
+ * interview (10+ rows is normal), so indexing data[0] would attribute a
+ * stranger's scores to this candidate and then write them onto their rpa_cv
+ * row. Matching on email is the only way to identify the right entry; when
+ * nothing matches we return null so the caller skips rather than guesses.
+ *
+ * @param {object[]} data - The `data` array from the results response.
+ * @param {string|null} candidateEmail - Our stored address(es) for the candidate.
+ * @returns {object|null} The matching result entry, or null when absent.
+ */
+function findResultForCandidate(data, candidateEmail) {
+  const wanted = new Set(emailCandidates(candidateEmail));
+  if (wanted.size === 0) return null;
+  return (
+    data.find((entry) => {
+      const entryEmail = entry?.candidate?.email;
+      if (!entryEmail) return false;
+      return wanted.has(String(entryEmail).trim().toLowerCase());
+    }) || null
+  );
+}
+
 /**
  * Ensures a valid (non-expiring-soon) Zeko bearer token exists in rpa_zeko_auth_token,
  * minting a fresh one via the API-key grant when needed.
@@ -453,9 +499,17 @@ export async function fetchInterviewResults() {
       p.status,
       p.interview_end_at,
       COALESCE(p.candidate_email, sc.candidate_email) AS candidate_email,
-      sc.candidate_name  AS sc_candidate_name
+      sc.candidate_name  AS sc_candidate_name,
+      cp.cv_id
     FROM rpa_zeko_candidate_pipeline p
     JOIN rpa_shortlisted_candidates sc ON sc.id = p.candidate_id
+    -- Journey link gives us the exact rpa_cv row to write scores back to.
+    -- LEFT so a Zeko row without a journey still syncs (it falls back to email).
+    LEFT JOIN LATERAL (
+      SELECT cv_id FROM rpa_candidate_pipeline
+      WHERE shortlist_id = p.candidate_id AND cv_id IS NOT NULL
+      ORDER BY created_at DESC LIMIT 1
+    ) cp ON TRUE
     WHERE p.status = 'sent'
       AND p.interview_end_at < NOW()
     ORDER BY p.interview_end_at ASC;
@@ -481,13 +535,33 @@ export async function fetchInterviewResults() {
       const data = Array.isArray(body?.data) ? body.data : [];
       if (!res.ok || data.length === 0) {
         skipped += 1;
-        logger.info(
-          `Zeko results fetch: no data yet for pipeline_row ${row.pipeline_row_id} (${row.candidate_email}).`
+        // An interview whose window closed long ago should have results by now;
+        // anything older than the staleness window is a real problem (a wrong
+        // id, a cancelled booking) rather than "not finished yet", so it is
+        // logged loudly. This path stalled silently for weeks precisely because
+        // every miss was reported at info level.
+        const overdueBy = Date.now() - new Date(row.interview_end_at).getTime();
+        const detail = `pipeline_row ${row.pipeline_row_id} (${row.candidate_email}) — HTTP ${res.status}, interview id ${row.pipeline_id}`;
+        if (overdueBy > RESULT_STALE_AFTER_MS) {
+          logger.warn(
+            `Zeko results fetch: STILL no data ${Math.floor(overdueBy / 3_600_000)}h after the interview ended — ${detail}.`
+          );
+        } else {
+          logger.info(`Zeko results fetch: no data yet for ${detail}.`);
+        }
+        continue;
+      }
+
+      // Never data[0]: the response carries every candidate on this interview.
+      const result = findResultForCandidate(data, row.candidate_email);
+      if (!result) {
+        skipped += 1;
+        logger.warn(
+          `Zeko results fetch: ${data.length} result(s) returned for interview ${row.pipeline_id} but none match ${row.candidate_email} (pipeline_row ${row.pipeline_row_id}) — skipping rather than recording another candidate's scores.`
         );
         continue;
       }
 
-      const result = data[0];
       const scores = result.scores || {};
       const overall = scores.overallScore ?? null;
       const technical = scores.technicalScore ?? null;
@@ -520,14 +594,28 @@ export async function fetchInterviewResults() {
         data: { status: 'completed', completed_at: new Date() },
       });
 
-      // 3) Write scores back to rpa_cv by candidate email (case-insensitive).
-      if (candidateEmail) {
+      // 3) Write scores back to rpa_cv.
+      //
+      // Prefer the journey's own cv_id: it identifies exactly one row, whereas
+      // matching on email can hit several (a candidate on two MRFs) and cannot
+      // match at all when the stored column holds multiple joined addresses.
+      // The email match is kept only as a fallback for rows with no journey,
+      // and is bounded to the address Zeko actually reported.
+      if (row.cv_id) {
         await prisma.$executeRaw`
           UPDATE rpa_cv
           SET "ZekoInterviewScore"     = ${overall},
               "ZekoCodingScore"        = ${technical},
               "ZekoCommunicationScore" = ${communication}
-          WHERE "EmailID" ILIKE ${candidateEmail};
+          WHERE id = ${row.cv_id};
+        `;
+      } else if (result.candidate?.email) {
+        await prisma.$executeRaw`
+          UPDATE rpa_cv
+          SET "ZekoInterviewScore"     = ${overall},
+              "ZekoCodingScore"        = ${technical},
+              "ZekoCommunicationScore" = ${communication}
+          WHERE "EmailID" ILIKE ${result.candidate.email};
         `;
       }
 
