@@ -71,6 +71,14 @@ const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
   label: STATUS_META[s].label,
 }));
 
+/**
+ * Statuses a row can still move on from. While any row is in one of these the table
+ * polls as a backstop, because a dropped socket event would otherwise leave it frozen
+ * on "Processing" indefinitely — there is no other trigger that would ever refetch.
+ */
+const NON_TERMINAL_STATUSES = new Set(['Uploaded', 'Queued', 'Processing']);
+const POLL_INTERVAL_MS = 10_000;
+
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
@@ -187,6 +195,17 @@ export default function HRUpload() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadJobs, jobsPage]);
+
+  /* ═══════ POLLING BACKSTOP ═══════ */
+  // The socket is the primary signal; this only covers the case where an event never
+  // arrives (proxy drops the upgrade, token expires, tab suspended mid-batch). Runs
+  // only while something is actually in flight, so a settled table costs nothing.
+  const hasPendingJobs = jobs.some((j) => NON_TERMINAL_STATUSES.has(j.status));
+  useEffect(() => {
+    if (!hasPendingJobs) return undefined;
+    const id = setInterval(() => loadJobs(jobsPage), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [hasPendingJobs, loadJobs, jobsPage]);
 
   /* ═══════ UPLOAD HANDLER ═══════ */
   const handleUpload = async () => {

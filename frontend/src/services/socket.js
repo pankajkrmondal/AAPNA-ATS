@@ -29,6 +29,17 @@ export function getSocket() {
     reconnectionDelay: 1000,
   });
 
+  // A failed handshake is otherwise completely silent: reconnection is infinite, so
+  // there is no error to surface and the only symptom is a page that quietly stops
+  // updating. Log it — a rejected token and a proxy that won't upgrade the connection
+  // look identical from the UI, and this is the line that tells them apart.
+  socket.on('connect_error', (err) => {
+    console.warn(`[socket] connect_error: ${err?.message || err}`);
+  });
+  socket.on('disconnect', (reason) => {
+    console.warn(`[socket] disconnected: ${reason}`);
+  });
+
   return socket;
 }
 
