@@ -12,20 +12,28 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**79 of 122 cases executed. Ten real defects found — six fixed, four open.**
+**79 of 122 cases executed. Ten real defects found — nine fixed, one unresolved (D10, not
+reproducible).**
 
 🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
 so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
 **public, unauthenticated** candidate endpoint, where the only credential is a token sent by email.
 Fixed on the document route; the other four upload routes share the pattern and are authenticated.
 
-**Still open:** D4 (reschedule kills the Teams join link — **and neither reschedule email carries the
-new one**), D5 (candidate email edits never reach a live journey), D8 (public upload page discards
-the server's error message), D10 (the drawer shows the dead Teams link after a reschedule —
-investigated, four causes ruled out, mechanism still unproven).
+**D4, D5, D8 and O3 were fixed on 2026-08-21.** The reschedule now patches the Graph event instead of
+destroying it, so the Teams link survives and Exchange stops sending the contradictory `Canceled:`
+notice; candidate emails resolve from the CV rather than the stale denormalised copy; and the public
+upload page shows the server's actual reason instead of telling candidates to retry the one thing
+that cannot work.
 
-⚠️ **D4 + D10 together are the demo risk.** The reschedule destroys the meeting, the emails do not
-carry the replacement, and the drawer keeps displaying the dead one as though it were live.
+**One item remains unresolved: D10** — the drawer showing a stale Teams link after a reschedule. Four
+structural causes were ruled out and it did not reproduce on re-test, with no code change in between.
+Left open pending sign-off rather than closed, since two clean runs do not disprove an intermittent
+render race.
+
+⚠️ **Two manual checks are owed on the fixes**, both needing a staging restart: confirm the
+`Canceled:` notice has stopped arriving on a reschedule (D4), and that the upload page now shows the
+server's message (D8).
 
 **Every defect after D2 was found by manual testing, not by the automated suite** — and the suite was
 green throughout. D1 hid behind a unit test that asserted a constant instead of running the query;
@@ -93,11 +101,11 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D1** | 🔴 **High** | `mrfClosure.service.js` `countAcceptedHires()` | **No requisition could ever auto-close on acceptance.** Double-hiring risk. | ✅ Fixed |
 | **D2** | 🟡 Medium | `offer.service.js` `recordCandidateDecision()` | A truthy *string* passed the `amend` guard, so a recorded acceptance could be silently overwritten. | ✅ Fixed |
 | **D3** | 🔴 **High** | `pipeline.service.js` `setStageOutcome()` + `pipeline.controller.js` | **A stale browser tab can advance a candidate a second time**, skipping a stage entirely and sending two outcome emails. The concurrency guard only catches simultaneous requests, not stale ones. | ✅ Fixed |
-| **D4** | 🟠 **High** (raised 2026-08-20) | `interviewSchedule.service.js` `rescheduleInterviewRound()` | **Rescheduling destroys the Teams meeting instead of patching it.** The join link dies, **neither reschedule email carries the new one**, and **Exchange sends the candidate its own `Canceled:` notice** — so they are told the interview is cancelled at the same moment they are told it moved. | 🔴 Open |
-| **D5** | 🟡 Medium | `rpa_candidate_pipeline.candidate_email` (denormalised at shortlist time) | **Editing a candidate's email does not reach a live journey**, and no UI path can correct it — invites keep going to the stale address. | 🔴 Open |
+| **D4** | 🟠 **High** | `interviewSchedule.service.js` `rescheduleInterviewRound()` + `graphCalendar.service.js` | **Rescheduling destroyed the Teams meeting instead of patching it.** The join link died, and Exchange sent the candidate its own `Canceled:` notice — telling them the interview was cancelled at the same moment they were told it moved. | ✅ Fixed |
+| **D5** | 🟡 Medium | `interviewSchedule.service.js` — denormalised `candidate_email` | **Editing a candidate's email did not reach a live journey** — invites kept going to the stale address. | ✅ Fixed |
 | **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
 | **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
-| **D8** | 🟡 Medium | `frontend` public upload page | The page **discards the server's precise reason** and tells the candidate *"Please try those again"* — advice that cannot work. | 🔴 Open |
+| **D8** | 🟡 Medium | `DocumentUpload.jsx` | The page **discarded the server's precise reason** and told the candidate *"Please try those again"* — advice that cannot work. Fixed together with **O3**, the client-side validation gap on the same page. | ✅ Fixed |
 | **D9** | 🟡 Medium | `PipelineDrawer.jsx` `interviewCancelMutation` | **A cancellation reason cannot be supplied from the UI at all** — the modal has no reason field, so every recruiter cancellation records *that* a round was cancelled, never *why*. | ✅ Fixed |
 | **D10** | 🟡 Downgraded | `PipelineDrawer.jsx` — schedule / reschedule view refresh | Drawer appeared to keep the **old time, meeting ID and passcode** after a reschedule. **Not reproducible on re-test** (twice, no reopen, values matched the DB exactly) — and no code changed in between. Most likely an observation timing artifact in the original run. | ⚠️ Not reproducible |
 
@@ -368,6 +376,40 @@ live Join button immediately after rescheduling — while the candidate holds a 
 no replacement link in either app email. **D10 was the recruiter's only visual cue that something had
 changed underneath them.** Without it, the failure is entirely silent on the operator's side.
 
+### ✅ D4 FIXED 2026-08-21 — the event is patched, not replaced
+
+| Where | Change |
+|---|---|
+| `graphCalendar.service.js` | New `updateInterviewEventTime()` — `PATCH`es start/end on the existing event. Leaves `onlineMeeting` untouched, so the join URL, meeting id and passcode all survive and Outlook sends attendees a normal *"Updated:"* notice instead of a cancellation |
+| `interviewSchedule.service.js` | `rescheduleInterviewRound()` patches first and carries the event forward onto the new row. `createInterviewEvent()` is now the **fallback**, not the default |
+| `interviewSchedule.service.js` | `previewRescheduleEmails()` no longer hardcodes `joinUrl: null` |
+
+**The booking row is still replaced.** The unique "one live booking per round" index requires the old
+row to go `cancelled` before a new one is inserted — that was never the problem. The bug was that the
+*calendar event* had been needlessly coupled to that row lifecycle. The two are now decoupled: rows
+churn, the event persists.
+
+**It falls back rather than failing.** If the patch cannot happen — calendar disabled, no prior
+event, or Graph refuses — the service reverts to the old cancel-and-recreate path. A Graph outage
+costs the join link, not the recruiter's reschedule.
+
+**On the "neither email carries a link" half — the original finding was half right.** The *sent*
+mail always appended the Teams block via `ensureTeamsBlock()` (`interviewSchedule.service.js:949`).
+What lacked the link was the **preview**, which passed `joinUrl: null` — and the preview is exactly
+what the manual run captured from the modal's HTML tab, and exactly what the recruiter reads and
+edits before sending. So it was a real defect on the surface that matters, but the diagnosis
+("neither email carries a link") was wrong about the delivered mail. The preview now shows the live
+booking's Teams details, which after this fix are the same ones the candidate keeps.
+
+**Verified:** `rescheduleEmails.test.js` → 2 tests, both passing, with the assertion inverted from
+*"the meeting IS replaced"* to *"the meeting SURVIVES"*. The Graph call log across two reschedules
+reads `created event → patched event → created event → patched event` — **no `cancelled event` at
+all**, which is the destroy step being gone.
+
+⚠️ **Still needs one manual check.** The tests prove the meeting id survives. Only a mailbox can
+confirm the `Canceled:` notice has actually stopped arriving, and that attendees now get *"Updated:"*
+instead. Ten minutes, after a staging restart.
+
 **Harness note worth keeping.** The first version of this test counted rows in
 `rpa_email_messages` — the table the vendor tests use — and found **zero**, failing on its own
 precondition while the logs showed mail going out fine. That table is written by the stage-outcome
@@ -413,6 +455,30 @@ Probe reverted; CV 292 and its shortlist row both verified back at `claudepankaj
 Also noted: the only candidate-update route on this build is `PATCH /api/candidates/:id`, and the
 Search Candidate modal is read-only — so the edit surface is effectively API-only today, which
 narrows who can hit this in practice.
+
+### ✅ D5 FIXED 2026-08-21 — resolve from the CV at read time
+
+Of the three candidate fixes, the re-test ruled out "it already resolves at send time" and left two.
+**Chosen: resolve from the CV**, which is the record of truth, rather than back-filling the
+denormalised copies. Back-filling would need a migration plus a write path on every candidate edit,
+and would still leave any row that missed the sweep wrong.
+
+New `liveCandidateEmail(candidate)` in `interviewSchedule.service.js` prefers `cv.EmailID` and falls
+back to the shortlist copy. Applied at all four send sites — the calendar attendee list (schedule and
+reschedule), the `interviewScheduled` recipient, the `interviewCancelled` recipient, and the
+`candidate_email` **token in the panel email**, which is the line the interviewer reads and replies
+to and was the clearest symptom.
+
+Two deliberate choices:
+
+- **Fall back, never blank.** A shortlist can exist without a `cv_id` (keyword shortlists), and an
+  empty CV address must not wipe out an address we do have.
+- **The denormalised column is left in place.** Other consumers read it, and removing it is a wider
+  change than this defect justifies. It is now bypassed on the paths that email people.
+
+All six shortlist queries in the file now include `cv: { select: { EmailID: true } }`. Without that
+include the helper silently falls back to the old behaviour, which is worth knowing if a new query is
+added.
 
 ### D7 — file validation was extension-only (found 2026-08-20, FIXED)
 
@@ -516,6 +582,31 @@ wrote nothing and reached no OneDrive folder — the 400 path is clean.
 This pairs the two halves neatly: **the server is now right and the page is still wrong.** A
 candidate is told to retry the one thing that cannot succeed, which is why D8 and O3 belong in the
 same change.
+
+### ✅ D8 + O3 FIXED 2026-08-21 — in one change, as the re-test recommended
+
+**D8 — the message.** `submitAll()` in `DocumentUpload.jsx` had a bare `catch {}` that discarded the
+error object entirely, so the server's sentence was gone before the toast was written. It now
+collects each failure's `response.data.message`, de-duplicates (three `.exe` files produced the same
+sentence three times), and leads with it:
+
+> *"1 of 1 could not be sent. File type .exe is not allowed. Accepted: .pdf, .docx, .doc, .jpg,
+> .jpeg, .png."*
+
+*"Please try those again"* survives only as the fallback when there is genuinely nothing to explain —
+a network drop, which is the one case where retrying **is** the right advice. Duration raised to 8s,
+since the message now carries an instruction rather than just a count.
+
+**O3 — the client-side gap.** `beforeUpload` returned `false` unconditionally with no checks, and all
+three inputs carried `accept=""`. Now: a real `accept` attribute so the OS picker filters, plus
+extension and 10 MB checks returning `Upload.LIST_IGNORE` with a plain-language reason. The
+constants mirror the server's `ALLOWED_EXTS` and `fileSize` limit.
+
+**The server remains the real gate** — including the magic-byte check from D7. This only spares the
+candidate a pointless round trip and a confusing error; it is not a security boundary, and a renamed
+executable is still caught server-side.
+
+**Frontend build: exit 0, 4101 modules.**
 
 ---
 

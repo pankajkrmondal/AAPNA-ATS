@@ -222,6 +222,83 @@ export async function getOnlineMeetingDetails(joinUrl) {
 }
 
 /**
+ * Moves an existing event to a new time, KEEPING its Teams meeting.
+ *
+ * This is what a reschedule should do. The previous implementation cancelled
+ * the event and created a replacement, which minted a new Teams meeting every
+ * time: everyone holding the original invite was left with a dead join link,
+ * and Outlook mailed the candidate a "Canceled:" notice for the destroyed
+ * meeting at the same moment the app told them the interview had merely moved
+ * (defect D4, 2026-08-20).
+ *
+ * PATCHing start/end leaves `onlineMeeting` untouched, so the join URL, meeting
+ * id and passcode all survive, and Outlook sends attendees a normal "Updated:"
+ * notice instead of a cancellation.
+ *
+ * Returns the same shape as createInterviewEvent() so callers can treat the two
+ * interchangeably — including `ok: false` on failure, which lets the caller
+ * fall back to cancel-and-recreate rather than losing the booking.
+ *
+ * @param {string|null} eventId
+ * @param {object} params
+ * @param {Date} params.start
+ * @param {Date} params.end
+ * @param {string} [params.subject] - omitted leaves the existing subject alone
+ * @returns {Promise<{ok: boolean, eventId: string|null, joinUrl: string|null, onlineMeetingId: string|null, meetingId: string|null, passcode: string|null, error: string|null}>}
+ */
+export async function updateInterviewEventTime(eventId, { start, end, subject } = {}) {
+  const failed = (error) => ({
+    ok: false, eventId: null, joinUrl: null, onlineMeetingId: null, meetingId: null, passcode: null, error,
+  });
+  if (!eventId || !isCalendarEnabled()) return failed('no event id, or calendar disabled');
+
+  const mailbox = config.microsoft.calendarMailbox;
+  try {
+    const token = await getAccessToken();
+    const patch = {
+      start: { dateTime: start.toISOString(), timeZone: 'UTC' },
+      end: { dateTime: end.toISOString(), timeZone: 'UTC' },
+      ...(subject ? { subject } : {}),
+    };
+    const res = await fetch(
+      `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }
+    );
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = body?.error?.message || res.statusText;
+      logger.warn(`Graph calendar: event patch failed (${res.status}) — ${detail}. Falling back to cancel-and-recreate.`);
+      return failed(detail);
+    }
+
+    const updated = await res.json();
+    const joinUrl = updated.onlineMeeting?.joinUrl || null;
+    // Same lookup the create path does — the event payload carries the join URL
+    // but not the dial-in id or passcode.
+    const meeting = await getOnlineMeetingDetails(joinUrl);
+
+    logger.info(`Graph calendar: patched event ${eventId} to ${start.toISOString()} — Teams meeting preserved.`);
+    return {
+      ok: true,
+      eventId: updated.id || eventId,
+      joinUrl,
+      onlineMeetingId: meeting.onlineMeetingId,
+      meetingId: meeting.meetingId,
+      passcode: meeting.passcode,
+      error: null,
+    };
+  } catch (err) {
+    logger.warn(`Graph calendar: event patch threw — ${err.message}. Falling back to cancel-and-recreate.`);
+    return failed(err.message);
+  }
+}
+
+/**
  * Cancels a previously created event. No-op when there is no event id (the
  * booking was made while the calendar integration was off).
  *

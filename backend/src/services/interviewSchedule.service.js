@@ -25,7 +25,7 @@ import AppError from '../utils/AppError.js';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
-import { createInterviewEvent, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
+import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 
 /** Template names seeded by prisma/seed-email-templates.js for this flow. */
@@ -154,6 +154,28 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 const calendarCandidateEmail = (candidateEmail) =>
   nonProdSafeCandidateEmail(candidateEmail, 'calendar:invite');
+
+/**
+ * The candidate's CURRENT address for a shortlist row.
+ *
+ * `rpa_shortlisted_candidates.candidate_email` is a denormalised copy taken when
+ * the candidate was shortlisted. Editing the candidate record does not update
+ * it, and no UI path corrects it on a live journey, so invites kept going to
+ * whatever address was true at shortlist time (defect D5, 2026-08-20).
+ *
+ * The CV row is the record of truth, so prefer it and fall back to the copy —
+ * a shortlist can exist without a cv_id (keyword shortlists), and an empty CV
+ * address must not blank out an address we do have.
+ *
+ * Callers must include `cv: { select: { EmailID: true } }` on the shortlist for
+ * this to see anything; without it the fallback keeps the previous behaviour.
+ *
+ * @param {{candidate_email?: string|null, cv?: {EmailID?: string|null}|null}|null} candidate
+ * @returns {string}
+ */
+function liveCandidateEmail(candidate) {
+  return (candidate?.cv?.EmailID || '').trim() || candidate?.candidate_email || '';
+}
 
 /**
  * Parses the interviewer field into a clean address list. A panel can be one
@@ -305,7 +327,10 @@ function interviewTokens({ candidate, stageLabel, position, when, durationMinute
   const reasonLine = reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '';
   return {
     candidate_name: candidate?.candidate_name || 'Candidate',
-    candidate_email: candidate?.candidate_email || 'n/a',
+    // The CV's live address, not the shortlist's denormalised copy — this token
+    // is the "Candidate email:" line the interviewer reads and replies to, and
+    // it was the clearest symptom of D5.
+    candidate_email: liveCandidateEmail(candidate) || 'n/a',
     // Panel-side greeting. Absent from this map until 2026-08-11, so the seeded
     // "Hi," could never be personalised and any template carrying the placeholder
     // rendered it verbatim — compileTemplate leaves unknown tokens in place.
@@ -374,7 +399,7 @@ const interviewWrapOpts = (subject) => ({ title: subject || '' });
 export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
-    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
   });
   if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
   if (!isSchedulableStage(stageKey || pipeline.current_stage_key)) {
@@ -414,7 +439,7 @@ export async function previewScheduleEmails(pipelineId, { stageKey, startAt, dur
 export async function previewCancelEmails(scheduleId, { reason = '' } = {}) {
   const row = await prisma.rpa_interview_schedule.findUnique({
     where: { id: BigInt(scheduleId) },
-    include: { rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } } },
+    include: { rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } } } },
   });
   if (!row) throw new AppError('Interview booking not found.', 404);
 
@@ -468,7 +493,7 @@ export async function scheduleInterviewRound(pipelineId, {
 
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
-    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
   });
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
@@ -532,8 +557,8 @@ export async function scheduleInterviewRound(pipelineId, {
   //    skipped entirely for manually-coordinated rounds — see autoInvite).
   const sendsInvites = stageSendsInvites(stageKey);
   const attendees = [
-    candidate?.candidate_email
-      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name, role: 'candidate' }
+    liveCandidateEmail(candidate)
+      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
       : null,
     ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
   ].filter(Boolean);
@@ -588,7 +613,7 @@ export async function scheduleInterviewRound(pipelineId, {
     ),
   };
 
-  const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
+  const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
   let inviteSentAt = null;
   if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {
@@ -688,7 +713,7 @@ export async function cancelInterviewRound(scheduleId, {
   const row = await prisma.rpa_interview_schedule.findUnique({
     where: { id: BigInt(scheduleId) },
     include: {
-      rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },
+      rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } } },
     },
   });
   if (!row) {
@@ -736,7 +761,7 @@ export async function cancelInterviewRound(scheduleId, {
     body: wrapBrandedEmail(panelBody ?? defaults.panel.body, interviewWrapOpts(panelFinalSubject)),
   };
 
-  const { to: candidateTo } = resolveRecipients('interviewCancelled', candidate?.candidate_email || '');
+  const { to: candidateTo } = resolveRecipients('interviewCancelled', liveCandidateEmail(candidate));
   if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {
       await sendGraphEmail({
@@ -804,7 +829,7 @@ export async function cancelInterviewRound(scheduleId, {
 export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
-    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
   });
   if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
   const key = stageKey || pipeline.current_stage_key;
@@ -823,7 +848,16 @@ export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, d
     when: fmtIst(start),
     previousWhen: existing ? fmtIst(existing.scheduled_start_at) : '(not set)',
     durationMinutes,
-    joinUrl: null,
+    // The live booking's Teams details, NOT null. A reschedule now patches the
+    // event rather than replacing it, so this join link is the one the candidate
+    // will still be using afterwards — and the preview is what the recruiter
+    // reads and edits before sending. Showing a link-free body here made the
+    // reschedule notice look like it carried no way to join (it did: the send
+    // path appends the block via ensureTeamsBlock), which is what the D4
+    // investigation on 2026-08-20 caught.
+    joinUrl: existing?.teams_join_url || null,
+    meetingId: existing?.teams_meeting_id || null,
+    passcode: existing?.teams_passcode || null,
     reason: null,
     // What the recruiter is typing wins; the existing booking is the fallback,
     // since a reschedule usually keeps the same panel.
@@ -861,7 +895,7 @@ export async function rescheduleInterviewRound(pipelineId, {
 
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
-    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
   });
   if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
   if (pipeline.current_stage_key !== stageKey) {
@@ -894,9 +928,34 @@ export async function rescheduleInterviewRound(pipelineId, {
   const stageLabel = SCHEDULABLE_STAGES[stageKey].label;
   const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
 
-  // 1) Cancel the old calendar event + mark the old row cancelled so the unique
-  //    "one live booking per round" index frees up for the new row.
-  await cancelInterviewEvent(oldRow.graph_event_id, 'This interview has been rescheduled.');
+  // 1) Move the EXISTING calendar event rather than destroying it (defect D4).
+  //
+  //    The booking ROW still has to be replaced — the unique "one live booking
+  //    per round" index requires the old one to go cancelled before a new one
+  //    can be inserted — but the Graph EVENT is a separate thing, and the two
+  //    were needlessly coupled. Cancelling it minted a fresh Teams meeting on
+  //    every reschedule, so everyone holding the original invite got a dead
+  //    join link, and Outlook mailed the candidate a "Canceled:" notice for the
+  //    destroyed meeting at the same moment we told them it had merely moved.
+  //
+  //    Patching start/end leaves onlineMeeting alone: the join URL, meeting id
+  //    and passcode survive, and attendees get a normal "Updated:" notice.
+  const sendsInvitesForStage = stageSendsInvites(stageKey);
+  const patched = sendsInvitesForStage
+    ? await updateInterviewEventTime(oldRow.graph_event_id, {
+      start,
+      end,
+      subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+    })
+    : { ok: false, error: 'stage does not send invites' };
+
+  // Fall back to the old cancel-and-recreate when the patch could not happen —
+  // a booking made while the calendar was off has no event to patch, and a
+  // Graph failure must not cost the recruiter their reschedule.
+  if (!patched.ok && oldRow.graph_event_id && sendsInvitesForStage) {
+    await cancelInterviewEvent(oldRow.graph_event_id, 'This interview has been rescheduled.');
+  }
+
   await prisma.rpa_interview_schedule.update({
     where: { id: BigInt(oldRow.id) },
     data: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'Rescheduled', modified_at: new Date() },
@@ -916,24 +975,40 @@ export async function rescheduleInterviewRound(pipelineId, {
     },
   });
 
-  // 3) Best-effort new calendar event (no-op unless MS_CALENDAR_ENABLED=true, and
-  //    skipped entirely for manually-coordinated rounds — see autoInvite).
-  const sendsInvites = stageSendsInvites(stageKey);
+  // 3) The calendar side. When the patch above succeeded there is nothing to
+  //    create — the same event, and the same Teams meeting, carry forward onto
+  //    the new row. Only fall back to creating one when the patch could not
+  //    happen (calendar off, no prior event, or Graph refused the PATCH).
+  const sendsInvites = sendsInvitesForStage;
   const attendees = [
-    candidate?.candidate_email
-      ? { email: calendarCandidateEmail(candidate.candidate_email), name: candidate.candidate_name, role: 'candidate' }
+    liveCandidateEmail(candidate)
+      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
       : null,
     ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
   ].filter(Boolean);
-  const calendar = sendsInvites
-    ? await createInterviewEvent({
+
+  let calendar;
+  if (patched.ok) {
+    calendar = {
+      eventId: patched.eventId,
+      joinUrl: patched.joinUrl,
+      onlineMeetingId: patched.onlineMeetingId,
+      meetingId: patched.meetingId,
+      passcode: patched.passcode,
+      skipped: false,
+      error: null,
+    };
+  } else if (sendsInvites) {
+    calendar = await createInterviewEvent({
       subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
       bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
       start,
       end,
       attendees,
-    })
-    : NO_CALENDAR;
+    });
+  } else {
+    calendar = NO_CALENDAR;
+  }
 
   // 4) One "rescheduled" email per side, old → new time.
   const when = fmtIst(start);
@@ -953,7 +1028,7 @@ export async function rescheduleInterviewRound(pipelineId, {
     body: wrapBrandedEmail(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), interviewWrapOpts(panelFinalSubject)),
   };
 
-  const { to: candidateTo } = resolveRecipients('interviewScheduled', candidate?.candidate_email || '');
+  const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
   let inviteSentAt = null;
   if (sendsInvites && candidateTo && candidateEmail.subject) {
     try {

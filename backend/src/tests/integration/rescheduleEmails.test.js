@@ -191,7 +191,7 @@ describe('SCHED-06 — a reschedule replaces the booking and logs it as one move
     );
   });
 
-  test('the Teams meeting IS replaced — defect D4, asserted so a fix is noticed', async () => {
+  test('D4 FIXED — the Teams meeting SURVIVES a reschedule', async () => {
     const { journey } = await makeJourney('D4');
 
     const booked = await scheduleInterviewRound(journey.id, {
@@ -210,14 +210,29 @@ describe('SCHED-06 — a reschedule replaces the booking and logs it as one move
       actedBy: ACTED_BY,
     });
 
-    // Documents CURRENT behaviour, which is the defect: the join link does not
-    // survive a time change. When D4 is fixed this test SHOULD fail — that is
-    // the point of it. Update it then, deliberately, rather than discovering
-    // the change by accident.
+    // D4's fix: rescheduleInterviewRound() now PATCHes the existing Graph event
+    // instead of cancelling it and creating a replacement. The booking ROW is
+    // still replaced — the unique "one live booking per round" index requires
+    // that — but the calendar event, and therefore the Teams meeting, carries
+    // forward onto the new row.
+    //
+    // Skipped when the calendar is disabled or Graph did not return a meeting:
+    // there is nothing to preserve, and the service correctly falls back to
+    // cancel-and-recreate in that case.
     if (booked.teams_meeting_id && rebooked.teams_meeting_id) {
-      assert.notEqual(
+      assert.equal(
         rebooked.teams_meeting_id, booked.teams_meeting_id,
-        'D4: reschedule currently mints a NEW Teams meeting. If this now passes, D4 is fixed — update this test.'
+        'D4: the Teams meeting must SURVIVE a reschedule — a new id means the event was replaced again'
+      );
+      assert.equal(
+        rebooked.teams_join_url, booked.teams_join_url,
+        'D4: the join link must survive too — this is the link already in the candidate\'s invite'
+      );
+    }
+    if (booked.graph_event_id && rebooked.graph_event_id) {
+      assert.equal(
+        rebooked.graph_event_id, booked.graph_event_id,
+        'D4: the same calendar event must carry forward, patched rather than recreated'
       );
     }
   });

@@ -48,9 +48,9 @@ behaviour was quoted rather than summarised.
 | ✅ | D6 | Rejected upload → 500 + alert email to the team | `document.routes.js` |
 | ✅ | D7 | 🔴 Executable renamed `.pdf` uploaded to OneDrive (public endpoint) | `document.routes.js` + new `fileSignature.js` |
 | ✅ | D9 | No cancellation reason could be entered | `PipelineDrawer.jsx` |
-| 🔴 | **D4** | Reschedule kills the Teams link — **and neither email carries the new one** | `interviewSchedule.service.js` |
-| 🔴 | **D5** | Candidate email edits never reach a live journey | denormalised `candidate_email` |
-| 🔴 | **D8** | Public upload page discards the server's reason | frontend upload page |
+| ✅ | **D4** | Reschedule killed the Teams link — **fixed 2026-08-21**, the Graph event is patched instead of destroyed | `graphCalendar.service.js`, `interviewSchedule.service.js` |
+| ✅ | **D5** | Candidate email edits never reached a live journey — **fixed 2026-08-21**, send paths resolve from the CV | `interviewSchedule.service.js` |
+| ✅ | **D8** + **O3** | Upload page discarded the server's reason and validated nothing — **both fixed 2026-08-21** | `DocumentUpload.jsx` |
 | ⚠️ | **D10** | Drawer showed the dead Teams link after a reschedule — **not reproducible** on re-test (twice, no reopen, matched the DB). No code changed in between, so this was never fixed; most likely a timing artifact in the original observation. Left open pending sign-off rather than closed | `PipelineDrawer.jsx` |
 
 **Also pending, not defects:** wire `fileSignature.js` into the other four upload routes (all
@@ -62,19 +62,13 @@ authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding,
 ✅ *The vendor over-privilege is resolved — `sahil.dubey673`'s `recruitment_pipeline` was revoked at
 21:03 IST on 2026-08-20 and verified off. No live permissions issue remains.*
 
-1. 🔴 **D4 — and it is worse than first documented, in three compounding ways.**
-   - The Teams meeting is destroyed and recreated on every reschedule (confirmed three times).
-   - **Neither reschedule email carries a join link** — captured pre-send from the modal's own HTML
-     tab. Not the new link, not even the old one.
-   - **Exchange sends the candidate its own `Canceled:` notice**, so they are told the interview is
-     cancelled at the same moment they are told it moved.
+1. ✅ **D4 is fixed (2026-08-21)** — the Graph event is patched rather than destroyed, so the Teams
+   link survives, the preview shows it, and Exchange should no longer send the contradictory
+   `Canceled:` notice.
 
-   ⚠️ **And D10 not reproducing makes this *more* dangerous, not less.** The stale drawer was the
-   recruiter's only visual cue that the meeting had changed underneath them. With the drawer
-   updating correctly, they see a live Join button while the candidate holds a dead one. The failure
-   is now silent on the operator's side.
-
-   **One fix resolves all three:** `PATCH` the Graph event instead of cancelling and recreating it.
+   ☐ **One manual check owed, after a staging restart:** reschedule once and confirm the `Canceled:`
+   notice has stopped arriving and attendees get *"Updated:"* instead. The tests prove the meeting id
+   survives; only a mailbox can prove the notice stopped.
 
 ⚠️ **Nothing is committed.** Six fixes and five new test files are in the working tree only, and
 staging predates all of them.

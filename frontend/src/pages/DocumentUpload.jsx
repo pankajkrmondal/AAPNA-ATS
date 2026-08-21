@@ -24,6 +24,19 @@ import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
 
 const { Text, Paragraph } = Typography;
 
+/**
+ * What the server's multer filter accepts (`backend/src/routes/document.routes.js`).
+ * Mirrored here so the candidate is told BEFORE a pointless round trip — the
+ * page advertised these formats in body copy but enforced nothing, so a .exe
+ * could be staged and submitted (code-review finding O3).
+ *
+ * The server remains the real gate, and it also checks magic bytes (D7); this
+ * only saves the candidate a wasted upload and a confusing error.
+ */
+const ACCEPTED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'];
+const ACCEPT_ATTR = ACCEPTED_EXTS.join(',');
+const MAX_BYTES = 10 * 1024 * 1024;
+
 /** How each document state reads to the candidate. */
 const STATUS_TAG = {
   pending: { color: 'default', label: 'Not uploaded' },
@@ -81,11 +94,18 @@ export default function DocumentUpload() {
     // Track the failing IDs, not just a count — a failure can land anywhere in
     // the list, so "everything after N" would strand the wrong files.
     const failedIds = [];
+    // Keep WHY each one failed, not just that it did. The bare catch here threw
+    // the server's explanation away and left the candidate with "please try
+    // those again" — advice that cannot work when the reason is a rejected file
+    // type, and which invited an endless retry loop (defect D8, 2026-08-20).
+    const reasons = [];
     for (const id of stagedIds) {
       try {
         await documentService.upload(token, Number(id), staged[id]);
-      } catch {
+      } catch (err) {
         failedIds.push(id);
+        const why = err?.response?.data?.message || err?.message;
+        if (why) reasons.push(why);
       }
     }
     setStaged((prev) => {
@@ -99,7 +119,20 @@ export default function DocumentUpload() {
     if (failedIds.length === 0) {
       message.success(sent === 1 ? 'Document submitted.' : `${sent} documents submitted.`);
     } else {
-      message.error(`${failedIds.length} of ${stagedIds.length} could not be sent. Please try those again.`);
+      // Lead with the server's own reason. De-duplicated, because picking three
+      // .exe files produces the same sentence three times. Only fall back to
+      // "try again" when there is genuinely nothing to explain (a network drop),
+      // which is the one case where retrying IS the right advice.
+      const unique = [...new Set(reasons)];
+      const detail = unique.join(' ');
+      message.error(
+        detail
+          ? `${failedIds.length} of ${stagedIds.length} could not be sent. ${detail}`
+          : `${failedIds.length} of ${stagedIds.length} could not be sent. Please try those again.`,
+        // Longer than the 3s default: this now carries an instruction the
+        // candidate has to act on, and 3s was already too short to read it.
+        detail ? 8 : undefined,
+      );
     }
     await load();
   };
@@ -248,7 +281,26 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
   const locked = item.status === 'verified';
   // beforeUpload returning false keeps the file client-side; nothing is sent
   // until the candidate presses Submit.
+  //
+  // It also validates now (finding O3). Previously it returned false
+  // unconditionally with no type or size check, so a .exe staged happily and
+  // failed only after a round trip, with a message that did not say why.
   const beforeUpload = (file) => {
+    const name = file?.name || '';
+    const dot = name.lastIndexOf('.');
+    const ext = dot >= 0 ? name.slice(dot).toLowerCase() : '';
+    if (!ACCEPTED_EXTS.includes(ext)) {
+      message.error(
+        `${name || 'That file'} is not an accepted format. Please upload a PDF, DOC/DOCX, JPG or PNG.`,
+        6,
+      );
+      return Upload.LIST_IGNORE;
+    }
+    if (file.size > MAX_BYTES) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      message.error(`${name} is ${mb} MB. Please upload a file under 10 MB.`, 6);
+      return Upload.LIST_IGNORE;
+    }
     onChoose(file);
     return false;
   };
@@ -297,7 +349,7 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
             </Button>
           </Space>
         ) : !locked && (
-          <Upload beforeUpload={beforeUpload} showUploadList={false} maxCount={1}>
+          <Upload beforeUpload={beforeUpload} showUploadList={false} maxCount={1} accept={ACCEPT_ATTR}>
             <Button size="small" icon={<UploadOutlined />}>
               {item.status === 'pending' ? 'Choose file' : 'Replace file'}
             </Button>
