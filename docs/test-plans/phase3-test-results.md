@@ -18,7 +18,10 @@ reproducible).**
 🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
 so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
 **public, unauthenticated** candidate endpoint, where the only credential is a token sent by email.
-Fixed on the document route; the other four upload routes share the pattern and are authenticated.
+**Now fixed on all six upload routes** (2026-08-21). The follow-up corrected two claims made here
+originally: the remaining routes were *not* all authenticated (`candidates/public/missing-data` is
+public too), and there was a sixth route nobody had listed — `mrf/submit`, also public, with **no
+extension allowlist whatsoever**. Zip entries, which bypassed every check, are now validated as well.
 
 **D4, D5, D8 and O3 were fixed on 2026-08-21.** The reschedule now patches the Graph event instead of
 destroying it, so the Teams link survives and Exchange stops sending the contradictory `Canceled:`
@@ -91,10 +94,18 @@ further code reading.
 | G — Companion plan | 32 | 0 | — | — | — | 32 |
 | **Total** | **122** | **68** | **68** | **0** | **0** | **54** |
 
+⚠️ **This table is a snapshot from before the 2026-08-20 manual runs — it is the source of the
+"68" that contradicts the "79" in the summary above.** Both figures appear in this document; the
+table's rows genuinely sum to 68, but eleven further cases were executed and written up *below*
+it and never added back: DOC-03, N5, DOC-11, OFFER-14, OFFER-15, SCHED-01/06/07, DOC-04, DOC-05,
+VEND-14/15, PIPE-08, VEND-11/13. **≈79 executed is the correct current figure**; 43 remain, of
+which 32 are the entire Block G companion plan. Rebuild this table before sign-off rather than
+patching the total.
+
 **2026-08-20 additions:** DOC-03 (manual, live journey), N5 (manual — found defect D3), and DOC-11 /
 OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assertions).
 
-## 🔴 Product defects found: 3 — two fixed, one open
+## 🔴 Product defects found: 10 — nine fixed, one not reproducible
 
 | # | Severity | Where | Effect | State |
 |---|---|---|---|---|
@@ -104,7 +115,7 @@ OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assert
 | **D4** | 🟠 **High** | `interviewSchedule.service.js` `rescheduleInterviewRound()` + `graphCalendar.service.js` | **Rescheduling destroyed the Teams meeting instead of patching it.** The join link died, and Exchange sent the candidate its own `Canceled:` notice — telling them the interview was cancelled at the same moment they were told it moved. | ✅ Fixed |
 | **D5** | 🟡 Medium | `interviewSchedule.service.js` — denormalised `candidate_email` | **Editing a candidate's email did not reach a live journey** — invites kept going to the stale address. | ✅ Fixed |
 | **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
-| **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
+| **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor`, **`mrf`** | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. Follow-up found a 5th route (`mrf/submit`, public, no allowlist at all), a 2nd public route (`candidate`), and that zip entries bypassed every check. | ✅ Fixed (all six routes, 2026-08-21) |
 | **D8** | 🟡 Medium | `DocumentUpload.jsx` | The page **discarded the server's precise reason** and told the candidate *"Please try those again"* — advice that cannot work. Fixed together with **O3**, the client-side validation gap on the same page. | ✅ Fixed |
 | **D9** | 🟡 Medium | `PipelineDrawer.jsx` `interviewCancelMutation` | **A cancellation reason cannot be supplied from the UI at all** — the modal has no reason field, so every recruiter cancellation records *that* a round was cancelled, never *why*. | ✅ Fixed |
 | **D10** | 🟡 Downgraded | `PipelineDrawer.jsx` — schedule / reschedule view refresh | Drawer appeared to keep the **old time, meeting ID and passcode** after a reschedule. **Not reproducible on re-test** (twice, no reopen, values matched the DB exactly) — and no code changed in between. Most likely an observation timing artifact in the original run. | ⚠️ Not reproducible |
@@ -162,7 +173,7 @@ since this is the one flag whose entire purpose is "the caller has to mean it".
 
 **Regression check after both fixes: `npm run test:unit` → 182 tests, 182 pass, 0 fail.**
 
-### D3 — a stale tab can double-advance a candidate (found 2026-08-20, OPEN)
+### D3 — a stale tab can double-advance a candidate (found 2026-08-20, FIXED)
 
 **Found by:** the N5 manual spot-check, doing something the automated pass structurally could not —
 two tabs clicking *minutes apart* rather than two promises firing at once.
@@ -277,7 +288,7 @@ server's sentence surfaces. See the corrected N5 note below.
 
 ---
 
-### D4 — reschedule mints a new Teams meeting (found 2026-08-20, OPEN)
+### D4 — reschedule mints a new Teams meeting (found 2026-08-20, FIXED 2026-08-21)
 
 **Found by:** the SCHED-05/06 manual run.
 Evidence: `docs/test-claude-chrome/SCHED0506findings.md`.
@@ -418,7 +429,7 @@ tried next and abandoned: `interviewSchedule.service.js:26` uses a named import,
 bindings are immutable. Anyone re-testing email counts on the scheduling path should read the run
 log, not the table.
 
-### D5 — a candidate's email edit never reaches a live journey (found 2026-08-20, OPEN)
+### D5 — a candidate's email edit never reaches a live journey (found 2026-08-20, FIXED 2026-08-21)
 
 `rpa_candidate_pipeline` holds a **denormalised copy** of `candidate_email`, taken at shortlist time.
 
@@ -519,8 +530,46 @@ separate control.
 bypass payload, a truncated file (an off-by-one would wave a 2-byte file through as a PNG), and an
 empty file.
 
-⚠️ **The other four routes are NOT yet fixed.** They are authenticated, so the risk is far lower, but
-the helper is shared and wiring them up is a small follow-up.
+**Follow-up completed 2026-08-21 — all upload routes now verify content.** The remaining routes were
+wired to the shared helper, and doing so turned up two things the original report had wrong.
+
+**Correction 1 — "the other four are authenticated" was false.** `POST /api/candidates/public/missing-data`
+(`candidate.routes.js:48`) is registered *before* `router.use(authenticate)` on line 51, so it is
+public. Its only credential is a **base64-encoded email** in the query string — weaker than the
+document route's uuid, since it is guessable rather than random. Two public upload surfaces existed,
+not one.
+
+**Correction 2 — there was a FIFTH unlisted route, and it was the worst of them.**
+`POST /api/mrf/submit` (`mrf.routes.js`) is public, unauthenticated, and had **no `fileFilter` at
+all** — no extension allowlist, so `.exe` was accepted by name before the bytes were ever examined.
+It now has both an allowlist (`.pdf/.docx/.doc`) and the signature check.
+
+**Also closed: zip entries bypassed every check.** `hrUpload` and `vendor` accept `.zip` and unpack
+entries straight to disk (`hrUpload.controller.js:58-89`). Entries never pass through multer's
+`fileFilter`, which only sees what was POSTED — so an `.exe` inside a `.zip` was written to
+`uploads/` and queued for parsing. The check now runs *after* expansion, so archive entries face an
+extension allowlist and a signature check for the first time.
+
+| Route | Shape | Policy |
+|---|---|---|
+| `candidates/public/missing-data` ⚠️ public | single | reject request, 400 |
+| `mrf/submit` ⚠️ public | 2 named fields | reject request, 400 (+ new allowlist) |
+| `hr-upload/upload` | up to 100 | **skip bad, process the rest** |
+| `vendor/upload` | up to 100 | **skip bad, process the rest** |
+| `pipeline/assessment-import/preview` | single | reject request, 400 |
+
+**Batch routes skip rather than fail.** Failing all 100 resumes over one mislabelled file would make
+the recruiter re-upload the other 99. Rejected files are unlinked, named in `rejectedFiles` on the
+response, recorded under `details.rejected_files` on the batch summary, and logged. If *every* file
+is rejected the request still 400s.
+
+**D6 fixed on the four remaining routes too.** Their `fileFilter`s rejected with a bare `Error`, so a
+wrong file type was still answering **500 and emailing a "Backend Error Alert"** — the same defect
+fixed on the document route in August. All five now use `AppError(…, 400)`.
+
+**Tests:** `fileSignature.test.js` is now **23 cases, all passing** — the original 12 plus coverage of
+the three multer shapes, the all-or-nothing path (including that one bad file unlinks *every* temp
+file in the request, not just the offending one), and the skip-and-report path.
 
 ### D6 — a rejected upload emailed the team (found 2026-08-20, FIXED)
 
@@ -544,7 +593,7 @@ a *different* candidate's token is a different signature. Repeated probes on one
 been throttled to one alert per 5 minutes. This softens "page the team on demand" but changes
 nothing about the wrong status code or the lost production message.
 
-### D8 — the upload page discards the server's reason (found 2026-08-20, OPEN)
+### D8 — the upload page discards the server's reason (found 2026-08-20, FIXED 2026-08-21)
 
 The server says exactly what is wrong and how to fix it:
 
@@ -1015,7 +1064,7 @@ and *"— Panel"*. **Those were the test's own labels, not the real subjects.** 
 
 The count and the "neither is a cancellation" conclusion are unaffected.
 
-### D9 — a cancellation reason cannot be supplied from the UI (OPEN)
+### D9 — a cancellation reason cannot be supplied from the UI (FIXED 2026-08-20)
 
 `rpa_interview_schedule.cancel_reason` is null for **every** cancellation a recruiter performs. The
 audit trail records that a round was cancelled but never why.
@@ -1052,7 +1101,7 @@ generated if it is to appear in them.
 
 **Frontend build after the change: exit 0, 4101 modules.**
 
-### D10 — the drawer shows a dead Teams link after a reschedule (OPEN)
+### D10 — the drawer shows a dead Teams link after a reschedule (NOT REPRODUCIBLE — still open)
 
 | | Drawer after the success toast | Actual row |
 |---|---|---|

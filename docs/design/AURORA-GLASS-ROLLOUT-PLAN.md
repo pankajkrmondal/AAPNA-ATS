@@ -6,7 +6,9 @@
 
 **Audience:** the developer executing this. You should be able to run any single phase end to end from this document without asking questions.
 **Supersedes:** the "Phases 1–6" list recorded in `frontend/UI-CHANGELOG.md` under the 2026-08-13 Phase 0 entry. That plan is discarded — see *Why this replaces the old plan*.
-**Status of the codebase:** `/dashboard`, `/candidates/:id` and `/filtering` are converted. Nothing else is. No Phase 2 work has been done.
+**Status of the codebase:** ✅ **ALL NINE PHASES ARE SHIPPED** (verified against source 2026-08-21; one commit per phase, `2c50d27` → `9029207`, plus cleanups `1f3e76b` and `d0e4173`). `V2_ROUTES` in `MainLayout.jsx` now lists all 12 routes, and no converted route still carries a bare `.glass` class — the failure mode Part I warns about. **This document is now a design reference, not a to-do list.** Its three "Open items" are all resolved: the prototype was converted (not retired), the public-page scope was settled in Phase 9, and antd is on `^5.29.3`. The one piece of debt the rollout left behind is ~7 raw brand hexes on the visible half of `CandidateScreening.jsx` (`:1466-1473`), including `#7a922e` — see I.2.
+
+*(Superseded: "`/dashboard`, `/candidates/:id` and `/filtering` are converted. Nothing else is. No Phase 2 work has been done." — true when written, false since.)*
 
 ---
 

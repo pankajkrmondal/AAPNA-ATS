@@ -4,7 +4,7 @@ Frontend design-system and visual-rollout documentation.
 
 | File | What it is |
 |---|---|
-| [`AURORA-GLASS-ROLLOUT-PLAN.md`](./AURORA-GLASS-ROLLOUT-PLAN.md) | **Canonical source.** The app-wide plan for rolling the dashboard's Aurora Glass design system across the remaining routes. Part I is the design system reference; Part II is nine executable phases. Edit this file if the plan changes. |
+| [`AURORA-GLASS-ROLLOUT-PLAN.md`](./AURORA-GLASS-ROLLOUT-PLAN.md) | **Canonical source for the design system** (Part I) — the inline-style law, the tier model, the shared-class couplings. Part II's nine phases are **all shipped** as of 2026-08-21, so that half is now a record of how it was done, not work to pick up. Edit Part I if the design system changes. |
 | [`aurora-glass-rollout.html`](./aurora-glass-rollout.html) | The same plan as a formatted, self-contained page. No build step and no network access required — open it directly in a browser. Regenerate it from the Markdown if the plan changes; do not edit the two out of step. |
 
 ## Related, elsewhere in the repo

@@ -26,7 +26,7 @@ behaviour was quoted rather than summarised.
 | ✅ | SCHED-01 — book a tech1 interview | PASS on every machine-checkable assertion |
 | ✅ | SCHED-06 — reschedule | PASS (found D4 is worse than written) |
 | ✅ | SCHED-07 — cancel | PASS (found D9) |
-| ✅ | DOC-05 — server-side file rejection | Was FAIL → both defects now fixed. **Needs one re-run to confirm** |
+| ✅ | DOC-05 — server-side file rejection | Was FAIL → both defects fixed → **re-run DONE and PASS** (see the row below) |
 | ✅ | DOC-04 — client-side validation (O3) | PARTIAL — O3 confirmed, not silent, but see D8 |
 | ✅ | VEND-14/15 — vendor dashboard counts | PASS — reconciles exactly |
 | ✅ | DOC-11, OFFER-14, OFFER-15 | Automated instead — 12 cases, no browser needed |
@@ -38,7 +38,7 @@ behaviour was quoted rather than summarised.
 | ✅ | D9 re-test | PASS — reason reaches the audit line *and* the Outlook cancellation notice |
 | ⊘ | O7, SCHED-18, SCHED-11, ZEK-05…12 | Blocked — see *Cannot be run at all* |
 
-### Defects — 10 found, 6 fixed
+### Defects — 10 found, 9 fixed, 1 not reproducible
 
 | | # | What | Where |
 |---|---|---|---|
@@ -53,9 +53,10 @@ behaviour was quoted rather than summarised.
 | ✅ | **D8** + **O3** | Upload page discarded the server's reason and validated nothing — **both fixed 2026-08-21** | `DocumentUpload.jsx` |
 | ⚠️ | **D10** | Drawer showed the dead Teams link after a reschedule — **not reproducible** on re-test (twice, no reopen, matched the DB). No code changed in between, so this was never fixed; most likely a timing artifact in the original observation. Left open pending sign-off rather than closed | `PipelineDrawer.jsx` |
 
-**Also pending, not defects:** wire `fileSignature.js` into the other four upload routes (all
-authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding, HR truncation,
-201-vs-200).
+**Also pending, not defects:** ~~wire `fileSignature.js` into the other four upload routes~~
+✅ **done 2026-08-21** — it was six routes, two of them public, plus zip entries; see the D7
+follow-up section below. Still open: three plan-vs-code decisions (scorecard rounding, HR
+truncation, 201-vs-200).
 
 ### What blocks a clean demo
 
@@ -70,8 +71,10 @@ authenticated, so lower risk); three plan-vs-code decisions (scorecard rounding,
    notice has stopped arriving and attendees get *"Updated:"* instead. The tests prove the meeting id
    survives; only a mailbox can prove the notice stopped.
 
-⚠️ **Nothing is committed.** Six fixes and five new test files are in the working tree only, and
-staging predates all of them.
+✅ **Committed as of 2026-08-21.** D4/D5/D8/O3 landed in `67efddf`; the D7 six-route follow-up
+and the email-template create UI in `9fe29a6` and `99fb0e6`. ⚠️ **Staging still predates all of
+them** — restart before running any of the owed manual checks below, or you will be testing the
+old build.
 
 ---
 
@@ -376,10 +379,15 @@ check the flag against the database first rather than trusting a note.
 
 ---
 
-## Open defects and follow-ups — decisions needed, not testing
+## ✅ RESOLVED — this section is kept for the decision record only
 
-Both found on 2026-08-20 and written up in [phase3-test-results.md](phase3-test-results.md). Neither
-is fixed, and neither should be fixed without a decision first.
+> **All four items below were closed on 2026-08-21** (commit `67efddf`). D4, D5 and D8+O3 are
+> **fixed**; D10 is **not reproducible**. The decision boxes are answered — the text is kept
+> because it records *why* each fix took the shape it did, which the code comments alone do not.
+> Do not read the ☐ boxes below as outstanding work.
+
+~~Both found on 2026-08-20 … Neither is fixed, and neither should be fixed without a decision
+first.~~ — superseded; the decisions were taken and the fixes shipped.
 
 ### D4 — reschedule kills the Teams join link
 
@@ -448,15 +456,32 @@ sits outside that app and does not.
 ☐ **Worth fixing alongside DOC-04's O3 gap** (the page also has `accept=""` and validates nothing
 client-side) rather than patching each separately.
 
-### ⚠️ D7 follow-up — four upload routes still unfixed
+### ✅ D7 follow-up — DONE 2026-08-21, and it was bigger than this section said
 
-`document.routes.js` is fixed. The same extension-only pattern remains in `hrUpload.routes.js`,
-`candidate.routes.js`, `assessmentImport.routes.js` and `vendor.routes.js`.
+~~four upload routes still unfixed … all four are authenticated, so the exposure is far lower~~
 
-All four are **authenticated**, so the exposure is far lower than the public document endpoint. The
-shared helper (`utils/fileSignature.js`) already exists — wiring each up is a few lines.
+**Both halves of that were wrong**, and the wiring work found a gap nobody had listed:
 
-☐ **Decide:** now, or as post-demo hardening?
+- **`candidate.routes.js` is not authenticated.** `POST /api/candidates/public/missing-data`
+  is registered at `:48`, *before* `router.use(authenticate)` at `:51`. Its only credential is
+  a base64-encoded email in the query string — guessable, unlike the document route's uuid.
+  There were **two** public upload surfaces, not one.
+- **There was a fifth route: `POST /api/mrf/submit`.** Also public, and it had **no
+  `fileFilter` at all** — every extension accepted on the filename alone, `.exe` included.
+  Strictly worse than the D7 baseline it was never listed under.
+- **Zip entries bypassed every check.** `hrUpload`/`vendor` unpack archives straight to disk,
+  and entries never pass through multer's `fileFilter` — which only sees what was POSTed. An
+  `.exe` inside a `.zip` reached `uploads/` and was queued for parsing.
+
+All six routes now verify content (commit `9fe29a6`). Batch routes skip-and-report rather than
+failing all 100 resumes over one bad file; the single-file and public routes reject the whole
+request. D6's bare-`Error` bug was fixed on the same four `fileFilter`s at the same time — a
+wrong file type was still answering 500 and emailing the team an alert.
+
+Tests: 23 passing, up from 11.
+
+☐ **Still owed:** the live per-route probes (MZ executable renamed `.pdf` → expect 400 on each
+of the six). Needs a running server; the helper-level behaviour is unit-tested.
 
 ---
 

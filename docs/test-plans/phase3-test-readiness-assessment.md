@@ -2,9 +2,13 @@
 
 **Written:** 2026-08-19
 **Author:** Claude (pre-execution review of the two Phase 3 test plans)
-**Purpose:** Answer one question — *what do we need before a full 117-case pass can run, and what will
+**Purpose:** Answer one question — *what do we need before a full 122-case pass can run, and what will
 stop us?* This is not a test plan. The test plans already exist and are good. This is the gap list
 between "we have a plan" and "we can execute it."
+
+> **Case count corrected 2026-08-21: it is 122, not 117.** The main plan defines 90 (PIPE 16,
+> SCHED 19, DOC 13, OFFER 16, VEND 16, E2E 5, N 5) and the companion plan 32 (OUT 15, CCT 5,
+> ZEK 12). Other docs quote 117, ~110 and ~90 — all wrong or loose. **122 is the arithmetic.**
 
 **Decisions taken (2026-08-19):** demo runs on **staging**, not production. Coverage target is the
 **full pass** (both documents). A **test harness will be built** rather than running everything by

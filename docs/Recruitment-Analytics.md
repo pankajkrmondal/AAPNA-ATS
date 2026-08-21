@@ -63,6 +63,12 @@ Two things worth knowing that are **not** defects to fix here:
 
 ## 2. What is pending
 
+> ⚠️ **Historical — 2.1 through 2.5 were all fixed on 2026-08-11** (see the status note at the
+> top of this file and the shipped-deltas in §6). This table is the original defect list that
+> justified the work, kept because §3 below is written against its numbering. **Only 2.6 is
+> still open.** Verified 2026-08-21: `pipelineAnalytics.test.js` passes 16/16, and
+> `pipeline.service.js:1252-1266` now queries real scorecard rows for "Awaiting feedback".
+
 | # | Defect | Where | Impact |
 |---|---|---|---|
 | 2.1 | `awaiting_feedback` hardcoded `0`; comment claims M3 unbuilt | `pipeline.service.js:1081-1085` | **High** — silently wrong |

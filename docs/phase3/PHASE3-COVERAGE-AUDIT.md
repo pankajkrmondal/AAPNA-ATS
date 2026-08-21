@@ -103,17 +103,27 @@ templates is the actual fix.**
 | `Document Collection Reminder` | M4 | Code fallback added, incl. the rejection variant naming the document and reason |
 | `Offer Approval Reminder` | M5 | Inline fallback subject in `offerSweep.js`, so the nudge still fires |
 
-**Admin config UI missing.** The API and the frontend client methods both exist
+> ⚠️ **The three items below are OUT OF DATE — all three are now built.** Left in place so the
+> audit still reads as the record it was, but do not act on them:
+>
+> - **Admin config UI** — built. `components/pipeline/PipelineConfigPanel.jsx`, four tabs,
+>   mounted at `Settings.jsx:605` behind an admin gate.
+> - **`POST /templates`** — added (`emailTemplate.routes.js:22`, admin-gated), and the screen
+>   to call it shipped 2026-08-21 (commit `99fb0e6`).
+> - **Vendor Offer notification** — Q29 was answered on 2026-08-12 and shipped in M6: a
+>   content-free milestone at Offer, nothing at Documents.
+
+~~**Admin config UI missing.**~~ The API and the frontend client methods both exist
 (`createStage`, `updateStage`, `createStageOutcome`, `updateStageOutcome`, `createReason`
 in `frontend/src/services/pipeline.js`) but **no screen calls them**. Stages, outcomes and
 reasons are only changeable via raw API or SQL — the opposite of RT's "without
 development" ask.
 
-**`POST /templates` never added.** `emailTemplate.routes.js` has only `PUT /templates/:id`.
+~~**`POST /templates` never added.**~~ `emailTemplate.routes.js` has only `PUT /templates/:id`.
 Admins can edit templates but not create them, which is the other half of the same RT ask —
 and the reason the closure/missing templates above cannot be self-served.
 
-**Vendor status-only notification at Offer** is not implemented. Q29 (bare status line vs
+~~**Vendor status-only notification at Offer** is not implemented.~~ Q29 (bare status line vs
 nothing at the Offer and Document stages) has never been answered, so the safer default —
 sending nothing — is what ships.
 
