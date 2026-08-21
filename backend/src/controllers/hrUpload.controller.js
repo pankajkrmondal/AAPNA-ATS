@@ -10,6 +10,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
 import * as uploadJobService from '../services/uploadJob.service.js';
+import { partitionBySignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import uploadJobsExport from '../exports/uploadJobs.export.js';
 
@@ -20,6 +21,17 @@ import uploadJobsExport from '../exports/uploadJobs.export.js';
  * so only genuinely dead runs are recovered, never a slow one still in progress.
  */
 const STALE_JOB_MINUTES = Number(process.env.UPLOAD_JOB_STALE_MINUTES || 15);
+
+/**
+ * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
+ * archives are unpacked into this list, never parsed as resumes themselves.
+ *
+ * This is the ONLY extension check entries from a .zip ever face: multer's
+ * fileFilter vets what was POSTED, and an entry inside an archive never passed
+ * through it. Before this, a .exe inside a .zip was written straight to
+ * uploads/ and queued for parsing.
+ */
+const PARSEABLE_EXTS = ['.pdf', '.docx', '.doc', '.xlsx'];
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -101,8 +113,25 @@ export const uploadResumes = catchAsync(async (req, res) => {
     }
   }
 
-  if (flatFiles.length === 0) {
-    throw new AppError('No valid files found inside the uploaded ZIP archive(s).', 400);
+  // CONTENT CHECK (defect D7). Sits after zip expansion so it covers loose
+  // uploads and archive entries in one pass. Skip-and-report rather than
+  // all-or-nothing: a recruiter sending 100 resumes should not lose the batch
+  // over one mislabelled file. Rejected files are unlinked by the helper.
+  const { accepted, rejected } = await partitionBySignature(flatFiles, PARSEABLE_EXTS);
+
+  if (rejected.length > 0) {
+    logger.warn(
+      `HR batch ${executionId}: ${rejected.length} file(s) rejected — ${rejected.map((r) => r.name).join(', ')}`
+    );
+  }
+
+  if (accepted.length === 0) {
+    throw new AppError(
+      rejected.length > 0
+        ? `None of the uploaded files could be accepted. ${rejected[0].reason}`
+        : 'No valid files found inside the uploaded ZIP archive(s).',
+      400
+    );
   }
 
   // 1) Write batch summary log
@@ -111,7 +140,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
       execution_id: executionId,
       uploaded_by: username,
       uploaded_at: new Date(),
-      total_count: flatFiles.length,
+      total_count: accepted.length,
       success_count: 0,
       failed_count: 0,
       duplicate_count: 0,
@@ -119,13 +148,14 @@ export const uploadResumes = catchAsync(async (req, res) => {
       details: {
         hr_email: hrEmail,
         hr_name: hrFullName,
-        files: flatFiles.map((f) => ({ name: f.originalname, size: f.size })),
+        files: accepted.map((f) => ({ name: f.originalname, size: f.size })),
+        rejected_files: rejected,
       },
     },
   });
 
   // 2) Write individual logs (status: pending, source: hr_manual_upload)
-  const logsData = flatFiles.map((file) => ({
+  const logsData = accepted.map((file) => ({
     execution_id: executionId,
     file_name: file.originalname,
     status: 'pending',
@@ -142,22 +172,25 @@ export const uploadResumes = catchAsync(async (req, res) => {
   );
 
   // 2b) Create durable per-resume job rows (powers the persistent dashboard)
-  await uploadJobService.createJobsForBatch(executionId, flatFiles, {
+  await uploadJobService.createJobsForBatch(executionId, accepted, {
     uploadedBy: username,
     uploadedById: req.user.id,
     source: 'hr_manual_upload',
   });
 
   // 3) Dispatch parsing (durable queue when enabled, else in-process background)
-  await hrUploadService.dispatchBatchParsing(executionId, flatFiles, req.user, 'hr_manual_upload');
+  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'hr_manual_upload');
 
   return success(
     res,
     {
       executionId,
-      totalFiles: flatFiles.length,
+      totalFiles: accepted.length,
+      rejectedFiles: rejected,
     },
-    'Files uploaded successfully and queued for parsing.'
+    rejected.length > 0
+      ? `${accepted.length} file(s) queued for parsing. ${rejected.length} file(s) were skipped.`
+      : 'Files uploaded successfully and queued for parsing.'
   );
 });
 

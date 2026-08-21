@@ -10,6 +10,7 @@ import { updateJobByCvId } from '../services/uploadJob.service.js';
 import { getApprovedRoles } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
+import { assertSignature } from '../utils/fileSignature.js';
 import path from 'path';
 import runExport from '../exports/runExport.js';
 import candidatesExport from '../exports/candidates.export.js';
@@ -190,6 +191,12 @@ export const getPublicMissingData = catchAsync(async (req, res) => {
 export const submitPublicMissingData = catchAsync(async (req, res) => {
   const { token } = req.query;
   const submissions = req.body || {};
+
+  // CONTENT CHECK (defect D7). Runs before anything else touches the file: this
+  // route is PUBLIC — the only credential is a base64 email in the query string,
+  // which is weaker than the document route's uuid — and the resume is pushed to
+  // the OneDrive tenant further down. Extension alone was the whole bypass.
+  await assertSignature(req);
 
   if (!token) {
     throw new AppError('Token is required.', 400);

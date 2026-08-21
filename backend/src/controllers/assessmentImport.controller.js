@@ -4,6 +4,7 @@ import AppError from '../utils/AppError.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import * as assessmentImportService from '../services/assessmentImport.service.js';
 import * as assessmentInviteService from '../services/assessmentInvite.service.js';
+import { assertSignature } from '../utils/fileSignature.js';
 
 function actingUser(req) {
   return { id: req.user?.id, username: req.user?.username || req.user?.email || 'user' };
@@ -19,6 +20,12 @@ export const preview = catchAsync(async (req, res) => {
   if (!file) {
     throw new AppError('No file uploaded.', 400);
   }
+
+  // CONTENT CHECK (defect D7). Placed before the try so it unlinks its own temp
+  // copy — the finally below only runs once we are inside. Note this verifies
+  // .xlsx only: .csv is plain text with no signature, so the route's extension
+  // allowlist stays the sole control there.
+  await assertSignature(req);
 
   try {
     const result = await assessmentImportService.previewImport({

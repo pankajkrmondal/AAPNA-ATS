@@ -14,12 +14,16 @@ import {
   Typography,
   Space,
   Tag,
+  Form,
+  Select,
+  Switch,
 } from 'antd';
 import {
   MailOutlined,
   SaveOutlined,
   SearchOutlined,
   CopyOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -27,7 +31,8 @@ import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import emailTemplateService from '../services/emailTemplateService';
 import useTheme from '../hooks/useTheme';
-import { EmailEditorTabs, FULL_TOOLBAR, sanitizeDoc } from '../components/common/EmailBodyEditor';
+import useAuth from '../hooks/useAuth';
+import EmailBodyEditor, { EmailEditorTabs, FULL_TOOLBAR, sanitizeDoc } from '../components/common/EmailBodyEditor';
 
 dayjs.extend(relativeTime);
 
@@ -90,6 +95,12 @@ function compileDummyPreview(subject, body) {
 
 export default function EmailManagement() {
   const { isDark } = useTheme();
+  // Creating a template is admin-only server-side (requireAdmin). Mirrors the
+  // gate on Settings.jsx so the button is not offered to someone who would only
+  // get a 403 back. Editing an existing template stays open to recruiters.
+  const { user } = useAuth();
+  const isAdmin = user?.role && ['admin', 'superadmin'].includes(user.role.toLowerCase());
+
   const [templates, setTemplates] = useState([]);
   const [filteredTemplates, setFilteredTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -103,6 +114,12 @@ export default function EmailManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [validationError, setValidationError] = useState('');
   const [isDirty, setIsDirty] = useState(false);
+
+  // Create-template modal
+  const [createOpen, setCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createBody, setCreateBody] = useState('');
+  const [createForm] = Form.useForm();
 
   useEffect(() => {
     fetchTemplates();
@@ -265,6 +282,62 @@ export default function EmailManagement() {
     setIsDirty(true);
   };
 
+  const openCreate = () => {
+    createForm.resetFields();
+    setCreateBody('');
+    setCreateOpen(true);
+  };
+
+  const handleCreate = async () => {
+    let values;
+    try {
+      values = await createForm.validateFields();
+    } catch {
+      return; // antd has already marked the offending fields
+    }
+
+    const cleanBody = sanitizeDoc(createBody);
+    if (!cleanBody.trim()) {
+      createForm.setFields([{ name: 'body_html', errors: ['A template needs a body.'] }]);
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const res = await emailTemplateService.createEmailTemplate({
+        name: values.name,
+        category: values.category || 'general',
+        subject: values.subject,
+        body_html: cleanBody,
+        placeholders: values.placeholders || [],
+        is_active: values.is_active !== false,
+      });
+
+      if (res.data.status === 'success') {
+        const created = res.data.data;
+        message.success(`Template "${created.name}" created.`);
+        setTemplates(prev => [...prev, created]);
+        setCreateOpen(false);
+        // Land the user in the new template's editor — creating one is almost
+        // always the first half of writing it.
+        applySelection(created);
+      } else {
+        message.error('Failed to create the template.');
+      }
+    } catch (err) {
+      // 409 means the name is taken. That message is the useful one and belongs
+      // on the field, not in a toast that disappears.
+      const serverMessage = err.response?.data?.message;
+      if (err.response?.status === 409 && serverMessage) {
+        createForm.setFields([{ name: 'name', errors: [serverMessage] }]);
+      } else {
+        message.error(serverMessage || err?.message || 'Error creating the email template.');
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const dummyPreview = useMemo(() => compileDummyPreview(subject, bodyHtml), [subject, bodyHtml]);
 
   const handleCopyHtml = async () => {
@@ -328,6 +401,17 @@ export default function EmailManagement() {
           >
             {/* Search + category selection */}
             <div style={{ padding: '0 16px 12px 16px', borderBottom: '1px solid var(--border-light)', flexShrink: 0 }}>
+              {isAdmin && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={openCreate}
+                  block
+                  style={{ borderRadius: 8, fontWeight: 600, marginBottom: 12 }}
+                >
+                  New Template
+                </Button>
+              )}
               <div style={{ marginBottom: 12 }}>
                 <Input
                   prefix={<SearchOutlined style={{ color: 'var(--text-2)', opacity: 0.5 }} />}
@@ -379,6 +463,8 @@ export default function EmailManagement() {
                   icon={<MailOutlined />}
                   title="No email templates yet"
                   body="Templates control the wording of every automated email the system sends."
+                  actionLabel={isAdmin ? 'New template' : undefined}
+                  onAction={isAdmin ? openCreate : undefined}
                 />
               )
             ) : (
@@ -558,6 +644,90 @@ export default function EmailManagement() {
           )}
         </Col>
       </Row>
+
+      {/* CREATE TEMPLATE — admin only. Closes the gap that sent every new
+          template through a developer and a seed script run. */}
+      <Modal
+        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>New Email Template</span>}
+        open={createOpen}
+        onOk={handleCreate}
+        onCancel={() => setCreateOpen(false)}
+        okText="Create Template"
+        okButtonProps={{ loading: isCreating }}
+        width={820}
+        destroyOnClose
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
+      >
+        <Form
+          form={createForm}
+          layout="vertical"
+          style={{ marginTop: 12 }}
+          initialValues={{ category: 'general', is_active: true }}
+        >
+          <Row gutter={16}>
+            <Col xs={24} md={14}>
+              <Form.Item
+                name="name"
+                label="Template name"
+                extra="Used to look this template up at send time, so it must be unique."
+                rules={[{ required: true, message: 'A template needs a name.' }]}
+              >
+                <Input placeholder="e.g. Interview Reminder — Technical Round" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={10}>
+              <Form.Item name="category" label="Category">
+                <Select
+                  options={categories
+                    .filter(c => c.key !== 'all')
+                    .map(c => ({ value: c.key, label: c.label }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="subject"
+            label="Subject"
+            rules={[{ required: true, message: 'A template needs a subject line.' }]}
+          >
+            <Input placeholder="e.g. Your interview for {{job_title}}" />
+          </Form.Item>
+
+          <Form.Item
+            name="placeholders"
+            label="Placeholders"
+            extra="Tokens this template requires, without braces (e.g. candidate_name). Each one must appear in the subject or body whenever the template is edited later."
+          >
+            <Select
+              mode="tags"
+              tokenSeparators={[',']}
+              placeholder="candidate_name, job_title"
+              options={Object.keys(dummyReplacements).map(k => ({ value: k, label: k }))}
+            />
+          </Form.Item>
+
+          <Form.Item name="body_html" label="Body" required>
+            <div style={{ border: '1px solid var(--border-light)', borderRadius: 8, overflow: 'hidden' }}>
+              <EmailBodyEditor
+                initialHtml=""
+                onChange={setCreateBody}
+                toolbar={FULL_TOOLBAR}
+                height={320}
+              />
+            </div>
+          </Form.Item>
+
+          <Form.Item
+            name="is_active"
+            label="Active"
+            valuePropName="checked"
+            extra="Inactive templates are kept but never sent."
+          >
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

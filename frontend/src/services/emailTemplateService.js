@@ -19,6 +19,20 @@ const emailTemplateService = {
   },
 
   /**
+   * Create a new email template. Admin-only server-side (requireAdmin).
+   *
+   * Responds 409 if `name` is taken — templates are resolved BY NAME at send
+   * time, so the server rejects duplicates outright rather than letting
+   * insertion order decide which one wins. Surface that message as-is.
+   *
+   * @param {object} payload - { name, subject, body_html, category, placeholders, is_active }
+   * @returns {Promise}
+   */
+  createEmailTemplate(payload) {
+    return api.post('/email/templates', payload);
+  },
+
+  /**
    * Update email template.
    * @param {number|string} id
    * @param {object} payload - { subject, body_html }

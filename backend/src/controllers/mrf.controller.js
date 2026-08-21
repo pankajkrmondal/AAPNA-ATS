@@ -12,6 +12,7 @@ import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
 import { isMrfFilled } from '../config/pipelineStages.js';
+import { assertSignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
 import mrfDetailExport from '../exports/mrfDetail.export.js';
@@ -538,6 +539,11 @@ export const getPrefillOptions = catchAsync(async (req, res) => {
  * @access  Public
  */
 export const submitHiringManagerMrf = catchAsync(async (req, res) => {
+  // CONTENT CHECK (defect D7). Public and unauthenticated, and the attachments
+  // are pushed to OneDrive below — so the bytes are verified against the claimed
+  // extension before anything else runs. Covers both named fields.
+  await assertSignature(req);
+
   const {
     submitter_email,
     hiring_manager_name,

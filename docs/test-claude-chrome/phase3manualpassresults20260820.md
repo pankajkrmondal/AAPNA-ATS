@@ -209,10 +209,17 @@ The calendar grid shows **4:00 PM**, and the invite as delivered to the candidat
    step was not needed; only the revoke afterwards is still owed.
 2. **The CLEANUP row is stale for the same reason.** It records the toggle as revoked and verified
    off. It is currently **on**.
+   > ✅ **Resolved later the same day.** The toggle was revoked at **2026-08-20 21:03 IST** and
+   > verified `is_enabled = false`, after this session was written up. The checklist row is now
+   > correct and this correction is itself spent — no live permissions issue remains.
 
 ## Still open after this session
 
-- ☐ Revoke `recruitment_pipeline` for `sahil.dubey673` before the demo (Group 3, step 3).
-- ☐ D4 and D10 decisions — untouched, and D4 is now worse than documented by one more email.
+> ⚠️ **All three were closed after this file was written.** Kept as the session record.
+
+- ~~☐ Revoke `recruitment_pipeline` for `sahil.dubey673` before the demo~~ ✅ done 2026-08-20 21:03 IST.
+- ~~☐ D4 and D10 decisions~~ ✅ **D4 fixed 2026-08-21** (`67efddf`); **D10 not reproducible**, still
+  open pending sign-off. The "one more email" finding was also overstated — only the *preview*
+  lacked the join link; the sent mail carried it.
 - ☐ D5, D8, the four unfixed upload routes, the three plan-vs-code decisions.
 - ⚠️ Nothing is committed. Everything verified here lives in the working tree only.
