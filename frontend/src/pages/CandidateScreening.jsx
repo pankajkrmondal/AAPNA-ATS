@@ -981,7 +981,7 @@ export default function CandidateScreening() {
       <StarFilled
         key={i}
         style={{
-          color: i < starCount ? '#fadb14' : 'var(--border-secondary)',
+          color: i < starCount ? 'var(--star)' : 'var(--border-secondary)',
           fontSize: size,
           marginRight: 2,
         }}
@@ -993,7 +993,7 @@ export default function CandidateScreening() {
   const scoreTierColor = (stars) => {
     if (stars >= 5) return 'var(--green)';
     if (stars >= 4) return 'var(--gold)';
-    if (stars >= 3) return '#d4a017';
+    if (stars >= 3) return 'var(--warning)';
     return 'var(--border)';
   };
 
@@ -1463,14 +1463,14 @@ export default function CandidateScreening() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(activeTab === 'jd'
                 ? [
-                    { label: '5★', value: summary.fiveStar || 0, color: '#4a7c59' },
-                    { label: '4★', value: summary.fourStar || 0, color: '#7a922e' },
-                    { label: '3★', value: summary.threeStar || 0, color: '#d4a017' },
+                    { label: '5★', value: summary.fiveStar || 0, color: 'var(--kpi-c)' },
+                    { label: '4★', value: summary.fourStar || 0, color: 'var(--kpi-a)' },
+                    { label: '3★', value: summary.threeStar || 0, color: 'var(--warning)' },
                   ]
                 : [
-                    { label: 'Strong', value: summary.high || 0, color: '#4a7c59' },
-                    { label: 'Moderate', value: summary.medium || 0, color: '#7a922e' },
-                    { label: 'Weak', value: summary.low || 0, color: '#d4a017' },
+                    { label: 'Strong', value: summary.high || 0, color: 'var(--kpi-c)' },
+                    { label: 'Moderate', value: summary.medium || 0, color: 'var(--kpi-a)' },
+                    { label: 'Weak', value: summary.low || 0, color: 'var(--warning)' },
                   ]
               ).map((s) => (
                 <span key={s.label} className="screening-stat-chip">

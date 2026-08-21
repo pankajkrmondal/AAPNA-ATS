@@ -220,6 +220,10 @@
   /* Accent tones with theme-specific values */
   --warning: #d4a017;
   --gold-dark: #5a6e1f;
+  /* Filled rating stars. Not the brand — a star reads as gold across every app
+     that has ever drawn one, so it stays yellow rather than following the org's
+     primary. Tokenised only so dark mode can pull it back from glaring. */
+  --star: #fadb14;
 
   /* ----- Pipeline status + stage palette (Aurora Glass rollout, Phase 4) -----
      The board encodes candidate status in a card's leading border and stage type
@@ -397,6 +401,8 @@
   /* Accent tones with theme-specific values */
   --warning: #f0b429;
   --gold-dark: #bcd566;
+  /* Slightly desaturated: full #fadb14 glares against a dark card. */
+  --star: #e8ca3a;
 
   /* Pipeline status + stage palette (dark). Lifted values, not the light hexes
      at lower alpha — a 3px status rule in #2f54eb is nearly invisible against
