@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
+import AppError from '../utils/AppError.js';
 import { getDocumentRequest, uploadCandidateDocument } from '../controllers/document.controller.js';
 
 const router = Router();
@@ -32,7 +33,15 @@ const upload = multer({
     if (ALLOWED_EXTS.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`File type ${ext} is not allowed. Accepted: ${ALLOWED_EXTS.join(', ')}.`));
+      // AppError, NOT a bare Error (defect D6, 2026-08-20). A plain Error carries
+      // no statusCode and no isOperational flag, so the global handler treated a
+      // candidate picking the wrong file type as a SERVER fault: it answered 500
+      // instead of 400, discarded the explanatory message in production (only
+      // operational errors keep theirs — errorHandler.js sendProdError), and
+      // fired a "Backend Error Alert" email to the team on every occurrence.
+      // This route is public and unauthenticated, so that last one was reachable
+      // by anyone holding a document token.
+      cb(new AppError(`File type ${ext} is not allowed. Accepted: ${ALLOWED_EXTS.join(', ')}.`, 400));
     }
   },
 });

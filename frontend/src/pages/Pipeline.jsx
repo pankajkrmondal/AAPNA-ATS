@@ -383,6 +383,10 @@ export default function Pipeline() {
   const [nlQuery, setNlQuery] = useState('');
   const [nlRead, setNlRead] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  // Dims and blurs the board for as long as the stale-conflict error toast is up
+  // (defect D3). Lives here rather than in PipelineDrawer because the drawer
+  // unmounts itself the moment the conflict is detected.
+  const [staleConflict, setStaleConflict] = useState(false);
 
   // Deep link: /pipeline?candidate=<pipelineId> opens straight into that
   // candidate's drawer. This is how the notification bell hands off — clicking
@@ -429,6 +433,29 @@ export default function Pipeline() {
   });
 
   const refreshBoard = () => queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
+
+  /**
+   * A stale-tab decision was refused (409, defect D3). The drawer has already
+   * closed itself; this reloads the board and holds a scrim over it for exactly
+   * as long as the error toast is up.
+   *
+   * Why the scrim: the board underneath is the state the recruiter was wrong
+   * about, and it visibly re-sorts as the refresh lands — a card jumping columns
+   * behind a toast reads as "something else just happened", not as "here is the
+   * correction". Freezing the view until the message is read makes the two one
+   * event instead of two.
+   *
+   * STALE_CONFLICT_TOAST_SECONDS must match the message duration below; they are
+   * one interaction, so drifting apart would either uncover the board early or
+   * leave it dimmed after the explanation has gone.
+   */
+  const STALE_CONFLICT_TOAST_SECONDS = 5;
+  const handleStaleConflict = useCallback(() => {
+    refreshBoard();
+    setStaleConflict(true);
+    window.setTimeout(() => setStaleConflict(false), STALE_CONFLICT_TOAST_SECONDS * 1000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryClient]);
 
   const anyFilterActive = Boolean(position || source || onHoldOnly || stuckOnly || showClosed || nlQuery.trim());
   const clearFilters = () => {
@@ -643,7 +670,35 @@ export default function Pipeline() {
           refreshBoard();
           message.success('Pipeline updated.');
         }}
+        // Refresh WITHOUT the success toast — used when the drawer closes itself
+        // because the candidate turned out to have moved (409, defect D3). The
+        // board is stale and must reload, but nothing the recruiter asked for
+        // succeeded, so "Pipeline updated." would contradict the error message.
+        onStaleConflict={handleStaleConflict}
       />
+
+      {/* Stale-conflict scrim (defect D3). Same treatment as LoadingOverlay —
+          var(--overlay-scrim) + blur(4px), both theme-aware — so a blocked board
+          looks the same here as everywhere else in the app.
+
+          zIndex sits BELOW antd's message layer (which renders above 10^4) so the
+          toast stays crisp and readable on top of the blur; pointer-events block
+          clicks on a board the recruiter has just been told is out of date. */}
+      {staleConflict && createPortal(
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'var(--overlay-scrim)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            zIndex: 1500,
+            transition: 'opacity 200ms ease',
+          }}
+        />,
+        document.body,
+      )}
 
       <AssessmentImportModal
         open={importModalOpen}

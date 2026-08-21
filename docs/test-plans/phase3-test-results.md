@@ -12,7 +12,33 @@ with observed behaviour quoted where it matters.
 
 ## Bottom line for the client demo
 
-**65 of 122 cases executed, all passing. Three real defects found and fixed.**
+**79 of 122 cases executed. Ten real defects found — nine fixed, one unresolved (D10, not
+reproducible).**
+
+🔴 **The one to read is D7.** File-upload validation checked the filename extension and nothing else,
+so an executable renamed to `.pdf` uploaded successfully into the OneDrive tenant — through the
+**public, unauthenticated** candidate endpoint, where the only credential is a token sent by email.
+Fixed on the document route; the other four upload routes share the pattern and are authenticated.
+
+**D4, D5, D8 and O3 were fixed on 2026-08-21.** The reschedule now patches the Graph event instead of
+destroying it, so the Teams link survives and Exchange stops sending the contradictory `Canceled:`
+notice; candidate emails resolve from the CV rather than the stale denormalised copy; and the public
+upload page shows the server's actual reason instead of telling candidates to retry the one thing
+that cannot work.
+
+**One item remains unresolved: D10** — the drawer showing a stale Teams link after a reschedule. Four
+structural causes were ruled out and it did not reproduce on re-test, with no code change in between.
+Left open pending sign-off rather than closed, since two clean runs do not disprove an intermittent
+render race.
+
+⚠️ **Two manual checks are owed on the fixes**, both needing a staging restart: confirm the
+`Canceled:` notice has stopped arriving on a reschedule (D4), and that the upload page now shows the
+server's message (D8).
+
+**Every defect after D2 was found by manual testing, not by the automated suite** — and the suite was
+green throughout. D1 hid behind a unit test that asserted a constant instead of running the query;
+D3 needed two tabs minutes apart, which `Promise.allSettled` cannot simulate; D7 needed someone to
+rename a file rather than follow the written step.
 
 **D3, found 2026-08-20 during the manual pass, is the one worth reading.** A stale browser tab could
 advance a candidate a *second* time — skipping a stage nobody chose to skip, sending two outcome
@@ -57,15 +83,16 @@ further code reading.
 |---|---|---|---|---|---|---|
 | A — M1 Pipeline (PIPE) | 16 | 14 | 14 | 0 | 0 | 2 (manual/UI) |
 | B — M3a Scheduling (SCHED) | 19 | 15 | 15 | 0 | 0 | 4 (manual/Graph) |
-| C — M4 Documents (DOC) | 13 | 9 | 9 | 0 | 0 | 4 (manual) |
-| D — M5 Offer (OFFER) | 16 | 12 | 12 | 0 | 0 | 4 |
+| C — M4 Documents (DOC) | 13 | 10 | 10 | 0 | 0 | 3 (manual) |
+| D — M5 Offer (OFFER) | 16 | 14 | 14 | 0 | 0 | 2 |
 | E — M6 Vendor (VEND) | 16 | 9 | 9 | 0 | 0 | 7 |
 | F — Cross-module (E2E) | 5 | 5 | 5 | 0 | 0 | 0 |
 | N — Negative/resilience | 5 | 1 | 1 | 0 | 0 | 4 |
 | G — Companion plan | 32 | 0 | — | — | — | 32 |
-| **Total** | **122** | **65** | **65** | **0** | **0** | **57** |
+| **Total** | **122** | **68** | **68** | **0** | **0** | **54** |
 
-Block C rose by one on 2026-08-20: **DOC-03** run manually against a live journey (details in Block C).
+**2026-08-20 additions:** DOC-03 (manual, live journey), N5 (manual — found defect D3), and DOC-11 /
+OFFER-14 / OFFER-15 automated via direct job calls (Block G below, 12 new assertions).
 
 ## 🔴 Product defects found: 3 — two fixed, one open
 
@@ -74,6 +101,13 @@ Block C rose by one on 2026-08-20: **DOC-03** run manually against a live journe
 | **D1** | 🔴 **High** | `mrfClosure.service.js` `countAcceptedHires()` | **No requisition could ever auto-close on acceptance.** Double-hiring risk. | ✅ Fixed |
 | **D2** | 🟡 Medium | `offer.service.js` `recordCandidateDecision()` | A truthy *string* passed the `amend` guard, so a recorded acceptance could be silently overwritten. | ✅ Fixed |
 | **D3** | 🔴 **High** | `pipeline.service.js` `setStageOutcome()` + `pipeline.controller.js` | **A stale browser tab can advance a candidate a second time**, skipping a stage entirely and sending two outcome emails. The concurrency guard only catches simultaneous requests, not stale ones. | ✅ Fixed |
+| **D4** | 🟠 **High** | `interviewSchedule.service.js` `rescheduleInterviewRound()` + `graphCalendar.service.js` | **Rescheduling destroyed the Teams meeting instead of patching it.** The join link died, and Exchange sent the candidate its own `Canceled:` notice — telling them the interview was cancelled at the same moment they were told it moved. | ✅ Fixed |
+| **D5** | 🟡 Medium | `interviewSchedule.service.js` — denormalised `candidate_email` | **Editing a candidate's email did not reach a live journey** — invites kept going to the stale address. | ✅ Fixed |
+| **D6** | 🟠 High | `document.routes.js` `fileFilter` | A rejected upload answered **500 instead of 400**, lost its explanatory message in production, and **emailed a "Backend Error Alert" to the team** — remotely triggerable on a public endpoint. | ✅ Fixed |
+| **D7** | 🔴 **High** | every upload route — `document`, `hrUpload`, `candidate`, `assessmentImport`, `vendor` | **File validation was extension-only.** An executable renamed `.pdf` uploaded successfully into the OneDrive tenant through the **public, unauthenticated** endpoint. | ✅ Fixed (document route) |
+| **D8** | 🟡 Medium | `DocumentUpload.jsx` | The page **discarded the server's precise reason** and told the candidate *"Please try those again"* — advice that cannot work. Fixed together with **O3**, the client-side validation gap on the same page. | ✅ Fixed |
+| **D9** | 🟡 Medium | `PipelineDrawer.jsx` `interviewCancelMutation` | **A cancellation reason cannot be supplied from the UI at all** — the modal has no reason field, so every recruiter cancellation records *that* a round was cancelled, never *why*. | ✅ Fixed |
+| **D10** | 🟡 Downgraded | `PipelineDrawer.jsx` — schedule / reschedule view refresh | Drawer appeared to keep the **old time, meeting ID and passcode** after a reschedule. **Not reproducible on re-test** (twice, no reopen, values matched the DB exactly) — and no code changed in between. Most likely an observation timing artifact in the original run. | ⚠️ Not reproducible |
 
 ### D1 — MRF never auto-closed (the significant one)
 
@@ -177,7 +211,39 @@ scored High on the pipeline path specifically.
 | `pipeline.service.js:545` | `setStageOutcome` takes an optional `expectedStageKey` and 409s when it disagrees with `current_stage_key`, before any work is done |
 | `pipeline.controller.js:149` | Reads `expected_stage_key` off the body and passes it through |
 | `PipelineDrawer.jsx` (submit) | Sends `expected_stage_key: pipeline?.current_stage_key` — the stage the drawer is **rendering**, deliberately not a fresh read, which would defeat the purpose |
-| `PipelineDrawer.jsx` (onError) | On a 409, invalidates the detail query so the stale drawer refreshes itself. The message says "reopen the candidate"; leaving the stale screen up invites the same click again |
+| `PipelineDrawer.jsx` (onError) | On a 409: dismiss the decision modal, **close the drawer**, and refresh the board. The message says "reopen the candidate to see where they are now" — so the UI does exactly that |
+| `Pipeline.jsx` | New `onStaleConflict` prop — refreshes the board **without** the "Pipeline updated." success toast that `onChanged` carries |
+
+**UX follow-up, same day (found by the recruiter running N5).** The first version left the drawer and
+the decision modal open behind the error. Two problems with that:
+
+1. It **contradicted its own message.** The toast says "reopen the candidate", and the candidate was
+   still sitting there open, with Approve / Hold / Reject buttons inviting the identical click.
+2. Every control on screen had been computed from a stage the candidate had **already left** — the
+   stage strip, the "Record outcome — current stage" panel, the whole right-hand pane.
+
+Worse, the first version called `onChanged()` to refresh the board — but that callback also fires a
+`"Pipeline updated."` **success** toast, so a failed action rendered a success message directly
+beside the error saying the opposite. Hence the separate `onStaleConflict` prop: same board refresh,
+no success toast.
+
+**Second UX pass, same day (also from the recruiter running N5).** With the drawer closing correctly,
+the board behind it was still fully legible and interactive while the error was up — and it visibly
+re-sorted as the refresh landed, so a card jumping columns behind a toast read as *another* event
+rather than as the correction to the one just refused.
+
+The board is now **dimmed and blurred for exactly as long as the message is up**, then returns to
+normal:
+
+| Piece | Detail |
+|---|---|
+| Treatment | `var(--overlay-scrim)` + `blur(4px)` — **the same tokens `LoadingOverlay` already uses**, so a blocked board looks identical across the app, and both values are theme-aware (light and dark are defined separately in `index.css`) |
+| Where it lives | `Pipeline.jsx`, not the drawer — the drawer unmounts itself on conflict and an unmounted component cannot hold anything on screen |
+| Layering | `zIndex: 1500`, deliberately **below** antd's message layer (2010), so the toast stays crisp on top of the blur rather than being blurred with everything else |
+| Timing | Scrim lifetime and toast duration are both `5s` and documented as one interaction — the error is two sentences and asks the recruiter to act, so the 3s default was too short |
+| Input | `pointer-events` blocked — the board underneath is precisely the state the recruiter was wrong about |
+
+**Frontend build after both changes: `npm run build` → exit 0, 4101 modules transformed.**
 
 **The existing conditional claim was NOT touched.** It is still correct and still needed — D3 added a
 second guard, it did not replace the first. The two cover different windows, which the new tests
@@ -208,6 +274,339 @@ this fix; a clean full-suite pass should be re-confirmed before sign-off.
 **No `N5` re-run needed to prove the message renders** — `api.js:55-63` normalises
 `response.data.message` onto `.message`, and `PipelineDrawer.jsx:872` reads `err?.message`, so the
 server's sentence surfaces. See the corrected N5 note below.
+
+---
+
+### D4 — reschedule mints a new Teams meeting (found 2026-08-20, OPEN)
+
+**Found by:** the SCHED-05/06 manual run.
+Evidence: `docs/test-claude-chrome/SCHED0506findings.md`.
+
+Rescheduling pipeline 40 from 16:00 to 15:00 IST replaced the online meeting outright:
+
+| | Meeting ID | Passcode |
+|---|---|---|
+| before | `468843751163904` | `Hp79cg77` |
+| after | `471591962995564` | `3mi22z8C` |
+
+**Root cause — confirmed in code.** `rescheduleInterviewRound()` (`interviewSchedule.service.js:897`)
+deliberately cancels the old Graph event and creates a fresh one:
+
+```js
+await cancelInterviewEvent(oldRow.graph_event_id, 'This interview has been rescheduled.');
+// … then a brand-new createInterviewEvent() at :928
+```
+
+The stated reason is to free the unique "one live booking per round" index. That justifies replacing
+the **database row** — it does not require replacing the **calendar event**. The two can be
+decoupled: keep the Graph event and `PATCH` its time, while still cancelling and re-creating the row.
+
+**Consequence:** anyone holding the original invite has a dead join link, and stale calendar entries
+point at a retired meeting for any party not re-invited.
+
+✅ **SCHED-06 is NOT affected — resolved 2026-08-20, D4 stays Medium.** The worry was that a
+cancel-then-create on the Graph event would produce a cancellation email plus a fresh invite, which
+is the pattern the case forbids. It does not. Verified by instrumented run
+(`rescheduleEmails.test.js`), counting every `sendGraphEmail` call:
+
+```
+SEND -> <candidate, redirected to test inbox>      ┐ booking:    2
+SEND -> pkmondal@aapnainfotech.com                 ┘
+CALENDAR CANCEL                                      ← Graph event only, NO email
+SEND -> <candidate>  subject "Interview Rescheduled — Candidate"  ┐ reschedule: 2
+SEND -> pkmondal@   subject "Interview Rescheduled — Panel"       ┘
+```
+
+**Exactly 2 emails per operation, both titled "Interview Rescheduled", neither a cancellation.**
+`cancelInterviewEvent()` POSTs to Graph's `/cancel` endpoint — it removes the calendar event and
+sends no mail of ours. The audit line reads `22 August 2026 at 03:21 pm IST → …`, one entry, exactly
+the `previous → new` form the plan asks for.
+
+🔴 **ANSWERED 2026-08-20 evening — Exchange DOES send its own notice, and it reaches the candidate.**
+Confirmed by reading both mailboxes. Evidence:
+`docs/test-claude-chrome/phase3manualpassresults20260820.md`.
+
+| When | Subject | Body opens with |
+|---|---|---|
+| the **reschedule** | `Canceled: Technical Round 1 — Phase3 Midflow Candidate (…)` | *"This interview has been rescheduled."* |
+| a cancel | `Canceled: Technical Round 1 (rescheduled) — …` | *"This interview has been cancelled."* |
+| a cancel with a reason | `Canceled: Technical Round 1 — …` | *"D9 re-test - interviewer unavailable"* — the reason, verbatim |
+
+**So a reschedule sends the candidate THREE messages, not one:** the app's *"Technical Round 1
+rescheduled"* mail, a fresh Exchange invite for the new event, and a `Canceled:` notice for the
+destroyed one. The candidate is told the interview is cancelled at the same moment they are told it
+moved. The third message is invisible to `rpa_email_messages` and to `email/monitoring`, which is
+why only a mailbox check could find it.
+
+⚠️ **The panel escaped it only by accident.** Every `Canceled:` message in `pkmondal@` sits in **Sent
+Items**, not the Inbox — because that mailbox is `MS_CALENDAR_MAILBOX`, the organiser. Book a
+*different* interviewer and they become a real attendee, receiving both the Exchange invite and the
+`Canceled:` notice. **Worth checking before anyone books a colleague.**
+
+This is the strongest argument yet for fixing D4 by patching the event rather than replacing it: the
+duplicate-and-contradictory candidate mail disappears entirely if the event is never cancelled.
+
+### D4 re-confirmed 2026-08-20 21:33 — and D10's non-reproduction makes it worse
+
+Two consecutive reschedules, every identifier changing each time:
+
+| | Row | Meeting ID | Passcode |
+|---|---|---|---|
+| book | 107 | `471138124881060` | `oM9s7Bi2` |
+| reschedule #1 | 108 | `450766067167142` | `sQ3Mi7nY` |
+| reschedule #2 | 109 | `482011056442070` | `Bd2wd9NL` |
+
+`graph_event_id`, `teams_join_url`, `online_meeting_id`, `teams_meeting_id` and `teams_passcode` all
+differ between consecutive rows. Delete-and-recreate, confirmed a third time.
+
+**The link-free emails were captured pre-send**, from the modal's own HTML tab — the exact payload
+dispatched. Both bodies carry previous time, new time and duration; **neither contains a join URL, a
+meeting ID or a passcode.** Not the new one, and not even the old one. So the app's own mail cannot
+repair the link it just broke.
+
+**The reschedule modal now discloses the behaviour** to the recruiter:
+
+> *"Picking a new time below cancels this slot and books the new one — both parties are emailed the
+> change."*
+
+Honest, but it is disclosure to the operator, not a fix, and **the candidate never sees it**.
+
+⚠️ **The sharpest point in the re-test.** With D10 not reproducing, the recruiter now sees a correct,
+live Join button immediately after rescheduling — while the candidate holds a dead one and receives
+no replacement link in either app email. **D10 was the recruiter's only visual cue that something had
+changed underneath them.** Without it, the failure is entirely silent on the operator's side.
+
+### ✅ D4 FIXED 2026-08-21 — the event is patched, not replaced
+
+| Where | Change |
+|---|---|
+| `graphCalendar.service.js` | New `updateInterviewEventTime()` — `PATCH`es start/end on the existing event. Leaves `onlineMeeting` untouched, so the join URL, meeting id and passcode all survive and Outlook sends attendees a normal *"Updated:"* notice instead of a cancellation |
+| `interviewSchedule.service.js` | `rescheduleInterviewRound()` patches first and carries the event forward onto the new row. `createInterviewEvent()` is now the **fallback**, not the default |
+| `interviewSchedule.service.js` | `previewRescheduleEmails()` no longer hardcodes `joinUrl: null` |
+
+**The booking row is still replaced.** The unique "one live booking per round" index requires the old
+row to go `cancelled` before a new one is inserted — that was never the problem. The bug was that the
+*calendar event* had been needlessly coupled to that row lifecycle. The two are now decoupled: rows
+churn, the event persists.
+
+**It falls back rather than failing.** If the patch cannot happen — calendar disabled, no prior
+event, or Graph refuses — the service reverts to the old cancel-and-recreate path. A Graph outage
+costs the join link, not the recruiter's reschedule.
+
+**On the "neither email carries a link" half — the original finding was half right.** The *sent*
+mail always appended the Teams block via `ensureTeamsBlock()` (`interviewSchedule.service.js:949`).
+What lacked the link was the **preview**, which passed `joinUrl: null` — and the preview is exactly
+what the manual run captured from the modal's HTML tab, and exactly what the recruiter reads and
+edits before sending. So it was a real defect on the surface that matters, but the diagnosis
+("neither email carries a link") was wrong about the delivered mail. The preview now shows the live
+booking's Teams details, which after this fix are the same ones the candidate keeps.
+
+**Verified:** `rescheduleEmails.test.js` → 2 tests, both passing, with the assertion inverted from
+*"the meeting IS replaced"* to *"the meeting SURVIVES"*. The Graph call log across two reschedules
+reads `created event → patched event → created event → patched event` — **no `cancelled event` at
+all**, which is the destroy step being gone.
+
+⚠️ **Still needs one manual check.** The tests prove the meeting id survives. Only a mailbox can
+confirm the `Canceled:` notice has actually stopped arriving, and that attendees now get *"Updated:"*
+instead. Ten minutes, after a staging restart.
+
+**Harness note worth keeping.** The first version of this test counted rows in
+`rpa_email_messages` — the table the vendor tests use — and found **zero**, failing on its own
+precondition while the logs showed mail going out fine. That table is written by the stage-outcome
+path; interview scheduling calls `sendGraphEmail()` directly and records nothing there. A spy was
+tried next and abandoned: `interviewSchedule.service.js:26` uses a named import, and ES module
+bindings are immutable. Anyone re-testing email counts on the scheduling path should read the run
+log, not the table.
+
+### D5 — a candidate's email edit never reaches a live journey (found 2026-08-20, OPEN)
+
+`rpa_candidate_pipeline` holds a **denormalised copy** of `candidate_email`, taken at shortlist time.
+
+Repro from the manual run:
+1. Journey 36 (HARISH MP) holds `candidate_email = harishmp1345@example.com`
+2. Search Candidate → Edit → change to `aiautomationn8nuser@gmail.com` → saves, toast confirms
+3. Full reload, re-open the journey
+4. `GET /api/pipeline/36` **still returns the old address**
+
+Neither the Schedule nor the Reschedule modal exposes a candidate "To" override, so **there is no
+path through the UI** to correct a wrong candidate address on an in-flight journey. Invites keep
+going to the stale address.
+
+**Three possible fixes, and the choice is a design decision:** resolve the candidate address at send
+time; propagate record edits to open journeys; or expose an editable recipient on the send form.
+Not fixed here — picking one affects other consumers of the denormalised copy.
+
+**Re-confirmed 2026-08-20 21:33, and one of the three options is now ruled out.**
+`PATCH /api/candidates/292` → 200. Read back in the same second:
+
+| Read | Value |
+|---|---|
+| Candidate record | `…+d5probe@gmail.com` ✅ updated |
+| Shortlist row `candidate_email` | old address 🔴 |
+| Pipeline board card | old address 🔴 |
+| **Interview panel email preview — the `Candidate email:` line the interviewer reads** | old address 🔴 |
+
+That last row is decisive: **the send path resolves the denormalised copy**, so "it already resolves
+at send time" is disproved rather than merely unimplemented. Two options remain — propagate edits to
+open journeys, or expose an editable recipient on the send form.
+
+Probe reverted; CV 292 and its shortlist row both verified back at `claudepankajmondal@gmail.com`.
+
+Also noted: the only candidate-update route on this build is `PATCH /api/candidates/:id`, and the
+Search Candidate modal is read-only — so the edit surface is effectively API-only today, which
+narrows who can hit this in practice.
+
+### ✅ D5 FIXED 2026-08-21 — resolve from the CV at read time
+
+Of the three candidate fixes, the re-test ruled out "it already resolves at send time" and left two.
+**Chosen: resolve from the CV**, which is the record of truth, rather than back-filling the
+denormalised copies. Back-filling would need a migration plus a write path on every candidate edit,
+and would still leave any row that missed the sweep wrong.
+
+New `liveCandidateEmail(candidate)` in `interviewSchedule.service.js` prefers `cv.EmailID` and falls
+back to the shortlist copy. Applied at all four send sites — the calendar attendee list (schedule and
+reschedule), the `interviewScheduled` recipient, the `interviewCancelled` recipient, and the
+`candidate_email` **token in the panel email**, which is the line the interviewer reads and replies
+to and was the clearest symptom.
+
+Two deliberate choices:
+
+- **Fall back, never blank.** A shortlist can exist without a `cv_id` (keyword shortlists), and an
+  empty CV address must not wipe out an address we do have.
+- **The denormalised column is left in place.** Other consumers read it, and removing it is a wider
+  change than this defect justifies. It is now bypassed on the paths that email people.
+
+All six shortlist queries in the file now include `cv: { select: { EmailID: true } }`. Without that
+include the helper silently falls back to the old behaviour, which is worth knowing if a new query is
+added.
+
+### D7 — file validation was extension-only (found 2026-08-20, FIXED)
+
+**The most serious finding of the pass.** Found by going beyond the script: DOC-05 asked only whether
+a `.exe` is rejected — it is. The tester then **renamed the executable to `.pdf`** and it uploaded
+successfully.
+
+| Payload | Before | After |
+|---|---|---|
+| `totally_safe.exe`, MZ header | 500 (rejected, wrong code — D6) | **400**, rejected |
+| `huge.pdf`, 11 MB | 413, `isOperational` ✅ | unchanged |
+| **`malware.pdf` — MZ executable bytes, `.pdf` name** | **200 `Document uploaded`** 🔴 | **400**, rejected |
+
+`multer`'s `fileFilter` read `path.extname(file.originalname)` and nothing else — no MIME check, no
+magic bytes. **Renaming was the entire attack.** The row was written and the binary pushed to
+OneDrive under the candidate's folder.
+
+**Worse than first reported: all FIVE upload routes share the pattern** — `document.routes.js`,
+`hrUpload.routes.js`, `candidate.routes.js`, `assessmentImport.routes.js`, `vendor.routes.js`. The
+document route is the critical one because it is the only **public, unauthenticated** upload: the
+sole credential is a token emailed to a candidate.
+
+**Fix.** New `utils/fileSignature.js` verifies the bytes on disk against the claimed extension, wired
+into `document.controller.js` before the file reaches OneDrive.
+
+Two design points worth keeping:
+- **It runs in the controller, not `fileFilter`.** `fileFilter` fires before any bytes are written —
+  `file.path` exists but the file is empty, so there is nothing to sniff.
+- **Unverifiable formats pass.** `.csv` is plain text with no signature; absence of a signature is
+  not disproof, and the caller's extension allowlist remains the control there.
+
+**Known limit, accepted:** `.docx`/`.xlsx`/`.zip` are all zip containers, so `PK\x03\x04` is the
+honest signature for each. This stops an executable renamed to `.docx`; it does not inspect the
+archive. It is **not** a virus scanner — a malicious PDF still passes, and real malware scanning is a
+separate control.
+
+**Tests:** `src/tests/unit/fileSignature.test.js` — **12 cases, all passing**, including the exact
+bypass payload, a truncated file (an off-by-one would wave a 2-byte file through as a PNG), and an
+empty file.
+
+⚠️ **The other four routes are NOT yet fixed.** They are authenticated, so the risk is far lower, but
+the helper is shared and wiring them up is a small follow-up.
+
+### D6 — a rejected upload emailed the team (found 2026-08-20, FIXED)
+
+`fileFilter` rejected with a **plain `Error`**, which carries no `statusCode` and no `isOperational`
+flag. The global handler therefore treated a candidate picking the wrong file type as a server fault:
+
+| | Before | After |
+|---|---|---|
+| Status | **500** | **400** |
+| Message in production | **discarded** — `sendProdError` only forwards messages for operational errors, so the candidate would get a generic error with no hint | preserved |
+| Team alert | **"Backend Error Alert" email fired** (`errorHandler.js:153` alerts on any 5xx) | none — 4xx never alerts |
+
+Contrast the size limit, which was already modelled correctly: 413, operational, no alert.
+
+**Fix:** `cb(new AppError(…, 400))` instead of `cb(new Error(…))`.
+
+**One correction to the field report.** It stated *"my five probes generated five alerts"*. There is
+a **5-minute cooldown** keyed on `code/name + route` (`emailNotification.service.js:1624`). A plain
+`Error` has no `code`, so the signature was constant per route — but the URL contains the token, so
+a *different* candidate's token is a different signature. Repeated probes on one token would have
+been throttled to one alert per 5 minutes. This softens "page the team on demand" but changes
+nothing about the wrong status code or the lost production message.
+
+### D8 — the upload page discards the server's reason (found 2026-08-20, OPEN)
+
+The server says exactly what is wrong and how to fix it:
+
+> `File type .exe is not allowed. Accepted: .pdf, .docx, .doc, .jpg, .jpeg, .png.`
+
+The candidate is told:
+
+> `1 of 1 could not be sent. Please try those again.`
+
+The advice is actively wrong — retrying is the one thing that cannot work, and each retry previously
+fired another alert email (D6).
+
+**This is N5's defect on the candidate-facing surface.** N5 was scoped as "does the UI render the
+*server's* message"; it passed on PipelineDrawer and the authenticated screens, all of which read
+`err.response?.data?.message` (or `err.message`, normalised by `api.js`). The **public upload page
+does not** — it is outside the authenticated app and does not use that shared client. N5's screen
+list should include it.
+
+Not fixed here: it is a frontend change on a page with its own error-handling shape, and worth doing
+alongside the O3 client-side validation gap (DOC-04) rather than piecemeal.
+
+**Re-confirmed 2026-08-20 21:33** with a 600-byte real-MZ `d8probe.exe` against journey 27's public
+portal:
+
+| | Result |
+|---|---|
+| Client-side filter | 🔴 still none — all three `input[type=file]` carry `accept=""`, the `.exe` was accepted and the item flipped to *"Ready to submit"*. **O3 unchanged** |
+| Server verdict | ✅ **400** — the D6/D7 fixes hold on the public endpoint |
+| What the candidate sees | 🔴 `1 of 1 could not be sent. Please try those again.` — byte-identical to before |
+
+**Verified no residue:** `rpa_candidate_documents` for request 3 still reads item 1 `uploaded`
+(DOC-03's genuine PDF) and items 2 and 3 `pending`, with null `file_url`. The rejected executable
+wrote nothing and reached no OneDrive folder — the 400 path is clean.
+
+This pairs the two halves neatly: **the server is now right and the page is still wrong.** A
+candidate is told to retry the one thing that cannot succeed, which is why D8 and O3 belong in the
+same change.
+
+### ✅ D8 + O3 FIXED 2026-08-21 — in one change, as the re-test recommended
+
+**D8 — the message.** `submitAll()` in `DocumentUpload.jsx` had a bare `catch {}` that discarded the
+error object entirely, so the server's sentence was gone before the toast was written. It now
+collects each failure's `response.data.message`, de-duplicates (three `.exe` files produced the same
+sentence three times), and leads with it:
+
+> *"1 of 1 could not be sent. File type .exe is not allowed. Accepted: .pdf, .docx, .doc, .jpg,
+> .jpeg, .png."*
+
+*"Please try those again"* survives only as the fallback when there is genuinely nothing to explain —
+a network drop, which is the one case where retrying **is** the right advice. Duration raised to 8s,
+since the message now carries an instruction rather than just a count.
+
+**O3 — the client-side gap.** `beforeUpload` returned `false` unconditionally with no checks, and all
+three inputs carried `accept=""`. Now: a real `accept` attribute so the OS picker filters, plus
+extension and 10 MB checks returning `Upload.LIST_IGNORE` with a plain-language reason. The
+constants mirror the server's `ALLOWED_EXTS` and `fileSize` limit.
+
+**The server remains the real gate** — including the magic-byte check from D7. This only spares the
+candidate a pointless round trip and a confusing error; it is not a security boundary, and a renamed
+executable is still caught server-side.
+
+**Frontend build: exit 0, 4101 modules.**
 
 ---
 
@@ -513,6 +912,403 @@ exactly as after any automated round — a live upload token issued normally.
 
 ---
 
+## Block G — the scheduled sweeps (DOC-11, OFFER-14, OFFER-15)
+
+Run 2026-08-20. **12 cases, all passed on the first run.**
+`backend/src/tests/integration/sweepJobs.test.js`
+
+These three were recorded as "cannot run / not attempted" because they are cron jobs. **They did not
+need cron.** All three are pure DB polling, so backdating the timestamps the sweep selects on puts a
+row into the state it is looking for, and the exported `run*()` functions can be called directly.
+The real job function runs, against real rows, with nothing stubbed or mocked.
+
+**Why the selection query is the whole test.** DOC-10 already proved reminders send. What was never
+verified is whether the sweep picks the *right* rows — and a sweep that reminds everybody, or
+nobody, would still pass a "did it send" assertion. Each case below is asserted on its own request's
+counter, so unrelated rows on shared staging cannot influence the result.
+
+### DOC-11 — reminder sweep selection ✅ 5/5
+
+| Case | Result |
+|---|---|
+| Aged past `DOCUMENT_REMINDER_AFTER_DAYS`, never reminded | ✅ reminded once, `last_reminded_at` stamped |
+| Requested just now | ✅ **not** chased — inside the quiet window |
+| Already at `DOCUMENT_REMINDER_MAX_COUNT` | ✅ **not** chased — the sweep gives up and leaves it to a human |
+| Every document `verified` | ✅ **not** chased — nothing left to ask for |
+| Journey closed underneath an open request | ✅ **not** chased — the specific case the `final_outcome: null` guard exists for |
+
+### OFFER-14 — approval nudge ✅ 3/3
+
+| Case | Result |
+|---|---|
+| Pending approval, never nudged | ✅ nudged, `approval_nudged_at` stamped |
+| **Second run the same day** | ✅ **not** re-nudged — the timestamp is identical to the first run. Daily, not per-run |
+| Nudged yesterday | ✅ nudged again today |
+| Already `approved` | ✅ never nudged |
+
+The same-day case is the one worth having: the cron is daily *now*, but the cadence is configurable
+(`OFFER_SWEEP_CRON`). Someone tightening it to hourly would spam the approver every hour if the
+`startOfToday()` clause were ever dropped.
+
+### OFFER-15 — post-joining auto-close ✅ 4/4
+
+| Case | Result |
+|---|---|
+| Joined longer ago than `OFFER_AUTO_CLOSE_AFTER_DAYS` (90) | ✅ closed as `joined`, `closed_at` stamped |
+| Joined recently | ✅ stays open |
+| **Already closed by a recruiter as `joined_and_left`** | ✅ **left alone** — the sweep does not relabel a human's closure as `joined` |
+| Accepted, but no `joining_date` | ✅ never closes — the clock never started |
+
+That third case is the one that matters. Overwriting a recruiter's `joined_and_left` with `joined`
+would quietly turn an attrition record into a successful hire, corrupting the conversion analytics
+that `HIRE_OUTCOMES` feeds.
+
+⚠️ **These tests send real email** — redirected to the staging test inbox like every other
+integration file. Expect a handful of reminder and approval-nudge mails per run.
+
+**Staging verified clean afterwards:** 0 leaked sweep MRFs, base fixture intact (3 CVs / 2 MRFs),
+0 fixture MRFs left filled, 23 journeys — the documented baseline.
+
+---
+
+## Group 1 — SCHED-01 / 06 / 07, the Teams round trip
+
+Run 2026-08-20 ~18:20 IST through the **real Pipeline drawer**, journey 40, interviewer
+`pkmondal@aapnainfotech.com` — deliberately not in `EMAIL_STAGING_RECIPIENTS`, so the attendee-collapse
+artifact that invalidated the earlier run could not recur. Local dev server against the shared
+staging database. Evidence: `docs/test-claude-chrome/sched010607results.md`.
+
+| Case | Verdict |
+|---|---|
+| **SCHED-01** | ✅ **PASS** on every machine-checkable assertion |
+| **SCHED-06** | ✅ **PASS** — one audit line, `previous → new`; D4 reproduced |
+| **SCHED-07** | ⚠️ **PASS with defect D9** — cancels correctly, but no reason can be supplied |
+
+**SCHED-01 detail.** `POST /api/pipeline/40/interview` → **200** (confirming the plan's 201 is wrong,
+third independent observation). Row 104, `status='scheduled'`, times stored correctly
+(`2026-08-21T05:30:00Z` = 11:00 IST), Teams meeting `473448322235179` minted, `invite_sent_at`
+stamped, audit line written.
+
+**SCHED-06 detail.** Row 105 live, exactly **one** audit line reading
+*"Technical Round 1 rescheduled: 21 August 2026 at 11:00 am IST → 21 August 2026 at 03:00 pm IST"*.
+Both emails composed as reschedule notices, neither a cancellation — consistent with the instrumented
+run.
+
+### 🔴 D4 is worse than its original write-up: neither reschedule email carries a join link
+
+Read from the modal previews before sending. The candidate email contains previous time, new time and
+duration. The panel email contains previous time, new time and the candidate's address. **Neither
+contains a Teams link.**
+
+So after a reschedule the only join link either party holds is the one from the original invite — and
+D4 has just killed it. The new link exists *only inside the app*. That moves D4 from "stale calendar
+entries left behind" to **"both parties are actively holding a dead link and were never sent the live
+one"**, which is a materially worse failure and raises the case for fixing it before the demo.
+
+### Correction to this document's own earlier wording
+
+The instrumented-run entry above describes both mails as titled *"Interview Rescheduled — Candidate"*
+and *"— Panel"*. **Those were the test's own labels, not the real subjects.** What actually sends is:
+
+- candidate — `Technical Round 1 rescheduled — Phase3 Test Role (1 opening)`
+- panel — `Interview rescheduled — Technical Round 1: Phase3 Midflow Candidate`
+
+The count and the "neither is a cancellation" conclusion are unaffected.
+
+### D9 — a cancellation reason cannot be supplied from the UI (OPEN)
+
+`rpa_interview_schedule.cancel_reason` is null for **every** cancellation a recruiter performs. The
+audit trail records that a round was cancelled but never why.
+
+**Confirmed in code.** `cancel_reason` appears exactly **once** in `PipelineDrawer.jsx` — line 1021,
+on the *Zeko* cancel path. `interviewCancelMutation` (line 1087) sends only the four email fields:
+
+```js
+pipelineService.cancelInterview(interviewSchedule.id, {
+  candidate_subject, candidate_body, panel_subject, panel_body,   // no cancel_reason
+})
+```
+
+**Why it was missed until now — two modals share one title.** Both are titled *"Confirm Cancel
+Interview"*: the Zeko one (`open: cancelOpen`) **has** a reason `TextArea`; the scheduled-interview
+one (`open: interviewCancelOpen`) does not. Searching for a reason field finds one and stops.
+
+The endpoint honours `cancel_reason` — proved during this run's cleanup call, which wrote
+*"Technical Round 1 interview cancelled: CLEANUP-SCHED-PREP: …"* into the audit trail. Two
+cancellations minutes apart on the same journey, one with a reason (API) and one without (UI), is the
+cleanest possible demonstration.
+
+**✅ FIXED 2026-08-20.** A `Cancel reason (optional)` `TextArea` on the `interviewCancelOpen` modal,
+backed by its **own** `interviewCancelReason` state — deliberately not `cancelReason`, which belongs
+to the Zeko modal that shares this one's title; reusing it would leak a reason typed in one dialog
+into the other. `cancel_reason` now goes in the mutation payload and the state is cleared on success.
+
+**One thing I got wrong while fixing it, corrected before shipping.** The helper text first read
+*"Not included in the emails below."* That is false: the service passes `reason` into
+`buildInterviewEmails('cancel', …)` (`interviewSchedule.service.js:724`) **and** into the Graph
+`/cancel` comment (line 701), so it can reach both the cancellation emails and the Outlook notice.
+The label now says so, and notes that the reason must be typed *before* the email previews are
+generated if it is to appear in them.
+
+**Frontend build after the change: exit 0, 4101 modules.**
+
+### D10 — the drawer shows a dead Teams link after a reschedule (OPEN)
+
+| | Drawer after the success toast | Actual row |
+|---|---|---|
+| Time | 21 Aug, 11:00 am | 21 Aug, **03:00 pm** |
+| Meeting ID | `473448322235179` | `482189874798031` |
+| Passcode | `tg3k3Eg7` | `vo2Jo6e5` |
+
+Closing and reopening the drawer shows the correct values, so the write is fine and the view is
+stale. **Compounds D4:** the meeting on screen has just been destroyed, and the recruiter is looking
+at a Join button, meeting ID and passcode that no longer work — on a screen that just said the
+reschedule succeeded. Copying any of it hands over a dead link.
+
+⚠️ **The field report's proposed cause is wrong, and the fix it suggests would not work.** It says the
+cancel mutation refreshes correctly and the schedule mutation should copy its invalidation. But
+`interviewMutation.onSuccess` (line 1071) **already** invalidates `['pipeline-detail', pipelineId]`,
+identically to `interviewCancelMutation` (line 1094). The query has no `staleTime`, and
+`interviewSchedule` is read straight off that query's data. So the invalidation is present and
+correct, and the stale render has some other cause — most likely the modal-close and state-reset
+sequence in the same `onSuccess`, or a race between the refetch and the re-render.
+
+**Do not "fix" this by adding an invalidation that is already there.** The symptom is real (observed
+twice, with the concrete values above); the mechanism needs a debugger session, not a code read.
+
+**Investigated 2026-08-20, not fixed — the mechanism is still unproven.** What was ruled out:
+
+| Hypothesis | Verdict |
+|---|---|
+| Missing `invalidateQueries` on the schedule path | ❌ ruled out — line 1071 invalidates `['pipeline-detail', pipelineId]`, identical to the cancel path at 1094 |
+| A `staleTime` holding the cached row | ❌ ruled out — the `pipeline-detail` query sets none |
+| `interviewMode` left as `'reschedule'` and poisoning a query key | ❌ ruled out — both `openInterviewModal` and `openRescheduleModal` set it explicitly on open |
+| `enabled: open` suppressing the refetch | ❌ ruled out — `open = !!pipelineId`, true throughout |
+
+The most likely remaining explanation is the **state cascade inside the same `onSuccess`**: it closes
+the modal and clears `interviewAt`, `interviewerEmail`, `interviewerName` and `schedEmail` in the
+same tick as the invalidation. Those four are all in the `schedule-preview` query key, so clearing
+them fires a *different* query while the detail refetch is still in flight. The cancel path clears
+far less, which fits it not showing the bug.
+
+That is a hypothesis, not a diagnosis. **Fixing it blind risks papering over the symptom** — for
+example by forcing a `refetch()` that hides a re-render ordering problem rather than resolving it.
+It needs React Query devtools on a live reschedule to confirm which query settles last.
+
+**Interim mitigation if the demo includes a reschedule:** close and reopen the drawer afterwards. The
+data is correct on reopen — only the immediate post-action render is stale.
+
+### ⚠️ D10 RE-TEST 2026-08-20 21:33 — not reproducible, and NOT because it was fixed
+
+Evidence: `docs/test-claude-chrome/d4d5d8d10retest20260820.md`. Two consecutive reschedules on
+journey 40, deliberately without reopening the drawer:
+
+| | Drawer after, no reopen | DB row |
+|---|---|---|
+| Reschedule #1 | 25 Aug 09:00 · `450766067167142` · `sQ3Mi7nY` | row 108 — matches |
+| Reschedule #2 | 26 Aug 09:00 · `482011056442070` · `Bd2wd9NL` | row 109 — matches |
+
+Compared programmatically against `/api/pipeline/40` — `drawerMatchesDb: true`. The second was
+captured ~4 s after the modal closed and was already correct.
+
+🔴 **The report scores this "✅ FIXED". It is not fixed — nothing was fixed.** `git log` confirms no
+code changed between the original observation and this re-test: the last commit touching
+`PipelineDrawer.jsx` is `d47b0ad` (the D9 reason field), which does not touch the schedule or
+reschedule mutations. **The same build produced both results.**
+
+That distinction matters, because "fixed" and "not reproducible" call for opposite actions. It
+supports the conclusion already reached above — that the four structural causes were correctly ruled
+out and the original symptom was most likely an **observation timing artifact**: a screenshot or DOM
+read taken in the window between the mutation resolving and React committing the re-render.
+
+**Downgraded to "not reproducible" rather than closed.** Two clean runs do not disprove an
+intermittent render race, and the original observation was specific and twice-repeated with concrete
+values. If it never recurs it can be closed at sign-off; it should not be closed on this evidence
+alone.
+
+**Do not "re-fix" it.** There is nothing to revert and nothing was applied.
+
+### Four smaller observations from the same run — not scored, worth knowing
+
+1. **`interview-preview` fires once per keystroke — 42 calls to fill one form.** 13 while typing the
+   interviewer's name, 26 while typing their address. Each call compiles two HTML email templates
+   server-side. No debounce. The name and address also travel in the **query string**, so they land
+   in access logs. Not a defect, but it is the kind of thing that looks bad in a network tab during a
+   demo, and it is a real server cost per keystroke.
+2. **The time picker rejects `03:00 PM` but accepts `3:00 PM`.** A zero-padded hour yields "No data"
+   and the field silently stays empty — easy to mistake for the form being broken.
+3. **"Emails in this round" shows only the live booking's mail.** After a reschedule the original
+   invite line disappears rather than the reschedule notice being appended, so the round's email
+   history is replaced, not accumulated.
+4. **A past booking has no UI cancel path.** Once the start time passes the drawer offers only Mark
+   as Held / Mark No-show / Reschedule. A recruiter with a stale past booking has to reschedule it
+   into the future before they can cancel it. This is why the run's own preparation step needed a
+   direct API call.
+
+---
+
+## Group 2 — browser-only checks
+
+Run 2026-08-20 ~16:50 IST against the **local dev server** (current working tree, so including the
+D3 and 409 UX fixes) — *not* staging. Journey 27, SAHIL SARMA. Evidence:
+`docs/test-claude-chrome/group2manualpassresults.md`.
+
+| Case | Verdict | Note |
+|---|---|---|
+| **DOC-05** | ⚠️ **FAIL → now fixed** | `.exe` rejected but with 500 (**D6**); extension check bypassed by rename (**D7**). Both fixed |
+| **DOC-04** | ⚠️ **PARTIAL** | O3 confirmed: the hidden input carries `accept=""`, nothing enforces the stated formats until submit. **It does not fail silently** — the toast reads *"1 of 1 could not be sent. Please try those again."* But the server's precise reason is discarded (**D8**) |
+| **VEND-14/15** | ✅ **PASS** | `byStage` reconciles exactly: 2 + 1 + closed 0 + untracked 14 = **17** = `stats.total`. Candidates with no journey land in `untracked` rather than vanishing. UI labels that bucket *"Not in pipeline"* — wording differs from the plan, same thing |
+| **O7** | ⊘ **Not reproducible — but confirmed in code** | See below |
+| **SCHED-18 (UI)** | ⊘ **Not runnable** | No submitted scorecard exists anywhere. Moved to the blocked list |
+
+### O7 — the null-deadline day count is real, and worse than the finding says
+
+Not observable in this database: **0 candidates at `assessment`**, and `invited` is false across all
+23 journeys, so the code path never executes. But it was verified by simulation at
+`PipelineDrawer.jsx:425`:
+
+| `deadline_at` | rendered `daysLeft` |
+|---|---|
+| `null` | **-20685** |
+| `undefined` | **NaN** |
+| `''` | **NaN** |
+
+**The important part the original finding missed:** `daysLeft` is used in **both** branches of the
+ternary, not only the overdue one. So this does not depend on `isOverdue` being wrongly true — the
+ordinary path renders *"deadline in -20685 day(s)"*.
+
+**How a null could arise is a configuration question, not an exotic one.** The live
+`AssessmentInviteModal` has no date picker and never sends `deadline_at`; the server computes it from
+the `assessment_deadline_days` setting. If that setting is ever absent, every invite gets a null
+deadline. Note the modal's own email body degrades gracefully (`deadlineDays || 2`) while the drawer
+does not — that asymmetry is the bug in miniature.
+
+**To close O7:** check `assessment_deadline_days`, send one invite, confirm `deadline_at` lands
+non-null. Five minutes, worth doing before the demo.
+
+---
+
+## Group 3 and the re-tests — evening session 2026-08-20
+
+Evidence: `docs/test-claude-chrome/phase3manualpassresults20260820.md`. Five items, all passing.
+
+### PIPE-08 — recruiter refused by `requireAdmin` ✅ PASS
+
+`biswajit.sur351` (recruiter). Five config writes refused — `POST /stages`, `PUT /stages/tech1`,
+`POST /stages/tech1/outcomes`, `POST /reasons`, `PUT /stage-templates` — all 403
+*"Admin access required to change this configuration."* from `auth.js:169`.
+
+**Proved it is the admin gate, not the module gate**, three ways: reads on the same router return
+200, so the module check passes; the message is the admin sentence, not the generic permission one;
+and the frame is `auth.js:169`, distinct from `auth.js:105` (module) and `auth.js:200`
+(`requireStaff`). This is exactly the "passes for the wrong reason" trap the plan warned about, and
+it was avoided.
+
+### VEND-11 / VEND-13 — vendor refused by `requireStaff` ✅ PASS
+
+`sahil.dubey673` (vendor), **with `recruitment_pipeline` enabled** — the precondition that makes the
+case meaningful. Eight pipeline routes refused, reads and writes alike, every one naming the guard:
+
+```
+at requireStaff (backend/src/middleware/auth.js:200:17)
+```
+
+`POST /api/pipeline/stages` stops at `requireStaff` and never reaches `requireAdmin` — correct
+ordering. Not a blanket refusal: the same session returns 200 on the vendor dashboard, vendor
+candidates, MRF, candidates, dashboard stats and email templates.
+
+This is precisely what the M6 fix was for: module on, vendor still out.
+
+✅ **Cleanup done.** The toggle was revoked at 21:03 IST on 2026-08-20 and verified
+`is_enabled = false` against the database. The account keeps `vendor_upload` and `vendor_dashboard`,
+so the revoke did not overshoot. **No vendor over-privilege remains ahead of the demo.**
+
+⚠️ **One process note.** That flag changed four times in a day, including once *mid-pass* at 13:38 by
+someone outside this test run — which silently broke VEND-11's precondition and would have made the
+case pass for the wrong reason (refused by the module gate, never reaching `requireStaff`). It was
+caught only because the flag was re-checked against the database rather than trusted from a note
+written hours earlier. Any re-run of VEND-11 should begin with that check.
+
+### DOC-05 re-run — ✅ PASS, both D6 and D7 confirmed dead
+
+| Payload | Result |
+|---|---|
+| real `.exe` | **400** — *"File type .exe is not allowed…"* |
+| **MZ bytes renamed `.pdf`, `application/pdf` MIME** | **400** — *"That file is not a valid PDF…"* ← the D7 bypass, now closed |
+| real PDF bytes named `.exe` | **400** — extension gate fires first |
+
+**D6's alert-email half was measured as a differential, not assumed:** `backend_error_alert`
+sent/failed was `30/0` before a rejected upload and `30/0` four seconds after. No alert fired.
+
+No side effects — the checklist row stayed `pending`, nothing written to OneDrive.
+
+### D9 re-test — ✅ FIXED, end to end
+
+Audit line, verbatim: `Technical Round 1 interview cancelled: D9 re-test - interviewer unavailable`.
+The reason also appears at the top of the Exchange cancellation notice delivered to the candidate,
+confirming the helper text's promise. State separation verified — `cancelReason` and
+`interviewCancelReason` are distinct, no collision with the Zeko modal.
+
+### Group 1 mailbox/calendar half — ✅ COMPLETE
+
+| Check | Result |
+|---|---|
+| Two distinct attendees on the event | ✅ **Phase3 Midflow Candidate** (→ staging inbox) and **Pankaj Kumar Mondal**. No collapse — the interviewer-address precondition worked |
+| Candidate invite | ✅ 1 |
+| Panel invite | ✅ 1 |
+| Reschedule notices | ✅ 1 per side |
+| Cancellation mails | ✅ 1 per side |
+| Extra Outlook `Canceled:` notice | 🔴 **Yes** — see D4 above |
+
+**Not a defect:** the OWA event editor renders times in UTC while the calendar grid and the
+candidate's Gmail both show IST correctly. Display-only, and correct everywhere a candidate looks.
+
+---
+
+## Two SCHED findings that are NOT defects — recorded so they are not re-investigated
+
+Both came out of the 2026-08-20 SCHED-05/06 run (`docs/test-claude-chrome/SCHED0506findings.md`) and
+were reported as bugs. Neither is. Each is written up because the reasoning is not obvious and
+somebody will otherwise find them again.
+
+### "One calendar attendee, candidate's name on the interviewer's address" — a STAGING ARTIFACT
+
+**Reported as High.** The Graph event carried exactly one attendee, displayed as *"Phase3 Midflow
+Candidate"* but resolving to `n8npankajmondal@gmail.com` — the interviewer's mailbox.
+
+**The attendee-building code is correct.** `interviewSchedule.service.js:534` pairs
+`candidate.candidate_email` with `candidate.candidate_name`, and maps panel addresses separately.
+Name and address are *not* sourced from different objects.
+
+**What actually happened.** `calendarCandidateEmail()` → `nonProdSafeCandidateEmail()`
+(`config/emailRecipients.js:301`) **replaces every candidate address with the first entry in
+`EMAIL_STAGING_RECIPIENTS`** outside production. That first entry is `n8npankajmondal@gmail.com` —
+**the same address the tester used as the interviewer**. So both attendees resolved to one mailbox,
+Outlook collapsed them into a single entry, and kept the candidate's display name.
+
+That guard exists precisely because **Outlook, not this app, sends calendar invites**, so they
+bypass every mail protection we own. Without it a real candidate would receive a genuine interview
+invite from staging. It is working exactly as designed.
+
+⚠️ **The real lesson is about test method.** Using an interviewer address that is also the first
+staging recipient makes the two-attendee behaviour **unobservable on staging** — the guard collapses
+it every time. **Re-test with an interviewer address that is NOT in `EMAIL_STAGING_RECIPIENTS`**
+(e.g. `pkmondal@aapnainfotech.com`) and confirm two distinct attendees appear. Until then, SCHED-01's
+attendee assertion is untested, not passed.
+
+### "Scheduling endpoints return 200, not 201" — the TEST PLAN is wrong
+
+`POST /interview` and `POST /interview/reschedule` both return **200**. The plan expects 201.
+
+Both controllers end in the shared `success(res, result, …)` helper, which returns 200 for every
+endpoint in the API. There is no 201 anywhere in this codebase. The plan's expectation was written
+against an assumption the code never adopted.
+
+**Correct the plan, not the code.** Changing these two endpoints to 201 would make them inconsistent
+with every other write endpoint in the app, and any client checking `=== 200` would break.
+
+---
+
 ## Test-harness bugs found and fixed (not product defects)
 
 Recorded deliberately — each looked like a failure and was investigated against the source before
@@ -570,8 +1366,8 @@ listed here with what to do so the pass can be finished properly.
 |---|---|
 | **SCHED-11** (occurrence sweep, Teams attendance) | Graph `OnlineMeetingArtifact.Read.All` + Teams policy still pending with IT (readiness §2.4). The **nudge fallback** half is testable; the automatic-attendance half is not. ⚠️ Verify the "auto-no-showed every staging interview" regression specifically when the grant lands — it is a silent, every-row class of failure |
 | **ZEK-05 … ZEK-12** | `ZEKO_API_URL` is blank in all four env files (readiness §2.3). No published Zeko job with a `primary_interview_id` exists to test against |
-| **DOC-11** (reminder sweep selection) | Needs four request states aged across days. Achievable by backdating `requested_at`, but not attempted this session |
-| **OFFER-14/15** (nudge + 90-day auto-close) | Callable directly via `runApprovalNudges()` / `runPostJoiningAutoClose()`; not attempted this session |
+| ~~**DOC-11**~~ | ✅ **DONE 2026-08-20** — automated, 5 cases. See Block G below |
+| ~~**OFFER-14/15**~~ | ✅ **DONE 2026-08-20** — automated, 7 cases. See Block G below |
 
 ### ⚠️ PIPE-08 and VEND-11 need a specific setup or they prove nothing
 
@@ -582,9 +1378,19 @@ Both assert a **403**, and both can pass for the wrong reason:
   different guard, box ticked having proven nothing. `biswajit.sur351` now **has** the module
   (granted 2026-08-19), so the 403 will genuinely come from `requireAdmin`. Good.
 - **VEND-11** expects a vendor to be refused by `requireStaff` **even with** the pipeline module
-  switched on — that is the whole point of the M6 fix. `sahil.dubey673` currently has
-  `recruitment_pipeline: true` precisely so this case is meaningful. **Remove that toggle once
-  VEND-11 and VEND-13 have been run** — it is a deliberate, temporary over-privilege.
+  switched on — that is the whole point of the M6 fix.
+
+  ✅ **RESOLVED 2026-08-20.** VEND-11/13 ran with the module **enabled** and passed — refused at
+  `requireStaff` (`auth.js:200`), which is the case's whole point. The toggle was then revoked at
+  21:03 IST and verified `is_enabled = false`. See *Group 3 and the re-tests* below.
+
+  ⚠️ **It was nearly tested wrong.** The flag was revoked mid-pass at 13:38 by someone outside this
+  run, which would have made the vendor fail at the module gate and never reach `requireStaff` — a
+  403 from the wrong guard, box ticked, nothing proved. Exactly the trap this section warns about.
+  Caught only by re-checking the database instead of trusting a note.
+
+  **`biswajit.sur351` (PIPE-08) was checked alongside and is correct** — `recruitment_pipeline`
+  enabled, so its 403 genuinely comes from `requireAdmin`.
 
 ---
 

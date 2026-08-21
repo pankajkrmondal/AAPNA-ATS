@@ -597,7 +597,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   };
 }
 
-export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
+export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -633,6 +633,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
   // submit attempted — an error on a pristine, never-touched field reads as broken.
   const [interviewerEmailTouched, setInterviewerEmailTouched] = useState(false);
   const [interviewCancelOpen, setInterviewCancelOpen] = useState(false);
+  // Deliberately NOT `cancelReason` — that belongs to the Zeko cancel modal,
+  // which shares this one's "Confirm Cancel Interview" title. Reusing it would
+  // leak a reason typed in one dialog into the other (defect D9, 2026-08-20).
+  const [interviewCancelReason, setInterviewCancelReason] = useState('');
   // No-show modal (which side missed + reason) for the occurrence gate.
   const [noShowOpen, setNoShowOpen] = useState(false);
   const [noShowParty, setNoShowParty] = useState('candidate');
@@ -871,14 +875,30 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
     onError: (err) => {
       // api.js normalises response.data.message onto .message, so the server's
       // own sentence renders here — not a generic fallback (N5).
-      message.error(err?.message || 'Failed to record outcome.');
-      // A 409 means this tab is looking at stale state (defect D3). Telling the
-      // recruiter to "reopen the candidate" and then leaving the stale screen up
-      // invites the same click again, so refresh it for them — the message
-      // explains what happened, the refresh makes the drawer true.
-      if (err?.status === 409) {
+      //
+      // A stale-conflict message is two sentences and asks the recruiter to do
+      // something, so it gets longer than the 3s default — and the parent holds
+      // its scrim for the same STALE_CONFLICT_TOAST_SECONDS. Change one, change
+      // both.
+      const isStale = err?.status === 409;
+      message.error(err?.message || 'Failed to record outcome.', isStale ? 5 : undefined);
+      // A 409 means this tab is looking at stale state (defect D3). The message
+      // says "reopen the candidate to see where they are now", so DO exactly
+      // that: dismiss the decision modal and the stale drawer, and refresh the
+      // board underneath. Leaving them open contradicts the instruction the
+      // recruiter is reading and invites the same click again — and every
+      // control still on screen was computed from a stage the candidate has
+      // already left.
+      if (isStale) {
+        setDecisionOutcome(null);
+        setOutcomeModalOpen(false);
+        onClose?.();
         queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
-        onChanged?.();
+        // Deliberately NOT onChanged() — that one also pops a "Pipeline updated."
+        // success toast, which would sit next to the error saying the opposite.
+        // The parent owns the scrim, because this drawer unmounts on the line
+        // above and an unmounted component cannot keep anything on screen.
+        onStaleConflict?.();
       }
     },
   });
@@ -1069,6 +1089,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
 
   const interviewCancelMutation = useMutation({
     mutationFn: () => pipelineService.cancelInterview(interviewSchedule.id, {
+      // The endpoint has always honoured cancel_reason and writes it into the
+      // stage-event audit line — the drawer simply never sent it, so every
+      // recruiter cancellation recorded THAT a round was cancelled and never
+      // WHY (defect D9, 2026-08-20).
+      cancel_reason: interviewCancelReason.trim() || undefined,
       candidate_subject: cxlEmail.candidateSubject,
       candidate_body: cxlEmail.candidateBody,
       panel_subject: cxlEmail.panelSubject,
@@ -1079,6 +1104,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
       onChanged?.();
       message.success('Interview cancelled — candidate notified.');
       setInterviewCancelOpen(false);
+      setInterviewCancelReason('');
       setCxlEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
       setCxlEmailForKey(null);
     },
@@ -2284,6 +2310,20 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged }) {
             {interviewSchedule.interviewer_name && (
               <Text type="secondary" style={{ fontSize: 12.5 }}>with {interviewSchedule.interviewer_name}</Text>
             )}
+          </div>
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Cancel reason (optional)</Text>
+            <TextArea
+              rows={3}
+              placeholder="e.g. Interviewer unavailable, candidate withdrew…"
+              value={interviewCancelReason}
+              onChange={(e) => setInterviewCancelReason(e.target.value)}
+              style={{ marginTop: 4 }}
+            />
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              Recorded on the candidate&apos;s timeline, and used in the Outlook cancellation notice.
+              Type it before the emails are generated if you want it to appear in them.
+            </Text>
           </div>
           <div>
             <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
