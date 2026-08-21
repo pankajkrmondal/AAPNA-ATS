@@ -6,6 +6,7 @@ import { authenticate, restrictTo, checkModuleAccess } from '../middleware/auth.
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as vendorController from '../controllers/vendor.controller.js';
 import config from '../config/index.js';
+import AppError from '../utils/AppError.js';
 
 const router = Router();
 
@@ -37,7 +38,10 @@ const upload = multer({
     if (allowedExts.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type. Allowed: ${allowedExts.join(', ')}`));
+      // AppError, not a bare Error: a bare one carries no statusCode, so the
+      // global handler treats a wrong file type as a 500 and emails the team a
+      // "Backend Error Alert" (defect D6).
+      cb(new AppError(`Invalid file type. Allowed: ${allowedExts.join(', ')}`, 400));
     }
   },
 });

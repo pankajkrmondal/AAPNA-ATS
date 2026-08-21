@@ -16,7 +16,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { matchesSignature } from '../../utils/fileSignature.js';
+import {
+  matchesSignature,
+  assertSignature,
+  partitionBySignature,
+  collectFiles,
+} from '../../utils/fileSignature.js';
 
 let dir;
 
@@ -99,5 +104,121 @@ describe('D7 — magic-byte validation', () => {
     // "Cannot open" and "wrong type" are different failures; conflating them
     // would tell a candidate their valid PDF is the wrong format.
     assert.equal(await matchesSignature(path.join(dir, 'nope.pdf'), '.pdf'), true);
+  });
+});
+
+/** A multer-shaped file object over a real temp file. */
+function fileObj(name, bytes) {
+  return { originalname: name, path: write(name, bytes) };
+}
+
+const MZ = [0x4D, 0x5A, 0x90, 0x00];
+const PDF = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34];
+const ZIP = [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00];
+
+describe('collectFiles — the three multer shapes', () => {
+  test('upload.single() — req.file', () => {
+    const f = { originalname: 'a.pdf', path: '/tmp/a' };
+    assert.deepEqual(collectFiles({ file: f }), [f]);
+  });
+
+  test('upload.array() — req.files as an array', () => {
+    const fs_ = [{ originalname: 'a.pdf' }, { originalname: 'b.pdf' }];
+    assert.deepEqual(collectFiles({ files: fs_ }), fs_);
+  });
+
+  test('upload.fields() — req.files as an object of named arrays', () => {
+    const a = { originalname: 'jd.pdf' };
+    const b = { originalname: 'test.pdf' };
+    assert.deepEqual(
+      collectFiles({ files: { attach_jd: [a], attach_online_test_paper: [b] } }),
+      [a, b]
+    );
+  });
+
+  test('no file at all yields an empty list, not a throw', () => {
+    assert.deepEqual(collectFiles({}), []);
+  });
+});
+
+describe('assertSignature — all-or-nothing routes', () => {
+  test('a clean single file passes and is left on disk', async () => {
+    const f = fileObj('ok-assert.pdf', PDF);
+    await assertSignature({ file: f });
+    assert.equal(fs.existsSync(f.path), true);
+  });
+
+  test('the D7 payload throws 400 and unlinks the temp file', async () => {
+    const f = fileObj('bad-assert.pdf', MZ);
+    await assert.rejects(
+      () => assertSignature({ file: f }),
+      (err) => {
+        assert.equal(err.statusCode, 400, 'must be 400 — a 500 emails the team (defect D6)');
+        assert.match(err.message, /not a valid PDF/);
+        return true;
+      }
+    );
+    assert.equal(fs.existsSync(f.path), false, 'the rejected upload must not stay on disk');
+  });
+
+  test('one bad file unlinks EVERY temp file in the request, not just the bad one', async () => {
+    // upload.fields(): a valid JD alongside a disguised executable. Leaving the
+    // good half behind would orphan it in uploads/ with nothing to clean it up.
+    const good = fileObj('jd-good.pdf', PDF);
+    const bad = fileObj('test-bad.pdf', MZ);
+    await assert.rejects(() => assertSignature({
+      files: { attach_jd: [good], attach_online_test_paper: [bad] },
+    }));
+    assert.equal(fs.existsSync(good.path), false, 'the good file must be cleaned up too');
+    assert.equal(fs.existsSync(bad.path), false);
+  });
+
+  test('a request with no file is a no-op', async () => {
+    await assertSignature({});
+  });
+});
+
+describe('partitionBySignature — skip-and-report batch routes', () => {
+  const EXTS = ['.pdf', '.docx', '.doc'];
+
+  test('a mislabelled file is dropped while the rest are kept', async () => {
+    const a = fileObj('resume-1.pdf', PDF);
+    const bad = fileObj('resume-2.pdf', MZ);
+    const c = fileObj('resume-3.docx', ZIP);
+
+    const { accepted, rejected } = await partitionBySignature([a, bad, c], EXTS);
+
+    assert.deepEqual(accepted.map((f) => f.originalname), ['resume-1.pdf', 'resume-3.docx']);
+    assert.equal(rejected.length, 1);
+    assert.equal(rejected[0].name, 'resume-2.pdf');
+    assert.equal(fs.existsSync(bad.path), false, 'the rejected file must be unlinked');
+    assert.equal(fs.existsSync(a.path), true, 'the good files must survive');
+    assert.equal(fs.existsSync(c.path), true);
+  });
+
+  test('an .exe unpacked from a .zip is rejected on extension alone', async () => {
+    // Zip entries never pass through multer's fileFilter, so this is the only
+    // extension check they ever face.
+    const entry = fileObj('payload.exe', MZ);
+    const { accepted, rejected } = await partitionBySignature([entry], EXTS);
+
+    assert.equal(accepted.length, 0);
+    assert.equal(rejected.length, 1);
+    assert.match(rejected[0].reason, /not accepted/);
+    assert.equal(fs.existsSync(entry.path), false);
+  });
+
+  test('everything rejected yields an empty accepted list, not a throw', async () => {
+    const bad = fileObj('all-bad.pdf', MZ);
+    const { accepted, rejected } = await partitionBySignature([bad], EXTS);
+    assert.equal(accepted.length, 0);
+    assert.equal(rejected.length, 1);
+  });
+
+  test('a .zip is rejected post-expansion — archives are unpacked, never parsed', async () => {
+    const z = fileObj('bundle.zip', ZIP);
+    const { accepted, rejected } = await partitionBySignature([z], EXTS);
+    assert.equal(accepted.length, 0);
+    assert.equal(rejected.length, 1);
   });
 });

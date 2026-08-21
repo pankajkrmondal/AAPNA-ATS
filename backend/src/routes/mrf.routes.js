@@ -6,6 +6,7 @@ import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
 import { authenticate, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Roles allowed to bulk-export requisitions. Vendors are external companies and
@@ -34,10 +35,27 @@ const storage = multer.diskStorage({
   },
 });
 
+// A JD or test paper is a document. This route had NO fileFilter at all, so it
+// accepted any extension — including .exe — on a PUBLIC, unauthenticated
+// endpoint (see the submit route below). Same class of hole as defect D7, on a
+// route the D7 write-up never listed.
+const ALLOWED_EXTS = ['.pdf', '.docx', '.doc'];
+
 const upload = multer({
   storage,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_EXTS.includes(ext)) {
+      cb(null, true);
+    } else {
+      // AppError, not a bare Error: a bare one carries no statusCode, so the
+      // global handler treats a wrong file type as a 500 and emails the team a
+      // "Backend Error Alert" (defect D6).
+      cb(new AppError(`File type ${ext} is not allowed. Accepted: ${ALLOWED_EXTS.join(', ')}.`, 400));
+    }
   },
 });
 
