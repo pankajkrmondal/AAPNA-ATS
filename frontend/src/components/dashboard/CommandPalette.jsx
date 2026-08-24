@@ -29,7 +29,7 @@ const NAV_COMMANDS = [
   { key: 'hr_manual_upload', label: 'HR Manual Upload', icon: <UploadOutlined />, url: '/hr-upload', module: 'hr_manual_upload' },
   { key: 'vendor_upload', label: 'Vendor Upload', icon: <CloudUploadOutlined />, url: '/vendor', module: 'vendor_upload' },
   { key: 'email', label: 'Email Templates', icon: <MailOutlined />, url: '/email' },
-  { key: 'settings', label: 'Reminder Settings', icon: <SettingOutlined />, url: '/settings' },
+  { key: 'settings', label: 'Settings', icon: <SettingOutlined />, url: '/settings' },
 ];
 
 export default function CommandPalette({ open, onClose, onNavigate, isModuleEnabled }) {
