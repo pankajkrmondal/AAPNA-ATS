@@ -234,6 +234,12 @@ const config = {
     scheduleApiBase: env('ZEKO_SCHEDULE_API_BASE', 'https://interview-api.zeko.ai/api/v1'),
     /** Base for candidate-facing interview links. */
     interviewLinkBase: env('ZEKO_INTERVIEW_LINK_BASE', 'https://interview.zeko.ai/interview'),
+    /**
+     * Base for the recruiter-facing candidate report page on Zeko's dashboard.
+     * Takes ?candidateId=&jobId=&tab= — the same link Zeko's own Responses table
+     * opens, used for the drawer's "View full report on Zeko".
+     */
+    reportLinkBase: env('ZEKO_REPORT_LINK_BASE', 'https://app.zeko.ai/app/new-report'),
     /** Client id for the API-key token grant (differs per environment). */
     clientId: env('ZEKO_CLIENT_ID', ''),
     /** Company/workflow id used by the dashboard job-catalog API. */

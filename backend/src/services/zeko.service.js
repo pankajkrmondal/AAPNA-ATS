@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
@@ -28,15 +29,19 @@ const SLEEP = (ms) => new Promise((r) => setTimeout(r, ms));
 const RESULT_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Picks the result belonging to one candidate out of an interview's results.
+ * Picks the result belonging to one candidate out of an interview's responses.
  *
- * GET /interview/<id>/results returns EVERY candidate booked against that
- * interview (10+ rows is normal), so indexing data[0] would attribute a
- * stranger's scores to this candidate and then write them onto their rpa_cv
- * row. Matching on email is the only way to identify the right entry; when
- * nothing matches we return null so the caller skips rather than guesses.
+ * The responses endpoint returns EVERY candidate booked against that interview
+ * (25+ rows is normal), so indexing data[0] would attribute a stranger's scores
+ * to this candidate and then write them onto their rpa_cv row. Matching on email
+ * is the only way to identify the right entry; when nothing matches we return
+ * null so the caller skips rather than guesses.
  *
- * @param {object[]} data - The `data` array from the results response.
+ * Two payload shapes are accepted: the dashboard responses endpoint puts the
+ * address in a flat `candidateEmail`, while the older bearer results endpoint
+ * nested it under `candidate.email`.
+ *
+ * @param {object[]} data - The response entries for one interview.
  * @param {string|null} candidateEmail - Our stored address(es) for the candidate.
  * @returns {object|null} The matching result entry, or null when absent.
  */
@@ -45,7 +50,7 @@ function findResultForCandidate(data, candidateEmail) {
   if (wanted.size === 0) return null;
   return (
     data.find((entry) => {
-      const entryEmail = entry?.candidate?.email;
+      const entryEmail = entry?.candidateEmail || entry?.candidate?.email;
       if (!entryEmail) return false;
       return wanted.has(String(entryEmail).trim().toLowerCase());
     }) || null
@@ -461,17 +466,159 @@ export async function syncZekoJobs() {
 }
 
 /**
+ * Fetches every candidate response for one Zeko interview, with their scores.
+ *
+ * POST /dashboard/api/v2/pipeline/interview-responses (cookie auth) — this is the
+ * call Zeko's own "Responses" page makes, and it is the ONLY source of the HR
+ * screening score. The bearer API's GET /interview/<id>/results exposes just
+ * `interviewScore`, which Zeko leaves at literal 0 for screening interviews, so
+ * every HR round synced through it recorded a meaningless 0 (RT, 2026-08-24:
+ * Panmon showed 0 in the ATS while Zeko showed 94).
+ *
+ * Which field carries the score depends on the interview type, and the response
+ * flags it via `isHRScreeningPresent`:
+ *   - screening-interview (`true`)  -> `fitPercentage`   (Panmon 94, Harish 75)
+ *   - functional-interview (`false`) -> `interviewScore`  (Tushar 83, Kumaresan 68)
+ * Verified against staging: on a functional interview `fitPercentage` is absent
+ * entirely, and on a screening interview `interviewScore` is 0 for every single
+ * candidate. Reading one and falling back to the other therefore fixes HR rounds
+ * without disturbing the functional rounds that already worked.
+ *
+ * The body's field names are snake_case; the endpoint 422s and names the missing
+ * ones if they are wrong.
+ *
+ * @param {string} cookieHeader - `authcookie=...`
+ * @param {string} jobId - Zeko role/job id (rpa_zeko_candidate_pipeline.zeko_job_id).
+ * @param {string} interviewId - Zeko interview id (…pipeline.pipeline_id).
+ * @returns {Promise<{ responses: object[], isHrScreening: boolean }>}
+ */
+async function fetchInterviewResponses(cookieHeader, jobId, interviewId) {
+  const url = `${config.zeko.dashboardApiBase}/pipeline/interview-responses`;
+  const collected = [];
+  let isHrScreening = false;
+  let page = 1;
+  const LIMIT = 100;
+  const MAX_PAGES = 50; // hard stop, same guard as the job-catalog sync
+
+  while (page <= MAX_PAGES) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Cookie: cookieHeader,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/plain, */*',
+        Origin: 'https://app.zeko.ai',
+        Referer: 'https://app.zeko.ai/',
+      },
+      body: JSON.stringify({
+        company_id: config.zeko.companyId,
+        job_id: String(jobId),
+        interview_id: String(interviewId),
+        page,
+        limit: LIMIT,
+      }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        `Zeko interview-responses failed (interview ${interviewId}, page ${page}, ${res.status}): ${JSON.stringify(body).slice(0, 300)}`
+      );
+    }
+
+    // The payload has been seen both at the top level and nested under `data`.
+    const envelope = body?.data && !Array.isArray(body.data) ? body.data : body;
+    const batch = envelope?.responses || (Array.isArray(body?.data) ? body.data : []) || [];
+    if (envelope?.isHRScreeningPresent) isHrScreening = true;
+
+    collected.push(...batch);
+    if (batch.length < LIMIT) break;
+    page += 1;
+  }
+
+  return { responses: collected, isHrScreening };
+}
+
+/**
+ * Picks the score Zeko actually populated for this interview type.
+ *
+ * `fitPercentage` is the screening score and is absent on functional interviews;
+ * `interviewScore` is the functional score and is a hard 0 on screening ones.
+ * Preferring fit and falling back keeps one column correct for both round types.
+ *
+ * @param {object} entry - One `responses[]` element.
+ * @param {boolean} isHrScreening - The response's `isHRScreeningPresent` flag.
+ * @returns {number|null} The score, or null when Zeko has none.
+ */
+export function pickZekoScore(entry, isHrScreening) {
+  const fit = entry?.fitPercentage;
+  const interview = entry?.interviewScore;
+  if (isHrScreening) return fit ?? null;
+  // Functional: interviewScore is authoritative, but honour fit if it is the
+  // only number present (mixed-type roles exist in the catalog).
+  if (interview !== null && interview !== undefined) return interview;
+  return fit ?? null;
+}
+
+/**
+ * Candidates whose interview never actually produced a result.
+ *
+ * `attemptStatus` is Zeko's own word for what happened. Only `completed` yields a
+ * score; the rest must stay unscored rather than be recorded as 0, which is what
+ * made a no-show look like a candidate who interviewed and failed.
+ */
+export const ZEKO_NO_RESULT_STATUSES = Object.freeze(['slotMissed', 'leftInMiddle', 'notAttempted', 'scheduled']);
+
+/**
+ * Builds the deep link to a candidate's report on Zeko.
+ *
+ * This is the URL Zeko's own Responses table links to — the live report page for
+ * one candidate on one role, opening on the Overview tab (score, fit, red flags,
+ * recommendation), with the Recruiter Screening / Resume / Transcript tabs one
+ * click away. Both ids come straight from the sync: `candidateId` off the
+ * response entry, and the role id we already store as `zeko_job_id`.
+ *
+ * Returns null when either id is missing, so callers can fall back rather than
+ * render a broken link.
+ *
+ * @param {string|null|undefined} candidateId - Zeko's candidate id.
+ * @param {string|number|null|undefined} jobId - Zeko role/job id.
+ * @returns {string|null}
+ */
+export function zekoReportUrl(candidateId, jobId) {
+  if (!candidateId || !jobId) return null;
+  const qs = new URLSearchParams({
+    candidateId: String(candidateId),
+    jobId: String(jobId),
+    tab: 'Overview',
+  });
+  return `${config.zeko.reportLinkBase}?${qs}`;
+}
+
+/**
  * Fetches results for interviews whose window has ended and writes scores back.
  *
- * Mirrors the n8n "Step 3 — Zeko Auto Fetch Interview Results" workflow:
+ * Replaces the n8n "Step 3 — Zeko Auto Fetch Interview Results" workflow:
  *   - find rpa_zeko_candidate_pipeline rows status='sent' AND interview_end_at < NOW()
- *   - GET /interview/<pipeline_id>/results (Bearer)
- *   - on non-empty data[]: insert rpa_zeko_interview_results, mark pipeline 'completed',
- *     update rpa_cv Zeko score columns by EmailID.
+ *   - POST /dashboard/api/v2/pipeline/interview-responses (cookie) per interview
+ *   - on a `completed` entry for our candidate: insert rpa_zeko_interview_results,
+ *     mark the pipeline 'completed', update rpa_cv Zeko score columns.
  *
+ * Rows the OLD endpoint already finalised are not revisited by default: they are
+ * `status='completed'`, so the normal sweep skips them and their bogus 0 would
+ * survive this fix forever. `includeCompleted` re-reads those too, which is what
+ * repairs them — see repairZeroZekoScores().
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.includeCompleted=false] - Also re-sync rows already
+ *   marked completed (used for the one-off repair of old bad 0s).
  * @returns {Promise<{ processed: number, skipped: number }>}
  */
-export async function fetchInterviewResults() {
+export async function fetchInterviewResults({ includeCompleted = false } = {}) {
+  const statusFilter = includeCompleted
+    ? Prisma.sql`p.status IN ('sent', 'completed')`
+    : Prisma.sql`p.status = 'sent'`;
+
   const pendingRows = await prisma.$queryRaw`
     SELECT
       p.id               AS pipeline_row_id,
@@ -493,7 +640,7 @@ export async function fetchInterviewResults() {
       WHERE shortlist_id = p.candidate_id AND cv_id IS NOT NULL
       ORDER BY created_at DESC LIMIT 1
     ) cp ON TRUE
-    WHERE p.status = 'sent'
+    WHERE ${statusFilter}
       AND p.interview_end_at < NOW()
     ORDER BY p.interview_end_at ASC;
   `;
@@ -503,20 +650,24 @@ export async function fetchInterviewResults() {
     return { processed: 0, skipped: 0 };
   }
 
-  const token = await ensureZekoToken();
+  const cookieHeader = await getDashboardCookieHeader();
   let processed = 0;
   let skipped = 0;
 
+  // One interview serves every candidate booked against it, and the endpoint is
+  // paged — so fetch each interview once and reuse it for all its rows.
+  const responsesByInterview = new Map();
+
   for (const row of pendingRows) {
     try {
-      const url = `${config.zeko.scheduleApiBase}/interview/${row.pipeline_id}/results`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      });
-      const body = await res.json().catch(() => ({}));
+      let fetched = responsesByInterview.get(row.pipeline_id);
+      if (!fetched) {
+        fetched = await fetchInterviewResponses(cookieHeader, row.zeko_job_id, row.pipeline_id);
+        responsesByInterview.set(row.pipeline_id, fetched);
+      }
+      const { responses: data, isHrScreening } = fetched;
 
-      const data = Array.isArray(body?.data) ? body.data : [];
-      if (!res.ok || data.length === 0) {
+      if (data.length === 0) {
         skipped += 1;
         // An interview whose window closed long ago should have results by now;
         // anything older than the staleness window is a real problem (a wrong
@@ -524,7 +675,7 @@ export async function fetchInterviewResults() {
         // logged loudly. This path stalled silently for weeks precisely because
         // every miss was reported at info level.
         const overdueBy = Date.now() - new Date(row.interview_end_at).getTime();
-        const detail = `pipeline_row ${row.pipeline_row_id} (${row.candidate_email}) — HTTP ${res.status}, interview id ${row.pipeline_id}`;
+        const detail = `pipeline_row ${row.pipeline_row_id} (${row.candidate_email}) — interview id ${row.pipeline_id}`;
         if (overdueBy > RESULT_STALE_AFTER_MS) {
           logger.warn(
             `Zeko results fetch: STILL no data ${Math.floor(overdueBy / 3_600_000)}h after the interview ended — ${detail}.`
@@ -545,31 +696,88 @@ export async function fetchInterviewResults() {
         continue;
       }
 
-      const scores = result.scores || {};
-      const overall = scores.overallScore ?? null;
-      const technical = scores.technicalScore ?? null;
-      const communication = scores.communicationScore ?? null;
-      const candidateName = result.candidate?.name || row.sc_candidate_name || null;
-      const candidateEmail = result.candidate?.email || row.candidate_email || null;
-      const reportLink = result.reportLink || null;
+      // A candidate who never sat the interview has no score. Recording 0 for
+      // them is what made a no-show read as "interviewed and scored zero", so
+      // they are left for the next run (they may still attend a rescheduled
+      // slot) rather than written as a result.
+      if (ZEKO_NO_RESULT_STATUSES.includes(result.attemptStatus)) {
+        skipped += 1;
+        logger.info(
+          `Zeko results fetch: ${row.candidate_email} has attemptStatus "${result.attemptStatus}" for interview ${row.pipeline_id} — no score to record (pipeline_row ${row.pipeline_row_id}).`
+        );
+        continue;
+      }
 
-      // 1) Insert interview result (skip duplicates).
-      await prisma.rpa_zeko_interview_results.create({
-        data: {
-          candidate_name: candidateName,
-          candidate_email: candidateEmail,
-          scores_overallscore: overall,
-          scores_technicalscore: technical,
-          scores_communicationscore: communication,
-          reportlink: reportLink,
-          zeko_job_id: String(row.zeko_job_id),
+      const overall = pickZekoScore(result, isHrScreening);
+      if (overall === null) {
+        skipped += 1;
+        logger.warn(
+          `Zeko results fetch: ${row.candidate_email} is "${result.attemptStatus}" on interview ${row.pipeline_id} but carries neither fitPercentage nor interviewScore — nothing recorded (pipeline_row ${row.pipeline_row_id}).`
+        );
+        continue;
+      }
+
+      // Screening interviews report a single fit score; Zeko exposes no
+      // technical/communication split for them, so those stay null rather than
+      // being filled with the 0s the old endpoint returned.
+      const technical = isHrScreening ? null : (result.technicalScore ?? null);
+      const communication = isHrScreening ? null : (result.communicationScore ?? null);
+      const candidateName = result.candidateName || row.sc_candidate_name || null;
+      const candidateEmail = result.candidateEmail || row.candidate_email || null;
+      // 1) Record the result. Update this candidate's existing row for the
+      //    interview when there is one, rather than only ever inserting: a
+      //    re-sync must be able to correct a score the old endpoint recorded
+      //    wrongly, and blind inserts would also stack duplicates. The table has
+      //    no unique constraint, so the match is done explicitly.
+      const existing = await prisma.rpa_zeko_interview_results.findFirst({
+        where: {
           pipeline_id: String(row.pipeline_id),
-          created_at: new Date(),
+          candidate_email: { equals: candidateEmail, mode: 'insensitive' },
         },
-      }).catch((e) => {
-        // Tolerate races / dup inserts (n8n used ON CONFLICT DO NOTHING).
-        logger.warn(`Zeko result insert skipped for pipeline_row ${row.pipeline_row_id}: ${e.message}`);
+        orderBy: { created_at: 'desc' },
       });
+
+      // The responses endpoint carries no reportLink (the old results endpoint
+      // did), but it does carry `candidateId`, which is what Zeko's own report
+      // URL is keyed on. Building it beats the old shared-report link: that was
+      // a static snapshot, whereas this opens the candidate's live report page —
+      // the same URL a recruiter lands on from Zeko's Responses table.
+      // Falls back to whatever we already stored, so switching endpoints never
+      // blanks a link that is still good.
+      const reportLink =
+        zekoReportUrl(result.candidateId, row.zeko_job_id) || existing?.reportlink || null;
+
+      const resultData = {
+        candidate_name: candidateName,
+        candidate_email: candidateEmail,
+        scores_overallscore: overall,
+        scores_technicalscore: technical,
+        scores_communicationscore: communication,
+        reportlink: reportLink,
+        zeko_job_id: String(row.zeko_job_id),
+        pipeline_id: String(row.pipeline_id),
+      };
+
+      try {
+        if (existing) {
+          if (existing.scores_overallscore !== overall) {
+            logger.info(
+              `Zeko results: correcting ${candidateEmail} on interview ${row.pipeline_id} — ${existing.scores_overallscore} → ${overall}.`
+            );
+          }
+          await prisma.rpa_zeko_interview_results.update({
+            where: { id: existing.id },
+            data: resultData,
+          });
+        } else {
+          await prisma.rpa_zeko_interview_results.create({
+            data: { ...resultData, created_at: new Date() },
+          });
+        }
+      } catch (e) {
+        // Tolerate races (n8n used ON CONFLICT DO NOTHING).
+        logger.warn(`Zeko result write skipped for pipeline_row ${row.pipeline_row_id}: ${e.message}`);
+      }
 
       // 2) Mark pipeline row completed (only if still 'sent').
       await prisma.rpa_zeko_candidate_pipeline.updateMany({
@@ -592,13 +800,13 @@ export async function fetchInterviewResults() {
               "ZekoCommunicationScore" = ${communication}
           WHERE id = ${row.cv_id};
         `;
-      } else if (result.candidate?.email) {
+      } else if (candidateEmail) {
         await prisma.$executeRaw`
           UPDATE rpa_cv
           SET "ZekoInterviewScore"     = ${overall},
               "ZekoCodingScore"        = ${technical},
               "ZekoCommunicationScore" = ${communication}
-          WHERE "EmailID" ILIKE ${result.candidate.email};
+          WHERE "EmailID" ILIKE ${candidateEmail};
         `;
       }
 
@@ -618,4 +826,30 @@ export async function fetchInterviewResults() {
   return { processed, skipped };
 }
 
-export default { ensureZekoToken, refreshZekoCookie, syncZekoJobs, fetchInterviewResults };
+/**
+ * One-off repair for scores the OLD endpoint recorded wrongly.
+ *
+ * Rounds synced before the switch to /pipeline/interview-responses were marked
+ * `status='completed'` with whatever GET /interview/<id>/results returned —
+ * a hard 0 for every screening interview. The normal sweep only looks at
+ * `status='sent'`, so those rows would keep their wrong score forever.
+ *
+ * This re-reads completed rows through the new endpoint and rewrites both
+ * rpa_zeko_interview_results and rpa_cv with the real number. Safe to run more
+ * than once: it is the same code path as the cron, just over a wider row set,
+ * and a candidate whose score is already correct is simply rewritten unchanged.
+ *
+ * @returns {Promise<{ processed: number, skipped: number }>}
+ */
+export async function repairZeroZekoScores() {
+  logger.info('Zeko score repair: re-syncing completed rounds through the responses endpoint.');
+  return fetchInterviewResults({ includeCompleted: true });
+}
+
+export default {
+  ensureZekoToken,
+  refreshZekoCookie,
+  syncZekoJobs,
+  fetchInterviewResults,
+  repairZeroZekoScores,
+};
