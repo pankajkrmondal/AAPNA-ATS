@@ -5,6 +5,47 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-24 — Zeko round showed another candidate's score and report link
+**Why:** Haris M's HR Screening (Zeko) round read "0 Interview" and its "View full report on
+Zeko" link opened **Samarth Tiwari's** report (a different person's name, email and scores).
+Both symptoms were one bug, and it is a cross-candidate data leak, not just a wrong number.
+
+`rpa_zeko_interview_results.pipeline_id` holds Zeko's **interview** id, which belongs to the
+*job* — every candidate booked against that job shares it, and the table therefore holds one row
+per candidate under the same `pipeline_id`. The drawer's lookup filtered on `pipeline_id` alone
+and took `orderBy: created_at desc`, so it returned whichever candidate had synced most recently.
+On staging this mis-attributed **5 of 11** non-cancelled Zeko pipeline rows.
+
+- `backend/src/services/pipeline.service.js` — the `rpa_zeko_interview_results` lookup in
+  `getPipelineDetail()` now also matches `candidate_email` against the candidate's own
+  address(es), case-insensitively. When we hold no address for them the round reports no result
+  rather than guessing. This feeds both `zekoScores` (the chips) and `zekoReportLink` (the
+  report link), so one filter fixes both symptoms.
+- `backend/src/utils/emailMatch.js` — **new.** `emailCandidates()` splits a stored address column
+  into comparable addresses; `rpa_shortlisted_candidates.candidate_email` and `rpa_cv."EmailID"`
+  sometimes hold several joined with commas ("a@x.com, b@y.com") while Zeko reports the single
+  address the interview was booked against, so plain equality misses the match.
+- `backend/src/services/zeko.service.js` — its private copy of that splitter (used by
+  `findResultForCandidate()`, which already scoped the *write* side correctly) now imports the
+  shared helper, so both sides of the sync identify a candidate the same way.
+- `backend/src/tests/unit/zekoResultAttribution.test.js` — **new**, 8 cases pinning the
+  regression: a stranger's row on the same interview is never returned, the candidate's own row
+  still is (including when Zeko reports a different letter case), multi-address columns match,
+  and a null address matches nothing rather than everything.
+- **No frontend change.** `PipelineDrawer.jsx` renders whatever the API attributes to the round;
+  it was fed the wrong row.
+- **No data cleanup needed.** The five legacy result rows (all synced 2026-06-13, before
+  `findResultForCandidate()` replaced the n8n-era `data[0]`) are each internally consistent —
+  right name, right email, right report link — they were only ever reachable by the wrong
+  candidate. With the email filter they resolve to their own candidate only.
+- **Verified:** replayed the old and new queries against staging across every non-cancelled Zeko
+  pipeline row — 5 leaks before, 0 after, and no row that legitimately had its own result lost
+  it. Haris M's round now reads "Awaiting Zeko to sync the score" (his window closed 24 Aug
+  6pm IST and nothing has synced), with no report link and no "Ready for decision" badge.
+  117/117 pure unit tests pass.
+
+---
+
 ## 2026-08-17 — Search Candidate: three filters, fixed ordering, lighter list query
 **Why:** the page's filter and Advanced filter "don't make any sense" — keep Name, Email and
 Phone, nothing more; order by id descending; no sorting in the UI, only search. Full detail in

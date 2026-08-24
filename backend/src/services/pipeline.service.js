@@ -28,6 +28,7 @@ import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
 import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../utils/rejectionCooldown.js';
+import { emailCandidates } from '../utils/emailMatch.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -427,11 +428,31 @@ export async function getPipelineDetail(pipelineId) {
     // interview id (zekoHrPipeline.pipeline_id) — NOT this journey's id.
     // fetchInterviewResults() (zeko.service.js) writes both under that same
     // external id when the hourly poll syncs a completed interview's score.
+    //
+    // That interview id is the JOB's interview, shared by EVERY candidate
+    // booked against that job, so rpa_zeko_interview_results holds one row per
+    // candidate under the same pipeline_id. Filtering on pipeline_id alone
+    // therefore returned whichever candidate happened to sync last — showing a
+    // stranger's score and, worse, a "View full report on Zeko" link opening
+    // another candidate's report (RT, 2026-08-24: Haris M's HR round rendered
+    // Samarth Tiwari's 0 and report link). The candidate's own address is what
+    // identifies their row, matched the same way fetchInterviewResults() picks
+    // their entry out of the interview's roster.
     if (zekoHrPipeline) {
-      const zekoResult = await prisma.rpa_zeko_interview_results.findFirst({
-        where: { pipeline_id: zekoHrPipeline.pipeline_id },
-        orderBy: { created_at: 'desc' },
-      });
+      const wantedEmails = emailCandidates(
+        zekoHrPipeline.candidate_email || pipeline.rpa_shortlisted_candidates?.candidate_email
+      );
+      // No address to match on means we cannot prove a row is this candidate's,
+      // so the round honestly reports no result rather than guessing.
+      const zekoResult = wantedEmails.length
+        ? await prisma.rpa_zeko_interview_results.findFirst({
+            where: {
+              pipeline_id: zekoHrPipeline.pipeline_id,
+              OR: wantedEmails.map((email) => ({ candidate_email: { equals: email, mode: 'insensitive' } })),
+            },
+            orderBy: { created_at: 'desc' },
+          })
+        : null;
       zekoReportLink = zekoResult?.reportlink || null;
 
       // Prefer this round's own synced result over the rpa_cv fallback above

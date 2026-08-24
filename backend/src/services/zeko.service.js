@@ -2,6 +2,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { fetchMessagesSince } from './outlookReader.service.js';
+import { emailCandidates } from '../utils/emailMatch.js';
 
 /**
  * Zeko background sync service.
@@ -25,24 +26,6 @@ const SLEEP = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A 'sent' interview older than this with no result is surfaced as a warning. */
 const RESULT_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Splits a stored candidate_email into comparable addresses.
- *
- * rpa_shortlisted_candidates.candidate_email sometimes holds several addresses
- * in one column ("a@x.com, b@y.com"), and Zeko reports whichever single address
- * the interview was booked against — so a plain equality test misses the match.
- *
- * @param {string|null} value - Raw column value, possibly comma/semicolon joined.
- * @returns {string[]} Lower-cased, trimmed addresses.
- */
-function emailCandidates(value) {
-  if (!value) return [];
-  return String(value)
-    .split(/[,;]/)
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-}
 
 /**
  * Picks the result belonging to one candidate out of an interview's results.
