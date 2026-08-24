@@ -5,6 +5,91 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-24 — Zeko HR scores always synced as 0 (wrong API endpoint)
+**Why:** Panmon attended his Zeko HR screening and scored **94**, but the ATS showed **0** —
+in the pipeline drawer, on the card, and in View Candidate. The cron was faithfully storing
+what it was told; it was asking the wrong endpoint.
+
+Zeko keeps two different scores in two different fields, and which one is populated depends on
+the interview type. The response flags it via `isHRScreeningPresent`:
+
+| Interview type | `isHRScreeningPresent` | Score field | old endpoint |
+|---|---|---|---|
+| `screening-interview` (our HR round) | `true` | **`fitPercentage`** (94) | ✗ returns `interviewScore: 0` |
+| `functional-interview` | `false` | **`interviewScore`** (83) | ✓ works |
+
+`GET /api/v1/interview/<id>/results` only ever exposes `interviewScore`, which Zeko leaves at a
+literal 0 for screening interviews — so **the HR round could never produce a real score**.
+Confirmed on staging: all 5 screening interviews returned 0 for all ~50 candidates, while all 6
+functional interviews returned real varied scores through the same call. That split is why some
+candidates had believable numbers and every HR round showed 0.
+
+- `backend/src/services/zeko.service.js` — `fetchInterviewResults()` now calls
+  **`POST /dashboard/api/v2/pipeline/interview-responses`** (cookie auth, the same
+  `getDashboardCookieHeader()` the job-catalog sync already uses; `dashboardApiBase` already
+  pointed at the right host, so no config change). Body is snake_case
+  `{ company_id, job_id, interview_id, page, limit }` — the endpoint 422s and names the fields
+  if they are wrong. Paged at 100/request with the same MAX_PAGES guard as the job sync, and
+  each interview is fetched **once** and reused across all its candidate rows.
+- `pickZekoScore()` — reads `fitPercentage` for screening rounds, `interviewScore` for
+  functional, each falling back to the other. Both land in `rpa_cv.ZekoInterviewScore` as
+  requested. This fixes HR rounds **without disturbing the functional rounds that already
+  worked** (Tushar's 83 is untouched).
+- `ZEKO_NO_RESULT_STATUSES` — `slotMissed` / `leftInMiddle` / `notAttempted` / `scheduled` are
+  now skipped instead of being written as 0. Recording 0 for a no-show is what made
+  "never attended" read as "interviewed and scored zero".
+- Screening rounds store `null` for coding/communication rather than the 0s the old endpoint
+  returned — Zeko exposes no such split for them.
+- `findResultForCandidate()` — accepts the new flat `candidateEmail` alongside the old nested
+  `candidate.email`. The `rpa_cv` email fallback used the nested shape too and would silently
+  never have fired.
+- **Result rows are now updated in place**, not blindly inserted: a re-sync must be able to
+  correct a wrong score, and blind inserts would stack duplicates (the table has no unique
+  constraint, so the match is explicit on `pipeline_id` + `candidate_email`).
+- `repairZeroZekoScores()` — **new**, one-off repair. Rounds synced before this fix are
+  `status='completed'`, which the normal sweep skips, so their bogus 0 would survive forever.
+  This re-reads completed rows through the new endpoint. Same code path as the cron, just a
+  wider row set; safe to re-run.
+- `backend/src/tests/unit/zekoScoreField.test.js` — **new**, 12 cases over the real captured
+  payloads: screening reads `fitPercentage` and never the placeholder 0, functional keeps
+  reading `interviewScore`, a *genuine* 0 is preserved in both directions, and no-show statuses
+  never yield a score.
+- **No scheduler change** — the hourly `ZEKO_RESULTS_CRON` already calls
+  `fetchInterviewResults()`; it was changed from the inside.
+- **Verified against live staging:** ran `repairZeroZekoScores()` — logged
+  `correcting claudepankajmondal@gmail.com … 0 → 94`, and `rpa_cv.ZekoInterviewScore` went
+  `0 → 94` with the result row corrected in place, not duplicated. `slotMissed` rows correctly
+  recorded nothing. 202/202 unit tests pass.
+- **Known, not a bug:** Haris M is skipped ("none match"). He has two bookings — his 75 lives on
+  the *Junior Python QA* interview, which we **cancelled**; his active row points at the
+  *Associate Accountant* interview where Zeko genuinely does not list him. He was re-booked but
+  never added on Zeko's side, so skipping is correct.
+
+### Follow-up — "View full report on Zeko" deep link
+The endpoint switch above dropped `reportLink`: the old results endpoint returned one, the
+responses endpoint does not, so the first repair run **overwrote Panmon's stored link with
+null** and the drawer's link disappeared. Fixed in the same pass.
+
+- `backend/src/services/zeko.service.js` — new `zekoReportUrl(candidateId, jobId)` builds
+  `…/app/new-report?candidateId=&jobId=&tab=Overview` from `candidateId` (on the response entry)
+  and the `zeko_job_id` we already store. This is the URL **Zeko's own Responses table opens**,
+  and it is better than what it replaces: the old `shared-report?linkId=` was a static snapshot,
+  whereas this is the candidate's live report page with the Recruiter Screening / Resume /
+  Transcript tabs one click away. Returns null if either id is missing, so a broken link is
+  never rendered, and falls back to any link already stored so a re-sync cannot blank a good one.
+- `backend/src/config/index.js` — `reportLinkBase` (`ZEKO_REPORT_LINK_BASE`, default
+  `https://app.zeko.ai/app/new-report`), matching how every other Zeko base URL is configured.
+- **No frontend change.** `PipelineDrawer.jsx` already renders `zekoReportLink` as
+  "View full report on Zeko" whenever the round has one; it had simply been fed null. The
+  current-stage gate on that link is correct as-is — the backend only loads the current round's
+  link, so passing it to a historical card would show the wrong round's report.
+- **Verified on staging:** re-ran the repair — Panmon's row now stores
+  `…new-report?candidateId=6a8bfcca5e57c481d6c906ee&jobId=69a15687abfe6f852d7d7d50&tab=Overview`,
+  byte-identical to the URL in the browser. 205/205 unit tests pass, including 3 new cases
+  covering the builder and its null guards.
+
+---
+
 ## 2026-08-24 — Notification bell restored to the header
 **Why:** the notification centre was fully built — DB table, service, 16 producer call sites,
 REST routes, socket push, and a finished `NotificationBell` component — but **nothing rendered
