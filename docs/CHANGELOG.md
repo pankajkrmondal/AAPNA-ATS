@@ -5,6 +5,39 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-24 — Notification bell restored to the header
+**Why:** the notification centre was fully built — DB table, service, 16 producer call sites,
+REST routes, socket push, and a finished `NotificationBell` component — but **nothing rendered
+it**, so the header had an empty gap where the bell belonged. The backend had been writing
+notifications the whole time: staging holds **1,021 rows in `rpa_notifications`, every one
+unread**, newest 2026-08-24 09:14. Nobody had ever read one, because there was no bell to open.
+
+History: the bell was live at `2b8077a` ("First Upload"). `57ea00e` ("bugs fix", 17 Jun 2026
+10:35) deliberately hid it — import and JSX both commented out, marked `Hidden as requested` —
+alongside the dark-mode toggle, for the same reason. `861710f` (the rebrand, 17 Jun 2026 19:40)
+then rewrote the header for the collapsible sidebar: it **restored the ThemeToggle but not the
+bell**, deleting the commented-out JSX and leaving only a dead commented import. Nine hours
+between hiding it and losing it.
+
+- `frontend/src/layouts/MainLayout.jsx` — import uncommented; `<NotificationBell />` added to
+  the header's right-hand `Space`, before `<ThemeToggle />`. **Two lines, one file** — this was
+  the only break in the chain.
+- **Nothing else changed.** Verified present and working end to end beforehand:
+  `rpa_notifications` (+ `idx_notifications_user_created`), `notification.service.js`
+  (`notify`/`list`/`unreadCount`/`markRead`/`markAllRead`), `notification.controller.js`,
+  `notification.routes.js` mounted at `/api/notifications`, `emitToUser()` + the `user:${id}`
+  socket room, `notificationService.js`, `getSocket()`, and the `--gold` / `--gold-subtle` /
+  `--border-light` tokens in both light and dark. The response shape
+  (`success(res, {items, unread})` → `res.data.data`) already matched the component's `select`.
+- **Known on first load, not a bug:** the four staffed accounts carry 197–282 unread each, so
+  the badge opens at AntD's `99+` over a backlog reaching early August. Left as-is by decision —
+  the popover's built-in "Mark all read" clears it in one click, and no data was written.
+- `git log -S 'NotificationBell'` does **not** find `57ea00e`: commenting a line out leaves the
+  occurrence count unchanged. Searching the `Hidden as requested` marker is what surfaced it.
+- **Verified:** `npx vite build` clean — 4103 modules, only the pre-existing >500 kB chunk warning.
+
+---
+
 ## 2026-08-24 — Zeko round showed another candidate's score and report link
 **Why:** Haris M's HR Screening (Zeko) round read "0 Interview" and its "View full report on
 Zeko" link opened **Samarth Tiwari's** report (a different person's name, email and scores).

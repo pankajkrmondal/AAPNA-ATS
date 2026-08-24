@@ -26,7 +26,6 @@ import {
   ApartmentOutlined,
   BarChartOutlined,
   MailOutlined,
-  BellOutlined,
   SearchOutlined,
   UserOutlined,
   KeyOutlined,
@@ -45,7 +44,7 @@ import ThemeToggle from '../components/common/ThemeToggle';
 import ChangePasswordModal from '../components/common/ChangePasswordModal';
 import AmbientBackdrop from '../components/common/AmbientBackdrop';
 import AapnaLogo from '../components/common/AapnaLogo';
-// import NotificationBell from '../components/common/NotificationBell';
+import NotificationBell from '../components/common/NotificationBell';
 
 const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
@@ -85,7 +84,7 @@ const MENU_ITEMS = [
   { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
-  { key: '/settings',   icon: <BellOutlined />,      label: 'Reminder Settings' },
+  { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
 ];
 
 /** Navigation menu shown to vendors — restricted to their own surfaces. */
@@ -152,7 +151,7 @@ const BREADCRUMB_MAP = {
   pipeline: 'Candidate Pipeline',
   analytics: 'Recruitment Analytics',
   email: 'Email Template Management',
-  settings: 'Reminder Settings',
+  settings: 'Settings',
 };
 
 export default function MainLayout() {
@@ -176,7 +175,7 @@ export default function MainLayout() {
   /** Self-service change-password modal (available to every role). */
   const [changePwOpen, setChangePwOpen] = useState(false);
 
-  /** User dropdown menu (Reminder Settings lives in the sidebar). */
+  /** User dropdown menu (Settings lives in the sidebar). */
   const userMenuItems = [
     { key: 'change-password', icon: <KeyOutlined />, label: 'Change Password' },
     { type: 'divider' },
@@ -540,8 +539,9 @@ export default function MainLayout() {
             {/* Company badge intentionally hidden for now (not required in the UI). */}
           </Space>
 
-          {/* Right: Theme toggle + Admin Portal + Avatar */}
+          {/* Right: Notifications + Theme toggle + Admin Portal + Avatar */}
           <Space size={12} align="center" style={{ flexShrink: 0 }}>
+            <NotificationBell />
             <ThemeToggle />
             {hasAdminAccess && (
               <Button
