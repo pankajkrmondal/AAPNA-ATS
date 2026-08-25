@@ -5,6 +5,71 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — Evalground import no longer misses candidates who have two email addresses
+**Why:** an Evalground result for `aiuserpankajmondal@gmail.com` imported as **Unmatched — "No
+candidate found for this email"**, while the pipeline drawer plainly showed that address on PANKAJ
+MONDAL, sitting on IQ / Tech Assessment, `in_progress`, invite already sent.
+
+**Root cause — a list compared as a scalar.** `rpa_cv."EmailID"` holds *every* address we hold for
+a candidate, comma-joined (`pankaj.mondal@example.com,aiuserpankajmondal@gmail.com`) — that is how
+`hrUpload.service.js`'s `appendUnique` merge stores a candidate re-uploaded under a second address.
+`matchRowToPipeline()` compared that whole column against the one address Evalground reports:
+
+```sql
+WHERE cv."EmailID" ILIKE ${email}   -- wildcard-free ILIKE is just a case-insensitive `=`
+```
+
+which Postgres evaluates as `'a@x.com,b@y.com' = 'b@y.com'` → false. The match could **never**
+succeed for any candidate with more than one address on file. Nothing was wrong with the
+spreadsheet, the AI row parser, or the candidate's stage — the preview reporting `Unmatched`
+rather than `Malformed` already showed the parse had succeeded and only the lookup had failed.
+
+**Why the message was actively misleading.** The fallback query that decides between "we don't know
+this person" and "we know them, but they have no open Assessment journey" carried the *same*
+defect, so it also found nothing and the UI escalated to the strongest possible claim.
+
+**Why it looked impossible from the outside.** The outbound invite path splits the address column on
+commas (`resolveRecipients`), so the invite was delivered and the candidate sat the test; only the
+inbound match path did not split. Reachable, but not findable.
+
+This class of bug had already been fixed once for Zeko — `emailCandidates()` exists precisely for
+it, and `hrUpload.service.js:583` already does the SQL-side equivalent. `assessmentImport.service.js`
+had adopted neither. Rather than add a third copy, the SQL form now lives beside the JS one.
+
+- `backend/src/utils/emailMatch.js` — **new** `emailMatchesSql(columnSql, value)`, the SQL sibling of
+  `emailCandidates()`: splits the stored column the same way (`[,;]`, whitespace-stripped,
+  lower-cased) and tests array overlap. Takes the column as a `Prisma.Sql` fragment so one predicate
+  serves every caller. Uses `'[[:space:]]'` rather than `'\s'` — a backslash escape would be
+  swallowed by the JS template literal before Postgres ever saw it. A `value` with no usable address
+  returns the literal `false`, never a predicate that matches everything: it is interpolated into an
+  `UPDATE` in `zeko.service.js`, where "match nothing" and "match every candidate" are very
+  different failures.
+- `backend/src/services/assessmentImport.service.js` — both queries in `matchRowToPipeline()` (the
+  journey match *and* the "does this candidate exist at all?" fallback) now use it. Fixing only the
+  first would have left the UI still reporting the wrong one of the two messages.
+- `backend/src/jobs/inboundEmailSync.js` — same defect in `lookupCandidate()`: a candidate replying
+  from the second address we hold for them was never linked to their shortlist.
+- `backend/src/services/zeko.service.js` — same defect in the by-email score write-back fallback.
+  The sharper of the two siblings: a **silent** failed write, in the same file that already imported
+  `emailCandidates` for its *read* path. Read side had been fixed, write side had not.
+- **Dropped `ILIKE` as an equality operator throughout.** `_` and `%` are wildcards to `ILIKE` and
+  `_` is legal in an email local-part, so `'first_last@x.com'` also matched `firstXlast@x.com` —
+  attributing a result to the *wrong* candidate. A latent silent-wrong-write, not the reported bug,
+  but it lived on the same lines.
+- **No performance regression.** `ILIKE` on a text column could not use a B-tree index either, so
+  this was already a sequential scan.
+- **Verified against the staging database (read-only):** the old predicate returns 0 rows
+  (reproducing the bug exactly); the new one returns cv 287 / PANKAJ MONDAL; the full fixed
+  `matchRowToPipeline()` query returns `pipeline_id 768, cv_id 287` — the exact journey the import
+  needs. 4 candidates currently carry multi-address `EmailID` values and were all unmatchable; 0 use
+  semicolons, so the `[,;]` split is a harmless superset. A stored `"a@x.com, b@y.com"` (space after
+  the comma) matches on either half, mixed case matches, a *partial* address matches nothing, and
+  a null needle matches nothing. 64/64 backend unit tests pass, including 18 new ones in
+  `src/tests/unit/emailMatchSql.test.js`.
+- Full analysis: [RCA-2026-08-25-evalground-import-multi-email-unmatched.md](./RCA-2026-08-25-evalground-import-multi-email-unmatched.md).
+
+---
+
 ## 2026-08-25 — Open pipeline drawer now updates live when the cron syncs a score
 **Why:** with the drawer open and untouched, the cron wrote PANKAJ MONDAL's score of 95 — and
 the drawer went on showing "Awaiting Results". Opening the same candidate in a new tab showed 95

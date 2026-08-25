@@ -3,7 +3,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { fetchMessagesSince } from './outlookReader.service.js';
-import { emailCandidates } from '../utils/emailMatch.js';
+import { emailCandidates, emailMatchesSql } from '../utils/emailMatch.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
 
@@ -808,10 +808,11 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
       // 3) Write scores back to rpa_cv.
       //
       // Prefer the journey's own cv_id: it identifies exactly one row, whereas
-      // matching on email can hit several (a candidate on two MRFs) and cannot
-      // match at all when the stored column holds multiple joined addresses.
+      // matching on email can hit several (a candidate on two MRFs).
       // The email match is kept only as a fallback for rows with no journey,
-      // and is bounded to the address Zeko actually reported.
+      // and is bounded to the address Zeko actually reported — matched by
+      // address-set overlap, since the stored column may hold several joined
+      // addresses and Zeko reports only one of them.
       if (row.cv_id) {
         await prisma.$executeRaw`
           UPDATE rpa_cv
@@ -826,7 +827,7 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
           SET "ZekoInterviewScore"     = ${overall},
               "ZekoCodingScore"        = ${technical},
               "ZekoCommunicationScore" = ${communication}
-          WHERE "EmailID" ILIKE ${candidateEmail};
+          WHERE ${emailMatchesSql(Prisma.sql`"EmailID"`, candidateEmail)};
         `;
       }
 

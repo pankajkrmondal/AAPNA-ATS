@@ -18,6 +18,7 @@
 import path from 'path';
 import XLSX from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import redis from '../config/redis.js';
@@ -29,6 +30,7 @@ import { setStageOutcome } from './pipeline.service.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
+import { emailMatchesSql } from '../utils/emailMatch.js';
 
 const PREVIEW_KEY_PREFIX = 'assessment-import:preview:';
 const PREVIEW_TTL_SECONDS = 3600;
@@ -170,6 +172,13 @@ async function mapWithConcurrency(items, worker, concurrency = AI_CONCURRENCY) {
  * open journey exists for the same email (concurrent MRFs), only the most
  * recently-entered one is auto-matched — the rest are reported, never
  * silently applied (Phase 3 M2 decision, resolving doc 04's Q24).
+ *
+ * The address is matched with emailMatchesSql() rather than compared to
+ * rpa_cv."EmailID" whole: that column holds every address we hold for the
+ * candidate, comma-joined ("a@x.com,b@y.com" — see hrUpload.service.js's
+ * appendUnique merge), while Evalground reports the single address the test
+ * was taken under. Comparing the two directly can never match a candidate
+ * with more than one address on file.
  */
 async function matchRowToPipeline(email) {
   if (!email) {
@@ -185,14 +194,18 @@ async function matchRowToPipeline(email) {
       FROM rpa_pipeline_stage_events
       WHERE pipeline_id = p.id AND stage_key = 'assessment' AND event_type IN ('entered', 'skip')
     ) ev ON true
-    WHERE cv."EmailID" ILIKE ${email}
+    WHERE ${emailMatchesSql(Prisma.sql`cv."EmailID"`, email)}
       AND p.current_stage_key = 'assessment'
       AND p.current_stage_status = 'in_progress'
     ORDER BY ev.entered_at DESC NULLS LAST, p.id DESC;
   `;
 
   if (!rows || rows.length === 0) {
-    const cvRows = await prisma.$queryRaw`SELECT id FROM rpa_cv WHERE "EmailID" ILIKE ${email} LIMIT 1;`;
+    // Same predicate as above — this decides between "we don't know this
+    // person" and "we do, but they have no open Assessment journey", so a
+    // stricter test here would report the wrong one of the two.
+    const cvRows = await prisma.$queryRaw`
+      SELECT id FROM rpa_cv WHERE ${emailMatchesSql(Prisma.sql`"EmailID"`, email)} LIMIT 1;`;
     const cvId = cvRows?.[0]?.id ?? null;
     return {
       cvId,
