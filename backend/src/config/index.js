@@ -264,8 +264,20 @@ const config = {
       enabled: env('ZEKO_SYNC_ENABLED', 'false') === 'true',
       /** Token refresh + job catalog sync cron (hourly by default). */
       jobsCron: env('ZEKO_JOBS_CRON', '0 * * * *'),
-      /** Interview-results fetch cron (hourly, offset by default). */
-      resultsCron: env('ZEKO_RESULTS_CRON', '30 * * * *'),
+      /**
+       * Interview-results fetch cron. Every 5 minutes, so a finished interview's
+       * score reaches the ATS in minutes rather than up to an hour — recruiters
+       * decide on a round as soon as Zeko has scored it.
+       *
+       * Safe at this cadence because the run is bounded by real work: the query
+       * only returns rows whose interview has ENDED and is still 'sent', it
+       * early-returns before touching the network when there are none, and each
+       * interview is fetched once per run no matter how many candidates share
+       * it. Overrunning is handled too — the scheduler skips a tick while the
+       * previous one is still going (see zekoScheduler.js), so a slow run can
+       * never stack up concurrent syncs.
+       */
+      resultsCron: env('ZEKO_RESULTS_CRON', '*/5 * * * *'),
     },
   },
 

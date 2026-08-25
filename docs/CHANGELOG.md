@@ -5,6 +5,43 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — Zeko results fetch moved to a 5-minute cadence
+**Why:** requested — an hourly sweep meant a finished interview's score could sit unseen for up
+to an hour before a recruiter could act on the round.
+
+`ZEKO_RESULTS_CRON` `30 * * * *` → `*/5 * * * *` (24 runs/day → 288). Config default and both
+env files updated. The job-catalog sync stays hourly — the role list barely changes.
+
+The interval alone is a one-line change, but the job was written for an hourly cadence and
+needed three guards before running 12× more often:
+
+- `backend/src/jobs/zekoScheduler.js` — **overlap guard.** node-cron fires on schedule whether
+  or not the previous run finished. A measured run takes **~15.5s** and grows with the number of
+  pending interviews, so a slow Zeko response or a backlog could exceed 5 minutes and stack
+  concurrent syncs — doubling API load and racing two writers onto the same rows. An overlapping
+  tick is now skipped with a warning; the next is only minutes away. Released in `finally`, so a
+  throwing run cannot wedge the job permanently.
+- `backend/src/services/zeko.service.js` — the "no expired interviews" line dropped from `info`
+  to `debug`. It is the common case at this cadence and would otherwise write ~288 identical
+  "nothing to do" lines a day, burying real events. That path already early-returns **before**
+  `getDashboardCookieHeader()`, so an idle tick is one indexed query and **zero** network calls.
+- `backend/src/services/zeko.service.js` — the "none match" warning is now rate-aware. A row can
+  be *permanently* unmatchable (candidate re-booked in the ATS but never added on Zeko's side —
+  Haris M), and would have emitted ~288 identical warnings a day forever. Past the 24h staleness
+  window it drops to `info` with an "unmatched for Nh — likely never added on Zeko" note: still
+  discoverable, no longer drowning the log.
+- **Cost measured, not assumed:** one real staging run = 3 pending rows, 3 API calls, 15.5s.
+  Each interview is fetched **once per run** regardless of how many candidates share it, and the
+  query only ever returns rows whose interview has already ENDED and is still `sent` — so the
+  work is bounded by real activity, not by the cadence.
+- **Verified:** `cron.validate('*/5 * * * *')` true, fires at :00/:05/…/:55; overlap guard
+  proven to skip a concurrent tick and to recover after a throw; 205/205 unit tests pass.
+- **Note:** production still has `ZEKO_SYNC_ENABLED=false`, so neither cron runs there yet.
+- **Bonus confirmation:** during this work the new sync picked up PANKAJ MONDAL at **95**
+  automatically on a fresh interview — the endpoint fix working unprompted, end to end.
+
+---
+
 ## 2026-08-24 — Zeko HR scores always synced as 0 (wrong API endpoint)
 **Why:** Panmon attended his Zeko HR screening and scored **94**, but the ATS showed **0** —
 in the pipeline drawer, on the card, and in View Candidate. The cron was faithfully storing

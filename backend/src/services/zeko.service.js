@@ -646,7 +646,10 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
   `;
 
   if (pendingRows.length === 0) {
-    logger.info('Zeko results fetch: no expired sent interviews to process.');
+    // debug, not info: this is the common case on a 5-minute cadence and would
+    // otherwise write ~288 "nothing to do" lines a day, burying the real events.
+    // Nothing has happened worth recording — no network call is even made.
+    logger.debug('Zeko results fetch: no expired sent interviews to process.');
     return { processed: 0, skipped: 0 };
   }
 
@@ -690,9 +693,21 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
       const result = findResultForCandidate(data, row.candidate_email);
       if (!result) {
         skipped += 1;
-        logger.warn(
-          `Zeko results fetch: ${data.length} result(s) returned for interview ${row.pipeline_id} but none match ${row.candidate_email} (pipeline_row ${row.pipeline_row_id}) — skipping rather than recording another candidate's scores.`
-        );
+        // A row can be permanently unmatchable — the candidate was re-booked in
+        // the ATS but never added on Zeko's side, so no run will ever match them
+        // (RT, 2026-08-24: Haris M). On a 5-minute cadence, warning every time
+        // would emit hundreds of identical lines a day, so the loud warning is
+        // reserved for the first day. After that it stays visible at info level:
+        // still discoverable, no longer drowning the real events.
+        const overdueBy = Date.now() - new Date(row.interview_end_at).getTime();
+        const message =
+          `Zeko results fetch: ${data.length} result(s) returned for interview ${row.pipeline_id} but none match ` +
+          `${row.candidate_email} (pipeline_row ${row.pipeline_row_id}) — skipping rather than recording another candidate's scores.`;
+        if (overdueBy > RESULT_STALE_AFTER_MS) {
+          logger.info(`${message} Unmatched for ${Math.floor(overdueBy / 3_600_000)}h — likely never added to this interview on Zeko.`);
+        } else {
+          logger.warn(message);
+        }
         continue;
       }
 
