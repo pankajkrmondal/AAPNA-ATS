@@ -13,10 +13,12 @@
  * manual/scratch runs. Disabled by default; enabled via INBOUND_SYNC_ENABLED.
  */
 import cron from 'node-cron';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { fetchMessagesSince, isAdminSender } from '../services/outlookReader.service.js';
+import { emailMatchesSql } from '../utils/emailMatch.js';
 
 const WATERMARK_KEY = 'inbound_sync_last_sync';
 
@@ -39,6 +41,11 @@ async function setWatermark(iso) {
 
 /**
  * Match an inbound sender to a candidate/shortlist (mirrors WF2 "Lookup Candidate").
+ *
+ * The sender is one address; rpa_cv."EmailID" may hold several joined together,
+ * so the match is by address-set overlap — a reply from the second address we
+ * hold for a candidate still finds them.
+ *
  * @param {string} fromEmail
  * @returns {Promise<{ candidate_id: bigint|null, shortlist_id: number|null }>}
  */
@@ -47,7 +54,7 @@ async function lookupCandidate(fromEmail) {
     SELECT sc.id AS shortlist_id, cv.id AS candidate_id, sc.position_applied
     FROM rpa_cv cv
     LEFT JOIN rpa_shortlisted_candidates sc ON sc.cv_id = cv.id
-    WHERE cv."EmailID" ILIKE ${fromEmail}
+    WHERE ${emailMatchesSql(Prisma.sql`cv."EmailID"`, fromEmail)}
     ORDER BY sc.created_at DESC NULLS LAST
     LIMIT 1
   `;
