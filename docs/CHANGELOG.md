@@ -5,6 +5,54 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — Open pipeline drawer now updates live when the cron syncs a score
+**Why:** with the drawer open and untouched, the cron wrote PANKAJ MONDAL's score of 95 — and
+the drawer went on showing "Awaiting Results". Opening the same candidate in a new tab showed 95
+immediately. The UI only caught up on a manual reload.
+
+**Root cause — nothing was ever telling the browser.** react-query refetches on exactly three
+triggers: query mount, a mutation's `invalidateQueries`, or window focus. `refetchOnWindowFocus`
+is **disabled globally** (`main.jsx`), the `pipeline-detail` query has no `refetchInterval`, and
+a cron writing to the database fires none of them. So an open drawer kept rendering the snapshot
+it fetched when it was opened — indefinitely. Not a caching bug; there was simply no path from a
+server-side background write to an already-mounted component.
+
+The board behind it *did* self-heal (`pipeline-board` polls every 60s and refetches on focus),
+which is exactly why a fresh tab looked right — and why only the drawer was stuck.
+
+Fixed by pushing, not polling: the socket infrastructure was already in place and simply had
+nothing wired to the Zeko sync.
+
+- `backend/src/services/zeko.service.js` — after a score is committed,
+  `emitToRole(role, 'pipeline:updated', …)` for each of `NOTIFY_ROLES`. `emitToRole` targets one
+  room, so the roles are emitted to in turn (the same fan-out `notification.service.js` uses).
+  Emitted to roles, not one user: a journey has no single owner, so whoever has it open should
+  see it. Best-effort inside try/catch — the row is already committed, so a failed push only
+  degrades to the previous behaviour.
+- `backend/src/services/zeko.service.js` — the pending-rows query's lateral join now also selects
+  `id AS journey_id`. It already joined `rpa_candidate_pipeline` for `cv_id`; the drawer is keyed
+  on the journey id, so the payload can name the exact candidate.
+- `frontend/src/components/pipeline/PipelineDrawer.jsx` — subscribes to `pipeline:updated` while
+  open and **invalidates** `['pipeline-detail', pipelineId]` rather than trusting the payload,
+  keeping the detail endpoint the single source of truth so the drawer can never drift from what
+  a reload would show. Events for other candidates share the role room and are filtered by
+  `pipelineId`, so one candidate's sync does not make every open drawer refetch. A payload
+  without a `pipelineId` is treated as "resync" rather than dropped.
+- **No polling added.** A `refetchInterval` on the drawer would have been the lazy fix — it would
+  hammer the detail endpoint for every open drawer forever to catch an event that happens once.
+- **No toast.** This deliberately does not call `onChanged()`, which shows "Pipeline updated." —
+  correct for a user's own action, wrong for a background sync the recruiter did not trigger.
+- **Verified:** with a real Socket.io server and a stubbed `io.to`, the emit block reaches all
+  four staffing rooms — `role:recruiter`, `role:hr`, `role:admin`, `role:superadmin` — carrying
+  `{pipelineId: 768, stageKey: 'zeko_hr', reason: 'zeko.score_synced', score: 95}`; 768 is
+  PANKAJ MONDAL's journey, the exact drawer from the report. Confirmed `journey_id` resolves for
+  every pending row. `vite build` clean (4103 modules); 205/205 unit tests pass. No circular
+  import: the socket layer imports neither service.
+- **Still needs a browser check** — the emit and the listener are each verified in isolation, but
+  the end-to-end "leave the drawer open and watch it flip" has not been observed in a live app.
+
+---
+
 ## 2026-08-25 — Zeko results fetch moved to a 5-minute cadence
 **Why:** requested — an hourly sweep meant a finished interview's score could sit unseen for up
 to an hour before a recruiter could act on the round.

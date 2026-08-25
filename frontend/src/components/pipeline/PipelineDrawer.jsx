@@ -42,6 +42,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
+import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
 import assessmentImportService from '../../services/assessmentImportService';
 import settingsService from '../../services/settingsService';
@@ -681,6 +682,40 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     },
     enabled: open,
   });
+
+  /**
+   * Live refresh for changes this browser did not make.
+   *
+   * react-query only refetches on mount, on a mutation's invalidate, or on
+   * window focus — and focus refetching is disabled globally (main.jsx). A cron
+   * writing to the database triggers none of those, so a drawer left open kept
+   * rendering whatever it fetched when it was opened: the recruiter watched
+   * "Awaiting Results" while the Zeko score was already stored, and only a
+   * manual reload revealed it (RT, 2026-08-25).
+   *
+   * The backend emits `pipeline:updated` after a background write. Invalidating
+   * rather than trusting the payload keeps one source of truth — the detail
+   * endpoint — so the drawer can never drift from what a reload would show.
+   * The socket is only a nudge: the row is committed first, so a missed push
+   * costs nothing beyond the previous behaviour.
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+    const socket = getSocket();
+    if (!socket) return undefined;
+
+    const onPipelineUpdated = (payload) => {
+      // Events for other candidates travel the same role room — ignore them, or
+      // every open drawer would refetch on every candidate's sync. A payload
+      // with no pipelineId is treated as "something changed, resync" rather
+      // than silently dropped.
+      if (payload?.pipelineId && Number(payload.pipelineId) !== Number(pipelineId)) return;
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+    };
+
+    socket.on('pipeline:updated', onPipelineUpdated);
+    return () => socket.off('pipeline:updated', onPipelineUpdated);
+  }, [open, pipelineId, queryClient]);
 
   const { data: stagesData } = useQuery({
     queryKey: ['pipeline-stages'],
