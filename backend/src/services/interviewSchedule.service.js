@@ -280,9 +280,29 @@ export async function getSchedulesByStage(pipelineId) {
     where: { pipeline_id: BigInt(pipelineId), status: { not: 'cancelled' } },
     orderBy: { created_at: 'asc' },
   });
+  // Scorecards that exist but were never actually emailed (sent_at IS NULL).
+  //
+  // scorecard_dispatched_at only records that dispatch was ATTEMPTED, so on its
+  // own it cannot tell a delivered link from one whose send failed — the drawer
+  // was reading it as proof and showing "scorecard sent" either way, with no
+  // retry offered. This count is what lets it say otherwise.
+  //
+  // The status literal avoids importing interviewScorecard.service.js, which
+  // imports helpers from this module (the same cycle markInterviewOccurrence
+  // dodges with a lazy import).
+  const undelivered = rows.length === 0 ? [] : await prisma.rpa_interview_scorecard.groupBy({
+    by: ['schedule_id'],
+    where: { schedule_id: { in: rows.map((r) => r.id) }, status: 'pending', sent_at: null },
+    _count: { _all: true },
+  });
+  const undeliveredBySchedule = new Map(undelivered.map((u) => [String(u.schedule_id), u._count._all]));
+
   // Ascending order means a later booking for the same round overwrites the
   // earlier one, leaving the newest per stage — matching getLiveSchedule().
-  return Object.fromEntries(rows.map((r) => [r.stage_key, serialize(r)]));
+  return Object.fromEntries(rows.map((r) => [r.stage_key, {
+    ...serialize(r),
+    scorecard_undelivered: undeliveredBySchedule.get(String(r.id)) || 0,
+  }]));
 }
 
 /**
