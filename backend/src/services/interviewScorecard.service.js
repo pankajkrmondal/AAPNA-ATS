@@ -101,6 +101,90 @@ function initialSkillRows() {
 }
 
 /**
+ * Compiles and emails the link for each card, recording the outcome ON THE ROW:
+ * `sent_at` is stamped only once Graph has accepted the message.
+ *
+ * Delivery used to be fire-and-forget — a failed send was logged and swallowed,
+ * the row still claimed sent_at, and the caller returned success either way. So
+ * the UI told the recruiter "scorecard link sent to the interviewer(s)" for mail
+ * that never left, and nothing anywhere recorded otherwise. Reporting what
+ * actually happened costs one extra write and makes the failure recoverable:
+ * a card with sent_at IS NULL is one the re-send path can pick up.
+ *
+ * @param {Array<object>} cards - rpa_interview_scorecard rows
+ * @param {object} ctx - { role, stageLabel, candidateName, position }
+ * @returns {Promise<{delivered: number, failed: number, failures: Array<{email: string, error: string}>}>}
+ */
+async function deliverScorecards(cards, { role, stageLabel, candidateName, position }) {
+  const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
+  const tpl = await getTemplate(tplName);
+
+  const failures = [];
+  let delivered = 0;
+
+  for (const card of cards) {
+    // A link that has already lapsed is not worth re-sending, so a retry gets a
+    // fresh window. On the first send this is always a no-op.
+    let expiresAt = card.token_expires_at;
+    if (!expiresAt || new Date(expiresAt).getTime() <= Date.now()) {
+      expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+      await prisma.rpa_interview_scorecard.update({
+        where: { id: card.id },
+        data: { token_expires_at: expiresAt, modified_at: new Date() },
+      });
+    }
+
+    const link = `${config.cors.frontendUrl}/scorecard/${card.token}`;
+    const tokens = {
+      candidate_name: candidateName,
+      position,
+      stage_label: stageLabel,
+      interviewer_name: card.recipient_name || 'there',
+      scorecard_link: link,
+    };
+    const compiled = tpl
+      ? compileTemplate(tpl.subject, tpl.body_html, tokens)
+      : {
+          subject: `Please score your ${stageLabel} — ${candidateName}`,
+          html: `<p>Hi ${tokens.interviewer_name},</p>
+                 <p>Please submit your feedback for the <strong>${stageLabel}</strong> interview with
+                 <strong>${tokens.candidate_name}</strong> (${position}). No login is needed.</p>
+                 <p><a href="${link}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
+                 <p>This link works once and expires on ${new Date(expiresAt).toDateString()}.</p>
+                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+        };
+
+    const { to } = resolveRecipients('scorecardInvite', card.recipient_email);
+    if (!to) {
+      // No route for the flow key — the same dead end as a missing address, and
+      // just as invisible if we let it pass as a success.
+      logger.error(`Scorecard dispatch: no recipient resolved for ${card.recipient_email} — nothing sent.`);
+      failures.push({ email: card.recipient_email, error: 'no recipient resolved for the scorecardInvite flow' });
+      continue;
+    }
+
+    try {
+      // Header headline = the email's own subject (RT decision, 2026-07-25).
+      const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
+      // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
+      // booking was made against, so it is reached in every environment.
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
+      await prisma.rpa_interview_scorecard.update({
+        where: { id: card.id },
+        data: { sent_at: new Date(), modified_at: new Date() },
+      });
+      delivered += 1;
+    } catch (err) {
+      logger.error(`Scorecard dispatch: email failed for card ${card.id} → ${card.recipient_email}: ${err.message}`);
+      failures.push({ email: card.recipient_email, error: err.message });
+      // sent_at stays null so the manual "Send scorecard link" button can retry.
+    }
+  }
+
+  return { delivered, failed: failures.length, failures };
+}
+
+/**
  * Creates + emails the tokenized scorecard link to every interviewer on a
  * confirmed-held interview. Idempotent: guarded by
  * rpa_interview_schedule.scorecard_dispatched_at, so the manual button and the
@@ -110,7 +194,11 @@ function initialSkillRows() {
  * @param {object} params
  * @param {string} [params.trigger] - 'manual' | 'graph' | 'sweep' (audit only)
  * @param {number} [params.actedBy]
- * @returns {Promise<{dispatched: boolean, alreadySent?: boolean, count?: number}>}
+ * @returns {Promise<{dispatched: boolean, alreadySent?: boolean, resent?: boolean,
+ *   count?: number, delivered?: number, failed?: number,
+ *   failures?: Array<{email: string, error: string}>, reason?: string}>}
+ *   `dispatched` now means mail actually went out — check `delivered`/`failures`
+ *   before telling anyone the link was sent.
  */
 export async function dispatchScorecards(scheduleId, { trigger = 'manual', actedBy = null } = {}) {
   const schedule = await prisma.rpa_interview_schedule.findUnique({
@@ -123,11 +211,6 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   if (schedule.occurrence_status !== 'held') {
     return { dispatched: false, alreadySent: false, reason: 'not_held' };
   }
-  // Single-fire guard.
-  if (schedule.scorecard_dispatched_at) {
-    return { dispatched: false, alreadySent: true };
-  }
-
   const pipeline = schedule.rpa_candidate_pipeline;
   const candidate = pipeline?.rpa_shortlisted_candidates;
   const mrf = candidate?.mrf;
@@ -137,16 +220,39 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   const stageLabel = await stageLabelFor(stageKey);
   const position = mrf?.position_hiring_for || candidate?.position_applied || 'the role';
 
+  const candidateName = candidate?.candidate_name || 'the candidate';
+  const deliveryCtx = { role, stageLabel, candidateName, position };
+
   const { emails } = parseInterviewerEmails(schedule.interviewer_email || '');
   if (emails.length === 0) {
+    // Deliberately does NOT stamp the guard. It used to, on the reasoning that a
+    // booking with no recipient can never send — but that turned a fixable data
+    // problem into a permanent one: adding the interviewer's address afterwards
+    // left "Send scorecard link" replying "already sent" forever, and the round
+    // could never produce a score. Leaving it unstamped keeps that door open.
     logger.warn(`Scorecard dispatch: schedule ${scheduleId} has no interviewer email — nothing to send.`);
-    // Still stamp the guard so the sweep stops retrying a booking that can
-    // never send (no recipient).
-    await prisma.rpa_interview_schedule.update({
-      where: { id: schedule.id },
-      data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
+    return { dispatched: false, count: 0, delivered: 0, failed: 0, reason: 'no_recipient' };
+  }
+
+  // Already dispatched → the only work left is retrying anything that was
+  // created but never actually delivered (sent_at IS NULL). This is what makes
+  // the manual "Send scorecard link" button a real retry rather than a no-op.
+  if (schedule.scorecard_dispatched_at) {
+    const undelivered = await prisma.rpa_interview_scorecard.findMany({
+      where: { schedule_id: schedule.id, status: SCORECARD_STATUS.PENDING, sent_at: null },
     });
-    return { dispatched: false, count: 0, reason: 'no_recipient' };
+    if (undelivered.length === 0) {
+      return { dispatched: false, alreadySent: true, delivered: 0, failed: 0 };
+    }
+    const retry = await deliverScorecards(undelivered, deliveryCtx);
+    logger.info(`Scorecard re-send: schedule ${scheduleId} → ${retry.delivered}/${undelivered.length} delivered (${trigger}).`);
+    return {
+      dispatched: retry.delivered > 0,
+      alreadySent: true,
+      resent: true,
+      count: undelivered.length,
+      ...retry,
+    };
   }
 
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -165,7 +271,9 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
         recipient_name: emails.length === 1 ? schedule.interviewer_name : null,
         recipient_role: role,
         token_expires_at: expiresAt,
-        sent_at: new Date(),
+        // Stamped by deliverScorecards() only once Graph accepts the message —
+        // sent_at means "delivered", not "created".
+        sent_at: null,
         rpa_interview_scorecard_skill: { create: skillRows },
       },
     });
@@ -179,67 +287,42 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
   });
 
-  // Compile + send each link.
-  const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
-  const tpl = await getTemplate(tplName);
-  for (const card of created) {
-    const link = `${config.cors.frontendUrl}/scorecard/${card.token}`;
-    const tokens = {
-      candidate_name: candidate?.candidate_name || 'the candidate',
-      position,
-      stage_label: stageLabel,
-      interviewer_name: card.recipient_name || 'there',
-      scorecard_link: link,
-    };
-    const compiled = tpl
-      ? compileTemplate(tpl.subject, tpl.body_html, tokens)
-      : {
-          subject: `Please score your ${stageLabel} — ${candidate?.candidate_name || 'candidate'}`,
-          html: `<p>Hi ${tokens.interviewer_name},</p>
-                 <p>Please submit your feedback for the <strong>${stageLabel}</strong> interview with
-                 <strong>${tokens.candidate_name}</strong> (${position}). No login is needed.</p>
-                 <p><a href="${link}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
-                 <p>This link works once and expires on ${expiresAt.toDateString()}.</p>
-                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
-        };
+  const { delivered, failed, failures } = await deliverScorecards(created, deliveryCtx);
 
-    const { to } = resolveRecipients('scorecardInvite', card.recipient_email);
-    if (to) {
-      try {
-        // Header headline = the email's own subject (RT decision, 2026-07-25).
-        const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
-        // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
-        // booking was made against, so it is reached in every environment.
-        await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
-      } catch (err) {
-        logger.error(`Scorecard dispatch: email failed for schedule ${scheduleId} → ${card.recipient_email}: ${err.message}`);
-      }
-    }
-  }
-
-  // Audit trail on the journey.
+  // Audit trail on the journey — records what was actually delivered, so a
+  // failure is legible on the candidate's timeline instead of reading as a send.
   await prisma.rpa_pipeline_stage_events.create({
     data: {
       pipeline_id: schedule.pipeline_id,
       stage_key: stageKey,
       event_type: 'note',
-      notes: `Scorecard link sent to ${emails.join(', ')} (${trigger})`,
+      notes: failed === 0
+        ? `Scorecard link sent to ${emails.join(', ')} (${trigger})`
+        : `Scorecard link: ${delivered}/${created.length} delivered (${trigger}) — failed for ${failures.map((f) => f.email).join(', ')}`,
       acted_by: actedBy || null,
     },
   });
 
   // The card is now "awaiting feedback" — the single biggest stall point in the
   // whole flow (loophole L3), so it goes on the team's board immediately.
+  //
+  // When nothing got out the notification says so instead. The sweep can trigger
+  // this with no one watching a screen, so the bell is the only place a delivery
+  // failure would otherwise surface.
   await notify({
     type: NOTIFICATION_TYPES.INTERVIEW_AWAITING_FEEDBACK,
-    title: `Awaiting interviewer feedback — ${stageLabel}`,
-    description: `${candidate?.candidate_name || 'A candidate'} · link sent to ${emails.join(', ')}`,
+    title: delivered > 0
+      ? `Awaiting interviewer feedback — ${stageLabel}`
+      : `Scorecard link could NOT be emailed — ${stageLabel}`,
+    description: delivered > 0
+      ? `${candidateName} · link sent to ${emails.join(', ')}`
+      : `${candidateName} · sending failed for ${failures.map((f) => f.email).join(', ')} — use “Send scorecard link” to retry`,
     pipelineId: schedule.pipeline_id,
-    meta: { stage_key: stageKey, recipients: emails.length },
+    meta: { stage_key: stageKey, recipients: emails.length, delivered, failed },
   });
 
-  logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${created.length} recipient(s) (${trigger}).`);
-  return { dispatched: true, count: created.length };
+  logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${delivered}/${created.length} delivered (${trigger}).`);
+  return { dispatched: delivered > 0, count: created.length, delivered, failed, failures };
 }
 
 /**

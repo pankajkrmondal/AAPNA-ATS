@@ -1161,11 +1161,25 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const occurrenceMutation = useMutation({
     mutationFn: ({ scheduleId, outcome, party, reason }) =>
       pipelineService.recordInterviewOccurrence(scheduleId, { outcome, party, reason }),
-    onSuccess: (_res, vars) => {
+    onSuccess: (res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
       onChanged?.();
       if (vars.outcome === 'held') {
-        message.success('Interview marked as held — scorecard link sent to the interviewer(s).');
+        // The occurrence itself always succeeds; the scorecard EMAIL may not.
+        // Reporting them as one thing told recruiters a link had been sent when
+        // nothing had left the building, and the round then stalled invisibly.
+        const sc = res?.data?.data?.scorecard;
+        if (sc?.reason === 'no_recipient') {
+          message.warning('Interview marked as held, but this booking has no interviewer email — no scorecard link could be sent.');
+        } else if (sc?.delivered > 0 && sc?.failed > 0) {
+          message.warning(`Interview marked as held — scorecard link sent to ${sc.delivered}, but it failed for ${sc.failed}. Use “Retry scorecard link”.`);
+        } else if (sc?.delivered > 0) {
+          message.success('Interview marked as held — scorecard link sent to the interviewer(s).');
+        } else if (sc?.alreadySent) {
+          message.success('Interview marked as held — the scorecard link had already been sent.');
+        } else {
+          message.error('Interview marked as held, but the scorecard link could NOT be emailed. Use “Retry scorecard link” below.');
+        }
       } else {
         message.success('No-show recorded — reschedule or reject this round below.');
       }
@@ -1217,9 +1231,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     mutationFn: (scheduleId) => pipelineService.sendScorecard(scheduleId),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
-      const data = res?.data || res;
-      if (data?.alreadySent) message.info('Scorecard link was already sent for this interview.');
-      else message.success('Scorecard link sent.');
+      // The payload sits under the { status, message, data } envelope — reading
+      // res.data as the payload meant alreadySent was always undefined, so this
+      // reported a fresh send every time, including for no-ops.
+      const d = res?.data?.data || {};
+      if (d.reason === 'no_recipient') {
+        message.warning('This booking has no interviewer email — add one on the round, then try again.');
+      } else if (d.delivered > 0 && d.failed > 0) {
+        message.warning(`Scorecard link sent to ${d.delivered}, but it failed for ${d.failed}. Try again for the rest.`);
+      } else if (d.delivered > 0) {
+        message.success(d.resent ? 'Scorecard link re-sent.' : 'Scorecard link sent.');
+      } else if (d.alreadySent) {
+        message.info('Scorecard link was already sent for this interview.');
+      } else {
+        message.error('Scorecard link could not be emailed — check the interviewer address, then try again.');
+      }
     },
     onError: (err) => {
       message.error(err?.message || 'Failed to send the scorecard link.');
@@ -1665,24 +1691,33 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         (() => {
                           // Has an interviewer already SUBMITTED a scorecard for this round?
                           const submitted = (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key);
+                          // Cards that exist but whose email never got out. Without
+                          // this the tag claimed "scorecard sent" for mail that
+                          // failed, and hid the one button that could fix it.
+                          const undelivered = interviewSchedule.scorecard_undelivered || 0;
                           const label = submitted
                             ? 'Held · scorecard received'
-                            : interviewSchedule.scorecard_dispatched_at ? 'Held · scorecard sent' : 'Held';
+                            : undelivered > 0
+                              ? 'Held · scorecard NOT sent'
+                              : interviewSchedule.scorecard_dispatched_at ? 'Held · scorecard sent' : 'Held';
                           const tip = submitted
                             ? 'The interview took place and the interviewer has submitted their scorecard. Open “Scorecard report” to see the score.'
-                            : interviewSchedule.scorecard_dispatched_at
-                              ? 'The interview took place (confirmed as held). The scorecard link has been emailed to the interviewer — the candidate’s score will appear once they submit it.'
-                              : 'The interview took place (confirmed as held). Send the scorecard link so the interviewer can submit their feedback.';
+                            : undelivered > 0
+                              ? 'The interview took place (confirmed as held), but the scorecard email could not be delivered to the interviewer. Retry below — until it reaches them, no score can be collected for this round.'
+                              : interviewSchedule.scorecard_dispatched_at
+                                ? 'The interview took place (confirmed as held). The scorecard link has been emailed to the interviewer — the candidate’s score will appear once they submit it.'
+                                : 'The interview took place (confirmed as held). Send the scorecard link so the interviewer can submit their feedback.';
+                          const needsSend = !submitted && (undelivered > 0 || !interviewSchedule.scorecard_dispatched_at);
                           return (
                             <>
                               <Tooltip title={tip}>
-                                <Tag color="green" style={{ cursor: 'help' }}>{label}</Tag>
+                                <Tag color={undelivered > 0 ? 'red' : 'green'} style={{ cursor: 'help' }}>{label}</Tag>
                               </Tooltip>
-                              {!interviewSchedule.scorecard_dispatched_at && !submitted && (
+                              {needsSend && (
                                 <Button size="small" type="primary"
                                   loading={sendScorecardMutation.isPending}
                                   onClick={() => sendScorecardMutation.mutate(interviewSchedule.id)}>
-                                  Send scorecard link
+                                  {undelivered > 0 ? 'Retry scorecard link' : 'Send scorecard link'}
                                 </Button>
                               )}
                             </>
