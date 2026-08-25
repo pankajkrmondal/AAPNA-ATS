@@ -5,6 +5,65 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — A Zeko round no longer shows the other Zeko round's score
+**Why:** PANKAJ MONDAL passed the Evalground round and moved to **Functional Screening (Zeko)**. That
+round immediately showed **Awaiting Results ✅ Done · 95 INTERVIEW** — the **HR** round's score — for a
+functional interview that had never been scheduled. The drawer contradicted itself on screen: the line
+directly above read "Schedule Interview · Not started yet · Not yet assigned to a Zeko job".
+
+**Root cause — a per-CANDIDATE column read as if it were per-ROUND.** `rpa_cv."ZekoInterviewScore"` /
+`"ZekoCodingScore"` / `"ZekoCommunicationScore"` are one set of columns per candidate, and **both** Zeko
+rounds write to them, so a value there carries no record of which round produced it. Two paths read it
+without round scoping:
+
+- `getPipelineDetail()` seeded `zekoScores` from `rpa_cv`, and the round-scoped correction that was
+  meant to replace it is wrapped in `if (zekoHrPipeline)`. For `zeko_fn` the booking lookup correctly
+  filters `stage: 'functional'`, finds nothing, and returns null — so the override never ran and the HR
+  value survived. The old comment named the hazard but its last clause was the bug: *"overrides this …
+  whenever one exists."*
+- `listPipeline()` derived the board's `ready_for_decision` chip from `rpa_cv` **directly**, with no
+  round scoping at all — so any candidate ever scored by Zeko read as "Ready for decision" on whichever
+  Zeko round they were standing on.
+
+**Worse than a wrong number: the round could not be progressed.** `PipelineDrawer.jsx` hides the
+Schedule Interview button once a score is present (`showScheduleButton = isCurrent && !zekoScores &&
+!outcomeEvent`) — a sound rule fed a score from the wrong round, so the UI concluded a never-booked
+round was already finished. Approve/Reject was live too, so the round could have been approved on
+another round's result — the same failure shape the Evalground auto-advance stage gate already guards
+against.
+
+Fixed by removing the source that cannot be made correct, rather than adding rules around it: `rpa_cv`
+has no round provenance, so any attempt to attribute it to a round is guessing.
+
+- `backend/src/services/pipeline.service.js` (`getPipelineDetail`) — the `rpa_cv` read now selects only
+  `cvFileUrl`. The round-scoped `rpa_zeko_interview_results` lookup is the **only** source of
+  `zekoScores`; a round with no result row of its own reports no score.
+- `backend/src/services/pipeline.service.js` (`listPipeline`) — `ready_for_decision` is now keyed
+  `${shortlist_id}:${round}` and resolved the same two-step way the drawer does: the round's own booking
+  names its external interview id, and the candidate's own address picks their row out of that
+  interview's roster (one interview is shared by every candidate booked against the job, so the id alone
+  would match a stranger's score). It now sits beside the `invited` flag that already worked this way —
+  the two share **one** query instead of two, so they can never disagree about which round a card is on.
+- **No frontend change needed.** The drawer already had honest copy for this exact state — *"Awaiting
+  Zeko to sync the score, once invited."* It was simply never reached.
+- **Option B was considered and rejected:** gating the fallback on "this round has a booking" is not
+  enough — the HR score reappears the moment a functional interview is booked but not yet synced. That
+  state exists on staging today (one `functional` booking in `sent`), and it is pinned by test.
+- **Legacy cost measured, not assumed:** every non-cancelled Zeko booking carrying an `rpa_cv` score also
+  has a matching `rpa_zeko_interview_results` row (**0** exceptions), so nothing was relying on the
+  fallback to display a legitimate score.
+- **Verified against the staging database by calling the real service functions:** journey 768
+  (`zeko_fn`) now returns `zekoScores: null` and `ready_for_decision: false` — was 95 / "Ready for
+  decision"; journey 703 (`zeko_hr`, with its own booking and result) still returns its own 94 /
+  `true`. All 13 Zeko board cards audited: 768 is the only value that changed. `cvFileUrl` still
+  resolves. 72/72 backend unit tests pass, including 8 new ones in
+  `src/tests/unit/zekoRoundScoreScoping.test.js`; `vite build` clean.
+- **No data repair.** Every row was stored correctly and correctly attributed — this was a read/display
+  defect only.
+- Full analysis: [RCA-2026-08-25-zeko-functional-round-shows-hr-score.md](./RCA-2026-08-25-zeko-functional-round-shows-hr-score.md).
+
+---
+
 ## 2026-08-25 — Evalground import no longer misses candidates who have two email addresses
 **Why:** an Evalground result for `aiuserpankajmondal@gmail.com` imported as **Unmatched — "No
 candidate found for this email"**, while the pipeline drawer plainly showed that address on PANKAJ
