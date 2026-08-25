@@ -249,6 +249,12 @@ const config = {
     /** Base for the Zeko account login / OTP API (cookie auth for the dashboard). */
     loginApiBase: env('ZEKO_LOGIN_API_BASE', 'https://api.zeko.ai/mygurukul'),
     /**
+     * Base for the per-candidate interview REPORT API (cookie auth) — the API
+     * behind Zeko's report page, and the only source that carries a real score
+     * for every round type. Takes ?candidateId=&jobId=.
+     */
+    reportApiBase: env('ZEKO_REPORT_API_BASE', 'https://api.zeko.ai/mygurukul/ait'),
+    /**
      * Zeko account email used for the OTP login that mints the dashboard cookie.
      * Defaults to the env's sending mailbox (the OTP email lands there), since that
      * is the mailbox the Graph reader already polls.

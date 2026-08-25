@@ -179,6 +179,59 @@ had adopted neither. Rather than add a third copy, the SQL form now lives beside
 
 ---
 
+## 2026-08-25 — Zeko scores now read from the per-candidate report API
+**Why:** the Functional (Zeko) round still showed `0` after the HR fix. `interview-responses`
+returns `interviewScore: 0` for functional interviews too — the same defect as HR, in a different
+field. Four *completed* candidates on job `69df92eff96fd5bee20f8fdc` reported `0` there while
+their reports held **1, 61, 56 and 65**.
+
+`interview-responses` is a **list/summary** endpoint whose score fields are unreliable per round
+type. `GET /mygurukul/ait/interview-report?candidateId=&jobId=` — the API behind Zeko's own report
+page — is the only source correct for every round type. Full analysis in
+[PLAN-2026-08-25-zeko-report-api-score-sync.md](./PLAN-2026-08-25-zeko-report-api-score-sync.md).
+
+It also fixes a structural gap: jobs expose different result tabs (`Meets Criteria` exists on some
+and not others), and on that job the **Completed tab reads 0 while Meets Criteria reads 4** — so
+any logic keyed to a tab silently skipped genuinely scored candidates. The report API is keyed on
+the candidate, so tab layout stops mattering.
+
+- `backend/src/services/zeko.service.js` — new `fetchCandidateReport()` (cookie auth, the existing
+  `getDashboardCookieHeader()`; **HTTP 410 Gone** is Zeko's "no report exists" signal and returns
+  `null` rather than throwing). `fetchInterviewResults()` is now two-step: `interview-responses`
+  **enumerates only** (it is the sole source of `candidateId`, and its pagination must stay — Haris
+  sits beyond page 1 of a 430-candidate interview), then the report supplies the score.
+- `pickZekoScore()` rewritten — each round type carries its score in a different field, and only
+  one is ever meaningful:
+
+  | Round | `fit_percentage` | `codingScore` | `totalScore` |
+  |---|---|---|---|
+  | HR screening | **95** | absent | `0` ← junk |
+  | Coding | absent | **61** | `61` ← duplicate |
+  | Panel | absent | absent | **79** |
+
+  All three mean "this round's headline score" (Zeko's own labels: Recruiter Screening / Coding
+  Score / **Interview Score**), so `interview = fit_percentage ?? codingScore ?? (totalScore || null)`,
+  `coding = codingScore`, `communication = null`.
+- **`ZekoCommunicationScore` stays null on purpose.** `softSkillsEvaluation` and
+  `language_proficiency` were checked — qualitative text only. Zeko exposes no numeric
+  communication score, so filling that column with `totalScore` would have written `0` on every HR
+  round and a duplicate on every coding round.
+- **`newEvaluation.overallScore` is deliberately never read** — it is a *different* number (49
+  where the UI gauge shows 79) that Zeko's own report page ignores. Reading it would put one score
+  in the ATS and another in Zeko for the same candidate. Pinned by a test.
+- `backend/src/config/index.js` — `reportApiBase` (`ZEKO_REPORT_API_BASE`).
+- `backend/src/tests/unit/zekoScoreField.test.js` — rewritten, 18 cases over the real payloads.
+- **Both tables still written.** Since the round-scoping fix the drawer no longer falls back to
+  `rpa_cv`, so the two now feed different surfaces: `rpa_zeko_interview_results` → drawer + board;
+  `rpa_cv` → Search Candidate, View Candidate, CSV export, analytics.
+- **Verified on staging:** `repairZeroZekoScores()` → 3 processed, 7 skipped. PANKAJ MONDAL's
+  functional round went **`0 → 1` (coding 1)**; HR 95 and Panmon 94 unchanged; four `slotMissed`
+  rows skipped with no write; unmatchable rows logged at `info`. 216/216 unit tests pass.
+- **Follow-up not done:** the functional round now renders `Interview 1 · Coding 1` — two identical
+  chips, since the coding score is also the headline score. Cosmetic; awaiting confirmation.
+
+---
+
 ## 2026-08-25 — Open pipeline drawer now updates live when the cron syncs a score
 **Why:** with the drawer open and untouched, the cron wrote PANKAJ MONDAL's score of 95 — and
 the drawer went on showing "Awaiting Results". Opening the same candidate in a new tab showed 95
