@@ -4,6 +4,8 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { fetchMessagesSince } from './outlookReader.service.js';
 import { emailCandidates } from '../utils/emailMatch.js';
+import { emitToRole } from '../socket/index.js';
+import { NOTIFY_ROLES } from './notification.service.js';
 
 /**
  * Zeko background sync service.
@@ -630,13 +632,16 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
       p.interview_end_at,
       COALESCE(p.candidate_email, sc.candidate_email) AS candidate_email,
       sc.candidate_name  AS sc_candidate_name,
-      cp.cv_id
+      cp.cv_id,
+      cp.journey_id
     FROM rpa_zeko_candidate_pipeline p
     JOIN rpa_shortlisted_candidates sc ON sc.id = p.candidate_id
-    -- Journey link gives us the exact rpa_cv row to write scores back to.
+    -- Journey link gives us the exact rpa_cv row to write scores back to, and
+    -- the journey id the pipeline drawer is keyed on so a synced score can be
+    -- pushed to any browser holding that drawer open.
     -- LEFT so a Zeko row without a journey still syncs (it falls back to email).
     LEFT JOIN LATERAL (
-      SELECT cv_id FROM rpa_candidate_pipeline
+      SELECT id AS journey_id, cv_id FROM rpa_candidate_pipeline
       WHERE shortlist_id = p.candidate_id AND cv_id IS NOT NULL
       ORDER BY created_at DESC LIMIT 1
     ) cp ON TRUE
@@ -829,6 +834,35 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
       logger.info(
         `Zeko results: recorded scores for ${candidateEmail} (overall ${overall}) — pipeline_row ${row.pipeline_row_id}.`
       );
+
+      // 4) Push the update to any browser already showing this candidate.
+      //
+      // Without this, a drawer left open keeps rendering whatever it fetched
+      // when it was opened: react-query only refetches on mount, on a mutation's
+      // invalidate, or on window focus (disabled globally) — and a cron writing
+      // to the database triggers none of those. The recruiter sat looking at
+      // "Awaiting Results" while the score was already stored, and only a manual
+      // reload revealed it (RT, 2026-08-25).
+      //
+      // Emitted to the staffing roles rather than one user because a journey has
+      // no single owner — whoever has it open should see it. Best-effort: the
+      // row is already committed, so a failed push only delays the update until
+      // the next refetch, exactly as before.
+      const updatePayload = {
+        pipelineId: row.journey_id === null || row.journey_id === undefined ? null : Number(row.journey_id),
+        stageKey: row.stage === 'functional' ? 'zeko_fn' : 'zeko_hr',
+        reason: 'zeko.score_synced',
+        score: overall,
+      };
+      // emitToRole targets ONE room, so each staffing role is emitted to in
+      // turn — the same pattern notification.service.js follows for its fan-out.
+      for (const role of NOTIFY_ROLES) {
+        try {
+          emitToRole(role, 'pipeline:updated', updatePayload);
+        } catch (e) {
+          logger.debug(`Zeko results: socket push to ${role} skipped for pipeline_row ${row.pipeline_row_id}: ${e.message}`);
+        }
+      }
     } catch (err) {
       skipped += 1;
       logger.error(
