@@ -60,7 +60,8 @@ router.post('/reject', screeningController.rejectCandidates);
 
 /**
  * GET /api/screening/analytics/jobs
- * List active Zeko jobs for assignment dropdown
+ * List PUBLISHED Zeko jobs for the assignment dropdown — booking a candidate
+ * onto a draft or archived job hands them a dead interview link.
  */
 router.get('/analytics/jobs', screeningController.getZekoJobs);
 

@@ -2292,10 +2292,23 @@ export async function rejectCandidates(candidates, mrfId, roleName, user, option
 
 /**
  * GET /api/screening/analytics/jobs
+ *
+ * Published jobs only — this list is what the "Schedule Zeko Interview" pickers
+ * offer, and booking a candidate onto an unpublished Zeko job hands them a dead
+ * link ("Unpublished Interview – Testing Mode"). It used to exclude only
+ * archived jobs, so all 25 draft jobs were offered alongside the 30 published
+ * ones (RT, 2026-08-25).
+ *
+ * Filtered on `status`, deliberately NOT on is_published: a job can be live via
+ * either isPublished or isWorkflowPublished, and only `status` is derived from
+ * both AND kept current by every sync — is_workflow_pub is set on create and
+ * never updated, so 8 genuinely published jobs currently carry a stale `false`
+ * there. `status = 'published'` already implies not-archived: syncZekoJobs()
+ * derives it as a chain where archived wins over published.
  */
 export async function getZekoJobs() {
   const jobs = await prisma.rpa_zeko_jobs.findMany({
-    where: { is_archived: false },
+    where: { status: 'published' },
     orderBy: { title: 'asc' },
   });
   return jobs;
@@ -2503,6 +2516,19 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   });
   if (!job) {
     throw new AppError('Zeko Job details not found.', 404);
+  }
+  // getZekoJobs() no longer offers unpublished jobs, but that is a UI-level
+  // guard only: a stale browser tab, a cached job list or a direct API call can
+  // still name one. Zeko accepts the booking and then serves the candidate
+  // "Unpublished Interview – Testing Mode" instead of an interview, so the
+  // failure is silent on our side and visible only to the candidate. Refused
+  // here with something the recruiter can act on. Checked against `status` for
+  // the same reason getZekoJobs() filters on it.
+  if (job.status !== 'published') {
+    throw new AppError(
+      `"${job.hiring_name || job.title}" is not published on Zeko (currently ${job.status || 'unknown'}) — publish it on Zeko before scheduling this interview.`,
+      400
+    );
   }
 
   const interviewId = job.primary_interview_id;
