@@ -50,6 +50,7 @@ export default function Settings() {
     interval_minutes: 30,
     grace_minutes: 15,
     attendance_enabled: false,
+    attendance_guest_candidate: true,
   });
   const [occurrenceLoading, setOccurrenceLoading] = useState(true);
   const [occurrenceSaving, setOccurrenceSaving] = useState(false);
@@ -576,9 +577,12 @@ export default function Settings() {
                 lineHeight: 1.6,
               }}
             >
-              <strong>Confirmed automatically.</strong> The verdict is read from the Teams attendance
-              report — both sides must have joined. If someone did not turn up it is recorded as a
-              no-show instead, no scorecard is sent, and the team is alerted to reschedule or reject.
+              <strong>Confirmed automatically.</strong> The verdict is read from the Teams attendance report.
+              {occurrenceCfg.attendance_guest_candidate
+                ? ' The interviewer must join signed in with the address on the booking; the candidate can join as a guest, with no Teams account and no sign-in. The round counts as held once the interviewer and at least one other person have attended.'
+                : ' Both the interviewer and the candidate must join signed in with the addresses on the booking — a guest join will not be recognised.'}
+              {' '}If nobody joined on one side it is recorded as a no-show instead, no scorecard is sent,
+              and the team is alerted to reschedule or reject.
             </div>
           ) : (
             <div

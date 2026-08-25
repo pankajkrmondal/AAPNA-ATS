@@ -287,9 +287,15 @@ export async function sweepInterviewOccurrence() {
   return { processed: due.length, held, noShow, nudged, unconfirmed: writtenOff.count };
 }
 
-/** Human-readable phrase for the side that failed to attend. */
+/**
+ * Human-readable phrase for the side that failed to attend.
+ *
+ * The 'candidate' wording describes what was OBSERVED rather than naming who was
+ * missing. Candidates join as guests, so the report carries no address for them
+ * — all we can honestly say is that nobody joined except the interviewer.
+ */
 const ABSENT_PARTY_PHRASE = Object.freeze({
-  candidate: 'the candidate did not join',
+  candidate: 'only the interviewer joined — nobody joined on the candidate side',
   panel: 'the interviewer / panel did not join',
   both: 'neither side joined',
 });
