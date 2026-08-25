@@ -187,45 +187,74 @@ export async function listPipeline(filters = {}) {
     }
   }
 
-  // Real Zeko-score presence for in-progress Zeko-stage cards only — drives
-  // the "ready for decision" vs. "awaiting interview" card chip honestly,
-  // without fabricating a richer lifecycle than the data actually supports.
-  const zekoCvIds = journeys
-    .filter((j) => (j.current_stage_key === 'zeko_hr' || j.current_stage_key === 'zeko_fn') && j.current_stage_status === 'in_progress' && j.cv_id)
-    .map((j) => j.cv_id);
-  const zekoScoredCvIds = new Set();
-  if (zekoCvIds.length > 0) {
-    const scored = await prisma.rpa_cv.findMany({
-      where: {
-        id: { in: zekoCvIds },
-        OR: [{ ZekoInterviewScore: { not: null } }, { ZekoCodingScore: { not: null } }, { ZekoCommunicationScore: { not: null } }],
-      },
-      select: { id: true },
-    });
-    scored.forEach((cv) => zekoScoredCvIds.add(String(cv.id)));
-  }
-
-  // Real "invited" state for in-progress Zeko cards — from the existing
-  // assignCandidateToZekoJob/scheduleInterview flow (Candidate Screening),
-  // keyed by shortlist_id (rpa_zeko_candidate_pipeline.candidate_id).
-  // Matched per ROUND ('hr' vs 'functional'): a candidate invited for HR
-  // screening must not read as already invited once they reach functional.
+  // Real "invited" and "ready for decision" state for in-progress Zeko cards —
+  // from the existing assignCandidateToZekoJob/scheduleInterview flow (Candidate
+  // Screening), keyed by shortlist_id (rpa_zeko_candidate_pipeline.candidate_id).
+  // Both are matched per ROUND ('hr' vs 'functional'): a candidate invited for —
+  // or scored on — HR screening must not read as already invited or already
+  // decidable once they reach functional.
   const zekoJourneys = journeys.filter(
     (j) => isZekoStage(j.current_stage_key) && j.current_stage_status === 'in_progress' && j.shortlist_id
   );
+  // One read serves both flags, so they can never disagree about which round a
+  // card is on.
+  const zekoBookings = zekoJourneys.length > 0
+    ? await prisma.rpa_zeko_candidate_pipeline.findMany({
+        where: {
+          candidate_id: { in: zekoJourneys.map((j) => j.shortlist_id) },
+          stage: { in: [...new Set(zekoJourneys.map((j) => normalizeZekoRoundStage(j.current_stage_key)))] },
+          status: { not: 'cancelled' },
+        },
+        select: { candidate_id: true, stage: true, pipeline_id: true, candidate_email: true, link_sent_at: true },
+      })
+    : [];
+
   // Set of `${shortlist_id}:${round}` pairs that have a real invite sent.
-  const invitedRoundKeys = new Set();
-  if (zekoJourneys.length > 0) {
-    const invited = await prisma.rpa_zeko_candidate_pipeline.findMany({
+  const invitedRoundKeys = new Set(
+    zekoBookings.filter((b) => b.link_sent_at).map((b) => `${b.candidate_id}:${b.stage}`)
+  );
+
+  // Set of `${shortlist_id}:${round}` pairs whose OWN interview has a synced
+  // score for THIS candidate.
+  //
+  // Previously read straight off rpa_cv's per-CANDIDATE score columns, which
+  // have no round provenance — so any candidate ever scored by Zeko read as
+  // "Ready for decision" on whichever Zeko round they were standing on, even a
+  // functional round with no interview booked (RT, 2026-08-25). Resolved the
+  // same two-step way getPipelineDetail() does: the round's own booking names
+  // its external interview id, and the candidate's own address picks their row
+  // out of that interview's roster — one interview is shared by every candidate
+  // booked against the job, so the id alone would match a stranger's score.
+  const scoredRoundKeys = new Set();
+  const zekoInterviewIds = [...new Set(zekoBookings.map((b) => b.pipeline_id).filter(Boolean))];
+  if (zekoInterviewIds.length > 0) {
+    const shortlistEmails = new Map(
+      journeys.map((j) => [String(j.shortlist_id), j.rpa_shortlisted_candidates?.candidate_email])
+    );
+    const scored = await prisma.rpa_zeko_interview_results.findMany({
       where: {
-        candidate_id: { in: zekoJourneys.map((j) => j.shortlist_id) },
-        stage: { in: [...new Set(zekoJourneys.map((j) => normalizeZekoRoundStage(j.current_stage_key)))] },
-        status: { not: 'cancelled' },
-        link_sent_at: { not: null },
+        pipeline_id: { in: zekoInterviewIds },
+        OR: [
+          { scores_overallscore: { not: null } },
+          { scores_technicalscore: { not: null } },
+          { scores_communicationscore: { not: null } },
+        ],
       },
-      select: { candidate_id: true, stage: true },
+      select: { pipeline_id: true, candidate_email: true },
     });
-    invited.forEach((row) => invitedRoundKeys.add(`${row.candidate_id}:${row.stage}`));
+    for (const booking of zekoBookings) {
+      // No address to match on means we cannot prove a result row is this
+      // candidate's, so the card stays "awaiting" rather than guessing.
+      const wanted = new Set(
+        emailCandidates(booking.candidate_email || shortlistEmails.get(String(booking.candidate_id)))
+      );
+      if (wanted.size === 0) continue;
+      const hasOwnScore = scored.some(
+        (r) => r.pipeline_id === booking.pipeline_id
+          && emailCandidates(r.candidate_email).some((e) => wanted.has(e))
+      );
+      if (hasOwnScore) scoredRoundKeys.add(`${booking.candidate_id}:${booking.stage}`);
+    }
   }
 
   // Real "scheduled" state for in-progress technical-round cards (tech1/tech2) —
@@ -249,7 +278,7 @@ export async function listPipeline(filters = {}) {
 
   // Real Evalground-result presence for in-progress Assessment-stage cards
   // (Phase 3 M2) — drives the "Evalground test pending" board badge honestly,
-  // same pattern as zekoScoredCvIds above. Keyed by pipeline_id (not cv_id):
+  // same pattern as scoredRoundKeys above. Keyed by pipeline_id (not cv_id):
   // a candidate with two concurrent journeys only clears "pending" on the
   // journey the import actually matched (Q24 concurrent-journey rule).
   const assessmentPipelineIds = journeys
@@ -272,10 +301,13 @@ export async function listPipeline(filters = {}) {
       : Math.floor((now - new Date(j.modified_at).getTime()) / (1000 * 60 * 60 * 24));
 
     const onZekoStage = isZekoStage(j.current_stage_key);
-    const readyForDecision = onZekoStage && j.current_stage_status === 'in_progress' && zekoScoredCvIds.has(String(j.cv_id));
+    const zekoRoundKey = `${j.shortlist_id}:${normalizeZekoRoundStage(j.current_stage_key)}`;
+    const readyForDecision = onZekoStage
+      && j.current_stage_status === 'in_progress'
+      && scoredRoundKeys.has(zekoRoundKey);
     const invited = onZekoStage
       && j.current_stage_status === 'in_progress'
-      && invitedRoundKeys.has(`${j.shortlist_id}:${normalizeZekoRoundStage(j.current_stage_key)}`);
+      && invitedRoundKeys.has(zekoRoundKey);
     // Technical rounds: a live booking means the card is "Scheduled".
     const scheduled = isSchedulableStage(j.current_stage_key)
       && j.current_stage_status === 'in_progress'
@@ -372,22 +404,25 @@ export async function getPipelineDetail(pipelineId) {
     orderBy: { sort_order: 'asc' },
   });
 
-  // Real Zeko scores + resume link (no mock) — one lookup when there's a cv_id.
-  // This is a fallback only: rpa_cv holds ONE set of Zeko score columns per
-  // CANDIDATE, not per round, so a candidate who has completed both Zeko
-  // rounds would show whichever round synced last here. The round-scoped
-  // rpa_zeko_interview_results lookup below overrides this with the correct
-  // per-round numbers whenever one exists.
+  // Resume link — one lookup when there's a cv_id.
+  //
+  // Zeko scores are deliberately NOT read from rpa_cv. That table holds ONE set
+  // of Zeko score columns per CANDIDATE, not per round, and both Zeko rounds
+  // write to them, so a value there carries no record of which round produced
+  // it. It used to seed `zekoScores` as a fallback, which meant a round with no
+  // synced result of its own displayed the OTHER round's number: on 2026-08-25
+  // PANKAJ MONDAL's Functional Screening showed the HR round's 95 for an
+  // interview that had never been scheduled — and, because the drawer hides the
+  // Schedule button once a score is present, left the round impossible to
+  // progress. A score with no identifiable round is not displayable, so the
+  // round-scoped rpa_zeko_interview_results lookup below is now the only source.
   let zekoScores = null;
   let cvFileUrl = null;
   if (pipeline.cv_id) {
     const cv = await prisma.rpa_cv.findUnique({
       where: { id: pipeline.cv_id },
-      select: { ZekoInterviewScore: true, ZekoCodingScore: true, ZekoCommunicationScore: true, cvFileUrl: true },
+      select: { cvFileUrl: true },
     });
-    if (cv?.ZekoInterviewScore != null || cv?.ZekoCodingScore != null || cv?.ZekoCommunicationScore != null) {
-      zekoScores = cv;
-    }
     cvFileUrl = cv?.cvFileUrl || null;
   }
 
@@ -455,9 +490,10 @@ export async function getPipelineDetail(pipelineId) {
         : null;
       zekoReportLink = zekoResult?.reportlink || null;
 
-      // Prefer this round's own synced result over the rpa_cv fallback above
-      // — this row is keyed by THIS round's external interview id, so it
-      // can't be clobbered by the other Zeko round syncing later.
+      // The ONLY source of this round's scores — keyed by THIS round's external
+      // interview id, so it can't be clobbered by the other Zeko round syncing
+      // later. A round with no result row here reports no score at all rather
+      // than borrowing the candidate-level one (see the rpa_cv note above).
       if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
         zekoScores = {
           ZekoInterviewScore: zekoResult.scores_overallscore,
