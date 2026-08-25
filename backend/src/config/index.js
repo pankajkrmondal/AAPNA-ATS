@@ -131,6 +131,20 @@ const config = {
      * actually attended, so an accidental 10-second join isn't read as "held".
      */
     attendanceMinSeconds: parseInt(env('MS_ATTENDANCE_MIN_SECONDS', '60'), 10),
+
+    /**
+     * Treat the candidate as a Teams GUEST rather than a matched mailbox.
+     *
+     * Candidates generally have no Teams account and join anonymously, which
+     * makes Teams record them with a blank emailAddress — nothing to match. So
+     * "held" is decided from the interviewer (internal, always signed in) plus
+     * the presence of at least one other participant. See decideOccurrence().
+     *
+     * ON by default because that is how interviews are actually run. Set to
+     * false for all-internal rounds where both sides sign in and the stricter
+     * both-addresses-must-match rule is worth having.
+     */
+    attendanceGuestCandidate: env('MS_ATTENDANCE_GUEST_CANDIDATE', 'true') === 'true',
   },
 
   /**
