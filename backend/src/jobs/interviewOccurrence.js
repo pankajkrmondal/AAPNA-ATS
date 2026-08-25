@@ -325,7 +325,7 @@ async function sendNoShowAlert(row, candidate, absentParty) {
     confirm_link: pipelineLink,
   };
 
-  const tpl = await getTemplate('Interview — Did Not Take Place');
+  const tpl = await getTemplate('Interview No-Show Notice');
   const compiled = tpl
     ? compileTemplate(tpl.subject, tpl.body_html, tokens)
     : {
@@ -371,7 +371,7 @@ async function sendConfirmationNudge(row, candidate) {
   // /candidate-pipeline (no such route — it 404'd).
   const confirmLink = `${config.cors.frontendUrl}/pipeline`;
 
-  const tpl = await getTemplate('Interview — Please Confirm It Happened');
+  const tpl = await getTemplate('Interview Attendance Check');
   const tokens = {
     candidate_name: candidate?.candidate_name || 'the candidate',
     position,

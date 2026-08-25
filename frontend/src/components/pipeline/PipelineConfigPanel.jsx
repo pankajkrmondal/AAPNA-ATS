@@ -16,6 +16,7 @@
  * rather than introducing a third style.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Switch, Select,
   Tabs, Tag, Space, Typography, message,
@@ -45,7 +46,14 @@ const STAGE_TYPES = [
 /** Outcome keys the stage engine treats specially; see STAGE_OUTCOMES. */
 const CORE_OUTCOME_KEYS = ['approved', 'rejected', 'hold', 'future_prospect'];
 
+// Tab keys the Tabs below actually use — a stale/foreign panelTab param falls
+// back to the default rather than rendering a blank pane.
+const PANEL_TAB_KEYS = new Set(['stages', 'reasons', 'stage-templates', 'flow-keys']);
+
 export default function PipelineConfigPanel() {
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('panelTab');
+  const initialPanelTab = PANEL_TAB_KEYS.has(requestedTab) ? requestedTab : undefined;
   const [stages, setStages] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -414,6 +422,7 @@ export default function PipelineConfigPanel() {
       </div>
 
       <Tabs
+        defaultActiveKey={initialPanelTab}
         items={[
           {
             key: 'stages',

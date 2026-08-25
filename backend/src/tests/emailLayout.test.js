@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import {
   wrapBrandedEmail,
   isFullHtmlDocument,
+  hasOwnSignature,
   brandedWrapperParts,
   stripEditableSlot,
   EDITABLE_SLOT_ATTR,
@@ -107,6 +108,50 @@ test('wrapBrandedEmail emits exactly one editable slot when asked, and none by d
 test('stripEditableSlot removes the preview-only marker', () => {
   const withSlot = wrapBrandedEmail('<p>x</p>', { editableSlot: true });
   assert.equal(stripEditableSlot(withSlot).includes(EDITABLE_SLOT_ATTR), false);
+});
+
+// ── signature guard ───────────────────────────────────────────────────
+//
+// The sign-off is rendered centrally by the wrapper, but not every body is
+// seed-managed: rows this repo's seed script does not own, and anything HR
+// edits by hand, can still carry their own. Rendering a second one underneath
+// looks broken, so the wrapper suppresses its own when the body already ends
+// with one — the same shape-based guard idea as isFullHtmlDocument().
+
+test('hasOwnSignature detects a trailing sign-off, and ignores bodies without one', () => {
+  assert.equal(hasOwnSignature('<p>Hi</p><p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>'), true);
+  assert.equal(hasOwnSignature('<p>Hi</p><p>Warm regards,<br/>HR</p>'), true);
+  assert.equal(hasOwnSignature('<p>Hi</p><p>Kind regards,</p>'), true);
+  assert.equal(hasOwnSignature('<p>Dear Candidate,</p><p>Your interview is confirmed.</p>'), false);
+  assert.equal(hasOwnSignature(''), false);
+  assert.equal(hasOwnSignature(null), false);
+  assert.equal(hasOwnSignature(undefined), false);
+});
+
+test('hasOwnSignature only looks at the tail, so a mid-body mention does not count', () => {
+  const longBody = `<p>Regards, as discussed in your last call, we have moved ahead.</p>${'<p>filler paragraph for length.</p>'.repeat(30)}`;
+  assert.equal(hasOwnSignature(longBody), false);
+});
+
+test('a body carrying its own sign-off gets exactly one signature, not two', () => {
+  const out = wrapBrandedEmail('<p>Hi</p><p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>');
+  const count = (out.match(/AAPNA Infotech Recruitment Team/g) || []).length;
+  assert.equal(count, 1, 'the wrapper must not add a second signature');
+});
+
+test('a body with no sign-off still receives exactly one from the wrapper', () => {
+  const out = wrapBrandedEmail('<p>Dear Candidate,</p><p>Your interview is confirmed.</p>');
+  const count = (out.match(/AAPNA Infotech Recruitment Team/g) || []).length;
+  assert.equal(count, 1);
+  assert.match(out, /Best regards,/);
+});
+
+test('brandedWrapperParts mirrors the guard when given the body', () => {
+  const signed = '<p>x</p><p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>';
+  assert.equal(brandedWrapperParts({ bodyHtml: signed }).footerHtml.includes('Best regards,'), false);
+  assert.equal(brandedWrapperParts({ bodyHtml: '<p>x</p>' }).footerHtml.includes('Best regards,'), true);
+  // Omitting the body keeps the old behaviour — the signature is included.
+  assert.equal(brandedWrapperParts({}).footerHtml.includes('Best regards,'), true);
 });
 
 // ── ordering contract with injectTrackingPixel ────────────────────────

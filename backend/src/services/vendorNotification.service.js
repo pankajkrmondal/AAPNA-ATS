@@ -225,13 +225,22 @@ export async function notifyVendor({
     const outcomeLabel = outcomeKey ? finalStatusLabelFor(effectiveStageKey, outcomeKey) : null;
     const statusLine = statusLineFor({ eventType, stageLabel: resolvedStageLabel, outcomeLabel, policy });
 
+    // rpa_candidate_pipeline has no vendor_name column — only vendor_email — so
+    // the real name has to come from the CV row the journey was created from.
+    // Falls back to the same "Vendor Partner" phrase emailNotification.service.js
+    // already uses for an unnamed vendor, rather than a bare lowercase "partner".
+    const cvRow = pipelineRow.cv_id
+      ? await prisma.rpa_cv.findUnique({ where: { id: pipelineRow.cv_id }, select: { vendorName: true } }).catch(() => null)
+      : null;
+    const vendorDisplayName = cvRow?.vendorName || 'Vendor Partner';
+
     const template = await resolveVendorTemplate(policy);
     const { subject, html: bodyHtml } = compileTemplate(
       template?.subject || FALLBACK.subject,
       template?.body_html || FALLBACK.body,
       {
         candidate_name: candidate?.name || 'the candidate',
-        vendor_name: pipelineRow.vendor_name || 'partner',
+        vendor_name: vendorDisplayName,
         position: positionLabel,
         job_title: positionLabel,
         stage_label: resolvedStageLabel,

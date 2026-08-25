@@ -8,9 +8,16 @@ const contentCss = (compact) => `
   body:focus { outline: none; }
   /* Degraded (no-wrapper) mode only — the branded shell supplies its own padding. */
   body:not(:has([data-editable-body])) { padding: ${compact ? '12px' : '16px'}; font-family: Arial, Helvetica, sans-serif; font-size: ${compact ? '13px' : '14px'}; -webkit-font-smoothing: antialiased; }
-  /* Make the editable region visibly the only editable part. */
-  [data-editable-body] { outline: 1px dashed rgba(122,146,46,0.55); outline-offset: 6px; border-radius: 2px; min-height: 60px; }
-  [data-editable-body]:focus { outline: 2px solid rgba(122,146,46,0.85); }
+  /* The editable region is deliberately UNMARKED at rest, so the shell reads as
+     the delivered email rather than as a form field inside a page — that framing
+     was the whole difference in feel against a legacy whole-document template.
+     Discoverability comes from hover and confirmation from focus, both as a soft
+     tint rather than a hard rule. Note the read-only guarantee does not live
+     here: it comes from which element carries contenteditable (see handleLoad),
+     so softening this costs no protection. */
+  [data-editable-body] { outline: none; min-height: 60px; border-radius: 4px; transition: background-color 120ms ease, box-shadow 120ms ease; }
+  [data-editable-body]:hover { background-color: rgba(122,146,46,0.06); box-shadow: 0 0 0 6px rgba(122,146,46,0.06); }
+  [data-editable-body]:focus { background-color: rgba(122,146,46,0.08); box-shadow: 0 0 0 6px rgba(122,146,46,0.08), 0 0 0 7px rgba(122,146,46,0.35); }
   img { max-width: 100%; }
 `;
 
@@ -30,9 +37,35 @@ const contentCss = (compact) => `
  * edit corrupt/delete the header or footer and ship it that way. Preserved
  * here, not reintroduced.
  */
-export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, subject, compact = false }) {
+export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, subject, compact = false, autoHeight = false }) {
   const iframeRef = useRef(null);
   const savedSelRef = useRef(null);
+  const resizeObsRef = useRef(null);
+
+  /**
+   * Grows the frame to exactly its content so the PAGE does the scrolling and
+   * there is no dead white space under a short email. Opt-in: callers that pass
+   * an explicit `height` (the Pipeline drawer modals) must keep it, and an
+   * inline height set here would silently override theirs.
+   *
+   * Measuring documentElement is safe from a feedback loop because nothing in
+   * the shell sets height:100% — the document is content-sized, so it never
+   * grows to fill whatever the frame currently is.
+   */
+  const autoSize = () => {
+    if (!autoHeight) return;
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc?.documentElement) return;
+    const h = Math.ceil(doc.documentElement.getBoundingClientRect().height);
+    if (h > 0) iframe.style.height = `${h}px`;
+  };
+
+  // Stop observing when the editor unmounts (it remounts per template).
+  useEffect(() => () => {
+    resizeObsRef.current?.disconnect();
+    resizeObsRef.current = null;
+  }, []);
 
   // Frozen on first mount only — reloading on every keystroke would drop the
   // caret. Consumers remount via `key` to load genuinely different content.
@@ -72,6 +105,8 @@ export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, s
       clone.querySelectorAll('img[src^="data:"]').forEach((el) => el.remove());
       onChange(clone.outerHTML);
     }
+    // Typing changes the content height, so the frame follows it.
+    autoSize();
   };
 
   const handleLoad = () => {
@@ -94,6 +129,16 @@ export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, s
     style.textContent = contentCss(compact);
     style.setAttribute('data-editor-css', '1');
     doc.head?.appendChild(style);
+
+    // Measure once the content CSS is in, then keep following it — a late
+    // reflow (web font swapping in, an image resolving) changes the height
+    // after load, which a one-shot measurement would miss.
+    autoSize();
+    if (autoHeight && typeof ResizeObserver !== 'undefined' && doc.documentElement) {
+      resizeObsRef.current?.disconnect();
+      resizeObsRef.current = new ResizeObserver(autoSize);
+      resizeObsRef.current.observe(doc.documentElement);
+    }
 
     doc.addEventListener('input', syncFromEditor);
     doc.addEventListener('selectionchange', () => {

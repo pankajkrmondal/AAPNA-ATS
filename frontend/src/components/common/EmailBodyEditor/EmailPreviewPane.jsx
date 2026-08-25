@@ -1,8 +1,9 @@
+import { useRef } from 'react';
 import { Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import { SANITIZE_OPTS } from './sanitize';
 import { buildBrandedShellHtml } from './brandedShell';
-import { wrapBrandedPreview, isFullHtmlDocument } from '../../../utils/emailPreview';
+import { wrapBrandedPreview } from '../../../utils/emailPreview';
 
 const { Text } = Typography;
 
@@ -15,14 +16,27 @@ const { Text } = Typography;
  * (the Email Templates page's case — it has no per-template backend preview
  * endpoint today).
  */
-export default function EmailPreviewPane({ subject, bodyHtml, wrapper, variant = 'full', to = 'candidate@example.com' }) {
+export default function EmailPreviewPane({ subject, bodyHtml, wrapper, variant = 'full', to = 'candidate@example.com', autoHeight = false }) {
+  const frameRef = useRef(null);
+
+  /**
+   * Grows the frame to its content so a short email leaves no dead white space
+   * and a long one needs no inner scrollbar — the page scrolls instead. Opt-in,
+   * so the compact/modal previews keep their fixed heights.
+   */
+  const handleLoad = () => {
+    if (!autoHeight) return;
+    const doc = frameRef.current?.contentDocument;
+    const h = doc?.documentElement && Math.ceil(doc.documentElement.getBoundingClientRect().height);
+    if (h > 0) frameRef.current.style.height = `${h}px`;
+  };
+
   const srcDoc = wrapper?.headerHtml
     ? DOMPurify.sanitize(buildBrandedShellHtml(DOMPurify.sanitize(bodyHtml || '', SANITIZE_OPTS), wrapper), { ADD_TAGS: ['style'], ADD_ATTR: ['target'] })
     : DOMPurify.sanitize(
         wrapBrandedPreview(bodyHtml || '<p style="font-family:sans-serif;color:#8a8f8c">Empty.</p>', { title: subject }),
         SANITIZE_OPTS
       );
-  const isWrapped = !wrapper?.headerHtml && !isFullHtmlDocument(bodyHtml || '');
 
   if (variant === 'compact') {
     return (
@@ -36,34 +50,34 @@ export default function EmailPreviewPane({ subject, bodyHtml, wrapper, variant =
   }
 
   return (
-    <div className="email-preview-shell" style={{ border: '1px solid var(--border)', borderRadius: 12, background: '#ffffff', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-      <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b' }} />
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }} />
-          <Text style={{ fontSize: 11, color: '#64748b', marginLeft: 10, fontWeight: 500 }}>
-            New Message — Preview Mode
-          </Text>
+    <div className="email-preview-shell">
+      {/* Chrome styling lives in index.css (.email-preview-shell*) rather than
+          in an inline object here. It was previously an off-palette slate ramp
+          with no dark-mode path, so this bar stayed near-white in dark mode. */}
+      <div className="email-preview-shell__chrome">
+        <div className="email-preview-shell__lights">
+          <div className="email-preview-shell__light email-preview-shell__light--r" />
+          <div className="email-preview-shell__light email-preview-shell__light--y" />
+          <div className="email-preview-shell__light email-preview-shell__light--g" />
+          <Text className="email-preview-shell__mode">New Message — Preview Mode</Text>
         </div>
-        <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-          <Text style={{ width: 60, color: '#64748b' }}>Subject:</Text>
-          <Text strong style={{ color: '#0f172a' }}>{subject}</Text>
+        <div className="email-preview-shell__row">
+          <Text className="email-preview-shell__key">Subject:</Text>
+          <Text strong className="email-preview-shell__val email-preview-shell__val--strong">{subject}</Text>
         </div>
-        <div style={{ display: 'flex', fontSize: 13, gap: 10 }}>
-          <Text style={{ width: 60, color: '#64748b' }}>To:</Text>
-          <Text style={{ color: '#334155' }}>{to}</Text>
+        <div className="email-preview-shell__row">
+          <Text className="email-preview-shell__key">To:</Text>
+          <Text className="email-preview-shell__val">{to}</Text>
         </div>
-        {isWrapped && (
-          <div style={{ display: 'flex', fontSize: 11.5, gap: 10 }}>
-            <Text style={{ width: 60, color: '#64748b' }}>Format:</Text>
-            <Text style={{ color: '#64748b' }}>
-              Standard AAPNA header &amp; footer are applied automatically on send.
-            </Text>
-          </div>
-        )}
       </div>
-      <iframe title="Email preview" sandbox="" className="email-preview-iframe" srcDoc={srcDoc} />
+      <iframe
+        ref={frameRef}
+        title="Email preview"
+        sandbox=""
+        className="email-preview-iframe"
+        srcDoc={srcDoc}
+        onLoad={handleLoad}
+      />
     </div>
   );
 }

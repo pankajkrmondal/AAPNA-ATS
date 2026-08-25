@@ -50,9 +50,9 @@ import { finalStatusLabelFor } from '../config/pipelineStages.js';
  * SILENT_FINAL_OUTCOMES below.
  */
 const GENERIC_FALLBACK_BY_OUTCOME = {
-  approved: 'Stage Outcome — Approved (Generic)',
-  rejected: 'Stage Outcome — Rejected (Generic)',
-  hold: 'Stage Outcome — Hold (Generic)',
+  approved: 'Stage Outcome — Approved',
+  rejected: 'Stage Outcome — Rejected',
+  hold: 'Stage Outcome — Hold',
   closure_approved: 'Closure — Approved',
   closure_rejected: 'Closure — Rejected',
   closure_on_hold: 'Closure — On Hold',

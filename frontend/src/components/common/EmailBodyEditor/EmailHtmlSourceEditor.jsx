@@ -10,7 +10,7 @@ const CM_EXTENSIONS = [cmHtml(), EditorView.lineWrapping];
  * caller-owned (mirrors the Email Templates page's existing `htmlView`
  * rev-tracking approach).
  */
-export default function EmailHtmlSourceEditor({ value, onChange, theme = 'light' }) {
+export default function EmailHtmlSourceEditor({ value, onChange, theme = 'light', autoHeight = false }) {
   return (
     <div className="email-html-editor">
       <CodeMirror
@@ -18,7 +18,9 @@ export default function EmailHtmlSourceEditor({ value, onChange, theme = 'light'
         onChange={onChange}
         extensions={CM_EXTENSIONS}
         theme={theme}
-        height="100%"
+        // "100%" fills a fixed-height pane (the modals); "auto" grows with the
+        // source so this page has no dead space under a short template.
+        height={autoHeight ? 'auto' : '100%'}
         basicSetup={{ foldGutter: true, highlightActiveLine: true, autocompletion: true }}
         aria-label="Raw email HTML source"
       />

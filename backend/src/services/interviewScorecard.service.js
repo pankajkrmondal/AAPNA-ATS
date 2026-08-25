@@ -21,6 +21,7 @@ import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { parseInterviewerEmails } from './interviewSchedule.service.js';
+import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
@@ -60,7 +61,7 @@ function roleForStage(stageKey) {
 
 const TEMPLATE_NAMES = Object.freeze({
   inviteInterviewer: 'Scorecard Invitation — Interviewer',
-  inviteHrCeo: 'Scorecard Invitation — HR/CEO',
+  inviteHrCeo: 'Scorecard Invitation — Leadership Round',
 });
 
 /** Loads an active template row by name, or null. */
@@ -188,7 +189,7 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
       candidate_name: candidate?.candidate_name || 'the candidate',
       position,
       stage_label: stageLabel,
-      interviewer_name: card.recipient_name || 'there',
+      interviewer_name: interviewerGreeting(card.recipient_name, emails.join(',')),
       scorecard_link: link,
     };
     const compiled = tpl

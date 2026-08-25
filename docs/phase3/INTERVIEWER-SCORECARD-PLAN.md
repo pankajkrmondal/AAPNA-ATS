@@ -382,8 +382,8 @@ surfaced via the
 - **Emails** — add to
   [seed-email-templates.js](../../backend/prisma/seed-email-templates.js)
   (`category:'interview'`, idempotent upserts): **`Scorecard Invitation —
-  Interviewer`**, **`Scorecard Invitation — HR/CEO`**, and **`Interview — Please
-  Confirm It Happened`**. Link = `${config.cors.frontendUrl}/scorecard/${token}`.
+  Interviewer`**, **`Scorecard Invitation — Leadership Round`**, and
+  **`Interview Attendance Check`**. Link = `${config.cors.frontendUrl}/scorecard/${token}`.
   Send via existing **`sendGraphEmail`** + **`compileTemplate`**
   ([emailNotification.service.js:29](../../backend/src/services/emailNotification.service.js#L29)) —
   a near-copy of the existing panel-email flow. Add recipient keys

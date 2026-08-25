@@ -44,8 +44,66 @@ function escapeHtml(text) {
 }
 
 /**
+ * True when a body already ends with its own sign-off — mirrors
+ * hasOwnSignature() in the backend's emailLayout.service.js. Keeps the preview
+ * and the editor from rendering a second signature under one the body already
+ * carries (which the real send would not produce either).
+ *
+ * @param {string} html
+ * @returns {boolean}
+ */
+export function hasOwnSignature(html) {
+  if (typeof html !== 'string' || html.trim() === '') return false;
+  const tail = html.slice(-400);
+  return /\b(best|warm|kind)\s+regards\b|^\s*regards\s*,/im.test(tail);
+}
+
+/**
+ * The header/footer chrome as standalone strings — the client-side counterpart
+ * of the backend's brandedWrapperParts(). Feeds two surfaces:
+ *  - EmailPreviewPane, which renders them around a read-only body, and
+ *  - useEmailIframeEditor's protected-chrome mode, where the header/footer are
+ *    real but read-only and only the body slot is editable.
+ *
+ * `footerHtml` is signature + footer, matching what the backend returns, so the
+ * two cannot drift.
+ *
+ * @param {{title?: string, subtitle?: string, bodyHtml?: string|null}} [opts]
+ *   `title` is the subject line; `bodyHtml` (optional) applies the signature guard.
+ * @returns {{headerHtml: string, footerHtml: string, title: string, accent: string}}
+ */
+export function brandedPreviewParts({ title = '', subtitle = 'AAPNA Infotech — Recruitment Update', bodyHtml = null } = {}) {
+  const safeTitle = escapeHtml(title).trim();
+  const headerHtml = `<tr><td style="background:${ACCENT};padding:32px 40px;text-align:center">`
+    + `<img src="${LOGO}" width="190" alt="AAPNA Infotech" style="display:block;margin:0 auto 16px auto">`
+    + (safeTitle ? `<h1 style="margin:0;font-size:22px;color:#ffffff;font-weight:800">${safeTitle}</h1>` : '')
+    + `<p style="margin:6px 0 0 0;color:#e7f0c5;font-size:13px">${escapeHtml(subtitle)}</p>`
+    + `</td></tr>`;
+
+  const signature = `<tr><td style="padding:0 40px 24px 40px;font-size:15px;color:#374151">`
+    + `<p style="margin:0 0 4px 0;">Best regards,</p>`
+    + `<p style="margin:0;font-weight:700;color:${ACCENT};">AAPNA Infotech Recruitment Team</p>`
+    + `</td></tr>`;
+
+  const footer = `<tr><td style="background:#f3f4f6;padding:16px;text-align:center;font-size:12px;color:#9ca3af">`
+    + `This email was sent by AAPNA Infotech's recruitment system.<br>`
+    + `&copy; 2026 AAPNA Infotech. All rights reserved.`
+    + `</td></tr>`;
+
+  return {
+    headerHtml,
+    footerHtml: (bodyHtml !== null && hasOwnSignature(bodyHtml) ? '' : signature) + footer,
+    title,
+    accent: ACCENT,
+  };
+}
+
+/**
  * Wraps a body fragment in the branded shell for preview purposes.
  * Returns full documents unchanged, so it is safe to call on any template.
+ *
+ * Built on brandedPreviewParts() so the standalone-chrome and whole-document
+ * renderings can never disagree.
  *
  * @param {string} bodyHtml
  * @param {{title?: string, subtitle?: string}} [opts] - `title` is the subject line
@@ -54,23 +112,16 @@ function escapeHtml(text) {
 export function wrapBrandedPreview(bodyHtml, { title = '', subtitle = 'AAPNA Infotech — Recruitment Update' } = {}) {
   if (isFullHtmlDocument(bodyHtml)) return bodyHtml;
   const body = typeof bodyHtml === 'string' ? bodyHtml : '';
-  const safeTitle = escapeHtml(title).trim();
+  const parts = brandedPreviewParts({ title, subtitle, bodyHtml: body });
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>`
     + `<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif">`
     + `<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:30px 10px"><tr><td align="center">`
     + `<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,0.08)">`
-    + `<tr><td style="background:${ACCENT};padding:32px 40px;text-align:center">`
-    + `<img src="${LOGO}" width="190" alt="AAPNA Infotech" style="display:block;margin:0 auto 16px auto">`
-    + (safeTitle ? `<h1 style="margin:0;font-size:22px;color:#ffffff;font-weight:800">${safeTitle}</h1>` : '')
-    + `<p style="margin:6px 0 0 0;color:#e7f0c5;font-size:13px">${escapeHtml(subtitle)}</p>`
-    + `</td></tr>`
+    + parts.headerHtml
     + `<tr><td style="padding:32px 40px 24px 40px;font-size:15px;color:#374151;line-height:1.8">${body}</td></tr>`
-    + `<tr><td style="background:#f3f4f6;padding:16px;text-align:center;font-size:12px;color:#9ca3af">`
-    + `This email was sent by AAPNA Infotech's recruitment system.<br>`
-    + `&copy; 2026 AAPNA Infotech. All rights reserved.`
-    + `</td></tr>`
+    + parts.footerHtml
     + `</table></td></tr></table></body></html>`;
 }
 
-export default { wrapBrandedPreview, isFullHtmlDocument };
+export default { wrapBrandedPreview, brandedPreviewParts, hasOwnSignature, isFullHtmlDocument };

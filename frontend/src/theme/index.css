@@ -2949,6 +2949,14 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ----- Email Template Management ----- */
+
+/* PageHeader's standard gap below is --space-6 (32px). This page runs tighter:
+   the editing surface is sized to a whole 750-900px email and every band above
+   it comes out of that budget. --space-4 keeps the header reading as a header
+   while giving 16px back. Paired with the .email-template-list max-height
+   below, which is computed against this. */
+.email-page .page-header { margin-bottom: var(--space-4); }
+
 .template-list-item {
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
@@ -2968,11 +2976,186 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* WYSIWYG email editor shell */
+/* ----- Email Templates: page toolbar -------------------------------------
+   The search + category row that replaced the nine wrapping category chips.
+
+   NO HEIGHT OR PADDING IS SET HERE, DELIBERATELY — do not reintroduce one.
+   An earlier version pinned these controls to 38px, which misaligned the
+   Select against the Input beside it for two compounding reasons:
+
+     1. AntD derives every INTERNAL metric of a Select from `controlHeight`
+        (40, themeConfig.js). `.ant-select-selection-item` and the baseline
+        `:after` spacer are emitted at `controlHeight - 2 * lineWidth` = 38px,
+        which then had to fit the 36px content box left by a 38px outer box
+        with 1px borders. The content overflowed and the control read taller
+        and lower than the Input.
+     2. AntD's `.ant-select-single:not(.ant-select-customize-input)
+        .ant-select-selector` is specificity (0,3,0) — exactly tying the rule
+        below. cssinjs injects at render time, AFTER this stylesheet, so AntD
+        won the tie and its `padding: 0 11px` beat ours anyway.
+
+   Letting `controlHeight` govern all three controls makes them align by
+   construction, and leaves no specificity fight to lose later. */
+.email-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+.email-toolbar__search { width: 300px; }
+.email-toolbar__search.ant-input-affix-wrapper,
+.email-toolbar .ant-select .ant-select-selector {
+  border-radius: var(--radius-sm);
+  background: var(--glass-3-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.email-toolbar__search.ant-input-affix-wrapper:hover,
+.email-toolbar .ant-select:hover .ant-select-selector { border-color: var(--gold-light); }
+.email-toolbar__category { min-width: 168px; }
+
+/* The app's standard primary — fill, radius, weight and shadow all come from
+   themeConfig's Button tokens. Only the hover lift is added, and that mirrors
+   `.admin-portal .ant-btn-primary:hover` above rather than inventing a glow. */
+.email-toolbar__save.ant-btn {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.email-toolbar__save.ant-btn-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(122, 146, 46, 0.28);
+}
+
+/* ----- Email Templates: list rows ---------------------------------------
+   Name + subject + a status dot. The category tag and the "Active" pill that
+   used to repeat on every row are gone: category is the toolbar filter now,
+   and only the exceptional states still spell themselves out. */
+.template-list-item.ant-list-item {
+  position: relative;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background-color var(--transition-fast);
+  animation: emailRowIn 0.34s var(--ease-out-quint) both;
+}
+/* The selection rail GROWS in rather than snapping. A border-left-color swap
+   cannot be animated convincingly (colour interpolates, geometry does not), so
+   the rail is a pseudo-element scaled on Y from its centre. */
+.template-list-item.ant-list-item::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--gold);
+  transform: scaleY(0);
+  transition: transform var(--transition-normal);
+}
+.template-list-item.ant-list-item:hover { background: var(--ink-4); }
+.template-list-item.is-selected,
+.template-list-item.is-selected:hover {
+  background: var(--gold-bg);
+}
+.template-list-item.is-selected::before { transform: scaleY(1); }
+.template-list-item__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  margin-top: 7px;
+  flex-shrink: 0;
+  display: block;
+}
+.template-list-item__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.template-list-item.is-selected .template-list-item__name { color: var(--brand-primary-active); }
+.template-list-item__sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.template-list-item.is-selected .template-list-item__sub { color: var(--text-2); }
+
+/* Rows arrive in sequence, matching .stagger-children's rhythm elsewhere. */
+@keyframes emailRowIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.email-template-list .ant-list-item:nth-child(1) { animation-delay: 0.02s; }
+.email-template-list .ant-list-item:nth-child(2) { animation-delay: 0.05s; }
+.email-template-list .ant-list-item:nth-child(3) { animation-delay: 0.08s; }
+.email-template-list .ant-list-item:nth-child(4) { animation-delay: 0.11s; }
+.email-template-list .ant-list-item:nth-child(5) { animation-delay: 0.14s; }
+.email-template-list .ant-list-item:nth-child(6) { animation-delay: 0.17s; }
+.email-template-list .ant-list-item:nth-child(7) { animation-delay: 0.20s; }
+.email-template-list .ant-list-item:nth-child(n+8) { animation-delay: 0.23s; }
+
+/* Editor card head: the heading face, since this is the page's real title. */
+.email-editor-card__name {
+  font-family: var(--font-heading);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+/* Subject: label inline with the field rather than stacked above it, and the
+   row runs the full width of the card as a band — the design's shape. A
+   floating bordered box read as a form field dropped into a page; a full-bleed
+   row with a single rule under it reads as part of the message header, which
+   is what it is. The negative inline margin cancels the Card body padding. */
+.email-subject-row {
+  --email-card-pad: 24px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 calc(var(--email-card-pad) * -1) var(--space-3);
+  padding: 8px var(--email-card-pad);
+  border-bottom: 1px solid var(--border-light);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.email-subject-row:focus-within {
+  border-bottom-color: var(--gold);
+  background: var(--gold-subtle);
+}
+.email-subject-row__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.email-subject-row__input.ant-input-affix-wrapper { flex-grow: 1; padding: 0; background: transparent; }
+
+/* The global guard (see "Reduced-motion accessibility guard" above) zeroes
+   every duration, but a `transform` applied on :hover or on a state class
+   still lands instantly — it is a value, not a timing. So the motion that is
+   expressed as geometry has to be cancelled by hand. */
+@media (prefers-reduced-motion: reduce) {
+  .template-list-item.ant-list-item { animation: none; }
+  .template-list-item.ant-list-item::before { transition: none; }
+  .email-toolbar__save.ant-btn-primary:not(:disabled):hover { transform: none; }
+  .email-editor-iframe,
+  .email-preview-iframe { animation: none; }
+  .email-editor-card .email-editor-tabs .ant-tabs-tab-active { animation: none; }
+  .placeholder-tag:hover,
+  .placeholder-tag:focus-visible { transform: none; }
+}
+
 .email-editor-shell {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--ink-2);
   box-shadow: var(--shadow-xs);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -3003,12 +3186,29 @@ h1, h2, h3, h4, h5, h6,
   margin: 0 6px;
   background: var(--border);
 }
+/* Base height, used below the md breakpoint and by any caller that does not
+   pass an explicit `height`. In protected-chrome mode the branded header,
+   signature and footer consume ~380px before a single line of editable body
+   shows, so the old 460px left the editing area a thin strip. md+ raises this
+   further so a whole email fits — see the block near the end of this file. */
+/* The two `background` values below are LITERAL HEXES ON PURPOSE — do not
+   tokenize them and do not give them a dark-mode variant. They paint only in
+   the moment before `srcDoc` renders, behind an email document whose own
+   ground is `background:#f4f6f9` (brandedShell.js / utils/emailPreview.js).
+   A token here would flash a themed colour on load and, in dark mode, put a
+   dark grey behind a white email. They previously held #ffffff and #f1f5f9 —
+   both near-misses of the document ground, which showed as a load flicker.
+
+   The email itself is unreachable from this stylesheet either way: it is a
+   complete <!DOCTYPE html> document inside an iframe, and neither custom
+   properties nor [data-theme] cross that boundary. */
 .email-editor-iframe {
   width: 100%;
-  height: 460px;
+  height: 600px;
   border: none;
   display: block;
-  background: #ffffff;
+  background: #f4f6f9;
+  animation: emailSheetIn 0.42s var(--ease-out-quint) 0.1s both;
 }
 
 /* Isolated compiled email preview */
@@ -3017,7 +3217,17 @@ h1, h2, h3, h4, h5, h6,
   height: 560px;
   border: none;
   display: block;
-  background: #f1f5f9;
+  background: #f4f6f9;
+  animation: emailSheetIn 0.42s var(--ease-out-quint) 0.1s both;
+}
+
+/* The email rises as it loads. Applied to the FRAME, not the sheet inside it —
+   the sheet is part of the email document and out of this stylesheet's reach.
+   Transform + opacity only, so it cannot disturb the content-height
+   measurement `autoSize`/`handleLoad` take. */
+@keyframes emailSheetIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Raw HTML source editor (CodeMirror) */
@@ -3025,7 +3235,7 @@ h1, h2, h3, h4, h5, h6,
   width: 100%;
   height: 460px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: #ffffff;
   box-shadow: var(--shadow-xs);
   overflow: hidden;
@@ -3074,6 +3284,100 @@ h1, h2, h3, h4, h5, h6,
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* ----- Email Templates: segmented tab strip ------------------------------
+   AntD's `type="card"` tabs are the component default and stay that way for
+   the THREE OTHER consumers of EmailEditorTabs (Candidate Screening's
+   decision modal, the Pipeline drawer's outcome and interview modals). Only
+   the Email Templates page restyles them, so every selector here is scoped to
+   `.email-editor-card` — widening that scope changes those modals too.
+
+   The shape reuses `.admin-tabs`/`.admin-tab`: a tinted track with capsule
+   items. A pill is the app's correct idiom for TAB CHROME (see also
+   .ant-menu-horizontal); it is form controls that use --radius-sm. */
+.email-editor-card .email-editor-tabs .ant-tabs-nav { margin-bottom: var(--space-3); }
+.email-editor-card .email-editor-tabs .ant-tabs-nav::before { display: none; }
+.email-editor-card .email-editor-tabs .ant-tabs-nav-wrap { flex: none; }
+.email-editor-card .email-editor-tabs .ant-tabs-nav-list {
+  gap: 2px;
+  padding: 4px;
+  background: var(--ink-3);
+  border-radius: var(--radius-pill);
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab {
+  margin: 0;
+  padding: 5px 14px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  font-size: 12.5px;
+  color: var(--text-2);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab:hover { color: var(--text); }
+.email-editor-card .email-editor-tabs .ant-tabs-tab-active {
+  background: var(--ink-2);
+  box-shadow: var(--shadow-xs);
+  animation: tabPop 0.3s var(--ease-spring);
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--brand-primary-active);
+  font-weight: 600;
+}
+/* The ink bar is what `type="card"` replaces with a border; neither belongs on
+   a segmented control, where the moving fill IS the indicator. */
+.email-editor-card .email-editor-tabs .ant-tabs-ink-bar { display: none; }
+.email-editor-card .email-editor-tabs .ant-tabs-tabpane-active {
+  animation: fadeIn 0.25s var(--ease-out-quint) both;
+}
+
+/* ----- Email preview: mail-client chrome ---------------------------------
+   Was an inline style object in EmailPreviewPane.jsx built from an off-palette
+   slate ramp (#f8fafc/#e2e8f0/#64748b/#0f172a/#334155) with no dark-mode path
+   at all — so the header bar stayed near-white in dark mode. Moved here per
+   the rule the rest of this file follows: a stylesheet cannot restyle what
+   lives in an inline object.
+
+   This is the chrome AROUND the preview frame, not the email — see the note
+   on .email-preview-iframe above. */
+.email-preview-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--ink-2);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.email-preview-shell__chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 20px;
+  background: var(--ink-3);
+  border-bottom: 1px solid var(--border-light);
+}
+.email-preview-shell__lights { display: flex; gap: 6px; align-items: center; }
+.email-preview-shell__light { width: 10px; height: 10px; border-radius: var(--radius-pill); }
+.email-preview-shell__light--r { background: var(--red); }
+.email-preview-shell__light--y { background: var(--warn-text); }
+.email-preview-shell__light--g { background: var(--green); }
+.email-preview-shell__row { display: flex; gap: 10px; font-size: 13px; }
+
+/* Descendant-scoped so these beat `.ant-typography` (0,1,0) — these three all
+   render as AntD <Text>, whose own colour rule would otherwise win the tie on
+   injection order and undo the tokens. */
+.email-preview-shell__chrome .email-preview-shell__mode {
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.email-preview-shell__chrome .email-preview-shell__key {
+  width: 60px;
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.email-preview-shell__chrome .email-preview-shell__val { color: var(--text-2); min-width: 0; }
+.email-preview-shell__chrome .email-preview-shell__val--strong { color: var(--text); font-weight: 600; }
+
 @media (max-width: 767.98px) {
   .email-template-list {
     max-height: 45vh;
@@ -3084,56 +3388,50 @@ h1, h2, h3, h4, h5, h6,
   .email-list-card { margin-bottom: 16px; }
 }
 
-/* md+: static full-height workspace — the page root is bounded to the viewport
-   (100vh minus the 64px app header and the layout's 24px/40px paddings), the
-   cards absorb whatever the PageHeader leaves, and content scrolls inside the
-   panes. The page itself never scrolls. */
+/* md+: the editing surface is sized to the EMAIL, and the page scrolls.
+
+   This replaces an earlier "static full-height workspace" where the page root
+   was pinned to calc(100vh - 128px) and every pane scrolled internally. The
+   arithmetic never worked: the PageHeader, card head, subject row, tab strip
+   and toolbar consume ~355px of that budget, leaving roughly 240px of editing
+   surface for an email that is 750-900px tall. Worse, giving the iframe a
+   min-height large enough to be useful made it overflow its own scrolling
+   pane, so a page scrollbar and an iframe scrollbar fought over the same
+   content and the end of the body became unreachable.
+
+   So the panes now get a real height that fits a whole branded email, the
+   cards size to their content, and the browser page provides the single
+   scroll surface. The template list is bounded and sticky so it stays
+   reachable as the editor scrolls past it. */
 @media (min-width: 768px) {
-  .email-page {
-    height: calc(100vh - 128px);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-  .email-page > .email-page-row { flex: 1; min-height: 0; }
-  .email-page-row > .ant-col { height: 100%; min-height: 0; }
-  .email-pane-card {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-  .email-pane-card .ant-card-head { flex: none; }
-  .email-pane-card .ant-card-body { flex: 1; min-height: 0; }
+  /* Tighter card head — identity only now that Save lives in the toolbar. */
+  .email-editor-card .ant-card-head { padding-top: 10px; padding-bottom: 10px; min-height: 0; }
 
   .email-placeholder-card .ant-card-body {
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
+    min-height: 400px;
   }
 
-  .email-template-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
+  /* Bounded, NOT sticky. Sticky only has travel while its containing block is
+     taller than it, so pinning the card here made it drift out of line with the
+     editor beside it — the two panes stopped sharing a top edge, which was the
+     most visible thing wrong with the page.
 
-  .email-editor-tabs { flex: 1; min-height: 0; }
-  .email-editor-tabs .ant-tabs-nav { flex: none; }
-  .email-editor-tabs .ant-tabs-content-holder { flex: 1; min-height: 0; overflow: hidden; }
-  .email-editor-tabs .ant-tabs-content,
-  .email-editor-tabs .ant-tabs-tabpane { height: 100%; }
+     The budget grew by the restored PageHeader (24px title + 16px margin). */
+  .email-template-list { max-height: calc(100vh - 250px); overflow-y: auto; padding: 6px 0; }
 
-  .email-tabpane { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  /* No fixed height: each pane is measured and grown to its own content by the
+     `autoHeight` path (useEmailIframeEditor / EmailPreviewPane), so a short
+     alert leaves no dead white space and a long template needs no inner
+     scrollbar — the page does the scrolling either way. The min-height is only
+     a floor for the moment before the first measurement lands. */
+  .email-editor-pane .email-editor-iframe,
+  .email-preview-pane .email-preview-iframe { height: auto; min-height: 240px; }
 
-  /* Editor pane: subject + placeholder tray stay fixed; on short viewports the
-     pane scrolls so the editing surface never collapses below its min-height. */
-  .email-editor-pane { overflow-y: auto; }
-  .email-body-section { flex: 1 0 auto; display: flex; flex-direction: column; min-height: 0; }
-  .email-editor-pane .email-editor-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .email-editor-pane .email-editor-toolbar { flex: none; }
-  .email-editor-pane .email-editor-iframe { flex: 1; height: auto; min-height: 260px; }
-
-  .email-html-pane .email-html-editor { flex: 1; height: auto; min-height: 200px; }
-
-  .email-preview-pane .email-preview-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .email-preview-pane .email-preview-iframe { flex: 1; height: auto; min-height: 0; }
+  .email-html-pane .email-html-editor { height: auto; min-height: 200px; }
 }
 
 /* ============================================================

@@ -45,6 +45,9 @@ export default function EmailEditorTabs({
   // pre-compiled with real values server-side (nothing left to substitute).
   previewSubject,
   previewBodyHtml,
+  // Let each pane grow to its content rather than sit in a fixed-height box.
+  // Opt-in so modal callers, which size their panes explicitly, are unaffected.
+  autoHeight = false,
 }) {
   const [activeTab, setActiveTab] = useState('1');
   const [editorRev, setEditorRev] = useState(0);
@@ -99,6 +102,7 @@ export default function EmailEditorTabs({
               toolbar={toolbar}
               compact={compact}
               height={height}
+              autoHeight={autoHeight}
             />
           )),
         },
@@ -115,6 +119,7 @@ export default function EmailEditorTabs({
                 value={htmlView.text}
                 onChange={handleHtmlChange}
                 theme={isDark ? 'dark' : 'light'}
+                autoHeight={autoHeight}
               />
             </>
           )),
@@ -128,6 +133,7 @@ export default function EmailEditorTabs({
               bodyHtml={previewBodyHtml ?? bodyHtml}
               wrapper={wrapper}
               to={to}
+              autoHeight={autoHeight}
             />
           )),
         },

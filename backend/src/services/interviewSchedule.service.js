@@ -25,6 +25,7 @@ import AppError from '../utils/AppError.js';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
+import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 
@@ -394,23 +395,6 @@ function ensureTeamsBlock(html, joinUrl, meetingId, passcode) {
   if (!joinUrl || !html) return html;
   if (html.includes(joinUrl)) return html; // already there (fresh-compiled body)
   return `${html}${buildTeamsBlock(joinUrl, meetingId, passcode)}`;
-}
-
-/**
- * How the panel templates address the recipient.
- *
- * One invite goes to every interviewer on the booking, so a single name is wrong
- * as soon as there are two of them — "Hi all," is what the pre-interview reminder
- * already falls back to (jobs/interviewReminder.js). Resolved here rather than in
- * the template so the DB copy HR edits gets the same treatment as the seeded one,
- * and so "Hi {{interviewer_name}}," can never render as a bare "Hi ,".
- *
- * @param {string} name   the booking's interviewer_name (may be blank)
- * @param {string} emails the comma-joined interviewer mailbox list
- */
-function interviewerGreeting(name, emails) {
-  if (String(emails || '').includes(',')) return 'all';
-  return String(name || '').trim() || 'there';
 }
 
 function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen, interviewerName, interviewerEmail }) {
