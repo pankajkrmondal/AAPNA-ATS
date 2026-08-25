@@ -30,6 +30,11 @@ export default function EmailEditorTabs({
   onBodyChange,
   subject,
   wrapper,
+  // Optional: a second wrapper for the Live Preview tab only, built from
+  // compiled/sample-substituted values instead of the raw ones `wrapper`
+  // carries. Falls back to `wrapper` so the three other callers (which have
+  // no such distinction — their preview IS the raw template) are unaffected.
+  previewWrapper,
   placeholders = [],
   toolbar = DEFAULT_TOOLBAR,
   compact = false,
@@ -131,7 +136,7 @@ export default function EmailEditorTabs({
             <EmailPreviewPane
               subject={previewSubject ?? subject}
               bodyHtml={previewBodyHtml ?? bodyHtml}
-              wrapper={wrapper}
+              wrapper={previewWrapper ?? wrapper}
               to={to}
               autoHeight={autoHeight}
             />

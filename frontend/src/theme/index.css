@@ -3122,14 +3122,31 @@ h1, h2, h3, h4, h5, h6,
   border-bottom: 1px solid var(--border-light);
   transition: border-color var(--transition-fast), background-color var(--transition-fast);
 }
+/* The negative side margins above make the row full-bleed horizontally, but
+   the Card body's own default `padding: 24px` still sits ABOVE the row
+   untouched — 24px of dead space before the row's own 8px padding even
+   starts, against only ~20px below it (8px padding + border + the 12px
+   margin to the tab strip). That top-heavy gap is what read as "not centered
+   top to bottom".
+
+   Fixed by pulling the row flush to the card-head divider — but ONLY when
+   it's the first thing in the body. When a validation Alert renders above it
+   (see EmailManagement.jsx), the row is no longer `:first-child` and this
+   does not apply, so the Alert keeps its normal 24px breathing room from the
+   head; only the alert-less case, which is what the report was about, changes. */
+.email-subject-row:first-child { margin-top: calc(var(--email-card-pad) * -1); }
 .email-subject-row:focus-within {
   border-bottom-color: var(--gold);
   background: var(--gold-subtle);
 }
+/* Weight/spacing match the app's established uppercase-eyebrow-label idiom
+   (MRF's toolbar "Records" label, Candidates' row-count label): 700/0.1em, not
+   the lighter 600/0.07em this carried before — that was the design canvas's
+   own value, and it read as off-brand next to every other micro-label. */
 .email-subject-row__label {
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-3);
   flex-shrink: 0;
@@ -3145,7 +3162,8 @@ h1, h2, h3, h4, h5, h6,
   .template-list-item.ant-list-item::before { transition: none; }
   .email-toolbar__save.ant-btn-primary:not(:disabled):hover { transform: none; }
   .email-editor-iframe,
-  .email-preview-iframe { animation: none; }
+  .email-preview-iframe,
+  .email-html-editor { animation: none; }
   .email-editor-card .email-editor-tabs .ant-tabs-tab-active { animation: none; }
   .placeholder-tag:hover,
   .placeholder-tag:focus-visible { transform: none; }
@@ -3240,6 +3258,10 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: var(--shadow-xs);
   overflow: hidden;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  /* Same rise-in as .email-editor-iframe/.email-preview-iframe — this pane had
+     been left with only the tab strip's subtler opacity fade, so switching to
+     it read as unanimated next to the other two. */
+  animation: emailSheetIn 0.42s var(--ease-out-quint) 0.1s both;
 }
 .email-html-editor:focus-within {
   border-color: var(--gold);
@@ -3293,7 +3315,18 @@ h1, h2, h3, h4, h5, h6,
 
    The shape reuses `.admin-tabs`/`.admin-tab`: a tinted track with capsule
    items. A pill is the app's correct idiom for TAB CHROME (see also
-   .ant-menu-horizontal); it is form controls that use --radius-sm. */
+   .ant-menu-horizontal); it is form controls that use --radius-sm.
+
+   !important IS REQUIRED HERE, not decorative — the same reason
+   `.admin-tab.ant-btn` and `.ant-menu-horizontal .ant-menu-item` above use it.
+   AntD wraps its own generated class in `:where()`, which contributes ZERO
+   specificity, but the card+small tab rule still carries FOUR real class
+   selectors (`.ant-tabs-card.ant-tabs-small > .ant-tabs-nav .ant-tabs-tab`).
+   This block's selector is three classes deep — a straight specificity loss,
+   not a source-order tie — so without !important AntD's `padding: 8px` and
+   top-only `border-radius: 8px 8px 0 0` win outright and the active pill
+   renders taller than its label with square top corners, i.e. this exact
+   reported bug: the highlighted background didn't hug the tab text. */
 .email-editor-card .email-editor-tabs .ant-tabs-nav { margin-bottom: var(--space-3); }
 .email-editor-card .email-editor-tabs .ant-tabs-nav::before { display: none; }
 .email-editor-card .email-editor-tabs .ant-tabs-nav-wrap { flex: none; }
@@ -3304,18 +3337,18 @@ h1, h2, h3, h4, h5, h6,
   border-radius: var(--radius-pill);
 }
 .email-editor-card .email-editor-tabs .ant-tabs-tab {
-  margin: 0;
-  padding: 5px 14px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-pill);
+  margin: 0 !important;
+  padding: 5px 14px !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--radius-pill) !important;
   font-size: 12.5px;
   color: var(--text-2);
   transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 .email-editor-card .email-editor-tabs .ant-tabs-tab:hover { color: var(--text); }
 .email-editor-card .email-editor-tabs .ant-tabs-tab-active {
-  background: var(--ink-2);
+  background: var(--ink-2) !important;
   box-shadow: var(--shadow-xs);
   animation: tabPop 0.3s var(--ease-spring);
 }

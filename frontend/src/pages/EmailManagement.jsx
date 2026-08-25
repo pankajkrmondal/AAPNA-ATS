@@ -391,6 +391,24 @@ export default function EmailManagement() {
     [selectedTemplate, subject, bodyHtml],
   );
 
+  // A SEPARATE wrapper for the Live Preview tab, built from dummyPreview's
+  // sample-substituted subject rather than the raw one editorWrapper uses.
+  // Without this, EmailPreviewPane's mail-client "Subject:" line (which reads
+  // `previewSubject` directly) showed sample text ("... Technical Round 1:
+  // John Doe") while the actual green header band inside the branded shell —
+  // baked from `wrapper.headerHtml`, which ignores the subject prop entirely
+  // once a wrapper is present — still showed the raw, un-substituted
+  // "{{stage_label}}: {{candidate_name}}". Reusing editorWrapper for both
+  // surfaces is deliberately NOT an option: the Editor tab must keep showing
+  // the real, editable subject in its header (that IS the template), only
+  // Live Preview should show the compiled sample.
+  const previewWrapper = useMemo(
+    () => (selectedTemplate && !isFullHtmlDocument(selectedTemplate.body_html)
+      ? brandedPreviewParts({ title: dummyPreview.subject, bodyHtml: dummyPreview.body })
+      : undefined),
+    [selectedTemplate, dummyPreview],
+  );
+
   const handleCopyHtml = async () => {
     try {
       await navigator.clipboard.writeText(bodyHtml || '');
@@ -667,6 +685,7 @@ export default function EmailManagement() {
                 isDark={isDark}
                 to={sampleRecipientFor(selectedTemplate)}
                 wrapper={editorWrapper}
+                previewWrapper={previewWrapper}
                 autoHeight
                 fillHeight
                 htmlExtra={

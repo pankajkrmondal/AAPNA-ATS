@@ -5,6 +5,40 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — Pipeline Configuration: quicker stage/outcome reordering, filterable reasons, clearer Outcome Emails feedback
+**Why:** admins reshaping the pipeline had to open an edit modal and retype a raw `sort_order`
+number just to swap two adjacent stages or outcomes, the Reject/Hold Reasons list had no way to
+scope down a growing mixed (stage-specific + global) list, and the Outcome Emails tab autosaved
+every change with only a transient toast and no way to undo a misclick. Scoped as a usability
+pass ahead of demoing the screen to the recruitment team's admins — no backend changes needed,
+since `updateStage`/`updateStageOutcome`/`updateReason` already accept partial `{ sort_order }`
+payloads.
+
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Move Up/Down buttons replace
+  manual sort_order entry** for reordering existing stages and existing outcomes-within-a-stage.
+  Clicking swaps `sort_order` with the adjacent row and saves both immediately (optimistic local
+  reorder, rolled back with an error toast if either `PUT` fails). The `sort_order` field is
+  dropped from the *edit* stage/outcome forms (redundant now) and kept only on *add*, where it
+  still pre-fills the next available value. Deliberately not drag-and-drop — nothing in this
+  codebase used a DnD library yet, and a plain swap-with-neighbor fully covers "move this one
+  above/below that one" without a new dependency.
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Reject/Hold Reasons tab gets a
+  stage filter.** A `Select` next to "Add reason" narrows the table to one stage's reasons plus
+  the global ("All stages") ones; purely a client-side filter over data already loaded, no
+  service/API change. Left the Reasons table's own `sort_order` field as a plain number — that
+  order is a single global sequence shared across differently-scoped rows (`listReasons` orders
+  everything by one `sort_order`), so swap-with-neighbor doesn't map cleanly onto a filtered view
+  the way it does for stages/outcomes.
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Outcome Emails tab keeps
+  autosave-on-change but replaces the bare toast with an inline "Saved ✓ · Undo"** under the
+  changed row's `Select`, auto-clearing after ~6s. Tracks the row's previous `template_id` in
+  local state; Undo re-invokes the same save with that value.
+- **Verified:** `npx vite build` clean — 4103 modules, only the pre-existing >500 kB chunk
+  warning. Not click-tested against a live login in this pass — no admin credentials were
+  available for automated browser verification; manual verification handed off to the user.
+
+---
+
 ## 2026-08-25 — A Zeko round no longer shows the other Zeko round's score
 **Why:** PANKAJ MONDAL passed the Evalground round and moved to **Functional Screening (Zeko)**. That
 round immediately showed **Awaiting Results ✅ Done · 95 INTERVIEW** — the **HR** round's score — for a

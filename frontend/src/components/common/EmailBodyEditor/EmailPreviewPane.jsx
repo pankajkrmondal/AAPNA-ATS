@@ -70,10 +70,25 @@ export default function EmailPreviewPane({ subject, bodyHtml, wrapper, variant =
           <Text className="email-preview-shell__val">{to}</Text>
         </div>
       </div>
+      {/* `sandbox="allow-same-origin"`, not the empty `sandbox=""` this carried
+          before — that made the frame an OPAQUE origin, which silently nulls
+          `contentDocument` from the parent (same-origin policy), so
+          `handleLoad()` below could never measure the content and `autoHeight`
+          never actually fired: the frame sat stuck at CSS's `min-height:
+          240px` with anything taller spilling into the browser's own iframe
+          scrollbar — while the Editor tab's iframe (no sandbox at all; see
+          EmailBodyEditor.jsx) auto-grew correctly, which is why only Preview
+          showed one.
+          `allow-same-origin` WITHOUT `allow-scripts` does not reopen the XSS
+          surface sandbox="" was closing: script execution is still fully
+          blocked (no <script>, no inline handlers, no javascript: URLs)
+          regardless of origin — only combining allow-same-origin WITH
+          allow-scripts would be dangerous, and this adds neither. The content
+          is also already DOMPurify-sanitized before it ever reaches srcDoc. */}
       <iframe
         ref={frameRef}
         title="Email preview"
-        sandbox=""
+        sandbox="allow-same-origin"
         className="email-preview-iframe"
         srcDoc={srcDoc}
         onLoad={handleLoad}
