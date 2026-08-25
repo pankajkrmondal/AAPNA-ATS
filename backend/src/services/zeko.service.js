@@ -435,16 +435,35 @@ export async function syncZekoJobs() {
   let upserted = 0;
   for (const r of allRoles) {
     const data = transformRole(r);
+    // Every mutable field is refreshed, not a subset. `is_workflow_pub`,
+    // `is_hr_screening`, `is_coding`, `slug`, `email` and `job_ref_id` used to
+    // be set on create only, so they froze at whatever the job looked like when
+    // first seen: a job first synced as a draft and later WORKFLOW-published
+    // kept `is_workflow_pub: false` forever, leaving 8 rows on staging reading
+    // `status: 'published'` with both publish booleans false (RT, 2026-08-25).
+    // `status` itself was always updated, which is why it — not the booleans —
+    // is what getZekoJobs() filters on; this keeps the booleans from
+    // contradicting it and misleading the next reader.
+    //
+    // `created_at_zeko` and `company_name` stay create-only on purpose: the
+    // first is immutable, the second carries a local default that a sync should
+    // not stamp back over.
     await prisma.rpa_zeko_jobs.upsert({
       where: { zeko_id: data.zeko_id },
       update: {
+        job_ref_id: data.job_ref_id,
         title: data.title,
         hiring_name: data.hiring_name,
         role_name: data.role_name,
         status: data.status,
         interview_type: data.interview_type,
         is_published: data.is_published,
+        is_workflow_pub: data.is_workflow_pub,
         is_archived: data.is_archived,
+        is_hr_screening: data.is_hr_screening,
+        is_coding: data.is_coding,
+        slug: data.slug,
+        email: data.email,
         total_applicants: data.total_applicants,
         resume_count: data.resume_count,
         screening_count: data.screening_count,
