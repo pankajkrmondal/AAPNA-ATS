@@ -487,23 +487,21 @@ export async function syncZekoJobs() {
 }
 
 /**
- * Fetches every candidate response for one Zeko interview, with their scores.
+ * Lists every candidate booked against one Zeko interview.
  *
- * POST /dashboard/api/v2/pipeline/interview-responses (cookie auth) — this is the
- * call Zeko's own "Responses" page makes, and it is the ONLY source of the HR
- * screening score. The bearer API's GET /interview/<id>/results exposes just
- * `interviewScore`, which Zeko leaves at literal 0 for screening interviews, so
- * every HR round synced through it recorded a meaningless 0 (RT, 2026-08-24:
- * Panmon showed 0 in the ATS while Zeko showed 94).
+ * POST /dashboard/api/v2/pipeline/interview-responses (cookie auth) — the call
+ * Zeko's own "Responses" page makes. This is the ENUMERATION step only: it is
+ * the sole source of each candidate's `candidateId`, which the report API is
+ * keyed on.
  *
- * Which field carries the score depends on the interview type, and the response
- * flags it via `isHRScreeningPresent`:
- *   - screening-interview (`true`)  -> `fitPercentage`   (Panmon 94, Harish 75)
- *   - functional-interview (`false`) -> `interviewScore`  (Tushar 83, Kumaresan 68)
- * Verified against staging: on a functional interview `fitPercentage` is absent
- * entirely, and on a screening interview `interviewScore` is 0 for every single
- * candidate. Reading one and falling back to the other therefore fixes HR rounds
- * without disturbing the functional rounds that already worked.
+ * Its SCORE fields are deliberately not used. It is a list/summary endpoint and
+ * its numbers are unreliable per round type: `interviewScore` is a literal 0 for
+ * screening interviews AND for functional ones (RT, 2026-08-25 — four completed
+ * candidates reported 0 here while the report API had 1, 61, 56 and 65).
+ * fetchCandidateReport() below is the only trustworthy source of a score.
+ *
+ * Pagination must be preserved: one interview can hold 400+ candidates, and ours
+ * is not always on page 1 (Haris sat beyond it on a 430-candidate interview).
  *
  * The body's field names are snake_case; the endpoint 422s and names the missing
  * ones if they are wrong.
@@ -561,24 +559,88 @@ async function fetchInterviewResponses(cookieHeader, jobId, interviewId) {
 }
 
 /**
- * Picks the score Zeko actually populated for this interview type.
+ * Fetches one candidate's full interview report — the only reliable score source.
  *
- * `fitPercentage` is the screening score and is absent on functional interviews;
- * `interviewScore` is the functional score and is a hard 0 on screening ones.
- * Preferring fit and falling back keeps one column correct for both round types.
+ * GET /mygurukul/ait/interview-report?candidateId=&jobId= (cookie auth) — the API
+ * behind Zeko's own report page. Unlike the responses list, it carries the real
+ * score for EVERY round type, and it is keyed on the candidate rather than on a
+ * results tab. That last point matters: jobs expose different tabs
+ * ("Meets Criteria" exists on some and not others), and on job
+ * 69df92eff96fd5bee20f8fdc the Completed tab reads 0 while Meets Criteria reads
+ * 4 — so any logic keyed to a tab silently skips genuinely scored candidates.
  *
- * @param {object} entry - One `responses[]` element.
- * @param {boolean} isHrScreening - The response's `isHRScreeningPresent` flag.
- * @returns {number|null} The score, or null when Zeko has none.
+ * Returns null on HTTP 410 Gone, which is Zeko's own "no report exists" signal —
+ * returned for every slotMissed candidate observed. A missing report is a normal
+ * state, not a failure, so it must not throw.
+ *
+ * @param {string} cookieHeader - `authcookie=...`
+ * @param {string} candidateId - Zeko candidate id (from the responses list).
+ * @param {string} jobId - Zeko role/job id (rpa_zeko_candidate_pipeline.zeko_job_id).
+ * @returns {Promise<object|null>} The report's `data.data` object, or null when absent.
  */
-export function pickZekoScore(entry, isHrScreening) {
-  const fit = entry?.fitPercentage;
-  const interview = entry?.interviewScore;
-  if (isHrScreening) return fit ?? null;
-  // Functional: interviewScore is authoritative, but honour fit if it is the
-  // only number present (mixed-type roles exist in the catalog).
-  if (interview !== null && interview !== undefined) return interview;
-  return fit ?? null;
+async function fetchCandidateReport(cookieHeader, candidateId, jobId) {
+  const qs = new URLSearchParams({ candidateId: String(candidateId), jobId: String(jobId) });
+  const url = `${config.zeko.reportApiBase}/interview-report?${qs}`;
+  const res = await fetch(url, {
+    headers: {
+      Cookie: cookieHeader,
+      Accept: 'application/json',
+      Origin: 'https://app.zeko.ai',
+      Referer: 'https://app.zeko.ai/',
+    },
+  });
+
+  if (res.status === 410) return null; // no report for this candidate — not an error
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      `Zeko interview-report failed (candidate ${candidateId}, job ${jobId}, ${res.status}): ${JSON.stringify(body).slice(0, 300)}`
+    );
+  }
+  return body?.data?.data || null;
+}
+
+/**
+ * Picks the scores out of a candidate's interview report.
+ *
+ * Each round type carries its score in a different field, and only one of them is
+ * ever meaningful — the other two are absent, 0, or a duplicate:
+ *
+ *   round type   fit_percentage   codingScore   totalScore
+ *   HR screening      95            absent         0        <- junk
+ *   coding          absent            61           61       <- duplicate of coding
+ *   panel           absent          absent         79
+ *
+ * So all three are the same thing — "this round's headline score" — and Zeko's
+ * own UI labels them that way (Recruiter Screening / Coding Score / Interview
+ * Score). None is a communication score: softSkillsEvaluation and
+ * language_proficiency were checked and hold only qualitative text, so
+ * ZekoCommunicationScore has no source and stays null rather than being filled
+ * with totalScore's 0s and duplicates.
+ *
+ * DO NOT read `newEvaluation.overallScore`: it is a different number (49 where
+ * the UI gauge shows 79) that Zeko's own report page ignores. Reading it would
+ * put one score in the ATS and another in Zeko for the same candidate.
+ *
+ * @param {object|null} report - The report's `data.data` object.
+ * @returns {{interview: number|null, coding: number|null, communication: null}}
+ */
+export function pickZekoScore(report) {
+  const fit = report?.hr_screening_evaluation?.fit_percentage;
+  const coding = report?.coding_evaluation?.codingScore;
+  const total = report?.totalScore;
+
+  // `??` so a genuine 0 survives (a real interview CAN score 0 — Vaibhav Garse
+  // scored 38 technical against a 0 overall). `total` is taken through `|| null`
+  // instead, because on HR and coding rounds its 0 means "not applicable" rather
+  // than "scored zero" — it is only a real score when it is the sole field present.
+  const interview = fit ?? coding ?? (total || null);
+
+  return {
+    interview: interview === undefined ? null : interview,
+    coding: coding === undefined ? null : coding,
+    communication: null,
+  };
 }
 
 /**
@@ -621,9 +683,18 @@ export function zekoReportUrl(candidateId, jobId) {
  *
  * Replaces the n8n "Step 3 — Zeko Auto Fetch Interview Results" workflow:
  *   - find rpa_zeko_candidate_pipeline rows status='sent' AND interview_end_at < NOW()
- *   - POST /dashboard/api/v2/pipeline/interview-responses (cookie) per interview
- *   - on a `completed` entry for our candidate: insert rpa_zeko_interview_results,
- *     mark the pipeline 'completed', update rpa_cv Zeko score columns.
+ *   - POST /dashboard/api/v2/pipeline/interview-responses (cookie) per interview,
+ *     to ENUMERATE the roster and find our candidate's `candidateId`
+ *   - GET /mygurukul/ait/interview-report for that candidate, which is where the
+ *     real score lives for every round type
+ *   - on a scored report: write rpa_zeko_interview_results, mark the pipeline
+ *     'completed', and update rpa_cv's Zeko score columns.
+ *
+ * Both tables are written because they now feed different surfaces: the pipeline
+ * drawer and board read rpa_zeko_interview_results (round-scoped), while Search
+ * Candidate, View Candidate, the CSV export and analytics read rpa_cv. Since the
+ * 2026-08-25 round-scoping fix the drawer no longer falls back to rpa_cv, so
+ * dropping either write would blank one of those surfaces.
  *
  * Rows the OLD endpoint already finalised are not revisited by default: they are
  * `status='completed'`, so the normal sweep skips them and their bogus 0 would
@@ -692,7 +763,7 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
         fetched = await fetchInterviewResponses(cookieHeader, row.zeko_job_id, row.pipeline_id);
         responsesByInterview.set(row.pipeline_id, fetched);
       }
-      const { responses: data, isHrScreening } = fetched;
+      const { responses: data } = fetched;
 
       if (data.length === 0) {
         skipped += 1;
@@ -747,22 +818,37 @@ export async function fetchInterviewResults({ includeCompleted = false } = {}) {
         continue;
       }
 
-      const overall = pickZekoScore(result, isHrScreening);
-      if (overall === null) {
+      // The list endpoint's own score fields are not trusted (see
+      // fetchInterviewResponses) — the real numbers come from this candidate's
+      // report, which is the only source correct for every round type.
+      if (!result.candidateId) {
         skipped += 1;
         logger.warn(
-          `Zeko results fetch: ${row.candidate_email} is "${result.attemptStatus}" on interview ${row.pipeline_id} but carries neither fitPercentage nor interviewScore — nothing recorded (pipeline_row ${row.pipeline_row_id}).`
+          `Zeko results fetch: ${row.candidate_email} matched on interview ${row.pipeline_id} but carries no candidateId — cannot fetch their report (pipeline_row ${row.pipeline_row_id}).`
         );
         continue;
       }
 
-      // Screening interviews report a single fit score; Zeko exposes no
-      // technical/communication split for them, so those stay null rather than
-      // being filled with the 0s the old endpoint returned.
-      const technical = isHrScreening ? null : (result.technicalScore ?? null);
-      const communication = isHrScreening ? null : (result.communicationScore ?? null);
-      const candidateName = result.candidateName || row.sc_candidate_name || null;
-      const candidateEmail = result.candidateEmail || row.candidate_email || null;
+      const report = await fetchCandidateReport(cookieHeader, result.candidateId, row.zeko_job_id);
+      if (!report) {
+        skipped += 1;
+        logger.info(
+          `Zeko results fetch: no report yet for ${row.candidate_email} on job ${row.zeko_job_id} (attemptStatus "${result.attemptStatus}", pipeline_row ${row.pipeline_row_id}).`
+        );
+        continue;
+      }
+
+      const { interview: overall, coding: technical, communication } = pickZekoScore(report);
+      if (overall === null) {
+        skipped += 1;
+        logger.warn(
+          `Zeko results fetch: ${row.candidate_email} has a report on job ${row.zeko_job_id} but it carries none of fit_percentage / codingScore / totalScore — nothing recorded (pipeline_row ${row.pipeline_row_id}).`
+        );
+        continue;
+      }
+      const candidateName = report.name || result.candidateName || row.sc_candidate_name || null;
+      const candidateEmail = report.email || result.candidateEmail || row.candidate_email || null;
+
       // 1) Record the result. Update this candidate's existing row for the
       //    interview when there is one, rather than only ever inserting: a
       //    re-sync must be able to correct a score the old endpoint recorded

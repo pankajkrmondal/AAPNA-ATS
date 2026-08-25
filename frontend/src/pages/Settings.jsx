@@ -19,8 +19,10 @@ const APPEARANCE_OPTIONS = [
   { label: 'System', value: 'system', icon: <DesktopOutlined /> },
 ];
 
-// Poll intervals (minutes) offered for the interview-reminder check. Must match
-// ALLOWED_INTERVALS in backend/src/jobs/interviewReminder.js.
+// Poll intervals (minutes) offered for the two interview background checks — the
+// pre-interview reminder and the post-interview completion sweep. Must match
+// ALLOWED_INTERVALS in backend/src/jobs/interviewReminder.js and
+// backend/src/jobs/interviewOccurrence.js, which deliberately share one list.
 const INTERVIEW_CHECK_INTERVALS = [1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
 export default function Settings() {
@@ -40,6 +42,17 @@ export default function Settings() {
   const [interviewCfg, setInterviewCfg] = useState({ enabled: false, interval_minutes: 30, lead_minutes: 30 });
   const [interviewLoading, setInterviewLoading] = useState(true);
   const [interviewSaving, setInterviewSaving] = useState(false);
+
+  // Interview completion sweep — same save-on-change contract as the reminder
+  // scheduler above. attendance_enabled is read-only (it mirrors an env var).
+  const [occurrenceCfg, setOccurrenceCfg] = useState({
+    enabled: false,
+    interval_minutes: 30,
+    grace_minutes: 15,
+    attendance_enabled: false,
+  });
+  const [occurrenceLoading, setOccurrenceLoading] = useState(true);
+  const [occurrenceSaving, setOccurrenceSaving] = useState(false);
 
   // Load existing settings on mount
   useEffect(() => {
@@ -128,6 +141,57 @@ export default function Settings() {
     }
   };
 
+  // Load the interview completion sweep config
+  useEffect(() => {
+    const fetchOccurrenceCfg = async () => {
+      try {
+        const res = await settingsService.getInterviewOccurrenceConfig();
+        const data = res.data?.data;
+        if (data) setOccurrenceCfg(data);
+      } catch {
+        message.error('Failed to load interview completion check settings.');
+      } finally {
+        setOccurrenceLoading(false);
+      }
+    };
+    fetchOccurrenceCfg();
+  }, []);
+
+  /**
+   * Persists a completion-sweep change straight away, like the reminder card —
+   * the backend re-registers the cron on write, so there is nothing to Save.
+   */
+  const saveOccurrenceCfg = async (patch) => {
+    const previous = occurrenceCfg;
+    const next = { ...occurrenceCfg, ...patch };
+    setOccurrenceCfg(next);
+    setOccurrenceSaving(true);
+    try {
+      const res = await settingsService.saveInterviewOccurrenceConfig({
+        enabled: next.enabled,
+        interval_minutes: next.interval_minutes,
+        grace_minutes: next.grace_minutes,
+      });
+      // Adopt what the server actually saved, so the inputs can never drift from
+      // the values the sweep is really running on.
+      const saved = res.data?.data;
+      if (saved) {
+        setOccurrenceCfg((cur) => ({
+          ...cur,
+          enabled: saved.enabled,
+          interval_minutes: saved.interval_minutes,
+          grace_minutes: saved.grace_minutes,
+        }));
+      }
+      message.success(res.data?.message || 'Interview completion check updated.');
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update the interview completion check.');
+      setOccurrenceCfg(previous); // roll back the optimistic change
+    } finally {
+      setOccurrenceSaving(false);
+    }
+  };
+
   // Load Assessment automation settings on mount
   useEffect(() => {
     const fetchAssessmentSettings = async () => {
@@ -202,6 +266,13 @@ export default function Settings() {
     .hour(15)
     .minute(0)
     .subtract(interviewCfg.lead_minutes || 0, 'minute')
+    .format('h:mm A');
+
+  /** "8:00 PM plus the grace period" — the earliest the sweep looks at a finished interview. */
+  const occurrenceExampleTime = dayjs()
+    .hour(20)
+    .minute(0)
+    .add(occurrenceCfg.grace_minutes || 0, 'minute')
     .format('h:mm A');
 
   const emailCoverageColumns = [
@@ -383,6 +454,149 @@ export default function Settings() {
               but reminders are set to go out only {interviewCfg.lead_minutes} minutes ahead, so the system can skip
               past that window entirely. Raise the lead time to at least {interviewCfg.interval_minutes} minutes,
               or check more often.
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Interview completion sweep — decides whether a finished interview actually
+          happened, which is what releases the interviewer's scorecard email. */}
+      <Card
+        bordered={false}
+        className="glass-card"
+        style={{ marginBottom: 24 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
+              <CalendarOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
+              <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
+                Interview Completion Check
+              </Title>
+              <Tag color={occurrenceCfg.enabled ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
+                {occurrenceCfg.enabled ? 'ON' : 'OFF'}
+              </Tag>
+            </div>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              After an interview ends, checks whether it actually took place and emails the interviewer
+              their scorecard. Without this, someone has to mark every interview as held by hand in the
+              Candidate Pipeline before any score can be collected.
+            </Text>
+          </div>
+          <Spin spinning={occurrenceLoading || occurrenceSaving}>
+            <Switch
+              checked={occurrenceCfg.enabled}
+              onChange={(checked) => saveOccurrenceCfg({ enabled: checked })}
+              disabled={occurrenceLoading}
+              checkedChildren="ON"
+              unCheckedChildren="OFF"
+              style={{ marginTop: 4 }}
+            />
+          </Spin>
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            opacity: occurrenceCfg.enabled ? 1 : 0.45,
+            pointerEvents: occurrenceCfg.enabled ? 'auto' : 'none',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          {/* Grace first: it is the number that decides how soon the scorecard goes out. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              Wait
+            </span>
+            <InputNumber
+              min={0}
+              max={1440}
+              step={5}
+              value={occurrenceCfg.grace_minutes}
+              onChange={(val) => val !== null && saveOccurrenceCfg({ grace_minutes: val })}
+              addonAfter="minutes"
+              style={{ width: 160 }}
+            />
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              after the interview ends before checking
+            </span>
+          </div>
+
+          <div style={{ marginTop: 22, marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              How often the system checks for finished interviews
+            </span>
+            <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginTop: 2 }}>
+              Only decides how quickly a finished interview is picked up. Shorter means the scorecard
+              request reaches the interviewer sooner.
+            </Text>
+          </div>
+          <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 2 }}>
+            <Segmented
+              value={occurrenceCfg.interval_minutes}
+              onChange={(val) => saveOccurrenceCfg({ interval_minutes: val })}
+              options={INTERVIEW_CHECK_INTERVALS.map((m) => ({
+                label: m === 60 ? '1 hour' : `${m} min`,
+                value: m,
+              }))}
+            />
+          </div>
+
+          {/* Worked example — the same device the reminder card uses above. */}
+          <div
+            style={{
+              marginTop: 18,
+              background: 'var(--info-bg)',
+              border: '1px solid var(--info-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--info-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>What this means:</strong> for an interview ending at 8:00 PM, the system first looks
+            at about <strong>{occurrenceExampleTime}</strong>
+            {` and settles it within ${occurrenceCfg.interval_minutes} minute${occurrenceCfg.interval_minutes === 1 ? '' : 's'} of that.`}
+            {' '}The interviewer’s scorecard email goes out as soon as the interview is confirmed held.
+          </div>
+
+          {/* Which of the sweep's two modes will actually run. Teams attendance is an
+              env-level switch, so the card states it rather than pretending to own it. */}
+          {occurrenceCfg.attendance_enabled ? (
+            <div
+              style={{
+                marginTop: 12,
+                background: 'var(--info-bg)',
+                border: '1px solid var(--info-border)',
+                borderRadius: 8,
+                padding: '12px 16px',
+                color: 'var(--info-text)',
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>Confirmed automatically.</strong> The verdict is read from the Teams attendance
+              report — both sides must have joined. If someone did not turn up it is recorded as a
+              no-show instead, no scorecard is sent, and the team is alerted to reschedule or reject.
+            </div>
+          ) : (
+            <div
+              style={{
+                marginTop: 12,
+                background: 'var(--warn-bg)',
+                border: '1px solid var(--warn-border)',
+                borderRadius: 8,
+                padding: '12px 16px',
+                color: 'var(--warn-text)',
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>Teams attendance reading is turned off for this environment.</strong> The check
+              cannot confirm an interview on its own, so instead it emails the recruitment mailbox
+              asking someone to confirm it — up to three times, a day apart. The scorecard still only
+              goes out once an interview is marked held in the Candidate Pipeline.
             </div>
           )}
         </div>
