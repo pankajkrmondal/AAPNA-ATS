@@ -33,7 +33,7 @@ const { Text, Paragraph } = Typography;
  * The server remains the real gate, and it also checks magic bytes (D7); this
  * only saves the candidate a wasted upload and a confusing error.
  */
-const ACCEPTED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'];
+const ACCEPTED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png', '.zip'];
 const ACCEPT_ATTR = ACCEPTED_EXTS.join(',');
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -253,7 +253,8 @@ export default function DocumentUpload() {
           </Space>
 
           <Paragraph type="secondary" style={{ fontSize: 12.5, margin: '18px 0 14px 0' }}>
-            Accepted formats: PDF, DOC/DOCX, JPG or PNG — up to 10&nbsp;MB each.
+            Accepted formats: PDF, DOC/DOCX, JPG, PNG or ZIP — up to 10&nbsp;MB each.
+            Sending several files for one item? Put them in a ZIP.
           </Paragraph>
 
           <Button
@@ -291,7 +292,7 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
     const ext = dot >= 0 ? name.slice(dot).toLowerCase() : '';
     if (!ACCEPTED_EXTS.includes(ext)) {
       message.error(
-        `${name || 'That file'} is not an accepted format. Please upload a PDF, DOC/DOCX, JPG or PNG.`,
+        `${name || 'That file'} is not an accepted format. Please upload a PDF, DOC/DOCX, JPG, PNG or ZIP.`,
         6,
       );
       return Upload.LIST_IGNORE;
