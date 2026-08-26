@@ -83,7 +83,21 @@ un-estimable until this lands.
 
 ### 2.3 Built but inert
 
-**Closure emails never send.** The eight closure outcomes (`joined`, `backed_out`,
+> ⚠️ **The "Closure emails never send" paragraph below is OUT OF DATE (2026-08-26).** Left in
+> place so the audit still reads as the record it was, but do not act on it. This notice is
+> scoped to this paragraph only — the separate notice further down covers three other items.
+>
+> `GENERIC_FALLBACK_BY_OUTCOME` (`stageNotification.service.js:58-65`) now covers
+> `closure_approved` / `closure_rejected` / `closure_on_hold`, so those three send with no
+> mapping row required. The other five never send **by design**, not by omission:
+> `SILENT_FINAL_OUTCOMES` (`:87-93`) short-circuits `joined`, `joined_and_left`, `backed_out`,
+> `did_not_join` and `candidate_withdrawn` inside `resolveTemplate()` at `:115`. So "seeding
+> real closure templates" is **not** the fix for those five — the fix was correcting the
+> promise. `02-BUSINESS-DESIGN.md` §2 rule 7 is corrected; **the in-app copy at
+> `PipelineDrawer.jsx:2797` is still wrong in both directions and is not yet fixed** — see
+> [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../PHASE3-CLOSURE-AUDIT-2026-08-26.md) §2.8.
+
+~~**Closure emails never send.**~~ The eight closure outcomes (`joined`, `backed_out`,
 `did_not_join`, …) have no generic fallback — `GENERIC_FALLBACK_BY_OUTCOME` in
 `stageNotification.service.js` covers only `approved`/`rejected`/`hold` — and
 `rpa_stage_email_templates` holds **0 mapping rows**. So `resolveTemplate()` returns null
@@ -91,8 +105,8 @@ on every closure and the send is skipped.
 
 Mapping the closure outcomes onto the approve/reject generics was rejected on purpose: it
 would email *"Congratulations"* to a candidate who backed out. The UI text was corrected
-instead (2026-07-30) so it no longer promises mail that cannot go. **Seeding real closure
-templates is the actual fix.**
+instead (2026-07-30) so it no longer promises mail that cannot go. ~~**Seeding real closure
+templates is the actual fix.**~~
 
 **Four templates unseeded:**
 

@@ -987,7 +987,17 @@ h1, h2, h3, h4, h5, h6,
   text-transform: uppercase;
   color: var(--text-2);
   margin-bottom: 7px;
-  white-space: nowrap;
+  /* Wraps rather than clipping. `white-space: nowrap` against the card's
+     `overflow: hidden` silently truncated any label too long for its column —
+     "ZEKO SCORE RECEIVED" rendered as "ZEKO SCORE RECEIV" at 1280px, taking the
+     info icon off the card with it, since the icon sits inside this span.
+
+     `min-height` reserves both lines on EVERY card so a wrapping label does not
+     stand taller than its neighbours: these sit in an Ant Row that aligns to the
+     top, so without it one wrapped tile makes the whole strip ragged. */
+  white-space: normal;
+  line-height: 1.25;
+  min-height: 2.5em;
 }
 
 .kpi-card__value {

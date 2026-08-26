@@ -11,6 +11,7 @@ import {
   normalizeZekoRoundStage,
   VACATING_OUTCOMES,
   isMrfFilled,
+  isStageArrival,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, OCCURRENCE_STATUS } from './interviewSchedule.service.js';
@@ -20,8 +21,8 @@ import { SCORECARD_STATUS } from './interviewScorecard.service.js';
 import {
   MS_PER_DAY,
   stageClockStart,
-  stageDurations,
   bucketFor,
+  timeToHireFor,
 } from './pipelineAnalytics.helpers.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
@@ -1396,11 +1397,26 @@ export async function getPipelineAnalytics({
     funnel = stages.map((s) => ({
       stage_key: s.stage_key,
       label: s.label,
-      // A journey "reached" a stage if it has any event at that stage, OR it is
-      // currently sitting past it (current_stage sort_order >= this stage's).
+      // A journey "reached" a stage only if it has an ARRIVAL event there
+      // ('entered' or 'skip' — see isStageArrival).
+      //
+      // The old test was `current_stage.sort_order >= this stage's`, which
+      // counted every earlier stage as reached. That over-counts a BYPASSED
+      // optional stage: setStageOutcome() logs the 'skip' against the stage the
+      // candidate LANDS in (:762) and writes nothing at all for the one that was
+      // jumped, so a stage nobody entered scored as if everyone had.
+      //
+      // The sort_order rule survives only as a fallback for a journey with no
+      // arrival events whatsoever — a row predating the event log. Dropping it
+      // outright would swap an over-count for an under-count, which is no better.
+      // createPipelineJourney() writes 'entered' (:1259), so it should be dead
+      // code for anything this app created.
       count: mrfJourneys.filter((j) => {
-        const reachedViaEvent = j.rpa_pipeline_stage_events.some((ev) => ev.stage_key === s.stage_key);
-        if (reachedViaEvent) return true;
+        const events = j.rpa_pipeline_stage_events || [];
+        const arrivals = events.filter(isStageArrival);
+        if (arrivals.length) {
+          return arrivals.some((ev) => ev.stage_key === s.stage_key);
+        }
         const currentStage = stages.find((st) => st.stage_key === j.current_stage_key);
         return currentStage && currentStage.sort_order >= s.sort_order;
       }).length,
@@ -1455,26 +1471,16 @@ export async function getPipelineAnalytics({
     .sort((a, b) => b.count - a.count);
   const rejectionReasonsTop = capped(rejectionReasons);
 
-  // ── Time-to-hire: average days spent in each stage, across CLOSED (final_outcome) journeys ──
-  const closedJourneys = allJourneys.filter((j) => j.final_outcome);
-  const stageDurationTotals = new Map(); // stage_key -> { totalDays, count }
-  for (const j of closedJourneys) {
-    // stageDurations() measures entered → next TRANSITION, skipping notes.
-    for (const [key, days] of stageDurations(j.rpa_pipeline_stage_events, j.closed_at || j.modified_at)) {
-      if (!stageDurationTotals.has(key)) stageDurationTotals.set(key, { totalDays: 0, count: 0 });
-      const agg = stageDurationTotals.get(key);
-      agg.totalDays += days;
-      agg.count += 1;
-    }
-  }
-  const timeToHire = stages
-    .map((s) => {
-      const agg = stageDurationTotals.get(s.stage_key);
-      const avgDays = agg && agg.count > 0 ? Math.round((agg.totalDays / agg.count) * 10) / 10 : 0;
-      return { stage_key: s.stage_key, label: s.label, avg_days: avgDays };
-    })
-    .filter((row) => row.avg_days > 0);
-  const totalTimeToHire = Math.round(timeToHire.reduce((sum, r) => sum + r.avg_days, 0));
+  // ── Time-to-hire ──
+  //
+  // The whole computation moved into pipelineAnalytics.helpers.js so it can be
+  // unit-tested; the headline it produces is a different number from the one
+  // this block used to return. It was `sum(per-stage averages)`, each average
+  // taken over a different population, published as "shortlist to offer" — a
+  // figure no candidate's journey ever matched. It is now the MEDIAN end-to-end
+  // duration of hired journeys, with the sample size carried alongside so a
+  // median of two is not read as a settled benchmark.
+  const timeToHire = timeToHireFor(allJourneys, stages);
 
   // ── Vendor performance: how many of a vendor's candidates are in the pipeline ──
   //
@@ -1554,7 +1560,9 @@ export async function getPipelineAnalytics({
     stuckCandidates: stuckCandidatesTop,
     rejectionReasons: rejectionReasonsTop,
     rejectionWindowDays,
-    timeToHire: { total_days: totalTimeToHire, stages: timeToHire },
+    // `median_days` is null, never 0, when nothing has been hired — the screen
+    // renders an em-dash for it rather than a confident zero.
+    timeToHire,
     vendorPerformance: vendorPerformanceTop,
     sourceOfHire,
   };

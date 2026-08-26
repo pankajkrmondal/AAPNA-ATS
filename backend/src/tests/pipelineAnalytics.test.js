@@ -39,6 +39,7 @@ import {
   stageClockStart,
   stageDurations,
   bucketFor,
+  timeToHireFor,
 } from '../services/pipelineAnalytics.helpers.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -233,4 +234,134 @@ test('every hired outcome is a real final outcome', () => {
   for (const outcome of HIRED_OUTCOMES) {
     assert.ok(all.includes(outcome), `"${outcome}" is not in FINAL_OUTCOMES`);
   }
+});
+
+// ── Time-to-hire ────────────────────────────────────────────────────────────
+//
+// A third silent-wrongness class, fixed 2026-08-26. The headline was
+// sum(per-stage averages), each average over a DIFFERENT population — a
+// candidate rejected at Tech-1 sits in Tech-1's average and no other — published
+// as "Average days, shortlist to offer". Adding those together mixes cohorts and
+// yields a duration no candidate's journey ever matched.
+
+/** A journey `days` long that closed with `outcome`. */
+const hire = (days, outcome = FINAL_OUTCOMES.JOINED) => ({
+  final_outcome: outcome,
+  created_at: new Date(T0),
+  closed_at: new Date(T0 + days * DAY),
+  rpa_pipeline_stage_events: [],
+});
+
+test('time-to-hire reports null, never 0, when nothing has been hired', () => {
+  // The old panel rendered a confident "0 days" over an empty set. A zero that
+  // means "no data" is indistinguishable from a zero that means "instant".
+  const result = timeToHireFor([], []);
+  assert.equal(result.median_days, null);
+  assert.equal(result.sample_size, 0);
+
+  // Same when journeys exist but none of them closed as a hire.
+  const openOnly = timeToHireFor([
+    { final_outcome: null, current_stage_status: null, created_at: new Date(T0), rpa_pipeline_stage_events: [] },
+    hire(30, FINAL_OUTCOMES.REJECTED),
+  ], []);
+  assert.equal(openOnly.median_days, null);
+  assert.equal(openOnly.sample_size, 0);
+});
+
+test('one slow requisition does not drag the time-to-hire figure', () => {
+  // The reason this is a median and not a mean. Hiring sets are small and
+  // long-tailed; the mean here is 47.6 days, which describes none of the five.
+  const result = timeToHireFor([hire(10), hire(12), hire(14), hire(2), hire(200)], []);
+  assert.equal(result.sample_size, 5);
+  assert.equal(result.median_days, 12);
+});
+
+test('an even number of hires averages the two middle journeys', () => {
+  const result = timeToHireFor([hire(10), hire(20), hire(30), hire(40)], []);
+  assert.equal(result.median_days, 25);
+});
+
+test('only hired journeys count toward time-to-hire', () => {
+  // Rejected and withdrawn journeys have no hire date, so including them would
+  // measure "time to any outcome" under a label promising something else.
+  // joined_and_left is excluded for the same reason bucketFor excludes it.
+  const result = timeToHireFor([
+    hire(10, FINAL_OUTCOMES.JOINED),
+    hire(100, FINAL_OUTCOMES.REJECTED),
+    hire(100, FINAL_OUTCOMES.JOINED_AND_LEFT),
+    hire(100, FINAL_OUTCOMES.BACKED_OUT),
+    hire(20, FINAL_OUTCOMES.APPROVED),
+  ], []);
+  assert.equal(result.sample_size, 2);
+  assert.equal(result.median_days, 15);
+});
+
+test('a stage that takes minutes reports 0d instead of disappearing', () => {
+  // The old `avg_days > 0` filter deleted exactly the stages performing best:
+  // anything averaging under 0.05 days rounded to 0 and was dropped from the
+  // list, so a fast stage looked like a stage nobody had ever entered.
+  const stages = [
+    { stage_key: 'tech1', label: 'Tech 1' },
+    { stage_key: 'hr', label: 'HR' },
+  ];
+  const journeys = [{
+    final_outcome: FINAL_OUTCOMES.JOINED,
+    created_at: new Date(T0),
+    closed_at: new Date(T0 + 5 * DAY),
+    rpa_pipeline_stage_events: [
+      at(0, EVENT_TYPES.ENTERED, 'tech1'),
+      // Approved 10 minutes later — a real duration, just a very small one.
+      at(10 / (60 * 24), EVENT_TYPES.ENTERED, 'hr'),
+    ],
+  }];
+
+  const result = timeToHireFor(journeys, stages);
+  const tech1 = result.stages.find((s) => s.stage_key === 'tech1');
+  assert.ok(tech1, 'a fast stage must still be listed');
+  assert.equal(tech1.avg_days, 0);
+  assert.equal(tech1.sample_size, 1);
+});
+
+test('every stage row carries the sample size its average rests on', () => {
+  // Without it, a stage averaged over one journey reads exactly like a stage
+  // averaged over two hundred.
+  const stages = [{ stage_key: 'tech1', label: 'Tech 1' }];
+  const journeys = [
+    {
+      final_outcome: FINAL_OUTCOMES.JOINED,
+      created_at: new Date(T0),
+      closed_at: new Date(T0 + 4 * DAY),
+      rpa_pipeline_stage_events: [at(0, EVENT_TYPES.ENTERED, 'tech1'), at(2, EVENT_TYPES.OUTCOME, 'tech1')],
+    },
+    {
+      final_outcome: FINAL_OUTCOMES.REJECTED,
+      created_at: new Date(T0),
+      closed_at: new Date(T0 + 8 * DAY),
+      rpa_pipeline_stage_events: [at(0, EVENT_TYPES.ENTERED, 'tech1'), at(6, EVENT_TYPES.OUTCOME, 'tech1')],
+    },
+  ];
+
+  const result = timeToHireFor(journeys, stages);
+  const tech1 = result.stages.find((s) => s.stage_key === 'tech1');
+  // Per-stage rows span ALL closed journeys, hired or not — wider than the
+  // headline on purpose, or most stages would have a sample of nearly nothing.
+  assert.equal(tech1.sample_size, 2);
+  assert.equal(tech1.avg_days, 4); // (2 + 6) / 2
+
+  // ...while the headline still counts only the one hire.
+  assert.equal(result.sample_size, 1);
+  assert.equal(result.median_days, 4);
+});
+
+test('an open journey contributes no stage durations', () => {
+  // Its current stage has not ended, so measuring it would report a stage
+  // duration that is really "time so far" — and shrink every average.
+  const stages = [{ stage_key: 'tech1', label: 'Tech 1' }];
+  const result = timeToHireFor([{
+    final_outcome: null,
+    current_stage_status: null,
+    created_at: new Date(T0),
+    rpa_pipeline_stage_events: [at(0, EVENT_TYPES.ENTERED, 'tech1')],
+  }], stages);
+  assert.deepEqual(result.stages, []);
 });

@@ -161,6 +161,7 @@ export const roleSummaryColumns = [
   { header: 'Shortlisted', key: 'shortlisted', numeric: true },
   { header: 'Rejected', key: 'rejected', numeric: true },
   { header: 'On Hold', key: 'on_hold', numeric: true },
+  { header: 'Future Prospect', key: 'future_prospect', numeric: true },
   { header: 'Total', key: 'total', numeric: true },
 ];
 
@@ -183,6 +184,7 @@ export function groupByRole(candidates = []) {
         shortlisted: 0,
         rejected: 0,
         on_hold: 0,
+        future_prospect: 0,
         total: 0,
       });
     }
@@ -192,6 +194,10 @@ export function groupByRole(candidates = []) {
     if (status === 'shortlisted') entry.shortlisted += 1;
     else if (status === 'rejected') entry.rejected += 1;
     else if (status === 'on_hold' || status === 'on hold') entry.on_hold += 1;
+    // future_prospect is the fourth value shortlistStatusFor() writes. Without
+    // this branch it fell through into `total` alone and the columns stopped
+    // summing — see the note in screening.service.js's candidateCounts.
+    else if (status === 'future_prospect') entry.future_prospect += 1;
   }
 
   return [...groups.values()];

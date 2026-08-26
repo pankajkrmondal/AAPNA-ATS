@@ -2,6 +2,24 @@
 
 **Date:** 2026-07-30 · **Module:** M5 (offer) → MRF lifecycle
 
+> **Superseded in part, 2026-08-26.** The *mechanism* described below was replaced on
+> 2026-08-11 — see [CHANGES-2026-08-07-candidate-pipeline-fixes.md](CHANGES-2026-08-07-candidate-pipeline-fixes.md)
+> §15, and [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../PHASE3-CLOSURE-AUDIT-2026-08-26.md) §3 for the
+> as-built state. The counting rule, the `VACATING_OUTCOMES` exclusion, the never-throws guarantee, the
+> `mrf_id = null` null-safety, and the Redis + `mrf:closed` broadcast are all still accurate.
+> Three things are not:
+>
+> - **Fill state is `rpa_mrf.filled_at`, not `approval_status`.** Writing `'closed'` to
+>   `approval_status` (and mirroring it onto `rpa_mrf_jd_send.mrfstatus`) destroyed the
+>   approval + workflow state it overwrote. `filled_at` is a dedicated nullable column that
+>   never clobbers anything; `isMrfFilled()` (`config/pipelineStages.js:200`) is the only
+>   reader. `LEGACY_MRF_CLOSED_STATUS` survives solely to recognise pre-migration rows.
+> - **"Reopening is therefore a manual DB update today" is false.** `reopenMrfIfUnfilled()`
+>   is called automatically from both vacating doors — `offer.service.js:362` (an acceptance
+>   amended down) and `pipeline.service.js:1038` (a journey closed on a vacating outcome).
+> - **The verification steps at the end check the wrong columns.** Assert `filled_at`, not
+>   `approval_status` / `mrfstatus` — see `src/tests/integration/crossModuleE2E.test.js:166`.
+
 ## Why
 
 Nothing ever closed a requisition. Once an MRF was approved it stayed in the JD

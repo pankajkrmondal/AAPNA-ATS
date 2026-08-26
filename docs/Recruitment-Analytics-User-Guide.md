@@ -23,12 +23,29 @@ Six counts across the top, above the tabs.
 | **Rejected** | Candidates whose status is *rejected* |
 | **On Hold** | Candidates whose status is *on hold* |
 | **Total** | Every shortlisted candidate record in the system |
-| **Zeko Sent** | Zeko screening invitations sent (sent, in progress, completed, passed or failed) |
-| **Zeko Passed** | Zeko screenings with a *passed* result |
+| **Zeko Sent** | Candidates who have been sent a Zeko assessment |
+| **Zeko Score Received** | Candidates whose Zeko score has come back into the ATS |
 
 **Important:** these six are **all-time totals across every requisition**. They are
 not "this month" and not filtered by role. The caption under the page title says so.
 A candidate with no status set yet is counted as *shortlisted*.
+
+**Zeko Score Received is not a pass count.** The ATS records whatever score Zeko
+returns and does not judge it against a threshold — there is no pass mark anywhere
+in the system. This tile answers "how many results have come back", nothing more.
+It was previously labelled *Zeko Passed*, which promised a judgement the app never
+makes; that tile could only ever show `0`. To see how a candidate actually did, open
+their record and read the score.
+
+**Both Zeko tiles count candidates, once each** — the same unit as the four tiles
+beside them — so Score Received can be read directly against Sent. A candidate who
+sits both the HR and the functional Zeko round still counts once. (Before
+2026-08-26 they counted invitations, so those candidates were counted twice and
+Zeko Sent read higher than it does now.)
+
+**Total does not equal Shortlisted + Rejected + On Hold.** A candidate marked
+*Future Prospect* is in Total but in none of those three. The Role Summary tab
+below breaks all four out per role.
 
 ---
 
@@ -36,12 +53,17 @@ A candidate with no status set yet is counted as *shortlisted*.
 
 **Question it answers:** how is each open role performing?
 
-One row per role, showing Shortlisted / Rejected / On Hold / Total candidates,
-with the MRF number beside each role.
+One row per role, showing Shortlisted / Rejected / On Hold / Future Prospect /
+Total candidates, with the MRF number beside each role.
 
 - **Data comes from:** the candidate records created by Candidate Screening.
 - **Grouped by:** the role on the requisition (or the position the candidate
   applied for, when there is no linked MRF).
+- **The four status columns add up to Total.** *Future Prospect* — a candidate
+  worth keeping in mind for a later opening — is a status a recruiter can set in
+  the pipeline drawer like any other. It was missing from this table until
+  2026-08-26, so those candidates appeared in Total and in no column at all,
+  which made the row look like it did not add up.
 - **Shows "MRF #N/A"** when a candidate was never linked to a requisition — worth
   chasing, because those candidates are invisible to requisition-level reporting.
 
@@ -82,6 +104,11 @@ reached each stage.
 - The percentage beside each bar is the **conversion from the stage above it** —
   not from the top. It turns **red below 50%**, marking where you are losing the
   most people.
+- **"Reached" means the candidate actually arrived at that stage.** An optional
+  stage that was skipped does not count for the candidate who skipped it. Before
+  2026-08-26 anyone sitting past a stage counted as having reached it, so a
+  skipped optional stage looked as though everyone had been through it — expect
+  those bars to read lower now, and correctly.
 
 ### Stuck candidates
 
@@ -111,12 +138,28 @@ first, with the stage each reason most often occurs at.
 
 ### Time-to-hire
 
-Average days spent in each stage, plus a total for shortlist-to-offer.
+A headline figure for how long a hire takes end to end, plus average days spent in
+each stage.
 
-- **Only counts finished journeys** — candidates who have a final outcome. Someone
-  still in progress cannot tell you how long the process takes.
-- **Shows "No closed journeys yet" until the first candidate completes.** This is
-  correct, not a fault. The chart fills in as hires and rejections close out.
+- **The headline is the middle hire, not the average.** Line every completed hire up
+  by how long it took and this is the one in the middle. Hiring sets are small, and a
+  single unusually long requisition would drag an average somewhere no real hire has
+  been.
+- **It counts hires only** — candidates who joined or whose offer was approved,
+  measured from the day they entered the pipeline to the day their journey closed.
+  Rejected and withdrawn candidates are excluded: they have no hire date.
+- **Always check the number of hires shown beneath it.** Over two or three hires this
+  describes those hires; it is not a benchmark you can plan against.
+- **Shows an em-dash (—) until the first hire closes**, never "0 days". A zero here
+  would be indistinguishable from an instant hire.
+- **The stage bars are a wider, separate calculation:** average days per stage across
+  *all* closed journeys, however they ended, since a stage duration is informative for
+  a rejected candidate too. Each bar carries its own `n =` sample size. A stage that
+  genuinely takes minutes shows `0d` and stays in the list.
+- **Do not add the stage bars together to get the headline.** They will not match, and
+  they are not meant to: each stage is averaged over a different set of candidates.
+  Until 2026-08-26 the headline *was* that sum, labelled "shortlist to offer" — a
+  figure no candidate's journey ever actually matched.
 
 ### Vendor performance
 
@@ -202,6 +245,17 @@ Work through these in order — most "wrong" numbers are one of the first three:
 4. **Empty is often correct.** "No closed journeys yet", "No stuck candidates" and
    "No vendor-sourced journeys yet" are real answers about your pipeline, not
    errors.
+5. **Are you comparing against a screenshot from before 2026-08-26?** Several
+   numbers deliberately changed that day, each moving away from a wrong figure:
+   *Zeko Passed* became **Zeko Score Received** and rose off a permanent zero,
+   **Zeko Sent fell** (it now counts candidates rather than invitations), the
+   **time-to-hire headline** changed to a median over hires only, and **funnel
+   bars fell** wherever an optional stage was skipped.
+
+**A zero that never moves is worth reporting.** The *Zeko Passed* defect was
+exactly that shape — a tile that had shown `0` since the day it shipped, because it
+counted something the system never records. If a number has never changed no matter
+what you do, that is a stronger signal than a number that merely looks off.
 
 If a figure still looks wrong after those checks, note **which tab, which filter
 settings, and what you expected**, and raise it with the development team — that

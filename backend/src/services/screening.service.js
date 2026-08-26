@@ -2333,14 +2333,35 @@ export async function getZekoPipeline() {
   `;
 
   // Compute stage counts (tiles)
+  //
+  // ⚠ THE STATUS VOCABULARY THIS APP ACTUALLY WRITES IS FOUR VALUES:
+  //   'pending'   — assignCandidateToZekoJob() (:2452, :2470) and the schema default
+  //   'sent'      — scheduleInterview() (:2633)
+  //   'completed' — zeko.service.js:917, when a score syncs back
+  //   'cancelled' — cancelInterview() (:2778)
+  //
+  // 'passed', 'failed' and 'in_progress' are NEVER WRITTEN by any code path.
+  // There is no pass/fail threshold anywhere in the system — Zeko returns a
+  // score, and the ATS records it without judging it. The `zeko_passed` tile was
+  // therefore structurally 0 forever, and shipped that way while reading like a
+  // real answer. The headline tile now shows zeko_completed under the honest
+  // name "Zeko Score Received". The three unreachable aliases are kept only so
+  // any future writer of those values is counted rather than silently dropped —
+  // do not build a tile on one without first checking a writer exists.
+  //
+  // COUNT(DISTINCT candidate_id), not COUNT(*): this table is unique on
+  // (candidate_id, zeko_job_id, stage), so a candidate who sits both the HR and
+  // the functional round has TWO rows. Counting rows put these tiles in a
+  // different unit ("invitations") from the four candidate-counting tiles beside
+  // them in the same strip, which made the ratio between them meaningless.
   const stats = await prisma.$queryRaw`
-    SELECT 
-      COUNT(*) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed')) AS zeko_sent,
-      COUNT(*) FILTER (WHERE status IN ('in_progress')) AS zeko_in_progress,
-      COUNT(*) FILTER (WHERE status IN ('completed','passed','failed')) AS zeko_completed,
-      COUNT(*) FILTER (WHERE status IN ('passed')) AS zeko_passed,
-      COUNT(*) FILTER (WHERE status IN ('failed')) AS zeko_failed,
-      COUNT(*) FILTER (WHERE status IN ('cancelled')) AS zeko_cancelled
+    SELECT
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed')) AS zeko_sent,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('in_progress')) AS zeko_in_progress,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('completed','passed','failed')) AS zeko_completed,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('passed')) AS zeko_passed,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('failed')) AS zeko_failed,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('cancelled')) AS zeko_cancelled
     FROM rpa_zeko_candidate_pipeline;
   `;
 
@@ -2390,11 +2411,21 @@ export async function getZekoPipeline() {
     zeko_status: c.rpa_zeko_candidate_pipeline[0]?.status || '-',
   }));
 
-  // Compute candidate status counts (shortlisted, rejected, on_hold, total)
+  // Compute candidate status counts (shortlisted, rejected, on_hold,
+  // future_prospect, total)
+  //
+  // future_prospect is counted because shortlistStatusFor() writes it
+  // (config/pipelineStages.js:306) — it is one of the four CORE_OUTCOME_KEYS a
+  // recruiter can pick in the pipeline drawer. Without a bucket of its own such
+  // a candidate landed in `total` and in NONE of the others, so the strip
+  // stopped adding up the moment anyone used the outcome. Keep these four in
+  // lockstep with the roleStats memo in frontend/src/pages/Analytics.jsx and
+  // groupByRole() in backend/src/exports/screening.export.js.
   const candidateCounts = {
     shortlisted: candidates.filter(c => (c.pipeline_status || 'shortlisted').toLowerCase() === 'shortlisted').length,
     rejected: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'rejected').length,
     on_hold: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'on_hold' || (c.pipeline_status || '').toLowerCase() === 'on hold').length,
+    future_prospect: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'future_prospect').length,
     total: candidates.length
   };
 
@@ -2411,6 +2442,7 @@ export async function getZekoPipeline() {
       shortlisted: candidateCounts.shortlisted,
       rejected: candidateCounts.rejected,
       on_hold: candidateCounts.on_hold,
+      future_prospect: candidateCounts.future_prospect,
       total: candidateCounts.total,
     },
   };
