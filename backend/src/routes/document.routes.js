@@ -23,7 +23,13 @@ const storage = multer.diskStorage({
 
 // Wider than the resume uploader's pdf/docx: payslips and government IDs are
 // routinely photographed or scanned, so images have to be accepted too.
-const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png'];
+//
+// .zip is accepted because a single checklist row often means several files —
+// three months of payslips is three PDFs — and the page allows one file per row.
+// Candidates were already zipping them and being turned away at the last step.
+// Note the signature check can only prove a .zip IS a zip, not what is inside;
+// the recruiter opens it during verification, same as any other document.
+const ALLOWED_EXTS = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png', '.zip'];
 
 const upload = multer({
   storage,
