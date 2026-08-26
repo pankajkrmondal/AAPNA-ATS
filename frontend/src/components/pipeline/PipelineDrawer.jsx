@@ -727,8 +727,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     staleTime: 5 * 60 * 1000,
   });
 
-  // Drives the "Scorecard report" button: it only appears once at least one
-  // interviewer has SUBMITTED a scorecard for this candidate.
+  // Drives the "Scorecard report" button: it appears once at least one
+  // interviewer has SUBMITTED a scorecard — or once one is merely OUTSTANDING,
+  // because "we are still waiting on a round" is itself worth being able to open
+  // and read before deciding.
   const { data: scorecardReport } = useQuery({
     queryKey: ['scorecard-report', pipelineId],
     queryFn: async () => {
@@ -737,7 +739,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     },
     enabled: open && !!pipelineId,
   });
-  const hasScorecards = (scorecardReport?.overall?.count || 0) > 0;
+  const hasScorecards = (scorecardReport?.overall?.count || 0) > 0
+    || (scorecardReport?.pending_rounds?.length || 0) > 0;
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -2835,19 +2838,66 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     enabled: open && !!pipelineId,
   });
 
+  const rounds = data?.rounds || [];
+  const pendingRounds = data?.pending_rounds || [];
+
   return (
     <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-      ) : !data || (data.rounds || []).length === 0 ? (
-        <Empty description="No submitted scorecards yet." />
+      ) : !data || (rounds.length === 0 && pendingRounds.length === 0) ? (
+        <Empty description="No scorecards for this candidate yet." />
       ) : (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <Tag color="green" style={{ fontSize: 13, padding: '4px 10px' }}>Average: {data.overall?.average ?? '—'}</Tag>
             <Tag color="blue" style={{ fontSize: 13, padding: '4px 10px' }}>Sum: {data.overall?.sum ?? '—'}</Tag>
             <Tag style={{ fontSize: 13, padding: '4px 10px' }}>Rounds scored: {data.overall?.count ?? 0}</Tag>
+            {pendingRounds.length > 0 && (
+              <Tag color="orange" style={{ fontSize: 13, padding: '4px 10px' }}>
+                Awaiting feedback: {pendingRounds.length}
+              </Tag>
+            )}
           </div>
+
+          {/* Rounds still owed a scorecard, stated next to the numbers they
+              qualify. Without this an average over 2 of 3 rounds is
+              indistinguishable from a complete picture — and rounds do get
+              approved before their scorecard arrives, so this is the normal
+              case rather than an edge one. */}
+          {pendingRounds.length > 0 && (
+            <Card
+              size="small"
+              title="Still awaiting feedback"
+              style={{ background: 'var(--warn-bg)', borderColor: 'var(--warn-border)' }}
+            >
+              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                {pendingRounds.map((p) => (
+                  <div key={p.scorecard_id}>
+                    <Text style={{ fontSize: 12.5 }}>
+                      <strong>{p.stage_label}</strong> · {p.recipient_email}
+                    </Text>
+                    <div>
+                      {!p.delivered ? (
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          The scorecard link was never emailed — retry it from the round below.
+                        </Text>
+                      ) : p.expired ? (
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          Link expired {p.expires_at ? fmtDateTime(p.expires_at) : ''} — this round can no longer be scored.
+                        </Text>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Link sent {p.sent_at ? fmtDateTime(p.sent_at) : ''}
+                          {p.expires_at ? ` · expires ${fmtDateTime(p.expires_at)}` : ''}
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </Space>
+            </Card>
+          )}
 
           {/* Consolidated feedback — every interviewer's verdict in one place,
               above the per-round cards. Whoever makes the final call (the CEO
@@ -2883,7 +2933,7 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
               </Space>
             </Card>
           )}
-          {(data.rounds || []).map((r) => (
+          {rounds.map((r) => (
             <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
               extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -2893,6 +2943,11 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                 ))}
                 {r.hr ? <HrScorecardFields hr={r.hr} /> : null}
                 {r.comments ? <Text type="secondary" style={{ fontSize: 12.5 }}>“{r.comments}”</Text> : null}
+                {/* Dated for the same reason the pending block is: a reader
+                    comparing rounds needs to know which verdict is the recent one. */}
+                {r.submitted_at ? (
+                  <Text type="secondary" style={{ fontSize: 11.5 }}>Submitted {fmtDateTime(r.submitted_at)}</Text>
+                ) : null}
               </Space>
             </Card>
           ))}

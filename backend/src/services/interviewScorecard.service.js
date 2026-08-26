@@ -560,14 +560,31 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
  * plus an overall sum/average across the interview rounds (Tech1..CEO). Feeds
  * the drawer report panel and future analytics.
  *
+ * Rounds still WAITING on their interviewer come back separately in
+ * `pending_rounds`. The report used to show submitted cards and nothing else, so
+ * "Rounds scored: 2" looked identical whether the third round had never been run
+ * or had been held and was sitting on an interviewer who had not filled the form
+ * in. Whoever makes the decision at a later round could not tell those apart —
+ * and rounds do get approved before their scorecard lands, because Approve /
+ * Reject is not gated on it.
+ *
  * @param {number} pipelineId
  */
 export async function getCandidateScorecardReport(pipelineId) {
-  const cards = await prisma.rpa_interview_scorecard.findMany({
-    where: { pipeline_id: BigInt(pipelineId), status: 'submitted' },
-    include: { rpa_interview_scorecard_skill: { orderBy: { sort_order: 'asc' } } },
-    orderBy: [{ stage_key: 'asc' }, { submitted_at: 'asc' }],
-  });
+  const [cards, outstanding] = await Promise.all([
+    prisma.rpa_interview_scorecard.findMany({
+      where: { pipeline_id: BigInt(pipelineId), status: SCORECARD_STATUS.SUBMITTED },
+      include: { rpa_interview_scorecard_skill: { orderBy: { sort_order: 'asc' } } },
+      orderBy: [{ stage_key: 'asc' }, { submitted_at: 'asc' }],
+    }),
+    prisma.rpa_interview_scorecard.findMany({
+      where: {
+        pipeline_id: BigInt(pipelineId),
+        status: { in: [SCORECARD_STATUS.PENDING, SCORECARD_STATUS.EXPIRED] },
+      },
+      orderBy: [{ stage_key: 'asc' }, { sent_at: 'asc' }],
+    }),
+  ]);
 
   // One lookup of all stage labels rather than per-row.
   const stageRows = await prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } });
@@ -597,6 +614,26 @@ export async function getCandidateScorecardReport(pipelineId) {
     };
   });
 
+  // Rounds still owed a scorecard. `expired` is computed rather than trusted:
+  // pending → expired is applied LAZILY, on open (see SCORECARD_STATUS), so a
+  // link nobody ever clicked keeps status='pending' long past its TTL.
+  const now = Date.now();
+  const pendingRounds = outstanding.map((c) => ({
+    scorecard_id: Number(c.id),
+    stage_key: c.stage_key,
+    stage_label: labelByKey[c.stage_key] || c.stage_key,
+    recipient_email: c.recipient_email,
+    recipient_role: c.recipient_role,
+    sent_at: c.sent_at,
+    // sent_at is stamped only once Graph accepts the message, so a null here
+    // means the link never actually reached anyone — a different problem from
+    // an interviewer who simply hasn't got round to it.
+    delivered: Boolean(c.sent_at),
+    expires_at: c.token_expires_at,
+    expired: c.status === SCORECARD_STATUS.EXPIRED
+      || (c.token_expires_at ? new Date(c.token_expires_at).getTime() <= now : false),
+  }));
+
   const scored = rounds.map((r) => r.avg_score).filter((n) => n !== null && n !== undefined);
   const sum = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) * 100) / 100 : null;
   const average = scored.length ? Math.round((sum / scored.length) * 100) / 100 : null;
@@ -604,8 +641,9 @@ export async function getCandidateScorecardReport(pipelineId) {
   return {
     pipeline_id: Number(pipelineId),
     rounds,
-    overall: { count: scored.length, sum, average },
-    consolidated_feedback: buildConsolidatedFeedback(rounds, { average }),
+    pending_rounds: pendingRounds,
+    overall: { count: scored.length, sum, average, outstanding: pendingRounds.length },
+    consolidated_feedback: buildConsolidatedFeedback(rounds, { average, outstanding: pendingRounds.length }),
   };
 }
 
@@ -623,10 +661,10 @@ export async function getCandidateScorecardReport(pipelineId) {
  * than none, because it reads as "no concerns raised".
  *
  * @param {Array<object>} rounds - the serialized rounds above
- * @param {{average: number|null}} overall
+ * @param {{average: number|null, outstanding?: number}} overall
  * @returns {{summary: string, lines: Array<object>, recommendation_counts: object}|null}
  */
-function buildConsolidatedFeedback(rounds, { average }) {
+function buildConsolidatedFeedback(rounds, { average, outstanding = 0 }) {
   if (!rounds.length) return null;
 
   // Count the explicit recommendations, so "3 of 4 interviewers said hire" can
@@ -675,6 +713,9 @@ function buildConsolidatedFeedback(rounds, { average }) {
     `${rounds.length} interview${rounds.length === 1 ? '' : 's'} scored`,
     average !== null ? `average ${average}` : null,
     verdict || null,
+    // Stated in the headline, not just further down: an average over 2 of 3
+    // rounds should never be read as if it were the whole picture.
+    outstanding > 0 ? `${outstanding} awaiting feedback` : null,
   ].filter(Boolean);
 
   return {
