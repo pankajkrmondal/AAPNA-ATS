@@ -48,11 +48,17 @@ import { finalStatusLabelFor } from '../config/pipelineStages.js';
  *
  * The other five closure outcomes are absent by design; see
  * SILENT_FINAL_OUTCOMES below.
+ *
+ * Exported (2026-08-26) so the admin config screen can name the template each
+ * unmapped stage×outcome pair actually falls back to. Every pair on that screen
+ * was a blank dropdown that said nothing about what really sends; the fallback
+ * chain lives here, so the screen has to read it from here rather than restate
+ * it in the frontend and drift.
  */
-const GENERIC_FALLBACK_BY_OUTCOME = {
-  approved: 'Stage Outcome — Approved (Generic)',
-  rejected: 'Stage Outcome — Rejected (Generic)',
-  hold: 'Stage Outcome — Hold (Generic)',
+export const GENERIC_FALLBACK_BY_OUTCOME = {
+  approved: 'Stage Outcome — Approved',
+  rejected: 'Stage Outcome — Rejected',
+  hold: 'Stage Outcome — Hold',
   closure_approved: 'Closure — Approved',
   closure_rejected: 'Closure — Rejected',
   closure_on_hold: 'Closure — On Hold',

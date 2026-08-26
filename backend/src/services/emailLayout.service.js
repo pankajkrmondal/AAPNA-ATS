@@ -94,6 +94,40 @@ function headerHtml(title, subtitle, accent) {
     + `</td></tr>`;
 }
 
+/**
+ * True when a body already ends with its own sign-off.
+ *
+ * Same guard idiom as isFullHtmlDocument() above, and for the same reason: the
+ * wrapper has to be safe to apply to ANY body without auditing where it came
+ * from. Seeded bodies had their sign-off removed when signatureHtml() was
+ * centralised, but an HR-edited body — or one of the rows this seed script does
+ * not manage — can still carry one, and rendering a second underneath it looks
+ * broken. Only the tail is examined so the phrase appearing mid-sentence
+ * ("Regards, as discussed…") does not suppress a genuine signature.
+ *
+ * @param {string} html
+ * @returns {boolean}
+ */
+export function hasOwnSignature(html) {
+  if (typeof html !== 'string' || html.trim() === '') return false;
+  const tail = html.slice(-400);
+  return /\b(best|warm|kind)\s+regards\b|^\s*regards\s*,/im.test(tail);
+}
+
+/**
+ * The single canonical sign-off, rendered once here rather than duplicated in
+ * every template body — the same reasoning that already centralizes the
+ * header/logo/copyright footer. Templates that used to carry their own
+ * "Best regards" line had it removed when this was added (seed-email-templates.js);
+ * hasOwnSignature() covers the ones that still do.
+ */
+function signatureHtml() {
+  return `<tr><td style="padding:0 40px 24px 40px;font-size:15px;color:${BRAND.text}">`
+    + `<p style="margin:0 0 4px 0;">Best regards,</p>`
+    + `<p style="margin:0;font-weight:700;color:${BRAND.accent};">AAPNA Infotech Recruitment Team</p>`
+    + `</td></tr>`;
+}
+
 /** The grey footer band. */
 function footerHtml() {
   return `<tr><td style="background:${BRAND.footerBg};padding:16px;text-align:center;font-size:12px;color:${BRAND.footerText}">`
@@ -144,6 +178,7 @@ export function wrapBrandedEmail(bodyHtml, {
     + `<tr><td style="padding:32px 40px 24px 40px;font-size:15px;color:${BRAND.text};line-height:1.8">`
     + `<div${slotAttr}>${body}</div>`
     + `</td></tr>`
+    + (hasOwnSignature(body) ? '' : signatureHtml())
     + footerHtml()
     + `</table></td></tr></table></body></html>`;
 }
@@ -159,13 +194,17 @@ export function wrapBrandedEmail(bodyHtml, {
  * @param {object} [opts] - same title/subtitle/accent as wrapBrandedEmail
  * @returns {{headerHtml: string, footerHtml: string, title: string, accent: string}}
  */
-export function brandedWrapperParts({ title = '', subtitle = 'AAPNA Infotech — Recruitment Update', accent = BRAND.accent } = {}) {
+export function brandedWrapperParts({ title = '', subtitle = 'AAPNA Infotech — Recruitment Update', accent = BRAND.accent, bodyHtml = null } = {}) {
+  // `bodyHtml` is optional and used only to mirror wrapBrandedEmail()'s
+  // signature guard, so a preview of a body that carries its own sign-off does
+  // not show a second one the real send would never produce. Callers that do
+  // not have the body yet simply get the signature, which is the common case.
   return {
     headerHtml: headerHtml(title, subtitle, accent),
-    footerHtml: footerHtml(),
+    footerHtml: (bodyHtml !== null && hasOwnSignature(bodyHtml) ? '' : signatureHtml()) + footerHtml(),
     title,
     accent,
   };
 }
 
-export default { wrapBrandedEmail, isFullHtmlDocument, brandedWrapperParts, stripEditableSlot, EDITABLE_SLOT_ATTR };
+export default { wrapBrandedEmail, isFullHtmlDocument, hasOwnSignature, brandedWrapperParts, stripEditableSlot, EDITABLE_SLOT_ATTR };

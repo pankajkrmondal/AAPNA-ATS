@@ -4,6 +4,7 @@ import config from '../config/index.js';
 import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
 import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, logFailedEmail, injectTrackingPixel } from './emailNotification.service.js';
+import { wrapBrandedEmail } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage } from '../config/pipelineStages.js';
@@ -2673,7 +2674,10 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
         sender: config.microsoft.defaultSender,
         to: toEmail,
         subject,
-        html: emailHtml,
+        // Branded here rather than in the template, so this email carries the
+        // same AAPNA shell as every other send path. Idempotent for bodies that
+        // are already full documents.
+        html: wrapBrandedEmail(emailHtml, { title: subject }),
       });
     } catch (err) {
       logger.error('Failed to send interview scheduling email:', { error: err.message });
@@ -2787,7 +2791,7 @@ export async function cancelInterview(pipelineId, reason, user) {
         sender: config.microsoft.defaultSender,
         to: toEmail,
         subject,
-        html: emailHtml,
+        html: wrapBrandedEmail(emailHtml, { title: subject }),
       });
     } catch (err) {
       logger.error('Failed to send interview cancellation email:', { error: err.message });

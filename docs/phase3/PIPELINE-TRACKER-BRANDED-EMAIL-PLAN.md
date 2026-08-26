@@ -41,11 +41,11 @@ The complete Family-B inventory (all Pipeline Tracker):
 | 5 | `Interview Rescheduled — Candidate` | interview | seed L681 |
 | 6 | `Interview Rescheduled — Panel` | interview | seed L691 |
 | 7 | `Scorecard Invitation — Interviewer` | interview | seed L702 |
-| 8 | `Scorecard Invitation — HR/CEO` | interview | seed L710 |
-| 9 | `Interview — Please Confirm It Happened` | interview | seed L720 |
-| 10 | `Stage Outcome — Approved (Generic)` | stage_outcome | seed L975 |
-| 11 | `Stage Outcome — Rejected (Generic)` | stage_outcome | seed L989 |
-| 12 | `Stage Outcome — Hold (Generic)` | stage_outcome | seed L1003 |
+| 8 | `Scorecard Invitation — Leadership Round` | interview | seed L710 |
+| 9 | `Interview Attendance Check` | interview | seed L720 |
+| 10 | `Stage Outcome — Approved` | stage_outcome | seed L975 |
+| 11 | `Stage Outcome — Rejected` | stage_outcome | seed L989 |
+| 12 | `Stage Outcome — Hold` | stage_outcome | seed L1003 |
 | 13 | Interview reminder — candidate | *(hard-coded, no template row)* | [interviewReminder.js:185](../../backend/src/jobs/interviewReminder.js#L185) |
 | 14 | Interview reminder — interviewer | *(hard-coded, no template row)* | [interviewReminder.js:217](../../backend/src/jobs/interviewReminder.js#L217) |
 | 15 | Scorecard invite hard-coded fallback | *(inline when template row missing)* | [interviewScorecard.service.js:181](../../backend/src/services/interviewScorecard.service.js#L181) |

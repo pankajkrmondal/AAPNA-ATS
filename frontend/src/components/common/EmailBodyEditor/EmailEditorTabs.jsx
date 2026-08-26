@@ -30,6 +30,11 @@ export default function EmailEditorTabs({
   onBodyChange,
   subject,
   wrapper,
+  // Optional: a second wrapper for the Live Preview tab only, built from
+  // compiled/sample-substituted values instead of the raw ones `wrapper`
+  // carries. Falls back to `wrapper` so the three other callers (which have
+  // no such distinction — their preview IS the raw template) are unaffected.
+  previewWrapper,
   placeholders = [],
   toolbar = DEFAULT_TOOLBAR,
   compact = false,
@@ -45,6 +50,9 @@ export default function EmailEditorTabs({
   // pre-compiled with real values server-side (nothing left to substitute).
   previewSubject,
   previewBodyHtml,
+  // Let each pane grow to its content rather than sit in a fixed-height box.
+  // Opt-in so modal callers, which size their panes explicitly, are unaffected.
+  autoHeight = false,
 }) {
   const [activeTab, setActiveTab] = useState('1');
   const [editorRev, setEditorRev] = useState(0);
@@ -99,6 +107,7 @@ export default function EmailEditorTabs({
               toolbar={toolbar}
               compact={compact}
               height={height}
+              autoHeight={autoHeight}
             />
           )),
         },
@@ -115,6 +124,7 @@ export default function EmailEditorTabs({
                 value={htmlView.text}
                 onChange={handleHtmlChange}
                 theme={isDark ? 'dark' : 'light'}
+                autoHeight={autoHeight}
               />
             </>
           )),
@@ -126,8 +136,9 @@ export default function EmailEditorTabs({
             <EmailPreviewPane
               subject={previewSubject ?? subject}
               bodyHtml={previewBodyHtml ?? bodyHtml}
-              wrapper={wrapper}
+              wrapper={previewWrapper ?? wrapper}
               to={to}
+              autoHeight={autoHeight}
             />
           )),
         },

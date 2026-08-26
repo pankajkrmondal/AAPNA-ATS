@@ -15,12 +15,15 @@
  * Table/modal/Card conventions follow Settings.jsx and EmailManagement.jsx
  * rather than introducing a third style.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Switch, Select,
-  Tabs, Tag, Space, Typography, message,
+  Tabs, Tag, Space, Tooltip, Typography, message,
 } from 'antd';
-import { PlusOutlined, EditOutlined, ApartmentOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, EditOutlined, ApartmentOutlined, ArrowUpOutlined, ArrowDownOutlined,
+} from '@ant-design/icons';
 import pipelineService from '../../services/pipeline';
 import emailTemplateService from '../../services/emailTemplateService';
 import settingsService from '../../services/settingsService';
@@ -45,14 +48,39 @@ const STAGE_TYPES = [
 /** Outcome keys the stage engine treats specially; see STAGE_OUTCOMES. */
 const CORE_OUTCOME_KEYS = ['approved', 'rejected', 'hold', 'future_prospect'];
 
+// Tab keys the Tabs below actually use — a stale/foreign panelTab param falls
+// back to the default rather than rendering a blank pane.
+const PANEL_TAB_KEYS = new Set(['stages', 'reasons', 'stage-templates', 'flow-keys']);
+
 export default function PipelineConfigPanel() {
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('panelTab');
+  const initialPanelTab = PANEL_TAB_KEYS.has(requestedTab) ? requestedTab : undefined;
   const [stages, setStages] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [mappings, setMappings] = useState([]);
+  // The generic per-outcome fallback each unmapped pair really lands on, plus
+  // the outcomes the dispatcher refuses to email at all. Both come from the
+  // server (stageNotification.service.js owns the chain) rather than being
+  // restated here, so the screen cannot drift from what actually sends.
+  const [fallbacks, setFallbacks] = useState([]);
+  const [silentOutcomes, setSilentOutcomes] = useState([]);
   const [flowKeys, setFlowKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Reasons tab: scope the (potentially long, mixed) list down to one stage.
+  const [reasonStageFilter, setReasonStageFilter] = useState(null);
+
+  // Outcome Emails tab: rowKey -> the template_id it held before the most
+  // recent change, so "Undo" can put it back. Cleared a few seconds after a
+  // save — it's a brief safety net, not a change log.
+  const [recentSaves, setRecentSaves] = useState({});
+  const saveTimers = useRef({});
+  useEffect(() => () => {
+    Object.values(saveTimers.current).forEach(clearTimeout);
+  }, []);
 
   // One modal per entity kind; `editing` null means "create".
   const [stageModal, setStageModal] = useState({ open: false, editing: null });
@@ -83,7 +111,15 @@ export default function PipelineConfigPanel() {
       if (stageRes.status === 'fulfilled') setStages(stageRes.value.data?.data || []);
       if (reasonRes.status === 'fulfilled') setReasons(reasonRes.value.data?.data || []);
       if (templateRes.status === 'fulfilled') setTemplates(templateRes.value.data?.data || []);
-      if (mappingRes.status === 'fulfilled') setMappings(mappingRes.value.data?.data || []);
+      if (mappingRes.status === 'fulfilled') {
+        // GET /stage-templates returns the whole resolution chain as of
+        // 2026-08-26; the `|| payload` keeps a cached/older array response
+        // working as the plain mapping list it used to be.
+        const payload = mappingRes.value.data?.data;
+        setMappings(payload?.mappings || (Array.isArray(payload) ? payload : []));
+        setFallbacks(payload?.fallbacks || []);
+        setSilentOutcomes(payload?.silent_outcomes || []);
+      }
       if (flowRes.status === 'fulfilled') setFlowKeys(flowRes.value.data?.data || []);
 
       if (stageRes.status === 'rejected') {
@@ -124,9 +160,10 @@ export default function PipelineConfigPanel() {
   const openStage = (stage = null) => {
     stageForm.resetFields();
     if (stage) {
+      // sort_order isn't editable here any more — the Move Up/Down buttons on
+      // the table own reordering existing stages.
       stageForm.setFieldsValue({
         label: stage.label,
-        sort_order: stage.sort_order,
         is_optional: !!stage.is_optional,
         is_active: stage.is_active !== false,
         stage_type: stage.stage_type || 'manual',
@@ -154,13 +191,67 @@ export default function PipelineConfigPanel() {
     );
   };
 
+  /**
+   * Swaps a stage with its immediate neighbor — the actual need behind
+   * reordering (move this one above/below that one) without the round-trip of
+   * opening two edit modals and retyping sort_order by hand. Optimistic: the
+   * table reorders immediately and rolls back if either PUT fails.
+   */
+  const moveStage = async (index, direction) => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= stages.length) return;
+    const a = stages[index];
+    const b = stages[targetIndex];
+    const aOrder = a.sort_order ?? 0;
+    const bOrder = b.sort_order ?? 0;
+    const prevStages = stages;
+    const next = [...stages];
+    next[index] = { ...b, sort_order: aOrder };
+    next[targetIndex] = { ...a, sort_order: bOrder };
+    setStages(next);
+    try {
+      await Promise.all([
+        pipelineService.updateStage(a.stage_key, { sort_order: bOrder }),
+        pipelineService.updateStage(b.stage_key, { sort_order: aOrder }),
+      ]);
+    } catch (err) {
+      setStages(prevStages);
+      message.error(err.response?.data?.message || err?.message || 'Could not reorder — try again.');
+    }
+  };
+
+  // Table's dataSource is `stages` in its loaded (sort_order ascending) order
+  // with no client-side sort applied, so the row index Table hands back lines
+  // up exactly with the state array index moveStage expects.
   const stageColumns = [
+    {
+      title: '',
+      width: 64,
+      render: (_, row, index) => (
+        <Space size={2}>
+          <Button
+            size="small"
+            type="text"
+            icon={<ArrowUpOutlined />}
+            disabled={index === 0}
+            onClick={() => moveStage(index, 'up')}
+            aria-label="Move stage up"
+          />
+          <Button
+            size="small"
+            type="text"
+            icon={<ArrowDownOutlined />}
+            disabled={index === stages.length - 1}
+            onClick={() => moveStage(index, 'down')}
+            aria-label="Move stage down"
+          />
+        </Space>
+      ),
+    },
     {
       title: 'Order',
       dataIndex: 'sort_order',
-      width: 80,
-      sorter: (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-      defaultSortOrder: 'ascend',
+      width: 70,
     },
     {
       title: 'Stage',
@@ -211,12 +302,13 @@ export default function PipelineConfigPanel() {
   const openOutcome = (outcome = null) => {
     outcomeForm.resetFields();
     if (outcome) {
+      // sort_order isn't editable here any more — Move Up/Down on the
+      // outcomes table owns reordering existing outcomes.
       outcomeForm.setFieldsValue({
         label: outcome.label,
         is_advance: !!outcome.is_advance,
         is_final: !!outcome.is_final,
         is_active: outcome.is_active !== false,
-        sort_order: outcome.sort_order,
       });
     } else {
       outcomeForm.setFieldsValue({ is_advance: false, is_final: false, is_active: true, sort_order: 0 });
@@ -234,6 +326,33 @@ export default function PipelineConfigPanel() {
       editing ? 'Outcome updated.' : 'Outcome added.',
       () => setOutcomeModal((m) => ({ ...m, editing: null, formOpen: false }))
     );
+  };
+
+  /** Same swap-with-neighbor approach as moveStage, scoped to one stage's outcomes. */
+  const moveOutcome = async (index, direction) => {
+    const list = outcomesForStage;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const a = list[index];
+    const b = list[targetIndex];
+    const aOrder = a.sort_order ?? 0;
+    const bOrder = b.sort_order ?? 0;
+    const nextList = [...list];
+    nextList[index] = { ...b, sort_order: aOrder };
+    nextList[targetIndex] = { ...a, sort_order: bOrder };
+    const prevStages = stages;
+    setStages((curr) => curr.map((s) => (
+      s.stage_key === outcomeStage.stage_key ? { ...s, rpa_stage_outcomes: nextList } : s
+    )));
+    try {
+      await Promise.all([
+        pipelineService.updateStageOutcome(outcomeStage.stage_key, a.outcome_key, { sort_order: bOrder }),
+        pipelineService.updateStageOutcome(outcomeStage.stage_key, b.outcome_key, { sort_order: aOrder }),
+      ]);
+    } catch (err) {
+      setStages(prevStages);
+      message.error(err.response?.data?.message || err?.message || 'Could not reorder — try again.');
+    }
   };
 
   // ── Reasons ──────────────────────────────────────────────────────────
@@ -297,12 +416,15 @@ export default function PipelineConfigPanel() {
   // only-what-exists would hide every one of them. Staging had zero mapping
   // rows, so that view would have been empty.
   const mappingByPair = new Map(mappings.map((m) => [`${m.stage_key}:${m.outcome_key}`, m]));
+  const fallbackByOutcome = new Map(fallbacks.map((f) => [f.outcome_key, f]));
+  const silentOutcomeSet = new Set(silentOutcomes);
   const templateRows = stages
     .filter((s) => s.is_active !== false)
     .flatMap((stage) => (stage.rpa_stage_outcomes || [])
       .filter((o) => o.is_active !== false)
       .map((outcome) => {
         const mapped = mappingByPair.get(`${stage.stage_key}:${outcome.outcome_key}`);
+        const fallback = fallbackByOutcome.get(outcome.outcome_key) || null;
         return {
           key: `${stage.stage_key}:${outcome.outcome_key}`,
           stage_key: stage.stage_key,
@@ -311,39 +433,130 @@ export default function PipelineConfigPanel() {
           outcome_label: outcome.label,
           template_id: mapped?.template_id ?? null,
           template_name: mapped?.rpa_email_templates?.name || null,
+          // What this pair falls back to when nothing is picked above.
+          fallback_name: fallback?.template_name || null,
+          fallback_resolves: !!fallback?.resolves,
+          // Silent outcomes short-circuit in resolveTemplate() before the
+          // mapping is even read, so nothing picked here could ever send.
+          is_silent: silentOutcomeSet.has(outcome.outcome_key),
         };
       }));
 
-  const saveMapping = (row, templateId) => submit(
-    () => pipelineService.setStageTemplate({
-      stage_key: row.stage_key,
-      outcome_key: row.outcome_key,
-      template_id: templateId ?? null,
-    }),
-    templateId ? 'Email template mapped to that outcome.' : 'Mapping cleared — the generic template will be used.',
-    () => {},
-  );
+  /**
+   * Autosaves on every Select change (unchanged), but a transient toast was
+   * the only feedback and there was no way to undo a misclick. This tracks
+   * what the row held before the change so an inline "Saved ✓ · Undo" can
+   * offer to put it back, without adding a confirm-before-apply step.
+   */
+  const saveMapping = async (row, templateId) => {
+    // Belt and braces with the disabled Select above: resolveTemplate()
+    // short-circuits silent outcomes, so a mapping saved here would be dead
+    // config that reads as if it works.
+    if (row.is_silent) return;
+    const previousValue = row.template_id;
+    setSaving(true);
+    try {
+      await pipelineService.setStageTemplate({
+        stage_key: row.stage_key,
+        outcome_key: row.outcome_key,
+        template_id: templateId ?? null,
+      });
+      await load();
+      setRecentSaves((m) => ({ ...m, [row.key]: previousValue }));
+      clearTimeout(saveTimers.current[row.key]);
+      saveTimers.current[row.key] = setTimeout(() => {
+        setRecentSaves((m) => {
+          if (!(row.key in m)) return m;
+          const next = { ...m };
+          delete next[row.key];
+          return next;
+        });
+      }, 6000);
+    } catch (err) {
+      message.error(err.response?.data?.message || err?.message || 'That change could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * The tag that answers "what does this row actually send today?".
+   *
+   * Nearly every pair is unmapped, so before this the honest answer to that
+   * question was invisible: 38 identical blank dropdowns, with no way to tell a
+   * pair that quietly sends the generic Approved mail from one that sends
+   * nothing at all. The four states are deliberately distinct colours.
+   */
+  const renderEffectiveTemplate = (row) => {
+    if (row.is_silent) {
+      return (
+        <Tooltip title="Recording something the candidate already knows — joined, withdrew, backed out. The dispatcher refuses these before it reads any mapping, so nothing set here can send.">
+          <Tag color="default">No email — by design</Tag>
+        </Tooltip>
+      );
+    }
+    if (row.template_id) {
+      return (
+        <Tooltip title="This pair has its own template, chosen here. It overrides the generic.">
+          <Tag color="green">{row.template_name || `Template #${row.template_id}`}</Tag>
+        </Tooltip>
+      );
+    }
+    if (row.fallback_name && row.fallback_resolves) {
+      return (
+        <Tooltip title={`Nothing specific is set, so this pair sends the generic “${row.fallback_name}” template.`}>
+          <Tag color="blue">Generic · {row.fallback_name}</Tag>
+        </Tooltip>
+      );
+    }
+    return (
+      <Tooltip title={row.fallback_name
+        ? `The generic “${row.fallback_name}” template is missing or deactivated, so this pair currently sends nothing. Pick a template here, or reactivate it on the Email Templates screen.`
+        : 'This outcome has no generic fallback, so unless a template is picked here it sends nothing.'}>
+        <Tag color="red">Nothing sends</Tag>
+      </Tooltip>
+    );
+  };
 
   const templateColumns = [
     { title: 'Stage', dataIndex: 'stage_label', width: 190 },
     { title: 'Outcome', dataIndex: 'outcome_label', width: 150, render: (v, r) => <Tag>{v || r.outcome_key}</Tag> },
     {
-      title: 'Email sent',
+      title: 'Currently sends',
+      key: 'effective',
+      width: 260,
+      render: (_, row) => renderEffectiveTemplate(row),
+    },
+    {
+      title: 'Specific template',
       key: 'template_id',
       render: (_, row) => (
-        <Select
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          style={{ width: '100%', maxWidth: 380 }}
-          placeholder="Generic template for this outcome"
-          value={row.template_id}
-          disabled={saving}
-          onChange={(val) => saveMapping(row, val)}
-          options={templates
-            .filter((t) => t.is_active !== false)
-            .map((t) => ({ value: t.id, label: t.name }))}
-        />
+        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            style={{ width: '100%', maxWidth: 380 }}
+            placeholder={row.fallback_name
+              ? `Generic · ${row.fallback_name}`
+              : 'Generic template for this outcome'}
+            value={row.template_id}
+            // Offering a working dropdown on a silent outcome was a lie: it
+            // saved, said "Saved ✓", and could never send. Left disabled rather
+            // than hidden so the row still reads as a real stage×outcome pair.
+            disabled={saving || row.is_silent}
+            onChange={(val) => saveMapping(row, val)}
+            options={templates
+              .filter((t) => t.is_active !== false)
+              .map((t) => ({ value: t.id, label: t.name }))}
+          />
+          {row.key in recentSaves && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Saved ✓ ·{' '}
+              <a onClick={() => saveMapping(row, recentSaves[row.key])}>Undo</a>
+            </Text>
+          )}
+        </Space>
       ),
     },
   ];
@@ -414,6 +627,7 @@ export default function PipelineConfigPanel() {
       </div>
 
       <Tabs
+        defaultActiveKey={initialPanelTab}
         items={[
           {
             key: 'stages',
@@ -442,12 +656,22 @@ export default function PipelineConfigPanel() {
               <>
                 <Space style={{ marginBottom: 12 }}>
                   <Button type="primary" icon={<PlusOutlined />} onClick={() => openReason(null)}>Add reason</Button>
+                  <Select
+                    allowClear
+                    placeholder="Filter by stage"
+                    style={{ width: 220 }}
+                    value={reasonStageFilter}
+                    onChange={(val) => setReasonStageFilter(val ?? null)}
+                    options={stages.map((s) => ({ value: s.stage_key, label: s.label }))}
+                  />
                 </Space>
                 <Table
                   rowKey="id"
                   loading={loading}
                   columns={reasonColumns}
-                  dataSource={reasons}
+                  dataSource={reasonStageFilter
+                    ? reasons.filter((r) => r.stage_key === reasonStageFilter || !r.stage_key)
+                    : reasons}
                   pagination={{ pageSize: 12 }}
                   size="middle"
                   style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
@@ -461,9 +685,14 @@ export default function PipelineConfigPanel() {
             children: (
               <>
                 <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
-                  Which email a candidate receives for each stage outcome. Leave one blank and the
-                  generic Approved / Rejected / On&nbsp;Hold template is used instead — so nothing here
-                  can accidentally silence an email. Create new templates on the Email Templates screen.
+                  Which email a candidate receives for each stage outcome. <b>Currently sends</b> is
+                  what actually goes out today: <Tag color="green" style={{ marginInlineEnd: 4 }}>green</Tag>
+                  a template picked here, <Tag color="blue" style={{ marginInlineEnd: 4 }}>blue</Tag>
+                  the generic Approved / Rejected / On&nbsp;Hold (or Closure) template used when nothing
+                  specific is set, <Tag style={{ marginInlineEnd: 4 }}>grey</Tag> an outcome that never
+                  emails by design, and <Tag color="red" style={{ marginInlineEnd: 4 }}>red</Tag> a pair
+                  that would send nothing at all. Leaving a row blank is safe — it falls back to the
+                  generic rather than going silent. Create new templates on the Email Templates screen.
                 </Text>
                 <Table
                   rowKey="key"
@@ -579,9 +808,11 @@ export default function PipelineConfigPanel() {
           <Form.Item name="stage_type" label={uppercaseLabel('Type')} rules={[{ required: true }]}>
             <Select options={STAGE_TYPES} />
           </Form.Item>
-          <Form.Item name="sort_order" label={uppercaseLabel('Order')} extra="Lower numbers come first." rules={[{ required: true }]}>
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
+          {!stageModal.editing && (
+            <Form.Item name="sort_order" label={uppercaseLabel('Order')} extra="Lower numbers come first. Use the ▲▼ buttons on the table to reorder later." rules={[{ required: true }]}>
+              <InputNumber min={0} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item name="is_optional" label={uppercaseLabel('Optional stage')} valuePropName="checked" extra="Optional stages can be skipped without an outcome.">
             <Switch />
           </Form.Item>
@@ -611,6 +842,30 @@ export default function PipelineConfigPanel() {
           pagination={false}
           dataSource={outcomesForStage}
           columns={[
+            {
+              title: '',
+              width: 64,
+              render: (_, row, index) => (
+                <Space size={2}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<ArrowUpOutlined />}
+                    disabled={index === 0}
+                    onClick={() => moveOutcome(index, 'up')}
+                    aria-label="Move outcome up"
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<ArrowDownOutlined />}
+                    disabled={index === outcomesForStage.length - 1}
+                    onClick={() => moveOutcome(index, 'down')}
+                    aria-label="Move outcome down"
+                  />
+                </Space>
+              ),
+            },
             { title: 'Outcome', dataIndex: 'label', render: (v, r) => (
               <Space direction="vertical" size={0}>
                 <Text strong>{v}</Text>
@@ -652,7 +907,9 @@ export default function PipelineConfigPanel() {
                 {outcomeModal.editing && (
                   <Form.Item name="is_active" label={uppercaseLabel('Active')} valuePropName="checked"><Switch /></Form.Item>
                 )}
-                <Form.Item name="sort_order" label={uppercaseLabel('Order')}><InputNumber min={0} /></Form.Item>
+                {!outcomeModal.editing && (
+                  <Form.Item name="sort_order" label={uppercaseLabel('Order')}><InputNumber min={0} /></Form.Item>
+                )}
               </Space>
               <Space>
                 <Button type="primary" loading={saving} onClick={saveOutcome}>

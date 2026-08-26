@@ -29,8 +29,11 @@ export default function EmailBodyEditor({
   toolbar = DEFAULT_TOOLBAR,
   compact = false,
   height,
+  // Grow the frame to its content instead of using a fixed height. Opt-in:
+  // callers that pass an explicit `height` (the Pipeline drawer modals) keep it.
+  autoHeight = false,
 }) {
-  const editor = useEmailIframeEditor({ initialHtml, onChange, wrapper, subject, compact });
+  const editor = useEmailIframeEditor({ initialHtml, onChange, wrapper, subject, compact, autoHeight });
   const [imgModalOpen, setImgModalOpen] = useState(false);
   const showImageModal = toolbar.includes('image');
 

@@ -94,7 +94,11 @@ const DEFAULTS = {
   occurrenceNudge: { to: '', cc: '', dynamic: true },
   // Daily "this offer is still awaiting internal approval" reminder (Q26).
   // Internal only — goes to the recruitment mailbox, never the candidate.
-  offerApprovalNudge: { to: '', cc: '', dynamic: true },
+  //
+  // Disabled 2026-08-25 with the offer approval flow (jobs/offerSweep.js) — RT:
+  // the offer is handled offline and the app marks the round only. The key is
+  // kept commented rather than deleted so restoring the nudge is one line.
+  // offerApprovalNudge: { to: '', cc: '', dynamic: true },
   // Document-collection request / reminder / re-request. Prod -> candidate.
   // NO vendor cc, ever — document-stage mail never reaches a vendor (Q5).
   documentRequest: { to: '', cc: '', dynamic: true },

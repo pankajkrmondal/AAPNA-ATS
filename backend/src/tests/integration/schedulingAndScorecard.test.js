@@ -16,6 +16,12 @@
  * in OPERATOR_ADDRESSED (emailRecipients.js:159), so whatever interviewer
  * address these tests use receives REAL mail. They use the supplied test
  * mailbox for exactly that reason — never a colleague's address.
+ *
+ * ⚠ 2026-08-25: SCHED-05/08/09/10 and the scorecard cases moved from the Client
+ * round to the CEO round, because the Client Interview is now arranged offline
+ * and is no longer bookable in-app. They previously used 'client' precisely
+ * BECAUSE it sent nothing, so these cases now send real panel mail on every run
+ * where they did not before.
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -120,16 +126,26 @@ after(async () => {
 
 // ── The six rounds ────────────────────────────────────────────────────
 
-describe('SCHED — the six schedulable rounds and their invite policy', () => {
-  test('exactly five rounds auto-invite; Client is manual', async () => {
+describe('SCHED — the five schedulable rounds and their invite policy', () => {
+  test('all five bookable rounds auto-invite; Client is not bookable at all', async () => {
     const keys = Object.keys(SCHEDULABLE_STAGES);
-    assert.deepEqual(keys, ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo', 'client']);
-    for (const k of ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo']) {
+    assert.deepEqual(keys, ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo']);
+    for (const k of keys) {
       assert.equal(stageSendsInvites(k), true, `${k} must auto-invite`);
     }
-    assert.equal(stageSendsInvites('client'), false, 'the Client round must never auto-invite (Q14)');
+    // The Client Interview is arranged offline and only marked in the app
+    // (2026-08-25), so it is no longer bookable here.
+    assert.equal(isSchedulableStage('client'), false, 'the Client round is not booked in-app');
     assert.equal(isSchedulableStage('documents'), false);
     assert.equal(isSchedulableStage('offer'), false);
+  });
+
+  test('the Client round never generates anything outward, bookable or not (Q14)', async () => {
+    // This must hold independently of SCHEDULABLE_STAGES: historical bookings
+    // exist, and this switch is what stops a scorecard link, an invite or a
+    // reminder reaching the client. Deriving it from the (now absent) stage
+    // entry would silently flip it to true — the exact bug this guards.
+    assert.equal(stageSendsInvites('client'), false, 'the Client round must never auto-invite (Q14)');
   });
 });
 
@@ -216,28 +232,61 @@ describe('SCHED-03 — scheduling a round the candidate is not on', () => {
 
 // ── SCHED-02 — the Client round sends nothing ─────────────────────────
 
-describe('SCHED-02 — Client round books without any system send', () => {
-  test('a client booking creates the row but no calendar event and no email', async () => {
+describe('SCHED-02 — the Client round is arranged offline, never by the ATS', () => {
+  test('the client round cannot be booked in-app and sends no email', async () => {
     const journey = await makeJourney('SCHED02');
     await advanceTo(journey.id, 'client');
 
     const emailsBefore = await prisma.rpa_email_messages.count({ where: { candidate_id: { in: createdCvs } } });
 
-    const booking = await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: futureAt(72), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
-    });
-    assert.equal(booking.status, 'scheduled', 'the booking itself is still recorded');
-
-    // Assert on the STORED row, not the returned object: the serializer omits
-    // absent calendar fields rather than returning them as null, so a strict
-    // `=== null` on the return value fails on `undefined` without telling us
-    // anything about what was actually persisted.
-    const stored = await prisma.rpa_interview_schedule.findUnique({ where: { id: BigInt(booking.id) } });
-    assert.ok(!stored.calendar_event_id, `no calendar event for the Client round (got ${stored.calendar_event_id})`);
-    assert.ok(!stored.teams_join_url, `no Teams meeting for the Client round (got ${stored.teams_join_url})`);
+    // 2026-08-25: RT arranges the client interview directly with the client and
+    // the app only marks the round, so booking it is refused outright rather
+    // than recorded-but-silent as it used to be.
+    await assert.rejects(
+      () => scheduleInterviewRound(journey.id, {
+        stageKey: 'client', startAt: futureAt(72), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+      }),
+      (err) => {
+        assert.equal(err.statusCode, 400);
+        return true;
+      }
+    );
 
     const emailsAfter = await prisma.rpa_email_messages.count({ where: { candidate_id: { in: createdCvs } } });
     assert.equal(emailsAfter, emailsBefore, 'the Client round must send NO email (Q14)');
+  });
+
+  test('a legacy client booking marked held dispatches NO scorecard (Q14)', async () => {
+    // Bookings made before in-app booking was withdrawn still exist. The
+    // interviewer address on one of them is plausibly the CLIENT's own, so
+    // dispatching a scorecard link would email the client — exactly what Q14
+    // forbids, and what dispatchScorecards() used to do.
+    const journey = await makeJourney('SCHED02L');
+    await advanceTo(journey.id, 'client');
+
+    const legacy = await prisma.rpa_interview_schedule.create({
+      data: {
+        pipeline_id: BigInt(journey.id),
+        stage_key: 'client',
+        interviewer_email: INTERVIEWER,
+        scheduled_start_at: futureAt(-4),
+        scheduled_end_at: futureAt(-3),
+        status: 'scheduled',
+        created_by: ACTED_BY,
+      },
+    });
+
+    const emailsBefore = await prisma.rpa_email_messages.count({ where: { candidate_id: { in: createdCvs } } });
+
+    await markInterviewOccurrence(Number(legacy.id), {
+      outcome: OCCURRENCE_STATUS.HELD, source: 'manual', actedBy: ACTED_BY,
+    });
+
+    const cards = await prisma.rpa_interview_scorecard.count({ where: { schedule_id: legacy.id } });
+    assert.equal(cards, 0, 'a client round must never dispatch a scorecard');
+
+    const emailsAfter = await prisma.rpa_email_messages.count({ where: { candidate_id: { in: createdCvs } } });
+    assert.equal(emailsAfter, emailsBefore, 'nothing may be emailed for a client round');
   });
 });
 
@@ -246,15 +295,18 @@ describe('SCHED-02 — Client round books without any system send', () => {
 describe('SCHED-05 — only one live booking per round', () => {
   test('a second booking on the same round without cancelling is refused', async () => {
     const journey = await makeJourney('SCHED05');
-    await advanceTo(journey.id, 'client'); // client = no email noise
+    // Was 'client' (chosen for producing no email noise) until 2026-08-25, when
+    // that round stopped being bookable in-app. These now run on 'ceo' and DO
+    // send real panel mail to INTERVIEWER — see the header warning.
+    await advanceTo(journey.id, 'ceo');
 
     await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: futureAt(48), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+      stageKey: 'ceo', startAt: futureAt(48), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
     });
 
     await assert.rejects(
       () => scheduleInterviewRound(journey.id, {
-        stageKey: 'client', startAt: futureAt(72), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+        stageKey: 'ceo', startAt: futureAt(72), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
       }),
       (err) => {
         assert.equal(err.statusCode, 409);
@@ -270,9 +322,9 @@ describe('SCHED-05 — only one live booking per round', () => {
 describe('SCHED-08 / 09 / 10 — occurrence verdicts', () => {
   test('SCHED-08: held completes the booking and dispatches a scorecard', async () => {
     const journey = await makeJourney('SCHED08');
-    await advanceTo(journey.id, 'client');
+    await advanceTo(journey.id, 'ceo');
     const booking = await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+      stageKey: 'ceo', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
     });
 
     await markInterviewOccurrence(booking.id, {
@@ -291,11 +343,11 @@ describe('SCHED-08 / 09 / 10 — occurrence verdicts', () => {
 
   test('SCHED-09: a no-show dispatches NO scorecard and does not auto-reject the candidate', async () => {
     const journey = await makeJourney('SCHED09');
-    await advanceTo(journey.id, 'client');
+    await advanceTo(journey.id, 'ceo');
     const stageBefore = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journey.id) } });
 
     const booking = await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+      stageKey: 'ceo', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
     });
     await markInterviewOccurrence(booking.id, {
       outcome: OCCURRENCE_STATUS.NO_SHOW, source: 'manual', party: 'candidate',
@@ -316,9 +368,9 @@ describe('SCHED-08 / 09 / 10 — occurrence verdicts', () => {
 
   test('SCHED-10: a repeated occurrence call is idempotent', async () => {
     const journey = await makeJourney('SCHED10');
-    await advanceTo(journey.id, 'client');
+    await advanceTo(journey.id, 'ceo');
     const booking = await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+      stageKey: 'ceo', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
     });
 
     await markInterviewOccurrence(booking.id, { outcome: OCCURRENCE_STATUS.HELD, source: 'manual', actedBy: ACTED_BY });
@@ -336,12 +388,12 @@ describe('SCHED-08 / 09 / 10 — occurrence verdicts', () => {
 
 // ── SCHED-12 / 13 / 14 / 15 / 16 / 17 — scorecards ────────────────────
 
-/** Books a client round, marks it held, and returns its first scorecard token. */
+/** Books a CEO round, marks it held, and returns its first scorecard token. */
 async function heldInterviewWithCard(name) {
   const journey = await makeJourney(name);
-  await advanceTo(journey.id, 'client');
+  await advanceTo(journey.id, 'ceo');
   const booking = await scheduleInterviewRound(journey.id, {
-    stageKey: 'client', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
+    stageKey: 'ceo', startAt: futureAt(2), interviewerEmail: INTERVIEWER, actedBy: ACTED_BY,
   });
   await markInterviewOccurrence(booking.id, { outcome: OCCURRENCE_STATUS.HELD, source: 'manual', actedBy: ACTED_BY });
   const card = await prisma.rpa_interview_scorecard.findFirst({ where: { schedule_id: BigInt(booking.id) } });

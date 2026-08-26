@@ -6,9 +6,9 @@
  * Nothing here generates, stores, or sends a letter — it records that one went
  * out, when, for what joining date, and what the candidate said.
  *
- * The internal approval is a SOFT gate (Q26): recordOfferShared() deliberately
- * does not require approval first, so an exceptional case is never blocked; the
- * approval is tracked and nudged daily, not enforced.
+ * As of 2026-08-25 the internal approval step is disabled (see the commented
+ * block below): RT wants the offer handled offline with the app marking the
+ * round only, so the live flow is record shared -> record decision -> close.
  *
  * Closure is NOT here. The 8 final statuses live on
  * rpa_candidate_pipeline.final_outcome via pipeline.service.js setFinalOutcome().
@@ -67,94 +67,106 @@ export async function getOffer(pipelineId) {
   return serialize(row);
 }
 
-/**
- * Starts the internal approval: the recruiter asks for sign-off before the
- * offer goes out. Arms the daily nudge (jobs/offerSweep.js) by setting
- * approval_requested_at.
+/* ---------------------------------------------------------------------------
+ * DISABLED 2026-08-25 — the internal offer approval and its daily nudge.
  *
- * @param {number} pipelineId
- * @param {object} params
- * @param {number} params.actedBy
- */
-export async function requestApproval(pipelineId, { actedBy } = {}) {
-  const pipeline = await loadPipeline(pipelineId);
+ * RT's instruction is that the offer is handled entirely offline and the app
+ * only marks the round, so the two approval steps and the chase email they
+ * armed are switched off. This REVERSES the earlier written answer to Q3
+ * ("internal approval = yes, with a reminder nudge") and the in-house Q26
+ * decision, which is why the code is commented out rather than deleted — if RT
+ * asks for the sign-off back, uncomment this block plus its controllers, routes,
+ * frontend service calls and the OfferActions buttons.
+ *
+ * The rpa_offers.approval_* columns are left in place and simply stop being
+ * written, so historical approvals stay readable.
+ * -------------------------------------------------------------------------- */
 
-  const existing = await prisma.rpa_offers.findUnique({ where: { pipeline_id: pipeline.id } });
-  if (existing?.approval_status === 'approved') {
-    throw new AppError('This offer has already been approved.', 409);
-  }
+// Starts the internal approval: the recruiter asks for sign-off before the
+// offer goes out. Arms the daily nudge (jobs/offerSweep.js) by setting
+// approval_requested_at.
+//
+// @param {number} pipelineId
+// @param {object} params
+// @param {number} params.actedBy
+//
+// export async function requestApproval(pipelineId, { actedBy } = {}) {
+//   const pipeline = await loadPipeline(pipelineId);
+//
+//   const existing = await prisma.rpa_offers.findUnique({ where: { pipeline_id: pipeline.id } });
+//   if (existing?.approval_status === 'approved') {
+//     throw new AppError('This offer has already been approved.', 409);
+//   }
+//
+//   const row = await prisma.rpa_offers.upsert({
+//     where: { pipeline_id: pipeline.id },
+//     create: {
+//       pipeline_id: pipeline.id,
+//       approval_status: 'pending',
+//       approval_requested_at: new Date(),
+//     },
+//     update: {
+//       approval_status: 'pending',
+//       approval_requested_at: new Date(),
+//       // Re-requesting re-arms the nudge from scratch.
+//       approval_nudged_at: null,
+//       modified_at: new Date(),
+//     },
+//   });
+//
+//   await auditNote(pipeline.id, 'Offer approval requested — daily reminder armed', actedBy);
+//
+//   // Someone other than the requester has to sign this off, so it goes to the
+//   // team's bell as well as the daily email nudge (offerSweep.js).
+//   await notify({
+//     type: NOTIFICATION_TYPES.OFFER_APPROVAL_REQUESTED,
+//     title: 'Offer awaiting internal approval',
+//     description: `${pipeline.rpa_shortlisted_candidates?.candidate_name || 'A candidate'} — sign off before the offer goes out`,
+//     pipelineId: pipeline.id,
+//     excludeUserId: actedBy || null,
+//   });
+//
+//   logger.info(`Offer approval requested: pipeline ${pipelineId}.`);
+//   return serialize(row);
+// }
+//
+// Records the internal sign-off. Stops the daily nudge.
+// @param {number} pipelineId
+// @param {object} params
+// @param {number} params.actedBy
+//
+// export async function approveOffer(pipelineId, { actedBy } = {}) {
+//   const pipeline = await loadPipeline(pipelineId);
+//
+//   const row = await prisma.rpa_offers.upsert({
+//     where: { pipeline_id: pipeline.id },
+//     // Approving without a prior request is allowed — the request step exists to
+//     // chase someone, not to gate the approval itself.
+//     create: {
+//       pipeline_id: pipeline.id,
+//       approval_status: 'approved',
+//       approved_by: actedBy || null,
+//       approved_at: new Date(),
+//     },
+//     update: {
+//       approval_status: 'approved',
+//       approved_by: actedBy || null,
+//       approved_at: new Date(),
+//       modified_at: new Date(),
+//     },
+//   });
+//
+//   await auditNote(pipeline.id, 'Offer approved internally', actedBy);
+//   logger.info(`Offer approved: pipeline ${pipelineId}.`);
+//   return serialize(row);
+// }
 
-  const row = await prisma.rpa_offers.upsert({
-    where: { pipeline_id: pipeline.id },
-    create: {
-      pipeline_id: pipeline.id,
-      approval_status: 'pending',
-      approval_requested_at: new Date(),
-    },
-    update: {
-      approval_status: 'pending',
-      approval_requested_at: new Date(),
-      // Re-requesting re-arms the nudge from scratch.
-      approval_nudged_at: null,
-      modified_at: new Date(),
-    },
-  });
-
-  await auditNote(pipeline.id, 'Offer approval requested — daily reminder armed', actedBy);
-
-  // Someone other than the requester has to sign this off, so it goes to the
-  // team's bell as well as the daily email nudge (offerSweep.js).
-  await notify({
-    type: NOTIFICATION_TYPES.OFFER_APPROVAL_REQUESTED,
-    title: 'Offer awaiting internal approval',
-    description: `${pipeline.rpa_shortlisted_candidates?.candidate_name || 'A candidate'} — sign off before the offer goes out`,
-    pipelineId: pipeline.id,
-    excludeUserId: actedBy || null,
-  });
-
-  logger.info(`Offer approval requested: pipeline ${pipelineId}.`);
-  return serialize(row);
-}
-
-/**
- * Records the internal sign-off. Stops the daily nudge.
- * @param {number} pipelineId
- * @param {object} params
- * @param {number} params.actedBy
- */
-export async function approveOffer(pipelineId, { actedBy } = {}) {
-  const pipeline = await loadPipeline(pipelineId);
-
-  const row = await prisma.rpa_offers.upsert({
-    where: { pipeline_id: pipeline.id },
-    // Approving without a prior request is allowed — the request step exists to
-    // chase someone, not to gate the approval itself.
-    create: {
-      pipeline_id: pipeline.id,
-      approval_status: 'approved',
-      approved_by: actedBy || null,
-      approved_at: new Date(),
-    },
-    update: {
-      approval_status: 'approved',
-      approved_by: actedBy || null,
-      approved_at: new Date(),
-      modified_at: new Date(),
-    },
-  });
-
-  await auditNote(pipeline.id, 'Offer approved internally', actedBy);
-  logger.info(`Offer approved: pipeline ${pipelineId}.`);
-  return serialize(row);
-}
+// --- end of the disabled approval block -----------------------------------
 
 /**
  * Records that HR shared the offer with the candidate (from their own mailbox —
- * the ATS neither sends nor stores the letter).
- *
- * Soft gate (Q26): allowed even when approval was never recorded, so an
- * exceptional case is never blocked. The skipped approval is written to the
- * audit trail rather than rejected.
+ * the ATS neither sends nor stores the letter). This is the first live step of
+ * the offer round since the internal approval was disabled (2026-08-25).
  *
  * @param {number} pipelineId
  * @param {object} params
@@ -172,7 +184,9 @@ export async function recordOfferShared(pipelineId, { joiningDate = null, remark
   }
 
   const existing = await prisma.rpa_offers.findUnique({ where: { pipeline_id: pipeline.id } });
-  const skippedApproval = existing?.approval_status !== 'approved';
+  // Disabled 2026-08-25 with the approval flow above — there is no longer an
+  // approval step to skip, so the audit note no longer remarks on its absence.
+  // const skippedApproval = existing?.approval_status !== 'approved';
 
   const data = {
     shared_at: new Date(),
@@ -210,7 +224,7 @@ export async function recordOfferShared(pipelineId, { joiningDate = null, remark
 
   await auditNote(
     pipeline.id,
-    `Offer recorded as shared${joining ? ` — proposed joining ${joining.toISOString().slice(0, 10)}` : ''}${skippedApproval ? ' (internal approval was not recorded)' : ''}`,
+    `Offer recorded as shared${joining ? ` — proposed joining ${joining.toISOString().slice(0, 10)}` : ''}`,
     actedBy
   );
 
@@ -227,7 +241,7 @@ export async function recordOfferShared(pipelineId, { joiningDate = null, remark
     positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
   });
 
-  logger.info(`Offer shared recorded: pipeline ${pipelineId} (approvalSkipped=${skippedApproval}).`);
+  logger.info(`Offer shared recorded: pipeline ${pipelineId}.`);
   return serialize(row);
 }
 

@@ -1,46 +1,49 @@
 /**
- * offerSweep.js — the two daily Offer-round sweeps (Phase 3 M5).
+ * offerSweep.js — the daily Offer-round sweep (Phase 3 M5).
  *
- *  1. Approval nudge (Q26): while an offer's internal approval is still
- *     'pending', email the recruitment mailbox once a day until someone
- *     approves it. approval_nudged_at is the per-day idempotency guard.
+ *  Post-joining auto-close (Q12): a candidate who accepted and whose joining
+ *  date is more than OFFER_AUTO_CLOSE_AFTER_DAYS (90) days past is closed
+ *  automatically as 'joined' — unless the recruiter already closed the record
+ *  themselves (e.g. as 'joined_and_left'), which is always left alone.
  *
- *  2. Post-joining auto-close (Q12): a candidate who accepted and whose joining
- *     date is more than OFFER_AUTO_CLOSE_AFTER_DAYS (90) days past is closed
- *     automatically as 'joined' — unless the recruiter already closed the record
- *     themselves (e.g. as 'joined_and_left'), which is always left alone.
- *
- * Both are pure DB polling with no external API, so unlike the Zeko/Graph jobs
+ * It is pure DB polling with no external API, so unlike the Zeko/Graph jobs
  * there is nothing to feature-gate — the cadence alone is configurable
  * (OFFER_SWEEP_CRON, daily by default).
+ *
+ * DISABLED 2026-08-25 — the second pass, the daily approval nudge (Q26), is
+ * commented out below along with the approval flow it chased. It was the only
+ * outbound email the Offer stage generated. Reverses Q3/Q26; uncomment it
+ * together with requestApproval/approveOffer in offer.service.js.
  */
 import cron from 'node-cron';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
-import { resolveRecipients } from '../config/emailRecipients.js';
-import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
-import { wrapBrandedEmail } from '../services/emailLayout.service.js';
+// Email machinery, used only by the disabled approval nudge below.
+// import { resolveRecipients } from '../config/emailRecipients.js';
+// import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
+// import { wrapBrandedEmail } from '../services/emailLayout.service.js';
 import { setFinalOutcome } from '../services/pipeline.service.js';
 import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
 
 let task = null;
 
-/** Loads an active template row by name, or null. */
-async function getTemplate(name) {
-  return prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
-}
+/** Loads an active template row by name, or null. Used only by the nudge. */
+// async function getTemplate(name) {
+//   return prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
+// }
 
-const startOfToday = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+// const startOfToday = () => {
+//   const d = new Date();
+//   d.setHours(0, 0, 0, 0);
+//   return d;
+// };
 
 /**
  * Emails a daily reminder for every offer still awaiting internal approval.
  * @returns {Promise<number>} how many nudges were sent
  */
+/*
 export async function runApprovalNudges() {
   const due = await prisma.rpa_offers.findMany({
     where: {
@@ -107,6 +110,7 @@ export async function runApprovalNudges() {
   if (sent) logger.info(`[Offer Sweep] sent ${sent} offer-approval nudge(s).`);
   return sent;
 }
+*/
 
 /**
  * Closes journeys where the candidate joined and the retention window has
@@ -149,13 +153,14 @@ export async function runPostJoiningAutoClose() {
   return closed;
 }
 
-/** Runs both sweeps back to back; a failure in one never blocks the other. */
+/** Runs the sweep. */
 export async function runOfferSweep() {
-  try {
-    await runApprovalNudges();
-  } catch (err) {
-    logger.error(`[Offer Sweep] approval-nudge pass failed: ${err.message}`);
-  }
+  // Disabled 2026-08-25 with runApprovalNudges() above.
+  // try {
+  //   await runApprovalNudges();
+  // } catch (err) {
+  //   logger.error(`[Offer Sweep] approval-nudge pass failed: ${err.message}`);
+  // }
   try {
     await runPostJoiningAutoClose();
   } catch (err) {
@@ -174,7 +179,7 @@ export function startOfferSweepJob() {
   }
 
   task = cron.schedule(expression, () => {
-    logger.info('⏰ Running offer sweep (approval nudges + post-joining auto-close)…');
+    logger.info('⏰ Running offer sweep (post-joining auto-close)…');
     runOfferSweep();
   });
   logger.info(`📅 Offer sweep cron scheduled: "${expression}".`);

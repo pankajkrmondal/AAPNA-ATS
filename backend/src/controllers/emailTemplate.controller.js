@@ -5,6 +5,7 @@ import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import emailMonitoringExport from '../exports/emailMonitoring.export.js';
+import { SILENT_FINAL_OUTCOMES } from '../services/stageNotification.service.js';
 
 /**
  * Structural placeholders that the sending service injects as HTML fragments
@@ -22,10 +23,23 @@ const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
  * @access  Private (Recruiter/Admin)
  */
 export const getEmailTemplates = catchAsync(async (req, res) => {
-  const templates = await prisma.rpa_email_templates.findMany({
-    orderBy: { name: 'asc' },
-  });
-  return success(res, templates, 'Email templates retrieved successfully');
+  const [templates, silencedMappings] = await Promise.all([
+    prisma.rpa_email_templates.findMany({ orderBy: { name: 'asc' } }),
+    // A template mapped to an outcome in SILENT_FINAL_OUTCOMES can never send —
+    // stageNotification.service.js's resolveTemplate() short-circuits before
+    // ever looking at this mapping. Flag those templates so the Email Templates
+    // screen can tell a business user their edits here have no effect, without
+    // deciding for them whether to delete or repurpose the row.
+    prisma.rpa_stage_email_templates.findMany({
+      where: { outcome_key: { in: [...SILENT_FINAL_OUTCOMES] } },
+      select: { template_id: true },
+    }),
+  ]);
+
+  const neverSendIds = new Set(silencedMappings.map((m) => m.template_id));
+  const annotated = templates.map((t) => ({ ...t, neverSends: neverSendIds.has(t.id) }));
+
+  return success(res, annotated, 'Email templates retrieved successfully');
 });
 
 /**

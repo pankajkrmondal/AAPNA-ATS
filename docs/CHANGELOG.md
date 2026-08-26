@@ -5,6 +5,134 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-25 — Client Round and Offer trimmed to "mark only" (+ a Q14 defect fix)
+**Why:** RT's instruction is that both modules happen entirely offline and the app is used to mark
+the rounds, nothing more. Auditing both stages against that found seven things the app still did
+beyond marking — and one outright contradiction of Q14: **marking a Client Interview "held" emailed
+a no-login scorecard link to whatever address was typed as the interviewer**, on a round where that
+field was *required* and the obvious value to type is the client's own contact. `dispatchScorecards()`
+had no client-stage exclusion, unlike `interviewReminder.js`, which has gated on the same switch
+since M3. Full write-up:
+[CHANGES-2026-08-25-client-round-and-offer-mark-only.md](./changelog/CHANGES-2026-08-25-client-round-and-offer-mark-only.md).
+
+- **Nothing is deleted — every removal is commented out with a dated reason.** Both halves reverse
+  decisions RT gave in writing, and this area has already seen one reversal (Client Interview
+  shipped with automated Teams invites in M3, then rolled back days later). The
+  `rpa_offers.approval_*` columns and existing `client` bookings are left in place and simply stop
+  being written, so a restore needs no DDL. **No schema change.**
+- `backend/src/services/interviewSchedule.service.js` — the `client` entry in `SCHEDULABLE_STAGES`
+  is commented out, which alone removes the booking modal, Schedule/Reschedule/Cancel, the
+  held/no-show controls, the Teams card and the double-booking refusal, since all were keyed off
+  it. **`stageSendsInvites()` was rewritten to read a dedicated `MANUALLY_COORDINATED_STAGES` list
+  rather than that entry** — the old `SCHEDULABLE_STAGES[k]?.autoInvite !== false` would have
+  returned `undefined !== false` → **`true`** once the entry was commented out, silently
+  re-enabling outward mail on the one round that must never send any. Also fixes the MRF hint,
+  which pointed at the Yes/No `client_round` column and rendered "Interviewer: **Yes**"; it now
+  reads `client_round_coordinator`.
+- `backend/src/services/interviewScorecard.service.js` — `dispatchScorecards()` returns early for a
+  manually-coordinated round. This is the actual defect fix, and it holds for historical bookings too.
+- `backend/src/jobs/interviewOccurrence.js` — the sweep skips these rounds in both places it touches
+  a row: the per-row loop (no confirmation nudges) and the write-off `updateMany` (no stamping
+  `unconfirmed`, which would be a verdict the ATS has no basis for — it never saw the meeting).
+- `backend/src/services/offer.service.js`, `controllers/pipeline.controller.js`,
+  `routes/pipeline.routes.js`, `frontend/src/services/pipeline.js`,
+  `frontend/src/components/pipeline/PipelineDrawer.jsx` — **the internal offer approval commented
+  out as one chain** (service → controller → routes → frontend service → mutation branches →
+  the two buttons and their status lines), so nothing is left importing a disabled symbol.
+- `backend/src/jobs/offerSweep.js`, `config/emailRecipients.js`, `prisma/seed-email-templates.js`,
+  `services/notification.service.js` — `runApprovalNudges()`, the `'Offer Approval Reminder'`
+  template, the `offerApprovalNudge` recipient key and `OFFER_APPROVAL_REQUESTED` all disabled.
+  **This was the only outbound email the Offer stage generated.** `runPostJoiningAutoClose()` (Q12),
+  the MRF close/re-open coupling and the bare vendor lines are kept.
+- `frontend/src/components/pipeline/PipelineDrawer.jsx` — the Client round panel now reads
+  *Stage Entry → Arranged Offline → Client Feedback → Approve/Reject*, pointing the recruiter at the
+  outcome notes for the transcribed verdict; an existing booking is still shown read-only. The
+  Offer round's **first progress segment was rebuilt to key off stage arrival instead of
+  `approval_status`** — left as-is it would have parked every offer on "Internal approval not
+  requested yet" forever.
+- **Tests:** `SCHED-02` and `E2E-05` now assert the client round is *refused* (400) rather than
+  booked silently, plus a new case proving a legacy client booking marked held dispatches no
+  scorecard and sends no email. ⚠ **`SCHED-05/08/09/10` and the scorecard cases moved to the CEO
+  round** — they used `client` precisely *because* it sent nothing, so they now send real panel mail
+  on every run where they previously sent none; the file header records this. `OFFER-01/02` and the
+  `OFFER-14` nudge block are commented out with their imports.
+- **Each item in the Client Round is individually markable** — new
+  `backend/src/services/clientRound.service.js` + two routes under `/api/pipeline/:id/client-round/*`:
+  *Mark as held* (when it happened, optional client-side contact) and *Record client feedback* (the
+  transcribed verdict). Both write to `rpa_interview_schedule`, which already models a round, its
+  date, whether it was held and free-text notes — **no DDL**. Neither has a code path to an outbound
+  message. Previously the panel told the recruiter to "put their feedback in the outcome notes" while
+  pointing at nothing clickable.
+- **Three defects the trim itself introduced, all Client Round, all fixed:** (a) the segment buttons
+  resolved `interviewSchedule` to the component-level `data?.interviewSchedule`, which
+  `getPipelineDetail` only populates when `isSchedulableStage(current_stage_key)` — false once
+  `client` was commented out — so "Mark as held" never became "Edit date" and the **feedback button
+  never rendered at all**; fixed by hoisting a `stageSchedule` local in `renderStagePanel()`.
+  (b) `liveRow()` filtered `status: 'scheduled'` while `uq_interview_schedule_live` is UNIQUE
+  `(pipeline_id, stage_key) WHERE status <> 'cancelled'`, so a legacy round sitting at `'completed'`
+  would have hit the unique index and **500'd**. (c) an arranged-but-not-fed-back round matched every
+  clause of `listUnresolvedInterviews()` and reappeared in the confirm-it-happened queue this change
+  set removed; `MANUALLY_COORDINATED_STAGES` is now excluded there.
+- **Copy fixed for both states:** the row was labelled "Arranged Offline" before anything had been
+  arranged. Labels are fixed for a row's lifetime, so it is now **"Client Meeting"** with the
+  sentence underneath carrying the state ("Arrange this with the client, then mark it here once it
+  has happened" → "Arranged offline — held 24 Aug, 04:44 pm with …").
+- **The Offer round's "Accepted / Declined" segment showed interview copy.** The offer branch of
+  `buildPipelineSegments()` set segments 1–3 and never touched `s4`, so it fell through to the
+  generic interview tail — *"Awaiting your decision once results are in"*. An offer has no results,
+  and the decision is the **candidate's**, not the recruiter's; the real decision was meanwhile being
+  rendered into "Awaiting Response" while the row labelled for it sat empty. Segments 3 and 4 now
+  mean what their labels say (3 = the wait, 4 = the answer), and the offer stage explicitly opts out
+  of that tail — placed after the `outcomeEvent` branch so a closed journey still shows its final
+  status. "Offer Shared" now names the control that exists ("use *Record offer shared* below")
+  instead of a dead-end instruction.
+- **Marking the final closure now returns the recruiter to the board.** `closureMutation` refreshed
+  the board but left the drawer open on a journey whose card had just been removed, with every action
+  bar disabled. It now calls `onClose()` after `onChanged()`, which also clears the `?candidate=` URL
+  param — so a refresh or a shared link cannot reopen a closed journey into a dead drawer.
+- **Verified:** `node --check` clean on all modified backend files (it caught one real bug mid-change
+  — a `/* */` wrapper whose inner JSDoc `*/` closed the comment early and left `approveOffer` live);
+  the pipeline route→controller→service import graph resolves; `npx vite build` clean. Integration
+  suites not run — they hit shared staging and send real mail.
+- **Known, not fixed** (a technical round, outside this pass's scope): the Teams card is gated on
+  `isSchedulableStageKey(stage.stage_key)` but not on `isCurrent`, so viewing a past round shows the
+  *current* round's join link and interviewer. The same `stageSchedule` hoist would close it.
+- **Still open:** this reverses RT's written answer to **Q3** and the in-house **Q26** decision, and
+  is owed a written confirmation recorded in `docs/phase3/04-QUESTIONS.md`.
+
+---
+
+## 2026-08-25 — Pipeline Configuration: quicker stage/outcome reordering, filterable reasons, clearer Outcome Emails feedback
+**Why:** admins reshaping the pipeline had to open an edit modal and retype a raw `sort_order`
+number just to swap two adjacent stages or outcomes, the Reject/Hold Reasons list had no way to
+scope down a growing mixed (stage-specific + global) list, and the Outcome Emails tab autosaved
+every change with only a transient toast and no way to undo a misclick. Scoped as a usability
+pass ahead of demoing the screen to the recruitment team's admins — no backend changes needed,
+since `updateStage`/`updateStageOutcome`/`updateReason` already accept partial `{ sort_order }`
+payloads.
+
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Move Up/Down buttons replace
+  manual sort_order entry** for reordering existing stages and existing outcomes-within-a-stage.
+  Clicking swaps `sort_order` with the adjacent row and saves both immediately (optimistic local
+  reorder, rolled back with an error toast if either `PUT` fails). The `sort_order` field is
+  dropped from the *edit* stage/outcome forms (redundant now) and kept only on *add*, where it
+  still pre-fills the next available value. Deliberately not drag-and-drop — nothing in this
+  codebase used a DnD library yet, and a plain swap-with-neighbor fully covers "move this one
+  above/below that one" without a new dependency.
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Reject/Hold Reasons tab gets a
+  stage filter.** A `Select` next to "Add reason" narrows the table to one stage's reasons plus
+  the global ("All stages") ones; purely a client-side filter over data already loaded, no
+  service/API change. Left the Reasons table's own `sort_order` field as a plain number — that
+  order is a single global sequence shared across differently-scoped rows (`listReasons` orders
+  everything by one `sort_order`), so swap-with-neighbor doesn't map cleanly onto a filtered view
+  the way it does for stages/outcomes.
+- `frontend/src/components/pipeline/PipelineConfigPanel.jsx` — **Outcome Emails tab keeps
+  autosave-on-change but replaces the bare toast with an inline "Saved ✓ · Undo"** under the
+  changed row's `Select`, auto-clearing after ~6s. Tracks the row's previous `template_id` in
+  local state; Undo re-invokes the same save with that value.
+- **Verified:** `npx vite build` clean — 4103 modules, only the pre-existing >500 kB chunk
+  warning. Not click-tested against a live login in this pass — no admin credentials were
+  available for automated browser verification; manual verification handed off to the user.
 ## 2026-08-25 — Only published Zeko jobs are offered when scheduling an interview
 **Why:** the "Schedule Zeko Interview" job picker offered **Junior Python QA Automation Engineer
 Hiring**, which is in **Draft** on Zeko. Booking against it hands the candidate a dead link — Zeko

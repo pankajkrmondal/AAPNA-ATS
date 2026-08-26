@@ -20,7 +20,8 @@ import AppError from '../utils/AppError.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
-import { parseInterviewerEmails } from './interviewSchedule.service.js';
+import { parseInterviewerEmails, stageSendsInvites } from './interviewSchedule.service.js';
+import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
@@ -60,7 +61,7 @@ function roleForStage(stageKey) {
 
 const TEMPLATE_NAMES = Object.freeze({
   inviteInterviewer: 'Scorecard Invitation — Interviewer',
-  inviteHrCeo: 'Scorecard Invitation — HR/CEO',
+  inviteHrCeo: 'Scorecard Invitation — Leadership Round',
 });
 
 /** Loads an active template row by name, or null. */
@@ -211,6 +212,21 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   if (schedule.occurrence_status !== 'held') {
     return { dispatched: false, alreadySent: false, reason: 'not_held' };
   }
+  // Never dispatch for a round the system does not invite for. The recipient is
+  // whatever was typed into the booking's interviewer_email, and on the Client
+  // Interview that is plausibly the CLIENT's own address — emailing them a
+  // scorecard link is exactly what Q14 forbids ("the system must not generate
+  // anything for the client"). The same switch already gates invites, cancels
+  // and reminders; it was missing here.
+  if (!stageSendsInvites(schedule.stage_key)) {
+    logger.info(`Scorecard dispatch: schedule ${scheduleId} is a manually-coordinated round (${schedule.stage_key}) — nothing sent.`);
+    return { dispatched: false, alreadySent: false, reason: 'manually_coordinated' };
+  }
+  // Single-fire guard.
+  if (schedule.scorecard_dispatched_at) {
+    return { dispatched: false, alreadySent: true };
+  }
+
   const pipeline = schedule.rpa_candidate_pipeline;
   const candidate = pipeline?.rpa_shortlisted_candidates;
   const mrf = candidate?.mrf;
@@ -287,6 +303,43 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
   });
 
+  // Compile + send each link.
+  const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
+  const tpl = await getTemplate(tplName);
+  for (const card of created) {
+    const link = `${config.cors.frontendUrl}/scorecard/${card.token}`;
+    const tokens = {
+      candidate_name: candidate?.candidate_name || 'the candidate',
+      position,
+      stage_label: stageLabel,
+      interviewer_name: interviewerGreeting(card.recipient_name, emails.join(',')),
+      scorecard_link: link,
+    };
+    const compiled = tpl
+      ? compileTemplate(tpl.subject, tpl.body_html, tokens)
+      : {
+          subject: `Please score your ${stageLabel} — ${candidate?.candidate_name || 'candidate'}`,
+          html: `<p>Hi ${tokens.interviewer_name},</p>
+                 <p>Please submit your feedback for the <strong>${stageLabel}</strong> interview with
+                 <strong>${tokens.candidate_name}</strong> (${position}). No login is needed.</p>
+                 <p><a href="${link}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
+                 <p>This link works once and expires on ${expiresAt.toDateString()}.</p>
+                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+        };
+
+    const { to } = resolveRecipients('scorecardInvite', card.recipient_email);
+    if (to) {
+      try {
+        // Header headline = the email's own subject (RT decision, 2026-07-25).
+        const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
+        // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
+        // booking was made against, so it is reached in every environment.
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
+      } catch (err) {
+        logger.error(`Scorecard dispatch: email failed for schedule ${scheduleId} → ${card.recipient_email}: ${err.message}`);
+      }
+    }
+  }
   const { delivered, failed, failures } = await deliverScorecards(created, deliveryCtx);
 
   // Audit trail on the journey — records what was actually delivered, so a

@@ -38,7 +38,10 @@ export const NOTIFICATION_TYPES = Object.freeze({
   INTERVIEW_CONFIRM_NEEDED: 'interview.confirm_needed',
   DOCUMENT_UPLOADED: 'document.uploaded',
   DOCUMENT_ALL_VERIFIED: 'document.all_verified',
-  OFFER_APPROVAL_REQUESTED: 'offer.approval_requested',
+  // Disabled 2026-08-25 with the offer approval flow (offer.service.js). Kept
+  // commented, not deleted: existing rpa_notifications rows still carry this
+  // type and would otherwise lose their canonical key.
+  // OFFER_APPROVAL_REQUESTED: 'offer.approval_requested',
   OFFER_DECISION: 'offer.decision',
   MRF_CLOSED: 'mrf.closed',
   ASSESSMENT_IMPORT_DONE: 'assessment.import_done',

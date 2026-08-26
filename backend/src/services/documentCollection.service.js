@@ -102,8 +102,6 @@ const CTA = (link, label) =>
  * @returns {{subject: string, html: string}}
  */
 function fallbackEmail(templateName, t, link) {
-  const sign = '<p>Best regards,<br/>AAPNA Recruitment Team</p>';
-
   // A rejection is a reminder carrying the two extra tokens.
   if (templateName === TEMPLATE_NAMES.reminder && t.rejected_document) {
     return {
@@ -112,8 +110,7 @@ function fallbackEmail(templateName, t, link) {
              <p>Thank you for sending your documents for <strong>${t.position}</strong>. We need one of them again:</p>
              <p><strong>${t.rejected_document}</strong><br/>${t.rejection_reason}</p>
              <p>Please re-upload it using the same secure link — no login is needed.</p>
-             ${CTA(link, 'Re-upload the document')}
-             ${sign}`,
+             ${CTA(link, 'Re-upload the document')}`,
     };
   }
 
@@ -122,8 +119,7 @@ function fallbackEmail(templateName, t, link) {
       subject: `Reminder: documents still needed — ${t.position}`,
       html: `<p>Dear ${t.candidate_name},</p>
              <p>This is a gentle reminder that we are still waiting on the documents needed to roll out your offer for <strong>${t.position}</strong>.</p>
-             ${CTA(link, 'Upload your documents')}
-             ${sign}`,
+             ${CTA(link, 'Upload your documents')}`,
     };
   }
 
@@ -132,8 +128,7 @@ function fallbackEmail(templateName, t, link) {
     html: `<p>Dear ${t.candidate_name},</p>
            <p>Congratulations! To roll out your offer for <strong>${t.position}</strong>, please share the documents listed on the secure link below — no login is needed.</p>
            ${CTA(link, 'Upload your documents')}
-           <p>Please do this at the earliest so we can proceed.</p>
-           ${sign}`,
+           <p>Please do this at the earliest so we can proceed.</p>`,
   };
 }
 
