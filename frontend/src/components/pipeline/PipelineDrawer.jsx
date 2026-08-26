@@ -30,7 +30,7 @@
  * what gets displayed/stored everywhere — never the literal word "Other"
  * (RT, 2026-07-14). Actions only apply to the CURRENT stage.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
@@ -2811,18 +2811,61 @@ const HR_SCORECARD_LABELS = [
   ['hr_next_step', 'Next step for recruitment team'],
 ];
 
-/** Renders the filled-in fields of an HR-round scorecard; skips empty ones. */
+/**
+ * Renders the filled-in fields of an HR-round scorecard as a label/value table;
+ * skips empty ones.
+ *
+ * These used to be a Fragment of <Text> elements dropped into the round card's
+ * <Space>. Space only wraps its DIRECT children in spaced items and
+ * React.Children.toArray does not look inside a Fragment, so all fifteen landed
+ * in one item — and Text renders an inline <span>, so they ran together into a
+ * single unreadable paragraph ("...Notice period: 15Current CTC: 12Expected
+ * CTC: 14..."). A grid fixes both problems at once: every field is its own row,
+ * and the values line up in a column instead of being chased through prose.
+ */
 function HrScorecardFields({ hr }) {
   const filled = HR_SCORECARD_LABELS.filter(([key]) => hr[key]);
   if (filled.length === 0) return null;
   return (
-    <>
-      {filled.map(([key, label]) => (
-        <Text key={key} type="secondary" style={{ fontSize: 12.5 }}>
-          <strong>{label}:</strong> {hr[key]}
-        </Text>
-      ))}
-    </>
+    <div style={{ marginTop: 6, width: '100%' }}>
+      <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+        HR round details
+      </Text>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(110px, 34%) 1fr',
+          columnGap: 14,
+          rowGap: 7,
+          marginTop: 8,
+        }}
+      >
+        {filled.map(([key, label], i) => (
+          <Fragment key={key}>
+            <Text
+              type="secondary"
+              style={{
+                fontSize: 12.5,
+                paddingTop: 5,
+                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
+              }}
+            >
+              {label}
+            </Text>
+            <Text
+              style={{
+                fontSize: 12.5,
+                paddingTop: 5,
+                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
+                wordBreak: 'break-word',
+              }}
+            >
+              {hr[key]}
+            </Text>
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2937,12 +2980,37 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
             <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
               extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text><strong>Avg:</strong> {r.avg_score ?? '—'} · <strong>Comms:</strong> {r.communication ?? '—'} · <strong>Attitude:</strong> {r.attitude ?? '—'} · <strong>Final:</strong> {r.final_rating ?? '—'}</Text>
-                {(r.skills || []).map((s, i) => (
-                  <Text key={i} type="secondary" style={{ fontSize: 12.5 }}>{s.label}: {s.rating ?? '—'}{s.remark ? ` — ${s.remark}` : ''}</Text>
-                ))}
+                {/* The four headline numbers as chips rather than a dot-separated
+                    run — they are what a reader scans for first, and four labels
+                    inside one sentence make them hunt. */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[['Avg', r.avg_score], ['Comms', r.communication], ['Attitude', r.attitude], ['Final', r.final_rating]].map(([label, val]) => (
+                    <Tag key={label} style={{ margin: 0, fontSize: 12 }}>
+                      {label}: <strong>{val ?? '—'}</strong>
+                    </Tag>
+                  ))}
+                </div>
+                {(r.skills || []).filter((s) => s.label || s.rating !== null).length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+                      Skills
+                    </Text>
+                    <div style={{ marginTop: 4 }}>
+                      {(r.skills || []).map((s, i) => (
+                        <div key={i} style={{ fontSize: 12.5, paddingTop: 2 }}>
+                          <Text>{s.label || 'Skill'}: <strong>{s.rating ?? '—'}</strong></Text>
+                          {s.remark ? <Text type="secondary"> — {s.remark}</Text> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {r.hr ? <HrScorecardFields hr={r.hr} /> : null}
-                {r.comments ? <Text type="secondary" style={{ fontSize: 12.5 }}>“{r.comments}”</Text> : null}
+                {r.comments ? (
+                  <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: '3px solid var(--border, rgba(0,0,0,0.10))' }}>
+                    <Text type="secondary" style={{ fontSize: 12.5, fontStyle: 'italic' }}>“{r.comments}”</Text>
+                  </div>
+                ) : null}
                 {/* Dated for the same reason the pending block is: a reader
                     comparing rounds needs to know which verdict is the recent one. */}
                 {r.submitted_at ? (
