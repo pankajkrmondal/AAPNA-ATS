@@ -30,7 +30,7 @@
  * what gets displayed/stored everywhere — never the literal word "Other"
  * (RT, 2026-07-14). Actions only apply to the CURRENT stage.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
@@ -817,8 +817,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     staleTime: 5 * 60 * 1000,
   });
 
-  // Drives the "Scorecard report" button: it only appears once at least one
-  // interviewer has SUBMITTED a scorecard for this candidate.
+  // Drives the "Scorecard report" button: it appears once at least one
+  // interviewer has SUBMITTED a scorecard — or once one is merely OUTSTANDING,
+  // because "we are still waiting on a round" is itself worth being able to open
+  // and read before deciding.
   const { data: scorecardReport } = useQuery({
     queryKey: ['scorecard-report', pipelineId],
     queryFn: async () => {
@@ -827,7 +829,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     },
     enabled: open && !!pipelineId,
   });
-  const hasScorecards = (scorecardReport?.overall?.count || 0) > 0;
+  const hasScorecards = (scorecardReport?.overall?.count || 0) > 0
+    || (scorecardReport?.pending_rounds?.length || 0) > 0;
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -1284,11 +1287,25 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const occurrenceMutation = useMutation({
     mutationFn: ({ scheduleId, outcome, party, reason }) =>
       pipelineService.recordInterviewOccurrence(scheduleId, { outcome, party, reason }),
-    onSuccess: (_res, vars) => {
+    onSuccess: (res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
       onChanged?.();
       if (vars.outcome === 'held') {
-        message.success('Interview marked as held — scorecard link sent to the interviewer(s).');
+        // The occurrence itself always succeeds; the scorecard EMAIL may not.
+        // Reporting them as one thing told recruiters a link had been sent when
+        // nothing had left the building, and the round then stalled invisibly.
+        const sc = res?.data?.data?.scorecard;
+        if (sc?.reason === 'no_recipient') {
+          message.warning('Interview marked as held, but this booking has no interviewer email — no scorecard link could be sent.');
+        } else if (sc?.delivered > 0 && sc?.failed > 0) {
+          message.warning(`Interview marked as held — scorecard link sent to ${sc.delivered}, but it failed for ${sc.failed}. Use “Retry scorecard link”.`);
+        } else if (sc?.delivered > 0) {
+          message.success('Interview marked as held — scorecard link sent to the interviewer(s).');
+        } else if (sc?.alreadySent) {
+          message.success('Interview marked as held — the scorecard link had already been sent.');
+        } else {
+          message.error('Interview marked as held, but the scorecard link could NOT be emailed. Use “Retry scorecard link” below.');
+        }
       } else {
         message.success('No-show recorded — reschedule or reject this round below.');
       }
@@ -1340,9 +1357,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     mutationFn: (scheduleId) => pipelineService.sendScorecard(scheduleId),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
-      const data = res?.data || res;
-      if (data?.alreadySent) message.info('Scorecard link was already sent for this interview.');
-      else message.success('Scorecard link sent.');
+      // The payload sits under the { status, message, data } envelope — reading
+      // res.data as the payload meant alreadySent was always undefined, so this
+      // reported a fresh send every time, including for no-ops.
+      const d = res?.data?.data || {};
+      if (d.reason === 'no_recipient') {
+        message.warning('This booking has no interviewer email — add one on the round, then try again.');
+      } else if (d.delivered > 0 && d.failed > 0) {
+        message.warning(`Scorecard link sent to ${d.delivered}, but it failed for ${d.failed}. Try again for the rest.`);
+      } else if (d.delivered > 0) {
+        message.success(d.resent ? 'Scorecard link re-sent.' : 'Scorecard link sent.');
+      } else if (d.alreadySent) {
+        message.info('Scorecard link was already sent for this interview.');
+      } else {
+        message.error('Scorecard link could not be emailed — check the interviewer address, then try again.');
+      }
     },
     onError: (err) => {
       message.error(err?.message || 'Failed to send the scorecard link.');
@@ -1833,24 +1862,33 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         (() => {
                           // Has an interviewer already SUBMITTED a scorecard for this round?
                           const submitted = (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key);
+                          // Cards that exist but whose email never got out. Without
+                          // this the tag claimed "scorecard sent" for mail that
+                          // failed, and hid the one button that could fix it.
+                          const undelivered = interviewSchedule.scorecard_undelivered || 0;
                           const label = submitted
                             ? 'Held · scorecard received'
-                            : interviewSchedule.scorecard_dispatched_at ? 'Held · scorecard sent' : 'Held';
+                            : undelivered > 0
+                              ? 'Held · scorecard NOT sent'
+                              : interviewSchedule.scorecard_dispatched_at ? 'Held · scorecard sent' : 'Held';
                           const tip = submitted
                             ? 'The interview took place and the interviewer has submitted their scorecard. Open “Scorecard report” to see the score.'
-                            : interviewSchedule.scorecard_dispatched_at
-                              ? 'The interview took place (confirmed as held). The scorecard link has been emailed to the interviewer — the candidate’s score will appear once they submit it.'
-                              : 'The interview took place (confirmed as held). Send the scorecard link so the interviewer can submit their feedback.';
+                            : undelivered > 0
+                              ? 'The interview took place (confirmed as held), but the scorecard email could not be delivered to the interviewer. Retry below — until it reaches them, no score can be collected for this round.'
+                              : interviewSchedule.scorecard_dispatched_at
+                                ? 'The interview took place (confirmed as held). The scorecard link has been emailed to the interviewer — the candidate’s score will appear once they submit it.'
+                                : 'The interview took place (confirmed as held). Send the scorecard link so the interviewer can submit their feedback.';
+                          const needsSend = !submitted && (undelivered > 0 || !interviewSchedule.scorecard_dispatched_at);
                           return (
                             <>
                               <Tooltip title={tip}>
-                                <Tag color="green" style={{ cursor: 'help' }}>{label}</Tag>
+                                <Tag color={undelivered > 0 ? 'red' : 'green'} style={{ cursor: 'help' }}>{label}</Tag>
                               </Tooltip>
-                              {!interviewSchedule.scorecard_dispatched_at && !submitted && (
+                              {needsSend && (
                                 <Button size="small" type="primary"
                                   loading={sendScorecardMutation.isPending}
                                   onClick={() => sendScorecardMutation.mutate(interviewSchedule.id)}>
-                                  Send scorecard link
+                                  {undelivered > 0 ? 'Retry scorecard link' : 'Send scorecard link'}
                                 </Button>
                               )}
                             </>
@@ -3023,18 +3061,61 @@ const HR_SCORECARD_LABELS = [
   ['hr_next_step', 'Next step for recruitment team'],
 ];
 
-/** Renders the filled-in fields of an HR-round scorecard; skips empty ones. */
+/**
+ * Renders the filled-in fields of an HR-round scorecard as a label/value table;
+ * skips empty ones.
+ *
+ * These used to be a Fragment of <Text> elements dropped into the round card's
+ * <Space>. Space only wraps its DIRECT children in spaced items and
+ * React.Children.toArray does not look inside a Fragment, so all fifteen landed
+ * in one item — and Text renders an inline <span>, so they ran together into a
+ * single unreadable paragraph ("...Notice period: 15Current CTC: 12Expected
+ * CTC: 14..."). A grid fixes both problems at once: every field is its own row,
+ * and the values line up in a column instead of being chased through prose.
+ */
 function HrScorecardFields({ hr }) {
   const filled = HR_SCORECARD_LABELS.filter(([key]) => hr[key]);
   if (filled.length === 0) return null;
   return (
-    <>
-      {filled.map(([key, label]) => (
-        <Text key={key} type="secondary" style={{ fontSize: 12.5 }}>
-          <strong>{label}:</strong> {hr[key]}
-        </Text>
-      ))}
-    </>
+    <div style={{ marginTop: 6, width: '100%' }}>
+      <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+        HR round details
+      </Text>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(110px, 34%) 1fr',
+          columnGap: 14,
+          rowGap: 7,
+          marginTop: 8,
+        }}
+      >
+        {filled.map(([key, label], i) => (
+          <Fragment key={key}>
+            <Text
+              type="secondary"
+              style={{
+                fontSize: 12.5,
+                paddingTop: 5,
+                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
+              }}
+            >
+              {label}
+            </Text>
+            <Text
+              style={{
+                fontSize: 12.5,
+                paddingTop: 5,
+                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
+                wordBreak: 'break-word',
+              }}
+            >
+              {hr[key]}
+            </Text>
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -3050,19 +3131,66 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     enabled: open && !!pipelineId,
   });
 
+  const rounds = data?.rounds || [];
+  const pendingRounds = data?.pending_rounds || [];
+
   return (
     <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-      ) : !data || (data.rounds || []).length === 0 ? (
-        <Empty description="No submitted scorecards yet." />
+      ) : !data || (rounds.length === 0 && pendingRounds.length === 0) ? (
+        <Empty description="No scorecards for this candidate yet." />
       ) : (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <Tag color="green" style={{ fontSize: 13, padding: '4px 10px' }}>Average: {data.overall?.average ?? '—'}</Tag>
             <Tag color="blue" style={{ fontSize: 13, padding: '4px 10px' }}>Sum: {data.overall?.sum ?? '—'}</Tag>
             <Tag style={{ fontSize: 13, padding: '4px 10px' }}>Rounds scored: {data.overall?.count ?? 0}</Tag>
+            {pendingRounds.length > 0 && (
+              <Tag color="orange" style={{ fontSize: 13, padding: '4px 10px' }}>
+                Awaiting feedback: {pendingRounds.length}
+              </Tag>
+            )}
           </div>
+
+          {/* Rounds still owed a scorecard, stated next to the numbers they
+              qualify. Without this an average over 2 of 3 rounds is
+              indistinguishable from a complete picture — and rounds do get
+              approved before their scorecard arrives, so this is the normal
+              case rather than an edge one. */}
+          {pendingRounds.length > 0 && (
+            <Card
+              size="small"
+              title="Still awaiting feedback"
+              style={{ background: 'var(--warn-bg)', borderColor: 'var(--warn-border)' }}
+            >
+              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                {pendingRounds.map((p) => (
+                  <div key={p.scorecard_id}>
+                    <Text style={{ fontSize: 12.5 }}>
+                      <strong>{p.stage_label}</strong> · {p.recipient_email}
+                    </Text>
+                    <div>
+                      {!p.delivered ? (
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          The scorecard link was never emailed — retry it from the round below.
+                        </Text>
+                      ) : p.expired ? (
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          Link expired {p.expires_at ? fmtDateTime(p.expires_at) : ''} — this round can no longer be scored.
+                        </Text>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Link sent {p.sent_at ? fmtDateTime(p.sent_at) : ''}
+                          {p.expires_at ? ` · expires ${fmtDateTime(p.expires_at)}` : ''}
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </Space>
+            </Card>
+          )}
 
           {/* Consolidated feedback — every interviewer's verdict in one place,
               above the per-round cards. Whoever makes the final call (the CEO
@@ -3098,16 +3226,46 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
               </Space>
             </Card>
           )}
-          {(data.rounds || []).map((r) => (
+          {rounds.map((r) => (
             <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
               extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
               <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text><strong>Avg:</strong> {r.avg_score ?? '—'} · <strong>Comms:</strong> {r.communication ?? '—'} · <strong>Attitude:</strong> {r.attitude ?? '—'} · <strong>Final:</strong> {r.final_rating ?? '—'}</Text>
-                {(r.skills || []).map((s, i) => (
-                  <Text key={i} type="secondary" style={{ fontSize: 12.5 }}>{s.label}: {s.rating ?? '—'}{s.remark ? ` — ${s.remark}` : ''}</Text>
-                ))}
+                {/* The four headline numbers as chips rather than a dot-separated
+                    run — they are what a reader scans for first, and four labels
+                    inside one sentence make them hunt. */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[['Avg', r.avg_score], ['Comms', r.communication], ['Attitude', r.attitude], ['Final', r.final_rating]].map(([label, val]) => (
+                    <Tag key={label} style={{ margin: 0, fontSize: 12 }}>
+                      {label}: <strong>{val ?? '—'}</strong>
+                    </Tag>
+                  ))}
+                </div>
+                {(r.skills || []).filter((s) => s.label || s.rating !== null).length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+                      Skills
+                    </Text>
+                    <div style={{ marginTop: 4 }}>
+                      {(r.skills || []).map((s, i) => (
+                        <div key={i} style={{ fontSize: 12.5, paddingTop: 2 }}>
+                          <Text>{s.label || 'Skill'}: <strong>{s.rating ?? '—'}</strong></Text>
+                          {s.remark ? <Text type="secondary"> — {s.remark}</Text> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {r.hr ? <HrScorecardFields hr={r.hr} /> : null}
-                {r.comments ? <Text type="secondary" style={{ fontSize: 12.5 }}>“{r.comments}”</Text> : null}
+                {r.comments ? (
+                  <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: '3px solid var(--border, rgba(0,0,0,0.10))' }}>
+                    <Text type="secondary" style={{ fontSize: 12.5, fontStyle: 'italic' }}>“{r.comments}”</Text>
+                  </div>
+                ) : null}
+                {/* Dated for the same reason the pending block is: a reader
+                    comparing rounds needs to know which verdict is the recent one. */}
+                {r.submitted_at ? (
+                  <Text type="secondary" style={{ fontSize: 11.5 }}>Submitted {fmtDateTime(r.submitted_at)}</Text>
+                ) : null}
               </Space>
             </Card>
           ))}

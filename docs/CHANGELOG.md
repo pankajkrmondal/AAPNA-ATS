@@ -133,6 +133,53 @@ payloads.
 - **Verified:** `npx vite build` clean — 4103 modules, only the pre-existing >500 kB chunk
   warning. Not click-tested against a live login in this pass — no admin credentials were
   available for automated browser verification; manual verification handed off to the user.
+## 2026-08-25 — Only published Zeko jobs are offered when scheduling an interview
+**Why:** the "Schedule Zeko Interview" job picker offered **Junior Python QA Automation Engineer
+Hiring**, which is in **Draft** on Zeko. Booking against it hands the candidate a dead link — Zeko
+serves *"Unpublished Interview – Testing Mode — Kindly publish it before conducting interview."* Two
+real bookings had already gone out that way.
+
+**Root cause — a missing filter on the read, not a stale sync.** `getZekoJobs()` excluded archived
+jobs and nothing else, so all **25** draft jobs were returned alongside the **30** published ones.
+
+The hourly sync was already doing its half correctly: it asks Zeko for all three states
+(`published`/`notPublished`/`archived`) on purpose, derives `status` from `isPublished ||
+isWorkflowPublished`, and **`status` was already in the upsert's `update` clause** — so publish ⇄
+unpublish flips already propagated within the hour, in both directions. The state was sitting in the
+column, current and correct; only the read ignored it.
+
+**The trap this avoided.** The obvious fix — `where: { is_published: true }` — would have been wrong.
+`is_workflow_pub` was set on `create` only and never updated, so a job first seen as a draft and later
+*workflow*-published kept `false` there forever: **8 rows on staging read `status: 'published'` with
+both publish booleans `false`**. An `is_published` filter would have hidden all 8 genuinely published
+jobs — trading "shows too much" for "hides what you need". `status` is the only field derived from
+both routes *and* kept current, so that is what the filter uses.
+
+- `backend/src/services/screening.service.js` (`getZekoJobs`) — `where: { status: 'published' }`,
+  replacing `is_archived: false` rather than adding to it: `status` is derived as a chain where
+  archived beats published, so published already implies not-archived.
+- `backend/src/services/screening.service.js` (`assignCandidateToZekoJob`) — refuses a non-published
+  job with a 400 naming the job and its current state. The dropdown filter is a UI-level guard only; a
+  stale tab, a cached list or a direct API call could still book a draft, and the failure is silent on
+  our side and visible only to the candidate.
+- `backend/src/services/zeko.service.js` (`syncZekoJobs`) — the upsert's `update` clause now refreshes
+  every mutable field. `is_workflow_pub`, `is_hr_screening`, `is_coding`, `slug`, `email` and
+  `job_ref_id` were create-only and froze at whatever the job looked like when first seen.
+  `created_at_zeko` and `company_name` stay create-only on purpose — the first is immutable, the second
+  carries a local default a sync should not stamp back over.
+- `backend/src/routes/screening.routes.js` — route comment corrected; it claimed "active jobs".
+- **Verified by calling the real `getZekoJobs()` against staging:** 30 rows (was 55), 0 non-published,
+  0 archived, 0 missing a `primary_interview_id` (which would throw at booking time). The drawer's own
+  split leaves 11 HR-round and 19 non-HR options, both non-empty, so its "offer everything" fallback
+  cannot fire. The 8 stale-flag jobs are still included, confirming the `status` choice. The reported
+  draft row is gone from the "juni" search while both published siblings remain. 72/72 unit tests pass.
+- **Not changed:** the drawer's type-filter fallback, which offers every job when none matches the
+  round's type. It cannot fire today, and post-fix could only offer published jobs.
+- **Two existing bookings still point at the draft job** (Abhishek Singh, PANKAJ MONDAL — both `sent`).
+  Untouched: this stops new draft bookings, it does not repair existing ones. Either publish that job
+  on Zeko or cancel and rebook — the cancel path resolves jobs without a status filter, so it still
+  works. Listed in §8 of the RCA.
+- Full analysis: [RCA-2026-08-25-zeko-draft-jobs-in-schedule-dropdown.md](./RCA-2026-08-25-zeko-draft-jobs-in-schedule-dropdown.md).
 
 ---
 
@@ -257,6 +304,59 @@ had adopted neither. Rather than add a third copy, the SQL form now lives beside
   a null needle matches nothing. 64/64 backend unit tests pass, including 18 new ones in
   `src/tests/unit/emailMatchSql.test.js`.
 - Full analysis: [RCA-2026-08-25-evalground-import-multi-email-unmatched.md](./RCA-2026-08-25-evalground-import-multi-email-unmatched.md).
+
+---
+
+## 2026-08-25 — Zeko scores now read from the per-candidate report API
+**Why:** the Functional (Zeko) round still showed `0` after the HR fix. `interview-responses`
+returns `interviewScore: 0` for functional interviews too — the same defect as HR, in a different
+field. Four *completed* candidates on job `69df92eff96fd5bee20f8fdc` reported `0` there while
+their reports held **1, 61, 56 and 65**.
+
+`interview-responses` is a **list/summary** endpoint whose score fields are unreliable per round
+type. `GET /mygurukul/ait/interview-report?candidateId=&jobId=` — the API behind Zeko's own report
+page — is the only source correct for every round type. Full analysis in
+[PLAN-2026-08-25-zeko-report-api-score-sync.md](./PLAN-2026-08-25-zeko-report-api-score-sync.md).
+
+It also fixes a structural gap: jobs expose different result tabs (`Meets Criteria` exists on some
+and not others), and on that job the **Completed tab reads 0 while Meets Criteria reads 4** — so
+any logic keyed to a tab silently skipped genuinely scored candidates. The report API is keyed on
+the candidate, so tab layout stops mattering.
+
+- `backend/src/services/zeko.service.js` — new `fetchCandidateReport()` (cookie auth, the existing
+  `getDashboardCookieHeader()`; **HTTP 410 Gone** is Zeko's "no report exists" signal and returns
+  `null` rather than throwing). `fetchInterviewResults()` is now two-step: `interview-responses`
+  **enumerates only** (it is the sole source of `candidateId`, and its pagination must stay — Haris
+  sits beyond page 1 of a 430-candidate interview), then the report supplies the score.
+- `pickZekoScore()` rewritten — each round type carries its score in a different field, and only
+  one is ever meaningful:
+
+  | Round | `fit_percentage` | `codingScore` | `totalScore` |
+  |---|---|---|---|
+  | HR screening | **95** | absent | `0` ← junk |
+  | Coding | absent | **61** | `61` ← duplicate |
+  | Panel | absent | absent | **79** |
+
+  All three mean "this round's headline score" (Zeko's own labels: Recruiter Screening / Coding
+  Score / **Interview Score**), so `interview = fit_percentage ?? codingScore ?? (totalScore || null)`,
+  `coding = codingScore`, `communication = null`.
+- **`ZekoCommunicationScore` stays null on purpose.** `softSkillsEvaluation` and
+  `language_proficiency` were checked — qualitative text only. Zeko exposes no numeric
+  communication score, so filling that column with `totalScore` would have written `0` on every HR
+  round and a duplicate on every coding round.
+- **`newEvaluation.overallScore` is deliberately never read** — it is a *different* number (49
+  where the UI gauge shows 79) that Zeko's own report page ignores. Reading it would put one score
+  in the ATS and another in Zeko for the same candidate. Pinned by a test.
+- `backend/src/config/index.js` — `reportApiBase` (`ZEKO_REPORT_API_BASE`).
+- `backend/src/tests/unit/zekoScoreField.test.js` — rewritten, 18 cases over the real payloads.
+- **Both tables still written.** Since the round-scoping fix the drawer no longer falls back to
+  `rpa_cv`, so the two now feed different surfaces: `rpa_zeko_interview_results` → drawer + board;
+  `rpa_cv` → Search Candidate, View Candidate, CSV export, analytics.
+- **Verified on staging:** `repairZeroZekoScores()` → 3 processed, 7 skipped. PANKAJ MONDAL's
+  functional round went **`0 → 1` (coding 1)**; HR 95 and Panmon 94 unchanged; four `slotMissed`
+  rows skipped with no write; unmatchable rows logged at `info`. 216/216 unit tests pass.
+- **Follow-up not done:** the functional round now renders `Interview 1 · Coding 1` — two identical
+  chips, since the coding score is also the headline score. Cosmetic; awaiting confirmation.
 
 ---
 

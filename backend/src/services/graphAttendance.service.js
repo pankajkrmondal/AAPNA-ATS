@@ -26,11 +26,15 @@ import logger from '../config/logger.js';
 import { getAccessToken } from './onedrive.service.js';
 import { parseInterviewerEmails } from './interviewSchedule.service.js';
 import { resolveUserId } from './graphCalendar.service.js';
+import { decideOccurrence, pickAttendanceReport } from './graphAttendance.helpers.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
 /** Whether Teams attendance auto-detection is switched on for this environment. */
 export const isAttendanceEnabled = () => Boolean(config.microsoft.attendanceEnabled);
+
+/** Whether the candidate is expected to join as a guest (no matchable address). */
+export const isGuestCandidateMode = () => Boolean(config.microsoft.attendanceGuestCandidate);
 
 /** The organizer mailbox whose onlineMeetings/attendance we query. */
 const organizerMailbox = () => config.microsoft.calendarMailbox;
@@ -71,11 +75,17 @@ export async function resolveOnlineMeetingId(joinUrl) {
  * most recent, then reads it in full (the list endpoint returns empty
  * attendanceRecords by design).
  *
+ * Which report is chosen matters: a reschedule reuses the same Teams meeting, so
+ * one id can hold several reports. pickAttendanceReport() keeps only ones whose
+ * session overlaps this booking's window, so a stale session can never be ruled
+ * on as if it were this one.
+ *
  * @param {string} onlineMeetingId
+ * @param {object} [window] - { windowStart, windowEnd } of the booking
  * @returns {Promise<Array<{email: string, seconds: number}>|null>} records, or
  *   null when unreadable (disabled / 403 / no report yet).
  */
-async function fetchAttendanceRecords(onlineMeetingId) {
+async function fetchAttendanceRecords(onlineMeetingId, window = {}) {
   if (!isAttendanceEnabled() || !onlineMeetingId) return null;
   try {
     const token = await getAccessToken();
@@ -99,8 +109,13 @@ async function fetchAttendanceRecords(onlineMeetingId) {
       return [];
     }
 
-    // Newest report (they arrive most-recent first) read in full for records.
-    const reportId = reports[0].id;
+    // The report for THIS booking's session, not simply the newest one.
+    const report = pickAttendanceReport(reports, window);
+    if (!report) {
+      logger.info(`Graph attendance: ${reports.length} report(s) on meeting ${onlineMeetingId}, none covering this booking's window — treating as not yet available.`);
+      return [];
+    }
+    const reportId = report.id;
     const detailRes = await fetch(`${base}/${encodeURIComponent(reportId)}?$expand=attendanceRecords`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -123,19 +138,19 @@ async function fetchAttendanceRecords(onlineMeetingId) {
 /**
  * Decides whether an interview OCCURRED from its Teams attendance report.
  *
- * "Occurred" = the report exists AND both sides showed up for a meaningful
- * duration: the candidate has a record ≥ min-seconds, and at least one
- * interviewer mailbox does too. That distinguishes the three failure modes —
- * candidate no-show (no candidate record), panel no-show (no interviewer
- * record), and a failed call (nobody / only-brief presence).
+ * The rule itself lives in decideOccurrence() (graphAttendance.helpers.js) —
+ * pure and unit-tested. In short: candidates join as guests and so carry no
+ * matchable address, which makes the interviewer the only reliable identity, so
+ * "occurred" is the interviewer plus at least one other participant. See that
+ * function for the reasoning and for strict mode.
  *
  * @param {object} scheduleRow - rpa_interview_schedule row (needs
- *   online_meeting_id | teams_join_url, interviewer_email) plus a
- *   `candidateEmail` the caller resolves from the pipeline.
- * @param {string} candidateEmail
+ *   online_meeting_id | teams_join_url, interviewer_email, scheduled_start_at,
+ *   scheduled_end_at) plus a `candidateEmail` the caller resolves.
+ * @param {string} candidateEmail - the address the invite actually went to
  * @returns {Promise<{decided: boolean, occurred: boolean, records: Array,
- *   candidatePresent?: boolean, anyInterviewerPresent?: boolean,
- *   absentParty?: 'candidate'|'interviewer'|'both'|null}>}
+ *   interviewerPresent?: boolean, guestPresent?: boolean, candidateMatched?: boolean,
+ *   absentParty?: 'candidate'|'panel'|'both'|null}>}
  *   decided:false ⇒ can't tell (disabled / no report / error) → caller must
  *   fall back to human confirmation. When decided and NOT occurred,
  *   `absentParty` names the side that failed to attend, for the no-show alert.
@@ -149,36 +164,37 @@ export async function getAttendanceOutcome(scheduleRow, candidateEmail) {
   }
   if (!meetingId) return { decided: false, occurred: false, records: [] };
 
-  const records = await fetchAttendanceRecords(meetingId);
-  // null = unreadable (fall back to human); [] = readable but no report yet
-  // (also not decided — try again next sweep).
+  const records = await fetchAttendanceRecords(meetingId, {
+    windowStart: scheduleRow?.scheduled_start_at,
+    windowEnd: scheduleRow?.scheduled_end_at,
+  });
+  // null = unreadable (fall back to human); [] = readable but no report for this
+  // booking yet (also not decided — try again next sweep).
   if (records === null || records.length === 0) {
     return { decided: false, occurred: false, records: records || [] };
   }
 
-  const minSeconds = config.microsoft.attendanceMinSeconds;
-  const present = new Set(records.filter((r) => r.seconds >= minSeconds).map((r) => r.email));
-
-  const candidate = (candidateEmail || '').toLowerCase();
-  const candidatePresent = candidate ? present.has(candidate) : false;
-
   const { emails: interviewerEmails } = parseInterviewerEmails(scheduleRow?.interviewer_email || '');
-  const anyInterviewerPresent = interviewerEmails.some((e) => present.has(e.toLowerCase()));
+  const guestMode = isGuestCandidateMode();
+  const decision = decideOccurrence(records, {
+    interviewerEmails,
+    candidateEmail,
+    organizerEmail: organizerMailbox(),
+    minSeconds: config.microsoft.attendanceMinSeconds,
+    guestMode,
+  });
 
-  const occurred = candidatePresent && anyInterviewerPresent;
+  // Say WHO was seen against who was expected. Without this a wrong verdict is
+  // indistinguishable from an empty meeting, and the only way to tell them apart
+  // was reading the database by hand.
+  const seen = decision.attendees.map((a) => `${a.email || '<guest>'} (${a.seconds}s)`).join(', ') || 'none';
+  logger.info(
+    `Graph attendance: schedule ${scheduleRow?.id} → ${decision.occurred ? 'HELD' : `no_show (${decision.absentParty})`}`
+    + ` | mode: ${guestMode ? 'guest-candidate' : 'strict'}`
+    + ` | present ≥${config.microsoft.attendanceMinSeconds}s: ${seen}`
+    + ` | panel expected: ${interviewerEmails.join(', ') || 'none'}`
+    + ` | invited candidate: ${candidateEmail || 'none'}`
+  );
 
-  // Which side was absent, for the recruiter-facing no-show alert. 'both' when
-  // neither joined (e.g. the call never happened at all), otherwise the one
-  // side that failed to attend. null when the interview did occur.
-  // Values MUST match the manual no-show vocabulary in PipelineDrawer.jsx
-  // ('candidate' | 'panel' | 'both' | 'technical') so auto- and human-recorded
-  // no-shows render identically in the drawer tag.
-  let absentParty = null;
-  if (!occurred) {
-    if (!candidatePresent && !anyInterviewerPresent) absentParty = 'both';
-    else if (!candidatePresent) absentParty = 'candidate';
-    else absentParty = 'panel';
-  }
-
-  return { decided: true, occurred, records, candidatePresent, anyInterviewerPresent, absentParty };
+  return { decided: true, records, ...decision };
 }

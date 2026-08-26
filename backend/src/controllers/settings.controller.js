@@ -16,6 +16,7 @@ import {
   getInterviewOccurrenceSettings,
   restartInterviewOccurrenceJob,
 } from '../jobs/interviewOccurrence.js';
+import { isAttendanceEnabled, isGuestCandidateMode } from '../services/graphAttendance.service.js';
 import { isAdminTier } from '../config/roles.js';
 import { describeFlowKeys, isKnownFlowKey, reloadEmailRecipients } from '../config/emailRecipients.js';
 import {
@@ -224,6 +225,15 @@ export const getInterviewOccurrenceConfig = catchAsync(async (req, res) => {
     interval_minutes: settings.intervalMin,
     grace_minutes: settings.graceMin,
     allowed_intervals: OCCURRENCE_INTERVALS,
+    // Read-only, from MS_ATTENDANCE_ENABLED. It decides which of the sweep's two
+    // modes actually runs: with attendance the verdict is read off the Teams
+    // report, without it the sweep can only email a human to ask. The Settings
+    // card says which, so the toggle never promises automation that cannot happen.
+    attendance_enabled: isAttendanceEnabled(),
+    // Also read-only (MS_ATTENDANCE_GUEST_CANDIDATE). The card describes the
+    // rule the sweep will actually apply, so recruiters know whether candidates
+    // may join as guests or must sign in with the invited address.
+    attendance_guest_candidate: isGuestCandidateMode(),
   }, 'Interview occurrence settings retrieved successfully');
 });
 

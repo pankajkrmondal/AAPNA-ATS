@@ -36,6 +36,25 @@ const settingsService = {
   },
 
   /**
+   * Get the interview occurrence sweep config (on/off, poll interval, grace).
+   * Also reports whether Teams attendance reading is available, which decides
+   * whether the sweep can confirm an interview by itself or only nudge.
+   * @returns {Promise}
+   */
+  getInterviewOccurrenceConfig() {
+    return api.get('/settings/interview-occurrence');
+  },
+
+  /**
+   * Update the interview occurrence sweep. Applies immediately — no restart.
+   * @param {object} payload — { enabled, interval_minutes?, grace_minutes? }
+   * @returns {Promise}
+   */
+  saveInterviewOccurrenceConfig(payload) {
+    return api.post('/settings/interview-occurrence', payload);
+  },
+
+  /**
    * Get Evalground Assessment automation settings (invite deadline days +
    * the global auto-advance/auto-reject toggle).
    * @returns {Promise}

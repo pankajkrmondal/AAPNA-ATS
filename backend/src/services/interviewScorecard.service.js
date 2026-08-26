@@ -102,6 +102,90 @@ function initialSkillRows() {
 }
 
 /**
+ * Compiles and emails the link for each card, recording the outcome ON THE ROW:
+ * `sent_at` is stamped only once Graph has accepted the message.
+ *
+ * Delivery used to be fire-and-forget — a failed send was logged and swallowed,
+ * the row still claimed sent_at, and the caller returned success either way. So
+ * the UI told the recruiter "scorecard link sent to the interviewer(s)" for mail
+ * that never left, and nothing anywhere recorded otherwise. Reporting what
+ * actually happened costs one extra write and makes the failure recoverable:
+ * a card with sent_at IS NULL is one the re-send path can pick up.
+ *
+ * @param {Array<object>} cards - rpa_interview_scorecard rows
+ * @param {object} ctx - { role, stageLabel, candidateName, position }
+ * @returns {Promise<{delivered: number, failed: number, failures: Array<{email: string, error: string}>}>}
+ */
+async function deliverScorecards(cards, { role, stageLabel, candidateName, position }) {
+  const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
+  const tpl = await getTemplate(tplName);
+
+  const failures = [];
+  let delivered = 0;
+
+  for (const card of cards) {
+    // A link that has already lapsed is not worth re-sending, so a retry gets a
+    // fresh window. On the first send this is always a no-op.
+    let expiresAt = card.token_expires_at;
+    if (!expiresAt || new Date(expiresAt).getTime() <= Date.now()) {
+      expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+      await prisma.rpa_interview_scorecard.update({
+        where: { id: card.id },
+        data: { token_expires_at: expiresAt, modified_at: new Date() },
+      });
+    }
+
+    const link = `${config.cors.frontendUrl}/scorecard/${card.token}`;
+    const tokens = {
+      candidate_name: candidateName,
+      position,
+      stage_label: stageLabel,
+      interviewer_name: card.recipient_name || 'there',
+      scorecard_link: link,
+    };
+    const compiled = tpl
+      ? compileTemplate(tpl.subject, tpl.body_html, tokens)
+      : {
+          subject: `Please score your ${stageLabel} — ${candidateName}`,
+          html: `<p>Hi ${tokens.interviewer_name},</p>
+                 <p>Please submit your feedback for the <strong>${stageLabel}</strong> interview with
+                 <strong>${tokens.candidate_name}</strong> (${position}). No login is needed.</p>
+                 <p><a href="${link}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
+                 <p>This link works once and expires on ${new Date(expiresAt).toDateString()}.</p>
+                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+        };
+
+    const { to } = resolveRecipients('scorecardInvite', card.recipient_email);
+    if (!to) {
+      // No route for the flow key — the same dead end as a missing address, and
+      // just as invisible if we let it pass as a success.
+      logger.error(`Scorecard dispatch: no recipient resolved for ${card.recipient_email} — nothing sent.`);
+      failures.push({ email: card.recipient_email, error: 'no recipient resolved for the scorecardInvite flow' });
+      continue;
+    }
+
+    try {
+      // Header headline = the email's own subject (RT decision, 2026-07-25).
+      const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
+      // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
+      // booking was made against, so it is reached in every environment.
+      await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
+      await prisma.rpa_interview_scorecard.update({
+        where: { id: card.id },
+        data: { sent_at: new Date(), modified_at: new Date() },
+      });
+      delivered += 1;
+    } catch (err) {
+      logger.error(`Scorecard dispatch: email failed for card ${card.id} → ${card.recipient_email}: ${err.message}`);
+      failures.push({ email: card.recipient_email, error: err.message });
+      // sent_at stays null so the manual "Send scorecard link" button can retry.
+    }
+  }
+
+  return { delivered, failed: failures.length, failures };
+}
+
+/**
  * Creates + emails the tokenized scorecard link to every interviewer on a
  * confirmed-held interview. Idempotent: guarded by
  * rpa_interview_schedule.scorecard_dispatched_at, so the manual button and the
@@ -111,7 +195,11 @@ function initialSkillRows() {
  * @param {object} params
  * @param {string} [params.trigger] - 'manual' | 'graph' | 'sweep' (audit only)
  * @param {number} [params.actedBy]
- * @returns {Promise<{dispatched: boolean, alreadySent?: boolean, count?: number}>}
+ * @returns {Promise<{dispatched: boolean, alreadySent?: boolean, resent?: boolean,
+ *   count?: number, delivered?: number, failed?: number,
+ *   failures?: Array<{email: string, error: string}>, reason?: string}>}
+ *   `dispatched` now means mail actually went out — check `delivered`/`failures`
+ *   before telling anyone the link was sent.
  */
 export async function dispatchScorecards(scheduleId, { trigger = 'manual', actedBy = null } = {}) {
   const schedule = await prisma.rpa_interview_schedule.findUnique({
@@ -148,16 +236,39 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   const stageLabel = await stageLabelFor(stageKey);
   const position = mrf?.position_hiring_for || candidate?.position_applied || 'the role';
 
+  const candidateName = candidate?.candidate_name || 'the candidate';
+  const deliveryCtx = { role, stageLabel, candidateName, position };
+
   const { emails } = parseInterviewerEmails(schedule.interviewer_email || '');
   if (emails.length === 0) {
+    // Deliberately does NOT stamp the guard. It used to, on the reasoning that a
+    // booking with no recipient can never send — but that turned a fixable data
+    // problem into a permanent one: adding the interviewer's address afterwards
+    // left "Send scorecard link" replying "already sent" forever, and the round
+    // could never produce a score. Leaving it unstamped keeps that door open.
     logger.warn(`Scorecard dispatch: schedule ${scheduleId} has no interviewer email — nothing to send.`);
-    // Still stamp the guard so the sweep stops retrying a booking that can
-    // never send (no recipient).
-    await prisma.rpa_interview_schedule.update({
-      where: { id: schedule.id },
-      data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
+    return { dispatched: false, count: 0, delivered: 0, failed: 0, reason: 'no_recipient' };
+  }
+
+  // Already dispatched → the only work left is retrying anything that was
+  // created but never actually delivered (sent_at IS NULL). This is what makes
+  // the manual "Send scorecard link" button a real retry rather than a no-op.
+  if (schedule.scorecard_dispatched_at) {
+    const undelivered = await prisma.rpa_interview_scorecard.findMany({
+      where: { schedule_id: schedule.id, status: SCORECARD_STATUS.PENDING, sent_at: null },
     });
-    return { dispatched: false, count: 0, reason: 'no_recipient' };
+    if (undelivered.length === 0) {
+      return { dispatched: false, alreadySent: true, delivered: 0, failed: 0 };
+    }
+    const retry = await deliverScorecards(undelivered, deliveryCtx);
+    logger.info(`Scorecard re-send: schedule ${scheduleId} → ${retry.delivered}/${undelivered.length} delivered (${trigger}).`);
+    return {
+      dispatched: retry.delivered > 0,
+      alreadySent: true,
+      resent: true,
+      count: undelivered.length,
+      ...retry,
+    };
   }
 
   const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -176,7 +287,9 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
         recipient_name: emails.length === 1 ? schedule.interviewer_name : null,
         recipient_role: role,
         token_expires_at: expiresAt,
-        sent_at: new Date(),
+        // Stamped by deliverScorecards() only once Graph accepts the message —
+        // sent_at means "delivered", not "created".
+        sent_at: null,
         rpa_interview_scorecard_skill: { create: skillRows },
       },
     });
@@ -227,30 +340,42 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
       }
     }
   }
+  const { delivered, failed, failures } = await deliverScorecards(created, deliveryCtx);
 
-  // Audit trail on the journey.
+  // Audit trail on the journey — records what was actually delivered, so a
+  // failure is legible on the candidate's timeline instead of reading as a send.
   await prisma.rpa_pipeline_stage_events.create({
     data: {
       pipeline_id: schedule.pipeline_id,
       stage_key: stageKey,
       event_type: 'note',
-      notes: `Scorecard link sent to ${emails.join(', ')} (${trigger})`,
+      notes: failed === 0
+        ? `Scorecard link sent to ${emails.join(', ')} (${trigger})`
+        : `Scorecard link: ${delivered}/${created.length} delivered (${trigger}) — failed for ${failures.map((f) => f.email).join(', ')}`,
       acted_by: actedBy || null,
     },
   });
 
   // The card is now "awaiting feedback" — the single biggest stall point in the
   // whole flow (loophole L3), so it goes on the team's board immediately.
+  //
+  // When nothing got out the notification says so instead. The sweep can trigger
+  // this with no one watching a screen, so the bell is the only place a delivery
+  // failure would otherwise surface.
   await notify({
     type: NOTIFICATION_TYPES.INTERVIEW_AWAITING_FEEDBACK,
-    title: `Awaiting interviewer feedback — ${stageLabel}`,
-    description: `${candidate?.candidate_name || 'A candidate'} · link sent to ${emails.join(', ')}`,
+    title: delivered > 0
+      ? `Awaiting interviewer feedback — ${stageLabel}`
+      : `Scorecard link could NOT be emailed — ${stageLabel}`,
+    description: delivered > 0
+      ? `${candidateName} · link sent to ${emails.join(', ')}`
+      : `${candidateName} · sending failed for ${failures.map((f) => f.email).join(', ')} — use “Send scorecard link” to retry`,
     pipelineId: schedule.pipeline_id,
-    meta: { stage_key: stageKey, recipients: emails.length },
+    meta: { stage_key: stageKey, recipients: emails.length, delivered, failed },
   });
 
-  logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${created.length} recipient(s) (${trigger}).`);
-  return { dispatched: true, count: created.length };
+  logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${delivered}/${created.length} delivered (${trigger}).`);
+  return { dispatched: delivered > 0, count: created.length, delivered, failed, failures };
 }
 
 /**
@@ -488,14 +613,31 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
  * plus an overall sum/average across the interview rounds (Tech1..CEO). Feeds
  * the drawer report panel and future analytics.
  *
+ * Rounds still WAITING on their interviewer come back separately in
+ * `pending_rounds`. The report used to show submitted cards and nothing else, so
+ * "Rounds scored: 2" looked identical whether the third round had never been run
+ * or had been held and was sitting on an interviewer who had not filled the form
+ * in. Whoever makes the decision at a later round could not tell those apart —
+ * and rounds do get approved before their scorecard lands, because Approve /
+ * Reject is not gated on it.
+ *
  * @param {number} pipelineId
  */
 export async function getCandidateScorecardReport(pipelineId) {
-  const cards = await prisma.rpa_interview_scorecard.findMany({
-    where: { pipeline_id: BigInt(pipelineId), status: 'submitted' },
-    include: { rpa_interview_scorecard_skill: { orderBy: { sort_order: 'asc' } } },
-    orderBy: [{ stage_key: 'asc' }, { submitted_at: 'asc' }],
-  });
+  const [cards, outstanding] = await Promise.all([
+    prisma.rpa_interview_scorecard.findMany({
+      where: { pipeline_id: BigInt(pipelineId), status: SCORECARD_STATUS.SUBMITTED },
+      include: { rpa_interview_scorecard_skill: { orderBy: { sort_order: 'asc' } } },
+      orderBy: [{ stage_key: 'asc' }, { submitted_at: 'asc' }],
+    }),
+    prisma.rpa_interview_scorecard.findMany({
+      where: {
+        pipeline_id: BigInt(pipelineId),
+        status: { in: [SCORECARD_STATUS.PENDING, SCORECARD_STATUS.EXPIRED] },
+      },
+      orderBy: [{ stage_key: 'asc' }, { sent_at: 'asc' }],
+    }),
+  ]);
 
   // One lookup of all stage labels rather than per-row.
   const stageRows = await prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } });
@@ -525,6 +667,26 @@ export async function getCandidateScorecardReport(pipelineId) {
     };
   });
 
+  // Rounds still owed a scorecard. `expired` is computed rather than trusted:
+  // pending → expired is applied LAZILY, on open (see SCORECARD_STATUS), so a
+  // link nobody ever clicked keeps status='pending' long past its TTL.
+  const now = Date.now();
+  const pendingRounds = outstanding.map((c) => ({
+    scorecard_id: Number(c.id),
+    stage_key: c.stage_key,
+    stage_label: labelByKey[c.stage_key] || c.stage_key,
+    recipient_email: c.recipient_email,
+    recipient_role: c.recipient_role,
+    sent_at: c.sent_at,
+    // sent_at is stamped only once Graph accepts the message, so a null here
+    // means the link never actually reached anyone — a different problem from
+    // an interviewer who simply hasn't got round to it.
+    delivered: Boolean(c.sent_at),
+    expires_at: c.token_expires_at,
+    expired: c.status === SCORECARD_STATUS.EXPIRED
+      || (c.token_expires_at ? new Date(c.token_expires_at).getTime() <= now : false),
+  }));
+
   const scored = rounds.map((r) => r.avg_score).filter((n) => n !== null && n !== undefined);
   const sum = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) * 100) / 100 : null;
   const average = scored.length ? Math.round((sum / scored.length) * 100) / 100 : null;
@@ -532,8 +694,9 @@ export async function getCandidateScorecardReport(pipelineId) {
   return {
     pipeline_id: Number(pipelineId),
     rounds,
-    overall: { count: scored.length, sum, average },
-    consolidated_feedback: buildConsolidatedFeedback(rounds, { average }),
+    pending_rounds: pendingRounds,
+    overall: { count: scored.length, sum, average, outstanding: pendingRounds.length },
+    consolidated_feedback: buildConsolidatedFeedback(rounds, { average, outstanding: pendingRounds.length }),
   };
 }
 
@@ -551,10 +714,10 @@ export async function getCandidateScorecardReport(pipelineId) {
  * than none, because it reads as "no concerns raised".
  *
  * @param {Array<object>} rounds - the serialized rounds above
- * @param {{average: number|null}} overall
+ * @param {{average: number|null, outstanding?: number}} overall
  * @returns {{summary: string, lines: Array<object>, recommendation_counts: object}|null}
  */
-function buildConsolidatedFeedback(rounds, { average }) {
+function buildConsolidatedFeedback(rounds, { average, outstanding = 0 }) {
   if (!rounds.length) return null;
 
   // Count the explicit recommendations, so "3 of 4 interviewers said hire" can
@@ -603,6 +766,9 @@ function buildConsolidatedFeedback(rounds, { average }) {
     `${rounds.length} interview${rounds.length === 1 ? '' : 's'} scored`,
     average !== null ? `average ${average}` : null,
     verdict || null,
+    // Stated in the headline, not just further down: an average over 2 of 3
+    // rounds should never be read as if it were the whole picture.
+    outstanding > 0 ? `${outstanding} awaiting feedback` : null,
   ].filter(Boolean);
 
   return {
