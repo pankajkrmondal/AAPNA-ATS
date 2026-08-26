@@ -408,6 +408,44 @@ export const setFinalOutcome = catchAsync(async (req, res) => {
   return success(res, result, 'Closure recorded successfully');
 });
 
+/**
+ * POST /api/pipeline/:id/reopen
+ * Re-opens a closed journey (audit §2.6). Reason is mandatory — a re-open is an
+ * exception, and until 2026-08-26 assertJourneyOpen named this action without
+ * it existing.
+ */
+export const reopenJourney = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  const { reason } = req.body;
+  if (!reason || !String(reason).trim()) throw new AppError('reason is required.', 400);
+
+  const result = await pipelineService.reopenJourney(id, {
+    reason: String(reason).trim(),
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Candidate record reopened');
+});
+
+/**
+ * POST /api/pipeline/:id/pause
+ * Pauses or resumes a journey (Q33). `paused` is explicit rather than a toggle
+ * so two recruiters acting at once cannot flip it past each other.
+ */
+export const setJourneyPaused = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  const { paused, reason } = req.body;
+  if (typeof paused !== 'boolean') throw new AppError('paused must be true or false.', 400);
+
+  const result = await pipelineService.setJourneyPaused(id, {
+    paused,
+    reason: reason ? String(reason).trim() : null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, paused ? 'Journey paused' : 'Journey resumed');
+});
+
 // ── Client round — marked, never booked; nothing reaches the client (Q14) ───
 
 /**

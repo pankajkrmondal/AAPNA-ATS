@@ -10,11 +10,16 @@ import {
   isZekoStage,
   normalizeZekoRoundStage,
   VACATING_OUTCOMES,
+  HIRED_OUTCOMES,
   isMrfFilled,
+  isMrfClosed,
   isStageArrival,
 } from '../config/pipelineStages.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, OCCURRENCE_STATUS } from './interviewSchedule.service.js';
+// cancelInterviewRound is also re-exported below for the controller's benefit;
+// this import is the local binding setFinalOutcome calls (a re-export creates
+// no binding in this module).
+import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
 import { SCORECARD_STATUS } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
@@ -25,7 +30,7 @@ import {
   timeToHireFor,
 } from './pipelineAnalytics.helpers.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
-import { reopenMrfIfUnfilled } from './mrfClosure.service.js';
+import { reopenMrfIfUnfilled, closeMrfIfFilled } from './mrfClosure.service.js';
 import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../utils/rejectionCooldown.js';
@@ -81,6 +86,12 @@ const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (type
  *
  * Exported so the offer and document services enforce the same rule; they act
  * on the same journeys through their own entry points.
+ *
+ * The "Reopen it before you…" instruction below named an action that did not
+ * exist until 2026-08-26 — there was no route or service that cleared
+ * final_outcome, so the only way out was a hand-written DB update. reopenJourney()
+ * now delivers it, and the drawer surfaces it beside the Closed tag. The wording
+ * is finally true.
  *
  * @param {{id: bigint|number, final_outcome: string|null}} pipeline
  * @param {string} action - what the caller was trying to do, for the message
@@ -336,7 +347,11 @@ export async function listPipeline(filters = {}) {
       // and it is the only signal that a candidate is chasing a role that no
       // longer has an opening. Keyword shortlists carry no MRF, so they are
       // never flagged.
-      mrf_closed: isMrfFilled(j.rpa_shortlisted_candidates?.mrf),
+      // isMrfClosed, not isMrfFilled: the card's "Role filled" flag is the
+      // "is this still hiring?" question, so a requisition the business
+      // cancelled (Q34) must flag too. The mrf include is unfiltered, so
+      // closed_at is already on the row.
+      mrf_closed: isMrfClosed(j.rpa_shortlisted_candidates?.mrf),
       source: j.source,
       vendor_email: j.vendor_email,
       is_paused: j.is_paused,
@@ -980,12 +995,56 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
     return { updatedPipeline: row, event: closureEvent };
   });
 
+  // Legacy write-back — BOTH layers, exactly as setStageOutcome does.
+  //
+  // This wrote only rpa_cv.FinalStatus until 2026-08-26. The shortlist row was
+  // left untouched, so a candidate closed as `joined` still read
+  // `pipeline_status = 'shortlisted'` forever — and that column is what feeds
+  // the dashboard shortlist tile, the recruiter leaderboard and the screening
+  // badges. The two writers of the same column had simply drifted: the stage
+  // path wrote both, the closure path (written later) wrote one.
+  // See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.4.
   try {
     if (pipeline.cv_id) {
       await prisma.$executeRaw`UPDATE rpa_cv SET "FinalStatus" = ${statusLabel} WHERE id = ${pipeline.cv_id};`;
     }
+    if (pipeline.shortlist_id) {
+      const legacyStatus = shortlistStatusFor(finalOutcomeKey);
+      if (legacyStatus) {
+        await prisma.rpa_shortlisted_candidates.update({
+          where: { id: pipeline.shortlist_id },
+          data: { pipeline_status: legacyStatus },
+        });
+      }
+
+      // joined_at (on rpa_shortlisted_candidates, beside offer_sent_at and
+      // offer_accepted_at) was declared, read by the dashboard hire count and
+      // by dashboardAggregations, required by the development plan "for
+      // reporting continuity" — and written by no code path anywhere. Nothing
+      // looked broken because the hire count falls back to offer_accepted_at,
+      // so time-to-hire silently measured to offer ACCEPTANCE instead of to
+      // joining. This is the write that was missing.
+      //
+      // JOINED only (decision, 2026-08-26 — audit §6a). Deliberately NOT the
+      // wider HIRED_OUTCOMES: closure_approved is a verdict on the record, not
+      // evidence anyone started, and joined_and_left did join but "now" is the
+      // LEAVE date and there is no leave column to put it in. Since
+      // dashboardAggregations prefers joined_at over offer_accepted_at, a
+      // fabricated date here corrupts the one metric that reads it first.
+      //
+      // Stamped with closed_at rather than a fresh new Date() so the two
+      // columns reconcile exactly instead of drifting by the milliseconds this
+      // best-effort tail takes to run. `joined_at: null` in the filter means a
+      // real joining date recorded elsewhere is never clobbered.
+      if (finalOutcomeKey === FINAL_OUTCOMES.JOINED) {
+        await prisma.rpa_shortlisted_candidates.updateMany({
+          where: { id: pipeline.shortlist_id, joined_at: null },
+          data: { joined_at: updatedPipeline.closed_at },
+        });
+      }
+    }
   } catch (err) {
-    logger.error(`Legacy FinalStatus write-back failed for pipeline ${pipelineId}: ${err.message}`);
+    logger.error(`Legacy write-back failed for closed pipeline ${pipelineId}: ${err.message}`);
   }
 
   // 90-day lock vs closure (M6 audit, 2026-08-12). Someone we actually hired is
@@ -1025,6 +1084,55 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
     logger.error(`Closure: document link could not be closed for pipeline ${pipelineId}: ${err.message}`);
   }
 
+  // Delivers the §D accepted-risk commitment recorded in 04-QUESTIONS.md —
+  // "withdrawing a candidate auto-cancels their pending calendar invites and
+  // scheduled reminders" — which was agreed and then never built. Until now a
+  // withdrawn or rejected candidate kept a live Teams booking on their calendar
+  // and still received the 30-minute reminder mail for an interview nobody was
+  // going to attend. See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.2.
+  //
+  // Only bookings that have not STARTED yet. A round that already happened is a
+  // historical fact and cancelling it would rewrite the record — those simply
+  // need to stop being chased, which is the job-guard half of this fix
+  // (interviewReminder / interviewOccurrence / listUnresolvedInterviews).
+  //
+  // Best effort, per-row, exactly like the document-token close above: a
+  // calendar API that is down must never leave a recorded closure half-applied.
+  try {
+    const liveBookings = await prisma.rpa_interview_schedule.findMany({
+      where: {
+        pipeline_id: pipeline.id,
+        status: 'scheduled',
+        scheduled_start_at: { gt: new Date() },
+      },
+      select: { id: true, stage_key: true },
+    });
+
+    for (const booking of liveBookings) {
+      try {
+        await cancelRound(booking.id, {
+          reason: `Candidate journey closed — ${statusLabel}`,
+          actedBy,
+          // Panel always, candidate never (audit §6a). The panel still gets
+          // told — nobody should sit waiting in a room — but the candidate
+          // does not, because five of the eight outcomes are deliberately
+          // silent and a cancellation notice would smuggle the news back in.
+          notifyCandidateOfCancellation: false,
+        });
+      } catch (err) {
+        // Tolerated by design: cancelInterviewRound throws 400 on a row that
+        // is already cancelled, which is a no-op for this sweep, not a failure.
+        logger.error(`Closure: could not cancel ${booking.stage_key} booking ${booking.id} for pipeline ${pipelineId}: ${err.message}`);
+      }
+    }
+
+    if (liveBookings.length > 0) {
+      logger.info(`Closure: cancelled ${liveBookings.length} pending interview booking(s) for pipeline ${pipelineId}.`);
+    }
+  } catch (err) {
+    logger.error(`Closure: pending interviews could not be cancelled for pipeline ${pipelineId}: ${err.message}`);
+  }
+
   // Closing a journey as backed-out / did-not-join / joined-and-left /
   // withdrawn FREES the opening that candidate was holding, so a requisition
   // auto-closed on the strength of their acceptance has to come back.
@@ -1050,6 +1158,43 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
         });
       } catch (err) {
         logger.error(`Closure: re-open audit note failed for pipeline ${pipelineId}: ${err.message}`);
+      }
+    }
+  }
+
+  // The mirror image, and the other half of the same decision (audit §2.7).
+  //
+  // Closing as a hire FILLS the seat this candidate was holding. Until
+  // 2026-08-26 only an in-app offer acceptance could do that, so the coupling
+  // ran one way: an outcome could free a seat but never fill one. A journey
+  // closed as `joined` without an accepted offer row — the offline-offer path,
+  // and the Offer round has been record-only since 2026-08-25 — stamped
+  // joined_at and counted as Hired while its requisition stayed open in the JD
+  // dropdown forever.
+  //
+  // That was narrow while closure was reachable only at the Offer stage. §2.1
+  // made it one click from Tech 1, which is what promoted this from theoretical
+  // to routine. countFilledSeats() now counts hire-closures too, so this call
+  // has something to find.
+  //
+  // Same guarantees as reopenMrfIfUnfilled beside it: null-safe on mrf_id,
+  // idempotent, and it never throws — a recorded hire must not fail because the
+  // requisition bookkeeping did.
+  if (HIRED_OUTCOMES.includes(finalOutcomeKey)) {
+    const mrfFill = await closeMrfIfFilled(pipeline.mrf_id);
+    if (mrfFill.closed) {
+      try {
+        await prisma.rpa_pipeline_stage_events.create({
+          data: {
+            pipeline_id: pipeline.id,
+            stage_key: pipeline.current_stage_key,
+            event_type: 'note',
+            notes: `Requisition closed — ${mrfFill.accepted}/${mrfFill.openings} opening(s) filled`,
+            acted_by: actedBy || null,
+          },
+        });
+      } catch (err) {
+        logger.error(`Closure: requisition-filled audit note failed for pipeline ${pipelineId}: ${err.message}`);
       }
     }
   }
@@ -1100,6 +1245,204 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
   });
 
   return serializeBigInts(updatedPipeline);
+}
+
+/**
+ * Re-opens a closed journey (audit §2.6 mirror gap).
+ *
+ * `assertJourneyOpen` has told users "Reopen it before you…" since Module 1 —
+ * naming an action that did not exist. No route or service cleared
+ * `final_outcome`/`closed_at`, so a mis-close could only be undone in the
+ * database by hand. That was tolerable while closure was reachable from the
+ * Offer stage only; §2.1 (2026-08-26) made closure available at every stage,
+ * which makes a mis-close very much likelier.
+ *
+ * This is NOT just "clear the flag". Closure has a best-effort tail that writes
+ * four other things, and every one of them is still true afterwards. Leaving
+ * them behind would re-create §2.4 in mirror image — a live journey reading
+ * `pipeline_status = 'hired'` with a `joined_at` for someone who never joined.
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string} params.reason - mandatory; a re-open is an exception and the
+ *   audit trail must say why
+ * @param {number} params.actedBy
+ */
+export async function reopenJourney(pipelineId, { reason, actedBy }) {
+  if (!reason || !String(reason).trim()) {
+    throw new AppError('A reason is required to reopen a closed record.', 400);
+  }
+
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+  if (!pipeline.final_outcome) {
+    throw new AppError('This candidate\'s record is not closed, so there is nothing to reopen.', 400);
+  }
+
+  const closedAs = finalStatusLabelFor(pipeline.current_stage_key, pipeline.final_outcome);
+  const wasHire = HIRED_OUTCOMES.includes(pipeline.final_outcome);
+
+  const updatedPipeline = await prisma.$transaction(async (tx) => {
+    // Conditional claim, mirroring the closure claim exactly: two recruiters
+    // re-opening the same record together means one wins rather than both
+    // writing an audit note for a single event.
+    const claim = await tx.rpa_candidate_pipeline.updateMany({
+      where: { id: pipeline.id, final_outcome: { not: null } },
+      data: { final_outcome: null, closed_at: null, modified_at: new Date() },
+    });
+    if (claim.count !== 1) {
+      throw new AppError('This candidate\'s record has already been reopened.', 409);
+    }
+    await tx.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: pipeline.current_stage_key,
+        event_type: 'note',
+        notes: `Record reopened — was closed as "${closedAs}". Reason: ${String(reason).trim()}`,
+        acted_by: actedBy || null,
+      },
+    });
+    return tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+  });
+
+  // Undo the closure's legacy write-back. Best effort, like the closure tail
+  // itself: a re-open that is recorded must not fail because a legacy column
+  // could not be restored.
+  try {
+    // The journey is live again, so pipeline_status must go back to the stage
+    // engine's own verdict rather than staying on a terminal closure value.
+    // Read it from the last STAGE outcome event — filtering on STAGE_OUTCOMES
+    // deliberately skips the closure event, which carries a FINAL_OUTCOMES
+    // value and is the thing being undone.
+    const lastStageOutcome = await prisma.rpa_pipeline_stage_events.findFirst({
+      where: {
+        pipeline_id: pipeline.id,
+        event_type: 'outcome',
+        outcome: { in: Object.values(STAGE_OUTCOMES) },
+      },
+      orderBy: { created_at: 'desc' },
+      select: { outcome: true, status_label: true },
+    });
+
+    if (pipeline.shortlist_id) {
+      await prisma.rpa_shortlisted_candidates.update({
+        where: { id: pipeline.shortlist_id },
+        data: {
+          // No stage outcome yet (closed straight out of an early round) means
+          // the honest resting state is 'shortlisted' — where the journey began.
+          pipeline_status: shortlistStatusFor(lastStageOutcome?.outcome) || 'shortlisted',
+          // They did not join after all. dashboardAggregations prefers
+          // joined_at over offer_accepted_at, so a stale value here would keep
+          // reporting a hire that has been un-recorded.
+          ...(wasHire ? { joined_at: null } : {}),
+        },
+      });
+    }
+
+    if (pipeline.cv_id && lastStageOutcome?.status_label) {
+      await prisma.$executeRaw`UPDATE rpa_cv SET "FinalStatus" = ${lastStageOutcome.status_label} WHERE id = ${pipeline.cv_id};`;
+    }
+  } catch (err) {
+    logger.error(`Reopen: legacy write-back restore failed for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  // Reconcile the requisition against reality rather than guessing which way it
+  // needs to move. Both helpers are null-safe, idempotent and never throw, and
+  // each is a no-op unless its own condition holds — so calling both is simply
+  // "recount the seats and settle":
+  //   - the journey was closed as a hire, which had FILLED a seat  -> free it
+  //   - the journey was closed as vacating, which had FREED a seat, and the
+  //     candidate still holds an accepted offer                    -> fill it
+  await reopenMrfIfUnfilled(pipeline.mrf_id);
+  await closeMrfIfFilled(pipeline.mrf_id);
+
+  await notify({
+    type: NOTIFICATION_TYPES.PIPELINE_CLOSURE,
+    title: `Candidate record reopened — was ${closedAs}`,
+    description: pipeline.rpa_shortlisted_candidates?.candidate_name || 'A candidate',
+    pipelineId: pipeline.id,
+    meta: { reopened_from: pipeline.final_outcome },
+    excludeUserId: actedBy || null,
+  });
+
+  logger.info(`Pipeline ${pipelineId} reopened (was "${pipeline.final_outcome}") by user ${actedBy || 'unknown'}.`);
+  return serializeBigInts(updatedPipeline);
+}
+
+/**
+ * Pauses or resumes a journey (Q33 — the Q13/Q25 manual pause/stop action).
+ *
+ * RT closed Q25 on 2026-07-14 with "the system's only job is to provide a
+ * manual action to pause/stop the other journey's status". `is_paused` was
+ * added to the schema, read onto every board card and exported to CSV — and
+ * nothing anywhere wrote it. The column has been inert since.
+ *
+ * The case it exists for: an MRF fills while other candidates are still
+ * mid-journey against it. Per Q32 nothing is auto-decided about them, so the
+ * recruiter needs a lever that is not "close them" — pausing says "hold, this
+ * role is filled" without ending a real application or firing a rejection.
+ *
+ * Pausing is NOT closing: it does not touch final_outcome, does not write any
+ * legacy layer, and sends nothing. What it does do is take the journey out of
+ * the four automated sweeps (interviewReminder, interviewOccurrence,
+ * assessmentDeadlineChecker, listUnresolvedInterviews) — without that the flag
+ * would be decorative, and "stop the journey's status" would be unmet.
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {boolean} params.paused
+ * @param {string|null} [params.reason]
+ * @param {number} params.actedBy
+ */
+export async function setJourneyPaused(pipelineId, { paused, reason = null, actedBy }) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+  const next = Boolean(paused);
+  // A closed journey is already stopped; pausing it would be a second, weaker
+  // way of saying the same thing and would leave two flags to reconcile.
+  assertJourneyOpen(pipeline, next ? 'pause it' : 'resume it');
+
+  // Conditional claim so a double-click writes one audit note, not two.
+  const claim = await prisma.rpa_candidate_pipeline.updateMany({
+    where: { id: pipeline.id, is_paused: !next },
+    data: { is_paused: next, modified_at: new Date() },
+  });
+  if (claim.count !== 1) {
+    throw new AppError(
+      next ? 'This journey is already paused.' : 'This journey is not paused.',
+      400
+    );
+  }
+
+  try {
+    await prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: pipeline.current_stage_key,
+        event_type: 'note',
+        notes: next
+          ? `Journey paused${reason ? ` — ${String(reason).trim()}` : ''}. Reminders and chase-ups are suspended.`
+          : `Journey resumed${reason ? ` — ${String(reason).trim()}` : ''}.`,
+        acted_by: actedBy || null,
+      },
+    });
+  } catch (err) {
+    logger.error(`Pause: audit note failed for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  const row = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+  logger.info(`Pipeline ${pipelineId} ${next ? 'paused' : 'resumed'} by user ${actedBy || 'unknown'}.`);
+  return serializeBigInts(row);
 }
 
 /**
@@ -1216,9 +1559,9 @@ export async function createPipelineJourney({
     try {
       const mrf = await prisma.rpa_mrf.findUnique({
         where: { id: mrfIdBig },
-        select: { filled_at: true, approval_status: true, position_hiring_for: true },
+        select: { filled_at: true, closed_at: true, approval_status: true, position_hiring_for: true },
       });
-      if (isMrfFilled(mrf)) {
+      if (isMrfClosed(mrf)) {
         logger.warn(
           `Journey created for cv ${cvIdBig} against MRF ${mrfIdBig} ("${mrf.position_hiring_for}") whose openings are already filled — likely a stale roles dropdown.`
         );

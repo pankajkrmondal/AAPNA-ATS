@@ -64,6 +64,19 @@ export async function checkOverdueAssessmentInvites() {
     FROM latest_invites li
     WHERE li.deadline_at < NOW()
       AND li.reminded_at IS NULL
+      -- Never ring the overdue bell for a journey that has been closed
+      -- underneath the invite. The SQL equivalent of the Prisma guard at
+      -- documentReminder.js:46 (rpa_candidate_pipeline: final_outcome null),
+      -- spelled out here because this sweep is a raw DISTINCT ON query.
+      -- See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md section 2.3.
+      -- is_paused is the Q33 lever (added 2026-08-26): a journey a recruiter is
+      -- holding because its role filled must not keep ringing an overdue bell.
+      AND EXISTS (
+        SELECT 1 FROM rpa_candidate_pipeline p
+        WHERE p.id = li.pipeline_id
+          AND p.final_outcome IS NULL
+          AND p.is_paused = FALSE
+      )
       AND NOT EXISTS (
         SELECT 1 FROM rpa_assessment_results r
         WHERE r.pipeline_id = li.pipeline_id AND r.status IN ('matched', 'score_overwritten')

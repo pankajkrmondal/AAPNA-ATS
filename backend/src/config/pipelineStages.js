@@ -204,6 +204,54 @@ export function isMrfFilled(mrf) {
   return mrf.approval_status === LEGACY_MRF_CLOSED_STATUS;
 }
 
+/**
+ * The controlled vocabulary for `rpa_mrf.closure_reason` (Q34).
+ *
+ * Written by BOTH closure paths: closeMrfIfFilled() stamps ALL_OPENINGS_FILLED,
+ * a manual close stamps whichever the recruiter picked. Before this existed the
+ * system recorded *when* a requisition closed but never *why* — not even for
+ * the automatic path.
+ *
+ * Deliberately not a DB CHECK constraint or an enum: every other status column
+ * in this schema is a plain VARCHAR, and a CHECK is what turns "add a reason"
+ * into a migration. Validation lives in the service instead.
+ */
+export const MRF_CLOSURE_REASONS = Object.freeze({
+  ALL_OPENINGS_FILLED: 'all_openings_filled',
+  BUDGET_WITHDRAWN: 'budget_withdrawn',
+  ROLE_WITHDRAWN: 'role_withdrawn',
+  HIRED_EXTERNALLY: 'hired_externally',
+  ON_HOLD_INDEFINITELY: 'on_hold_indefinitely',
+  OTHER: 'other',
+});
+
+/**
+ * Whether a requisition is CLOSED — filled, or manually closed by a human.
+ *
+ * This is the "is it still hiring?" question, and it is the one every consumer
+ * should ask: the JD dropdown, the dashboard active tile, the pipeline board
+ * card. A requisition leaves circulation if EITHER signal is set.
+ *
+ * Kept separate from isMrfFilled() rather than widening it, because the two
+ * genuinely differ and one reader depends on the difference: mrfDetail.export's
+ * "Openings Filled: YES/NO" must stay false for a role the business cancelled
+ * without hiring anyone. isMrfFilled() therefore still means exactly what its
+ * name says.
+ *
+ * ⚠️ Reads `closed_at` off the row it is given, so ANY `select:` that omits the
+ * column makes this return false and a closed requisition silently reappears in
+ * JD filtering — the same trap `filled_at` already carries a warning about in
+ * exports/mrf.export.js. Select both columns wherever this is called.
+ *
+ * @param {{ filled_at?: Date|string|null, closed_at?: Date|string|null, approval_status?: string|null }|null} mrf
+ * @returns {boolean}
+ */
+export function isMrfClosed(mrf) {
+  if (!mrf) return false;
+  if (mrf.closed_at != null) return true;
+  return isMrfFilled(mrf);
+}
+
 const STAGE_LABELS = Object.freeze({
   [STAGE_KEYS.SHORTLIST]: 'Shortlisted',
   [STAGE_KEYS.ZEKO_HR]: 'Zeko HR Screening',
@@ -287,24 +335,117 @@ export function finalStatusLabelFor(stageKey, outcomeKey) {
 }
 
 /**
- * Maps a stage×outcome pair onto the 3-value legacy vocabulary of
- * rpa_shortlisted_candidates.pipeline_status, plus the new 'future_prospect'
- * value the column already accepts (confirmed: no CHECK constraint in the
- * live staging DB — see backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md).
+ * Every value shortlistStatusFor() can write.
  *
- * @param {string} outcomeKey - one of STAGE_OUTCOMES
- * @returns {string|null} 'shortlisted' | 'rejected' | 'on_hold' | 'future_prospect', or null if not applicable
+ * Three readers bucket this column into count strips that must SUM to their
+ * total, and all three used to break silently — no error, just columns that
+ * stop adding up — whenever this list grew without them:
+ *
+ *   - `candidateCounts` in backend/src/services/screening.service.js
+ *   - `groupByRole()` in backend/src/exports/screening.export.js
+ *   - the `roleStats` memo in frontend/src/pages/Analytics.jsx
+ *
+ * That happened with 'future_prospect', which was written here before it had a
+ * bucket: every such candidate landed in `total` and nowhere else. The closure
+ * values were the second such growth, and rather than adding five more columns
+ * all three readers were given a CATCH-ALL `closed` branch on 2026-08-26 — so
+ * the sum now holds by construction and a value added to this list later cannot
+ * silently vanish from a strip again.
+ *
+ * Growing this list is therefore safe for the strips, but still check anything
+ * that switches on specific values — see TERMINAL_SHORTLIST_STATUSES below.
+ */
+export const SHORTLIST_STATUSES = Object.freeze({
+  SHORTLISTED: 'shortlisted',
+  REJECTED: 'rejected',
+  ON_HOLD: 'on_hold',
+  FUTURE_PROSPECT: 'future_prospect',
+  HIRED: 'hired',
+  WITHDRAWN: 'withdrawn',
+  BACKED_OUT: 'backed_out',
+  DID_NOT_JOIN: 'did_not_join',
+  JOINED_AND_LEFT: 'joined_and_left',
+});
+
+/**
+ * The subset of SHORTLIST_STATUSES that mean "this journey is over".
+ *
+ * The count strips roll all of these into a single `closed` column rather than
+ * carrying nine, but the COLUMN keeps them distinct — see shortlistStatusFor().
+ */
+export const TERMINAL_SHORTLIST_STATUSES = Object.freeze([
+  SHORTLIST_STATUSES.HIRED,
+  SHORTLIST_STATUSES.WITHDRAWN,
+  SHORTLIST_STATUSES.BACKED_OUT,
+  SHORTLIST_STATUSES.DID_NOT_JOIN,
+  SHORTLIST_STATUSES.JOINED_AND_LEFT,
+]);
+
+/**
+ * Maps a stage×outcome OR closure outcome onto the legacy vocabulary of
+ * rpa_shortlisted_candidates.pipeline_status (VarChar(50), nullable, no CHECK
+ * constraint in the live staging DB — see
+ * backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md).
+ *
+ * Accepts both STAGE_OUTCOMES and FINAL_OUTCOMES because both write this column
+ * and there is only one column to write. Closure was missing here until
+ * 2026-08-26: setStageOutcome wrote both legacy layers, setFinalOutcome wrote
+ * only rpa_cv.FinalStatus, so a candidate closed as `joined` still read
+ * `pipeline_status = 'shortlisted'` — inflating the dashboard shortlist tile,
+ * the recruiter leaderboard and the screening badges with people whose journey
+ * was over. See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.4.
+ *
+ * The closure outcomes map to DISTINCT values rather than one rolled-up
+ * "closed" (product-owner decision, 2026-08-26 — audit §6a). The column is
+ * plain VARCHAR(50) with no CHECK constraint, so no DDL is needed to widen the
+ * vocabulary, and the distinctness is the point:
+ *
+ *   - Only `closure_rejected` may write 'rejected'. That value drives the Q11
+ *     6-month re-application cooling-off (screening.service.js selects the
+ *     cooldown list on pipeline_status = 'rejected'), so routing a withdrawal
+ *     or a no-join through it would silently bar someone from re-applying on
+ *     the strength of a decision they made themselves.
+ *   - `joined` and `closure_approved` share 'hired' because that is one
+ *     concept, and 'hired' is a value dashboard.service.js already counts —
+ *     nothing wrote it until now.
+ *   - The remaining exits stay individually legible, so a report can tell a
+ *     backed-out offer from a candidate who never turned up without going back
+ *     to rpa_candidate_pipeline.final_outcome.
+ *
+ * The count strips roll every terminal value into one `closed` column; see
+ * TERMINAL_SHORTLIST_STATUSES.
+ *
+ * @param {string} outcomeKey - one of STAGE_OUTCOMES or FINAL_OUTCOMES
+ * @returns {string|null} one of SHORTLIST_STATUSES, or null if not applicable
  */
 export function shortlistStatusFor(outcomeKey) {
   switch (outcomeKey) {
     case STAGE_OUTCOMES.APPROVED:
-      return 'shortlisted';
+      return SHORTLIST_STATUSES.SHORTLISTED;
     case STAGE_OUTCOMES.REJECTED:
-      return 'rejected';
+      return SHORTLIST_STATUSES.REJECTED;
     case STAGE_OUTCOMES.HOLD:
-      return 'on_hold';
+      return SHORTLIST_STATUSES.ON_HOLD;
     case STAGE_OUTCOMES.FUTURE_PROSPECT:
-      return 'future_prospect';
+      return SHORTLIST_STATUSES.FUTURE_PROSPECT;
+
+    // --- Closure outcomes (Q12). Added 2026-08-26, audit §2.4 / §6a. ---
+    case FINAL_OUTCOMES.APPROVED:
+    case FINAL_OUTCOMES.JOINED:
+      return SHORTLIST_STATUSES.HIRED;
+    case FINAL_OUTCOMES.REJECTED:
+      return SHORTLIST_STATUSES.REJECTED;
+    case FINAL_OUTCOMES.ON_HOLD:
+      return SHORTLIST_STATUSES.ON_HOLD;
+    case FINAL_OUTCOMES.CANDIDATE_WITHDRAWN:
+      return SHORTLIST_STATUSES.WITHDRAWN;
+    case FINAL_OUTCOMES.BACKED_OUT:
+      return SHORTLIST_STATUSES.BACKED_OUT;
+    case FINAL_OUTCOMES.DID_NOT_JOIN:
+      return SHORTLIST_STATUSES.DID_NOT_JOIN;
+    case FINAL_OUTCOMES.JOINED_AND_LEFT:
+      return SHORTLIST_STATUSES.JOINED_AND_LEFT;
+
     default:
       return null;
   }

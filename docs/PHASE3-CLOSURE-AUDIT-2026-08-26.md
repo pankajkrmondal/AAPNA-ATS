@@ -15,10 +15,20 @@ implementation. Two findings collide with recorded RT decisions (Q10, Q13/Q25) a
 recorded RT commitment that was never built (§D) — those need RT before code, not just a ticket.
 
 > **Update 2026-08-26 (later same day).** Every finding was re-verified against the code, a fix
-> plan was approved, and the **documentation half was executed**. Read **[§6a](#6a-verification-pass-and-approved-fix-plan-2026-08-26-later-same-day)**
-> before acting on anything below: it corrects two claims here, records five downstream
-> consequences this audit did not model, and fixes the decisions so the work does not need
-> re-litigating. **No code has been changed** — §5 items 1–4 are all still outstanding.
+> plan was approved, and **the whole of §5 has since been built** — items 1–4 + 7 first, then
+> §2.5 / §2.6 / §2.7 once the product owner answered Q32–Q34. Read
+> **[§6a](#6a-verification-pass-and-approved-fix-plan-2026-08-26-later-same-day)** before acting on
+> anything below: it corrects two claims here and records five downstream consequences this audit
+> did not model.
+>
+> **Nothing in §2 is outstanding.** See
+> [CHANGES-2026-08-26-candidate-closure-graceful-exit.md](./changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md)
+> and [CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](./changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md),
+> with live status in [PHASE3-CLOSURE-FOLLOWON-PROGRESS.md](./PHASE3-CLOSURE-FOLLOWON-PROGRESS.md).
+>
+> 🚨 One premise in §6a proved **false**: `pipeline_status` *does* carry a CHECK constraint, so 5 of
+> the 7 closure values were silently rejected until `2026-08-26-shortlist-status-vocabulary.sql`
+> widened it. That also fixes a month-old `future_prospect` write failure this audit never saw.
 
 ---
 
@@ -327,7 +337,7 @@ implies, and the first two are regressions the fix itself would introduce:
 | Decision | Choice |
 |---|---|
 | Scope | §5 items **1–4 + 7**. §2.5 / §2.6 / §2.7 stay out of code — filed as Q32 / Q33 / Q34 in `phase3/04-QUESTIONS.md`. |
-| §2.4 `pipeline_status` map | **Add distinct closure values**, no DDL — the column is plain `VARCHAR(50)` with **no CHECK constraint** (`backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md:39`). `joined`/`closure_approved` → `'hired'`; `closure_rejected` → `'rejected'`; `closure_on_hold` → `'on_hold'`; `candidate_withdrawn` → `'withdrawn'`; `backed_out` → `'backed_out'`; `did_not_join` → `'did_not_join'`; `joined_and_left` → `'joined_and_left'`. **The distinct values are the point:** only `closure_rejected` may write `'rejected'`, because that column drives the 6-month Q11 cooling-off (`screening.service.js:1256`) — a withdrawal must not trip a cooling-off it did not earn. |
+| §2.4 `pipeline_status` map | **Add distinct closure values.** ~~no DDL — the column is plain `VARCHAR(50)` with **no CHECK constraint** (`backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md:39`).~~ 🚨 **The no-CHECK premise was FALSE — corrected 2026-08-26.** `rpa_shortlisted_candidates_pipeline_status_check` exists and rejected 5 of the 7 values, silently, because the write is a best-effort `try/catch`. DDL WAS needed: `2026-08-26-shortlist-status-vocabulary.sql`. The distinct-values decision itself stands. `joined`/`closure_approved` → `'hired'`; `closure_rejected` → `'rejected'`; `closure_on_hold` → `'on_hold'`; `candidate_withdrawn` → `'withdrawn'`; `backed_out` → `'backed_out'`; `did_not_join` → `'did_not_join'`; `joined_and_left` → `'joined_and_left'`. **The distinct values are the point:** only `closure_rejected` may write `'rejected'`, because that column drives the 6-month Q11 cooling-off (`screening.service.js:1256`) — a withdrawal must not trip a cooling-off it did not earn. |
 | §2.4 `joined_at` | Stamp for `joined` **only**, using `closed_at` so the two reconcile. Not `closure_approved` (a verdict on the record, not evidence anyone started) and not `joined_and_left` (they joined, but "now" is the *leave* date, and there is no leave column). `dashboardAggregations.js:227` prefers `joined_at` over `offer_accepted_at`, so a fabricated date corrupts the one metric that reads it first. |
 | §2.2 cancellation email | **Panel always, candidate never.** The Graph/Teams event is always cancelled. Rationale: 5 of the 8 outcomes are in `SILENT_FINAL_OUTCOMES` precisely because there is nothing to tell someone who withdrew — but the panel must not show up to a room. |
 | §2.1 outcome picker | **All 8 at every stage, unfiltered** — matches the backend, which accepts any outcome at any stage, and matches Q10/Q13's "manual only, no system logic" posture. |
@@ -349,11 +359,24 @@ every backend fix above reachable.
 > `joined_at` and count as Hired while the requisition stays open in the JD dropdown forever.
 > §2.7 must be reconsidered at that point even though it is out of scope now.
 
-**Status: logged only — no code changed.** Steps completed on 2026-08-26: the four stale
-documents in §2.8 are stamped, and §2.5's orphaned decision is filed as **Q32** with the three RT
-questions as **Q32-confirmation / Q33 / Q34** in `phase3/04-QUESTIONS.md`. The §D accepted-risk
-bullet at `04-QUESTIONS.md:306` is now marked **NOT BUILT**. Everything in §5 items 1–4 remains
-outstanding; the in-app copy at `PipelineDrawer.jsx:2797` is still wrong and unfixed.
+**Status: ~~logged only — no code changed~~ → BUILT, 2026-08-26.** The documentation half landed
+first: the four stale documents in §2.8 are stamped, §2.5's orphaned decision is filed as **Q32**
+with the three RT questions as **Q32-confirmation / Q33 / Q34** in `phase3/04-QUESTIONS.md`, and the
+§D accepted-risk bullet at `04-QUESTIONS.md:306` is marked **NOT BUILT**.
+
+**§5 items 1–4 + 7 are now implemented** — see
+[CHANGES-2026-08-26-candidate-closure-graceful-exit.md](./changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md).
+Every decision in the table above was followed as written. The two regressions predicted in this
+section (the status strip, the recruiter leaderboard) and the two hardening items (items 4 and 5)
+landed in the same change set; the strip readers now end in a **catch-all** branch, so the "no final
+`else`" defect cannot recur. The in-app copy at `PipelineDrawer.jsx:2797` is corrected and now states
+the email outcome **per status**. One item beyond the letter of §5 was also fixed: the Evalground
+Re-invite button, which §6a identified above as a genuine drawer leak, was the only action missing
+the `!outcomeEvent` guard and could send an invite to a closed candidate.
+
+**Still outstanding:** §2.5 / §2.6 / §2.7 (Q32 / Q33 / Q34), the ⚠️ immediately above — which the
+§2.1 fix has now promoted from theoretical to routine — and the integration tests, which are written
+(E2E-06) but **not run**, since they execute against shared staging and send real mail.
 
 ---
 

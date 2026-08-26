@@ -215,6 +215,24 @@ const pipelineService = {
   },
 
   /**
+   * Re-opens a closed journey (audit §2.6). Reason is mandatory.
+   * @param {number} id
+   * @param {Object} payload - { reason }
+   */
+  reopenJourney(id, payload) {
+    return api.post(`/pipeline/${id}/reopen`, payload);
+  },
+
+  /**
+   * Pauses or resumes a journey (Q33 — the manual pause/stop lever).
+   * @param {number} id
+   * @param {Object} payload - { paused: boolean, reason? }
+   */
+  setJourneyPaused(id, payload) {
+    return api.post(`/pipeline/${id}/pause`, payload);
+  },
+
+  /**
    * Ad-hoc per-candidate email override (RT ask, 2026-07-14).
    * @param {number} id
    * @param {Object} payload - { subject, body }

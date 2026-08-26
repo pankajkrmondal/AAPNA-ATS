@@ -175,6 +175,96 @@ describe('E2E-01 — vendor-sourced journey all the way to JOINED', () => {
     const closed = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journey.id) } });
     assert.equal(closed.final_outcome, 'joined');
     assert.ok(closed.closed_at);
+
+    // 6) Closure writes BOTH legacy layers, not just rpa_cv (audit §2.4).
+    //
+    // setStageOutcome always wrote both; setFinalOutcome — written later, for
+    // the terminal case — wrote only rpa_cv.FinalStatus. So a candidate we
+    // actually hired went on reading `pipeline_status = 'shortlisted'` forever,
+    // and that column feeds the dashboard shortlist tile, the recruiter
+    // leaderboard and the screening badges.
+    const slAfter = await prisma.rpa_shortlisted_candidates.findUnique({
+      where: { id: shortlist.id }, select: { pipeline_status: true, joined_at: true },
+    });
+    assert.equal(slAfter.pipeline_status, 'hired', 'closure must move the shortlist row off "shortlisted"');
+    // joined_at was declared, read by the dashboard and required by the
+    // development plan "for reporting continuity" — and written by nothing.
+    // The hire COUNT survived on the offer_accepted_at fallback, so nothing
+    // looked broken while time-to-hire silently measured to offer acceptance
+    // instead of to joining.
+    assert.ok(slAfter.joined_at, 'JOINED must stamp joined_at — the column time-to-hire measures to');
+    // Stamped FROM closed_at, not a second new Date(), so the two reconcile
+    // exactly rather than drifting by however long the best-effort tail took.
+    assert.equal(
+      slAfter.joined_at.getTime(), closed.closed_at.getTime(),
+      'joined_at must be closed_at, not an independently-taken timestamp'
+    );
+  });
+});
+
+// ── E2E-06 ────────────────────────────────────────────────────────────
+
+describe('E2E-06 — a candidate who withdraws mid-flow winds down completely', () => {
+  test('closing from a non-Offer stage cancels the pending interview and moves both legacy layers', async () => {
+    const mrfId = await makeMrf(1);
+    const { cv, shortlist, journey } = await makeJourney({ name: 'E2E06', mrfId });
+
+    // Park the journey on a real interview round — deliberately NOT 'offer'.
+    // No test covered closure from a non-Offer stage before 2026-08-26, which
+    // is how §2.1 survived: setFinalOutcome has always accepted any
+    // current_stage_key, but the drawer only ever offered the closure action
+    // inside OfferActions, so a candidate who withdrew at Tech 2 could not be
+    // closed at all.
+    await walkTo(journey.id, 'tech2');
+
+    const booked = await scheduleInterviewRound(journey.id, {
+      stageKey: 'tech2',
+      startAt: new Date(Date.now() + 48 * 3600 * 1000),
+      durationMinutes: 60,
+      interviewerEmail: 'pkmondal@aapnainfotech.com',
+      interviewerName: 'Phase3 Test Interviewer',
+      actedBy: ACTED_BY,
+    });
+
+    await setFinalOutcome(journey.id, {
+      finalOutcomeKey: FINAL_OUTCOMES.CANDIDATE_WITHDRAWN, actedBy: ACTED_BY,
+    });
+
+    const closed = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journey.id) } });
+    assert.equal(closed.final_outcome, 'candidate_withdrawn', 'closure must be reachable from any stage');
+    assert.equal(closed.current_stage_key, 'tech2', 'closing does not drag the candidate to the offer stage');
+    assert.ok(closed.closed_at);
+
+    // §2.2 / §D — the booking does not outlive the journey. This is the
+    // commitment recorded in 04-QUESTIONS.md §D ("withdrawing a candidate
+    // auto-cancels their pending calendar invites and scheduled reminders")
+    // that was agreed and then never built: a withdrawn candidate kept a live
+    // Teams booking and still received the 30-minute reminder mail.
+    const sched = await prisma.rpa_interview_schedule.findUnique({ where: { id: BigInt(booked.id) } });
+    assert.equal(sched.status, 'cancelled', 'a closed journey must not keep a live interview booking');
+    assert.ok(sched.cancelled_at, 'the cancellation is stamped, so the reminder sweep skips it');
+
+    // §2.4 — a withdrawal is NOT a rejection, on either cooling-off surface.
+    const sl = await prisma.rpa_shortlisted_candidates.findUnique({
+      where: { id: shortlist.id }, select: { pipeline_status: true, joined_at: true },
+    });
+    assert.equal(sl.pipeline_status, 'withdrawn', 'a withdrawal reads as withdrawn, not shortlisted');
+    assert.notEqual(
+      sl.pipeline_status, 'rejected',
+      'mapping a withdrawal to "rejected" would enter it into the screening cooldown list'
+    );
+    assert.equal(sl.joined_at, null, 'someone who withdrew never joined');
+
+    // The other cooling-off surface: findRecentRejection() gates re-application
+    // on current_stage_status, which a closure does not touch. Asserted end to
+    // end because §2.1's real harm was recruiters reaching for Reject to close
+    // a withdrawal, which DOES arm this gate for six months.
+    const otherMrf = await makeMrf(1);
+    const reapplied = await createPipelineJourney({
+      cvId: cv.id, mrfId: otherMrf, source: 'screening_shortlist',
+    });
+    createdJourneys.push(BigInt(reapplied.id));
+    assert.ok(reapplied.id, 'a voluntary withdrawal must not bar re-application');
   });
 });
 

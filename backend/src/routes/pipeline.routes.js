@@ -92,6 +92,12 @@ router.post('/:id/outcome', pipelineController.setStageOutcome);
 router.post('/:id/advance', pipelineController.advanceStage);
 /** POST /api/pipeline/:id/closure — set the final/closure outcome (Q12). */
 router.post('/:id/closure', pipelineController.setFinalOutcome);
+/** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
+ * action assertJourneyOpen has named since Module 1 without it existing. */
+router.post('/:id/reopen', pipelineController.reopenJourney);
+/** POST /api/pipeline/:id/pause — pause/resume a journey (Q33). The manual
+ * lever RT asked for when a role fills under a candidate still in flight. */
+router.post('/:id/pause', pipelineController.setJourneyPaused);
 
 /** Documents round (Module 4) — recruiter-facing half; the candidate uploads
  * through the public token route in document.routes.js. */

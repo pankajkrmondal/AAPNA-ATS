@@ -38,7 +38,7 @@ import {
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
   FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  SendOutlined, StepForwardOutlined, UserOutlined,
+  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
@@ -541,12 +541,19 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
         : { state: 'done', detail: `Invite ${invite.method === 'email' ? 'emailed' : 'marked sent manually'} · ${fmtDateTime(invite.sent_at)} · deadline in ${daysLeft} day(s)` };
       s2 = { state: 'active', detail: 'Evalground test pending' };
       s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
-      showInviteButton = isCurrent; // re-invite always available once one exists and no result yet
+      // Re-invite stays available once an invite exists and no result has
+      // landed — but NOT after an outcome has been recorded on the stage. This
+      // was the one action button in the drawer missing the `!outcomeEvent`
+      // guard every other one carries (Schedule, Cancel, Client-round,
+      // Documents), so it survived both an ordinary reject and a closure: a
+      // recruiter could email a fresh Evalground invite to a candidate whose
+      // record was already closed. Audit §6a.
+      showInviteButton = isCurrent && !outcomeEvent;
     } else if (enteredEvent) {
       s1 = { state: 'active', detail: 'Not sent yet' };
       s2 = { state: 'pending', detail: 'Send the Evalground invite to start the test window' };
       s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
-      showInviteButton = isCurrent;
+      showInviteButton = isCurrent && !outcomeEvent; // same guard as above
     }
   } else if (stage.stage_key === 'offer') {
     // Record-only offer (Q3): the letter is prepared and shared by HR outside
@@ -761,6 +768,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const [closureOpen, setClosureOpen] = useState(false);
   const [closureOutcome, setClosureOutcome] = useState(null);
   const [closureNotes, setClosureNotes] = useState('');
+  const [reopenOpen, setReopenOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  // How the picked status reads, for the modal's per-outcome email warning.
+  const closureLabel = CLOSURE_OPTIONS.find((o) => o.value === closureOutcome)?.label || 'This status';
 
   const open = !!pipelineId;
 
@@ -1112,6 +1123,36 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     },
     onError: (err) => {
       message.error(err?.message || 'Failed to update the offer.');
+    },
+  });
+
+  const pauseMutation = useMutation({
+    mutationFn: (paused) => pipelineService.setJourneyPaused(pipelineId, { paused }),
+    onSuccess: (_data, paused) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      message.success(paused
+        ? 'Journey paused — reminders and chase-ups are suspended.'
+        : 'Journey resumed.');
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.message || 'Could not change the pause state.');
+    },
+  });
+
+  const reopenMutation = useMutation({
+    mutationFn: () => pipelineService.reopenJourney(pipelineId, { reason: reopenReason.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      setReopenOpen(false);
+      setReopenReason('');
+      message.success('Candidate record reopened.');
+      // Deliberately NOT dismissing the drawer, unlike closure: the journey is
+      // live again and the recruiter almost always wants to act on it now.
+    },
+    onError: (err) => {
+      message.error(err?.response?.data?.message || 'Could not reopen this record.');
     },
   });
 
@@ -1987,7 +2028,42 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             {isReadyForDecision
               ? <Tag color="green">Ready for decision</Tag>
               : <Tag color={pipeline.current_stage_status === 'hold' ? 'gold' : 'blue'}>{pipeline.current_stage_status}</Tag>}
+            {pipeline.is_paused && !pipeline.final_outcome && <Tag color="orange">Paused</Tag>}
             {pipeline.final_outcome && <Tag color="purple">Closed — {pipeline.final_outcome}</Tag>}
+            {/* Pause / resume (Q33). Offered only on an OPEN journey — a closed
+                one is already stopped, and two flags meaning "not running"
+                would have to be reconciled. The lever RT asked for on
+                2026-07-14 for candidates left stranded when their role fills;
+                is_paused had been read onto every card and exported to CSV
+                since, with nothing writing it. */}
+            {!pipeline.final_outcome && (
+              <Button
+                size="small"
+                type="link"
+                icon={<PauseCircleOutlined />}
+                loading={pauseMutation.isPending}
+                onClick={() => pauseMutation.mutate(!pipeline.is_paused)}
+                style={{ paddingLeft: 0 }}
+              >
+                {pipeline.is_paused ? 'Resume journey' : 'Pause journey'}
+              </Button>
+            )}
+            {/* Re-open (audit §2.6). Sits beside the Closed tag because it is
+                the only action a closed journey has — every other affordance in
+                the drawer is suppressed once an outcome event exists. Until
+                2026-08-26 assertJourneyOpen told users to "Reopen it before
+                you…" while no route or service could do so. */}
+            {pipeline.final_outcome && (
+              <Button
+                size="small"
+                type="link"
+                icon={<UndoOutlined />}
+                onClick={() => setReopenOpen(true)}
+                style={{ paddingLeft: 0 }}
+              >
+                Reopen record
+              </Button>
+            )}
           </Space>
 
           {/* Shortlisting happens on Candidate Screening, not as a pipeline
@@ -2115,6 +2191,38 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   </Popconfirm>
                 </div>
               )}
+              {/* Closure from ANY stage (audit §2.1, 2026-08-26).
+                  setClosureOpen(true) used to be reachable from exactly one
+                  place — OfferActions — which renders only at the Offer stage.
+                  Everywhere else offered Approve/Reject/Hold and nothing else,
+                  so a candidate who withdrew at Tech 2 could not be closed at
+                  all: the recruiter's only options were to reject them (wrong
+                  outcome, wrong email, and it starts a 6-month Q11 cooling-off
+                  they did not earn) or leave the journey open forever.
+
+                  This contradicted the spec on both sides — Q12 defines
+                  Candidate Withdrawn as "at ANY stage before joining", and
+                  setFinalOutcome has always accepted any current_stage_key. The
+                  API and the templates were ready; only the button was missing.
+
+                  Kept visually quieter than the outcome buttons above: closure
+                  is the rarer, heavier action, and the stage decision remains
+                  the normal path. */}
+              <div style={{ marginBottom: 12 }}>
+                <Button
+                  size="small"
+                  type="link"
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={() => setClosureOpen(true)}
+                  style={{ paddingLeft: 0 }}
+                >
+                  Close this candidate&apos;s record
+                </Button>
+                <Text type="secondary" style={{ fontSize: 11.5, display: 'block' }}>
+                  For an exit that is not a stage decision — withdrew, backed out, joined, or never joined.
+                </Text>
+              </div>
               {/* States what actually happens now (M6): two separate emails,
                   the vendor's built from a fixed status vocabulary rather than
                   from anything typed here. The old copy promised a cc, which
@@ -2787,14 +2895,28 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       onOk={() => closureMutation.mutate()}
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {/* Deliberately does NOT promise an email: the 8 closure outcomes have
-            no generic fallback template (stageNotification.service.js only
-            covers approved/rejected/hold), so one is sent only where an admin
-            has mapped a template to that status. */}
+        {/* Corrected 2026-08-26 (audit §2.8). The old copy — "a closure email is
+            sent only if a template is mapped to the status you pick" — was
+            written before the closure templates were seeded, and was by then
+            wrong in BOTH directions: the three decision outcomes now always
+            send via GENERIC_FALLBACK_BY_OUTCOME whether or not anyone mapped
+            anything, and the other five never send however they are mapped
+            (SILENT_FINAL_OUTCOMES short-circuits before the lookup).
+
+            Stated per-outcome rather than in general, because the honest
+            general statement is "it depends", which tells the recruiter
+            nothing at the moment they are choosing. */}
         <Alert
           type="warning"
           showIcon
-          message="This ends the journey and removes the candidate from the active board. A closure email is sent only if a template is mapped to the status you pick."
+          message="This ends the journey and removes the candidate from the active board."
+          description={
+            !closureOutcome
+              ? 'Whether the candidate is emailed depends on the status you pick.'
+              : SILENT_CLOSURE_OUTCOMES.has(closureOutcome)
+                ? `${closureLabel} does not email the candidate — it records something that already happened, which they know about.`
+                : `${closureLabel} emails the candidate automatically, from the recruitment mailbox.`
+          }
         />
         <div>
           <Text strong style={{ fontSize: 12.5 }}>Final status <Text type="danger">*</Text></Text>
@@ -2807,6 +2929,37 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           />
         </div>
         <TextArea rows={2} placeholder="Notes (optional)" value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} />
+      </Space>
+    </Modal>
+
+    {/* Re-open — the undo for a closure (audit §2.6). */}
+    <Modal
+      open={reopenOpen}
+      onCancel={() => setReopenOpen(false)}
+      title="Reopen candidate record"
+      width={MODAL_WIDTH.CONFIRM}
+      okText="Reopen the record"
+      okButtonProps={{ disabled: !reopenReason.trim() }}
+      confirmLoading={reopenMutation.isPending}
+      onOk={() => reopenMutation.mutate()}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="This puts the candidate back on the active board at the stage they were closed on."
+          description="No email is sent. The closure is kept in the history, and any requisition seat the closure filled or freed is recounted."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Why is this being reopened? <Text type="danger">*</Text></Text>
+          <TextArea
+            rows={2}
+            style={{ marginTop: 4 }}
+            placeholder="e.g. closed by mistake — wrong candidate"
+            value={reopenReason}
+            onChange={(e) => setReopenReason(e.target.value)}
+          />
+        </div>
       </Space>
     </Modal>
     </>
@@ -2906,6 +3059,26 @@ function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemi
     </Space>
   );
 }
+
+/**
+ * The five closure outcomes that NEVER email the candidate, whatever an admin
+ * has mapped. Mirrors SILENT_FINAL_OUTCOMES in
+ * backend/src/services/stageNotification.service.js — the backend is
+ * authoritative and short-circuits before any template lookup; this copy exists
+ * only so the modal can say which way it will go BEFORE the recruiter commits.
+ * Keep the two lists identical.
+ *
+ * The other three (closure_approved / closure_rejected / closure_on_hold) are
+ * real decisions the candidate is waiting on, and always send via
+ * GENERIC_FALLBACK_BY_OUTCOME.
+ */
+const SILENT_CLOSURE_OUTCOMES = new Set([
+  'joined',
+  'joined_and_left',
+  'backed_out',
+  'did_not_join',
+  'candidate_withdrawn',
+]);
 
 /** The 8 closure statuses (Q12), in the order RT reads them. */
 const CLOSURE_OPTIONS = [

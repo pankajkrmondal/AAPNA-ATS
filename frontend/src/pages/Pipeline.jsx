@@ -29,7 +29,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
@@ -177,6 +177,16 @@ function CandidateCard({ card, onOpen }) {
             {card.mrf_closed && !card.final_outcome && (
               <Tooltip title="All openings on this requisition are filled — this candidate is still in progress. Continue only if you intend to re-open the role or are holding them as a backup.">
                 <Tag color="orange" className="tag-attention" icon={<WarningOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Role filled</Tag>
+              </Tooltip>
+            )}
+            {/* Held by a recruiter (Q33). Sits next to "Role filled" because
+                that is the case it exists for: the role filled underneath this
+                candidate and someone chose to hold rather than close them.
+                is_paused has been on the card payload all along; nothing wrote
+                it until 2026-08-26. */}
+            {card.is_paused && !card.final_outcome && (
+              <Tooltip title="This journey is paused — interview reminders, occurrence chase-ups and assessment deadline bells are all suspended until it is resumed.">
+                <Tag color="orange" icon={<PauseCircleOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Paused</Tag>
               </Tooltip>
             )}
             {card.source === 'vendor' && <ShopOutlined style={{ color: 'var(--text-3)', fontSize: 11 }} />}

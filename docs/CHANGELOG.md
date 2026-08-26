@@ -5,6 +5,104 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-26 — Closure follow-on: the requisition lifecycle closes both ways
+**Why:** the closure audit's remaining findings (§2.5–§2.7), built once the product owner answered
+**Q32–Q34**. Full write-up:
+[CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](./changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md).
+
+- **Two manual DDL files, both applied to staging and verified.**
+- **§2.7 — the MRF coupling ran one way.** An outcome could FREE a requisition seat but never FILL
+  one, so a journey closed as `joined` without an in-app accepted offer counted as Hired while its
+  requisition **stayed open in the JD dropdown forever**. Wiring `closeMrfIfFilled` in was not
+  enough: the seat count only counted `rpa_offers` rows, so it would have counted 0 in exactly that
+  case. `countAcceptedHires` → **`countFilledSeats`**, now counting **journeys, not offer rows** —
+  the normal path carries both an accepted offer and a `joined` closure on one journey, and counting
+  the two separately would have **filled a 2-opening requisition on a single hire**.
+- **§2.6 — journeys can be re-opened.** `assertJourneyOpen` has said *"Reopen it before you…"* since
+  Module 1, naming an action that did not exist. `reopenJourney()` also undoes what closure's tail
+  wrote — `pipeline_status`, `joined_at` — and recounts the requisition seat, otherwise a live
+  journey would read `hired` with a `joined_at` for someone who never joined.
+- **Q33 — the pause lever RT asked for on 2026-07-14.** `is_paused` was read onto every card and
+  exported to CSV, and **nothing wrote it**. A paused journey now also drops out of all four sweeps;
+  without that the flag would be decorative.
+- **Q34 — manual requisition closure with a reason.** A business-cancelled requisition had no
+  representation at all. New `closed_at` / `closure_reason` / `closure_note`, a widened
+  `idx_rpa_mrf_open`, `isMrfClosed()`, and `AND closed_at IS NULL` in `getApprovedRoles()` — the line
+  that actually removes the role from the JD dropdown. **Never writes `approval_status` or
+  `mrfstatus`**; that lossy bug was removed on 2026-08-11 and stays removed.
+- 🚨 **A documented premise proved false.** `2026-07-21-pipeline-stage-engine.README.md` states in
+  bold that `pipeline_status` has **no CHECK constraint**. It does. Because every writer of that
+  column is a best-effort `try/catch`, the rejections were **silent**: `future_prospect` has been
+  refused since 2026-07-21 (staging has **zero** such rows), and 5 of the 7 closure statuses from
+  earlier the same day were refused too — meaning §2.4 could not move a candidate off
+  `'shortlisted'`, **the exact defect it set out to fix**. Its unit tests covered the pure mapping
+  function and never touched the database. Fixed by
+  `2026-08-26-shortlist-status-vocabulary.sql`; both source documents stamped.
+- Verified by targeted staging smoke tests that create rows directly and **send no mail**: seat
+  counting (5 cases incl. the dedup), re-open (flag + both legacy layers + MRF seat), pause (sweep
+  guard both ways), and the full manual close/re-open loop. **207 unit tests still pass.**
+- **Integration suite run 2026-08-26** — the three changed files, individually:
+  `pipelineClosure` **21 pass**, `sweepJobs` **10 pass**, `crossModuleE2E` **7 pass**, 0 fail.
+  The first run surfaced four failures, **all in the tests, none in the product**.
+- **Q32 confirmed** (stranded candidates stand as shipped, manual only); Q33/Q34 and the §D
+  accepted-risk bullet refreshed in `04-QUESTIONS.md`. **Backfill applied to STAGING only** (2 rows,
+  idempotent); production deliberately untouched.
+
+## 2026-08-26 — Candidate closure: winding the journey down, not just stamping it
+**Why:** the closure audit's code half, executed under the decisions in its **§6a**. Closure was
+built as a per-journey state write, not as a process that winds things down — the row was set
+correctly, race-safely, with a clean audit trail, and then everything that row was driving kept
+running. And one gap blocked the process outright: **five of the eight closure outcomes could not be
+reached from the UI at all**, because `setClosureOpen(true)` was called from exactly one place in the
+drawer — inside `OfferActions`. A candidate who withdrew at Tech 2 could not be closed; the
+recruiter's only options were to reject them (wrong outcome, wrong email, and a 6-month Q11
+cooling-off they did not earn) or leave the journey open forever. Full write-up:
+[CHANGES-2026-08-26-candidate-closure-graceful-exit.md](./changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md).
+
+- **No schema change, no migration, no backfill** — `pipeline_status` is plain `VARCHAR(50)` with no
+  CHECK constraint and `joined_at` was already declared. The fix writes columns that existed and were
+  never populated; rows closed before today are left as they are.
+- **Scope: audit §5 items 1–4 + 7.** §2.5 / §2.6 / §2.7 stay out of code as **Q32 / Q33 / Q34**.
+- `frontend/src/components/pipeline/PipelineDrawer.jsx` — **§2.1:** a *Close this candidate's record*
+  action now renders at **every** stage, all 8 outcomes unfiltered, matching a backend that has always
+  accepted any `current_stage_key`. Also: the closure modal's email warning was wrong **in both
+  directions** (three outcomes always send via `GENERIC_FALLBACK_BY_OUTCOME`, five never send however
+  they are mapped) and now states the answer per outcome as the recruiter picks; and the Evalground
+  **Re-invite button was the one action missing the `!outcomeEvent` guard**, so it survived both a
+  reject and a closure.
+- `backend/src/services/pipeline.service.js`, `services/interviewSchedule.service.js` — **§2.2:**
+  closure cancels every **not-yet-started** booking, delivering the §D commitment that was recorded as
+  settled and never built. **Panel always, candidate never**: nobody should sit waiting in a room, but
+  five outcomes are deliberately silent and a cancellation notice would smuggle the news back in.
+- `backend/src/jobs/interviewReminder.js`, `jobs/interviewOccurrence.js`,
+  `jobs/assessmentDeadlineChecker.js`, `services/interviewSchedule.service.js` — **§2.3:** the
+  `final_outcome: null` guard `documentReminder.js` and `offerSweep.js` already carried, added to the
+  four queries that never got it.
+- `backend/src/config/pipelineStages.js`, `services/pipeline.service.js` — **§2.4:**
+  `shortlistStatusFor()` maps the 8 closure outcomes to **distinct** values, and the closure tail
+  writes `pipeline_status` plus **`joined_at` (for `joined` only, taken from `closed_at`)** — a column
+  declared, read by the dashboard, required "for reporting continuity", and **written by nothing**.
+  Only `closure_rejected` may write `'rejected'`, because that value drives the Q11 cooling-off.
+- `backend/src/services/screening.service.js`, `exports/screening.export.js`,
+  `frontend/src/pages/Analytics.jsx`, `services/dashboard.service.js` — **the two regressions the fix
+  would otherwise have introduced.** The status strip would have stopped adding up again (all three
+  readers now end in a catch-all `closed` branch, so the sum holds *by construction*), and the
+  recruiter leaderboard **deducted credit at the moment of success** — a hire dropped the recruiter's
+  score, because `=== 'shortlisted'` was the wrong instrument for "exclude reject stamps". Now
+  `{ not: 'rejected' }`.
+- `backend/src/services/interviewSchedule.service.js` — hardening §6a caught: `scheduleInterviewRound`
+  had **no closure guard** (a stale tab could book a fresh interview on a closed journey *after* the
+  cancel sweep ran), and `cancelInterviewRound`'s read/write straddled an `await`, so two racers both
+  passed and **both emailed the panel**. Now a conditional `updateMany` claim.
+- `backend/src/tests/shortlistStatus.test.js` (**new**, 9 tests), `tests/integration/crossModuleE2E.test.js`
+  (E2E-01 extended, **E2E-06 added** — closure from a non-Offer stage, which no test covered before;
+  that absence is how §2.1 survived). **203 unit tests pass.** The integration tests are written but
+  **not run**: they hit shared staging and send real mail.
+- **Expected metric movements, which are the fix and not new bugs:** the Shortlisted KPI **falls**,
+  the Hired count **rises**, time-to-hire starts measuring to joining rather than offer acceptance,
+  and **`closure_rejected` arms the 6-month cooling-off from the closure path for the first time** —
+  those candidates leave JD and Keyword search for six months. RT will feel that one.
+
 ## 2026-08-26 — Candidate closure audit: decision register brought up to date (**docs only**)
 **Why:** the closure audit ([PHASE3-CLOSURE-AUDIT-2026-08-26.md](./PHASE3-CLOSURE-AUDIT-2026-08-26.md))
 found that closure was built as a per-journey state write, not as a process that winds things down —

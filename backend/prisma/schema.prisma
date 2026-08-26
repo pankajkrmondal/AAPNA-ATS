@@ -213,6 +213,9 @@ model rpa_mrf {
   mandatory_skills_other        String?
   good_to_have_skills_other     String?
   filled_at                     DateTime?                    @db.Timestamptz(6)
+  closed_at                     DateTime?                    @db.Timestamptz(6)
+  closure_reason                String?                      @db.VarChar(50)
+  closure_note                  String?
   emails                        rpa_email_messages[]
   shortlisted                   rpa_shortlisted_candidates[]
 
@@ -702,6 +705,7 @@ model rpa_candidate_pipeline {
   @@index([shortlist_id], map: "idx_candidate_pipeline_shortlist")
   @@index([current_stage_key], map: "idx_candidate_pipeline_stage")
   @@index([vendor_email], map: "idx_candidate_pipeline_vendor")
+  @@index([cv_id, modified_at(sort: Desc)], map: "idx_candidate_pipeline_cv_modified")
 }
 
 model rpa_outcome_reasons {

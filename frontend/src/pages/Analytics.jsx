@@ -791,6 +791,7 @@ export default function Analytics() {
           rejected: 0,
           on_hold: 0,
           future_prospect: 0,
+          closed: 0,
           total: 0
         };
       }
@@ -803,11 +804,15 @@ export default function Analytics() {
       } else if (status === 'on_hold' || status === 'on hold') {
         groups[roleName].on_hold += 1;
       } else if (status === 'future_prospect') {
-        // The fourth status a recruiter can set. Before this branch existed it
-        // fell through into `total` and nothing else, so the columns quietly
-        // stopped adding up. Mirrored in groupByRole() (backend/src/exports/
-        // screening.export.js) so the CSV matches the table.
         groups[roleName].future_prospect += 1;
+      } else {
+        // Final else, not another named branch. The seven closure statuses
+        // setFinalOutcome writes from 2026-08-26 all roll up here, and so does
+        // anything added later: a status with no branch used to sum into
+        // `total` alone and the columns quietly stopped adding up. Mirrored in
+        // groupByRole() (backend/src/exports/screening.export.js) so the CSV
+        // matches the table.
+        groups[roleName].closed += 1;
       }
     });
     return Object.values(groups);
@@ -862,6 +867,17 @@ export default function Analytics() {
       key: 'future_prospect',
       align: 'center',
       render: (count) => <Badge count={count} showZero color={ACCENT.progress.color} />
+    },
+    {
+      // Every terminal closure status rolls up here — hired, withdrawn,
+      // backed out, did not join, joined and left. The column keeps them
+      // distinct; this strip reports screening progress, which nine columns
+      // would not help it do.
+      title: 'Closed',
+      dataIndex: 'closed',
+      key: 'closed',
+      align: 'center',
+      render: (count) => <Badge count={count} showZero color={ACCENT.neutral.color} />
     },
     {
       title: 'Total Candidates',

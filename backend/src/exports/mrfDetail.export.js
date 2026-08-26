@@ -46,6 +46,25 @@ export function mrfRaiseLabel(status) {
   return s.toUpperCase();
 }
 
+/**
+ * Human label for rpa_mrf.closure_reason (Q34).
+ *
+ * Falls through to a de-underscored upper-case form rather than '—' for an
+ * unrecognised value, so a reason added to MRF_CLOSURE_REASONS later still
+ * exports legibly instead of silently reading as "no reason recorded".
+ */
+export function mrfClosureReasonLabel(reason) {
+  const r = (reason || '').trim().toLowerCase();
+  if (!r) return '—';
+  if (r === 'all_openings_filled') return 'ALL OPENINGS FILLED';
+  if (r === 'budget_withdrawn') return 'BUDGET WITHDRAWN';
+  if (r === 'role_withdrawn') return 'ROLE WITHDRAWN';
+  if (r === 'hired_externally') return 'HIRED EXTERNALLY';
+  if (r === 'on_hold_indefinitely') return 'ON HOLD INDEFINITELY';
+  if (r === 'other') return 'OTHER';
+  return r.replace(/_/g, ' ').toUpperCase();
+}
+
 /** Approval tag label, mirroring getWorkflowSummaryTags() in MRF.jsx. */
 export function mrfApprovalLabel(status) {
   const s = (status || '').trim().toLowerCase();
@@ -194,6 +213,13 @@ export function buildDetailRows(jdSend, mainMrf) {
   // Independent of approval status — a requisition can be approved AND filled.
   push('Workflow', 'Openings Filled', isMrfFilled(mainMrf) ? 'YES' : 'NO');
   push('Workflow', 'Filled On', formatDateTime(mainMrf?.filled_at));
+  // Manual business closure (Q34) is reported separately and NOT folded into
+  // "Openings Filled" above: a requisition cancelled without hiring anyone was
+  // never filled, and this row is the one place that distinction is visible.
+  push('Workflow', 'Closed By Business', mainMrf?.closed_at ? 'YES' : 'NO');
+  push('Workflow', 'Closed On', formatDateTime(mainMrf?.closed_at));
+  push('Workflow', 'Closure Reason', mrfClosureReasonLabel(mainMrf?.closure_reason));
+  push('Workflow', 'Closure Note', mainMrf?.closure_note || '—');
 
   // ── Section 2: New MRF Request Info (rpa_mrf_jd_send) ───────────────
   const REQUEST = 'New MRF Request';

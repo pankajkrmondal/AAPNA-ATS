@@ -5,6 +5,78 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-26 — Candidate closure: the actions that were missing, and the copy that was wrong
+
+Backend write-up: [CHANGES-2026-08-26-candidate-closure-graceful-exit.md](../docs/changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md).
+Source: [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md).
+
+### Closure is reachable from every stage — `PipelineDrawer.jsx`
+
+`setClosureOpen(true)` was called from exactly **one** place in the whole drawer: inside
+`OfferActions`, which renders only when `selectedStageKey === 'offer'`. Every other stage got the
+generic Approve / Reject / Hold bar and no closure path at all.
+
+So **five of the eight closure outcomes were unreachable**, and a candidate who withdrew at Tech 2
+could not be closed. The recruiter's only options were to *reject* them — wrong outcome, wrong email,
+and it starts a 6-month cooling-off they did not earn — or leave the journey open forever. The API
+and the templates had supported any stage all along; only the button was missing.
+
+- A **Close this candidate's record** action now renders in the generic stage panel, opening the same
+  8-outcome modal the Offer stage uses.
+- Kept deliberately **quieter** than the outcome buttons: a small link-style danger button under a
+  muted caption, not a fourth peer of Approve/Reject/Hold. Closure is the rarer, heavier action; the
+  stage decision is still the normal path.
+
+### The closure modal was lying in both directions
+
+It told recruiters *"A closure email is sent only if a template is mapped to the status you pick."*
+Written before the closure templates were seeded, it had since become wrong **both ways**: three
+outcomes now **always** send via the generic fallback whether or not anyone mapped anything, and five
+**never** send however they are mapped.
+
+It now states the answer **per outcome, as you pick it** — because the honest general statement is
+"it depends", which helps nobody at the moment of choosing.
+
+### Reopen a closed record — the action that was named but never existed
+
+`assertJourneyOpen` has told users *"Reopen it before you…"* since Module 1. **No route or service
+could do it** — the only undo was a hand-written database update. Tolerable while closure was
+Offer-only; surfacing it at every stage makes a mis-close far likelier.
+
+- A **Reopen record** action now sits beside the purple `Closed — …` tag, which is the only place it
+  could go: every other affordance in the drawer is suppressed once an outcome exists.
+- A reason is **mandatory**, and the modal is explicit that no email is sent, the closure stays in the
+  history, and any requisition seat the closure filled or freed is recounted.
+- Unlike closure, re-opening **does not dismiss the drawer** — the journey is live again and the
+  recruiter almost always wants to act on it immediately.
+
+### Pause a journey — a column that had been read-only for a month
+
+`is_paused` was on every board card payload and in the CSV export, and **nothing anywhere wrote it**.
+It is the lever RT asked for on 2026-07-14 for candidates left stranded when their role fills.
+
+- **Pause / Resume journey** in the drawer, offered only on an **open** journey — a closed one is
+  already stopped, and two flags meaning "not running" would have to be reconciled.
+- An orange **Paused** tag on the board card, sitting next to *Role filled* because that is the case
+  it exists for. Its tooltip names exactly what stops: interview reminders, occurrence chase-ups and
+  assessment deadline bells.
+
+### One leak fixed: Evalground Re-invite survived closure
+
+`showInviteButton` was the **only** action in the drawer missing the `!outcomeEvent` guard that
+Schedule, Cancel, Client-round and Documents all carry. It survived both an ordinary reject and a
+closure — so a recruiter could email a fresh assessment invite to a candidate whose record was
+already closed. Fixed at both call sites.
+
+### Analytics role table — a **Closed** column
+
+Closure now writes terminal statuses to `pipeline_status`, and the four-bucket status strip would
+have silently stopped adding up (the exact defect fixed for `future_prospect` earlier the same day).
+All three readers — the table, the CSV export and the backend counts — now end in a **catch-all**
+branch, so the columns sum to Total *by construction* and a status invented later cannot vanish.
+
+---
+
 ## 2026-08-18 — Aurora Glass rollout, Phase 9: public pages + FINAL ACCEPTANCE
 
 **The rollout is complete.** Nine phases, every route converted.

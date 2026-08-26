@@ -11,7 +11,8 @@ import { uploadFileToOneDrive } from '../services/onedrive.service.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
-import { isMrfFilled } from '../config/pipelineStages.js';
+import { isMrfFilled, isMrfClosed, MRF_CLOSURE_REASONS } from '../config/pipelineStages.js';
+import { closeMrfManually, reopenMrfManually } from '../services/mrfClosure.service.js';
 import { assertSignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
@@ -209,14 +210,19 @@ export const getMrfRequest = catchAsync(async (req, res) => {
   // separately rather than one overwriting the other.
   let approval_status = 'pending';
   let mrf_filled = false;
+  let mrf_closed = false;
   if (mrfSend.mrf_id) {
     const linkedMrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfSend.mrf_id) },
-      select: { approval_status: true, filled_at: true },
+      select: { approval_status: true, filled_at: true, closed_at: true, closure_reason: true, closure_note: true },
     });
     if (linkedMrf) {
       approval_status = linkedMrf.approval_status;
+      // mrf_filled keeps meaning "all openings filled" so existing readers are
+      // untouched; mrf_closed is the wider "no longer hiring", which a manual
+      // business cancellation (Q34) also satisfies.
       mrf_filled = isMrfFilled(linkedMrf);
+      mrf_closed = isMrfClosed(linkedMrf);
     }
   }
 
@@ -226,6 +232,7 @@ export const getMrfRequest = catchAsync(async (req, res) => {
     mrf_id: mrfSend.mrf_id ? mrfSend.mrf_id.toString() : null,
     approval_status,
     mrf_filled,
+    mrf_closed,
   };
 
   return success(res, responseData, 'MRF Request retrieved successfully');
@@ -274,15 +281,25 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
   let approval_status = 'pending';
   let mrf_filled = false;
   let mrf_filled_at = null;
+  let mrf_closed = false;
+  let mrf_closed_at = null;
+  let mrf_closure_reason = null;
+  let mrf_closure_note = null;
   if (updated.mrf_id) {
     const linkedMrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(updated.mrf_id) },
-      select: { approval_status: true, filled_at: true },
+      select: { approval_status: true, filled_at: true, closed_at: true, closure_reason: true, closure_note: true },
     });
     if (linkedMrf) {
       approval_status = linkedMrf.approval_status;
       mrf_filled = isMrfFilled(linkedMrf);
       mrf_filled_at = linkedMrf.filled_at;
+      // Manual business closure (Q34), reported alongside rather than merged
+      // into mrf_filled: a cancelled requisition was never filled.
+      mrf_closed = isMrfClosed(linkedMrf);
+      mrf_closed_at = linkedMrf.closed_at;
+      mrf_closure_reason = linkedMrf.closure_reason;
+      mrf_closure_note = linkedMrf.closure_note;
     }
   }
 
@@ -293,6 +310,10 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
     approval_status,
     mrf_filled,
     mrf_filled_at,
+    mrf_closed,
+    mrf_closed_at,
+    mrf_closure_reason,
+    mrf_closure_note,
   };
 
   return success(res, responseData, 'MRF Request updated successfully');
@@ -944,3 +965,46 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
   return success(res, { approval_status: updatedMrf.approval_status }, `Requisition request successfully ${updatedMrf.approval_status}`);
 });
 
+
+// ── Manual requisition closure (Q34) ──────────────────────────────────
+//
+// A business-cancelled requisition had no representation before this: no close
+// endpoint, a disabled status Select on the MRF page, and no closure-reason
+// column anywhere. Audit §2.6.
+//
+// These deliberately do NOT touch approval_status or rpa_mrf_jd_send.mrfstatus.
+// Expressing closure by overwriting those is the lossy bug removed on
+// 2026-08-11 — approval_status lost 'completed' vs 'approved', and mrfstatus is
+// the protected raise-status workflow column. Closure lives in closed_at.
+
+/** GET /api/mrf/closure-reasons — the vocabulary, so the UI cannot drift from it. */
+export const listClosureReasons = catchAsync(async (req, res) => {
+  const reasons = Object.values(MRF_CLOSURE_REASONS)
+    .filter((r) => r !== MRF_CLOSURE_REASONS.ALL_OPENINGS_FILLED)
+    .map((value) => ({
+      value,
+      // budget_withdrawn -> Budget Withdrawn
+      label: value.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+    }));
+  return success(res, reasons, 'Closure reasons retrieved');
+});
+
+/** POST /api/mrf/:id/close — close a requisition by hand, with a reason. */
+export const closeMrf = catchAsync(async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const { reason, note } = req.body;
+  if (!reason) throw new AppError('reason is required.', 400);
+
+  const result = await closeMrfManually(id, { reason, note: note || null, actedBy: req.user?.id });
+  return success(res, result, 'Requisition closed');
+});
+
+/** POST /api/mrf/:id/reopen — undo a manual closure. */
+export const reopenMrf = catchAsync(async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+
+  const result = await reopenMrfManually(id, { actedBy: req.user?.id });
+  return success(res, result, 'Requisition re-opened');
+});

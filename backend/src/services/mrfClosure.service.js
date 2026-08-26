@@ -1,10 +1,15 @@
 /**
  * mrfClosure.service.js — closes a requisition once its openings are filled.
  *
- * Trigger: a candidate ACCEPTS an offer. The MRF closes only when the number of
- * accepted offers reaches `rpa_mrf.number_of_positions`, so a 3-opening
+ * Triggers: a candidate ACCEPTS an offer, or a journey is CLOSED as a hire.
+ * Both fill a seat — see countFilledSeats(). The MRF closes only when the
+ * number of held seats reaches `rpa_mrf.number_of_positions`, so a 3-opening
  * requisition stays open (and stays in the JD dropdown) until all three are
  * filled — the dropdown label literally reads "(3 openings)".
+ *
+ * The second trigger was added 2026-08-26 (audit §2.7). Until then the coupling
+ * was one-directional: closing a journey could FREE a seat but never FILL one,
+ * so an offer handled offline left its requisition open forever.
  *
  * Fill state lives in ONE dedicated column, `rpa_mrf.filled_at` (NULL = still
  * hiring). Nothing here writes a status column.
@@ -28,9 +33,10 @@
  */
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
+import AppError from '../utils/AppError.js';
 import redis from '../config/redis.js';
 import { broadcast } from '../socket/index.js';
-import { VACATING_OUTCOMES, LEGACY_MRF_CLOSED_STATUS, isMrfFilled } from '../config/pipelineStages.js';
+import { VACATING_OUTCOMES, HIRED_OUTCOMES, LEGACY_MRF_CLOSED_STATUS, isMrfFilled, isMrfClosed, MRF_CLOSURE_REASONS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
 /**
@@ -40,23 +46,39 @@ import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 export const MRF_CLOSED_STATUS = LEGACY_MRF_CLOSED_STATUS;
 
 /**
- * How many candidates have accepted an offer against this requisition.
- * Counted through the journey's mrf_id, which is the column the pipeline board
- * filters on.
+ * How many of this requisition's openings are currently held.
+ *
+ * A seat is held two ways, and BOTH count:
+ *
+ *   1. an accepted offer recorded in the app (`rpa_offers.candidate_decision`), or
+ *   2. a journey closed as a hire (`HIRED_OUTCOMES`) with no offer row at all —
+ *      the offline-offer path, which is now one click from any stage.
+ *
+ * Counting only (1) was audit §2.7: the coupling was one-directional, so an
+ * outcome could FREE a seat but never FILL one. A journey closed as `joined`
+ * without an in-app accepted offer left its requisition open in the JD dropdown
+ * forever while counting as Hired everywhere else. That path used to be nearly
+ * unreachable; surfacing closure at every stage (§2.1, 2026-08-26) made it
+ * routine, which is what forced this.
+ *
+ * Counts JOURNEYS, not offer rows, and that is deliberate: the normal path
+ * carries BOTH an accepted offer AND a `joined` closure on the same journey, so
+ * counting the two sources separately would fill a 2-opening requisition on a
+ * single hire. One row per journey dedupes by construction.
+ * (`rpa_offers.pipeline_id` is @unique, so no cardinality is lost by the switch.)
  *
  * @param {number|bigint} mrfId
  * @returns {Promise<number>}
  */
-export async function countAcceptedHires(mrfId) {
-  return prisma.rpa_offers.count({
+export async function countFilledSeats(mrfId) {
+  return prisma.rpa_candidate_pipeline.count({
     where: {
-      candidate_decision: 'accepted',
-      rpa_candidate_pipeline: {
-        mrf_id: BigInt(mrfId),
-        // An acceptance only holds an opening while the hire is still on. If the
-        // journey was later closed as backed-out / did-not-join / joined-and-left,
-        // the seat is free again — otherwise a candidate who never turned up
-        // would keep the requisition shut for good.
+      mrf_id: BigInt(mrfId),
+      AND: [
+        // A seat is only held while the hire is still on. If the journey was
+        // later closed as backed-out / did-not-join / joined-and-left, the seat
+        // is free again — otherwise a candidate who never turned up would keep
+        // the requisition shut for good.
         //
         // Written as an explicit NULL branch rather than NOT IN (…) because of
         // SQL three-valued logic: for an OPEN journey final_outcome IS NULL, and
@@ -67,14 +89,34 @@ export async function countAcceptedHires(mrfId) {
         // Found by PIPE/OFFER-08 in the 2026-08-19 test pass; the unit test
         // covering this only asserted the VACATING_OUTCOMES constant, which is
         // why a green suite never saw it.
-        OR: [
-          { final_outcome: null },
-          { final_outcome: { notIn: [...VACATING_OUTCOMES] } },
-        ],
-      },
+        {
+          OR: [
+            { final_outcome: null },
+            { final_outcome: { notIn: [...VACATING_OUTCOMES] } },
+          ],
+        },
+        // …and it has to actually be held by something. HIRED_OUTCOMES is reused
+        // rather than restated: it is already this codebase's single definition
+        // of "this was a hire", and it is what setFinalOutcome gates the
+        // joined_at stamp on. A second list here is how the two vacating doors
+        // drifted apart before.
+        {
+          OR: [
+            { rpa_offers: { is: { candidate_decision: 'accepted' } } },
+            { final_outcome: { in: [...HIRED_OUTCOMES] } },
+          ],
+        },
+      ],
     },
   });
 }
+
+/**
+ * @deprecated Renamed to countFilledSeats on 2026-08-26 — it no longer counts
+ * only accepted offers (audit §2.7). Kept as an alias per the no-delete rule so
+ * anything still importing the old name keeps working.
+ */
+export const countAcceptedHires = countFilledSeats;
 
 /**
  * Closes the requisition if every opening is now filled. Safe to call on every
@@ -93,14 +135,16 @@ export async function closeMrfIfFilled(mrfId) {
   try {
     const mrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfId) },
-      select: { id: true, approval_status: true, filled_at: true, number_of_positions: true, position_hiring_for: true },
+      select: { id: true, approval_status: true, filled_at: true, closed_at: true, number_of_positions: true, position_hiring_for: true },
     });
     if (!mrf) return { closed: false, reason: 'not_found' };
-    if (isMrfFilled(mrf)) return { closed: false, reason: 'already_closed' };
+    // isMrfClosed, not isMrfFilled: a requisition the business already cancelled
+    // by hand (Q34) must not be quietly re-stamped as auto-filled underneath them.
+    if (isMrfClosed(mrf)) return { closed: false, reason: 'already_closed' };
 
     // A requisition with no stated count still fills with one hire.
     const openings = mrf.number_of_positions && mrf.number_of_positions > 0 ? mrf.number_of_positions : 1;
-    const accepted = await countAcceptedHires(mrf.id);
+    const accepted = await countFilledSeats(mrf.id);
     if (accepted < openings) {
       return { closed: false, accepted, openings, reason: 'openings_remaining' };
     }
@@ -111,7 +155,7 @@ export async function closeMrfIfFilled(mrfId) {
     // wins; the loser sees count 0 and backs out.
     const claim = await prisma.rpa_mrf.updateMany({
       where: { id: mrf.id, filled_at: null },
-      data: { filled_at: new Date() },
+      data: { filled_at: new Date(), closure_reason: MRF_CLOSURE_REASONS.ALL_OPENINGS_FILLED },
     });
     if (claim.count !== 1) {
       return { closed: false, accepted, openings, reason: 'already_closed' };
@@ -221,13 +265,17 @@ export async function reopenMrfIfUnfilled(mrfId) {
   try {
     const mrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfId) },
-      select: { id: true, approval_status: true, filled_at: true, number_of_positions: true, position_hiring_for: true },
+      select: { id: true, approval_status: true, filled_at: true, closed_at: true, number_of_positions: true, position_hiring_for: true },
     });
     if (!mrf) return { reopened: false, reason: 'not_found' };
+    // Deliberately isMrfFilled and NOT isMrfClosed. This path only ever undoes
+    // an AUTOMATIC fill, and it clears only filled_at. A requisition the
+    // business cancelled by hand must never be resurrected by a candidate
+    // backing out — that invariant is the reason closed_at is its own column.
     if (!isMrfFilled(mrf)) return { reopened: false, reason: 'not_closed' };
 
     const openings = mrf.number_of_positions && mrf.number_of_positions > 0 ? mrf.number_of_positions : 1;
-    const accepted = await countAcceptedHires(mrf.id);
+    const accepted = await countFilledSeats(mrf.id);
     if (accepted >= openings) {
       return { reopened: false, accepted, openings, reason: 'still_filled' };
     }
@@ -241,7 +289,9 @@ export async function reopenMrfIfUnfilled(mrfId) {
     // rather than being guessed at again.
     await prisma.rpa_mrf.update({
       where: { id: mrf.id },
-      data: { filled_at: null },
+      // The reason goes with the fill it explained. A manual closure_reason is
+      // never touched here because this path never sets closed_at.
+      data: { filled_at: null, closure_reason: null },
     });
     if (mrf.approval_status === LEGACY_MRF_CLOSED_STATUS) {
       logger.warn(
@@ -278,4 +328,158 @@ export async function reopenMrfIfUnfilled(mrfId) {
     logger.error(`MRF re-open check failed for MRF ${mrfId}: ${err.message}`);
     return { reopened: false, reason: 'error' };
   }
+}
+
+// ── Manual closure (Q34) ──────────────────────────────────────────────
+//
+// A requisition cancelled by the BUSINESS — budget pulled, role withdrawn,
+// filled by an external agency — had no representation in the system at all.
+// There was no close endpoint, the MRF page's status Select is disabled, fill
+// state was written only by the automatic offer-acceptance path, and no column
+// anywhere recorded WHY a requisition closed. So such a role sat in the JD
+// dropdown forever. Audit §2.6, filed as Q34.
+//
+// These write `closed_at`, never `filled_at`: a cancelled requisition was not
+// filled, and keeping the two apart is what stops reopenMrfIfUnfilled() — which
+// clears only filled_at — from ever resurrecting a deliberate cancellation.
+//
+// Unlike the automatic pair above, these DO throw: they are user actions with
+// validation, not best-effort bookkeeping attached to something more important.
+
+/**
+ * Closes a requisition by hand, with a reason.
+ *
+ * @param {number|bigint} mrfId
+ * @param {object} params
+ * @param {string} params.reason - one of MRF_CLOSURE_REASONS, except
+ *   ALL_OPENINGS_FILLED, which only the automatic path may write
+ * @param {string|null} [params.note] - required when reason is 'other'
+ * @param {number} params.actedBy
+ */
+export async function closeMrfManually(mrfId, { reason, note = null, actedBy }) {
+  const allowed = Object.values(MRF_CLOSURE_REASONS).filter(
+    (r) => r !== MRF_CLOSURE_REASONS.ALL_OPENINGS_FILLED
+  );
+  if (!allowed.includes(reason)) {
+    throw new AppError(
+      `"${reason}" is not a valid closure reason. Expected one of: ${allowed.join(', ')}.`,
+      400
+    );
+  }
+  // 'other' without detail records that something happened but not what, which
+  // is the same gap this whole change set exists to close.
+  const trimmedNote = note ? String(note).trim() : null;
+  if (reason === MRF_CLOSURE_REASONS.OTHER && !trimmedNote) {
+    throw new AppError('A note is required when the closure reason is "other".', 400);
+  }
+
+  const mrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(mrfId) },
+    select: { id: true, filled_at: true, closed_at: true, position_hiring_for: true, number_of_positions: true },
+  });
+  if (!mrf) throw new AppError('Requisition not found.', 404);
+  if (mrf.closed_at) throw new AppError('This requisition is already closed.', 409);
+  // Filled is a different fact, already out of circulation, and overwriting it
+  // with a business-cancellation reason would lose how it actually ended.
+  if (mrf.filled_at) {
+    throw new AppError('This requisition already closed because all its openings were filled.', 409);
+  }
+
+  // Conditional claim, like every other closure write in this module.
+  const claim = await prisma.rpa_mrf.updateMany({
+    where: { id: mrf.id, closed_at: null },
+    data: { closed_at: new Date(), closure_reason: reason, closure_note: trimmedNote },
+  });
+  if (claim.count !== 1) throw new AppError('This requisition is already closed.', 409);
+
+  // Same cache + broadcast hygiene as the automatic path, so the role leaves
+  // the JD dropdowns without anyone reloading.
+  try {
+    await redis.del(`screening:role:${mrf.id}`);
+  } catch (err) {
+    logger.warn(`MRF ${mrf.id} closed manually but its Redis role cache was not cleared: ${err.message}`);
+  }
+  try {
+    broadcast('mrf:closed', {
+      mrf_id: Number(mrf.id),
+      position: mrf.position_hiring_for,
+      openings: mrf.number_of_positions || 1,
+      manual: true,
+    });
+  } catch (err) {
+    logger.warn(`MRF ${mrf.id} closed manually but the broadcast failed: ${err.message}`);
+  }
+
+  await notify({
+    type: NOTIFICATION_TYPES.MRF_CLOSED,
+    title: 'Requisition closed',
+    description: `${mrf.position_hiring_for || 'A role'} — closed by a recruiter (${reason.replace(/_/g, ' ')})`
+      + (trimmedNote ? `: ${trimmedNote}` : ''),
+    linkPath: '/mrf',
+    meta: { mrf_id: Number(mrf.id), closure_reason: reason, manual: true },
+    excludeUserId: actedBy || null,
+  });
+
+  logger.info(`MRF ${mrf.id} ("${mrf.position_hiring_for}") closed manually by user ${actedBy || 'unknown'} — ${reason}.`);
+  return { closed: true, mrf_id: Number(mrf.id), closure_reason: reason };
+}
+
+/**
+ * Undoes a manual closure. Deliberately cannot re-open an automatically FILLED
+ * requisition — that is reopenMrfIfUnfilled()'s job and it is driven by the
+ * seat count, not by a button.
+ *
+ * @param {number|bigint} mrfId
+ * @param {object} params
+ * @param {number} params.actedBy
+ */
+export async function reopenMrfManually(mrfId, { actedBy }) {
+  const mrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(mrfId) },
+    select: { id: true, closed_at: true, filled_at: true, position_hiring_for: true, number_of_positions: true },
+  });
+  if (!mrf) throw new AppError('Requisition not found.', 404);
+  if (!mrf.closed_at) {
+    throw new AppError(
+      mrf.filled_at
+        ? 'This requisition closed because its openings were filled — it re-opens automatically when a seat is freed.'
+        : 'This requisition is not closed.',
+      400
+    );
+  }
+
+  const claim = await prisma.rpa_mrf.updateMany({
+    where: { id: mrf.id, closed_at: { not: null } },
+    data: { closed_at: null, closure_reason: null, closure_note: null },
+  });
+  if (claim.count !== 1) throw new AppError('This requisition is not closed.', 400);
+
+  try {
+    await redis.del(`screening:role:${mrf.id}`);
+  } catch (err) {
+    logger.warn(`MRF ${mrf.id} re-opened but its Redis role cache was not cleared: ${err.message}`);
+  }
+  try {
+    broadcast('mrf:closed', {
+      mrf_id: Number(mrf.id),
+      position: mrf.position_hiring_for,
+      openings: mrf.number_of_positions || 1,
+      reopened: true,
+      manual: true,
+    });
+  } catch (err) {
+    logger.warn(`MRF ${mrf.id} re-opened but the broadcast failed: ${err.message}`);
+  }
+
+  await notify({
+    type: NOTIFICATION_TYPES.MRF_CLOSED,
+    title: 'Requisition re-opened',
+    description: `${mrf.position_hiring_for || 'A role'} — back in JD filtering`,
+    linkPath: '/mrf',
+    meta: { mrf_id: Number(mrf.id), reopened: true, manual: true },
+    excludeUserId: actedBy || null,
+  });
+
+  logger.info(`MRF ${mrf.id} ("${mrf.position_hiring_for}") manually re-opened by user ${actedBy || 'unknown'}.`);
+  return { reopened: true, mrf_id: Number(mrf.id) };
 }

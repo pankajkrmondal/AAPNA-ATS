@@ -186,6 +186,12 @@ export default function MRF() {
   // Details and edit modal state
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  // Manual requisition closure (Q34).
+  const [closeMrfOpen, setCloseMrfOpen] = useState(false);
+  const [closeMrfReason, setCloseMrfReason] = useState(null);
+  const [closeMrfNote, setCloseMrfNote] = useState('');
+  const [closureReasons, setClosureReasons] = useState([]);
+  const [mrfClosurePending, setMrfClosurePending] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
 
@@ -308,6 +314,66 @@ export default function MRF() {
       message.error(err?.message || 'Failed to load submitted MRF details.');
     } finally {
       setMainMrfLoading(false);
+    }
+  };
+
+  // ── Manual requisition closure (Q34) ────────────────────────────────
+  //
+  // Writes rpa_mrf.closed_at, never approval_status or mrfstatus. The "MRF
+  // Raise Status" Select stays disabled for exactly that reason: overwriting
+  // that column to express closure is the lossy bug removed on 2026-08-11.
+
+  // Vocabulary comes from the server so the UI cannot drift from
+  // MRF_CLOSURE_REASONS. Fetched lazily, the first time the modal is opened.
+  useEffect(() => {
+    if (!closeMrfOpen || closureReasons.length > 0) return;
+    mrfService.getClosureReasons()
+      .then((res) => setClosureReasons(res.data?.data || res.data || []))
+      .catch(() => message.error('Could not load the closure reasons.'));
+  }, [closeMrfOpen, closureReasons.length]);
+
+  const refreshAfterClosure = async () => {
+    // Re-read the row so the CLOSED tag and the button state both follow the
+    // server rather than being guessed locally.
+    if (selectedRecord?.id) {
+      try {
+        const res = await mrfService.getById(selectedRecord.id);
+        setSelectedRecord(res.data?.data || res.data);
+      } catch { /* the list refresh below still corrects the view */ }
+    }
+    loadRecords(page, searchQuery, statusTab);
+  };
+
+  const handleCloseMrf = async () => {
+    if (!closeMrfReason) return;
+    setMrfClosurePending(true);
+    try {
+      await mrfService.close(selectedRecord.mrf_id, {
+        reason: closeMrfReason,
+        note: closeMrfNote.trim() || null,
+      });
+      message.success('Requisition closed — it has left JD filtering.');
+      setCloseMrfOpen(false);
+      setCloseMrfReason(null);
+      setCloseMrfNote('');
+      await refreshAfterClosure();
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Could not close the requisition.');
+    } finally {
+      setMrfClosurePending(false);
+    }
+  };
+
+  const handleReopenMrf = async () => {
+    setMrfClosurePending(true);
+    try {
+      await mrfService.reopen(selectedRecord.mrf_id);
+      message.success('Requisition re-opened — it is back in JD filtering.');
+      await refreshAfterClosure();
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Could not re-open the requisition.');
+    } finally {
+      setMrfClosurePending(false);
     }
   };
 
@@ -894,9 +960,53 @@ export default function MRF() {
                         </Tag>
                       </Tooltip>
                     )}
+                    {/* Closed by the business (Q34) — a DIFFERENT fact from
+                        FILLED: budget pulled, role withdrawn, hired externally.
+                        Before closed_at existed such a requisition had no
+                        representation at all and sat in the JD dropdown for
+                        good. */}
+                    {selectedRecord?.mrf_closed_at && (
+                      <Tooltip title={`Closed by a recruiter${selectedRecord?.mrf_closure_reason ? ` — ${String(selectedRecord.mrf_closure_reason).replace(/_/g, ' ')}` : ''}${selectedRecord?.mrf_closure_note ? `: ${selectedRecord.mrf_closure_note}` : ''}. It is out of JD filtering until it is re-opened.`}>
+                        <Tag color="red" style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                          CLOSED
+                        </Tag>
+                      </Tooltip>
+                    )}
                   </Space>
                 </Col>
               </Row>
+
+              {/* Manual close / re-open (Q34).
+                  Deliberately NOT wired to the "MRF Raise Status" Select above,
+                  which stays disabled: mrfstatus is the protected raise-status
+                  workflow column, and expressing closure by overwriting it is
+                  the lossy bug removed on 2026-08-11. This writes closed_at. */}
+              {selectedRecord?.mrf_id && (
+                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>
+                  {selectedRecord?.mrf_closed_at ? (
+                    <Button
+                      size="small"
+                      loading={mrfClosurePending}
+                      onClick={handleReopenMrf}
+                    >
+                      Re-open requisition
+                    </Button>
+                  ) : selectedRecord?.mrf_filled ? (
+                    <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                      All openings are filled — this requisition closed itself.
+                    </span>
+                  ) : (
+                    <Button
+                      size="small"
+                      danger
+                      loading={mrfClosurePending}
+                      onClick={() => setCloseMrfOpen(true)}
+                    >
+                      Close requisition…
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Section 2: New MRF Request Info */}
@@ -1142,6 +1252,52 @@ export default function MRF() {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Close a requisition by hand (Q34). A reason is mandatory — the audit's
+          complaint was that closure recorded WHEN but never WHY, and 'other'
+          without a note would reproduce that one level down. */}
+      <Modal
+        open={closeMrfOpen}
+        onCancel={() => setCloseMrfOpen(false)}
+        title="Close requisition"
+        okText="Close it"
+        okButtonProps={{
+          danger: true,
+          disabled: !closeMrfReason || (closeMrfReason === 'other' && !closeMrfNote.trim()),
+        }}
+        confirmLoading={mrfClosurePending}
+        onOk={handleCloseMrf}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+            This takes the role out of JD filtering and the screening dropdowns straight away.
+            Candidates already in progress against it are <strong>not</strong> touched — close or
+            pause their journeys individually if that is what you intend.
+          </div>
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text></Text>
+            <Select
+              style={{ width: '100%', marginTop: 4 }}
+              placeholder="Why is this requisition closing?"
+              value={closeMrfReason}
+              onChange={setCloseMrfReason}
+              options={closureReasons}
+            />
+          </div>
+          <div>
+            <Text strong style={{ fontSize: 12.5 }}>
+              Note {closeMrfReason === 'other' ? <Text type="danger">*</Text> : <Text type="secondary">(optional)</Text>}
+            </Text>
+            <Input.TextArea
+              rows={2}
+              style={{ marginTop: 4 }}
+              placeholder={closeMrfReason === 'other' ? 'Required — say what happened' : 'Any detail worth keeping'}
+              value={closeMrfNote}
+              onChange={(e) => setCloseMrfNote(e.target.value)}
+            />
+          </div>
+        </Space>
       </Modal>
     </div>
   );

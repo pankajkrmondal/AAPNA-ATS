@@ -162,6 +162,7 @@ export const roleSummaryColumns = [
   { header: 'Rejected', key: 'rejected', numeric: true },
   { header: 'On Hold', key: 'on_hold', numeric: true },
   { header: 'Future Prospect', key: 'future_prospect', numeric: true },
+  { header: 'Closed', key: 'closed', numeric: true },
   { header: 'Total', key: 'total', numeric: true },
 ];
 
@@ -185,6 +186,7 @@ export function groupByRole(candidates = []) {
         rejected: 0,
         on_hold: 0,
         future_prospect: 0,
+        closed: 0,
         total: 0,
       });
     }
@@ -194,10 +196,13 @@ export function groupByRole(candidates = []) {
     if (status === 'shortlisted') entry.shortlisted += 1;
     else if (status === 'rejected') entry.rejected += 1;
     else if (status === 'on_hold' || status === 'on hold') entry.on_hold += 1;
-    // future_prospect is the fourth value shortlistStatusFor() writes. Without
-    // this branch it fell through into `total` alone and the columns stopped
-    // summing — see the note in screening.service.js's candidateCounts.
     else if (status === 'future_prospect') entry.future_prospect += 1;
+    // Final else, not another named branch: the seven closure statuses
+    // setFinalOutcome writes from 2026-08-26 (audit §2.4) all roll up here, and
+    // so does anything added later. A bucketless value used to sum into `total`
+    // alone and the columns quietly stopped adding up — see the note in
+    // screening.service.js's candidateCounts.
+    else entry.closed += 1;
   }
 
   return [...groups.values()];

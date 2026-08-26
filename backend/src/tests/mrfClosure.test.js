@@ -24,6 +24,7 @@ import assert from 'node:assert/strict';
 import {
   FINAL_OUTCOMES,
   VACATING_OUTCOMES,
+  HIRED_OUTCOMES,
   isMrfFilled,
   LEGACY_MRF_CLOSED_STATUS,
 } from '../config/pipelineStages.js';
@@ -123,4 +124,63 @@ test('isMrfFilled is null-safe', () => {
   assert.equal(isMrfFilled(null), false);
   assert.equal(isMrfFilled(undefined), false);
   assert.equal(isMrfFilled({}), false);
+});
+
+// ── countFilledSeats: the two lists it ANDs together (audit §2.7) ──────
+//
+// From 2026-08-26 a seat is held by an accepted offer OR by a journey closed as
+// a hire, and countFilledSeats() expresses that as two ANDed clauses:
+//
+//     (final_outcome IS NULL OR final_outcome NOT IN VACATING_OUTCOMES)
+//   AND (has an accepted offer OR final_outcome IN HIRED_OUTCOMES)
+//
+// The service itself cannot be imported here — its module-level Redis and
+// socket connections keep the process alive and hang `node --test` (see this
+// file's header) — so what is asserted is the property of the CONSTANTS that
+// makes the query correct. The DB-level behaviour is integration's job.
+
+test('HIRED_OUTCOMES and VACATING_OUTCOMES are disjoint', () => {
+  // THE critical invariant for countFilledSeats. The two clauses are ANDed, so
+  // an outcome appearing in both lists is excluded by the first and can never
+  // satisfy the second — the seat would silently never fill, and a requisition
+  // would stay open forever after a real hire. Exactly the §2.7 bug, re-created
+  // from the other direction and just as invisible.
+  for (const outcome of HIRED_OUTCOMES) {
+    assert.ok(
+      !VACATING_OUTCOMES.includes(outcome),
+      `"${outcome}" is in BOTH lists — it would free a seat and fill it at once, so it does neither`
+    );
+  }
+});
+
+test('every hired outcome is a real final outcome', () => {
+  // Same reasoning as the vacating equivalent above: a typo here matches no
+  // stored final_outcome, so the seat is never counted and the failure is
+  // invisible at runtime.
+  for (const outcome of HIRED_OUTCOMES) {
+    assert.ok(
+      ALL_FINAL.includes(outcome),
+      `"${outcome}" is not a value in FINAL_OUTCOMES — it can never match a closed journey`
+    );
+  }
+});
+
+test('joined fills a seat; joined_and_left frees one', () => {
+  // The pair most easily confused, and they must land on opposite sides.
+  // Someone who joined holds the opening; someone who joined and then left does
+  // not, or a requisition could never be re-filled after early attrition.
+  assert.ok(HIRED_OUTCOMES.includes(FINAL_OUTCOMES.JOINED));
+  assert.ok(!VACATING_OUTCOMES.includes(FINAL_OUTCOMES.JOINED));
+
+  assert.ok(VACATING_OUTCOMES.includes(FINAL_OUTCOMES.JOINED_AND_LEFT));
+  assert.ok(!HIRED_OUTCOMES.includes(FINAL_OUTCOMES.JOINED_AND_LEFT));
+});
+
+test('a rejection or a hold neither fills nor frees a seat', () => {
+  // These close the journey without resolving the opening either way: the
+  // candidate never held it, so there is nothing to free, and nothing to fill.
+  for (const outcome of [FINAL_OUTCOMES.REJECTED, FINAL_OUTCOMES.ON_HOLD]) {
+    assert.ok(!HIRED_OUTCOMES.includes(outcome), `${outcome} must not fill an opening`);
+    assert.ok(!VACATING_OUTCOMES.includes(outcome), `${outcome} must not free an opening`);
+  }
 });

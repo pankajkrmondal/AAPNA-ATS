@@ -36,7 +36,24 @@
 ## Also included in the DDL
 
 - **`rpa_email_templates.category` CHECK constraint extended** to add `'stage_outcome'` — required before seeding any per-stage-outcome templates (flagged as a pre-flight risk in `03-DEVELOPMENT-PLAN.md`).
-- **Confirmed, no DDL needed:** `rpa_shortlisted_candidates.pipeline_status` is a plain `VARCHAR(50)` with no CHECK constraint in the current staging DB — the planned `future_prospect` value can be written immediately, unlike the cautious pre-flight note in `03-DEVELOPMENT-PLAN.md` assumed.
+- ~~**Confirmed, no DDL needed:** `rpa_shortlisted_candidates.pipeline_status` is a plain `VARCHAR(50)` with no CHECK constraint in the current staging DB — the planned `future_prospect` value can be written immediately, unlike the cautious pre-flight note in `03-DEVELOPMENT-PLAN.md` assumed.~~
+
+  > 🚨 **WRONG — corrected 2026-08-26.** `rpa_shortlisted_candidates_pipeline_status_check` **does
+  > exist** and permitted only 14 values, none of them `future_prospect`. The cautious pre-flight
+  > note in `03-DEVELOPMENT-PLAN.md` was right and this line was not.
+  >
+  > Because every writer of this column is a best-effort legacy write-back inside a `try/catch`, the
+  > rejection was **silent**: `setStageOutcome` has written `future_prospect` since this landed and
+  > the database has refused it every time, logging and moving on. Staging on 2026-08-26: 79
+  > `shortlisted`, 21 `rejected`, 2 `on_hold`, **zero** `future_prospect`.
+  >
+  > The same false premise was then relied on by
+  > [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../../../docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md) §6a to
+  > decide the closure vocabulary needed no DDL, so 5 of the 7 closure statuses were rejected too.
+  >
+  > Fixed by [`2026-08-26-shortlist-status-vocabulary.sql`](./2026-08-26-shortlist-status-vocabulary.sql),
+  > which widens the constraint to cover both. **Do not assume a column is unconstrained — check
+  > `pg_constraint`.**
 
 ## After this lands
 

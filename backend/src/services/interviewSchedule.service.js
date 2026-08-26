@@ -27,6 +27,9 @@ import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js'
 import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
+// From pure config, not pipeline.service.js: that module imports THIS one, so
+// reaching back for its assertJourneyOpen would close an import cycle.
+import { finalStatusLabelFor } from '../config/pipelineStages.js';
 
 /** Template names seeded by prisma/seed-email-templates.js for this flow. */
 const TEMPLATE_NAMES = Object.freeze({
@@ -349,6 +352,15 @@ export async function listUnresolvedInterviews({ graceMin = 15 } = {}) {
       // SCHEDULABLE_STAGES entry no longer exists to supply a label.
       stage_key: { notIn: [...MANUALLY_COORDINATED_STAGES] },
       scheduled_end_at: { lt: cutoff },
+      // A closed journey has nothing left to resolve. Without this the row sat
+      // in the recruiter's "confirm this happened" queue forever: the sweep
+      // eventually stops nudging, but this list has no upper bound, so a
+      // withdrawn candidate's abandoned interview stayed actionable for good.
+      // Same guard as documentReminder.js:46.
+      // See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.3.
+      // is_paused too (Q33): a paused journey leaves the recruiter's queue for
+      // as long as it is held, and comes back when it is resumed.
+      rpa_candidate_pipeline: { final_outcome: null, is_paused: false },
       OR: [{ occurrence_status: null }, { occurrence_status: OCCURRENCE_UNCONFIRMED }],
     },
     include: {
@@ -613,6 +625,23 @@ export async function scheduleInterviewRound(pipelineId, {
   if (!pipeline) {
     throw new AppError('Pipeline journey not found.', 404);
   }
+  // A closed journey cannot be booked into. This entry point checked
+  // stage-support, journey-exists, current-stage and one-live-booking — and
+  // nothing about final_outcome, so a stale browser tab could book a fresh
+  // interview on a closed record AFTER the closure sweep had cancelled its
+  // bookings, leaving exactly the live Teams invite that sweep exists to
+  // prevent. Latent until 2026-08-26; surfacing closure at every stage
+  // (audit §2.1) turns it from unreachable into a matter of time. See §6a.
+  //
+  // Inlined rather than calling pipeline.service.js's assertJourneyOpen for the
+  // import-cycle reason noted at the top of this file; the message is kept
+  // identical so the two read the same to a recruiter.
+  if (pipeline.final_outcome) {
+    throw new AppError(
+      `This candidate's record was closed as "${finalStatusLabelFor(pipeline.current_stage_key, pipeline.final_outcome)}". Reopen it before you schedule an interview.`,
+      409
+    );
+  }
   if (pipeline.current_stage_key !== stageKey) {
     throw new AppError(`The candidate is not currently on ${SCHEDULABLE_STAGES[stageKey].label}.`, 400);
   }
@@ -816,6 +845,21 @@ export async function scheduleInterviewRound(pipelineId, {
  * @param {string|null} [params.candidateBody]
  * @param {string|null} [params.panelSubject]
  * @param {string|null} [params.panelBody]
+ * @param {boolean} [params.notifyCandidateOfCancellation=true] - false when the
+ *   cancellation is a CONSEQUENCE of a larger event rather than news in its own
+ *   right. setFinalOutcome passes false when closing a journey.
+ *
+ *   Panel always, candidate never (decision, 2026-08-26 — audit §6a). The panel
+ *   half is never suppressed: someone must not show up to a room for a
+ *   candidate who is no longer coming. The candidate half is, because five of
+ *   the eight closure outcomes are in SILENT_FINAL_OUTCOMES precisely on the
+ *   grounds that there is nothing to tell someone who withdrew — and mailing
+ *   them "your Tech 2 interview is cancelled" would reintroduce, through the
+ *   side door, the notification that rule exists to prevent.
+ *
+ *   NOT named `notifyVendor`: that is a live import in this module (:29), and a
+ *   destructured param of that name would shadow it, turning the call below
+ *   into a boolean invocation.
  */
 export async function cancelInterviewRound(scheduleId, {
   reason,
@@ -824,6 +868,7 @@ export async function cancelInterviewRound(scheduleId, {
   candidateBody = null,
   panelSubject = null,
   panelBody = null,
+  notifyCandidateOfCancellation = true,
 }) {
   const row = await prisma.rpa_interview_schedule.findUnique({
     where: { id: BigInt(scheduleId) },
@@ -840,10 +885,19 @@ export async function cancelInterviewRound(scheduleId, {
 
   await cancelInterviewEvent(row.graph_event_id, reason || 'This interview has been cancelled.');
 
-  const updated = await prisma.rpa_interview_schedule.update({
-    where: { id: row.id },
+  // Conditional claim, not a bare update. The `status === 'cancelled'` read
+  // above and this write straddle an await (the Graph call), so two racers —
+  // a recruiter cancelling by hand while a journey closure sweeps the same
+  // booking — both passed the check and both went on to email the panel twice.
+  // `status: { not: 'cancelled' }` in the filter means exactly one of them wins.
+  const claim = await prisma.rpa_interview_schedule.updateMany({
+    where: { id: row.id, status: { not: 'cancelled' } },
     data: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason || null, modified_at: new Date() },
   });
+  if (claim.count !== 1) {
+    throw new AppError('This interview is already cancelled.', 400);
+  }
+  const updated = await prisma.rpa_interview_schedule.findUnique({ where: { id: row.id } });
 
   const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
   const stageLabel = SCHEDULABLE_STAGES[row.stage_key]?.label || row.stage_key;
@@ -877,7 +931,7 @@ export async function cancelInterviewRound(scheduleId, {
   };
 
   const { to: candidateTo } = resolveRecipients('interviewCancelled', liveCandidateEmail(candidate));
-  if (sendsInvites && candidateTo && candidateEmail.subject) {
+  if (notifyCandidateOfCancellation && sendsInvites && candidateTo && candidateEmail.subject) {
     try {
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
@@ -891,6 +945,9 @@ export async function cancelInterviewRound(scheduleId, {
   }
 
   // Also tell the panel the round is off, so no one shows up.
+  // Never gated on notifyCandidateOfCancellation: whatever the cancellation is a
+  // consequence of, the panel must not show up to a room for a candidate who is
+  // no longer coming.
   const { to: panelTo } = resolveRecipients('interviewCancelledPanel', row.interviewer_email || '');
   if (sendsInvites && panelTo && panelEmail.subject) {
     try {
@@ -919,15 +976,19 @@ export async function cancelInterviewRound(scheduleId, {
 
   // Vendor status line (M6). The cancellation reason is deliberately not
   // forwarded — it is internal, and often about the panel rather than the
-  // candidate.
-  await notifyVendor({
-    pipelineRow: row.rpa_candidate_pipeline,
-    candidate: { name: candidate?.candidate_name },
-    eventType: VENDOR_EVENTS.INTERVIEW_CANCELLED,
-    stageKey: row.stage_key,
-    stageLabel,
-    positionLabel: position,
-  });
+  // candidate. Suppressed for a closure-driven cancellation, which sends its
+  // own VENDOR_EVENTS.CLOSURE line moments later; the vendor wants the outcome,
+  // not a play-by-play of the bookings being torn down to reach it.
+  if (notifyCandidateOfCancellation) {
+    await notifyVendor({
+      pipelineRow: row.rpa_candidate_pipeline,
+      candidate: { name: candidate?.candidate_name },
+      eventType: VENDOR_EVENTS.INTERVIEW_CANCELLED,
+      stageKey: row.stage_key,
+      stageLabel,
+      positionLabel: position,
+    });
+  }
 
   logger.info(`Interview cancelled: schedule ${scheduleId} (pipeline ${row.pipeline_id}, ${row.stage_key}).`);
   return serialize(updated);
