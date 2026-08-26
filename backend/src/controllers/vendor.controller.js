@@ -11,6 +11,21 @@ import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import runExport from '../exports/runExport.js';
+import uploadJobsExport from '../exports/uploadJobs.export.js';
+import { partitionBySignature } from '../utils/fileSignature.js';
+
+/**
+ * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
+ * archives are unpacked into this list, never parsed as resumes themselves.
+ * No `.xlsx` here (unlike the HR route): this route accepts resumes only.
+ *
+ * This is the ONLY extension check entries from a .zip ever face: multer's
+ * fileFilter vets what was POSTED, and an entry inside an archive never passed
+ * through it. Before this, a .exe inside a .zip was written straight to
+ * uploads/ and queued for parsing.
+ */
+const PARSEABLE_EXTS = ['.pdf', '.docx', '.doc'];
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -39,10 +54,18 @@ export const getVendorCandidates = catchAsync(async (req, res) => {
 
   // Vendors are locked to their own email; staff scope the list to the vendor
   // they've selected (mirrors getVendorDashboard).
+  //
+  // The scoping runs through candidateService.enforceVendorScope() — the same
+  // helper the CSV export uses — rather than a second hand-rolled copy of the
+  // rule. Two implementations of "which vendor is this caller allowed to see"
+  // is exactly how the list and the export drift apart, which is what let a
+  // vendor token read the whole candidate table before b671236.
+  const scoped = candidateService.enforceVendorScope(
+    { vendorEmail: (req.query.vendorEmail || '').trim() },
+    req.user,
+  );
   const isVendor = (req.user.role || '').toLowerCase() === 'vendor';
-  const vendorEmail = isVendor
-    ? req.user.email
-    : (req.query.vendorEmail || '').trim();
+  const vendorEmail = (scoped.vendorEmail || '').trim();
 
   if (isVendor && !vendorEmail) {
     throw new AppError('Vendor email is required for listing candidates.', 400);
@@ -131,12 +154,16 @@ export const getVendorDashboard = catchAsync(async (req, res) => {
     candidateService.search(recentFilter, 1, 5, 'createdAt', 'desc'),
   ]);
 
+  // Real stage per recent candidate (M6). Candidates with no journey come back
+  // stage_source:'legacy' and the screen falls back to classifyStatus().
+  const recentWithStage = await candidateService.attachPipelineStage(recent.data);
+
   return res.status(200).json({
     status: 'success',
     message: vendorEmail ? 'Vendor dashboard retrieved' : 'All-vendors dashboard retrieved',
     data: {
       stats: { ...summary, pendingReview },
-      recentCandidates: recent.data,
+      recentCandidates: recentWithStage,
       selectedVendorEmail: vendorEmail || null,
       scope: vendorEmail ? 'vendor' : 'all',
     },
@@ -266,8 +293,25 @@ export const uploadResumes = catchAsync(async (req, res) => {
     }
   }
 
-  if (flatFiles.length === 0) {
-    throw new AppError('No valid files found inside the uploaded ZIP archive(s).', 400);
+  // CONTENT CHECK (defect D7). Sits after zip expansion so it covers loose
+  // uploads and archive entries in one pass. Skip-and-report rather than
+  // all-or-nothing: a vendor sending 100 resumes should not lose the batch over
+  // one mislabelled file. Rejected files are unlinked by the helper.
+  const { accepted, rejected } = await partitionBySignature(flatFiles, PARSEABLE_EXTS);
+
+  if (rejected.length > 0) {
+    logger.warn(
+      `Vendor batch ${executionId}: ${rejected.length} file(s) rejected — ${rejected.map((r) => r.name).join(', ')}`
+    );
+  }
+
+  if (accepted.length === 0) {
+    throw new AppError(
+      rejected.length > 0
+        ? `None of the uploaded files could be accepted. ${rejected[0].reason}`
+        : 'No valid files found inside the uploaded ZIP archive(s).',
+      400
+    );
   }
 
   // 1) Write batch summary log
@@ -276,7 +320,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
       execution_id: executionId,
       uploaded_by: username,
       uploaded_at: new Date(),
-      total_count: flatFiles.length,
+      total_count: accepted.length,
       success_count: 0,
       failed_count: 0,
       duplicate_count: 0,
@@ -284,13 +328,14 @@ export const uploadResumes = catchAsync(async (req, res) => {
       details: {
         vendor_email: vendorEmail,
         vendor_name: vendorFullName,
-        files: flatFiles.map(f => ({ name: f.originalname, size: f.size })),
+        files: accepted.map(f => ({ name: f.originalname, size: f.size })),
+        rejected_files: rejected,
       },
     },
   });
 
   // 2) Write individual logs (status: pending, source: vendor_portal)
-  const logsData = flatFiles.map(file => ({
+  const logsData = accepted.map(file => ({
     execution_id: executionId,
     file_name: file.originalname,
     status: 'pending',
@@ -307,7 +352,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
   );
 
   // 2b) Create durable per-resume job rows (powers the persistent dashboard)
-  await uploadJobService.createJobsForBatch(executionId, flatFiles, {
+  await uploadJobService.createJobsForBatch(executionId, accepted, {
     uploadedBy: username,
     uploadedById: req.user.id,
     vendorEmail: attribution.vendorEmail,
@@ -316,16 +361,19 @@ export const uploadResumes = catchAsync(async (req, res) => {
   });
 
   // 3) Dispatch parsing (durable queue when enabled, else in-process background)
-  await hrUploadService.dispatchBatchParsing(executionId, flatFiles, req.user, 'vendor_portal', attribution);
+  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'vendor_portal', attribution);
 
   return success(
     res,
     {
       executionId,
-      totalFiles: flatFiles.length,
+      totalFiles: accepted.length,
+      rejectedFiles: rejected,
       batchSummary,
     },
-    'Files uploaded successfully and queued for parsing.'
+    rejected.length > 0
+      ? `${accepted.length} file(s) queued for parsing. ${rejected.length} file(s) were skipped.`
+      : 'Files uploaded successfully and queued for parsing.'
   );
 });
 
@@ -379,22 +427,11 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     });
   }
 
-  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
-  // already complete (statusActive = ACTIVE). This keeps the dashboard correct no matter
-  // which path resolved the missing data (public form, recruiter edit, merge, re-upload),
-  // and covers candidates with multiple job rows. Cheap (filtered on status) and best-effort.
-  try {
-    await prisma.$executeRaw`
-      UPDATE rpa_upload_jobs AS j
-      SET status = 'Completed', action_required = false, updated_at = now()
-      FROM rpa_cv AS c
-      WHERE j.cv_id = c.id
-        AND j.status = 'Missing_Information'
-        AND c."statusActive" = 'ACTIVE'
-    `;
-  } catch (e) {
-    logger.warn(`Upload-job self-heal skipped: ${e.message}`);
-  }
+  // Heal rows no live run will advance again. This endpoint previously only ran the
+  // missing-info self-heal, so a vendor whose batch died mid-run watched "Processing"
+  // forever: the reaper existed, but only on the HR dashboard, so recovery depended on
+  // an admin happening to open a different page.
+  await uploadJobService.reconcileStaleJobs('Vendor upload-job');
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
   const role = (req.user.role || '').toLowerCase();
@@ -471,6 +508,17 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * @desc    Export vendor upload jobs as CSV, honouring the same visibility
+ *          scoping as the list (vendors see only their own self-uploads).
+ * @route   GET /api/vendor/jobs/export
+ * @access  Private (Vendor + staff with vendor_upload)
+ */
+export const exportUploadJobs = catchAsync(async (req, res) => runExport(req, res, {
+  ...uploadJobsExport.vendorSpec,
+  filters: uploadJobsExport.parseVendorFilters(req),
+}));
 
 /**
  * @desc    Reprocess a failed upload job by re-running parsing on its stored file.

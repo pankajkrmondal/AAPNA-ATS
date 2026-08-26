@@ -7,9 +7,13 @@ import { disconnectRedis } from './config/redis.js';
 import { initializeSocket } from './socket/index.js';
 import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
-import { startEmailResumeIntakeJob, stopEmailResumeIntakeJob } from './jobs/emailResumeIntake.js';
-import { startInboundEmailSyncJob, stopInboundEmailSyncJob } from './jobs/inboundEmailSync.js';
+import { startInterviewReminderJob, stopInterviewReminderJob } from './jobs/interviewReminder.js';
+import { startInterviewOccurrenceJob, stopInterviewOccurrenceJob } from './jobs/interviewOccurrence.js';
+import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
+import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
+import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
+import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
@@ -34,12 +38,33 @@ async function startServer() {
     startSessionCleanupJob();
     await startReminderSchedulerJob();
 
-    // Outlook mailbox pollers (replace n8n "Outlook Trigger2" + "WF2"); self-gated by config flags
-    startEmailResumeIntakeJob();
-    startInboundEmailSyncJob();
+    // Pre-interview reminders for booked technical rounds; self-gated by the
+    // interview_reminder_enabled setting (Settings → Reminder Settings).
+    await startInterviewReminderJob();
+
+    // Post-interview occurrence sweep — decides "did it happen?" (Teams
+    // attendance or a confirm nudge) so a scorecard is never sent for a
+    // no-show; self-gated by interview_occurrence_enabled.
+    await startInterviewOccurrenceJob();
+
+    // Consolidated Outlook mailbox poller — one delta fetch per tick fanned out
+    // to resume intake + inbound sync (replaces n8n "Outlook Trigger2" + "WF2");
+    // self-gated by EMAIL_INTAKE_ENABLED / INBOUND_SYNC_ENABLED.
+    startMailboxPollerJob();
 
     // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
     startZekoSchedulerJob();
+
+    // Evalground invite deadline checker — pure DB polling, no external API, always runs.
+    startAssessmentDeadlineJob();
+
+    // Offer sweeps — daily approval nudge + post-joining auto-close (Q12/Q26);
+    // pure DB polling, no external API, always runs.
+    startOfferSweepJob();
+
+    // Document reminder sweep — chases candidates whose documents are still
+    // outstanding ("reminders until submitted"); pure DB polling, always runs.
+    startDocumentReminderJob();
 
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
@@ -70,9 +95,13 @@ async function gracefulShutdown(signal) {
 
   // Stop cron schedulers
   stopReminderSchedulerJob();
-  stopEmailResumeIntakeJob();
-  stopInboundEmailSyncJob();
+  stopInterviewReminderJob();
+  stopInterviewOccurrenceJob();
+  stopMailboxPollerJob();
   stopZekoSchedulerJob();
+  stopAssessmentDeadlineJob();
+  stopOfferSweepJob();
+  stopDocumentReminderJob();
 
   // Stop accepting new connections
   server.close(async () => {

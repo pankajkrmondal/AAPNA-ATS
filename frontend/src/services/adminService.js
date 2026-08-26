@@ -21,6 +21,18 @@ const adminService = {
   },
 
   /**
+   * CSV of the users in scope — same tenant scoping as listUsers.
+   * @param {{ companyId?: number }} [opts]
+   * @param {object} [config] - blob/timeout config from downloadFile
+   */
+  exportUsers(opts = {}, config = {}) {
+    return api.get('/admin/users/export', {
+      params: opts.companyId ? { company_id: opts.companyId } : {},
+      ...config,
+    });
+  },
+
+  /**
    * Check if email exists in database.
    * @param {string} email
    * @returns {Promise}
@@ -98,6 +110,14 @@ const adminService = {
    */
   listCompanies() {
     return api.get('/admin/companies/list');
+  },
+
+  /**
+   * CSV of all companies (superadmin only).
+   * @param {object} [config] - blob/timeout config from downloadFile
+   */
+  exportCompanies(config = {}) {
+    return api.get('/admin/companies/export', config);
   },
 
   /**

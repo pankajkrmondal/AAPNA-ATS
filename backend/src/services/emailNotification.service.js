@@ -10,18 +10,49 @@ import { getAccessToken } from './onedrive.service.js';
 /**
  * Sends a HTML email using the Microsoft Graph API.
  * Uses Client Credentials flow token.
- * 
+ *
+ * Sends via draft → send so the real Graph ids (conversationId etc.) can be
+ * captured for reply/bounce correlation. Requires Mail.ReadWrite; if the
+ * tenant only grants Mail.Send, draft creation fails and we transparently
+ * fall back to the legacy one-shot sendMail (ids come back null and callers
+ * fall back to their synthetic conversation ids).
+ *
+ * NON-PRODUCTION SAFETY NET. Outside production this function REWRITES `to` to
+ * the internal test inbox and clears `cc`, unless the caller passes
+ * `allowRealRecipients: true`. Every candidate-facing flow is already supposed
+ * to route through resolveRecipients() first — this is the net under those ~40
+ * call sites, so a new one added without that call cannot email a real
+ * candidate from local or staging. Only the flows in NEVER_REDIRECT /
+ * OPERATOR_ADDRESSED (config/emailRecipients.js) opt out.
+ *
  * @param {Object} params
  * @param {string} params.sender - The user mailbox to send from
  * @param {string} params.to - Comma-separated list of recipient emails
  * @param {string} [params.cc] - Comma-separated list of cc emails
  * @param {string} params.subject - Subject line of the email
  * @param {string} params.html - HTML email body content
- * @returns {Promise<boolean>}
+ * @param {boolean} [params.allowRealRecipients=false] - bypass the non-prod
+ *   redirect. ONLY for flows whose key is in NEVER_REDIRECT or
+ *   OPERATOR_ADDRESSED; pass the resolved recipients straight through.
+ * @returns {Promise<{graphMessageId: string|null, conversationId: string|null, internetMessageId: string|null}>}
+ *   Truthy on success (so old boolean-style callers keep working); throws on failure.
  */
-export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
+export async function sendGraphEmail({ sender, to, cc = '', subject, html, allowRealRecipients = false }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
+
+  // Last line of defence — applied before anything is built or sent.
+  if (config.email.redirectInNonProd && !allowRealRecipients) {
+    const original = `${to}${cc ? ` cc "${cc}"` : ''}`;
+    const testInbox = config.email.testRecipients;
+    if ((to || '').trim() !== (testInbox || '').trim() || cc) {
+      logger.info(
+        `MS Graph Email [non-prod guard]: redirected "${original}" -> "${testInbox}" (cc cleared). Subject: "${subject}".`
+      );
+    }
+    to = testInbox;
+    cc = '';
+  }
 
   try {
     return await executeSend(requestedSender);
@@ -45,8 +76,12 @@ export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
 
   async function executeSend(activeSender) {
     const accessToken = await getAccessToken();
-    const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(activeSender)}/sendMail`;
-    
+    const baseUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(activeSender)}`;
+    const headers = {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    };
+
     // Clean and split recipients
     const toRecipients = to
       .split(',')
@@ -69,52 +104,192 @@ export async function sendGraphEmail({ sender, to, cc = '', subject, html }) {
         emailAddress: { address: email }
       }));
 
-    const payload = {
-      message: {
-        subject,
-        body: {
-          contentType: 'HTML',
-          content: html
-        },
-        toRecipients,
-        ...(ccRecipients.length > 0 ? { ccRecipients } : {})
+    const message = {
+      subject,
+      body: {
+        contentType: 'HTML',
+        content: html
       },
-      saveToSentItems: 'true'
+      toRecipients,
+      ...(ccRecipients.length > 0 ? { ccRecipients } : {})
     };
 
     logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}...`);
 
-    // Retry transient network failures (connect timeouts / resets). Graph itself
-    // does not throw — a non-ok HTTP status is a real rejection and is NOT retried.
-    const MAX_ATTEMPTS = 3;
-    let response;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-        break;
-      } catch (netErr) {
-        if (attempt === MAX_ATTEMPTS) {
-          throw new Error(`Graph sendMail network error after ${MAX_ATTEMPTS} attempts: ${netErr.message}${netErr.cause ? ` (${netErr.cause.code || netErr.cause.message})` : ''}`);
-        }
-        logger.warn(`MS Graph Email: network error on attempt ${attempt}/${MAX_ATTEMPTS} (${netErr.cause?.code || netErr.message}); retrying...`);
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
+    // Legacy one-shot send: cannot capture Graph ids, but only needs Mail.Send.
+    async function legacySendMail() {
+      const response = await fetchWithNetRetry(`${baseUrl}/sendMail`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message, saveToSentItems: 'true' })
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Graph sendMail failed: ${response.statusText}. ${JSON.stringify(errorData)}`);
       }
+      logger.info(`MS Graph Email: Email successfully sent from ${activeSender}`);
+      return { graphMessageId: null, conversationId: null, internetMessageId: null };
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(`Graph sendMail failed: ${response.statusText}. ${JSON.stringify(errorData)}`);
+    // 1) Create a draft. ImmutableId keeps graphMessageId valid after the
+    // message moves to Sent Items. Any rejection here (e.g. Mail.ReadWrite not
+    // granted) falls back to the legacy path so sending never regresses.
+    const draftRes = await fetchWithNetRetry(`${baseUrl}/messages`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'IdType="ImmutableId"' },
+      body: JSON.stringify(message)
+    });
+
+    if (!draftRes.ok) {
+      const errText = await draftRes.text().catch(() => '');
+      logger.warn(`MS Graph Email: draft create failed (${draftRes.status}) for "${activeSender}"; falling back to one-shot sendMail. ${errText}`);
+      return await legacySendMail();
     }
 
-    logger.info(`MS Graph Email: Email successfully sent from ${activeSender}`);
-    return true;
+    const draft = await draftRes.json();
+
+    // 2) Send the draft (moves it to Sent Items).
+    const sendRes = await fetchWithNetRetry(`${baseUrl}/messages/${encodeURIComponent(draft.id)}/send`, {
+      method: 'POST',
+      headers
+    });
+
+    if (!sendRes.ok) {
+      const errorData = await sendRes.json().catch(() => ({}));
+      // Best-effort: don't leave the unsent draft behind in the mailbox.
+      fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+      throw new Error(`Graph sendMail failed: ${sendRes.statusText}. ${JSON.stringify(errorData)}`);
+    }
+
+    logger.info(`MS Graph Email: Email successfully sent from ${activeSender} (conversation ${draft.conversationId || 'n/a'})`);
+    return {
+      graphMessageId: draft.id || null,
+      conversationId: draft.conversationId || null,
+      internetMessageId: draft.internetMessageId || null
+    };
+  }
+}
+
+/**
+ * Appends an open-tracking pixel to outbound HTML. The pixel hits the public
+ * GET /api/track/open/:token endpoint, which flips rpa_email_tracking.opened.
+ * No-op (returns the HTML unchanged) when PUBLIC_BASE_URL is not configured,
+ * so environments without a public backend URL behave exactly as before.
+ *
+ * Opens are a positive signal, not a metric: mail clients proxy/cache or block
+ * images, so counts are approximate.
+ *
+ * @param {string} html - The outbound email HTML
+ * @param {string} token - The rpa_email_tracking.tracking_token (uuid) for this send
+ * @returns {string}
+ */
+export function injectTrackingPixel(html, token) {
+  if (!config.publicBaseUrl || !token) return html;
+  const pixel = `<img src="${config.publicBaseUrl}/api/track/open/${token}" width="1" height="1" style="display:none" alt=""/>`;
+  if (typeof html !== 'string' || html === '') return html;
+  const closing = html.lastIndexOf('</body>');
+  if (closing !== -1) {
+    return html.slice(0, closing) + pixel + html.slice(closing);
+  }
+  return html + pixel;
+}
+
+/**
+ * Sends a threaded reply to an existing message via Microsoft Graph:
+ * createReply (draft inherits the real conversationId, RE: subject, quoted
+ * original body and original sender as recipient) → PATCH body/recipients →
+ * send. Requires Mail.ReadWrite (verified granted for this tenant).
+ *
+ * @param {Object} params
+ * @param {string} params.mailbox - Mailbox that owns the original message (shared sender)
+ * @param {string} params.graphMessageId - Graph id of the message being replied to
+ * @param {string} params.html - Reply body HTML (prepended above the quoted thread)
+ * @param {string} [params.toOverride] - Comma-separated recipients replacing the
+ *   original sender (used by the non-prod redirect so test replies never reach
+ *   real candidates)
+ * @returns {Promise<{graphMessageId: string|null, conversationId: string|null, internetMessageId: string|null, subject: string|null, toEmails: string[]}>}
+ */
+export async function sendGraphReply({ mailbox, graphMessageId, html, toOverride }) {
+  const accessToken = await getAccessToken();
+  const baseUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}`;
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json'
+  };
+
+  // 1) Create the reply draft off the original message.
+  const draftRes = await fetchWithNetRetry(`${baseUrl}/messages/${encodeURIComponent(graphMessageId)}/createReply`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'IdType="ImmutableId"' }
+  });
+  if (!draftRes.ok) {
+    const errText = await draftRes.text().catch(() => '');
+    throw new Error(`Graph createReply failed (${draftRes.status}): ${errText}`);
+  }
+  const draft = await draftRes.json();
+
+  // 2) Put the reply text above the quoted original; optionally redirect recipients.
+  const quoted = draft.body?.content || '';
+  const patchPayload = {
+    body: { contentType: 'HTML', content: `<div>${html}</div>${quoted}` },
+  };
+  if (toOverride) {
+    patchPayload.toRecipients = toOverride
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0)
+      .map((e) => ({ emailAddress: { address: e } }));
+    patchPayload.ccRecipients = [];
+  }
+  const patchRes = await fetchWithNetRetry(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(patchPayload)
+  });
+  if (!patchRes.ok) {
+    const errText = await patchRes.text().catch(() => '');
+    fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+    throw new Error(`Graph reply draft update failed (${patchRes.status}): ${errText}`);
+  }
+
+  // 3) Send the reply.
+  const sendRes = await fetchWithNetRetry(`${baseUrl}/messages/${encodeURIComponent(draft.id)}/send`, {
+    method: 'POST',
+    headers
+  });
+  if (!sendRes.ok) {
+    const errorData = await sendRes.json().catch(() => ({}));
+    fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+    throw new Error(`Graph reply send failed: ${sendRes.statusText}. ${JSON.stringify(errorData)}`);
+  }
+
+  logger.info(`MS Graph Email: Reply sent from ${mailbox} (conversation ${draft.conversationId || 'n/a'})`);
+  return {
+    graphMessageId: draft.id || null,
+    conversationId: draft.conversationId || null,
+    internetMessageId: draft.internetMessageId || null,
+    subject: draft.subject || null,
+    toEmails: (patchPayload.toRecipients || draft.toRecipients || []).map((r) => r.emailAddress?.address).filter(Boolean),
+  };
+}
+
+/**
+ * fetch() with retry on transient network failures (connect timeouts / resets).
+ * Graph itself does not throw — a non-ok HTTP status is a real rejection, is
+ * NOT retried, and is returned to the caller to handle.
+ */
+async function fetchWithNetRetry(url, options) {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(url, options);
+    } catch (netErr) {
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(`Graph sendMail network error after ${MAX_ATTEMPTS} attempts: ${netErr.message}${netErr.cause ? ` (${netErr.cause.code || netErr.cause.message})` : ''}`);
+      }
+      logger.warn(`MS Graph Email: network error on attempt ${attempt}/${MAX_ATTEMPTS} (${netErr.cause?.code || netErr.message}); retrying...`);
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
   }
 }
 
@@ -153,6 +328,31 @@ export function describeEmailError(err) {
   }
   // Fall back to the raw message so something actionable is still shown.
   return msg || 'Unknown email error.';
+}
+
+/**
+ * Best-effort record of a FAILED send in rpa_email_log (status 'failed'), so
+ * failures are queryable instead of living only in the Winston logs. Never
+ * throws — a logging problem must not mask the original send error.
+ * The reminder scheduler only picks up status 'sent' rows, so failed rows are
+ * never "reminded".
+ */
+export async function logFailedEmail({ emailType, recipientEmail, recipientName, subject, referenceId, err }) {
+  try {
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: emailType,
+        recipient_email: recipientEmail || 'unknown',
+        recipient_name: recipientName || null,
+        subject: subject || null,
+        reference_id: referenceId ?? null,
+        status: 'failed',
+        error_message: describeEmailError(err),
+      }
+    });
+  } catch (logErr) {
+    logger.error(`Failed to record failed-email log entry (${emailType}): ${logErr.message}`);
+  }
 }
 
 /**
@@ -237,6 +437,13 @@ export async function sendWelcomeEmail(candidate, hrUserEmail) {
     return true;
   } catch (err) {
     logger.error(`Failed to send welcome email for candidate ID ${candidate?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'welcome',
+      recipientEmail: candidate?.EmailID,
+      recipientName: candidate?.Name,
+      referenceId: candidate?.id ? Number(candidate.id) : null,
+      err
+    });
     return false;
   }
 }
@@ -332,6 +539,13 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
     return true;
   } catch (err) {
     logger.error(`Failed to send missing data email for candidate ID ${candidate?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'data_collection',
+      recipientEmail: candidate?.EmailID,
+      recipientName: candidate?.Name,
+      referenceId: candidate?.id ? Number(candidate.id) : null,
+      err
+    });
     // Token is already persisted; record that the email delivery failed so a
     // retry/reminder can pick it up. The link itself remains usable.
     if (candidate.id) {
@@ -387,6 +601,12 @@ export async function sendEmailIdNullAlert(candidateName, hrUserEmail, uploadedB
     return true;
   } catch (err) {
     logger.error(`Failed to send email null alert for candidate ${candidateName}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'email_null_alert',
+      recipientName: 'HR Team',
+      subject: `Email ID null alert — ${candidateName || 'Candidate'}`,
+      err
+    });
     return false;
   }
 }
@@ -442,7 +662,8 @@ export async function sendResumeErrorAlert({ executionId, failedCount, totalCoun
 </html>
     `;
 
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: internal failure alert — must reach real inboxes in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     await prisma.rpa_email_log.create({
       data: {
@@ -459,6 +680,80 @@ export async function sendResumeErrorAlert({ executionId, failedCount, totalCoun
     return true;
   } catch (err) {
     logger.error(`Failed to send resume error alert for batch ${executionId}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'resume_error_alert',
+      recipientName: 'HR / Admin',
+      subject: `Resume processing error alert (batch ${executionId})`,
+      err
+    });
+    return false;
+  }
+}
+
+/**
+ * Sends an internal alert when the Cohere Rerank API fails during a screening
+ * search, so the candidate list can gracefully fall back to a bounded,
+ * base-relevance-ordered list instead of erroring out for the recruiter.
+ * @param {{ query: string, candidateCount: number, errorMessage: string, rateLimited?: boolean }} params
+ * @returns {Promise<boolean>}
+ */
+export async function sendRerankApiAlert({ query, candidateCount, errorMessage, rateLimited = false }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('rerankApiAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping rerank API alert: no recipient configured.');
+      return false;
+    }
+
+    const subject = rateLimited
+      ? `⏳ Candidate Ranking (Cohere) Rate Limit Hit — Screening Search`
+      : `🚨 Candidate Ranking (Cohere) API Failure — Screening Search`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:${rateLimited ? '#b8860b' : '#b71c1c'};color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    ${rateLimited ? 'Candidate Ranking API Rate Limit Hit' : 'Candidate Ranking API Failure'}
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>${rateLimited
+      ? 'The Cohere Rerank API returned a 429 (rate limit) during a Candidate Screening search — likely the candidate pool for this search produced more concurrent batches than the current Cohere plan allows per minute (the candidate pool is no longer capped before reranking). If this recurs often, consider lowering RERANK_MAX_CONCURRENT_BATCHES in vectorStore.service.js or upgrading the Cohere plan.'
+      : 'The Cohere Rerank API failed during a Candidate Screening search.'
+    } The recruiter was shown a bounded fallback list (base vector relevance, no rerank) instead of an error.</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Search query:</td><td>${query || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Candidate pool size:</td><td>${candidateCount}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Error:</p>
+    <p style="font-family:monospace;">${String(errorMessage || 'Unknown error')}</p>
+  </div>
+</body>
+</html>
+    `;
+
+    // NEVER_REDIRECT: internal failure alert — must reach real inboxes in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'rerank_api_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev / Admin',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info('Rerank API alert sent.');
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send rerank API alert: ${err.message}`);
     return false;
   }
 }
@@ -507,6 +802,13 @@ export async function sendDuplicateAlertEmail(candidate, hrUserEmail) {
     return true;
   } catch (err) {
     logger.error(`Failed to send duplicate resume alert email: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'duplicate_alert',
+      recipientName: 'HR Team / Admin',
+      recipientEmail: hrUserEmail,
+      referenceId: candidate?.id ? Number(candidate.id) : null,
+      err
+    });
     return false;
   }
 }
@@ -555,6 +857,12 @@ export async function sendSameVendorDuplicateAlert({ candidateName, candidateEma
     return true;
   } catch (err) {
     logger.error(`Failed to send same vendor duplicate email: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'vendor_same_duplicate',
+      recipientEmail: vendorEmail,
+      recipientName: vendorName,
+      err
+    });
     return false;
   }
 }
@@ -602,6 +910,12 @@ export async function sendDifferentVendorDuplicateAlert({ candidateName, candida
     return true;
   } catch (err) {
     logger.error(`Failed to send different vendor duplicate email: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'vendor_diff_duplicate',
+      recipientEmail: vendorEmail,
+      recipientName: vendorName,
+      err
+    });
     return false;
   }
 }
@@ -736,6 +1050,14 @@ body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
     return true;
   } catch (err) {
     logger.error(`Failed to send MRF request email for ${first_name} ${last_name}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'mrf_hm',
+      recipientEmail: email,
+      recipientName: `${first_name || ''} ${last_name || ''}`.trim(),
+      subject: 'New MRF Request',
+      referenceId: reference_id ? Number(reference_id) : null,
+      err
+    });
     return false;
   }
 }
@@ -832,6 +1154,12 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
     return true;
   } catch (err) {
     logger.error(`Failed to send MRF approval request email for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'mrf_approval_request',
+      recipientName: 'Approvers',
+      referenceId: mrfRecord?.id ? Number(mrfRecord.id) : null,
+      err
+    });
     return false;
   }
 }
@@ -882,6 +1210,12 @@ export async function sendMrfSubmissionHrEmail({ mrfRecord }) {
     return true;
   } catch (err) {
     logger.error(`Failed to send MRF submission HR notification for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'mrf_submit_hr',
+      recipientName: 'HR Team',
+      referenceId: mrfRecord?.id ? Number(mrfRecord.id) : null,
+      err
+    });
     return false;
   }
 }
@@ -970,6 +1304,12 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
     return true;
   } catch (err) {
     logger.error(`Failed to send MRF outcome email for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: approved ? 'mrf_approved' : 'mrf_declined',
+      recipientName: 'HR Team',
+      referenceId: mrfRecord?.id ? Number(mrfRecord.id) : null,
+      err
+    });
     return false;
   }
 }
@@ -1093,7 +1433,8 @@ export async function sendCredentialEmail({ user, plainTextPassword, isNewUser =
     `;
 
     // 1) Send email
-    await sendGraphEmail({ sender, to: toEmail, subject, html });
+    // NEVER_REDIRECT: account security — credentials go to the affected user in every env.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
 
     // 2) Log to rpa_email_log
     await prisma.rpa_email_log.create({
@@ -1112,9 +1453,246 @@ export async function sendCredentialEmail({ user, plainTextPassword, isNewUser =
     return true;
   } catch (err) {
     logger.error(`Failed to send credential email for user ${user?.id || user?.email}: ${err.message}`);
+    await logFailedEmail({
+      emailType: isNewUser ? 'user_created' : 'user_password_changed',
+      recipientEmail: user?.email || user?.username,
+      recipientName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'User',
+      referenceId: user?.id ? Number(user.id) : null,
+      err
+    });
     return false;
   }
 }
 
+/**
+ * Sends a password-reset link to the user (forgot-password flow).
+ * The link is single-use and expires in 30 minutes. Never throws.
+ */
+export async function sendPasswordResetEmail({ user, resetUrl }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+
+    // Reset links must always reach the account owner (NEVER_REDIRECT flow).
+    const { to: toEmail } = resolveRecipients('passwordReset', user.email);
+
+    if (!toEmail) {
+      logger.warn(`Skipping password reset email: No recipient email address available.`);
+      return false;
+    }
+
+    const subject = 'Reset Your AAPNA ATS Password';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      border: 1px solid #e8ede0;
+      border-radius: 5px;
+    }
+    .header {
+      background-color: #f7f9f6;
+      padding: 15px;
+      text-align: center;
+      border-bottom: 2px solid #7cb342;
+      margin-bottom: 20px;
+    }
+    .header h2 {
+      margin: 0;
+      color: #33691e;
+    }
+    .reset-box {
+      background-color: #f1f8e9;
+      border: 1px solid #c5e1a5;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .reset-button {
+      display: inline-block;
+      background-color: #558b2f;
+      color: #ffffff !important;
+      text-decoration: none;
+      font-weight: bold;
+      padding: 12px 28px;
+      border-radius: 4px;
+    }
+    .reset-link {
+      word-break: break-all;
+      font-size: 12px;
+      color: #555;
+      margin-top: 15px;
+    }
+    .footer {
+      font-size: 12px;
+      color: #777;
+      margin-top: 30px;
+      border-top: 1px solid #e8ede0;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>AAPNA Recruitment Process Automation</h2>
+    </div>
+    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
+    <p>We received a request to reset the password for your AAPNA ATS account. Click the button below to choose a new password:</p>
+
+    <div class="reset-box">
+      <a class="reset-button" href="${resetUrl}">Reset Password</a>
+      <div class="reset-link">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <a href="${resetUrl}">${resetUrl}</a>
+      </div>
+    </div>
+
+    <p>This link expires in <strong>30 minutes</strong> and can only be used once.</p>
+    <p>If you did not request a password reset, you can safely ignore this email — your password will not change.</p>
+
+    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
+
+    <div class="footer">
+      This is an automated notification. Please do not reply directly to this email.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    // 1) Send email
+    // NEVER_REDIRECT: account security — a reset link is only useful in the owner's inbox.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
+
+    // 2) Log to rpa_email_log
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'password_reset_request',
+        recipient_email: toEmail,
+        recipient_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User',
+        subject,
+        body_html: html,
+        reference_id: user.id ? Number(user.id) : null,
+        sent_at: new Date()
+      }
+    });
+
+    logger.info(`Password reset email sent & logged for user ID ${user.id}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send password reset email for user ${user?.id || user?.email}: ${err.message}`);
+    return false;
+  }
+}
+
+/** Last-alerted timestamp per error signature, so a sustained outage sends one email, not a flood. */
+const errorAlertCooldown = new Map();
+const ERROR_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Alerts developers by email when a 5xx error reaches the global error handler,
+ * carrying the real (pre-sanitization) error detail so it doesn't just vanish
+ * behind the friendly message the user sees. Never throws — errors here must
+ * never affect the HTTP response already being sent to the user.
+ *
+ * Throttled per error signature (code/name + route) so a sustained outage
+ * (e.g. a connection pool timeout under load) sends one alert, not one per
+ * failed request.
+ *
+ * @param {Object} params
+ * @param {Error} params.err - The original error, before sanitization.
+ * @param {Error} params.finalErr - The (possibly sanitized) AppError sent to the client.
+ * @param {import('express').Request} params.req
+ * @returns {Promise<boolean>}
+ */
+export async function sendBackendErrorAlert({ err, finalErr, req }) {
+  try {
+    const route = `${req.method} ${req.originalUrl}`;
+    const signature = `${err.code || err.name || 'Error'}:${route}`;
+
+    const now = Date.now();
+    const lastSent = errorAlertCooldown.get(signature);
+    if (lastSent && now - lastSent < ERROR_ALERT_COOLDOWN_MS) {
+      return false; // Same error/route alerted recently — skip.
+    }
+    errorAlertCooldown.set(signature, now);
+
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('backendErrorAlert');
+
+    if (!toEmail) {
+      logger.warn('Skipping backend error alert: no recipient configured.');
+      return false;
+    }
+
+    const stackSnippet = (err.stack || 'No stack trace available.')
+      .split('\n')
+      .slice(0, 8)
+      .join('\n');
+
+    const subject = `🚨 Backend Error Alert — ${finalErr.statusCode} on ${route}`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:#b71c1c;color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">
+    Backend Error Alert
+  </div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>A backend error reached the global error handler and was shown to a user as a sanitized message. Real detail below:</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Environment:</td><td>${config.env}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Time:</td><td>${new Date().toISOString()}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Route:</td><td>${route}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Status sent to user:</td><td>${finalErr.statusCode}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Message shown to user:</td><td>${finalErr.message}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Error name:</td><td>${err.name || 'n/a'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Error code:</td><td>${err.code || 'n/a'}</td></tr>
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Real error message:</p>
+    <p style="font-family:monospace;white-space:pre-wrap;">${String(err.message || 'n/a')}</p>
+    <p style="margin-top:14px;font-weight:700;">Stack (top frames — full trace in server logs):</p>
+    <pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;background:#f9fbf5;padding:10px;border-radius:4px;">${stackSnippet}</pre>
+  </div>
+</body>
+</html>
+    `;
+
+    // NEVER_REDIRECT: internal 5xx alert — staging is precisely where these are caught.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'backend_error_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev Team',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    });
+
+    return true;
+  } catch (alertErr) {
+    logger.error(`Failed to send backend error alert: ${alertErr.message}`);
+    return false;
+  }
+}
 
 

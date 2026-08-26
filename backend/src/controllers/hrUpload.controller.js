@@ -10,6 +10,20 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
 import * as uploadJobService from '../services/uploadJob.service.js';
+import { partitionBySignature } from '../utils/fileSignature.js';
+import runExport from '../exports/runExport.js';
+import uploadJobsExport from '../exports/uploadJobs.export.js';
+
+/**
+ * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
+ * archives are unpacked into this list, never parsed as resumes themselves.
+ *
+ * This is the ONLY extension check entries from a .zip ever face: multer's
+ * fileFilter vets what was POSTED, and an entry inside an archive never passed
+ * through it. Before this, a .exe inside a .zip was written straight to
+ * uploads/ and queued for parsing.
+ */
+const PARSEABLE_EXTS = ['.pdf', '.docx', '.doc', '.xlsx'];
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -91,8 +105,25 @@ export const uploadResumes = catchAsync(async (req, res) => {
     }
   }
 
-  if (flatFiles.length === 0) {
-    throw new AppError('No valid files found inside the uploaded ZIP archive(s).', 400);
+  // CONTENT CHECK (defect D7). Sits after zip expansion so it covers loose
+  // uploads and archive entries in one pass. Skip-and-report rather than
+  // all-or-nothing: a recruiter sending 100 resumes should not lose the batch
+  // over one mislabelled file. Rejected files are unlinked by the helper.
+  const { accepted, rejected } = await partitionBySignature(flatFiles, PARSEABLE_EXTS);
+
+  if (rejected.length > 0) {
+    logger.warn(
+      `HR batch ${executionId}: ${rejected.length} file(s) rejected — ${rejected.map((r) => r.name).join(', ')}`
+    );
+  }
+
+  if (accepted.length === 0) {
+    throw new AppError(
+      rejected.length > 0
+        ? `None of the uploaded files could be accepted. ${rejected[0].reason}`
+        : 'No valid files found inside the uploaded ZIP archive(s).',
+      400
+    );
   }
 
   // 1) Write batch summary log
@@ -101,7 +132,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
       execution_id: executionId,
       uploaded_by: username,
       uploaded_at: new Date(),
-      total_count: flatFiles.length,
+      total_count: accepted.length,
       success_count: 0,
       failed_count: 0,
       duplicate_count: 0,
@@ -109,13 +140,14 @@ export const uploadResumes = catchAsync(async (req, res) => {
       details: {
         hr_email: hrEmail,
         hr_name: hrFullName,
-        files: flatFiles.map((f) => ({ name: f.originalname, size: f.size })),
+        files: accepted.map((f) => ({ name: f.originalname, size: f.size })),
+        rejected_files: rejected,
       },
     },
   });
 
   // 2) Write individual logs (status: pending, source: hr_manual_upload)
-  const logsData = flatFiles.map((file) => ({
+  const logsData = accepted.map((file) => ({
     execution_id: executionId,
     file_name: file.originalname,
     status: 'pending',
@@ -132,22 +164,25 @@ export const uploadResumes = catchAsync(async (req, res) => {
   );
 
   // 2b) Create durable per-resume job rows (powers the persistent dashboard)
-  await uploadJobService.createJobsForBatch(executionId, flatFiles, {
+  await uploadJobService.createJobsForBatch(executionId, accepted, {
     uploadedBy: username,
     uploadedById: req.user.id,
     source: 'hr_manual_upload',
   });
 
   // 3) Dispatch parsing (durable queue when enabled, else in-process background)
-  await hrUploadService.dispatchBatchParsing(executionId, flatFiles, req.user, 'hr_manual_upload');
+  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'hr_manual_upload');
 
   return success(
     res,
     {
       executionId,
-      totalFiles: flatFiles.length,
+      totalFiles: accepted.length,
+      rejectedFiles: rejected,
     },
-    'Files uploaded successfully and queued for parsing.'
+    rejected.length > 0
+      ? `${accepted.length} file(s) queued for parsing. ${rejected.length} file(s) were skipped.`
+      : 'Files uploaded successfully and queued for parsing.'
   );
 });
 
@@ -181,21 +216,10 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     });
   }
 
-  // Self-heal: advance any "Awaiting Candidate Details" job whose linked candidate is
-  // already complete (statusActive = ACTIVE). Keeps the dashboard correct regardless of
-  // which path resolved the missing data. Cheap (filtered on status) and best-effort.
-  try {
-    await prisma.$executeRaw`
-      UPDATE rpa_upload_jobs AS j
-      SET status = 'Completed', action_required = false, updated_at = now()
-      FROM rpa_cv AS c
-      WHERE j.cv_id = c.id
-        AND j.status = 'Missing_Information'
-        AND c."statusActive" = 'ACTIVE'
-    `;
-  } catch (e) {
-    logger.warn(`HR upload-job self-heal skipped: ${e.message}`);
-  }
+  // Heal rows no live run will advance again (stale in-flight jobs, orphaned
+  // duplicates, resolved missing-info). Shared with the vendor dashboard so both
+  // surfaces recover the same way.
+  await uploadJobService.reconcileStaleJobs('HR upload-job');
 
   const { page = 1, limit = 20, status, actionRequired } = req.query;
 
@@ -244,6 +268,16 @@ export const getUploadJobs = catchAsync(async (req, res) => {
     },
   });
 });
+
+/**
+ * @desc    Export HR upload jobs matching the current filters as CSV
+ * @route   GET /api/hr-upload/jobs/export
+ * @access  Private (hr_manual_upload module)
+ */
+export const exportUploadJobs = catchAsync(async (req, res) => runExport(req, res, {
+  ...uploadJobsExport.hrSpec,
+  filters: uploadJobsExport.parseHrFilters(req),
+}));
 
 /**
  * @desc    Reprocess a failed upload job by re-running parsing on its stored file.

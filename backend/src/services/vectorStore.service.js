@@ -2,6 +2,35 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import { sendRerankApiAlert } from './emailNotification.service.js';
+
+// Cohere Rerank's documented per-request document ceiling — batch and merge
+// instead of silently truncating the candidate pool before scoring.
+const COHERE_MAX_DOCUMENTS = 1000;
+// Bounded fallback size shown to the recruiter if the Rerank API fails —
+// keeps the UI usable (and fast) instead of erroring out or dumping an
+// unranked, unbounded list.
+const RERANK_DEGRADED_FALLBACK_SIZE = 250;
+// Candidate pool is no longer capped before reranking (see searchRoleCandidates/
+// searchKeywordCandidates), so a very broad search can produce many batches. This
+// bounds how many Cohere requests run AT ONCE — protects a free/trial API key's
+// requests-per-minute limit regardless of pool size, without capping how many
+// candidates eventually get reranked (batches just queue instead of failing).
+const RERANK_MAX_CONCURRENT_BATCHES = 5;
+
+/** Runs `worker` over `items` with at most `limit` calls in flight at once. */
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runNext() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await worker(items[current], current);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+  return results;
+}
 
 let genAI = null;
 if (config.gemini.apiKey) {
@@ -125,82 +154,115 @@ export async function saveCandidateVector(candidateId, parsedData) {
   }
 }
 
-/**
- * Rerank candidate search results using Cohere Rerank API
- * @param {string} query - The search query/keyword
- * @param {Array} candidates - The list of pre-filtered candidates from database
- * @param {number} [topN=50] - Number of ranked candidates to return
- * @returns {Promise<Array>} Reranked candidates
- */
-export async function rerankCandidates(query, candidates, topN = 50) {
-  if (!config.cohere?.apiKey) {
-    logger.warn('Cohere API key is not configured. Skipping Cohere reranking.');
-    return candidates;
+/** Builds the per-candidate document text sent to Cohere for one rerank call. */
+function toDocument(c) {
+  return c.text || JSON.stringify({
+    id: Number(c.id),
+    Name: c.Name,
+    TotalExperienceYears: c.TotalExperienceYears,
+    CurrentCompany: c.CurrentCompany,
+    Top5KeySkills: c.Top5KeySkills,
+    HighestQualification: c.HighestQualification,
+    CurrentLocation: c.CurrentLocation,
+    ExpectedCTC_LPA: c.ExpectedCTC_LPA,
+    NoticePeriod: c.NoticePeriod,
+    resume_technical_terms: c.resume_technical_terms
+  });
+}
+
+/** One Cohere Rerank call for a single batch (<= COHERE_MAX_DOCUMENTS documents). */
+async function rerankBatch(query, batch) {
+  const documents = batch.map(toDocument);
+
+  const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'content-type': 'application/json',
+      'Authorization': `Bearer ${config.cohere.apiKey}`
+    },
+    body: JSON.stringify({
+      model: config.cohere.model || 'rerank-v3.5',
+      query,
+      documents,
+      top_n: documents.length
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Cohere Rerank API error (Status ${response.status}): ${errText}`);
   }
 
+  const result = await response.json();
+  if (!result || !Array.isArray(result.results)) {
+    throw new Error('Invalid response format from Cohere Rerank API.');
+  }
+
+  return result.results.map(r => ({ ...batch[r.index], cohereScore: r.relevance_score }));
+}
+
+/**
+ * Rerank candidate search results using the Cohere Rerank API. Reranks the
+ * FULL candidate pool (batched under the hood if it exceeds Cohere's
+ * per-request document ceiling) rather than an arbitrary top-N slice, so a
+ * later deterministic score-threshold — not this step — decides what counts
+ * as "matching". On any API failure, falls back to a bounded, unranked
+ * (base vector-distance order) list and fires an internal alert email so the
+ * degradation is visible and actionable, instead of erroring out for the
+ * recruiter or silently returning an unbounded unranked list.
+ *
+ * @param {string} query - The search query/keyword
+ * @param {Array} candidates - The list of pre-filtered candidates from database
+ * @param {number} [topN] - Number of ranked candidates to return; defaults to the full pool
+ * @returns {Promise<{ candidates: Array, degraded: boolean, degradedReason: string|null }>}
+ */
+export async function rerankCandidates(query, candidates, topN = null) {
   if (!candidates || candidates.length === 0) {
-    return [];
+    return { candidates: [], degraded: false, degradedReason: null };
+  }
+
+  const effectiveTopN = topN || candidates.length;
+
+  if (!config.cohere?.apiKey) {
+    logger.warn('Cohere API key is not configured. Skipping Cohere reranking.');
+    return { candidates: candidates.slice(0, effectiveTopN), degraded: false, degradedReason: null };
   }
 
   try {
     logger.info(`Sending ${candidates.length} candidates to Cohere Rerank for query "${query}"`);
 
-    const documents = candidates.map(c => {
-      // Use stored vector text or construct a descriptive JSON string
-      return c.text || JSON.stringify({
-        id: Number(c.id),
-        Name: c.Name,
-        TotalExperienceYears: c.TotalExperienceYears,
-        CurrentCompany: c.CurrentCompany,
-        Top5KeySkills: c.Top5KeySkills,
-        HighestQualification: c.HighestQualification,
-        CurrentLocation: c.CurrentLocation,
-        ExpectedCTC_LPA: c.ExpectedCTC_LPA,
-        NoticePeriod: c.NoticePeriod,
-        resume_technical_terms: c.resume_technical_terms
-      });
-    });
-
-    const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'Authorization': `Bearer ${config.cohere.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.cohere.model || 'rerank-v3.5',
-        query,
-        documents,
-        top_n: topN
-      })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Cohere Rerank API error (Status ${response.status}): ${errText}`);
+    const batches = [];
+    for (let i = 0; i < candidates.length; i += COHERE_MAX_DOCUMENTS) {
+      batches.push(candidates.slice(i, i + COHERE_MAX_DOCUMENTS));
     }
 
-    const result = await response.json();
-    if (result && Array.isArray(result.results)) {
-      // Map results back to candidate objects with scores
-      const scored = result.results.map(r => {
-        const candidate = candidates[r.index];
-        return {
-          ...candidate,
-          cohereScore: r.relevance_score
-        };
-      });
+    const scoredBatches = await mapWithConcurrency(batches, RERANK_MAX_CONCURRENT_BATCHES, (batch) => rerankBatch(query, batch));
+    const scored = scoredBatches.flat();
+    scored.sort((a, b) => b.cohereScore - a.cohereScore);
 
-      // Sort by cohereScore DESC
-      scored.sort((a, b) => b.cohereScore - a.cohereScore);
-      return scored;
-    }
-
-    throw new Error('Invalid response format from Cohere Rerank API.');
+    return { candidates: scored.slice(0, effectiveTopN), degraded: false, degradedReason: null };
   } catch (err) {
-    logger.error('Failed to rerank candidates with Cohere, returning candidates in original order:', { error: err.message });
-    return candidates;
+    // Cohere's HTTP status is embedded in the message by rerankBatch() above
+    // ("Cohere Rerank API error (Status 429): ...") — cheap, reliable way to tell
+    // a rate-limit hit apart from an outage/auth/config failure without a second
+    // round-trip. Matters more now that the candidate pool isn't capped before
+    // reranking, so a broad search can produce many more batches than before.
+    const isRateLimited = /status 429/i.test(err.message) || /rate.?limit/i.test(err.message);
+    logger.error('Failed to rerank candidates with Cohere, falling back to a bounded list:', {
+      error: err.message,
+      rateLimited: isRateLimited,
+    });
+
+    // Non-blocking: the alert must never delay or fail the recruiter's search.
+    sendRerankApiAlert({ query, candidateCount: candidates.length, errorMessage: err.message, rateLimited: isRateLimited }).catch(() => {});
+
+    const shown = Math.min(RERANK_DEGRADED_FALLBACK_SIZE, candidates.length);
+    return {
+      candidates: candidates.slice(0, RERANK_DEGRADED_FALLBACK_SIZE),
+      degraded: true,
+      degradedReason: `Candidate ranking service is temporarily ${isRateLimited ? 'busy' : 'unavailable'} — showing the top ${shown} of ${candidates.length} matches by base relevance. Our team has been notified.`,
+    };
   }
 }
 

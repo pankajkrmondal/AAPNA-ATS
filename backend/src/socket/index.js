@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
+import { publishSocketEvent, subscribeSocketBridge } from './bridge.js';
 
 /** @type {Server} */
 let io;
@@ -85,6 +86,10 @@ export function initializeSocket(httpServer) {
 
   logger.info('⚡ Socket.io initialised');
 
+  // Relay events published by processes that hold no sockets of their own —
+  // chiefly the standalone resume worker. See socket/bridge.js.
+  subscribeSocketBridge(io);
+
   return io;
 }
 
@@ -100,6 +105,17 @@ export function getIO() {
 }
 
 // ── Emit helpers ────────────────────────────────────────────────────────
+//
+// Each helper emits directly when this process owns the Socket.io server, and
+// otherwise hands the event to the Redis bridge for the HTTP server to relay.
+// That second path is what the standalone resume worker takes: it has no `io`,
+// so before the bridge existed every emit here threw and the update never
+// reached the browser (the caller logged it as debug and moved on).
+
+/** True when this process holds the Socket.io server. */
+function hasLocalIO() {
+  return Boolean(io);
+}
 
 /**
  * Emit an event to a specific user.
@@ -108,7 +124,8 @@ export function getIO() {
  * @param {*} data
  */
 export function emitToUser(userId, event, data) {
-  getIO().to(`user:${userId}`).emit(event, data);
+  if (hasLocalIO()) return void io.to(`user:${userId}`).emit(event, data);
+  publishSocketEvent('user', userId, event, data);
 }
 
 /**
@@ -118,7 +135,8 @@ export function emitToUser(userId, event, data) {
  * @param {*} data
  */
 export function emitToRole(role, event, data) {
-  getIO().to(`role:${role}`).emit(event, data);
+  if (hasLocalIO()) return void io.to(`role:${role}`).emit(event, data);
+  publishSocketEvent('role', role, event, data);
 }
 
 /**
@@ -128,7 +146,8 @@ export function emitToRole(role, event, data) {
  * @param {*} data
  */
 export function emitToMRF(mrfId, event, data) {
-  getIO().to(`mrf:${mrfId}`).emit(event, data);
+  if (hasLocalIO()) return void io.to(`mrf:${mrfId}`).emit(event, data);
+  publishSocketEvent('mrf', mrfId, event, data);
 }
 
 /**
@@ -137,5 +156,6 @@ export function emitToMRF(mrfId, event, data) {
  * @param {*} data
  */
 export function broadcast(event, data) {
-  getIO().emit(event, data);
+  if (hasLocalIO()) return void io.emit(event, data);
+  publishSocketEvent('broadcast', null, event, data);
 }

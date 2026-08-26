@@ -1,2 +1,13 @@
 # Internal fix/change notes — not part of the shipped codebase
 Fixes/
+dump.rdb
+.claude/
+Excel/
+
+# Pre-test-pass database snapshots (pg_dump). Real candidate data — never commit.
+.test-snapshots/
+*.dump
+
+# Raw test-run logs from the Phase 3 pass (backend/test-results/). Regenerable,
+# noisy, and they echo candidate rows out of the staging database.
+test-results/

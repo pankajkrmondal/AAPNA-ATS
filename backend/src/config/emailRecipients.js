@@ -41,12 +41,18 @@ import config from './index.js';
 const DEFAULTS = {
   // Admin-initiated password/credential update. Prod -> target user.
   userCredentialUpdate: { to: '', cc: '', dynamic: true },
+  // Forgot-password reset link. Always -> the account owner (never redirected).
+  passwordReset: { to: '', cc: '', dynamic: true },
   // Candidate-facing welcome email (1.1.1 / 1.1.4 welcome). Prod -> candidate.
   welcome: { to: '', cc: '', dynamic: true },
   // Missing JD/data collection email to the candidate. Prod -> candidate.
   missingData: { to: '', cc: '', dynamic: true },
   // Internal alert: resume processing failure ("Error Alert — Resume Processing").
   resumeErrorAlert: { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '', dynamic: false },
+  // Internal alert: any 5xx backend error reaching the global error handler.
+  backendErrorAlert: { to: 'hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '', dynamic: false },
+  // Internal alert: candidate-ranking (Cohere Rerank) API failure during screening search.
+  rerankApiAlert: { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal alert: candidate email id was null/missing ("Email ID Null Alert").
   missingEmailAlert: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Internal duplicate-resume alert to HR/admin.
@@ -74,10 +80,43 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
+  // Same two notifications, but to the interview PANEL rather than the
+  // candidate. Separate keys so the panel side can keep its real recipients in
+  // every environment (see OPERATOR_ADDRESSED below) while the candidate side
+  // stays redirected on staging.
+  interviewScheduledPanel: { to: '', cc: '', dynamic: true },
+  interviewCancelledPanel: { to: '', cc: '', dynamic: true },
+  // Interviewer scorecard link, sent once an interview is confirmed held.
+  // Prod -> the interviewer/HR/CEO mailbox (dynamic); non-prod -> test inbox.
+  scorecardInvite: { to: '', cc: '', dynamic: true },
+  // "Please confirm this interview happened" nudge from the occurrence sweep.
+  // Prod -> recruiter/interviewer (dynamic); non-prod -> test inbox.
+  occurrenceNudge: { to: '', cc: '', dynamic: true },
+  // Daily "this offer is still awaiting internal approval" reminder (Q26).
+  // Internal only — goes to the recruitment mailbox, never the candidate.
+  offerApprovalNudge: { to: '', cc: '', dynamic: true },
+  // Document-collection request / reminder / re-request. Prod -> candidate.
+  // NO vendor cc, ever — document-stage mail never reaches a vendor (Q5).
+  documentRequest: { to: '', cc: '', dynamic: true },
   // Screening status -> Rejected notification to candidate. Prod -> candidate.
   rejection: { to: '', cc: '', dynamic: true },
   // Screening status -> On Hold notification to candidate. Prod -> candidate.
   onHold: { to: '', cc: '', dynamic: true },
+  // Recruiter's manual reply from the ATS conversation view. Prod -> the
+  // original counterpart (candidate); non-prod -> test inbox like every other
+  // candidate-facing flow.
+  manualReply: { to: '', cc: '', dynamic: true },
+  // Phase 3 stage engine (Module 1): every stage×outcome notification and the
+  // ad-hoc per-candidate override, dispatched by stageNotification.service.js.
+  // Prod -> candidate. No vendor cc: the vendor half of Q5 is its own send
+  // under `vendorStatus` below, so the candidate's body has no path to a vendor.
+  stageOutcome: { to: '', cc: '', dynamic: true },
+  // Phase 3 M6: the vendor's status-only notification, dispatched by
+  // vendorNotification.service.js. Prod -> the owning vendor; non-prod -> test
+  // inbox like every other external recipient. Deliberately NOT in
+  // OPERATOR_ADDRESSED: a vendor is an outside party who never asked to be
+  // mailed from staging.
+  vendorStatus: { to: '', cc: '', dynamic: true },
 };
 
 /** Active recipient map; starts from DEFAULTS and is overlaid with DB values. */
@@ -92,10 +131,32 @@ for (const [key, val] of Object.entries(DEFAULTS)) {
  * and resolve exactly as in production (static `to`/`cc`, or the runtime
  * recipient for dynamic flows):
  *   - resumeErrorAlert: internal failure alert that ops must always see.
+ *   - rerankApiAlert: internal failure alert for Cohere Rerank API errors.
+ *   - backendErrorAlert: internal failure alert for 5xx backend errors —
+ *     must always reach real developer inboxes, including on staging, since
+ *     that's precisely where this class of bug is caught.
  *   - userCredentialUpdate: account credentials / password changes must go to
  *     the affected user's own inbox in every environment.
+ *   - passwordReset: forgot-password links are only useful in the account
+ *     owner's own inbox.
  */
-const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'userCredentialUpdate']);
+const NEVER_REDIRECT = new Set(['resumeErrorAlert', 'rerankApiAlert', 'backendErrorAlert', 'userCredentialUpdate', 'passwordReset']);
+
+/**
+ * Flows whose recipient is an address an ATS operator deliberately typed in
+ * during the action itself — the interview panel entered in the Schedule /
+ * Reschedule modal, and the scorecard/confirmation links that follow from it.
+ *
+ * These also bypass the test-inbox redirect, but for a different reason than
+ * NEVER_REDIRECT above (which is about internal alerts and account security).
+ * Here the point is that redirecting would defeat the action: whoever books an
+ * interview on staging is naming the mailbox that should receive the invite,
+ * so sending it to a generic test inbox instead makes the round-trip
+ * unverifiable. The candidate side of the very same booking is NOT in this set
+ * — a candidate never asks to be emailed, so they stay protected by the
+ * redirect on staging.
+ */
+const OPERATOR_ADDRESSED = new Set(['interviewScheduledPanel', 'interviewCancelledPanel', 'scorecardInvite', 'occurrenceNudge']);
 
 let loaded = false;
 
@@ -168,9 +229,11 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
   }
 
   // Non-production: redirect everything to the internal test inbox, no cc.
-  // Exception: NEVER_REDIRECT flows (internal failure alerts) always go to
-  // their configured recipients regardless of environment / redirect flag.
-  if (config.email.redirectInNonProd && !NEVER_REDIRECT.has(flowKey)) {
+  // Exceptions: NEVER_REDIRECT (internal failure alerts / account security) and
+  // OPERATOR_ADDRESSED (an address the operator typed in for this very action)
+  // always reach their configured recipients regardless of environment.
+  const bypassRedirect = NEVER_REDIRECT.has(flowKey) || OPERATOR_ADDRESSED.has(flowKey);
+  if (config.email.redirectInNonProd && !bypassRedirect) {
     return { to: config.email.testRecipients, cc: '' };
   }
 
@@ -183,4 +246,82 @@ export function resolveRecipients(flowKey, dynamicValue = '') {
   return { to: to || '', cc: entry.cc || '' };
 }
 
-export default { resolveRecipients, loadEmailRecipients, reloadEmailRecipients };
+/**
+ * Every known flow key with its current routing, for the admin Flow Keys screen
+ * (M6, 2026-08-12).
+ *
+ * These rows have always been editable in principle — `loadEmailRecipients()`
+ * reads them from rpa_settings — but only by someone with a SQL client, since
+ * no API or screen ever exposed them. That made "who receives the MRF approval
+ * request" a developer task, and it is the third leg of RT's "changeable
+ * without development" ask alongside templates and pipeline config.
+ *
+ * `dynamic` and `redirectExempt` are reported so the screen can explain why a
+ * static `to` is empty (it is resolved per-send) and why some flows still reach
+ * real inboxes on staging — both look like misconfiguration otherwise.
+ *
+ * @returns {Array<{ flowKey, to, cc, dynamic, redirectExempt }>}
+ */
+export function describeFlowKeys() {
+  return Object.entries(recipients)
+    .map(([flowKey, entry]) => ({
+      flowKey,
+      to: entry.to || '',
+      cc: entry.cc || '',
+      dynamic: !!entry.dynamic,
+      redirectExempt: NEVER_REDIRECT.has(flowKey) || OPERATOR_ADDRESSED.has(flowKey),
+    }))
+    .sort((a, b) => a.flowKey.localeCompare(b.flowKey));
+}
+
+/** True when `flowKey` is one this app actually sends under. */
+export function isKnownFlowKey(flowKey) {
+  return Object.prototype.hasOwnProperty.call(recipients, flowKey);
+}
+
+/**
+ * The candidate's address to hand to a system that will email them ITSELF,
+ * substituted with the internal test inbox outside production.
+ *
+ * resolveRecipients() only protects mail WE send through Graph. It cannot cover
+ * an address we hand to someone else — a calendar attendee list (Outlook sends
+ * the invite) or an external platform's API payload (Zeko emails its own
+ * interview invitation). Those bypass every mail guard we own, so a real
+ * candidate would receive a genuine invite from local or staging.
+ *
+ * Use this at exactly those hand-off points. The interview PANEL is deliberately
+ * NOT substituted: those addresses are typed in per booking by whoever is
+ * scheduling, so they are meant to be reached (the same reasoning as
+ * OPERATOR_ADDRESSED above).
+ *
+ * @param {string} candidateEmail - the real candidate address
+ * @param {string} [context] - short label for the log line, e.g. 'zeko:schedule'
+ * @returns {string} the address safe to hand over in THIS environment
+ */
+export function nonProdSafeCandidateEmail(candidateEmail, context = '') {
+  if (!config.email.redirectInNonProd) return candidateEmail;
+
+  const testInbox = (config.email.testRecipients || '').split(',')[0].trim();
+  // FAIL CLOSED. If the redirect is on but no test inbox is configured, there is
+  // no safe address to hand over — and returning the candidate's real one would
+  // do exactly what this function exists to prevent, silently. A failed booking
+  // is recoverable; a real candidate invited from staging is not.
+  //
+  // EMAIL_STAGING_RECIPIENTS has a hard-coded default in config/index.js, so
+  // reaching this needs someone to have explicitly blanked it. That is a
+  // misconfiguration worth stopping on rather than working around.
+  if (!testInbox) {
+    throw new Error(
+      `Refusing to hand over a candidate address${context ? ` [${context}]` : ''}: recipient redirect is ON but EMAIL_STAGING_RECIPIENTS is empty, so there is no safe substitute address.`
+    );
+  }
+
+  if (candidateEmail && candidateEmail !== testInbox) {
+    logger.info(
+      `Non-prod guard${context ? ` [${context}]` : ''}: candidate address "${candidateEmail}" substituted with "${testInbox}" before hand-off.`
+    );
+  }
+  return testInbox;
+}
+
+export default { resolveRecipients, loadEmailRecipients, reloadEmailRecipients, nonProdSafeCandidateEmail };

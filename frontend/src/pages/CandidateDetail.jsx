@@ -17,12 +17,13 @@ import {
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import candidateService from '../services/candidateService';
 import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
+import usePointerSpotlight from '../hooks/usePointerSpotlight';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -64,9 +65,19 @@ export default function CandidateDetail() {
 
   const data = candidate || MOCK_CANDIDATE;
 
-  if (isLoading) {
-    return <LoadingSkeleton type="detail" />;
-  }
+  /** Cursor-tracked spotlight for this page's `.spotlight` surface (the header
+   *  card), same delegated listener the dashboard uses.
+   *
+   *  LOAD-BEARING: the loading branch below must return the SAME root element —
+   *  `<div className="stagger-children" ref={rootRef}>` — as the loaded branch.
+   *  The hook attaches its `pointermove` listener to `rootRef.current` once and
+   *  only re-runs when the ref identity changes, never when the DOM node behind
+   *  it does. Two identical roots at the same position let React reuse the node
+   *  across the loading→loaded flip, so the listener survives. Return a Fragment
+   *  or a different element type from either branch and the node is swapped out,
+   *  leaving the listener bound to a detached div and the spotlight dead. */
+  const rootRef = useRef(null);
+  usePointerSpotlight(rootRef);
 
   // Custom validation helpers
   const contactNumberValidator = (_, value) => {
@@ -173,7 +184,7 @@ export default function CandidateDetail() {
       setEditOpen(false);
       queryClient.invalidateQueries({ queryKey: ['candidate', id] });
     } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to update candidate details.');
+      message.error(err.response?.data?.message || err?.message || 'Failed to update candidate details.');
     } finally {
       setUpdating(false);
     }
@@ -218,7 +229,10 @@ export default function CandidateDetail() {
             <Descriptions.Item label="Education">{data.education}</Descriptions.Item>
           </Descriptions>
 
-          <Card title="Professional Summary" size="small" bordered={false} style={{ background: 'var(--gold-subtle)', borderRadius: 12 }}>
+          {/* Tint and radius live in CSS (.cd-summary), not inline: under Design V2
+              this callout is restyled onto the glass tier, and an inline style
+              cannot be overridden by a stylesheet. */}
+          <Card title="Professional Summary" size="small" bordered={false} className="cd-summary">
             <Paragraph style={{ margin: 0, fontSize: 14, lineHeight: 1.8 }}>
               {data.summary || 'No professional summary available.'}
             </Paragraph>
@@ -292,8 +306,17 @@ export default function CandidateDetail() {
     },
   ];
 
+  if (isLoading) {
+    // Rendered inside the same root as the loaded view — see the rootRef note above.
+    return (
+      <div className="stagger-children" ref={rootRef}>
+        <LoadingSkeleton type="detail" />
+      </div>
+    );
+  }
+
   return (
-    <div className="stagger-children">
+    <div className="stagger-children" ref={rootRef}>
       {/* Back button */}
       <Button
         type="text"
@@ -310,10 +333,11 @@ export default function CandidateDetail() {
         {fromPage === 'analytics' ? 'Back to Analytics' : 'Back to Candidates'}
       </Button>
 
-      {/* Header card */}
+      {/* Header card — this page's hero-analog, so it carries the cursor
+          spotlight the dashboard puts on its one feature surface. */}
       <Card
         bordered={false}
-        className="glass-card"
+        className="glass-card spotlight"
         style={{ marginBottom: 24 }}
         styles={{ body: { padding: 28 } }}
       >
@@ -362,7 +386,7 @@ export default function CandidateDetail() {
             <Button 
               type="primary" 
               icon={<EditOutlined />} 
-              style={{ borderRadius: 8, background: '#7a922e', borderColor: '#7a922e' }}
+              style={{ borderRadius: 8 }}
               onClick={handleOpenEdit}
             >
               Edit
@@ -383,26 +407,26 @@ export default function CandidateDetail() {
         onOk={handleSaveEdit}
         onCancel={() => setEditOpen(false)}
         okText="Update Candidate"
-        okButtonProps={{ style: { background: '#7a922e', borderColor: '#7a922e' }, loading: updating }}
+        okButtonProps={{ loading: updating }}
         width={700}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
         <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
           {/* Section 1: Personal Information */}
           <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE NAME</span>} name="name">
-                <Input readOnly style={{ background: '#f3f4f6', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE NAME</span>} name="name">
+                <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE EMAIL</span>} name="email">
-                <Input readOnly style={{ background: '#f3f4f6', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
+                <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
               </Form.Item>
             </Col>
           </Row>
@@ -410,7 +434,7 @@ export default function CandidateDetail() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CANDIDATE CONTACT NUMBER</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
                 name="phone"
                 rules={[{ validator: contactNumberValidator }]}
               >
@@ -419,7 +443,7 @@ export default function CandidateDetail() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CURRENT LOCATION</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} 
                 name="location"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -430,14 +454,14 @@ export default function CandidateDetail() {
 
           {/* Section 2: Education & Experience */}
           <div style={{ marginBottom: 8, marginTop: 16 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education & Experience</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education & Experience</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>HIGHEST QUALIFICATION</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HIGHEST QUALIFICATION</span>} 
                 name="education"
                 rules={[{ validator: nonNumericValidator }]}
               >
@@ -446,7 +470,7 @@ export default function CandidateDetail() {
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>TOTAL EXPERIENCE (YEARS)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOTAL EXPERIENCE (YEARS)</span>} 
                 name="experience"
                 rules={[{ validator: experienceValidator }]}
               >
@@ -457,18 +481,18 @@ export default function CandidateDetail() {
 
           {/* Section 3: Company & CTC */}
           <div style={{ marginBottom: 8, marginTop: 16 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Company & Salary Details</span>
-            <div style={{ height: 1, background: '#e5e7eb', marginTop: 6 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Company & Salary Details</span>
+            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: '#4b5563' }}>CURRENT COMPANY NAME</span>} name={['currentCompany', 'Name']}>
+              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT COMPANY NAME</span>} name={['currentCompany', 'Name']}>
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: '#4b5563' }}>CURRENT COMPANY WEBSITE</span>} name={['currentCompany', 'Website']}>
+              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT COMPANY WEBSITE</span>} name={['currentCompany', 'Website']}>
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
             </Col>
@@ -477,7 +501,7 @@ export default function CandidateDetail() {
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>EXPECTED CTC (LPA)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>EXPECTED CTC (LPA)</span>} 
                 name="expectedCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
@@ -486,7 +510,7 @@ export default function CandidateDetail() {
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>CURRENT CTC (LPA)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT CTC (LPA)</span>} 
                 name="currentCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
@@ -495,7 +519,7 @@ export default function CandidateDetail() {
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: '#4b5563' }}>NOTICE PERIOD (DAYS)</span>} 
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>NOTICE PERIOD (DAYS)</span>} 
                 name="noticePeriod"
                 rules={[{ validator: noticePeriodValidator }]}
               >

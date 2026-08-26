@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { Card, Typography, Tooltip } from 'antd';
 import { ArrowDownOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { conversionStages, medianTimeToHire } from '../../utils/dashboardAggregations';
+import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
 
@@ -34,18 +35,23 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Conversion Funnel</Title>
+          {/* The one widget on the page with a definition in the registry that it never
+              rendered — so the only card whose title you could not hover for an
+              explanation was the one describing the whole hiring process. */}
+          <Title level={5} style={{ margin: 0 }}>
+            Conversion Funnel <MetricInfo metric="conversionFunnel" size={12} />
+          </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>Sourced → hired conversion</Text>
         </div>
         <div className="dash-funnel-metrics">
-          <Tooltip title="Share of sourced candidates who reached hired.">
+          <Tooltip title={`${overall}% of everyone sourced has gone all the way through to hired.`}>
             <div className="dash-card-metric">
               <span className="dash-card-metric__num">{overall}%</span>
               <span className="dash-card-metric__cap">overall</span>
             </div>
           </Tooltip>
           {tth !== null && (
-            <Tooltip title="Median days from shortlist to hire (from interview pipeline).">
+            <Tooltip title={`Half of your hires took less than ${tth} day${tth === 1 ? '' : 's'} from being shortlisted to joining, and half took longer. Measured only on candidates who have completed the journey.`}>
               <div className="dash-card-metric">
                 <span className="dash-card-metric__num"><ClockCircleOutlined /> {tth}d</span>
                 <span className="dash-card-metric__cap">time-to-hire</span>
@@ -60,7 +66,17 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
           const pct = Math.round((stage.value / maxVal) * 100);
           return (
             <div key={stage.key}>
-              <Tooltip title={STAGE_DESC[stage.key]} placement="top">
+              <Tooltip
+                title={(
+                  <span>
+                    {STAGE_DESC[stage.key]}
+                    <br />
+                    <strong>{stage.value.toLocaleString()}</strong> candidate{stage.value === 1 ? '' : 's'}
+                    {idx > 0 && ` — ${stage.ofTop}% of everyone sourced`}
+                  </span>
+                )}
+                placement="top"
+              >
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <Text style={{ fontSize: 13, fontWeight: 500 }}>{stage.label}</Text>
@@ -106,10 +122,15 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
 
               {/* Step conversion between this stage and the next */}
               {idx < stages.length - 1 && (
-                <div className="dash-funnel-step">
-                  <ArrowDownOutlined />
-                  <span>{stages[idx + 1].stepPct}% advance</span>
-                </div>
+                <Tooltip
+                  title={`${stages[idx + 1].stepPct}% of the ${stage.value.toLocaleString()} at ${stage.label} moved on to ${stages[idx + 1].label}. The rest are still at this stage or did not progress.`}
+                  placement="right"
+                >
+                  <div className="dash-funnel-step">
+                    <ArrowDownOutlined />
+                    <span>{stages[idx + 1].stepPct}% advance</span>
+                  </div>
+                </Tooltip>
               )}
             </div>
           );

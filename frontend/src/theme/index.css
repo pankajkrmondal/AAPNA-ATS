@@ -4,24 +4,54 @@
    and dark mode support.
    ============================================================ */
 
-/* ----- Design Token Custom Properties ----- */
-:root {
-  /* Brand Palette */
-  --ink: #f7f6f3;
-  --gold: #7a922e;
-  --ink-2: #ffffff;
+/* ----- Design Token Custom Properties -----
+   Also matches [data-theme='light'] so a wrapper element can re-scope the
+   tokens back to light inside a dark page (used by ForceLight for public
+   token-link pages). */
+:root, [data-theme='light'] {
+  /* ----- Brand axis (per-organization theming) -----
+     BrandProvider writes `--brand-*-light` / `--brand-*-dark` pairs inline on
+     <html> (see theme/brands.js). This block picks the light half; the
+     [data-theme='dark'] block picks the dark half. Doing the mode selection HERE
+     rather than in JS is what keeps <ForceLight> working: those public token-link
+     pages re-scope via [data-theme='light'], and an inline mode-specific value on
+     :root would override them.
+
+     The fallbacks after each var() are the pre-brand hardcoded values, so the app
+     renders identically if BrandProvider never mounts. */
+  --brand-primary: var(--brand-primary-light, #7a922e);
+  --brand-primary-hover: var(--brand-primary-hover-light, #92a63c);
+  --brand-primary-active: var(--brand-primary-active-light, #5f7424);
+  --brand-accent: var(--brand-accent-light, #92a339);
+  --brand-primary-bg: var(--brand-primary-bg-light, #eef3da);
+  --brand-canvas: var(--brand-canvas-light, #f7f6f3);
+  --brand-canvas-deep: var(--brand-canvas-deep-light, #fbfcf7);
+  --brand-surface: var(--brand-surface-light, #ffffff);
+
+  /* Brand Palette — legacy names, kept because they are referenced in hundreds of
+     places across this file and in inline styles on nearly every page. Aliasing
+     them onto the brand axis means a tenant theme repaints the whole app without a
+     repo-wide rename. */
+  --ink: var(--brand-canvas);
+  --gold: var(--brand-primary);
+  --ink-2: var(--brand-surface);
   --ink-3: #eef0ea;
   --ink-4: #f3f5ee;
-  --gold-light: #92a63c;
+  --gold-light: var(--brand-primary-hover);
   --text: #2b2b2b;
   --text-2: #5f6664;
   --text-3: #8b938a;
   --green: #4a7c59;
   --red: #c0392b;
+  /* Conversations / email-thread accent. Sat as a lone `#7c3aed` on the
+     Candidates action column with no dark-mode pair, so it stayed a deep violet
+     against a dark ground where it barely read. Semantic, not brand: it does not
+     move when a tenant swaps their palette. */
+  --violet: #7c3aed;
 
   /* Extended Palette */
-  --gold-bg: #eef3da;
-  --gold-subtle: rgba(122, 146, 46, 0.06);
+  --gold-bg: var(--brand-primary-bg);
+  --gold-subtle: color-mix(in srgb, var(--brand-primary) 6%, transparent);
   --border: #dde1df;
   --border-light: #eaebe8;
 
@@ -32,7 +62,7 @@
   --shadow-md: 0 4px 12px rgba(16, 24, 20, 0.08);
   --shadow-lg: 0 10px 28px rgba(16, 24, 20, 0.10);
   --shadow-xl: 0 20px 48px rgba(16, 24, 20, 0.14);
-  --glow-accent: 0 4px 14px rgba(122, 146, 46, 0.30); /* primary buttons only */
+  --glow-accent: 0 4px 14px color-mix(in srgb, var(--brand-primary) 30%, transparent); /* primary buttons only */
 
   /* Typography */
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -45,9 +75,66 @@
   --glass-shadow: 0 8px 32px rgba(16, 24, 20, 0.10);
   --glass-blur: blur(16px);
 
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #7a922e 0%, #92a63c 50%, #869c34 100%);
-  --gradient-hero: linear-gradient(135deg, #f7f6f3 0%, #eef3da 50%, #f7f6f3 100%);
+  /* ----- Design V2: Aurora Glass -----
+     Three glass tiers, because a data table and a hero want opposite things.
+     Only tier 1 carries backdrop-filter, and it is the sticky chrome. Tiers 2–3
+     get their depth from translucency, the rim, the sheen and layered shadow —
+     blur adds nothing visible over a soft-gradient backdrop. See the note above
+     the surface primitives in aurora-glass.css for the profiling behind that. */
+  --glass-1-bg: rgba(255, 255, 255, 0.55);   /* chrome: sidebar, topbar */
+  --glass-1-blur: blur(34px) saturate(220%);
+  --glass-1-border: rgba(255, 255, 255, 0.55);
+  --glass-2-bg: rgba(255, 255, 255, 0.62);   /* features: hero, KPI, widgets */
+  --glass-2-border: rgba(255, 255, 255, 0.62);
+  --glass-3-bg: rgba(255, 255, 255, 0.90);   /* data: tables, dense lists */
+  --glass-3-border: rgba(255, 255, 255, 0.70);
+
+  /* Tier 4 — overlays (modals, drawers, dropdowns, popovers, tooltips).
+     More opaque than tier 2 on purpose: a dialog has to stay readable over
+     arbitrary page content, and unlike tiers 2–3 it is transient and sits above
+     everything, so it is the one content-side surface where a real blur both
+     reads and costs nothing on scroll. The scrim replaces AntD's flat black
+     mask with a brand-hued one so the page behind recedes rather than dims. */
+  --glass-4-bg: rgba(255, 255, 255, 0.86);
+  --glass-4-border: rgba(255, 255, 255, 0.72);
+  --glass-4-blur: blur(22px) saturate(180%);
+  --glass-4-scrim: rgb(var(--shade-rgb) / 0.30);
+  --radius-overlay: 18px;
+
+  /* The three details that make glass read as a physical pane rather than a
+     transparent rectangle: a top edge that catches light, a diagonal specular
+     sheen, and a gradient rim that is bright where light lands, brand-tinted
+     where it falls away. */
+  --glass-hilite: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -14px 24px -16px rgb(var(--shade-rgb) / 0.14);
+  --glass-specular: linear-gradient(135deg, rgba(255, 255, 255, 0.50) 0%, rgba(255, 255, 255, 0.06) 34%, transparent 46%);
+  --glass-ring: linear-gradient(140deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.14) 40%, color-mix(in srgb, var(--brand-primary) 74%, transparent) 100%);
+  --spotlight-tint: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+
+  /* Layered depth — ambient + direct + contact. A single shadow always reads
+     flat no matter how large you make it. */
+  --shade-rgb: var(--shade-rgb-light, 86 104 52);
+  --depth-1: 0 1px 2px rgb(var(--shade-rgb) / 0.07), 0 3px 8px rgb(var(--shade-rgb) / 0.08);
+  --depth-2: 0 2px 4px rgb(var(--shade-rgb) / 0.10), 0 18px 42px -16px rgb(var(--shade-rgb) / 0.34);
+  --depth-3: 0 2px 6px rgb(var(--shade-rgb) / 0.13), 0 30px 60px -18px rgb(var(--shade-rgb) / 0.42);
+
+  /* Aurora field — brand-owned, so a tenant theme repaints the ambient canvas along
+     with the palette. For AAPNA: olive leads, one analogous companion (teal-forest),
+     one warm accent. Alpha stays low — this sits under body text. Fallbacks are the
+     AAPNA values, so the canvas is correct even if BrandProvider never mounts. */
+  --aurora-1: var(--aurora-1-light, rgba(122, 146, 46, 0.13));
+  --aurora-2: var(--aurora-2-light, rgba(146, 163, 57, 0.11));
+  --aurora-3: var(--aurora-3-light, rgba(146, 163, 57, 0.08));
+  --aurora-4: var(--aurora-4-light, rgba(122, 146, 46, 0.06));
+  --aurora-opacity: var(--aurora-opacity-light, 1);
+  --watermark-color: var(--brand-primary);
+  --watermark-opacity: var(--watermark-opacity-light, 0.06);
+  --grain-opacity: 0.030;
+  --grain-blend: multiply;
+
+  /* Gradients — brand-derived so primary buttons, avatars and the active nav rail
+     follow a tenant theme. Built from the brand tokens rather than fixed hexes. */
+  --gradient-primary: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-hover) 50%, var(--brand-primary-active) 100%);
+  --gradient-hero: linear-gradient(135deg, var(--brand-canvas) 0%, var(--brand-primary-bg) 50%, var(--brand-canvas) 100%);
   --gradient-card: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(247,246,243,0.7) 100%);
   --gradient-sidebar: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(247,246,243,0.9) 100%);
 
@@ -75,6 +162,30 @@
   --space-7: 48px;
   --space-8: 64px;
 
+  /* ----- Density scale (Aurora Glass rollout, Phase 2) -----
+     Control heights, table row padding and card padding were being chosen per
+     page, so the same table rendered at three different row heights depending
+     on which screen you opened. Three steps, one meaning each:
+
+       compact  — dense data the user scans (tables inside a tier-3 card)
+       default  — everything else
+       relaxed  — feature surfaces with room to breathe (hero, KPI cards)
+
+     Theme-independent (a row is not taller in dark mode), so these live only
+     here and are NOT repeated in the [data-theme='dark'] block. */
+  --control-h-compact: 28px;
+  --control-h: 36px;
+  --control-h-relaxed: 44px;
+
+  --row-py-compact: 8px;    /* table cell block padding */
+  --row-py: 12px;
+  --row-py-relaxed: 16px;
+  --row-px: 16px;           /* table cell inline padding, all densities */
+
+  --card-pad-compact: 16px;
+  --card-pad: 20px;
+  --card-pad-relaxed: 28px;
+
   /* Layout */
   --sidebar-width: 260px;
   --sidebar-collapsed: 80px;
@@ -82,24 +193,138 @@
   --border-radius: var(--radius-sm);
   --border-radius-lg: var(--radius-lg);
   --border-radius-xl: 16px;
+
+  /* AntD-token-named aliases — referenced by inline styles and rules below.
+     Values must mirror src/theme/themeConfig.js lightTheme tokens. */
+  --colorBgContainer: #ffffff;
+  --colorBgElevated: #ffffff;
+  --colorBgLayout: #f7f6f3;
+
+  /* Admin portal background */
+  --admin-bg: #f2f4f0;
+
+  /* Informational banner (blue) */
+  --info-bg: #eff6ff;
+  --info-border: #bfdbfe;
+  --info-text: #1e3a8a;
+
+  /* Aliases that auto-flip with the theme (legacy names used in pages) */
+  --text-secondary: var(--text-2);
+  --text-1: var(--text);
+  --color-primary: var(--gold);
+  --color-primary-bg: var(--gold-bg);
+  --olive: var(--gold);
+  --border-secondary: var(--border-light);
+  --box-shadow-secondary: var(--shadow-lg);
+
+  /* Accent tones with theme-specific values */
+  --warning: #d4a017;
+  --gold-dark: #5a6e1f;
+  /* Filled rating stars. Not the brand — a star reads as gold across every app
+     that has ever drawn one, so it stays yellow rather than following the org's
+     primary. Tokenised only so dark mode can pull it back from glaring. */
+  --star: #fadb14;
+
+  /* ----- Pipeline status + stage palette (Aurora Glass rollout, Phase 4) -----
+     The board encodes candidate status in a card's leading border and stage type
+     in a column's top rule. Both were raw hex literals in Pipeline.jsx (and
+     again in the prototype), which meant they could not be tuned for dark mode
+     and did not exist as a named idea anywhere.
+
+     SEMANTIC, NOT BRAND: these must not follow a tenant's palette. "Rejected" is
+     red because it is rejected, and a tenant whose brand is red would otherwise
+     turn every card's status the same colour. Only `--stage-interview` overlaps
+     the brand, and it is fixed here for the same reason.
+
+     Dark-mode values are lifted, not the same hex at lower alpha: a 3px rule at
+     these light-mode values disappears against the dark board. */
+  --status-closed: #c9cdc7;    /* final_outcome set — the journey is over */
+  --status-rejected: var(--red);
+  --status-hold: #d4a017;
+  --status-approved: #27ae60;
+  --status-active: #5b7ff0;    /* invited / scheduled / in progress */
+
+  --stage-zeko: #2f54eb;
+  --stage-zeko-2: #5b7ff0;
+  --stage-manual: #13c2c2;
+  --stage-manual-2: #36d6d6;
+  --stage-interview: #7a922e;
+  --stage-interview-2: #92a63c;
+  --stage-document: #eb2f96;
+  --stage-document-2: #f062b4;
+  --stage-offer: #4a7c59;
+  --stage-offer-2: #6ba57d;
+
+  /* ----- KPI accent palette (Phase 5) -----
+     The four upload/vendor screens each re-declared the same four accents as
+     hex literals (colour + tint + gradient, twelve values per screen). Named
+     once here. Semantic like the status palette: blue is "in flight", green is
+     "done", red is "failed" — they do not follow a tenant's brand.
+     `--kpi-a-*` is the exception, and is aliased to the brand deliberately. */
+  --kpi-a: var(--brand-primary);
+  --kpi-a-2: var(--brand-primary-hover);
+  --kpi-a-tint: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  --kpi-b: #2f6f9f;
+  --kpi-b-2: #4f93c4;
+  --kpi-b-tint: rgba(47, 111, 159, 0.12);
+  --kpi-c: #4a7c59;
+  --kpi-c-2: #6aa67c;
+  --kpi-c-tint: rgba(74, 124, 89, 0.12);
+  --kpi-d: #c0392b;
+  --kpi-d-2: #e0654f;
+  --kpi-d-tint: rgba(192, 57, 43, 0.12);
+  --kpi-e: #b6883a;
+  --kpi-e-2: #d2a85a;
+  --kpi-e-tint: rgba(182, 136, 58, 0.14);
+
+  /* Avatar palette — deterministic per name, so it only has to be distinguishable,
+     not meaningful. Six hues that stay apart at 28px. */
+  --avatar-1: #7a922e;
+  --avatar-2: #2f54eb;
+  --avatar-3: #13c2c2;
+  --avatar-4: #eb2f96;
+  --avatar-5: #d4a017;
+  --avatar-6: #4a7c59;
+
+  /* Semantic status colors for text/borders on tinted panels */
+  --color-primary-border: rgba(122, 146, 46, 0.35);
+  --warn-bg: #fff7e6;
+  --warn-border: #ffd591;
+  --warn-text: #ad6800;
+  --success-text: #237804;
+  --info-strong: #096dd9;
+
+  /* Full-screen loading overlay scrim */
+  --overlay-scrim: rgba(255, 255, 255, 0.45);
 }
 
 /* ----- Dark Mode ----- */
 [data-theme='dark'] {
-  --ink: #0a0e0c;
-  --gold: #a8c24a;
-  --ink-2: #121816;
+  /* Brand axis — dark half of the pairs BrandProvider emits. */
+  --brand-primary: var(--brand-primary-dark, #a8c24a);
+  --brand-primary-hover: var(--brand-primary-hover-dark, #bcd566);
+  --brand-primary-active: var(--brand-primary-active-dark, #94ad3f);
+  --brand-accent: var(--brand-accent-dark, #a8c24a);
+  --brand-primary-bg: var(--brand-primary-bg-dark, rgba(168, 194, 74, 0.12));
+  --brand-canvas: var(--brand-canvas-dark, #0a0e0c);
+  --brand-canvas-deep: var(--brand-canvas-deep-dark, #0a0e0c);
+  --brand-surface: var(--brand-surface-dark, #121816);
+
+  --ink: var(--brand-canvas);
+  --gold: var(--brand-primary);
+  --ink-2: var(--brand-surface);
   --ink-3: #1f2724;
   --ink-4: #262f2b;
-  --gold-light: #bcd566;
+  --gold-light: var(--brand-primary-hover);
   --text: #eaeae6;
   --text-2: #9ca5a2;
   --text-3: #6f7875;
   --green: #5a9c6e;
   --red: #e74c3c;
+  --violet: #a78bfa;   /* lifted for a dark ground; #7c3aed reads near-black there */
 
-  --gold-bg: rgba(168, 194, 74, 0.12);
-  --gold-subtle: rgba(168, 194, 74, 0.08);
+  --gold-bg: var(--brand-primary-bg);
+  --gold-subtle: color-mix(in srgb, var(--brand-primary) 8%, transparent);
   --border: #233330;
   --border-light: #1b2624;
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.18);
@@ -107,16 +332,134 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.35);
   --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.4);
-  --glow-accent: 0 4px 14px rgba(168, 194, 74, 0.30);
+  --glow-accent: 0 4px 14px color-mix(in srgb, var(--brand-primary) 30%, transparent);
 
   --glass-bg: rgba(18, 24, 22, 0.75);
   --glass-border: rgba(35, 51, 48, 0.5);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 
-  --gradient-primary: linear-gradient(135deg, #a8c24a 0%, #869c34 50%, #7a922e 100%);
-  --gradient-hero: linear-gradient(135deg, #0a0e0c 0%, #121816 50%, #0a0e0c 100%);
+  /* ----- Design V2: Aurora Glass (dark) -----
+     Dark glass is *more* transparent than light glass and can carry more blur:
+     there is no white haze to fight, so the aurora shows through as colour
+     instead of washing the surface out. */
+  --glass-1-bg: rgba(16, 22, 20, 0.62);
+  --glass-1-blur: blur(30px) saturate(150%);
+  --glass-1-border: rgba(168, 194, 74, 0.14);
+  --glass-2-bg: rgba(19, 26, 23, 0.72);
+  --glass-2-border: rgba(168, 194, 74, 0.16);
+  --glass-3-bg: rgba(18, 24, 22, 0.92);
+  --glass-3-border: rgba(35, 51, 48, 0.75);
+
+  /* Tier 4 (dark). Slightly *less* opaque than light's 0.86 for the same reason
+     tiers 1–3 are: there is no white haze to fight, so the aurora reads through
+     as colour rather than washing the pane out. The scrim goes near-black —
+     a brand-tinted scrim over an already-dark ground reads as a green fog. */
+  --glass-4-bg: rgba(21, 28, 25, 0.90);
+  --glass-4-border: rgba(168, 194, 74, 0.18);
+  --glass-4-blur: blur(24px) saturate(150%);
+  --glass-4-scrim: rgba(6, 10, 8, 0.62);
+
+  /* A 0.65-alpha white catch-light on a dark pane reads as cheap plastic —
+     dark glass gets a whisper of one, and leans on the brand-tinted rim instead. */
+  --glass-hilite: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --glass-specular: linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.02) 34%, transparent 46%);
+  --glass-ring: linear-gradient(140deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 42%, color-mix(in srgb, var(--brand-primary) 42%, transparent) 100%);
+  --spotlight-tint: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+
+  --depth-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 2px 6px rgba(0, 0, 0, 0.22);
+  --depth-2: 0 1px 2px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.28), 0 12px 32px rgba(0, 0, 0, 0.30);
+  --depth-3: 0 2px 4px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.34), 0 24px 56px rgba(0, 0, 0, 0.42);
+
+  --aurora-1: var(--aurora-1-dark, rgba(168, 194, 74, 0.32));
+  --aurora-2: var(--aurora-2-dark, rgba(53, 194, 173, 0.24));
+  --aurora-3: var(--aurora-3-dark, rgba(212, 160, 23, 0.16));
+  --aurora-4: var(--aurora-4-dark, rgba(122, 146, 46, 0.38));
+  --aurora-opacity: var(--aurora-opacity-dark, 0.92);
+  --watermark-color: var(--brand-primary);
+  --watermark-opacity: var(--watermark-opacity-dark, 0.075);
+  --grain-opacity: 0.055;
+  --grain-blend: overlay;
+
+  --gradient-primary: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-hover) 50%, var(--brand-primary-active) 100%);
+  --gradient-hero: linear-gradient(135deg, var(--brand-canvas) 0%, var(--brand-surface) 50%, var(--brand-canvas) 100%);
   --gradient-card: linear-gradient(145deg, rgba(18,24,22,0.95) 0%, rgba(25,32,28,0.85) 100%);
   --gradient-sidebar: linear-gradient(180deg, rgba(18,24,22,0.98) 0%, rgba(10,14,12,0.92) 100%);
+
+  /* AntD-token-named aliases — mirror themeConfig.js darkTheme tokens. */
+  --colorBgContainer: #121816;
+  --colorBgElevated: #1a221f;
+  --colorBgLayout: #0a0e0c;
+
+  /* Admin portal background */
+  --admin-bg: #0a0e0c;
+
+  /* Informational banner (blue) */
+  --info-bg: rgba(52, 152, 219, 0.10);
+  --info-border: rgba(52, 152, 219, 0.35);
+  --info-text: #9cc4e4;
+
+  /* Accent tones with theme-specific values */
+  --warning: #f0b429;
+  --gold-dark: #bcd566;
+  /* Slightly desaturated: full #fadb14 glares against a dark card. */
+  --star: #e8ca3a;
+
+  /* Pipeline status + stage palette (dark). Lifted values, not the light hexes
+     at lower alpha — a 3px status rule in #2f54eb is nearly invisible against
+     the dark board, and the point of the rule is that it is readable at a
+     glance across a column. `--status-rejected` follows `--red`, which already
+     has its own dark value. */
+  --status-closed: #565f5c;
+  /* Restated for readability beside the other four. It would resolve correctly
+     without this line — `var(--red)` is substituted at use time against this
+     block's `--red` — but a status palette that lists four of five colours
+     invites someone to assume the fifth was forgotten. */
+  --status-rejected: var(--red);
+  --status-hold: #f0b429;
+  --status-approved: #4ade80;
+  --status-active: #7c9cf5;
+
+  --stage-zeko: #5b7ff0;
+  --stage-zeko-2: #8ba6f5;
+  --stage-manual: #36d6d6;
+  --stage-manual-2: #6ee7e7;
+  --stage-interview: #a8c24a;
+  --stage-interview-2: #bcd566;
+  --stage-document: #f062b4;
+  --stage-document-2: #f78fcb;
+  --stage-offer: #6ba57d;
+  --stage-offer-2: #8ec49f;
+
+  /* KPI accents (dark). Lifted for the same reason as the status palette: these
+     are a 34px numeral and a 3px accent bar, and the light-mode values read as
+     muddy against a dark card. `--kpi-a` follows the brand, which already has
+     its own dark value, so it needs no override. */
+  --kpi-b: #5aa3d8;
+  --kpi-b-2: #7fbde8;
+  --kpi-c: #5a9c6e;
+  --kpi-c-2: #7fbd91;
+  --kpi-d: #e7614f;
+  --kpi-d-2: #f08a7b;
+  --kpi-e: #d2a85a;
+  --kpi-e-2: #e3c283;
+
+  --avatar-1: #a8c24a;
+  --avatar-2: #5b7ff0;
+  --avatar-3: #36d6d6;
+  --avatar-4: #f062b4;
+  --avatar-5: #f0b429;
+  --avatar-6: #6ba57d;
+
+  /* Semantic status colors for text/borders on tinted panels */
+  --color-primary-border: rgba(168, 194, 74, 0.45);
+  --warn-bg: rgba(240, 180, 41, 0.12);
+  --warn-border: rgba(240, 180, 41, 0.40);
+  --warn-text: #f0b429;
+  --success-text: #73d13d;
+  --info-strong: #69b1ff;
+
+  /* Full-screen loading overlay scrim */
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
 }
 
 /* ----- CSS Reset & Base ----- */
@@ -378,8 +721,8 @@ h1, h2, h3, h4, h5, h6,
     box-shadow 0.3s var(--ease-out-quint);
 }
 .upload-page .ant-upload-drag:hover {
-  border-color: #7a922e !important;
-  background: #eef3da !important;
+  border-color: var(--gold) !important;
+  background: var(--gold-bg) !important;
   transform: translateY(-2px);
   box-shadow: 0 10px 24px rgba(122, 146, 46, 0.14);
 }
@@ -411,7 +754,7 @@ h1, h2, h3, h4, h5, h6,
 
 /* Drag-active "release to upload" state (AntD adds .ant-upload-drag-hover on drag-over). */
 .upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover {
-  border-color: #7a922e !important;
+  border-color: var(--gold) !important;
   background: linear-gradient(135deg, #eef3da, #e3ecc8) !important;
   transform: scale(1.01);
   box-shadow: 0 14px 34px rgba(122, 146, 46, 0.22);
@@ -419,6 +762,13 @@ h1, h2, h3, h4, h5, h6,
 .upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover .upload-inbox-icon {
   transform: translateY(-4px) scale(1.16);
   color: #5e7325;
+}
+[data-theme='dark'] .upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover {
+  background: rgba(168, 194, 74, 0.14) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+}
+[data-theme='dark'] .upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover .upload-inbox-icon {
+  color: var(--gold-light);
 }
 
 /* Real-time indicator — understated muted pill with a soft pulsing halo. */
@@ -431,7 +781,7 @@ h1, h2, h3, h4, h5, h6,
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: #6b7a52;
+  color: var(--text-3);
   background: rgba(122, 146, 46, 0.07);
   border: 1px solid rgba(122, 146, 46, 0.18);
 }
@@ -592,9 +942,10 @@ h1, h2, h3, h4, h5, h6,
   right: -45px;
   top: -45px;
   border-radius: 50%;
-  background: var(--kpi-color, #7a922e);
+  /* Soft-edged radial tint — a solid disc reads as a hard box on dark cards. */
+  background: radial-gradient(circle, var(--kpi-color, var(--gold)) 0%, transparent 70%);
   opacity: 0.08;
-  filter: blur(4px);
+  filter: blur(18px);
   pointer-events: none;
   transition: opacity 0.45s ease, transform 0.55s var(--ease-out-quint);
 }
@@ -602,6 +953,10 @@ h1, h2, h3, h4, h5, h6,
 .kpi-card:hover .kpi-card__glow {
   opacity: 0.16;
   transform: scale(1.18);
+}
+
+[data-theme='dark'] .kpi-card__glow {
+  opacity: 0.12;
 }
 
 .kpi-card__icon {
@@ -644,6 +999,125 @@ h1, h2, h3, h4, h5, h6,
   color: var(--kpi-color, var(--text));
   font-variant-numeric: tabular-nums;
 }
+
+/* ----- Shared surface shells (Aurora Glass rollout, Phase 2) -------------
+   Two shapes were being repeated as inline style objects across pages. Inline
+   styles cannot be restyled by a stylesheet, so every one of them would have
+   become a flat slab stuck to the glass as its page converted (the "Failure A"
+   case in the rollout plan). Moved here with BYTE-IDENTICAL values, so nothing
+   moves by a pixel today and the `.ats-v2` rules can reach them tomorrow. */
+
+/* Was PANEL_STYLE, duplicated verbatim in pages/Analytics.jsx and
+   components/email/DeliveryMonitoring.jsx. */
+.panel-shell {
+  border-radius: 14px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Was SECTION_CARD_STYLE in pages/VendorDashboard.jsx, which the Vendor Upload
+   screen mirrors by hand. `margin-bottom` is part of the original object and is
+   kept so the swap is a no-op; it is the one property here that is layout
+   rather than chrome. */
+.section-card {
+  background: var(--colorBgContainer);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* ----- PageHeader (Phase 2) ---------------------------------------------
+   The component previously rendered an AntD <Title level={3}> inside an inline
+   style object. It is a plain <h2> now with the styles here, for two reasons:
+   a stylesheet can restyle this (an inline object cannot be overridden), and
+   `level={3}` emitted an <h3> while acting as the page's top heading. The
+   values below reproduce what Title was painting, so nothing shifts. */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.page-header__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.page-header__subtitle {
+  font-size: 14px;
+  margin-top: var(--space-1);
+  color: var(--text-2);
+}
+
+/* ----- Empty / error state primitives (Phase 2) -------------------------
+   One shape for every "there is nothing here" and "this failed" surface, so a
+   table, a board column and a chart all explain themselves the same way. The
+   components live in components/common/. Sized by a `data-size` attribute
+   rather than a modifier class so a caller passes one prop.
+
+   Deliberately NOT translucent: these render INSIDE an already-translucent
+   card, and a second glass layer over the first reads as a smudge. They are
+   type, spacing and one icon — the surface beneath them is the material. */
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  color: var(--text-2);
+}
+.state-block[data-size='sm'] { padding: var(--space-5) var(--space-4); gap: var(--space-2); }
+.state-block[data-size='lg'] { padding: var(--space-7) var(--space-5); }
+
+.state-block__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  font-size: 20px;
+  color: var(--state-accent, var(--text-3));
+  background: color-mix(in srgb, var(--state-accent, var(--text-3)) 10%, transparent);
+}
+.state-block[data-size='sm'] .state-block__icon { width: 36px; height: 36px; font-size: 16px; }
+
+.state-block__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+.state-block[data-size='sm'] .state-block__title { font-size: 13.5px; }
+
+/* The line that does the actual work: why this is empty, or what failed. Capped
+   so it stays a readable measure inside a wide table. */
+.state-block__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  max-width: 46ch;
+}
+
+.state-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-top: var(--space-1);
+}
+
+/* Error is the same block with the accent switched — same shape, so a failed
+   panel and an empty one do not read as two different systems. */
+.state-block--error { --state-accent: var(--red); }
 
 /* Glassmorphism */
 .glass {
@@ -966,6 +1440,52 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ----- Candidate Screening polish ----- */
+
+/* Four surfaces below were written as inline `style` props on the JSX. An inline
+   style cannot be overridden by any stylesheet, so under Design V2 (`.ats-v2`)
+   they stayed flat opaque blocks bolted onto a glass card. The declarations move
+   here UNCHANGED — same values, same rendering outside `.ats-v2` — purely so the
+   aurora-glass.css rollout block can restyle them. Same move that was made for
+   `.premium-stat-card`'s inline background/border-top. `!important` throughout so
+   the `.ats-v2` overrides (higher specificity, also `!important`) win
+   deterministically rather than by cascade order against AntD's runtime styles. */
+
+/* Search-summary metrics bar, above the results list. */
+.screening-summary-bar {
+  background: var(--ink-3) !important;
+  border: 1px solid var(--border-light) !important;
+  border-radius: 10px !important;
+}
+
+/* Select-this-page bar, directly above the candidate cards. */
+.screening-selectall-bar {
+  background: var(--ink-4) !important;
+  border-radius: 6px !important;
+}
+
+/* Education / qualification accordion panels in the keyword filter. */
+.screening-edu-panel {
+  background: var(--ink-3) !important;
+  border: 1px solid var(--border-secondary) !important;
+  border-radius: 8px !important;
+  margin-bottom: 8px !important;
+}
+
+/* The selected role's JD context panel (JD Filtering tab). */
+.screening-role-card {
+  background: var(--color-primary-bg) !important;
+  border-color: var(--color-primary-border) !important;
+  border-radius: 10px !important;
+}
+
+/* ----- Candidate Detail ----- */
+/* Same story as the four above: the Professional Summary callout carried its
+   tint and radius inline. */
+.cd-summary {
+  background: var(--gold-subtle) !important;
+  border-radius: 12px !important;
+}
+
 /* Unified detail pill (location / experience / CTC) */
 .screening-pill {
   display: inline-flex;
@@ -1491,9 +2011,27 @@ h1, h2, h3, h4, h5, h6,
   transition: all var(--transition-fast) !important;
 }
 
-/* AntD Modal glassmorphism */
+/* Baseline modal radius. The `!important` this carried until the overlay-tier
+   work was doing real damage: it outranked the per-modal radii below it, so
+   `.dash-cmdk`'s 16px never applied (it rendered at --border-radius-lg like
+   everything else) and the tier-4 overlay radius could not apply either. There
+   is nothing to fight here — AntD sets this radius via a low-specificity token
+   rule — so plain specificity is enough and the bespoke radii win again. */
 .ant-modal-content {
-  border-radius: var(--border-radius-lg) !important;
+  border-radius: var(--border-radius-lg);
+}
+
+/* Modal widths are set in px per modal (see components/pipeline/modalWidths.js).
+   The widest tier (820) exceeds a narrow laptop viewport, so cap every modal to
+   the window with a gutter — otherwise the dialog runs under the screen edge and
+   its footer buttons become unreachable. Also keep tall modals scrollable inside
+   themselves rather than pushing the page. */
+.ant-modal {
+  max-width: calc(100vw - 32px);
+}
+.ant-modal-body {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
 }
 
 /* AntD Button active press effect */
@@ -2094,6 +2632,19 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: var(--shadow-sm);
 }
 
+/* Dark-mode parity for the admin top bar chrome (light hexes above). */
+[data-theme='dark'] .admin-topbar {
+  background: linear-gradient(180deg, #121816 0%, #0e1412 100%) !important;
+}
+[data-theme='dark'] .admin-top-btn.ant-btn {
+  background: var(--ink-2) !important;
+}
+[data-theme='dark'] .admin-top-btn--logout.ant-btn:hover {
+  color: #e74c3c !important;
+  border-color: rgba(231, 76, 60, 0.4) !important;
+  background: rgba(231, 76, 60, 0.12) !important;
+}
+
 /* ===== Admin Portal — micro-animations ===== */
 
 /* Stat icon tile springs on card hover */
@@ -2249,6 +2800,19 @@ h1, h2, h3, h4, h5, h6,
   border: 1px solid var(--border);
   color: var(--text-2);
 }
+/* Names the range control. Without it the 7d/30d/90d pills sit unlabelled next to a
+   role dropdown, and nothing on screen says the two are the page's global filters. */
+.dash-hero__filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: help;
+}
 
 /* ----- Shared widget card header ----- */
 .dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -2354,6 +2918,7 @@ h1, h2, h3, h4, h5, h6,
 }
 .dash-chart-tip__label { font-size: 11px; color: var(--text-2); margin-bottom: 2px; }
 .dash-chart-tip__value { font-size: 14px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.dash-chart-tip__note { font-size: 11px; color: var(--text-3); margin-top: 4px; max-width: 220px; line-height: 1.4; }
 
 /* ----- Command palette (⌘K) ----- */
 .dash-cmdk .ant-modal-content { padding: 0; overflow: hidden; border-radius: 16px; }
@@ -2493,6 +3058,22 @@ h1, h2, h3, h4, h5, h6,
   background: var(--gold-subtle);
 }
 
+/* Dark mode: CodeMirror gets the oneDark theme (via the component's `theme`
+   prop) — override the hardcoded white chrome so it doesn't fight it. */
+[data-theme='dark'] .email-html-editor,
+[data-theme='dark'] .email-html-editor .cm-editor {
+  background: #282c34;
+}
+[data-theme='dark'] .email-html-editor .cm-gutters {
+  background: #21252b;
+  border-right-color: #181a1f;
+  color: #7d8799;
+}
+[data-theme='dark'] .email-html-editor .cm-activeLineGutter,
+[data-theme='dark'] .email-html-editor .cm-activeLine {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 @media (max-width: 767.98px) {
   .email-template-list {
     max-height: 45vh;
@@ -2554,5 +3135,294 @@ h1, h2, h3, h4, h5, h6,
   .email-preview-pane .email-preview-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .email-preview-pane .email-preview-iframe { flex: 1; height: auto; min-height: 0; }
 }
+
+/* ============================================================
+   Theme switch transition (see src/utils/themeTransition.js)
+   ============================================================ */
+
+/* View Transitions: disable the default cross-fade — the JS clip-path
+   animation on ::view-transition-new(root) drives the circular reveal. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+/* Fallback cross-fade for browsers without View Transitions (e.g. Firefox). */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.3s ease, background 0.3s ease, color 0.3s ease,
+              border-color 0.3s ease, fill 0.3s ease, stroke 0.3s ease,
+              box-shadow 0.3s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: none !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+/* ----- Animated sun/moon theme toggle (ThemeToggle.jsx) ----- */
+.theme-toggle {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.theme-toggle:hover {
+  background: var(--gold-subtle);
+  color: var(--gold);
+}
+.theme-toggle:active .theme-toggle__orb {
+  transform: scale(0.5);
+}
+
+/* Sun core → moon crescent. The crescent is carved with an inset box-shadow,
+   so no background-colored overlay is needed (works on glass surfaces). */
+.theme-toggle__orb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 0 0 currentColor;
+  transform: scale(0.6);
+  transition: transform 0.45s var(--ease-spring), background 0.3s ease,
+              box-shadow 0.45s var(--ease-out-quint);
+}
+.theme-toggle--dark .theme-toggle__orb {
+  transform: scale(1) rotate(-25deg);
+  background: transparent;
+  box-shadow: inset -6px -5px 0 0 currentColor;
+}
+
+/* Sun rays — 8 ticks that spin in/out on toggle. */
+.theme-toggle__rays {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.45s var(--ease-spring), opacity 0.3s ease;
+}
+.theme-toggle__rays i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(calc(var(--i) * 45deg)) translateY(-9px);
+}
+.theme-toggle--dark .theme-toggle__rays {
+  transform: scale(0) rotate(90deg);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle,
+  .theme-toggle__orb,
+  .theme-toggle__rays {
+    transition: none;
+  }
+}
+
+/* ----- Candidate Pipeline prototype (Phase 3) — remove alongside
+   CandidatePipelinePrototype.jsx once the real Tracker ships. ----- */
+.cp-candidate-card {
+  transition: transform 0.25s var(--ease-out-quint),
+    box-shadow 0.25s var(--ease-out-quint),
+    border-color 0.25s var(--ease-out-quint);
+  animation: fadeInUp 0.4s var(--ease-out-quint) both;
+  /* The status accent. `--cp-accent` is published by the card component
+     (Pipeline.jsx / CandidatePipelinePrototype.jsx) and CSS owns the property,
+     so the hover rule below can restyle the other three sides without the
+     `border-color` shorthand wiping out the one that carries meaning. */
+  border-inline-start: 3px solid var(--cp-accent, var(--border));
+}
+
+/* Floating left/right scrollers for the Pipeline board (Pipeline.jsx).
+   Brand-green gradient pill (see arrowStyle in Pipeline.jsx). */
+.board-scroll-arrow {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.board-scroll-arrow:hover {
+  transform: translateY(-50%) scale(1.12);
+  filter: brightness(1.06);
+  box-shadow: 0 8px 22px rgba(122, 146, 46, 0.5), 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+.board-scroll-arrow:active { transform: translateY(-50%) scale(0.96); }
+.board-scroll-arrow:focus-visible { outline: 3px solid var(--gold-light, #92a63c); outline-offset: 3px; }
+.cp-candidate-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  /* NOT `border-color` — that shorthand sets all four sides, and the inline
+     edge carries the candidate's status. This rule used to wipe it out on every
+     hover with no error and no visual clue that information had gone missing.
+     Set the three decorative sides and leave the leading edge alone. */
+  border-block-color: var(--gold-light) !important;
+  border-inline-end-color: var(--gold-light) !important;
+}
+.cp-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+/* 4-segment round-progress stepper (Entry / Schedule / Outcome / Decision)
+   on each candidate card — compact alternative to four separate tags. */
+.cp-progress-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-light);
+  transition: background 0.3s var(--ease-out-quint);
+}
+.cp-progress-seg--done { background: #27ae60; }
+.cp-progress-seg--active { background: #d4a017; }
+.cp-progress-seg--pending { background: var(--border-light); }
+.cp-progress-seg--hold { background: #d4a017; }
+.cp-progress-seg--rejected { background: var(--red); }
+
+/* Round-detail panel (drawer) — elevated card matching the board card's
+   polish instead of a plain flat box. */
+.cp-round-panel {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-md) !important;
+  border: 1px solid var(--border-light) !important;
+  overflow: hidden;
+  animation: fadeInUp 0.35s var(--ease-out-quint) both;
+}
+.cp-round-panel .ant-card-head {
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Stage navigator pills (drawer) — replaces the small numbered-circle Steps,
+   which read as cramped at 11 stages wide. */
+.cp-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--border-light);
+  background: var(--ink-2);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-out-quint), box-shadow 0.2s var(--ease-out-quint), border-color 0.2s var(--ease-out-quint);
+}
+.cp-stage-pill:disabled { cursor: not-allowed; opacity: 0.5; }
+.cp-stage-pill--done { background: rgba(39, 174, 96, 0.12); border-color: rgba(39, 174, 96, 0.35); color: #1e8449; }
+.cp-stage-pill--current { background: var(--gradient-primary); border-color: transparent; color: #fff; box-shadow: var(--glow-accent); }
+.cp-stage-pill--future { background: var(--ink-3); color: var(--text-3); }
+.cp-stage-pill--selected { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--gold); }
+.cp-stage-pill:not(:disabled):hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+
+/* v11 — unified vertical pipeline (drawer): replaces the horizontal
+   4-tile category bar. One connected stepper, top to bottom, every stage
+   always fully expanded (no click-to-expand — see CandidatePipeline
+   Prototype.jsx's roundProgressSegments comment for why). */
+.cp-pipeline { margin-bottom: 16px; }
+.cp-pipeline-step { display: flex; gap: 12px; }
+.cp-pipeline-step__rail { display: flex; flex-direction: column; align-items: center; width: 22px; flex-shrink: 0; }
+.cp-pipeline-node {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  flex-shrink: 0;
+  border: 2px solid var(--border-light);
+  background: var(--ink-2);
+  transition: background 0.3s var(--ease-out-quint), border-color 0.3s var(--ease-out-quint);
+}
+.cp-pipeline-node--active { background: var(--gradient-primary); border-color: transparent; box-shadow: var(--glow-accent); animation: cpPipelinePulse 1.8s ease-in-out infinite; }
+.cp-pipeline-node--done { background: #27ae60; border-color: transparent; }
+.cp-pipeline-node--hold { background: #d4a017; border-color: transparent; }
+.cp-pipeline-node--rejected { background: var(--red); border-color: transparent; }
+@keyframes cpPipelinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(122, 146, 46, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(122, 146, 46, 0); }
+}
+.cp-pipeline-step__connector { width: 2px; flex: 1; min-height: 22px; background: var(--border-light); margin: 2px 0; transition: background 0.3s var(--ease-out-quint); }
+.cp-pipeline-step__connector--done { background: #27ae60; }
+.cp-pipeline-step__body { flex: 1; min-width: 0; padding-bottom: 18px; }
+.cp-pipeline-step:last-child .cp-pipeline-step__body { padding-bottom: 2px; }
+.cp-pipeline-step__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cp-pipeline-step__label { font-size: 13px; font-weight: 700; color: var(--text); }
+.cp-pipeline-step--pending .cp-pipeline-step__label { color: var(--text-3); }
+.cp-pipeline-step__state { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.cp-pipeline-step__state--pending { color: var(--text-3); }
+.cp-pipeline-step__state--active { color: #d4a017; }
+.cp-pipeline-step__state--done { color: #27ae60; }
+.cp-pipeline-step__state--hold { color: #d4a017; }
+.cp-pipeline-step__state--rejected { color: var(--red); }
+.cp-pipeline-step__detail { font-size: 12.5px; color: var(--text-2); margin-top: 2px; line-height: 1.5; }
+.cp-pipeline-step__extra { margin-top: 8px; }
+
+/* Compact colour-coded stat chip — replaces the old flat, near-empty
+   Statistic cards for Zeko/Assessment scores. Colour is driven by the
+   score itself (>=70 green / 50-69 amber / <50 red) so it carries real
+   information, not just decoration. */
+.cp-stat-chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.cp-stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 84px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+}
+.cp-stat-chip__value { font-size: 17px; font-weight: 800; line-height: 1.1; }
+.cp-stat-chip__label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; }
+.cp-stat-chip--good { background: rgba(39, 174, 96, 0.1); border-color: rgba(39, 174, 96, 0.3); color: #1e8449; }
+.cp-stat-chip--mid { background: rgba(212, 160, 23, 0.1); border-color: rgba(212, 160, 23, 0.3); color: #96760f; }
+.cp-stat-chip--low { background: rgba(192, 57, 43, 0.1); border-color: rgba(192, 57, 43, 0.3); color: var(--red); }
+
+/* Section micro-label (e.g. "Emails in this round") — uppercase, muted,
+   thin rule; the emails timeline sits on a muted surface to recede
+   behind the pipeline above it. */
+.cp-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 6px;
+  margin: 18px 0 10px;
+}
+.cp-emails-surface { background: var(--ink-3); border-radius: var(--radius-md); padding: 10px 14px 2px; }
 
 

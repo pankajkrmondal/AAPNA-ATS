@@ -21,6 +21,29 @@ const mrfService = {
   },
 
   /**
+   * Download every MRF request matching the filters as CSV.
+   * Pagination is deliberately absent — the server returns the full filtered set.
+   * @param {object} [params={}] — { search, status }
+   * @param {object} [config={}] — blob/timeout config from downloadFile
+   * @returns {Promise}
+   */
+  exportCsv(params = {}, config = {}) {
+    return api.get('/mrf/export', { params, ...config });
+  },
+
+  /**
+   * Download ONE requisition as CSV — the request plus the MRF the Hiring
+   * Manager submitted, laid out as Section/Field/Value rows. Backs the Export
+   * button in the MRF details modal.
+   * @param {string|number} id — the rpa_mrf_jd_send id
+   * @param {object} [config={}] — blob/timeout config from downloadFile
+   * @returns {Promise}
+   */
+  exportDetailCsv(id, config = {}) {
+    return api.get(`/mrf/${id}/export`, config);
+  },
+
+  /**
    * Get MRF request details by ID.
    * @param {string|number} id
    * @returns {Promise}

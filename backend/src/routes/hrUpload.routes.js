@@ -3,8 +3,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
-import { authenticate, checkModuleAccess } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireStaff } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as hrUploadController from '../controllers/hrUpload.controller.js';
+import AppError from '../utils/AppError.js';
 
 const router = Router();
 
@@ -36,7 +38,10 @@ const upload = multer({
     if (allowedExts.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`File type ${ext} is not allowed. Only ${allowedExts.join(', ')} are accepted.`));
+      // AppError, not a bare Error: a bare one carries no statusCode, so the
+      // global handler treats a wrong file type as a 500 and emails the team a
+      // "Backend Error Alert" (defect D6).
+      cb(new AppError(`File type ${ext} is not allowed. Only ${allowedExts.join(', ')} are accepted.`, 400));
     }
   },
 });
@@ -45,6 +50,9 @@ const upload = multer({
 // hr_manual_upload module toggle (managed in the Admin Portal). Mirrors the
 // screening & vendor route guards.
 router.use(authenticate);
+// Internal staff only (M6). Vendors upload through /api/vendor/upload, which
+// attributes and scopes what they send; this route does neither.
+router.use(requireStaff);
 router.use(checkModuleAccess('hr_manual_upload'));
 
 // ── HR Upload APIs ────────────────────────────────────────────────────
@@ -57,6 +65,9 @@ router.get('/summary/:executionId', hrUploadController.getSummary);
 
 /** Persistent per-resume job feed (powers the live Upload Status dashboard) */
 router.get('/jobs', hrUploadController.getUploadJobs);
+
+/** CSV of every upload job matching the filters (no pagination). */
+router.get('/jobs/export', exportLimiter, hrUploadController.exportUploadJobs);
 
 /** Reprocess a failed upload job */
 router.post('/jobs/:id/reprocess', hrUploadController.reprocessJob);

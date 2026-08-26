@@ -4,7 +4,18 @@ import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, restrictTo } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
+import AppError from '../utils/AppError.js';
+
+/**
+ * Roles allowed to bulk-export requisitions. Vendors are external companies and
+ * are deliberately excluded: the export carries `budget_min`/`budget_max` for
+ * every open role, which is commercially sensitive. They have no UI route to
+ * MRF either (`VENDOR_ALLOWED_PATHS` in MainLayout.jsx), but that is a
+ * client-side confinement — a vendor's token can call the API directly.
+ */
+const MRF_EXPORT_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
 
 const router = Router();
 
@@ -24,10 +35,27 @@ const storage = multer.diskStorage({
   },
 });
 
+// A JD or test paper is a document. This route had NO fileFilter at all, so it
+// accepted any extension — including .exe — on a PUBLIC, unauthenticated
+// endpoint (see the submit route below). Same class of hole as defect D7, on a
+// route the D7 write-up never listed.
+const ALLOWED_EXTS = ['.pdf', '.docx', '.doc'];
+
 const upload = multer({
   storage,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_EXTS.includes(ext)) {
+      cb(null, true);
+    } else {
+      // AppError, not a bare Error: a bare one carries no statusCode, so the
+      // global handler treats a wrong file type as a 500 and emails the team a
+      // "Backend Error Alert" (defect D6).
+      cb(new AppError(`File type ${ext} is not allowed. Accepted: ${ALLOWED_EXTS.join(', ')}.`, 400));
+    }
   },
 });
 
@@ -45,6 +73,12 @@ router.use(authenticate);
 
 router.post('/', mrfController.createMrfRequest);
 router.get('/', mrfController.listMrfRequests);
+// Registered before '/:id' so 'export' is never captured as an MRF id — the
+// controller would run BigInt('export') and 500.
+router.get('/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfRequests);
+// One requisition (request + the MRF the Hiring Manager submitted), from the
+// details modal. Two path segments, so it cannot collide with '/:id'.
+router.get('/:id/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfDetail);
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
 router.get('/main/:id', mrfController.getMainMrf);
 router.patch('/main/:id', mrfController.updateMainMrf);

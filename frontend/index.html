@@ -9,13 +9,41 @@
     <meta name="author" content="AAPNA" />
     <meta name="theme-color" content="#7a922e" />
 
+    <!-- Anti-FOUC: apply the saved theme before first paint. Default is LIGHT;
+         the OS preference is honored only when the user explicitly chose "system". -->
+    <script>
+      (function () {
+        var mode = null;
+        try {
+          mode = localStorage.getItem('ats_theme');
+        } catch (e) {
+          /* storage unavailable (private mode) — fall through to light */
+        }
+        var dark =
+          mode === 'dark' ||
+          (mode === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var theme = dark ? 'dark' : 'light';
+        var el = document.documentElement;
+        el.setAttribute('data-theme', theme);
+        el.style.colorScheme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', dark ? '#0a0e0c' : '#7a922e');
+      })();
+    </script>
+
     <!-- Open Graph -->
     <meta property="og:title" content="AAPNA ATS - Recruitment Process Automation" />
     <meta property="og:description" content="Modern Applicant Tracking System for streamlined recruitment" />
     <meta property="og:type" content="website" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- Favicon. Points at a real file in public/ — the old /vite.svg only ever
+         resolved because the Vite dev server serves its own copy; no such file is
+         emitted into dist, so every deployed environment fell through to the SPA
+         catch-all, received index.html as "the icon", and showed the default globe. -->
+    <link rel="icon" type="image/jpeg" href="/brand/aapna-mark.jpg" />
+    <link rel="apple-touch-icon" href="/brand/aapna-mark.jpg" />
 
     <!-- Google Fonts: Inter + Sora + DM Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

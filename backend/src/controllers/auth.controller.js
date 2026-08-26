@@ -1,4 +1,5 @@
 import * as authService from '../services/auth.service.js';
+import { isTurnstileEnabled, verifyTurnstileToken } from '../services/turnstile.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -10,10 +11,22 @@ import prisma from '../config/database.js';
  * @access  Public
  */
 export const login = catchAsync(async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, captchaToken } = req.body;
 
   if (!username || !password) {
     throw new AppError('Please provide username and password.', 400);
+  }
+
+  // Bot protection: when Turnstile is configured, every login attempt must
+  // pass Cloudflare's verification BEFORE credentials are checked, so bots
+  // can't brute-force passwords or enumerate accounts.
+  if (isTurnstileEnabled()) {
+    if (!captchaToken) {
+      throw new AppError('Captcha verification is required. Please refresh the page and try again.', 400);
+    }
+    if (!(await verifyTurnstileToken(captchaToken, req.ip))) {
+      throw new AppError('Captcha verification failed. Please try again.', 403);
+    }
   }
 
   const result = await authService.login(username, password);
@@ -58,6 +71,72 @@ export const getCurrentUser = catchAsync(async (req, res) => {
   safeUser.permissions = permissions.map((p) => p.module_key);
 
   return success(res, { user: safeUser }, 'User retrieved successfully');
+});
+
+/**
+ * @desc    Change the current user's password
+ * @route   POST /api/auth/change-password
+ * @access  Private (all roles)
+ */
+export const changePassword = catchAsync(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!authService.verifyPassword(currentPassword, req.user.password_hash)) {
+    throw new AppError('Current password is incorrect.', 400);
+  }
+
+  await prisma.rpa_users.update({
+    where: { id: req.user.id },
+    data: { password_hash: authService.hashPassword(newPassword) },
+  });
+
+  // Invalidate every other session for this user, keeping the current one alive.
+  await prisma.rpa_sessions.deleteMany({
+    where: {
+      user_id: req.user.id,
+      NOT: { token: req.token },
+    },
+  });
+
+  return success(res, null, 'Password changed successfully');
+});
+
+/**
+ * @desc    Request a password reset link by username or email
+ * @route   POST /api/auth/forgot-password
+ * @access  Public
+ */
+export const forgotPassword = catchAsync(async (req, res) => {
+  const { login, captchaToken } = req.body;
+
+  // Bot protection: reset requests trigger emails, so when Turnstile is
+  // configured they must pass verification before any work happens.
+  if (isTurnstileEnabled()) {
+    if (!captchaToken) {
+      throw new AppError('Captcha verification is required. Please refresh the page and try again.', 400);
+    }
+    if (!(await verifyTurnstileToken(captchaToken, req.ip))) {
+      throw new AppError('Captcha verification failed. Please try again.', 403);
+    }
+  }
+
+  await authService.requestPasswordReset(login);
+
+  // Always the same generic response — never reveal whether an account exists.
+  return success(res, null, 'If an account exists for that username or email, a password reset link has been sent.');
+});
+
+/**
+ * @desc    Reset a password using an emailed reset token
+ * @route   POST /api/auth/reset-password
+ * @access  Public (requires valid reset token in body)
+ */
+export const resetPassword = catchAsync(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  await authService.resetPasswordWithToken(token, newPassword);
+
+  return success(res, null, 'Password reset successfully. You can now sign in with your new password.');
 });
 
 /**

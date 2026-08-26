@@ -1,3 +1,4 @@
+import MetricInfo from '../common/MetricInfo';
 /**
  * HiringTrendsCard — animated gradient area chart of new candidates added per day over the
  * selected date-range (client-bucketed from the candidate batch). Honest label: it reflects
@@ -26,15 +27,18 @@ const prefersReducedMotion = () =>
 
 function ChartTip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
+  const n = payload[0].value;
   return (
     <div className="dash-chart-tip">
       <div className="dash-chart-tip__label">{label}</div>
-      <div className="dash-chart-tip__value">{payload[0].value} added</div>
+      <div className="dash-chart-tip__value">
+        {n === 0 ? 'No candidates added' : `${n} candidate${n === 1 ? '' : 's'} added`}
+      </div>
     </div>
   );
 }
 
-export default function HiringTrendsCard({ candidates = [], rangeDays = 30, loading = false }) {
+export default function HiringTrendsCard({ candidates = [], rangeDays = 30, role = '', loading = false }) {
   const data = useMemo(() => bucketByDay(candidates, rangeDays), [candidates, rangeDays]);
   const total = useMemo(() => data.reduce((s, d) => s + d.count, 0), [data]);
   const peak = useMemo(() => data.reduce((m, d) => Math.max(m, d.count), 0), [data]);
@@ -43,19 +47,25 @@ export default function HiringTrendsCard({ candidates = [], rangeDays = 30, load
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Hiring Trends</Title>
+          <Title level={5} style={{ margin: 0 }}>Hiring Trends <MetricInfo metric="hiringTrends" size={12} /></Title>
+          {/* Naming the active role here, not just in the picker, is what tells the
+              reader why the shape of the chart just changed under them. */}
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            New candidates added · last {rangeDays} days
+            New candidates added · last {rangeDays} days{role ? ` · ${role}` : ''}
           </Text>
         </div>
-        <Tooltip title="Daily count of candidates entering the system over the selected range.">
+        <Tooltip title={`${total.toLocaleString()} candidates were added in the last ${rangeDays} days — the sum of every day on this chart. Hover a point to see a single day; busiest day so far is ${peak}.`}>
           <div className="dash-card-metric">
             <span className="dash-card-metric__num">{total.toLocaleString()}</span>
             <span className="dash-card-metric__cap">total <InfoCircleOutlined /></span>
           </div>
         </Tooltip>
       </div>
-
+      {/* The "based on the 200 most recently added profiles" caveat used to sit here as
+          body copy. It is still true and still stated — it moved into this card's
+          MetricInfo definition (constants/metricDefinitions.js `hiringTrends.caveat`),
+          which is where every other metric's provenance lives. A permanent apology
+          printed under the title read as clutter and drew the eye away from the data. */}
       <div style={{ height: 240, marginTop: 8 }}>
         {!loading && total === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No candidates in this range" style={{ paddingTop: 60 }} />

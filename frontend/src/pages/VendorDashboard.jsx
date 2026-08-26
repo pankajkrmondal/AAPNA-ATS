@@ -29,64 +29,38 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
+import useTheme from '../hooks/useTheme';
 import vendorService from '../services/vendorService';
+import candidateService from '../services/candidateService';
+import ExportButton from '../components/common/ExportButton';
+import KpiCard from '../components/common/KpiCard';
 
 const { Title, Text } = Typography;
 
-/** Shared card chrome — matches the Vendor Upload (VendorPortal) screen. */
-const SECTION_CARD_STYLE = {
-  background: '#ffffff',
-  border: '1px solid rgba(0,0,0,0.07)',
-  borderRadius: 12,
-  marginBottom: 24,
-  boxShadow: '0 2px 16px rgba(0,0,0,0.04)',
-  overflow: 'hidden',
+/* Card chrome is the shared `.section-card` class in theme/index.css — same
+   values, but a stylesheet can reach it, which an inline object cannot. The
+   Vendor Upload (VendorPortal) screen mirrors the same shape. */
+
+const EMPTY_STATS = {
+  total: 0,
+  withPosition: 0,
+  thisMonth: 0,
+  byFinalStatus: [],
+  byStage: { stages: [], closed: 0, untracked: 0 },
 };
 
-const EMPTY_STATS = { total: 0, withPosition: 0, thisMonth: 0, byFinalStatus: [] };
+/** Colour for a journey's stage status — matches the Pipeline Tracker's vocabulary. */
+const STAGE_STATUS_COLOR = {
+  in_progress: 'blue',
+  rejected: 'red',
+  hold: 'orange',
+  approved: 'green',
+};
 
-/**
- * Animate a number from 0 up to `target` (eased). Re-runs whenever the target
- * changes — e.g. when staff switch to a different vendor.
- */
-function useCountUp(target, duration = 750) {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    const safeTarget = Number(target) || 0;
-    let raf;
-    const start = performance.now();
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
-      setValue(Math.round(safeTarget * eased));
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-  return value;
-}
-
-/** Elegant animated KPI card — colour-themed via CSS custom properties. */
-function KpiCard({ icon, label, value, color, tint, accent, index }) {
-  const display = useCountUp(value);
-  return (
-    <div
-      className="kpi-card"
-      style={{
-        '--kpi-color': color,
-        '--kpi-tint': tint,
-        '--kpi-accent': accent,
-        animationDelay: `${index * 0.08}s`,
-      }}
-    >
-      <span className="kpi-card__glow" />
-      <span className="kpi-card__icon">{icon}</span>
-      <span className="kpi-card__label">{label}</span>
-      <span className="kpi-card__value">{display}</span>
-    </div>
-  );
-}
+// A local useCountUp and a local KpiCard used to live here, both byte-for-byte
+// equivalent to components/common/KpiCard.jsx and hooks/useCountUp — except that
+// neither local copy respected prefers-reduced-motion. Importing the shared ones
+// removes the duplication and fixes that.
 
 /** KPI card definitions — keyed to fields on the dashboard `stats` object. */
 const KPI_CARDS = [
@@ -94,25 +68,25 @@ const KPI_CARDS = [
     key: 'total',
     label: 'Total Candidates',
     icon: <TeamOutlined />,
-    color: '#7a922e',
-    tint: 'rgba(122,146,46,0.12)',
-    accent: 'linear-gradient(90deg,#7a922e,#92a63c)',
+    color: 'var(--kpi-a)',
+    tint: 'var(--kpi-a-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
   },
   {
     key: 'thisMonth',
     label: 'Added This Month',
     icon: <RiseOutlined />,
-    color: '#4a7c59',
-    tint: 'rgba(74,124,89,0.12)',
-    accent: 'linear-gradient(90deg,#4a7c59,#6aa67c)',
+    color: 'var(--kpi-c)',
+    tint: 'var(--kpi-c-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))',
   },
   {
     key: 'withPosition',
     label: 'With Position Applied',
     icon: <AimOutlined />,
-    color: '#b6883a',
-    tint: 'rgba(182,136,58,0.14)',
-    accent: 'linear-gradient(90deg,#b6883a,#d2a85a)',
+    color: 'var(--kpi-e)',
+    tint: 'var(--kpi-e-tint)',
+    accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))',
   },
 ];
 
@@ -121,9 +95,9 @@ const PENDING_REVIEW_CARD = {
   key: 'pendingReview',
   label: 'Pending Review',
   icon: <WarningOutlined />,
-  color: '#c0392b',
-  tint: 'rgba(192,57,43,0.12)',
-  accent: 'linear-gradient(90deg,#c0392b,#e0654f)',
+  color: 'var(--kpi-d)',
+  tint: 'var(--kpi-d-tint)',
+  accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))',
 };
 
 /**
@@ -131,6 +105,13 @@ const PENDING_REVIEW_CARD = {
  * (Stage 0 Resume Screening → Stages 1–9 → Final Outcome). Order matters: lost
  * outcomes are checked before positive/offer keywords so e.g. "Offer Rejected" and
  * "Did Not Join" are not mistaken for wins.
+ *
+ * LEGACY FALLBACK ONLY (M6, 2026-08-12). Candidates now carry a real stage from
+ * rpa_candidate_pipeline (`stage_source: 'pipeline'`), which is what the Stage
+ * column and the stage tiles read. This keyword matcher still runs for rows the
+ * stage engine never saw — anyone uploaded before it existed, or never
+ * shortlisted — where FinalStatus is genuinely the only signal there is. That
+ * population never shrinks to zero, so this is permanent, not transitional.
  */
 function classifyStatus(status) {
   const s = (status || '').trim().toLowerCase();
@@ -179,17 +160,21 @@ function statusColor(status) {
   }
 }
 
-/** Pipeline stage tiles — order, label, colour, icon. */
+/** Pipeline stage tiles — order, label, colour, icon.
+ *  Colours come from the shared `--status-*` palette (theme/index.css), the same
+ *  one the real board uses, so "On Hold" is the same amber in both places. They
+ *  used to be four independent hexes here with no dark-mode values. */
 const PIPELINE_STAGES = [
-  { key: 'selected', label: 'Selected / Joined', color: '#4a7c59', icon: <CheckCircleOutlined /> },
-  { key: 'inProcess', label: 'In Process', color: '#7a922e', icon: <SyncOutlined /> },
-  { key: 'onHold', label: 'On Hold', color: '#b6883a', icon: <PauseCircleOutlined /> },
-  { key: 'rejected', label: 'Rejected / Dropped', color: '#c0392b', icon: <CloseCircleOutlined /> },
-  { key: 'pending', label: 'Awaiting Screening', color: '#8a9270', icon: <ClockCircleOutlined /> },
+  { key: 'selected', label: 'Selected / Joined', color: 'var(--status-approved)', icon: <CheckCircleOutlined /> },
+  { key: 'inProcess', label: 'In Process', color: 'var(--brand-primary)', icon: <SyncOutlined /> },
+  { key: 'onHold', label: 'On Hold', color: 'var(--status-hold)', icon: <PauseCircleOutlined /> },
+  { key: 'rejected', label: 'Rejected / Dropped', color: 'var(--status-rejected)', icon: <CloseCircleOutlined /> },
+  { key: 'pending', label: 'Awaiting Screening', color: 'var(--text-3)', icon: <ClockCircleOutlined /> },
 ];
 
 export default function VendorDashboard() {
   const { user } = useAuth();
+  const { isDark } = useTheme();
   const role = (user?.role || '').toLowerCase();
   // Internal staff review a chosen vendor; vendors view their own submissions.
   const isStaff = ['admin', 'superadmin', 'recruiter'].includes(role);
@@ -225,7 +210,7 @@ export default function VendorDashboard() {
       setStats(data.stats || EMPTY_STATS);
       setRecent(data.recentCandidates || []);
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load the dashboard. Please try again.');
+      setError(err?.response?.data?.message || err?.message || 'Failed to load the dashboard. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -238,6 +223,34 @@ export default function VendorDashboard() {
   const recentColumns = [
     { title: 'Name', dataIndex: 'name', key: 'name', render: (v) => v || '—' },
     { title: 'Position', dataIndex: 'position', key: 'position', render: (v) => v || '—' },
+    {
+      // The real stage from rpa_candidate_pipeline (M6). Rows the stage engine
+      // never saw say so plainly rather than borrowing a stage they don't have.
+      title: 'Stage',
+      key: 'stage',
+      render: (_, row) => {
+        if (row.stage_source !== 'pipeline' || !row.stage) {
+          return (
+            <Tooltip title="This candidate has no pipeline journey — they were uploaded before the stage engine, or have not been shortlisted yet. The Status column is the only signal available.">
+              <Tag>Not in pipeline</Tag>
+            </Tooltip>
+          );
+        }
+        const { stage_label: label, stage_status: st, final_outcome: closed } = row.stage;
+        if (closed) {
+          return (
+            <Tooltip title={`Journey closed — ${closed.replace(/_/g, ' ')}`}>
+              <Tag color="purple">Closed</Tag>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip title={`Currently at ${label} — ${(st || '').replace(/_/g, ' ')}`}>
+            <Tag color={STAGE_STATUS_COLOR[st] || 'default'}>{label}</Tag>
+          </Tooltip>
+        );
+      },
+    },
     {
       title: 'Status',
       dataIndex: 'finalStatus',
@@ -256,7 +269,10 @@ export default function VendorDashboard() {
     },
   ];
 
-  // Derive a hiring pipeline + selection rate from the status breakdown (no extra API call).
+  // Outcome buckets + selection rate, still derived from the status breakdown:
+  // these summarise WHERE CANDIDATES ENDED UP, which FinalStatus records for
+  // every candidate including the ones with no journey. The stage breakdown
+  // below answers the different question of where live candidates are RIGHT NOW.
   const pipeline = (() => {
     const b = { selected: 0, inProcess: 0, onHold: 0, rejected: 0, pending: 0 };
     (stats.byFinalStatus || []).forEach(({ status, count }) => {
@@ -266,6 +282,10 @@ export default function VendorDashboard() {
   })();
   const decided = pipeline.selected + pipeline.rejected;
   const selectionRate = decided ? Math.round((pipeline.selected / decided) * 100) : 0;
+
+  // Real stages from rpa_candidate_pipeline (M6).
+  const byStage = stats.byStage || { stages: [], closed: 0, untracked: 0 };
+  const trackedTotal = (byStage.stages || []).reduce((sum, s) => sum + s.count, 0) + (byStage.closed || 0);
 
   return (
     <div className="page-enter" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
@@ -344,8 +364,11 @@ export default function VendorDashboard() {
           </Row>
 
           {/* ═══════ SECTION 2: HIRING PIPELINE ═══════ */}
-          <Card className="animate-fade-in-up stagger-2" bordered={false} style={SECTION_CARD_STYLE} styles={{ body: { padding: 0 } }}>
-            <div style={{ height: 3, background: 'linear-gradient(90deg, #7a922e, #4a7c59)' }} />
+          {/* Tier 2 — the pipeline summary is a feature surface, not a records
+              list. `.section-card` stays for the shape it carries outside
+              `.ats-v2`; `.glass-card` supplies the material inside it. */}
+          <Card className="section-card glass-card no-lift animate-fade-in-up stagger-2" bordered={false} styles={{ body: { padding: 0 } }}>
+            <div style={{ height: 3, background: 'linear-gradient(90deg, var(--stage-interview), var(--stage-offer))' }} />
             <div style={{ padding: '24px 28px 28px' }}>
               <Text
                 style={{
@@ -368,11 +391,11 @@ export default function VendorDashboard() {
                     <Progress
                       type="dashboard"
                       percent={selectionRate}
-                      strokeColor="#4a7c59"
-                      trailColor="rgba(0,0,0,0.06)"
+                      strokeColor="var(--kpi-c)"
+                      trailColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
                       size={130}
                       format={(p) => (
-                        <span style={{ fontSize: 24, fontWeight: 700, color: '#3f3f3f' }}>{p}%</span>
+                        <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{p}%</span>
                       )}
                     />
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginTop: 6 }}>
@@ -422,6 +445,42 @@ export default function VendorDashboard() {
                 <Empty description="No candidates submitted yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               )}
 
+              {/* Real stage breakdown, straight from the stage engine (M6).
+                  Only rendered when at least one candidate has a journey —
+                  before that there is nothing true to say here, and an empty
+                  row of zeroes would read as "stuck", not "not started". */}
+              {trackedTotal > 0 && (
+                <div style={{ marginTop: 22, borderTop: '1px solid var(--border-light)', paddingTop: 16 }}>
+                  <Text style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 10 }}>
+                    Current stage
+                    <Tooltip title="Where candidates are right now, from the Candidate Pipeline. The tiles above summarise final outcomes instead, which is why the totals differ.">
+                      <span style={{ marginLeft: 6, cursor: 'help', opacity: 0.6 }}>ⓘ</span>
+                    </Tooltip>
+                  </Text>
+                  <Space size={[8, 10]} wrap>
+                    {(byStage.stages || []).map((s) => (
+                      <Tag key={s.stage_key} color="blue" style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                        {s.stage_label}: <strong>{s.count}</strong>
+                      </Tag>
+                    ))}
+                    {byStage.closed > 0 && (
+                      <Tooltip title="Journeys that have reached a final outcome — joined, withdrawn, rejected outright.">
+                        <Tag color="purple" style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                          Closed: <strong>{byStage.closed}</strong>
+                        </Tag>
+                      </Tooltip>
+                    )}
+                    {byStage.untracked > 0 && (
+                      <Tooltip title="Submitted but never entered the pipeline — not yet shortlisted, or uploaded before the stage engine existed. Their Status column is the only signal available.">
+                        <Tag style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                          Not in pipeline: <strong>{byStage.untracked}</strong>
+                        </Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                </div>
+              )}
+
               {/* Detailed raw status breakdown */}
               {stats.byFinalStatus && stats.byFinalStatus.length > 0 && (
                 <div style={{ marginTop: 22, borderTop: '1px solid var(--border-light)', paddingTop: 16 }}>
@@ -445,16 +504,37 @@ export default function VendorDashboard() {
           </Card>
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
-          <Card className="animate-fade-in-up stagger-4" bordered={false} style={{ ...SECTION_CARD_STYLE, marginBottom: 0 }}>
-            <div style={{ marginBottom: 20 }}>
-              <Text strong style={{ fontSize: 16, display: 'block' }}>
-                Recent Submissions
-              </Text>
-              <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-                {isStaff
-                  ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
-                  : 'Your most recently uploaded candidates.'}
-              </Text>
+          {/* Tier 3 — recent submissions is a records table. */}
+          <Card className="section-card glass-3 no-lift animate-fade-in-up stagger-4" bordered={false} style={{ marginBottom: 0 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 20,
+            }}>
+              <div>
+                <Text strong style={{ fontSize: 16, display: 'block' }}>
+                  Recent Submissions
+                </Text>
+                <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                  {isStaff
+                    ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
+                    : 'Your most recently uploaded candidates.'}
+                </Text>
+              </div>
+              {/* This table is only the most recent handful, so the export is
+                  the full candidate set behind it, not the five rows shown. */}
+              <ExportButton
+                request={(cfg) => candidateService.exportCsv(
+                  selectedVendor ? { vendorEmail: selectedVendor } : { vendorOnly: 'true' },
+                  cfg,
+                )}
+                fallbackName="AAPNA-ATS_Vendor-Candidates.csv"
+                fullSetNote="This is every matching candidate — the table above shows only the most recent."
+                label="Export"
+                size="small"
+              />
             </div>
             <Table
               rowKey={(r) => r.id}

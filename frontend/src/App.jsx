@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { BrandProvider } from './context/BrandContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
 import { lightTheme, darkTheme } from './theme/themeConfig';
@@ -23,6 +24,8 @@ import AuthLayout from './layouts/AuthLayout';
 /* Pages */
 import Login from './pages/Login';
 import AdminLogin from './pages/AdminLogin';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Candidates from './pages/Candidates';
@@ -39,6 +42,10 @@ import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
 import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
+import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
+import Pipeline from './pages/Pipeline';
+import InterviewScorecard from './pages/InterviewScorecard';
+import DocumentUpload from './pages/DocumentUpload';
 
 /* ---- Route Guards ---- */
 
@@ -213,6 +220,58 @@ function ComingSoon({ title }) {
 
 /* ---- Theme-Aware App Shell ---- */
 
+/**
+ * OVERLAY_CONFIG — the tier-4 (overlay) glass, applied app-wide in one place.
+ *
+ * Modals, drawers and every popup panel portal into `document.body`, which puts
+ * them structurally OUTSIDE the `.ats-v2` wrapper MainLayout applies. No route
+ * gate can reach them and no stylesheet scoped to `.ats-v2` can style them, so
+ * the ~40 dialogs in the app opened as flat white boxes on a glass page.
+ *
+ * Rather than edit 40 call sites (and re-edit every new one), ConfigProvider
+ * stamps the class onto every instance wherever it portals to. The matching
+ * rules live UNSCOPED in aurora-glass.css — a deliberate scope exception,
+ * documented there, because portals are outside the scope by construction.
+ *
+ * Slot names verified against the installed antd 5.29.3: `content`/`mask` on
+ * rc-dialog's ModalClassNames and rc-drawer's DrawerClassNames;
+ * `classNames.popup.root` on Select/DatePicker; `classNames.root` on
+ * Tooltip/Popover/Popconfirm. `dropdown` is a plain ComponentStyleConfig
+ * (className only, no slots) — its className lands on the popup root, which is
+ * the element we want, so it works the same way.
+ *
+ * To revert the overlay tier entirely: delete this object, its five spreads
+ * below, and the tier-4 block in aurora-glass.css.
+ */
+const OVERLAY_CONFIG = {
+  modal: { classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } },
+  drawer: { classNames: { content: 'ats-overlay', mask: 'ats-overlay-mask' } },
+  select: { classNames: { popup: { root: 'ats-overlay-popup' } } },
+  datePicker: { classNames: { popup: { root: 'ats-overlay-popup' } } },
+  dropdown: { className: 'ats-overlay-popup' },
+  tooltip: { classNames: { root: 'ats-overlay-tip' } },
+  popover: { classNames: { root: 'ats-overlay-popup' } },
+  popconfirm: { classNames: { root: 'ats-overlay-popup' } },
+};
+
+/**
+ * ForceLight — pins a subtree to the light theme regardless of the app theme.
+ * Used for public token-link pages (candidate/approver-facing forms opened
+ * from emails) that are designed light and offer no theme toggle. The
+ * data-theme="light" wrapper re-scopes the CSS variables (see the
+ * `:root, [data-theme='light']` selector in theme/index.css); the nested
+ * ConfigProvider pins AntD tokens.
+ */
+function ForceLight({ children }) {
+  return (
+    <ConfigProvider theme={lightTheme}>
+      <div data-theme="light" style={{ colorScheme: 'light', minHeight: '100vh' }}>
+        {children}
+      </div>
+    </ConfigProvider>
+  );
+}
+
 function AppShell() {
   const { isDark } = useTheme();
   const { user, isAuthenticated } = useAuth();
@@ -236,7 +295,11 @@ function AppShell() {
   }, [isAuthenticated, user, queryClient]);
 
   return (
-    <ConfigProvider theme={currentTheme}>
+    // `{...OVERLAY_CONFIG}` is the tier-4 overlay glass — see the constant above.
+    // The ForceLight provider wrapping the public token routes is nested under
+    // this one and leaves these keys undefined, so it inherits them: dialogs on
+    // the public pages get the same material, resolved against light tokens.
+    <ConfigProvider theme={currentTheme} {...OVERLAY_CONFIG}>
       <AntApp>
         <BrowserRouter>
           <Routes>
@@ -250,14 +313,22 @@ function AppShell() {
             >
               <Route path="/login" element={<Login />} />
               <Route path="/admin/login" element={<AdminLogin />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
             </Route>
 
-            {/* Public candidate missing data route */}
-            <Route path="/missing-jd-upload" element={<MissingJdUpload />} />
+            {/* Public candidate missing data route (always light — external users) */}
+            <Route path="/missing-jd-upload" element={<ForceLight><MissingJdUpload /></ForceLight>} />
 
-            {/* Public MRF submission & approval routes */}
-            <Route path="/mrf-submit" element={<MrfSubmit />} />
-            <Route path="/mrf/:id/approve" element={<MrfApprovalAction />} />
+            {/* Public MRF submission & approval routes (always light — external users) */}
+            <Route path="/mrf-submit" element={<ForceLight><MrfSubmit /></ForceLight>} />
+            <Route path="/mrf/:id/approve" element={<ForceLight><MrfApprovalAction /></ForceLight>} />
+
+            {/* Public interviewer scorecard (no login — opened from an emailed link) */}
+            <Route path="/scorecard/:token" element={<ForceLight><InterviewScorecard /></ForceLight>} />
+
+            {/* Public candidate document upload (no login — opened from an emailed link) */}
+            <Route path="/documents/:token" element={<ForceLight><DocumentUpload /></ForceLight>} />
 
             {/* Protected (app) routes */}
             <Route
@@ -295,6 +366,35 @@ function AppShell() {
               />
               <Route path="/filtering" element={<CandidateScreening />} />
               <Route path="/analytics" element={<Analytics />} />
+              {/* Real Pipeline Tracker (Module 1) — persists to /api/pipeline,
+                  sends real outcome emails. This is "Candidate Pipeline" in the
+                  sidebar. */}
+              <Route
+                path="/pipeline"
+                element={
+                  <ModuleRoute moduleKey="recruitment_pipeline">
+                    <Pipeline />
+                  </ModuleRoute>
+                }
+              />
+              {/* Phase 3 walkthrough demo (mock data only). Retired from the
+                  sidebar but still routable for client walkthroughs and as the
+                  design reference PipelineDrawer / AssessmentImportModal /
+                  DecisionEmailModal cite.
+
+                  Now behind the SAME module guard as the real page: it was a
+                  bare route, so a user explicitly denied the recruitment_pipeline
+                  module could still open a full pipeline UI and act on it. The
+                  data was fake, but the access check was too. */}
+              <Route
+                path="/candidate-pipeline-prototype"
+                element={
+                  <ModuleRoute moduleKey="recruitment_pipeline">
+                    <CandidatePipelinePrototype />
+                  </ModuleRoute>
+                }
+              />
+
               <Route path="/email" element={<EmailManagement />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
@@ -314,9 +414,15 @@ function AppShell() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
+      {/* BrandProvider is the per-organization theming axis (theme/brands.js). It is
+          independent of ThemeProvider's light/dark: it publishes `-light`/`-dark`
+          token pairs and index.css selects between them, so the two nest in either
+          order. It sits inside so a future server-driven theme can read auth. */}
+      <BrandProvider>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </BrandProvider>
     </ThemeProvider>
   );
 }

@@ -3,9 +3,10 @@
  * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
  */
 import { useMemo, useState } from 'react';
-import { Card, Typography, Segmented, Empty } from 'antd';
+import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { topByField, topSkills } from '../../utils/dashboardAggregations';
+import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
 
@@ -16,13 +17,18 @@ const prefersReducedMotion = () =>
   window.matchMedia &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function BarTip({ active, payload }) {
+function BarTip({ active, payload, mode }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <div className="dash-chart-tip">
+      {/* The label repeats in full because the axis truncates long ones with an
+          ellipsis — the hover is where a reader recovers the whole name. */}
       <div className="dash-chart-tip__label">{p.name}</div>
       <div className="dash-chart-tip__value">{p.value} candidate{p.value === 1 ? '' : 's'}</div>
+      <div className="dash-chart-tip__note">
+        {mode === 'roles' ? 'applied for this role' : 'list this skill on their profile'}
+      </div>
     </div>
   );
 }
@@ -38,7 +44,9 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
     <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Talent Insights</Title>
+          <Title level={5} style={{ margin: 0 }}>
+            Talent Insights <MetricInfo metric="talentInsights" size={12} />
+          </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'}
           </Text>
@@ -47,9 +55,21 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           size="small"
           value={mode}
           onChange={setMode}
-          options={[{ label: 'Roles', value: 'roles' }, { label: 'Skills', value: 'skills' }]}
+          options={[
+            {
+              label: <Tooltip title="The roles candidates are applying for most often">Roles</Tooltip>,
+              value: 'roles',
+            },
+            {
+              label: <Tooltip title="The skills that appear most often across candidate profiles">Skills</Tooltip>,
+              value: 'skills',
+            },
+          ]}
         />
       </div>
+      {/* Sampling caveat moved into this card's MetricInfo definition
+          (`talentInsights.caveat`) rather than printed under the title — same as
+          HiringTrendsCard. Still stated, no longer clutter. */}
 
       <div style={{ height: 250, marginTop: 12 }}>
         {data.length === 0 ? (
@@ -58,15 +78,20 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 4 }}>
               <XAxis type="number" hide allowDecimals={false} />
+              {/* width was 120, which clipped real role names ("Senior React
+                  Engineer" rendered as "enior React Engineer"). Widened, and long
+                  labels now truncate with an ellipsis so nothing can clip mid-glyph
+                  regardless of length — the full value is in the bar's tooltip. */}
               <YAxis
                 type="category"
                 dataKey="name"
-                width={120}
+                width={150}
                 tick={{ fontSize: 11.5, fill: 'var(--text)' }}
+                tickFormatter={(v) => (String(v).length > 22 ? `${String(v).slice(0, 21)}…` : v)}
                 tickLine={false}
                 axisLine={false}
               />
-              <RTooltip content={<BarTip />} cursor={{ fill: 'var(--gold-subtle)' }} />
+              <RTooltip content={<BarTip mode={mode} />} cursor={{ fill: 'var(--gold-subtle)' }} />
               <Bar dataKey="value" radius={[0, 6, 6, 0]} isAnimationActive={!prefersReducedMotion()} animationDuration={800} barSize={16}>
                 {data.map((_, i) => (
                   <Cell key={i} fill={ROLE_COLORS[i % ROLE_COLORS.length]} />

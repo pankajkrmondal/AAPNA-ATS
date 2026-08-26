@@ -11,6 +11,11 @@ import { uploadFileToOneDrive } from '../services/onedrive.service.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
+import { isMrfFilled } from '../config/pipelineStages.js';
+import { assertSignature } from '../utils/fileSignature.js';
+import runExport from '../exports/runExport.js';
+import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
+import mrfDetailExport from '../exports/mrfDetail.export.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -123,42 +128,9 @@ export const listMrfRequests = catchAsync(async (req, res) => {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 
-  const where = {};
-  const andConditions = [];
-
-  // Status filtering (e.g. pending, manager submitted)
-  if (status && status.toLowerCase() !== 'all') {
-    const statusLower = status.trim().toLowerCase();
-    if (statusLower === 'pending') {
-      andConditions.push({
-        mrfstatus: { in: ['pending', 'pendingfromleader'] },
-      });
-    } else if (statusLower === 'manager submitted' || statusLower === 'managersubmitted') {
-      andConditions.push({
-        mrfstatus: { in: ['managersubmitted', 'manager submitted'] },
-      });
-    } else {
-      andConditions.push({
-        mrfstatus: status.trim(),
-      });
-    }
-  }
-
-  // Free text search
-  if (search) {
-    andConditions.push({
-      OR: [
-        { first_name: { contains: search, mode: 'insensitive' } },
-        { last_name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { role: { contains: search, mode: 'insensitive' } },
-      ],
-    });
-  }
-
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
+  // Shared with GET /api/mrf/export so the CSV can never disagree with the
+  // screen about what a filter means.
+  const where = buildMrfWhere({ search, status });
 
   // Query records and count in parallel
   const [records, total] = await Promise.all([
@@ -171,37 +143,50 @@ export const listMrfRequests = catchAsync(async (req, res) => {
     prisma.rpa_mrf_jd_send.count({ where }),
   ]);
 
-  // Fetch approval status for all records in parallel
-  const mrfIds = records
-    .map((r) => r.mrf_id)
-    .filter(Boolean)
-    .map((id) => BigInt(id));
-
-  const linkedMrfs = mrfIds.length > 0
-    ? await prisma.rpa_mrf.findMany({
-        where: { id: { in: mrfIds } },
-        select: { id: true, approval_status: true },
-      })
-    : [];
-
-  const mrfStatusMap = {};
-  linkedMrfs.forEach((m) => {
-    mrfStatusMap[m.id.toString()] = m.approval_status;
-  });
+  const withApproval = await attachApprovalStatus(records);
 
   // Safe BigInt serialization
-  const serializedRecords = records.map((record) => {
-    const mIdStr = record.mrf_id ? record.mrf_id.toString() : null;
-    return {
-      ...record,
-      id: record.id.toString(),
-      mrf_id: mIdStr,
-      approval_status: mIdStr ? (mrfStatusMap[mIdStr] || 'pending') : 'pending',
-    };
-  });
+  const serializedRecords = withApproval.map((record) => ({
+    ...record,
+    id: record.id.toString(),
+    mrf_id: record.mrf_id ? record.mrf_id.toString() : null,
+  }));
 
   return paginated(res, serializedRecords, pageNum, limitNum, total, 'MRF requests retrieved successfully');
 });
+
+/**
+ * @desc    Export MRF requests matching the current filters as CSV
+ * @route   GET /api/mrf/export
+ * @access  Private
+ */
+export const exportMrfRequests = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'mrf',
+  label: 'MRF-Requests',
+  columns: mrfExport.columns,
+  filters: mrfExport.parseFilters(req),
+  fetch: mrfExport.fetch,
+}));
+
+/**
+ * @desc    Export ONE requisition — the request plus the MRF the Hiring Manager
+ *          submitted — as a Section/Field/Value CSV. Backs the Export button in
+ *          the MRF details modal.
+ * @route   GET /api/mrf/:id/export
+ * @access  Private
+ */
+export const exportMrfDetail = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'mrf-detail',
+  label: `MRF-${req.params.id}`,
+  columns: mrfDetailExport.columns,
+  filters: mrfDetailExport.parseFilters(req),
+  fetch: mrfDetailExport.fetch,
+  // A "row" here is a FIELD of one requisition, not a record. Reporting ~65
+  // would have the client toast read "Exported 65 rows." for a single MRF, so
+  // the count is suppressed (sendCsv skips null-valued headers) and the toast
+  // falls back to "Exported CSV.".
+  headers: { 'X-Export-Row-Count': null },
+}));
 
 /**
  * @desc    Get a single MRF Request by ID
@@ -219,14 +204,19 @@ export const getMrfRequest = catchAsync(async (req, res) => {
     throw new AppError('MRF Request not found.', 404);
   }
 
+  // approval_status and fill state are independent facts — see
+  // attachApprovalStatus() in exports/mrf.export.js for why they are carried
+  // separately rather than one overwriting the other.
   let approval_status = 'pending';
+  let mrf_filled = false;
   if (mrfSend.mrf_id) {
     const linkedMrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(mrfSend.mrf_id) },
-      select: { approval_status: true },
+      select: { approval_status: true, filled_at: true },
     });
     if (linkedMrf) {
       approval_status = linkedMrf.approval_status;
+      mrf_filled = isMrfFilled(linkedMrf);
     }
   }
 
@@ -235,6 +225,7 @@ export const getMrfRequest = catchAsync(async (req, res) => {
     id: mrfSend.id.toString(),
     mrf_id: mrfSend.mrf_id ? mrfSend.mrf_id.toString() : null,
     approval_status,
+    mrf_filled,
   };
 
   return success(res, responseData, 'MRF Request retrieved successfully');
@@ -281,13 +272,17 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
   });
 
   let approval_status = 'pending';
+  let mrf_filled = false;
+  let mrf_filled_at = null;
   if (updated.mrf_id) {
     const linkedMrf = await prisma.rpa_mrf.findUnique({
       where: { id: BigInt(updated.mrf_id) },
-      select: { approval_status: true },
+      select: { approval_status: true, filled_at: true },
     });
     if (linkedMrf) {
       approval_status = linkedMrf.approval_status;
+      mrf_filled = isMrfFilled(linkedMrf);
+      mrf_filled_at = linkedMrf.filled_at;
     }
   }
 
@@ -296,6 +291,8 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
     id: updated.id.toString(),
     mrf_id: updated.mrf_id ? updated.mrf_id.toString() : null,
     approval_status,
+    mrf_filled,
+    mrf_filled_at,
   };
 
   return success(res, responseData, 'MRF Request updated successfully');
@@ -542,6 +539,11 @@ export const getPrefillOptions = catchAsync(async (req, res) => {
  * @access  Public
  */
 export const submitHiringManagerMrf = catchAsync(async (req, res) => {
+  // CONTENT CHECK (defect D7). Public and unauthenticated, and the attachments
+  // are pushed to OneDrive below — so the bytes are verified against the claimed
+  // extension before anything else runs. Covers both named fields.
+  await assertSignature(req);
+
   const {
     submitter_email,
     hiring_manager_name,

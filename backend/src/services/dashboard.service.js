@@ -18,19 +18,46 @@ export async function getStats() {
     const [
       totalCandidates,
       activeMRFs,
+      pendingApprovalMRFs,
       todayUploads,
       shortlistedCount,
       aiScreenedCount,
-      funnelShortlistedCount,
       hiredCount,
     ] = await Promise.all([
       // Total candidates in rpa_cv
       prisma.rpa_cv.count(),
 
-      // Active MRFs (approval_status is 'pending', 'waiting', or 'approved')
+      // Active MRFs (approval_status is 'pending', 'waiting', or 'approved',
+      // and the openings are not all filled). The filled_at test used to be
+      // implicit — closure overwrote approval_status to 'closed', which fell
+      // out of this list for free. That write was lossy, so fill state now has
+      // its own column and must be excluded explicitly.
       prisma.rpa_mrf.count({
         where: {
           approval_status: { in: ['pending', 'waiting', 'approved'] },
+          filled_at: null,
+        },
+      }),
+
+      // MRFs awaiting an APPROVAL decision.
+      //
+      // This exists because the dashboard was deriving "pending approval" from
+      // `GET /api/mrf?status=pending&limit=50` and taking the array length. That was
+      // wrong twice over:
+      //   1. WRONG COLUMN. buildMrfWhere() maps `status=pending` onto `mrfstatus`
+      //      (the manager's *submission* state: pending / pendingfromleader), not
+      //      `approval_status`. So a row labelled "pending approval" was counting
+      //      requisitions that had not yet been submitted. That is why the dashboard
+      //      could show "Active MRFs 21" beside "50 pending approval" — the two
+      //      numbers were reading different columns.
+      //   2. TRUNCATED. `.length` of a page capped at limit=50 can never exceed 50,
+      //      so the figure silently plateaus once there are 50+ matches.
+      // Counting it here, next to activeMRFs and with the same filled_at exclusion,
+      // keeps the two consistent by construction.
+      prisma.rpa_mrf.count({
+        where: {
+          approval_status: 'pending',
+          filled_at: null,
         },
       }),
 
@@ -61,17 +88,6 @@ export async function getStats() {
         },
       }),
 
-      // Funnel Shortlisted: candidates shortlisted and not rejected
-      prisma.rpa_shortlisted_candidates.count({
-        where: {
-          NOT: {
-            pipeline_status: {
-              in: ['rejected', 'Rejected'],
-            },
-          },
-        },
-      }),
-
       // Hired: candidates with joined_at, offer_accepted_at or hired/joined status
       prisma.rpa_shortlisted_candidates.count({
         where: {
@@ -87,12 +103,21 @@ export async function getStats() {
     return {
       totalCandidates,
       activeMRFs,
+      pendingApprovalMRFs,
       todayUploads,
       shortlisted: shortlistedCount, // Map to frontend expected key: 'shortlisted'
       funnel: {
         sourced: totalCandidates,
         aiScreened: aiScreenedCount,
-        shortlisted: funnelShortlistedCount,
+        // ONE definition of "shortlisted" per screen.
+        //
+        // The funnel used to count "every shortlist row not explicitly rejected",
+        // while the KPI card counted "pipeline_status is shortlisted/selected". Both
+        // were labelled "Shortlisted" and rendered on the same dashboard, so the page
+        // showed two different numbers for the same word (e.g. 74 in the KPI, 78 in
+        // the funnel). The looser predicate also counted on-hold and in-progress rows
+        // as shortlisted, which overstated the funnel.
+        shortlisted: shortlistedCount,
         hired: hiredCount,
       },
     };
@@ -101,6 +126,7 @@ export async function getStats() {
     return {
       totalCandidates: 0,
       activeMRFs: 0,
+      pendingApprovalMRFs: 0,
       todayUploads: 0,
       shortlisted: 0,
       funnel: {
@@ -139,6 +165,77 @@ export async function getRecentUploads(limit = 10) {
     });
   } catch (error) {
     logger.error('Recent uploads query failed', { error: error.message });
+    return [];
+  }
+}
+
+/**
+ * Per-recruiter breakdown: how many candidates each recruiter ADDED (uploaded —
+ * rpa_cv.last_action_by, an email) vs SHORTLISTED to a role —
+ * rpa_shortlisted_candidates.shortlisted_by, a username), merged into ONE row
+ * per person instead of two separate rankings. (Named "Shortlisted", not
+ * "Tagged" — "Tag to Open JD" refers to picking a role during both Shortlist
+ * *and* Reject, so "Tagged" would misleadingly imply rejects count too; this
+ * metric is scoped to pipeline_status = 'shortlisted' only.)
+ *
+ * last_action_by and shortlisted_by use different identity formats (email vs.
+ * username) for what's often the same person, so each raw value is resolved
+ * against rpa_users (matching email → last_action_by, username → shortlisted_by)
+ * to get a real display name and a stable join key — that's what lets the two
+ * counts land on the same row instead of reading as unrelated people. Values
+ * that don't match any user account (e.g. "Self Applied", or a blank/legacy
+ * last_action_by) fall back to that raw label as both the name and the key.
+ *
+ * @param {number} [limit=10]
+ * @returns {Promise<Array<{ recruiter: string, added: number, shortlisted: number }>>}
+ */
+export async function getRecruiterBreakdown(limit = 10) {
+  try {
+    const [addedGrouped, shortlistedGrouped, users] = await Promise.all([
+      prisma.rpa_cv.groupBy({
+        by: ['last_action_by'],
+        _count: { _all: true },
+      }),
+      prisma.rpa_shortlisted_candidates.groupBy({
+        by: ['shortlisted_by'],
+        where: { pipeline_status: 'shortlisted' }, // exclude rows that only exist due to a reject() stamp
+        _count: { _all: true },
+      }),
+      prisma.rpa_users.findMany({
+        select: { id: true, username: true, email: true, first_name: true, last_name: true },
+      }),
+    ]);
+
+    const byEmail = new Map(users.filter((u) => u.email).map((u) => [u.email.toLowerCase(), u]));
+    const byUsername = new Map(users.filter((u) => u.username).map((u) => [u.username.toLowerCase(), u]));
+    const displayName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.username || u.email;
+
+    const combined = new Map(); // key -> { recruiter, added, shortlisted }
+    const resolve = (raw, lookup) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return { key: 'raw:Unattributed', name: 'Unattributed' };
+      const user = lookup.get(trimmed.toLowerCase());
+      return user ? { key: `user:${user.id}`, name: displayName(user) } : { key: `raw:${trimmed}`, name: trimmed };
+    };
+
+    for (const r of addedGrouped) {
+      const { key, name } = resolve(r.last_action_by, byEmail);
+      const entry = combined.get(key) || { recruiter: name, added: 0, shortlisted: 0 };
+      entry.added += r._count._all;
+      combined.set(key, entry);
+    }
+    for (const r of shortlistedGrouped) {
+      const { key, name } = resolve(r.shortlisted_by, byUsername);
+      const entry = combined.get(key) || { recruiter: name, added: 0, shortlisted: 0 };
+      entry.shortlisted += r._count._all;
+      combined.set(key, entry);
+    }
+
+    return [...combined.values()]
+      .sort((a, b) => (b.added + b.shortlisted) - (a.added + a.shortlisted))
+      .slice(0, limit);
+  } catch (error) {
+    logger.error('Dashboard recruiter breakdown query failed', { error: error.message });
     return [];
   }
 }

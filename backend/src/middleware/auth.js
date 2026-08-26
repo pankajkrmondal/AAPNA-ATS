@@ -3,7 +3,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
-import { isAdminTier, isSuperadmin } from '../config/roles.js';
+import { isAdminTier, isSuperadmin, ROLE_RANK, normalizeRole } from '../config/roles.js';
 
 /**
  * JWT authentication middleware.
@@ -148,6 +148,58 @@ export const checkModuleAccess = (moduleName) => {
 
     next();
   });
+};
+
+/**
+ * Admin-tier gate for configuration endpoints — the things RT asked to be
+ * changeable "without development" (pipeline stages/outcomes/reasons, creating
+ * email templates). Recruiters use that configuration; they do not reshape it.
+ *
+ * Must run after authenticate(), which populates req.user.
+ *
+ * Usage:  router.post('/stages', requireAdmin, handler);
+ *
+ * @type {import('express').RequestHandler}
+ */
+export const requireAdmin = catchAsync(async (req, _res, next) => {
+  if (!req.user) {
+    throw new AppError('Authentication required.', 401);
+  }
+  if (!isAdminTier(req.user.role)) {
+    throw new AppError('Admin access required to change this configuration.', 403);
+  }
+  next();
+});
+
+/**
+ * Internal-staff floor: everyone at recruiter rank or above (recruiter, the
+ * legacy hr alias, admin, superadmin). Vendors are rank 10 and are refused.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM checkModuleAccess (M6, 2026-08-12):
+ * a module toggle is a per-user checkbox in the Admin Portal, so it answers
+ * "was this deliberately switched on?" — not "should this role ever have it?".
+ * The Candidate Pipeline, Candidate Screening and HR Upload routes were guarded
+ * by the module check alone, which meant one mis-clicked checkbox on a vendor
+ * account exposed the entire board: every candidate, every MRF, plus the
+ * outcome/closure/offer/document write endpoints. The frontend confines vendors
+ * to /vendor-dashboard and /vendor (MainLayout's VENDOR_ALLOWED_PATHS) but that
+ * binds a browser, not a token.
+ *
+ * Same class of hole as the CSV export one closed in b671236. Rank-based rather
+ * than a hardcoded list so a future low-privilege role is denied by default
+ * instead of needing to be remembered here.
+ *
+ * @type {import('express').RequestHandler}
+ */
+export const requireStaff = (req, _res, next) => {
+  if (!req.user) {
+    return next(new AppError('Authentication required.', 401));
+  }
+  const rank = ROLE_RANK[normalizeRole(req.user.role)] ?? 0;
+  if (rank < ROLE_RANK.recruiter) {
+    return next(new AppError('You do not have permission to perform this action.', 403));
+  }
+  next();
 };
 
 /**

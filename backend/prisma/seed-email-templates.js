@@ -16,7 +16,7 @@
  *   - Zeko Interview Cancelled Alert    (by name)
  *   - MRF Approval Request              (by name) — intro paragraphs only; greeting/buttons are built in the service
  *
- * Legacy source of truth for the branded bodies: docs/Email-Templates-Summary.md
+ * Legacy source of truth for the branded bodies: docs/reference/Email-Templates-Summary.md
  * (the n8n flow exports). Safe to run multiple times.
  *
  *   node prisma/seed-email-templates.js
@@ -108,7 +108,7 @@ const REJECTED_PARAS = `<p>After careful consideration of your profile, we regre
 
 const ONHOLD_PARAS = `<p>Thank you for your continued interest in the <strong>{position}</strong> position at AAPNA Infotech.</p><p>Your application is currently on hold while we complete our initial screening. We will reach out with an update as soon as possible.</p><p>We appreciate your patience.</p>`;
 
-/** Branded candidate welcome — n8n "Send a message" (Resume 1.1.1 Intake), §1.1 of docs/Email-Templates-Summary.md. */
+/** Branded candidate welcome — n8n "Send a message" (Resume 1.1.1 Intake), §1.1 of docs/reference/Email-Templates-Summary.md. */
 const WELCOME_BODY = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -642,6 +642,122 @@ const ZEKO_CANCELLED_BODY = `<!DOCTYPE html>
  */
 const MRF_APPROVAL_BODY = `<p>We have received a new Manpower Requisition Form ( MRF ) request for your review and approval.</p><p><br></p><p>Kindly review the filled MRF and the attached Job Description and share your approval. Please review the filled MRF and attached JD and confirm your approval. Also, let us know whether this should be a permanent role or a different engagement model.</p><p><br></p><p>Also, please help define the priority of the role (High / Moderate / Low) as per the business need.</p>`;
 
+// ── Technical-round interview scheduling (Module 2) ──────────────────────────
+// Editable defaults for the Pipeline Tracker Schedule/Cancel actions, shown in
+// the modal so the recruiter can tweak the text before it sends (same pattern
+// as the stage-outcome emails). {{teams_line}} is injected by the service —
+// it becomes a Join-Teams button when a link exists, or empty otherwise.
+
+/** Candidate-facing interview invitation. */
+const INTERVIEW_SCHED_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
+<p>Your <strong>{{stage_label}}</strong> interview for <strong>{{position}}</strong> has been scheduled.</p>
+<p><strong>When:</strong> {{interview_when}}<br/><strong>Duration:</strong> {{duration}} minutes</p>
+{{teams_line}}
+<p>Please be available a few minutes early. Reply to this email if the time does not work for you.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Interviewer/panel-facing notice.
+ *  {{interviewer_name}} resolves to the booking's interviewer, to "all" when more
+ *  than one mailbox was invited, and to "there" when no name was captured — see
+ *  interviewerGreeting() in services/interviewSchedule.service.js. It is never blank. */
+const INTERVIEW_SCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>You are scheduled to take <strong>{{stage_label}}</strong> for <strong>{{candidate_name}}</strong> ({{position}}).</p>
+<p><strong>When:</strong> {{interview_when}}<br/><strong>Duration:</strong> {{duration}} minutes<br/>
+   <strong>Candidate email:</strong> {{candidate_email}}</p>
+{{teams_line}}
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Candidate-facing cancellation notice. */
+const INTERVIEW_CANCEL_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
+<p>Your <strong>{{stage_label}}</strong> interview scheduled for {{interview_when}} has been cancelled.</p>
+{{reason_line}}
+<p>We will be in touch with a new time shortly.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Interviewer/panel-facing cancellation notice. */
+const INTERVIEW_CANCEL_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>The <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) scheduled for {{interview_when}} has been cancelled.</p>
+{{reason_line}}
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Candidate-facing reschedule notice — shows the OLD and NEW time together. */
+const INTERVIEW_RESCHED_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
+<p>Your <strong>{{stage_label}}</strong> interview for <strong>{{position}}</strong> has been <strong>rescheduled</strong>.</p>
+<p><strong>Previous time:</strong> <span style="text-decoration:line-through;color:#888;">{{previous_when}}</span><br/>
+   <strong>New time:</strong> {{interview_when}}<br/>
+   <strong>Duration:</strong> {{duration}} minutes</p>
+{{teams_line}}
+<p>Please be available a few minutes early. Reply to this email if the new time does not work for you.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Interviewer/panel-facing reschedule notice. */
+const INTERVIEW_RESCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>The <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) has been <strong>rescheduled</strong>.</p>
+<p><strong>Previous time:</strong> <span style="text-decoration:line-through;color:#888;">{{previous_when}}</span><br/>
+   <strong>New time:</strong> {{interview_when}}<br/>
+   <strong>Duration:</strong> {{duration}} minutes<br/>
+   <strong>Candidate email:</strong> {{candidate_email}}</p>
+{{teams_line}}
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Pre-interview reminder — candidate. Sent by jobs/interviewReminder.js inside
+ *  the configured lead-time window. Promoted from a hard-coded body so HR can
+ *  edit the copy from the Email Templates page. */
+const INTERVIEW_REMINDER_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
+<p>This is a reminder that your <strong>{{stage_label}}</strong> interview for <strong>{{position}}</strong> starts shortly.</p>
+<p><strong>When:</strong> {{interview_when}}</p>
+{{teams_line}}
+{{notes_line}}
+<p>Please be ready a few minutes early.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Pre-interview reminder — interviewer/panel. */
+const INTERVIEW_REMINDER_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>Your <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) starts shortly.</p>
+<p><strong>When:</strong> {{interview_when}}<br/>
+   <strong>Candidate email:</strong> {{candidate_email}}</p>
+{{teams_line}}
+{{notes_line}}
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Scorecard invitation — technical interviewer. Sent once the interview is
+ *  confirmed held; {{scorecard_link}} is the no-login single-use link. */
+const SCORECARD_INVITE_INTERVIEWER_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>Thank you for interviewing <strong>{{candidate_name}}</strong> for <strong>{{position}}</strong> in the <strong>{{stage_label}}</strong> round.</p>
+<p>Please submit your evaluation using the secure link below — <strong>no login is required</strong>. The candidate, position and round are already filled in for you.</p>
+<p style="margin:16px 0;"><a href="{{scorecard_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
+<p style="color:#888;font-size:13px;">This link works once and expires in a few days. Please submit before it lapses.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** Scorecard invitation — HR / CEO round (same secure-link mechanics). */
+const SCORECARD_INVITE_HRCEO_BODY = `<p>Hi {{interviewer_name}},</p>
+<p>Thank you for the <strong>{{stage_label}}</strong> round with <strong>{{candidate_name}}</strong> for <strong>{{position}}</strong>.</p>
+<p>Please record your feedback using the secure link below — <strong>no login is required</strong>.</p>
+<p style="margin:16px 0;"><a href="{{scorecard_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
+<p style="color:#888;font-size:13px;">This link works once and expires in a few days.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+/** "Please confirm this interview happened" nudge from the occurrence sweep,
+ *  sent when Teams attendance can't be read automatically. {{confirm_link}}
+ *  opens the pipeline drawer / interviewer gate. */
+const INTERVIEW_CONFIRM_BODY = `<p>Hi,</p>
+<p>The scheduled <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) for {{interview_when}} has passed.</p>
+<p>Please confirm whether it took place, so we can either request the interviewer's scorecard or reschedule:</p>
+<p style="margin:16px 0;"><a href="{{confirm_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Confirm interview outcome</a></p>
+<p style="color:#888;font-size:13px;">No scorecard is sent until the interview is confirmed as held.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
+// Recruiter-facing alert when Teams attendance PROVES the interview did not
+// happen (no-show / nobody joined / network failure), so they can chase the
+// absent side or rebook. No scorecard is requested for a no-show. A successful
+// interview sends nothing here — the interviewer just receives the scorecard.
+const INTERVIEW_NO_SHOW_BODY = `<p>Hi,</p>
+<p>The scheduled <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) for {{interview_when}} <strong>did not take place</strong>.</p>
+<p>The Microsoft Teams attendance report shows that <strong>{{absent_party}}</strong>.</p>
+<p style="margin:16px 0;"><a href="{{confirm_link}}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open Candidate Pipeline</a></p>
+<p style="color:#888;font-size:13px;">No scorecard has been requested from the interviewer. Please reschedule the round or update the candidate's status.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`;
+
 const TEMPLATES = [
   {
     find: { category: 'shortlist' },
@@ -772,6 +888,377 @@ const TEMPLATES = [
       subject: 'New MRF Request - Approval Request',
       body_html: MRF_APPROVAL_BODY,
       placeholders: [],
+      is_active: true,
+    },
+  },
+  // Module 2 — technical-round interview scheduling. Four editable defaults
+  // (candidate + panel × schedule + cancel) surfaced by the Pipeline Tracker
+  // Schedule / Cancel modals.
+  {
+    find: { name: 'Interview Scheduled — Candidate' },
+    data: {
+      name: 'Interview Scheduled — Candidate',
+      category: 'interview',
+      subject: '{{stage_label}} scheduled — {{position}}',
+      body_html: INTERVIEW_SCHED_CANDIDATE_BODY,
+      placeholders: ['candidate_name', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Scheduled — Panel' },
+    data: {
+      name: 'Interview Scheduled — Panel',
+      category: 'interview',
+      subject: 'Interview panel — {{stage_label}}: {{candidate_name}}',
+      body_html: INTERVIEW_SCHED_PANEL_BODY,
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Cancelled — Candidate' },
+    data: {
+      name: 'Interview Cancelled — Candidate',
+      category: 'interview',
+      subject: '{{stage_label}} cancelled',
+      body_html: INTERVIEW_CANCEL_CANDIDATE_BODY,
+      placeholders: ['candidate_name', 'stage_label', 'interview_when', 'reason_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Cancelled — Panel' },
+    data: {
+      name: 'Interview Cancelled — Panel',
+      category: 'interview',
+      subject: 'Interview cancelled — {{stage_label}}: {{candidate_name}}',
+      body_html: INTERVIEW_CANCEL_PANEL_BODY,
+      placeholders: ['interviewer_name', 'candidate_name', 'position', 'stage_label', 'interview_when', 'reason_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Rescheduled — Candidate' },
+    data: {
+      name: 'Interview Rescheduled — Candidate',
+      category: 'interview',
+      subject: '{{stage_label}} rescheduled — {{position}}',
+      body_html: INTERVIEW_RESCHED_CANDIDATE_BODY,
+      placeholders: ['candidate_name', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Rescheduled — Panel' },
+    data: {
+      name: 'Interview Rescheduled — Panel',
+      category: 'interview',
+      subject: 'Interview rescheduled — {{stage_label}}: {{candidate_name}}',
+      body_html: INTERVIEW_RESCHED_PANEL_BODY,
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line'],
+      is_active: true,
+    },
+  },
+  // Pre-interview reminders (jobs/interviewReminder.js). Editable defaults; the
+  // job falls back to an equivalent inline body if a row is missing.
+  {
+    find: { name: 'Interview Reminder — Candidate' },
+    data: {
+      name: 'Interview Reminder — Candidate',
+      category: 'interview',
+      subject: 'Reminder: your {{stage_label}} interview is coming up',
+      body_html: INTERVIEW_REMINDER_CANDIDATE_BODY,
+      placeholders: ['candidate_name', 'position', 'stage_label', 'interview_when', 'teams_line', 'notes_line'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview Reminder — Panel' },
+    data: {
+      name: 'Interview Reminder — Panel',
+      category: 'interview',
+      subject: 'Reminder: {{stage_label}} with {{candidate_name}}',
+      body_html: INTERVIEW_REMINDER_PANEL_BODY,
+      placeholders: ['candidate_name', 'candidate_email', 'interviewer_name', 'position', 'stage_label', 'interview_when', 'teams_line', 'notes_line'],
+      is_active: true,
+    },
+  },
+  // Phase 3 Module 3 — interviewer scorecard link + occurrence-confirm nudge.
+  {
+    find: { name: 'Scorecard Invitation — Interviewer' },
+    data: {
+      name: 'Scorecard Invitation — Interviewer',
+      category: 'interview',
+      subject: 'Please score your {{stage_label}} — {{candidate_name}}',
+      body_html: SCORECARD_INVITE_INTERVIEWER_BODY,
+      placeholders: ['interviewer_name', 'candidate_name', 'position', 'stage_label', 'scorecard_link'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Scorecard Invitation — HR/CEO' },
+    data: {
+      name: 'Scorecard Invitation — HR/CEO',
+      category: 'interview',
+      subject: 'Your feedback on {{candidate_name}} — {{stage_label}}',
+      body_html: SCORECARD_INVITE_HRCEO_BODY,
+      placeholders: ['interviewer_name', 'candidate_name', 'position', 'stage_label', 'scorecard_link'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview — Please Confirm It Happened' },
+    data: {
+      name: 'Interview — Please Confirm It Happened',
+      category: 'interview',
+      subject: 'Did the {{stage_label}} with {{candidate_name}} take place?',
+      body_html: INTERVIEW_CONFIRM_BODY,
+      placeholders: ['candidate_name', 'position', 'stage_label', 'interview_when', 'confirm_link'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Interview — Did Not Take Place' },
+    data: {
+      name: 'Interview — Did Not Take Place',
+      category: 'interview',
+      subject: '{{stage_label}} with {{candidate_name}} did not take place',
+      body_html: INTERVIEW_NO_SHOW_BODY,
+      placeholders: ['candidate_name', 'position', 'stage_label', 'interview_when', 'absent_party', 'confirm_link'],
+      is_active: true,
+    },
+  },
+  // Phase 3 Module 1 — generic stage-outcome fallbacks. Used by
+  // stageNotification.service.js whenever no specific rpa_stage_email_templates
+  // mapping exists for a given stage×outcome pair. {{stage_label}} is
+  // interpolated by the dispatcher (e.g. "Zeko HR Screening", "Technical Round 1").
+  // Requires the category CHECK constraint to include 'stage_outcome' —
+  // see backend/prisma/ddl/2026-07-21-pipeline-stage-engine.sql.
+  {
+    find: { name: 'Stage Outcome — Approved (Generic)' },
+    data: {
+      name: 'Stage Outcome — Approved (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Good news — you have successfully cleared the <strong>{{stage_label}}</strong> stage for the {{position}} role.</p>
+<p>Our recruitment team will be in touch shortly with the next steps.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Stage Outcome — Rejected (Generic)' },
+    data: {
+      name: 'Stage Outcome — Rejected (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your time and effort through the <strong>{{stage_label}}</strong> stage for the {{position}} role.</p>
+<p>After careful review, we will not be moving forward with your candidacy at this time. We appreciate your interest in AAPNA Infotech and encourage you to apply for future openings that match your profile.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Stage Outcome — Hold (Generic)' },
+    data: {
+      name: 'Stage Outcome — Hold (Generic)',
+      category: 'stage_outcome',
+      subject: 'Update on Your Application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Your application for {{position}} is currently <strong>on hold</strong> following the {{stage_label}} stage. This is not a rejection — our recruitment team will reach out once there is an update.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'stage_label'],
+      is_active: true,
+    },
+  },
+
+  // ── Closure outcomes (Q12) ────────────────────────────────────────────
+  //
+  // Only THREE of the eight closure outcomes are seeded, and that is the point.
+  // The other five — joined, joined_and_left, backed_out, did_not_join,
+  // candidate_withdrawn — record something the candidate already lived through;
+  // they are listed in SILENT_FINAL_OUTCOMES in stageNotification.service.js and
+  // will never send however they are mapped. Seeding a "Congratulations" for
+  // someone who backed out is the exact failure that got the earlier
+  // map-closures-onto-the-generics shortcut rejected.
+  //
+  // These three ARE decisions the candidate is waiting on, so they get real copy.
+  // They resolve through GENERIC_FALLBACK_BY_OUTCOME rather than per-stage
+  // mapping rows, because a journey can be closed from ANY stage — a candidate
+  // withdrawing at Tech 2 never reaches the offer stage.
+  {
+    find: { name: 'Closure — Approved' },
+    data: {
+      name: 'Closure — Approved',
+      category: 'stage_outcome',
+      subject: 'Your application with AAPNA Infotech — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>We are pleased to confirm that your candidacy for <strong>{{position}}</strong> has been approved and your application is now complete.</p>
+<p>Our recruitment team will be in touch with everything you need for the next steps.</p>
+<p>Thank you for the time you have given us throughout this process.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Closure — Rejected' },
+    data: {
+      name: 'Closure — Rejected',
+      category: 'stage_outcome',
+      subject: 'Update on your application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for the time and effort you invested in our process for <strong>{{position}}</strong>.</p>
+<p>After careful consideration we will not be taking your application further on this occasion. This was a considered decision and not a reflection of your ability — we would genuinely welcome an application from you for a future opening that fits your profile.</p>
+<p>We wish you every success.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Closure — On Hold' },
+    data: {
+      name: 'Closure — On Hold',
+      category: 'stage_outcome',
+      subject: 'Update on your application — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your patience through our process for <strong>{{position}}</strong>.</p>
+<p>Your application is currently <strong>on hold</strong>. This is not a rejection — the requirement itself is paused, and we will contact you as soon as there is a change.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+
+  // ── Templates that had only a code fallback (or none at all) ──────────
+  //
+  // Seeding these moves the copy out of JavaScript and onto the Email Templates
+  // page, so HR can reword them without a deploy. The code fallbacks stay in
+  // place as a safety net for an environment seeded later.
+  {
+    find: { name: 'Recruitment Process & Interview Stages' },
+    data: {
+      name: 'Recruitment Process & Interview Stages',
+      category: 'general',
+      subject: 'What to expect — our recruitment process for {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Thank you for your interest in the <strong>{{position}}</strong> role at AAPNA Infotech. So you know what to expect, here is how our process runs:</p>
+<ol>
+  <li><strong>HR Screening</strong> — a short introductory conversation.</li>
+  <li><strong>Assessment</strong> — an online test covering aptitude and/or technical skills.</li>
+  <li><strong>Technical Rounds</strong> — one to three discussions with our engineering team, depending on the role.</li>
+  <li><strong>HR Round</strong> — role expectations, timing and compensation.</li>
+  <li><strong>Final Round</strong> — a closing conversation with our leadership team.</li>
+  <li><strong>Documents &amp; Offer</strong> — document collection, then the offer itself.</li>
+</ol>
+<p>Not every role includes every stage, and we will tell you in advance which ones apply to you. You will hear from us after each stage either way.</p>
+<p>If anything is unclear, just reply to this email.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
+  {
+    find: { name: 'Document Collection Request' },
+    data: {
+      name: 'Document Collection Request',
+      category: 'onboarding',
+      subject: 'Documents required to roll out your offer — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>Congratulations! To roll out your offer for <strong>{{position}}</strong>, please share the documents listed on the secure link below — no login is needed.</p>
+<p><a href="{{upload_link}}" style="background:#7a922e;color:#ffffff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Upload your documents</a></p>
+<p>Please do this at the earliest so we can proceed.</p>
+<p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'upload_link'],
+      is_active: true,
+    },
+  },
+  {
+    // ONE template serves both the plain reminder and the post-rejection
+    // re-request. documentCollection.service.js always supplies
+    // rejected_document / rejection_reason — empty strings on a plain reminder —
+    // so the conditional block below simply renders blank in that case. They are
+    // NOT declared as required placeholders, or a reworded plain reminder that
+    // drops them would fail the PUT validator.
+    find: { name: 'Document Collection Reminder' },
+    data: {
+      name: 'Document Collection Reminder',
+      category: 'onboarding',
+      subject: 'Reminder: documents still needed — {{position}}',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>This is a gentle reminder that we are still waiting on the documents needed to roll out your offer for <strong>{{position}}</strong>.</p>
+<p>{{rejected_document}} {{rejection_reason}}</p>
+<p><a href="{{upload_link}}" style="background:#7a922e;color:#ffffff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Upload your documents</a></p>
+<p>Best regards,<br/>AAPNA Recruitment Team</p>`,
+      placeholders: ['candidate_name', 'position', 'upload_link'],
+      is_active: true,
+    },
+  },
+  {
+    // INTERNAL — goes to the recruitment mailbox, never the candidate
+    // (offerApprovalNudge flow key). Q26: a daily chase, not a communication.
+    find: { name: 'Offer Approval Reminder' },
+    data: {
+      name: 'Offer Approval Reminder',
+      category: 'offer',
+      subject: 'Offer approval pending — {{candidate_name}} ({{position}})',
+      body_html: `<p>The offer for <strong>{{candidate_name}}</strong> ({{position}}) is still waiting for internal approval — requested {{waiting_days}} day(s) ago.</p>
+<p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
+<p><a href="{{pipeline_link}}">Open the Candidate Pipeline</a></p>`,
+      placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
+      is_active: true,
+    },
+  },
+  // Phase 3 Module 6 — the vendor half of the Q5 dual-notification. Sent by
+  // vendorNotification.service.js as its OWN message, never as a cc on the
+  // candidate's email, so nothing a recruiter types can reach a vendor.
+  //
+  // {{status_line}} is assembled server-side from a fixed vocabulary — it is
+  // the one field an admin editing this template must leave in place, since it
+  // is the only thing that says what actually happened.
+  //
+  // Requires the category CHECK constraint to include 'vendor_status' —
+  // see backend/prisma/ddl/2026-08-12-vendor-status-templates.sql.
+  {
+    find: { name: 'Vendor — Candidate Status Update' },
+    data: {
+      name: 'Vendor — Candidate Status Update',
+      category: 'vendor_status',
+      subject: 'Candidate update — {{candidate_name}} ({{position}})',
+      body_html: `<p>Hello {{vendor_name}},</p>
+<p>An update on the candidate you submitted for the {{position}} role:</p>
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:14px">
+  <tr><td style="color:#666">Candidate</td><td><strong>{{candidate_name}}</strong></td></tr>
+  <tr><td style="color:#666">Position</td><td>{{position}}</td></tr>
+  <tr><td style="color:#666">Status</td><td><strong>{{status_line}}</strong></td></tr>
+  <tr><td style="color:#666">Date</td><td>{{event_date}}</td></tr>
+</table>
+<p style="color:#666;font-size:12.5px">This is a status update only. Please contact the recruitment team for anything further.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['vendor_name', 'candidate_name', 'position', 'stage_label', 'status_line', 'event_date'],
+      is_active: true,
+    },
+  },
+  {
+    // The Offer stage's deliberately thin variant (Q29). Carries no figures, no
+    // joining date and no remarks — if you are editing this template, that
+    // absence IS the specification, not an oversight.
+    find: { name: 'Vendor — Candidate Milestone (No Detail)' },
+    data: {
+      name: 'Vendor — Candidate Milestone (No Detail)',
+      category: 'vendor_status',
+      subject: 'Candidate milestone — {{candidate_name}} ({{position}})',
+      body_html: `<p>Hello {{vendor_name}},</p>
+<p><strong>{{candidate_name}}</strong> ({{position}}) — {{status_line}}</p>
+<p style="color:#666;font-size:12.5px">Offer terms are handled directly between AAPNA Infotech and the candidate, so this note carries the milestone only. Please contact the recruitment team with any questions.</p>
+<p>Best regards,<br/>AAPNA Infotech Recruitment Team</p>`,
+      placeholders: ['vendor_name', 'candidate_name', 'position', 'status_line', 'event_date'],
       is_active: true,
     },
   },

@@ -1,27 +1,20 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Card,
   Tabs,
   Typography,
-  Select,
-  Input,
-  Button,
   Row,
   Col,
   Space,
   Tag,
   Badge,
-  DatePicker,
-  Form,
-  Spin,
-  Tooltip,
-  Divider,
+  Statistic,
+  Alert,
   message,
-  Avatar,
   Empty,
-  Modal,
-  Table
+  Table,
+  Select,
+  Tooltip
 } from 'antd';
 import {
   TeamOutlined,
@@ -31,167 +24,685 @@ import {
   BarChartOutlined,
   SendOutlined,
   MailOutlined,
-  ThunderboltOutlined,
-  ArrowRightOutlined,
-  CalendarOutlined,
-  SearchOutlined,
-  ExclamationCircleOutlined,
-  MessageOutlined,
-  SaveOutlined,
-  UserOutlined,
+  ApartmentOutlined,
+  RiseOutlined,
   SolutionOutlined,
-  CompassOutlined,
-  WarningOutlined,
-  CloseOutlined,
-  EyeOutlined
+  FileDoneOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import useAuth from '../hooks/useAuth';
 import screeningService from '../services/screeningService';
-import StatusBadge from '../components/common/StatusBadge';
-import CandidateDetailCard from '../components/CandidateDetailCard';
+import pipelineService from '../services/pipeline';
+import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
+import ExportButton from '../components/common/ExportButton';
+import KpiCard from '../components/common/KpiCard';
+import LoadingOverlay from '../components/common/LoadingOverlay';
 
-const { Title, Text, Paragraph } = Typography;
-const { TextArea } = Input;
+const { Title, Text } = Typography;
 
-// Maps an Analytics shortlist record (with its raw rpa_cv at `.cv`) into the
-// normalized shape consumed by the shared <CandidateDetailCard />.
-const parseEmploymentHistory = (raw) => {
-  if (!raw) return { companies: [] };
-  let obj = raw;
-  if (typeof raw === 'string') {
-    try { obj = JSON.parse(raw); } catch { return { companies: [] }; }
-  }
-  return { companies: Array.isArray(obj?.companies) ? obj.companies : [] };
+/**
+ * Semantic palette, shared with the Dashboard / HR Upload / Vendor screens.
+ * Colour carries MEANING here rather than decoration — gold reads as positive,
+ * red as rejected/failed, blue as in-flight, amber as waiting on someone. Kept
+ * as one map so a tile, a tag and a table cell for the same concept cannot
+ * drift to different colours.
+ */
+const ACCENT = {
+  positive: { color: 'var(--kpi-a)', tint: 'var(--kpi-a-tint)', accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))' },
+  negative: { color: 'var(--kpi-d)', tint: 'var(--kpi-d-tint)', accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))' },
+  progress: { color: 'var(--kpi-b)', tint: 'var(--kpi-b-tint)', accent: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))' },
+  waiting: { color: 'var(--kpi-e)', tint: 'var(--kpi-e-tint)', accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))' },
+  neutral: { color: 'var(--text-2)', tint: 'color-mix(in srgb, var(--text-2) 12%, transparent)', accent: 'linear-gradient(90deg,var(--text-2),var(--text-3))' },
+  success: { color: 'var(--kpi-c)', tint: 'var(--kpi-c-tint)', accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))' },
 };
 
-function mapCvToCandidate(record) {
-  const cv = record?.cv || {};
-  const currentCompany = typeof cv.CurrentCompany === 'object' && cv.CurrentCompany !== null
-    ? cv.CurrentCompany
-    : { Name: cv.CurrentCompany || '', Website: '' };
-  return {
-    name: record.candidate_name || cv.Name,
-    email: record.candidate_email || cv.EmailID,
-    phone: cv.ContactNumber,
-    education: cv.HighestQualification,
-    experience: cv.TotalExperienceYears,
-    lastCompanyExperience: cv.LastCompanyExperienceYears,
-    location: cv.CurrentLocation,
-    currentCTC: cv.CTC_LPA,
-    expectedCTC: cv.ExpectedCTC_LPA,
-    noticePeriod: cv.NoticePeriod,
-    position: cv.PositionApplied || record.position_applied,
-    jobSource: cv.JobSource,
-    recruiterInfo: cv.RecruiterInfoAAPNA,
-    englishCommunicationRating: cv.EnglishCommunicationRating,
-    top5KeySkills: cv.Top5KeySkills,
-    gender: cv.Gender,
-    preferredShift: cv.PreferredShift,
-    reasonForJobChange: cv.ReasonForJobChange,
-    willingToTakeOnlineTest: cv.WillingToTakeOnlineTest,
-    hasLaptopForInitialDays: cv.HasLaptopForInitialDays,
-    currentCompany,
-    a10th: cv.a10th,
-    a12th: cv.a12th,
-    graduation: cv.graduation,
-    postGraduation: cv.postGraduation,
-    graduationdegree: cv.graduationdegree,
-    graduationspecialization: cv.graduationspecialization,
-    postgraduationdegree: cv.postgraduationdegree,
-    postgraduationspecialization: cv.postgraduationspecialization,
-    LinkedInProfile: cv.LinkedInProfile,
-    employment_history: parseEmploymentHistory(cv.employment_history),
-    Heat: cv.Heat,
-    FinalStatus: cv.FinalStatus,
-    HRQuickcomments: cv.HRQuickcomments,
-    IQScore: cv.IQScore,
-    TechScore: cv.TechScore,
-    ZekoInterviewScore: cv.ZekoInterviewScore,
-    ZekoCodingScore: cv.ZekoCodingScore,
-    ZekoCommunicationScore: cv.ZekoCommunicationScore,
-    TechRoundOne: cv.TechRoundOne,
-    TechRoundTwo: cv.TechRoundTwo,
-    TechRoundThree: cv.TechRoundThree,
-    ManagerialOrCEOFeedback: cv.ManagerialOrCEOFeedback,
-    HRInterview: cv.HRInterview,
-  };
+/**
+ * Card header used across all four tabs: a coloured rule + title, so every
+ * panel is scannable at a glance and colour-coded to what it reports on.
+ */
+function SectionTitle({ children, accent = ACCENT.positive, hint }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span style={{
+        width: 4, height: 18, borderRadius: 3, background: accent.accent, flexShrink: 0,
+      }}
+      />
+      <span>
+        <Text strong style={{ fontSize: 15 }}>{children}</Text>
+        {hint && (
+          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 400 }}>{hint}</Text>
+        )}
+      </span>
+    </span>
+  );
 }
 
-// Helper: Clean email message bodies
-const cleanMsgBody = (s) => {
-  if (!s) return '(No content)';
-  let text = s.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<[^>]*>/g, ' ')
-              .replace(/&amp;/gi, '&')
-              .replace(/&lt;/gi, '<')
-              .replace(/&gt;/gi, '>')
-              .replace(/&quot;/gi, '"')
-              .replace(/&#039;/gi, "'")
-              .replace(/&#x27;/gi, "'")
-              .replace(/&rsquo;/gi, "'")
-              .replace(/&lsquo;/gi, "'")
-              .replace(/&ldquo;/gi, '"')
-              .replace(/&rdquo;/gi, '"')
-              .replace(/&nbsp;/gi, ' ');
-  text = text.replace(/EXTERNAL EMAIL:[\s\S]*?password\./gi, '').trim();
-  text = text.split(/\bOn\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2}[\/\-])/i)[0];
-  text = text.split(/\r?\nFrom:\s/i)[0];
-  text = text.split(/\r?\n-{3,}/)[0];
-  text = text.replace(/\s+/g, ' ').trim();
-  return text || '(No content)';
-};
+/* The panel shell (radius / border / shadow) is now the shared `.panel-shell`
+   class in theme/index.css — same values, but reachable by a stylesheet. It was
+   duplicated byte-for-byte here and in components/email/DeliveryMonitoring.jsx. */
+
+/**
+ * Analytics.jsx — "Recruitment Analytics", the curated analytics-only page.
+ *
+ * Rebuilt from the pre-rebrand "Recruitment Screening Analytics" page by
+ * dropping everything operational — candidate search/status editing, Zeko
+ * interview scheduling/cancelling, the Outlook conversation viewer — and
+ * keeping only what is genuinely analytics. That old page survived for a while
+ * at /analytics-legacy as a fallback and was deleted on 2026-08-12; its
+ * operational features live on the screens that own them (Candidate Screening,
+ * Candidate Pipeline, Search Candidate). See git history for the original.
+ *
+ * "Pipeline Insights" and "Recruiter Insights" below are wired to the real
+ * Phase 3 Module 1 backend (/api/pipeline/analytics, pipeline.service.js's
+ * getPipelineAnalytics) — they replaced the hardcoded mock data that lived
+ * here before Module 1 shipped.
+ */
+
+/* The "from the Candidate Pipeline" provenance note now rides on SectionTitle's
+   `hint`, so the standalone SHARED_SOURCE node is gone. */
+
+/**
+ * These tables are ranked top-10 summaries on screen, but a 10-row CSV is
+ * useless for the analysis someone exports in order to do — so the export
+ * returns the complete ranked list. Said out loud in the success toast rather
+ * than left to be discovered as a discrepancy.
+ */
+const TOP_TEN_NOTE = 'This is the complete list — the table on screen shows only the top 10.';
+
+/**
+ * The analysis parameters the backend has always accepted but nothing sent.
+ * The defaults here MUST match getPipelineAnalytics()'s own defaults, so the
+ * page renders exactly as before until someone changes a control.
+ */
+const DEFAULT_ANALYTICS_PARAMS = Object.freeze({
+  mrf_id: undefined,          // undefined = let the server pick the busiest
+  stuck_threshold_days: 10,
+  hold_threshold_days: 30,
+  rejection_window_days: 30,
+});
+
+const daysOptions = (values) => values.map((v) => ({ value: v, label: `${v} days` }));
+const STUCK_THRESHOLD_OPTIONS = daysOptions([5, 10, 14, 30]);
+const HOLD_THRESHOLD_OPTIONS = daysOptions([7, 30, 60, 90]);
+// Mirrors the Email Delivery tab's 7/30/90 selector so the page is consistent.
+const REJECTION_WINDOW_OPTIONS = daysOptions([7, 30, 90]);
+
+/**
+ * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
+ * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
+ */
+function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
+  if (errored) {
+    return <Alert type="error" showIcon message="Failed to load pipeline analytics." />;
+  }
+
+  const tiles = data?.tiles || {};
+  const funnel = data?.funnel || { stages: [], mrf_label: null, available_mrfs: [] };
+  const maxFunnel = Math.max(1, ...(funnel.stages.map((f) => f.count)));
+  const availableMrfs = funnel.available_mrfs || [];
+
+  return (
+    <>
+      <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading className="panel-shell" /> : (
+            <KpiCard
+              index={0}
+              icon={<ApartmentOutlined />}
+              label="Active in pipeline"
+                metric="activeInPipeline"
+              value={tiles.active_in_pipeline ?? 0}
+              {...ACCENT.progress}
+            />
+          )}
+        </Col>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading className="panel-shell" /> : (
+            <div style={{ position: 'relative' }}>
+              <KpiCard
+                index={1}
+                icon={<SolutionOutlined />}
+                label="Awaiting feedback"
+                metric="awaitingFeedback"
+                value={tiles.awaiting_feedback ?? 0}
+                {...ACCENT.waiting}
+              />
+              <Text
+                type="secondary"
+                style={{ fontSize: 11, display: 'block', padding: '6px 24px 0', lineHeight: 1.4 }}
+              >
+                interviewer scorecard still outstanding
+                {/* A panel round issues one card per interviewer, so the card
+                    count can exceed the candidate count — said out loud so the
+                    tile does not look undercounted on the scorecard screen. */}
+                {tiles.awaiting_feedback_cards > (tiles.awaiting_feedback ?? 0)
+                  && ` · ${tiles.awaiting_feedback_cards} cards`}
+              </Text>
+            </div>
+          )}
+        </Col>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading className="panel-shell" /> : (
+            <div style={{ position: 'relative' }}>
+              <KpiCard
+                index={2}
+                icon={<ClockCircleOutlined />}
+                label={`On hold > ${tiles.hold_threshold_days ?? 30} days`}
+                metric="onHoldOverThreshold"
+                value={tiles.on_hold_over_threshold ?? 0}
+                {...ACCENT.negative}
+              />
+              <div style={{ padding: '6px 24px 0' }}>
+                <Tooltip title="How old a hold has to be before it is counted above. At 30 days the tile shows only candidates parked on hold for more than 30 days — the ones likely to need chasing. Lower it to catch holds sooner; raise it to see only the worst cases. Affects this tile only.">
+                  <Select
+                    size="small"
+                    variant="borderless"
+                    value={params.hold_threshold_days}
+                    onChange={(v) => onParamsChange({ hold_threshold_days: v })}
+                    options={HOLD_THRESHOLD_OPTIONS}
+                    style={{ marginLeft: -11, cursor: 'help' }}
+                  />
+                </Tooltip>
+              </div>
+            </div>
+          )}
+        </Col>
+        <Col xs={12} lg={6}>
+          {loading ? <Card loading className="panel-shell" /> : (
+            <KpiCard
+              index={3}
+              icon={<FileDoneOutlined />}
+              label="Offers pending"
+                metric="offersPending"
+              value={tiles.offers_pending ?? 0}
+              {...ACCENT.positive}
+            />
+          )}
+        </Col>
+      </Row>
+
+      <Card
+        title={(
+          <SectionTitle accent={ACCENT.positive}>
+            {funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+          </SectionTitle>
+        )}
+        loading={loading}
+        className="panel-shell" style={{ marginBottom: 16 }}
+        extra={availableMrfs.length > 0 && (
+          <Space size={8}>
+            {/* An auto-picked requisition presented silently reads as "the"
+                funnel rather than one of several — say which it is. */}
+            {funnel.auto_selected && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                showing the requisition with the most candidates
+              </Text>
+            )}
+            <Tooltip title="Which requisition this funnel shows. The funnel covers one role at a time — the number after each name is how many candidates it has. Type to search. Affects the funnel only; the tiles and tables below cover every requisition.">
+              <Select
+                size="small"
+                showSearch
+                optionFilterProp="label"
+                style={{ minWidth: 260 }}
+                value={funnel.mrf_id ?? undefined}
+                onChange={(v) => onParamsChange({ mrf_id: v })}
+                options={availableMrfs.map((m) => ({
+                  value: m.mrf_id,
+                  label: `${m.label} · ${m.journey_count}`,
+                }))}
+              />
+            </Tooltip>
+          </Space>
+        )}
+      >
+        {funnel.stages.length === 0 ? (
+          <Empty description="No candidates in the pipeline yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Space direction="vertical" size={9} style={{ width: '100%' }}>
+            {funnel.stages.map((f, i) => {
+              const conversion = i > 0 && funnel.stages[i - 1].count > 0
+                ? Math.round((f.count / funnel.stages[i - 1].count) * 100)
+                : null;
+              return (
+                <Row key={f.stage_key} gutter={10} align="middle" wrap={false}>
+                  <Col flex="180px" style={{ textAlign: 'right' }}>
+                    <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
+                  </Col>
+                  <Col flex="auto">
+                    {/* Track behind the bar gives the funnel a shape to read
+                        against — a bare bar on white loses its scale. */}
+                    <div style={{
+                      height: 22, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
+                    }}
+                    >
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`,
+                        background: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
+                        borderRadius: 6,
+                        transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
+                      }}
+                      />
+                    </div>
+                  </Col>
+                  <Col flex="120px">
+                    <Text strong style={{ fontSize: 14 }}>{f.count}</Text>
+                    {conversion !== null && (
+                      <Tag
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          border: 'none',
+                          // A steep drop between stages is the thing worth
+                          // noticing, so it is tinted rather than left neutral.
+                          background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(122,146,46,0.12)',
+                          color: conversion < 50 ? 'var(--kpi-d)' : 'var(--gold-dark)',
+                        }}
+                      >
+                        {conversion}%
+                      </Tag>
+                    )}
+                  </Col>
+                </Row>
+              );
+            })}
+          </Space>
+        )}
+      </Card>
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <Card
+            // The threshold was previously applied but never stated, so the
+            // list looked like "all stuck candidates" rather than a cut-off.
+            title={(
+              <SectionTitle accent={ACCENT.waiting} hint="from the Candidate Pipeline">
+                {`Stuck candidates — ${params.stuck_threshold_days}+ days`}
+              </SectionTitle>
+            )}
+            className="panel-shell"
+            extra={(
+              <Space size={8}>
+                <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage — notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
+                  <Select
+                    size="small"
+                    value={params.stuck_threshold_days}
+                    onChange={(v) => onParamsChange({ stuck_threshold_days: v })}
+                    options={STUCK_THRESHOLD_OPTIONS}
+                    style={{ width: 100, cursor: 'help' }}
+                  />
+                </Tooltip>
+                <ExportButton
+                  tooltip="Downloads every candidate stuck past the day threshold — name, stage, days waiting and status — so you can chase them offline."
+                  request={(cfg) => pipelineService.exportAnalytics('stuck', { ...cfg, params })}
+                  fallbackName="AAPNA-ATS_Pipeline-Stuck-Candidates.csv"
+                  rowCount={data?.stuckCandidates?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
+            loading={loading}
+          >
+            <Table size="small" pagination={false} rowKey="pipeline_id"
+              columns={[
+                {
+                  title: 'Candidate',
+                  dataIndex: 'candidate_name',
+                  render: (name) => <Text strong style={{ fontSize: 13 }}>{name}</Text>,
+                },
+                {
+                  title: 'Stage',
+                  dataIndex: 'stage',
+                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                },
+                {
+                  title: 'Days',
+                  dataIndex: 'days',
+                  width: 76,
+                  align: 'center',
+                  // The longer someone has been stuck, the harder the number
+                  // should be to skim past.
+                  render: (d) => (
+                    <Text strong style={{ color: d >= 20 ? 'var(--kpi-d)' : d >= 14 ? 'var(--kpi-e)' : 'var(--text-2)' }}>
+                      {d}d
+                    </Text>
+                  ),
+                },
+                {
+                  title: 'Status',
+                  dataIndex: 'blocked_on',
+                  render: (b) => (
+                    <Tag
+                      style={{
+                        border: 'none',
+                        background: b?.includes('Hold') ? 'rgba(192,57,43,0.10)' : 'rgba(182,136,58,0.14)',
+                        color: b?.includes('Hold') ? 'var(--kpi-d)' : 'var(--kpi-e)',
+                      }}
+                    >
+                      {b}
+                    </Tag>
+                  ),
+                },
+              ]}
+              dataSource={data?.stuckCandidates || []}
+              locale={{ emptyText: <Empty description="No stuck candidates" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card
+            title={(
+              <SectionTitle accent={ACCENT.negative} hint="from the Candidate Pipeline">
+                {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+              </SectionTitle>
+            )}
+            className="panel-shell"
+            extra={(
+              <Space size={8}>
+                <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
+                  <Select
+                    size="small"
+                    value={params.rejection_window_days}
+                    onChange={(v) => onParamsChange({ rejection_window_days: v })}
+                    options={REJECTION_WINDOW_OPTIONS}
+                    style={{ width: 100, cursor: 'help' }}
+                  />
+                </Tooltip>
+                <ExportButton
+                  tooltip="Downloads why candidates were rejected in the selected window — each reason, how often it occurred, and the stage it happens at most."
+                  request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', { ...cfg, params })}
+                  fallbackName="AAPNA-ATS_Pipeline-Rejection-Reasons.csv"
+                  rowCount={data?.rejectionReasons?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
+            loading={loading}
+          >
+            <Table size="small" pagination={false} rowKey="reason"
+              columns={[
+                {
+                  title: 'Reason',
+                  dataIndex: 'reason',
+                  render: (r) => <Text strong style={{ fontSize: 13 }}>{r}</Text>,
+                },
+                {
+                  title: 'Count',
+                  dataIndex: 'count',
+                  width: 72,
+                  align: 'center',
+                  render: (c) => (
+                    <Tag style={{ border: 'none', background: 'var(--kpi-d-tint)', color: 'var(--kpi-d)', fontWeight: 600 }}>
+                      {c}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: 'Most common stage',
+                  dataIndex: 'most_common_stage',
+                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                },
+              ]}
+              dataSource={data?.rejectionReasons || []}
+              locale={{ emptyText: <Empty description="No rejections in this window" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+}
+
+/**
+ * RecruiterInsights — time-to-hire, vendor performance, source-of-hire.
+ * Sourced from GET /api/pipeline/analytics (pipeline.service.js).
+ */
+function RecruiterInsights({ data, loading, errored, params }) {
+  if (errored) {
+    return <Alert type="error" showIcon message="Failed to load recruiter insights." />;
+  }
+
+  const timeToHire = data?.timeToHire || { total_days: 0, stages: [] };
+  const maxStageDays = Math.max(1, ...timeToHire.stages.map((s) => s.avg_days));
+  const vendorPerformance = data?.vendorPerformance || [];
+  const sourceOfHire = data?.sourceOfHire || [];
+
+  return (
+    <>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <Card
+            title={<SectionTitle accent={ACCENT.progress}>Time-to-hire</SectionTitle>}
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
+            loading={loading}
+            className="panel-shell" style={{ marginBottom: 16 }}
+          >
+            <div style={{
+              background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
+            }}
+            >
+              <Statistic
+                title="Average days, shortlist to offer"
+                value={timeToHire.total_days}
+                suffix="days"
+                valueStyle={{ color: 'var(--kpi-b)', fontWeight: 800 }}
+              />
+            </div>
+            {timeToHire.stages.length === 0 ? (
+              <Empty description="No closed journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Space direction="vertical" size={7} style={{ width: '100%' }}>
+                {timeToHire.stages.map(({ stage_key, label, avg_days }) => (
+                  <Row key={stage_key} gutter={10} align="middle" wrap={false}>
+                    <Col flex="170px" style={{ textAlign: 'right' }}>
+                      <Text type="secondary" style={{ fontSize: 12.5 }}>{label}</Text>
+                    </Col>
+                    <Col flex="auto">
+                      <div style={{
+                        height: 20, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
+                      }}
+                      >
+                        <div style={{
+                          height: '100%',
+                          width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`,
+                          background: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))',
+                          borderRadius: 6,
+                          transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
+                        }}
+                        />
+                      </div>
+                    </Col>
+                    <Col flex="60px"><Text strong style={{ fontSize: 13 }}>{avg_days}d</Text></Col>
+                  </Row>
+                ))}
+              </Space>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card
+            title={<SectionTitle accent={ACCENT.waiting}>Vendor performance</SectionTitle>}
+            className="panel-shell" style={{ marginBottom: 16 }}
+            extra={(
+              <Space size={8}>
+                <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
+                <ExportButton
+                  tooltip="Downloads each vendor's candidates — how many are in the pipeline, hired and rejected — for comparing vendor quality."
+                  request={(cfg) => pipelineService.exportAnalytics('vendor_performance', { ...cfg, params })}
+                  fallbackName="AAPNA-ATS_Pipeline-Vendor-Performance.csv"
+                  rowCount={vendorPerformance?.length ?? null}
+                  fullSetNote={TOP_TEN_NOTE}
+                  label="Export"
+                  size="small"
+                />
+              </Space>
+            )}
+            loading={loading}
+          >
+            {/* No "Shortlist rate" column: it read 100% for every vendor by
+                construction. The honest denominator (CVs actually sent) is in
+                rpa_upload_jobs, but only 23% of those rows carry a cv_id, so a
+                rate there would be invented. See docs/Recruitment-Analytics.md. */}
+            <Table size="small" pagination={false} rowKey="vendor_email"
+              columns={[
+                {
+                  title: 'Vendor',
+                  dataIndex: 'vendor_email',
+                  render: (v) => <Text strong style={{ fontSize: 13 }}>{v}</Text>,
+                },
+                { title: 'In pipeline', dataIndex: 'in_pipeline', align: 'center', width: 110 },
+                {
+                  title: 'Hired',
+                  dataIndex: 'hired',
+                  align: 'center',
+                  width: 90,
+                  render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
+                },
+                {
+                  title: 'Rejected',
+                  dataIndex: 'rejected',
+                  align: 'center',
+                  width: 100,
+                  render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
+                },
+              ]}
+              dataSource={vendorPerformance}
+              locale={{ emptyText: <Empty description="No vendor-sourced journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+          </Card>
+        </Col>
+      </Row>
+      <Card
+        title={<SectionTitle accent={ACCENT.success}>Source of hire</SectionTitle>}
+        className="panel-shell"
+        extra={(
+          <Space size={8}>
+            <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
+            <ExportButton
+              tooltip="Downloads how each intake route converts — candidates submitted, in progress, hired, rejected and on hold, per source."
+              request={(cfg) => pipelineService.exportAnalytics('source_of_hire', { ...cfg, params })}
+              fallbackName="AAPNA-ATS_Pipeline-Source-Of-Hire.csv"
+              rowCount={sourceOfHire?.length ?? null}
+              label="Export"
+              size="small"
+            />
+          </Space>
+        )}
+        loading={loading}
+      >
+        {/* Columns are mutually exclusive and sum to Submitted. The old
+            "Shortlist rate" was ~100% for every source because every pipeline
+            row IS a shortlist; hire rate is the question worth asking. */}
+        <Table size="small" pagination={false} rowKey="source"
+          columns={[
+            {
+              title: 'Source',
+              dataIndex: 'source',
+              // Stored values are snake_case keys ('screening_shortlist'); the
+              // table is read by humans, so present them as words.
+              render: (s) => (
+                <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>
+                  {String(s || '').replace(/_/g, ' ')}
+                </Text>
+              ),
+            },
+            {
+              title: 'Submitted',
+              dataIndex: 'submitted',
+              align: 'center',
+              render: (n) => <Text strong>{n}</Text>,
+            },
+            {
+              title: 'In progress',
+              dataIndex: 'in_progress',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-b)' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Hired',
+              dataIndex: 'hired',
+              align: 'center',
+              render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Rejected',
+              dataIndex: 'rejected',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'On Hold',
+              dataIndex: 'on_hold',
+              align: 'center',
+              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-e)' : 'var(--text-2)' }}>{n}</Text>,
+            },
+            {
+              title: 'Hire rate',
+              dataIndex: 'hire_rate',
+              align: 'center',
+              render: (rate) => (
+                <Tag
+                  style={{
+                    border: 'none',
+                    fontWeight: 600,
+                    background: rate > 0 ? 'rgba(74,124,89,0.12)' : 'var(--ink-3)',
+                    color: rate > 0 ? 'var(--kpi-c)' : 'var(--text-2)',
+                  }}
+                >
+                  {rate}%
+                </Tag>
+              ),
+            },
+          ]}
+          dataSource={sourceOfHire}
+          locale={{ emptyText: <Empty description="No journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
+      </Card>
+    </>
+  );
+}
 
 export default function Analytics() {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const convBodyRef = useRef(null);
-
-  // --- Core State ---
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ pipeline: [], candidates: [], tiles: {} });
   const [activeTab, setActiveTab] = useState('analytics');
-  const [highlightedScheduleId, setHighlightedScheduleId] = useState(null);
-  const [viewingCandidate, setViewingCandidate] = useState(null);
+  // Distinct from pipelineAnalytics.loading: that one drives per-card skeletons
+  // on first paint, this one drives the blocking scrim on a user-triggered
+  // refetch. Conflating them would put a full-screen overlay over the initial
+  // page load.
+  const [refetching, setRefetching] = useState(false);
 
-  // --- Filtering State ---
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  /**
+   * Pipeline analytics is owned HERE, not by the two tabs that render it.
+   * Both Pipeline Insights and Recruiter Insights read the same
+   * GET /api/pipeline/analytics payload; when each fetched its own, opening the
+   * page fired the identical (and expensive) request twice.
+   */
+  const [pipelineAnalytics, setPipelineAnalytics] = useState({
+    data: null, loading: true, errored: false,
+  });
 
-  // --- Local Candidate Status Edits ---
-  const [changedStatuses, setChangedStatuses] = useState({});
-  const [savingStatusId, setSavingStatusId] = useState(null);
+  /**
+   * The analysis window the two pipeline tabs are showing. These map 1:1 onto
+   * query params getPipelineAnalytics has always accepted; until now nothing
+   * sent them, so the server defaults were effectively fixed.
+   */
+  const [analyticsParams, setAnalyticsParams] = useState(DEFAULT_ANALYTICS_PARAMS);
 
-  // --- Scheduling State ---
-  const [zekoJobs, setZekoJobs] = useState([]);
-  const [loadingZekoJobs, setLoadingZekoJobs] = useState(false);
-  const [schedulingCandidate, setSchedulingCandidate] = useState(null);
-  const [selectedZekoJobId, setSelectedZekoJobId] = useState(null);
-  const [interviewDates, setInterviewDates] = useState(null);
-  const [schedulingLoading, setSchedulingLoading] = useState(false);
-
-  // --- Zeko Job Assignment Dropdown State per Candidate ---
-  const [selectedJobsMap, setSelectedJobsMap] = useState({});
-  const [assigningCandidateId, setAssigningCandidateId] = useState(null);
-
-  // --- Outlook Conversations State ---
-  const [outlookEmail, setOutlookEmail] = useState(null);
-  const [outlookCandidateName, setOutlookCandidateName] = useState('');
-  const [outlookModalVisible, setOutlookModalVisible] = useState(false);
-  const [outlookThreads, setOutlookThreads] = useState([]);
-  const [outlookLoading, setOutlookLoading] = useState(false);
-
-  // --- Cancellation State ---
-  const [cancellingPipeline, setCancellingPipeline] = useState(null);
-  const [cancelReason, setCancelReason] = useState('');
-  const [cancellingLoading, setCancellingLoading] = useState(false);
-
-  // Load Main Data and Zeko Jobs
   useEffect(() => {
     fetchMainData();
-    fetchZekoJobs();
   }, []);
+
+  // Refetch whenever a control moves. The initial mount runs this too, with the
+  // defaults, so there is still exactly ONE request per page load.
+  //
+  // isInitialAnalyticsLoad separates the two cases: on first paint the cards
+  // are skeletons and a scrim on top of them would be noise, but on a control
+  // change the user is looking at real numbers that are about to be replaced —
+  // that needs the overlay, or the swap reads as "nothing happened".
+  const isInitialAnalyticsLoad = useRef(true);
+  useEffect(() => {
+    loadPipelineAnalytics(analyticsParams, { showOverlay: !isInitialAnalyticsLoad.current });
+    isInitialAnalyticsLoad.current = false;
+  }, [analyticsParams]);
 
   const fetchMainData = async () => {
     setLoading(true);
@@ -199,36 +710,41 @@ export default function Analytics() {
       const res = await screeningService.getZekoPipeline();
       setData(res.data?.data || res.data || { pipeline: [], candidates: [], tiles: {} });
     } catch (err) {
-      message.error('Failed to load recruitment screening pipeline analytics.');
+      message.error('Failed to load recruitment analytics.');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchZekoJobs = async () => {
-    setLoadingZekoJobs(true);
+  const loadPipelineAnalytics = async (params = analyticsParams, { showOverlay = false } = {}) => {
+    if (showOverlay) setRefetching(true);
+    setPipelineAnalytics((prev) => ({ ...prev, loading: true, errored: false }));
     try {
-      const res = await screeningService.getZekoJobs();
-      setZekoJobs(res.data?.data || res.data || []);
+      const res = await pipelineService.getAnalytics(params);
+      setPipelineAnalytics({ data: res.data?.data || res.data, loading: false, errored: false });
     } catch (err) {
-      console.warn('Failed to load Zeko jobs list');
+      setPipelineAnalytics({ data: null, loading: false, errored: true });
     } finally {
-      setLoadingZekoJobs(false);
+      if (showOverlay) setRefetching(false);
     }
   };
 
-  // Scroll Outlook chat body to bottom when new messages loaded
-  useEffect(() => {
-    if (outlookModalVisible && convBodyRef.current) {
-      setTimeout(() => {
-        if (convBodyRef.current) {
-          convBodyRef.current.scrollTop = convBodyRef.current.scrollHeight;
-        }
-      }, 100);
-    }
-  }, [outlookThreads, outlookModalVisible]);
+  /**
+   * Merge one control's new value into the current analysis window.
+   *
+   * Re-selecting the value that is already showing returns the SAME state
+   * object, so React bails out and the effect below never re-runs — no request,
+   * no spinner, no flash. Picking your current requisition out of the dropdown
+   * should be a no-op, not a reload of identical data.
+   */
+  const handleParamsChange = (patch) => {
+    setAnalyticsParams((prev) => {
+      const unchanged = Object.entries(patch).every(([k, v]) => prev[k] === v);
+      return unchanged ? prev : { ...prev, ...patch };
+    });
+  };
 
-  // Group candidates by Role for the Analytics Tab
+  // Group candidates by Role for the Role Summary tab
   const roleStats = useMemo(() => {
     if (!data.candidates) return [];
     const groups = {};
@@ -261,207 +777,6 @@ export default function Analytics() {
     return Object.values(groups);
   }, [data.candidates]);
 
-  // Unique roles for filtering
-  const uniqueRoles = useMemo(() => {
-    if (!data.candidates) return [];
-    const rolesSet = new Set();
-    data.candidates.forEach((c) => {
-      const roleName = c.mrf?.position_hiring_for || c.position_applied || 'Unknown Role';
-      rolesSet.add(roleName);
-    });
-    return Array.from(rolesSet);
-  }, [data.candidates]);
-
-  // Filtered Candidates list for the Candidates Tab
-  const filteredCandidates = useMemo(() => {
-    if (!data.candidates) return [];
-    return data.candidates.filter((c) => {
-      const nameMatch = c.candidate_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.candidate_email?.toLowerCase().includes(searchQuery.toLowerCase());
-      const roleName = c.mrf?.position_hiring_for || c.position_applied || 'Unknown Role';
-      const roleMatch = roleFilter === 'ALL' || roleName === roleFilter;
-
-      const currentStatus = changedStatuses[c.id] || c.pipeline_status || 'shortlisted';
-      const statusMatch = statusFilter === 'ALL' || currentStatus.toLowerCase() === statusFilter.toLowerCase();
-
-      return nameMatch && roleMatch && statusMatch;
-    });
-  }, [data.candidates, searchQuery, roleFilter, statusFilter, changedStatuses]);
-
-  // Filtered Zeko Cancel pipeline rows
-  const cancelPipelineRows = useMemo(() => {
-    if (!data.pipeline) return [];
-    return data.pipeline.filter(row => ['sent', 'in_progress'].includes((row.status || '').toLowerCase()));
-  }, [data.pipeline]);
-
-  // --- Handlers ---
-  const handleStatusChange = (candidateId, value) => {
-    setChangedStatuses(prev => ({
-      ...prev,
-      [candidateId]: value
-    }));
-  };
-
-  const handleSaveStatus = async (candidateId) => {
-    const status = changedStatuses[candidateId];
-    if (!status) return;
-
-    setSavingStatusId(candidateId);
-    try {
-      const resp = await screeningService.updateCandidateStatus({
-        candidate_id: candidateId,
-        status: status
-      });
-      const result = resp.data?.data || resp.data || {};
-      const notifiable = status === 'rejected' || status === 'on_hold';
-      if (notifiable && result.email_sent) {
-        message.success('Candidate status updated and notification email sent.');
-      } else if (notifiable && !result.email_sent) {
-        message.error(`Status updated, but email not sent: ${result.email_error || 'Unknown email error.'}`, 6);
-      } else {
-        message.success('Candidate status updated successfully');
-      }
-      
-      // Update local data state without full reload
-      setData(prev => ({
-        ...prev,
-        candidates: prev.candidates.map(c => 
-          c.id === candidateId ? { ...c, pipeline_status: status } : c
-        )
-      }));
-
-      // Clear changed status tracking for this candidate
-      setChangedStatuses(prev => {
-        const copy = { ...prev };
-        delete copy[candidateId];
-        return copy;
-      });
-
-      // Recalculate tiles locally or refetch
-      fetchMainData();
-    } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to update candidate status');
-    } finally {
-      setSavingStatusId(null);
-    }
-  };
-
-  const handleAssignJob = async (candidateId) => {
-    const zekoJobId = selectedJobsMap[candidateId];
-    if (!zekoJobId) {
-      message.warning('Please select a Zeko Job to assign');
-      return;
-    }
-
-    setAssigningCandidateId(candidateId);
-    try {
-      await screeningService.assignZekoJob({
-        candidate_id: candidateId,
-        zeko_job_id: zekoJobId
-      });
-      message.success('Candidate assigned to Zeko job successfully');
-      fetchMainData();
-    } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to assign candidate to Zeko Job');
-    } finally {
-      setAssigningCandidateId(null);
-    }
-  };
-
-  const handleOpenOutlook = async (email, name) => {
-    setOutlookEmail(email);
-    setOutlookCandidateName(name);
-    setOutlookModalVisible(true);
-    setOutlookLoading(true);
-    setOutlookThreads([]);
-
-    try {
-      const res = await screeningService.getOutlookConversations(email);
-      setOutlookThreads(res.data?.data?.threads || res.data?.threads || []);
-    } catch (err) {
-      message.error('Failed to load email conversation threads');
-    } finally {
-      setOutlookLoading(false);
-    }
-  };
-
-  const handleOpenScheduleModal = (candidate) => {
-    setSchedulingCandidate(candidate);
-    // Pre-select job if already assigned
-    const assignedJobId = candidate.rpa_zeko_candidate_pipeline?.[0]?.zeko_job_id;
-    setSelectedZekoJobId(assignedJobId || null);
-    setInterviewDates(null);
-  };
-
-  // Send the recruiter to the Zeko Interview Schedule tab and spotlight the
-  // candidate's row (the dedicated assign + schedule flow).
-  const goToScheduleTab = (candidate) => {
-    setActiveTab('schedule');
-    setHighlightedScheduleId(candidate.id);
-    setTimeout(() => {
-      const el = document.querySelector('.row-highlight');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 120);
-    setTimeout(() => setHighlightedScheduleId(null), 4000);
-  };
-
-  const handleScheduleInterview = async () => {
-    if (!selectedZekoJobId) {
-      message.warning('Please select a Zeko Job');
-      return;
-    }
-    if (!interviewDates || interviewDates.length < 2) {
-      message.warning('Please pick interview date & time range');
-      return;
-    }
-
-    setSchedulingLoading(true);
-    try {
-      await screeningService.scheduleZekoInterview({
-        shortlist_id: schedulingCandidate.id,
-        zeko_job_id: selectedZekoJobId,
-        interview_start_at: interviewDates[0].toISOString(),
-        interview_end_at: interviewDates[1].toISOString()
-      });
-      message.success(`Interview scheduled successfully for ${schedulingCandidate.candidate_name}`);
-      setSchedulingCandidate(null);
-      fetchMainData();
-    } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to schedule Zeko interview');
-    } finally {
-      setSchedulingLoading(false);
-    }
-  };
-
-  const handleOpenCancelModal = (pipelineRow) => {
-    setCancellingPipeline(pipelineRow);
-    setCancelReason('');
-  };
-
-  const handleCancelInterview = async () => {
-    setCancellingLoading(true);
-    try {
-      await screeningService.cancelZekoInterview({
-        pipeline_id: cancellingPipeline.id,
-        cancel_reason: cancelReason.trim() || 'No reason provided'
-      });
-      message.success(`Interview cancelled successfully`);
-      setCancellingPipeline(null);
-      fetchMainData();
-    } catch (err) {
-      message.error(err.response?.data?.message || 'Failed to cancel interview');
-    } finally {
-      setCancellingLoading(false);
-    }
-  };
-
-  const handleViewRoleCandidates = (roleName) => {
-    setRoleFilter(roleName);
-    setStatusFilter('ALL');
-    setActiveTab('all');
-  };
-
-  // --- Rendering Columns ---
   const analyticsColumns = [
     {
       title: 'Role',
@@ -473,28 +788,35 @@ export default function Analytics() {
       title: 'MRF ID',
       dataIndex: 'mrf_id',
       key: 'mrf_id',
-      render: (text) => <Tag color="default">MRF #{text || 'N/A'}</Tag>
+      render: (text) => (
+        <Tag style={{
+          border: 'none', background: 'var(--ink-3)', color: 'var(--text-2)', fontFamily: 'monospace',
+        }}
+        >
+          MRF #{text || 'N/A'}
+        </Tag>
+      )
     },
     {
       title: 'Shortlisted',
       dataIndex: 'shortlisted',
       key: 'shortlisted',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="var(--gold)" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.positive.color} />
     },
     {
       title: 'Rejected',
       dataIndex: 'rejected',
       key: 'rejected',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="var(--red)" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.negative.color} />
     },
     {
       title: 'On Hold',
       dataIndex: 'on_hold',
       key: 'on_hold',
       align: 'center',
-      render: (count) => <Badge count={count} showZero color="#95a5a6" />
+      render: (count) => <Badge count={count} showZero color={ACCENT.waiting.color} />
     },
     {
       title: 'Total Candidates',
@@ -502,465 +824,79 @@ export default function Analytics() {
       key: 'total',
       align: 'center',
       render: (count) => <Text strong style={{ fontSize: 14 }}>{count}</Text>
-    },
-    {
-      title: 'Action',
-      key: 'action',
-      align: 'center',
-      render: (_, record) => (
-        <Button
-          type="text"
-          icon={<ArrowRightOutlined />}
-          onClick={() => handleViewRoleCandidates(record.role)}
-          style={{ color: 'var(--gold)', fontWeight: 600 }}
-        >
-          View Candidates
-        </Button>
-      )
     }
   ];
 
-  const allCandidatesColumns = [
-    {
-      title: 'Candidate',
-      key: 'candidate',
-      render: (_, record) => (
-        <div>
-          <Text strong style={{ display: 'block', color: 'var(--text)' }}>
-            {record.candidate_name}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.candidate_email}
-          </Text>
-        </div>
-      )
-    },
-    {
-      title: 'Role Applied For',
-      key: 'role',
-      render: (_, record) => {
-        const roleName = record.mrf?.position_hiring_for || record.position_applied || 'Unknown Role';
-        return (
-          <div>
-            <Text style={{ display: 'block' }}>{roleName}</Text>
-            {record.mrf_id && <Text type="secondary" style={{ fontSize: 11 }}>MRF #{record.mrf_id}</Text>}
-          </div>
-        );
-      }
-    },
-    {
-      title: 'Shortlisted Date',
-      dataIndex: 'shortlisted_at',
-      key: 'shortlisted_at',
-      render: (text) => text ? dayjs(text).format('DD MMM YYYY, hh:mm A') : '-'
-    },
-    {
-      title: 'Screening Status',
-      key: 'status',
-      render: (_, record) => {
-        const currentVal = changedStatuses[record.id] || record.pipeline_status || 'shortlisted';
-        const isChanged = changedStatuses[record.id] !== undefined && changedStatuses[record.id] !== record.pipeline_status;
-        return (
-          <Space>
-            <Select
-              value={currentVal}
-              onChange={(val) => handleStatusChange(record.id, val)}
-              style={{ width: 130 }}
-              dropdownMatchSelectWidth={false}
-            >
-              <Select.Option value="shortlisted">Shortlisted</Select.Option>
-              <Select.Option value="rejected">Rejected</Select.Option>
-              <Select.Option value="on_hold">On Hold</Select.Option>
-            </Select>
-            {isChanged && (
-              <Button
-                type="primary"
-                shape="circle"
-                size="small"
-                icon={<SaveOutlined />}
-                loading={savingStatusId === record.id}
-                onClick={() => handleSaveStatus(record.id)}
-                style={{ background: 'var(--gold)', borderColor: 'var(--gold)' }}
-                title="Save Status"
-              />
-            )}
-          </Space>
-        );
-      }
-    },
-    {
-      title: 'Zeko Stage',
-      dataIndex: 'zeko_stage',
-      key: 'zeko_stage',
-      render: (text) => text && text !== '-' ? <Tag color="blue">{text.toUpperCase()}</Tag> : <Text type="secondary">-</Text>
-    },
-    {
-      title: 'Zeko Status',
-      dataIndex: 'zeko_status',
-      key: 'zeko_status',
-      render: (status) => {
-        if (!status || status === '-') return <Text type="secondary">-</Text>;
-        let color = 'default';
-        if (status === 'passed') color = 'success';
-        if (status === 'failed') color = 'error';
-        if (status === 'sent') color = 'processing';
-        if (status === 'pending') color = 'warning';
-        return <Tag color={color}>{status.toUpperCase()}</Tag>;
-      }
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      align: 'center',
-      render: (_, record) => (
-        <Space size={8}>
-          <Tooltip title="Outlook Email Conversations">
-            <Button
-              type="text"
-              shape="circle"
-              icon={<MessageOutlined style={{ color: 'var(--gold)' }} />}
-              onClick={() => handleOpenOutlook(record.candidate_email, record.candidate_name)}
-            />
-          </Tooltip>
-
-          <Tooltip title="Go to Zeko Interview Schedule">
-            <Button
-              type="text"
-              shape="circle"
-              icon={<CalendarOutlined style={{ color: '#185fa5' }} />}
-              onClick={() => goToScheduleTab(record)}
-            />
-          </Tooltip>
-
-          <Tooltip title="View Candidate Info">
-            <Button
-              type="text"
-              shape="circle"
-              icon={<EyeOutlined style={{ color: '#27ae60' }} />}
-              onClick={() => setViewingCandidate(record)}
-            />
-          </Tooltip>
-
-          <Tooltip title="View Profile">
-            <Button
-              type="text"
-              shape="circle"
-              icon={<ArrowRightOutlined />}
-              onClick={() => navigate(`/candidates/${record.cv_id || record.id}`, { state: { from: 'analytics' } })}
-            />
-          </Tooltip>
-        </Space>
-      )
-    }
-  ];
-
-  const zekoScheduleColumns = [
-    {
-      title: 'Candidate',
-      key: 'candidate',
-      render: (_, record) => (
-        <div>
-          <Text strong style={{ display: 'block', color: 'var(--text)' }}>
-            {record.candidate_name}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.candidate_email}
-          </Text>
-        </div>
-      )
-    },
-    {
-      title: 'Applied Role',
-      key: 'role',
-      render: (_, record) => record.mrf?.position_hiring_for || record.position_applied || 'Unknown'
-    },
-    {
-      title: 'Zeko Pipeline Status',
-      key: 'zeko_status',
-      render: (_, record) => {
-        const pipelineRow = record.rpa_zeko_candidate_pipeline?.[0];
-        if (!pipelineRow) {
-          return <Tag color="default">NOT ASSIGNED</Tag>;
-        }
-        let color = 'default';
-        const st = (pipelineRow.status || '').toLowerCase();
-        if (st === 'pending') color = 'warning';
-        if (st === 'sent') color = 'processing';
-        if (st === 'completed' || st === 'passed') color = 'success';
-        if (st === 'failed') color = 'error';
-        return <Tag color={color}>{st.toUpperCase()}</Tag>;
-      }
-    },
-    {
-      title: 'Assigned Job & Actions',
-      key: 'actions',
-      render: (_, record) => {
-        const pipelineRow = record.rpa_zeko_candidate_pipeline?.[0];
-        const selectedJobId = selectedJobsMap[record.id];
-
-        let actionContent;
-        if (!pipelineRow) {
-          actionContent = (
-            <Space>
-              <Select
-                placeholder="Select Zeko Job"
-                style={{ width: 200 }}
-                value={selectedJobId}
-                onChange={(val) => setSelectedJobsMap(prev => ({ ...prev, [record.id]: val }))}
-                loading={loadingZekoJobs}
-                dropdownMatchSelectWidth={false}
-              >
-                {zekoJobs.map((job) => (
-                  <Select.Option key={job.zeko_id} value={job.zeko_id}>
-                    {job.title}
-                  </Select.Option>
-                ))}
-              </Select>
-              <Button
-                type="primary"
-                onClick={() => handleAssignJob(record.id)}
-                loading={assigningCandidateId === record.id}
-                style={{
-                  background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%)',
-                  borderColor: 'var(--gold)',
-                  boxShadow: '0 4px 10px rgba(122, 146, 46, 0.2)',
-                  borderRadius: '6px',
-                  fontWeight: '600'
-                }}
-              >
-                Assign & Send
-              </Button>
-            </Space>
-          );
-        } else if (pipelineRow.status === 'pending') {
-          actionContent = (
-            <Button
-              type="primary"
-              icon={<CalendarOutlined />}
-              onClick={() => handleOpenScheduleModal(record)}
-              style={{
-                background: 'linear-gradient(135deg, #185fa5 0%, #1e40af 100%)',
-                borderColor: '#185fa5',
-                boxShadow: '0 4px 10px rgba(24, 95, 165, 0.2)',
-                borderRadius: '6px',
-                fontWeight: '600'
-              }}
-            >
-              Schedule Interview
-            </Button>
-          );
-        } else {
-          actionContent = (
-            <Space direction="vertical" size={4} style={{ display: 'flex', alignItems: 'flex-start' }}>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-                Job ID: <strong>{pipelineRow.zeko_job_id}</strong>
-              </Text>
-              <Button
-                type="primary"
-                icon={<CalendarOutlined />}
-                onClick={() => handleOpenScheduleModal(record)}
-                style={{
-                  background: 'linear-gradient(135deg, #4a7c59 0%, #5a9c6e 100%)',
-                  borderColor: '#4a7c59',
-                  boxShadow: '0 4px 12px rgba(74, 124, 89, 0.25)',
-                  borderRadius: '6px',
-                  fontWeight: '600',
-                  fontSize: '12px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                Scheduled: {dayjs(pipelineRow.interview_start_at).format('DD MMM, hh:mm A')}
-              </Button>
-            </Space>
-          );
-        }
-
-        return (
-          <Space size={8} align="center">
-            {actionContent}
-            <Tooltip title="View Candidate Info">
-              <Button
-                type="default"
-                shape="circle"
-                icon={<EyeOutlined style={{ color: '#27ae60' }} />}
-                onClick={() => setViewingCandidate(record)}
-                style={{
-                  borderColor: '#b8cc6e',
-                  backgroundColor: '#f9fbe7',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 2px 6px rgba(122, 146, 46, 0.15)',
-                  width: '32px',
-                  height: '32px'
-                }}
-              />
-            </Tooltip>
-          </Space>
-        );
-      }
-    }
-  ];
-
-  const zekoCancelColumns = [
-    {
-      title: 'Candidate',
-      key: 'candidate',
-      render: (_, record) => (
-        <div>
-          <Text strong style={{ display: 'block', color: 'var(--text)' }}>
-            {record.candidate_name || 'Candidate'}
-          </Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {record.candidate_email}
-          </Text>
-        </div>
-      )
-    },
-    {
-      title: 'Zeko Job Title',
-      dataIndex: 'job_title',
-      key: 'job_title',
-      render: (text) => text || 'Position'
-    },
-    {
-      title: 'Interview Stage',
-      dataIndex: 'stage',
-      key: 'stage',
-      render: (text) => <Tag color="blue">{(text || '').toUpperCase()}</Tag>
-    },
-    {
-      title: 'Start Time',
-      dataIndex: 'interview_start_at',
-      key: 'interview_start_at',
-      render: (text) => text ? dayjs(text).format('DD MMM YYYY, hh:mm A') : '-'
-    },
-    {
-      title: 'End Time',
-      dataIndex: 'interview_end_at',
-      key: 'interview_end_at',
-      render: (text) => text ? dayjs(text).format('DD MMM YYYY, hh:mm A') : '-'
-    },
-    {
-      title: 'Zeko Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => <Tag color="processing">{(status || '').toUpperCase()}</Tag>
-    },
-    {
-      title: 'Action',
-      key: 'cancel',
-      align: 'center',
-      render: (_, record) => (
-        <Space size={8}>
-          <Button
-            type="primary"
-            danger
-            icon={<CloseCircleOutlined />}
-            onClick={() => handleOpenCancelModal(record)}
-          >
-            Cancel Interview
-          </Button>
-          <Tooltip title="View Candidate Info">
-            <Button
-              type="default"
-              shape="circle"
-              icon={<EyeOutlined style={{ color: '#27ae60' }} />}
-              onClick={() => {
-                const candidateObj = data.candidates.find(c => Number(c.id) === Number(record.candidate_id));
-                setViewingCandidate(candidateObj || record);
-              }}
-              style={{
-                borderColor: '#b8cc6e',
-                backgroundColor: '#f9fbe7',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 6px rgba(122, 146, 46, 0.15)',
-                width: '32px',
-                height: '32px'
-              }}
-            />
-          </Tooltip>
-        </Space>
-      )
-    }
-  ];
-
-  // Tile items
+  // Headline tiles — the shared KpiCard used by Dashboard / HR Upload / Vendor,
+  // so this page speaks the same visual language as the rest of the app.
   const tilesData = [
-    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, color: 'var(--gold)', bg: 'rgba(122, 146, 46, 0.08)' },
-    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, color: 'var(--red)', bg: 'rgba(192, 57, 43, 0.08)' },
-    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, color: '#95a5a6', bg: 'rgba(149, 165, 166, 0.08)' },
-    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, color: 'var(--text)', bg: 'var(--gold-subtle)' },
-    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, color: '#185fa5', bg: 'rgba(24, 95, 165, 0.08)' },
-    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, color: '#27ae60', bg: 'rgba(39, 174, 96, 0.08)' },
+    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, metric: 'analyticsShortlisted', ...ACCENT.positive },
+    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, metric: 'analyticsRejected', ...ACCENT.negative },
+    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, metric: 'analyticsOnHold', ...ACCENT.waiting },
+    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, metric: 'analyticsTotal', ...ACCENT.neutral },
+    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, metric: 'analyticsZekoSent', ...ACCENT.progress },
+    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, metric: 'analyticsZekoPassed', ...ACCENT.success },
   ];
 
   return (
     <div className="stagger-children" style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Page Header */}
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
-            Recruitment Screening Analytics
-          </Title>
-          <Text type="secondary">
-            Monitor shortlist conversions, update pipeline statuses, and manage Zeko interview schedules.
-          </Text>
-        </div>
-        <Button
-          type="primary"
-          onClick={fetchMainData}
-          loading={loading}
-          style={{ background: 'var(--gold)', borderColor: 'var(--gold)', height: 40, borderRadius: 8 }}
-        >
-          Refresh Data
-        </Button>
+      {/* Blocking scrim while a control change re-queries. Matches the Candidate
+          Screening page so a wait looks the same everywhere in the app. */}
+      <LoadingOverlay open={refetching} message="Updating analytics…" />
+
+      {/* Page Header. No "Refresh Data" button: the page already refetches
+          whenever a control changes, and the Email Delivery tab carries its own
+          Refresh for the one surface with a poller behind it. */}
+      <div style={{ marginBottom: 24 }}>
+        <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
+          Recruitment Analytics
+        </Title>
+        <Text type="secondary">
+          Track recruitment performance and hiring trends across roles, sources, and vendors.
+        </Text>
+        <br />
+        {/* These six counts have no date window — saying so beats letting
+            them be read as "this month". */}
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Headline counts below are <strong>all time</strong>, across every requisition.
+        </Text>
       </div>
 
-      {/* Stats Tiles */}
+      {/* Headline tiles. Until the first payload lands there is nothing true to
+          count up to, so the strip is skeletoned rather than animating from 0 —
+          a confident "0" mid-fetch is a wrong answer, not a slow one. */}
       <Row gutter={[16, 16]} style={{ marginBottom: 28 }}>
         {tilesData.map((tile, idx) => (
-          <Col xs={12} sm={12} md={8} lg={4} key={idx}>
-            <Card
-              bordered={false}
-              className="glass"
-              style={{
-                borderRadius: 12,
-                background: tile.bg,
-                border: '1px solid var(--border-light)',
-                padding: '12px 16px',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                boxShadow: 'var(--shadow-sm)'
-              }}
-              bodyStyle={{ padding: 0, width: '100%' }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <Text type="secondary" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {tile.title}
-                  </Text>
-                  <Title level={3} style={{ margin: '4px 0 0', fontWeight: 800, color: tile.color }}>
-                    {tile.value}
-                  </Title>
-                </div>
-                <div style={{ fontSize: 24, color: tile.color, opacity: 0.85 }}>
-                  {tile.icon}
-                </div>
-              </div>
-            </Card>
+          <Col xs={12} sm={12} md={8} lg={4} key={tile.title}>
+            {loading && !data.tiles ? (
+              <Card bordered={false} loading className="panel-shell" style={{ height: '100%' }} />
+            ) : (
+              <KpiCard
+                index={idx}
+                icon={tile.icon}
+                label={tile.title}
+                value={tile.value}
+                color={tile.color}
+                tint={tile.tint}
+                accent={tile.accent}
+                // These six tiles explained nothing before Phase 6 — they are the
+                // numbers most likely to be quoted in a review meeting and the
+                // ones with nothing behind them.
+                metric={tile.metric}
+              />
+            )}
           </Col>
         ))}
       </Row>
 
-      {/* Main Tabs Container */}
-      <Card className="glass" style={{ borderRadius: 16, border: '1px solid var(--border-light)', boxShadow: 'var(--shadow-md)' }}>
+      {/* Main Tabs Container — `glass-3`, NOT the bare `glass` this carried.
+          `.glass` is defined in index.css and is never touched by
+          aurora-glass.css, so widening the route gate without renaming it would
+          have left this container flat under glass chrome — the one change on
+          this page that the gate alone could not make. It holds five tables, so
+          tier 3 is also the right tier for it. Radius, border and shadow now
+          come from the class. */}
+      <Card className="glass-3 no-lift">
         <Tabs
           className="screening-tabs"
           activeKey={activeTab}
@@ -973,439 +909,91 @@ export default function Analytics() {
               label: (
                 <span>
                   <BarChartOutlined className="tab-ico" />
-                  Analytics Summary
+                  Role Summary
                 </span>
               ),
               children: (
-                <Table
-                  dataSource={roleStats}
-                  columns={analyticsColumns}
-                  loading={loading}
-                  pagination={{ pageSize: 10 }}
-                  locale={{ emptyText: <Empty description="No shortlisted roles found" /> }}
-                />
-              )
-            },
-            {
-              key: 'all',
-              label: (
-                <span>
-                  <TeamOutlined className="tab-ico" />
-                  All Candidates
-                </span>
-              ),
-              children: (
-                <div>
-                  {/* Filters Bar */}
-                  <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-                    <Col xs={24} md={10}>
-                      <Input
-                        prefix={<SearchOutlined style={{ color: 'var(--text-2)', opacity: 0.5 }} />}
-                        placeholder="Search candidate name or email..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        allowClear
-                      />
-                    </Col>
-                    <Col xs={12} md={7}>
-                      <Select
-                        style={{ width: '100%' }}
-                        value={roleFilter}
-                        onChange={setRoleFilter}
-                        placeholder="Filter by Role"
-                      >
-                        <Select.Option value="ALL">All Roles</Select.Option>
-                        {uniqueRoles.map((role) => (
-                          <Select.Option key={role} value={role}>{role}</Select.Option>
-                        ))}
-                      </Select>
-                    </Col>
-                    <Col xs={12} md={7}>
-                      <Select
-                        style={{ width: '100%' }}
-                        value={statusFilter}
-                        onChange={setStatusFilter}
-                        placeholder="Filter by Status"
-                      >
-                        <Select.Option value="ALL">All Statuses</Select.Option>
-                        <Select.Option value="shortlisted">Shortlisted</Select.Option>
-                        <Select.Option value="rejected">Rejected</Select.Option>
-                        <Select.Option value="on_hold">On Hold</Select.Option>
-                      </Select>
-                    </Col>
-                  </Row>
-
+                <>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 12,
+                    marginBottom: 14,
+                  }}
+                  >
+                    <SectionTitle accent={ACCENT.positive} hint="candidate outcomes per requisition">
+                      Role summary
+                    </SectionTitle>
+                    <ExportButton
+                      tooltip="Downloads one row per role — shortlisted, rejected, on-hold and total candidates for every requisition."
+                      request={(cfg) => screeningService.exportRoleSummary(cfg)}
+                      fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
+                      rowCount={roleStats.length}
+                      label="Export"
+                      size="small"
+                    />
+                  </div>
                   <Table
-                    dataSource={filteredCandidates}
-                    columns={allCandidatesColumns}
-                    rowKey="id"
+                    dataSource={roleStats}
+                    columns={analyticsColumns}
                     loading={loading}
-                    pagination={{ pageSize: 15 }}
-                    locale={{ emptyText: <Empty description="No candidates matched the selected filters" /> }}
+                    pagination={{ pageSize: 10 }}
+                    locale={{ emptyText: <Empty description="No shortlisted roles found" /> }}
                   />
-                </div>
+                </>
               )
             },
             {
-              key: 'schedule',
+              // Phase 3 Module 1 — real pipeline analytics (GET /api/pipeline/analytics).
+              key: 'pipeline',
               label: (
                 <span>
-                  <CalendarOutlined className="tab-ico" />
-                  Zeko Interview Schedule
+                  <ApartmentOutlined className="tab-ico" />
+                  Pipeline Insights
                 </span>
               ),
               children: (
-                <Table
-                  dataSource={data.candidates}
-                  columns={zekoScheduleColumns}
-                  rowKey="id"
-                  loading={loading}
-                  rowClassName={(record) => (record.id === highlightedScheduleId ? 'row-highlight' : '')}
-                  pagination={{ pageSize: 10 }}
-                  locale={{ emptyText: <Empty description="No candidates available for scheduling" /> }}
+                <PipelineInsights
+                  data={pipelineAnalytics.data}
+                  loading={pipelineAnalytics.loading}
+                  errored={pipelineAnalytics.errored}
+                  params={analyticsParams}
+                  onParamsChange={handleParamsChange}
                 />
               )
             },
             {
-              key: 'cancel',
+              key: 'recruiterInsights',
               label: (
                 <span>
-                  <CloseCircleOutlined className="tab-ico" />
-                  Zeko Cancel Interview
+                  <RiseOutlined className="tab-ico" />
+                  Recruiter Insights
                 </span>
               ),
               children: (
-                <Table
-                  dataSource={cancelPipelineRows}
-                  columns={zekoCancelColumns}
-                  rowKey="id"
-                  loading={loading}
-                  pagination={{ pageSize: 10 }}
-                  locale={{ emptyText: <Empty description="No active scheduled interviews found" /> }}
+                <RecruiterInsights
+                  data={pipelineAnalytics.data}
+                  loading={pipelineAnalytics.loading}
+                  errored={pipelineAnalytics.errored}
+                  params={analyticsParams}
                 />
               )
+            },
+            {
+              key: 'emailDelivery',
+              label: (
+                <span>
+                  <MailOutlined className="tab-ico" />
+                  Email Delivery
+                </span>
+              ),
+              children: <DeliveryMonitoring />
             }
           ]}
         />
       </Card>
-
-      {/* --- Outlook Conversations Modal --- */}
-      <Modal
-        open={outlookModalVisible}
-        onCancel={() => setOutlookModalVisible(false)}
-        footer={null}
-        width={780}
-        bodyStyle={{ padding: 0 }}
-        destroyOnClose
-        centered
-        closable={false}
-        className="conv-modal"
-      >
-        <div className="conv-modal-head">
-          <div className="conv-modal-avatar">
-            <MailOutlined />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="conv-modal-title">
-              {outlookCandidateName || 'Candidate'}
-            </div>
-            <div className="conv-modal-sub">
-              {outlookEmail}
-            </div>
-          </div>
-          <button className="conv-close" aria-label="Close" onClick={() => setOutlookModalVisible(false)}>
-            <CloseOutlined />
-          </button>
-        </div>
-
-        <div className="conv-body" ref={convBodyRef}>
-          {outlookLoading && (
-            <div className="conv-loading">
-              <Spin size="default" style={{ marginBottom: 10 }} />
-              <div>Fetching email threads from Outlook...</div>
-            </div>
-          )}
-
-          {!outlookLoading && outlookThreads.length === 0 && (
-            <div className="conv-empty">
-              <MailOutlined style={{ fontSize: 32, opacity: 0.3, marginBottom: 8 }} />
-              <div>No Outlook correspondence history found for this email address.</div>
-            </div>
-          )}
-
-          {!outlookLoading && outlookThreads.map((thread) => (
-            <div key={thread.group_key} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ alignSelf: 'center', margin: '8px 0' }}>
-                <Tag color="cyan" style={{ borderRadius: 12, padding: '2px 12px', fontWeight: 600 }}>
-                  Thread: {thread.position || 'Correspondence'}
-                </Tag>
-              </div>
-
-              {thread.messages.map((msg, index) => {
-                const isOutbound = msg.direction === 'outbound';
-                const formattedTime = msg.sent_at ? dayjs(msg.sent_at).format('DD MMM YYYY, hh:mm A') : '';
-                return (
-                  <div key={msg.id || index} className={`conv-msg ${isOutbound ? 'out' : 'in'}`}>
-                    {msg.subject && (
-                      <div className="conv-msg-subject">
-                        Subject: {msg.subject}
-                      </div>
-                    )}
-                    <div className="conv-msg-body">
-                      {cleanMsgBody(msg.body_html || msg.body_preview)}
-                    </div>
-                    <div className="conv-msg-meta">
-                      <span>{formattedTime}</span>
-                      {isOutbound && msg.tracking && (
-                        <span className={`conv-badge ${msg.tracking.opened ? 'conv-b-opened' : 'conv-b-delivered'}`}>
-                          {msg.tracking.opened ? `Opened (${msg.tracking.open_count})` : 'Delivered'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </Modal>
-
-      {/* --- Zeko Interview Scheduling Modal --- */}
-      <Modal
-        title={
-          <span style={{ fontWeight: 700, fontSize: 16 }}>
-            <CalendarOutlined style={{ marginRight: 8, color: '#185fa5' }} />
-            Schedule Zeko Interview
-          </span>
-        }
-        visible={!!schedulingCandidate}
-        onCancel={() => setSchedulingCandidate(null)}
-        onOk={handleScheduleInterview}
-        confirmLoading={schedulingLoading}
-        okText="Confirm & Invite"
-        cancelText="Cancel"
-        destroyOnClose
-        centered
-      >
-        {schedulingCandidate && (
-          <Form layout="vertical" style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--ink-2)', border: '1px solid var(--border-light)', borderRadius: 10, marginBottom: 18 }}>
-              <Avatar size={40} style={{ background: 'var(--green)', flexShrink: 0 }} icon={<UserOutlined />} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{schedulingCandidate.candidate_name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{schedulingCandidate.candidate_email}</div>
-              </div>
-            </div>
-
-            <Form.Item label="Select Zeko Job" required>
-              <Select
-                placeholder="Choose associated Zeko job description"
-                value={selectedZekoJobId}
-                onChange={setSelectedZekoJobId}
-                loading={loadingZekoJobs}
-              >
-                {zekoJobs.map((job) => (
-                  <Select.Option key={job.zeko_id} value={job.zeko_id}>
-                    {job.title}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item>
-
-            <Form.Item label="Interview Date & Time Range (IST)" required>
-              <DatePicker.RangePicker
-                showTime={{ format: 'HH:mm' }}
-                format="YYYY-MM-DD HH:mm"
-                style={{ width: '100%' }}
-                value={interviewDates}
-                onChange={setInterviewDates}
-                disabledDate={(current) => current && current < dayjs().startOf('day')}
-              />
-              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-                * Zeko requires times rounded to 30-minute intervals. System will adjust times automatically.
-              </Text>
-            </Form.Item>
-          </Form>
-        )}
-      </Modal>
-
-      {/* --- Zeko Cancel Confirmation Modal --- */}
-      <Modal
-        visible={!!cancellingPipeline}
-        onCancel={() => setCancellingPipeline(null)}
-        footer={null}
-        title={null}
-        destroyOnClose
-        centered
-        width={540}
-        bodyStyle={{ padding: '24px 28px' }}
-      >
-        {cancellingPipeline && (
-          <div>
-            {/* Custom Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingBottom: '16px', borderBottom: '1px solid var(--border-light)', marginBottom: '20px' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '6px', backgroundColor: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CloseOutlined style={{ color: '#fff', fontSize: '15px', fontWeight: 'bold' }} />
-              </div>
-              <span style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text)' }}>
-                Confirm Cancel Interview
-              </span>
-            </div>
-
-            {/* Candidate Details Vertical Stack */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px', marginBottom: '24px' }}>
-              {/* Candidate Info */}
-              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: 'rgba(47, 84, 235, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '14px', flexShrink: 0 }}>
-                  <UserOutlined style={{ color: '#2f54eb', fontSize: '16px' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.4' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '2px' }}>
-                    Candidate
-                  </span>
-                  <span style={{ fontSize: '14px', color: 'var(--text)', fontWeight: '700' }}>
-                    {cancellingPipeline.candidate_name || 'Candidate'}
-                  </span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>
-                    {cancellingPipeline.candidate_email}
-                  </span>
-                </div>
-              </div>
-
-              {/* Role / MRF Info */}
-              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: 'rgba(250, 140, 22, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '14px', flexShrink: 0 }}>
-                  <SolutionOutlined style={{ color: '#fa8c16', fontSize: '16px' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.4' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '2px' }}>
-                    Role / MRF
-                  </span>
-                  <span style={{ fontSize: '14px', color: 'var(--text)', fontWeight: '700' }}>
-                    {cancellingPipeline.job_title || 'Position'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Stage Info */}
-              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: 'rgba(235, 47, 150, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '14px', flexShrink: 0 }}>
-                  <CompassOutlined style={{ color: '#eb2f96', fontSize: '16px' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.4' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '2px' }}>
-                    Stage
-                  </span>
-                  <span style={{ fontSize: '14px', color: 'var(--text)', fontWeight: '700' }}>
-                    {cancellingPipeline.stage ? (cancellingPipeline.stage.toLowerCase() === 'hr' ? 'HR Interview' : cancellingPipeline.stage.charAt(0).toUpperCase() + cancellingPipeline.stage.slice(1) + ' Interview') : 'Interview'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Scheduled Time Info */}
-              <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: 'rgba(82, 196, 26, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '14px', flexShrink: 0 }}>
-                  <CalendarOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.4' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '2px' }}>
-                    Scheduled Time
-                  </span>
-                  <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: '700' }}>
-                    {dayjs(cancellingPipeline.interview_start_at).format('DD MMMM YYYY, hh:mm a') + ' IST'} → {dayjs(cancellingPipeline.interview_end_at).format('DD MMMM YYYY, hh:mm a') + ' IST'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Cancel Reason Input */}
-            <div style={{ marginBottom: '20px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--text-2)', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                Cancel Reason (Optional)
-              </span>
-              <TextArea
-                rows={3}
-                placeholder="e.g. Candidate unavailable, rescheduling required..."
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                style={{ borderRadius: '8px', border: '1px solid var(--border)' }}
-              />
-            </div>
-
-            {/* Alert Message Box */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '10px',
-              backgroundColor: 'rgba(192, 57, 43, 0.04)',
-              border: '1px solid rgba(192, 57, 43, 0.15)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              marginBottom: '24px'
-            }}>
-              <WarningOutlined style={{ color: 'var(--red)', fontSize: '15px', marginTop: '2px' }} />
-              <span style={{ fontSize: '12px', color: 'var(--red)', fontWeight: '500', lineHeight: '1.5' }}>
-                A cancellation email will be sent to the candidate immediately. This action cannot be undone.
-              </span>
-            </div>
-
-            {/* Footer Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <Button
-                onClick={() => setCancellingPipeline(null)}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: '#f5f5f5',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-2)',
-                  fontWeight: '600',
-                  height: '40px',
-                  padding: '0 20px'
-                }}
-              >
-                — Back
-              </Button>
-              <Button
-                type="primary"
-                danger
-                icon={<CloseOutlined />}
-                loading={cancellingLoading}
-                onClick={handleCancelInterview}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--red)',
-                  borderColor: 'var(--red)',
-                  fontWeight: '600',
-                  height: '40px',
-                  padding: '0 20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                Yes, Cancel Interview
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* --- View Candidate Modal --- */}
-      <Modal
-        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>View Candidate</span>}
-        open={!!viewingCandidate}
-        onCancel={() => setViewingCandidate(null)}
-        footer={[
-          <Button key="close" style={{ borderRadius: 8, fontWeight: 600 }} onClick={() => setViewingCandidate(null)}>
-            Close
-          </Button>
-        ]}
-        destroyOnClose
-        width={760}
-        styles={{ body: { maxHeight: '72vh', overflowY: 'auto', paddingRight: 12 } }}
-      >
-        {viewingCandidate && <CandidateDetailCard candidate={mapCvToCandidate(viewingCandidate)} />}
-      </Modal>
     </div>
   );
 }

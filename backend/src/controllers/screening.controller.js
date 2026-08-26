@@ -2,6 +2,8 @@ import * as screeningService from '../services/screening.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import runExport from '../exports/runExport.js';
+import screeningExport from '../exports/screening.export.js';
 
 /**
  * GET /api/screening/roles
@@ -37,10 +39,43 @@ export const searchKeywordCandidates = catchAsync(async (req, res) => {
 });
 
 /**
+ * POST /api/screening/roles/:id/export
+ * CSV of the JD-filtering results for one MRF. POST, not GET, to mirror the
+ * search it re-runs.
+ */
+export const exportRoleCandidates = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId)) {
+    throw new AppError('Invalid MRF ID provided.', 400);
+  }
+  return runExport(req, res, screeningExport.roleSpec(mrfId));
+});
+
+/**
+ * POST /api/screening/keyword-export
+ * CSV of the keyword-tab results. Takes the same filter body as the search.
+ */
+export const exportKeywordCandidates = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  screeningExport.keywordSpec(req.body || {}),
+));
+
+/**
+ * GET /api/screening/analytics/pipeline/export
+ * CSV of the Analytics "Role Summary" table.
+ */
+export const exportRoleSummary = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  screeningExport.roleSummarySpec,
+));
+
+/**
  * POST /api/screening/shortlist
  */
 export const shortlistCandidates = catchAsync(async (req, res) => {
-  const { candidates, mrf_id, role_name } = req.body;
+  const { candidates, mrf_id, role_name, send_email, email_override } = req.body;
   if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
     throw new AppError('Candidates array is required.', 400);
   }
@@ -49,8 +84,32 @@ export const shortlistCandidates = catchAsync(async (req, res) => {
     throw new AppError('Invalid MRF ID.', 400);
   }
 
-  const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user);
+  const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user, {
+    sendEmail: send_email !== false,
+    emailOverride: email_override || null,
+  });
   return success(res, result, 'Candidates shortlisted successfully');
+});
+
+/**
+ * POST /api/screening/reject
+ */
+export const rejectCandidates = catchAsync(async (req, res) => {
+  const { candidates, mrf_id, role_name, reason, send_email, email_override } = req.body;
+  if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+    throw new AppError('Candidates array is required.', 400);
+  }
+  if (!reason) {
+    throw new AppError('A rejection reason is required.', 400);
+  }
+  const mrfId = parseInt(mrf_id, 10) || 0;
+
+  const result = await screeningService.rejectCandidates(candidates, mrfId, role_name, req.user, {
+    reason,
+    sendEmail: send_email !== false,
+    emailOverride: email_override || null,
+  });
+  return success(res, result, 'Candidates rejected successfully');
 });
 
 /**
@@ -73,13 +132,15 @@ export const getZekoPipeline = catchAsync(async (req, res) => {
  * POST /api/screening/analytics/assign
  */
 export const assignZekoJob = catchAsync(async (req, res) => {
-  const { candidate_id, zeko_job_id } = req.body;
+  // `stage` picks the Zeko round ('hr' | 'functional', or the board stage key);
+  // omitted by Candidate Screening, which only ever assigns the HR round.
+  const { candidate_id, zeko_job_id, stage } = req.body;
   const candidateId = parseInt(candidate_id, 10);
   if (isNaN(candidateId) || !zeko_job_id) {
     throw new AppError('Candidate ID and Zeko Job ID are required.', 400);
   }
 
-  const result = await screeningService.assignCandidateToZekoJob(candidateId, zeko_job_id);
+  const result = await screeningService.assignCandidateToZekoJob(candidateId, zeko_job_id, stage);
   return success(res, result, 'Candidate successfully assigned to Zeko job');
 });
 
@@ -87,7 +148,7 @@ export const assignZekoJob = catchAsync(async (req, res) => {
  * POST /api/screening/analytics/schedule
  */
 export const scheduleZekoInterview = catchAsync(async (req, res) => {
-  const { shortlist_id, zeko_job_id, interview_start_at, interview_end_at } = req.body;
+  const { shortlist_id, zeko_job_id, interview_start_at, interview_end_at, stage } = req.body;
   const shortlistId = parseInt(shortlist_id, 10);
   if (isNaN(shortlistId) || !zeko_job_id || !interview_start_at || !interview_end_at) {
     throw new AppError('Shortlist ID, Zeko Job ID, Start time, and End time are required.', 400);
@@ -98,7 +159,8 @@ export const scheduleZekoInterview = catchAsync(async (req, res) => {
     zeko_job_id,
     interview_start_at,
     interview_end_at,
-    req.user
+    req.user,
+    stage
   );
   return success(res, result, 'Zeko interview scheduled successfully');
 });
@@ -128,6 +190,23 @@ export const getOutlookConversations = catchAsync(async (req, res) => {
 
   const result = await screeningService.getOutlookConversations(email);
   return success(res, result, 'Candidate conversations retrieved successfully');
+});
+
+/**
+ * POST /api/screening/outlook/reply
+ */
+export const replyToOutlookMessage = catchAsync(async (req, res) => {
+  const { message_id, body_html } = req.body;
+  const messageId = parseInt(message_id, 10);
+  if (isNaN(messageId)) {
+    throw new AppError('A valid message_id is required.', 400);
+  }
+  if (typeof body_html !== 'string' || body_html.trim() === '') {
+    throw new AppError('Reply body is required.', 400);
+  }
+
+  const result = await screeningService.replyToOutlookMessage(messageId, body_html.trim(), req.user);
+  return success(res, result, 'Reply sent successfully');
 });
 
 /**

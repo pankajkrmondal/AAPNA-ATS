@@ -16,7 +16,9 @@ import screeningService from '../services/screeningService';
 /** How many candidates to pull for client-side trend/role/skill aggregation. */
 const AGG_BATCH = 200;
 
-const EMPTY_STATS = { totalCandidates: 0, activeMRFs: 0, todayUploads: 0, shortlisted: 0 };
+const EMPTY_STATS = {
+  totalCandidates: 0, activeMRFs: 0, pendingApprovalMRFs: 0, todayUploads: 0, shortlisted: 0,
+};
 const EMPTY_FUNNEL = { sourced: 0, aiScreened: 0, shortlisted: 0, hired: 0 };
 
 export default function useDashboardData() {
@@ -27,6 +29,7 @@ export default function useDashboardData() {
   const [pipeline, setPipeline] = useState([]);
   const [pipelineTiles, setPipelineTiles] = useState({});
   const [roles, setRoles] = useState([]);
+  const [recruiterBreakdown, setRecruiterBreakdown] = useState([]); // [{ recruiter, added, tagged }]
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
@@ -42,6 +45,11 @@ export default function useDashboardData() {
           setStats({
             totalCandidates: d.totalCandidates || 0,
             activeMRFs: d.activeMRFs || 0,
+            // Counted server-side alongside activeMRFs. It used to be derived from
+            // pendingMrfs.length, which read the wrong column (mrfstatus, not
+            // approval_status) AND capped at the list's limit of 50 — see the note in
+            // dashboard.service.js getStats().
+            pendingApprovalMRFs: d.pendingApprovalMRFs || 0,
             todayUploads: d.todayUploads || 0,
             shortlisted: d.shortlisted || 0,
           });
@@ -83,6 +91,14 @@ export default function useDashboardData() {
           setRoles(Array.isArray(list) ? list : []);
         })
         .catch((e) => { errs.roles = e?.message || 'failed'; }),
+
+      // Per-recruiter Added + Tagged breakdown (one row per recruiter, both counts)
+      dashboardService.getRecruiterBreakdown()
+        .then((res) => {
+          const list = res.data?.data || res.data || [];
+          setRecruiterBreakdown(Array.isArray(list) ? list : []);
+        })
+        .catch((e) => { errs.recruiterBreakdown = e?.message || 'failed'; }),
     ];
 
     await Promise.allSettled(tasks);
@@ -100,6 +116,7 @@ export default function useDashboardData() {
     pipeline,
     pipelineTiles,
     roles,
+    recruiterBreakdown,
     loading,
     errors,
     reload: load,

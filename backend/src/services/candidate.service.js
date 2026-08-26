@@ -241,17 +241,8 @@ export function unmapCandidate(data) {
 export async function search(filters = {}, page = 1, limit = 20, sort = 'createdAt', order = 'desc') {
   const where = buildWhereClause(filters);
 
-  // Validate sort field exists on model
-  const allowedSorts = ['id', 'Name', 'EmailID', 'PositionApplied', 'createdAt', 'modifiedAt'];
-  let dbSortField = 'createdAt';
-  if (sort === 'name') dbSortField = 'Name';
-  else if (sort === 'email') dbSortField = 'EmailID';
-  else if (sort === 'position') dbSortField = 'PositionApplied';
-  else if (sort === 'modifiedAt') dbSortField = 'modifiedAt';
-  
-  if (!allowedSorts.includes(dbSortField)) {
-    dbSortField = 'createdAt';
-  }
+  // Shared with the CSV export so both order rows identically.
+  const dbSortField = resolveSortField(sort);
 
   const [data, total] = await Promise.all([
     prisma.rpa_cv.findMany({
@@ -259,6 +250,12 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { [dbSortField]: order },
+      // `rpa_cv` is ~80 columns wide and these two are by far the heaviest: the
+      // full plain-text resume and the AI insights blob. A list page reads
+      // neither — mapCandidate() ignores them, and the screening service pulls
+      // them through its own raw queries — so shipping them made every page of
+      // results far larger over the wire than the rows it actually renders.
+      omit: { resume_full_text: true, ai_profile_insights: true },
     }),
     prisma.rpa_cv.count({ where }),
   ]);
@@ -279,6 +276,78 @@ function vendorScopeWhere(vendorEmail) {
     return { VendorEmail: { equals: vendorEmail, mode: 'insensitive' } };
   }
   return { AND: [{ VendorEmail: { not: null } }, { VendorEmail: { not: '' } }] };
+}
+
+/**
+ * The live pipeline journey for each of a set of candidates, keyed by cv_id.
+ *
+ * The Vendor Dashboard used to derive everything from `rpa_cv.FinalStatus` and
+ * a client-side keyword matcher (`classifyStatus` in VendorDashboard.jsx), which
+ * reads a string the stage engine writes back rather than the stage engine
+ * itself — so it lagged, and could not distinguish "no journey yet" from
+ * "journey with no outcome recorded".
+ *
+ * A candidate can hold several journeys (one per MRF, Q13/Q24). The most
+ * recently touched one is the honest answer to "where are they now?" on a
+ * per-candidate dashboard; the per-MRF breakdown lives on the Pipeline Tracker,
+ * which is the screen built for it.
+ *
+ * @param {Array<bigint|number>} cvIds
+ * @returns {Promise<Map<string, { stage_key: string, stage_status: string, stage_label: string|null, final_outcome: string|null }>>}
+ */
+export async function vendorPipelineByCvId(cvIds) {
+  const byCv = new Map();
+  if (!cvIds || cvIds.length === 0) return byCv;
+
+  const [journeys, stages] = await Promise.all([
+    prisma.rpa_candidate_pipeline.findMany({
+      where: { cv_id: { in: cvIds.map((id) => BigInt(id)) } },
+      orderBy: { modified_at: 'desc' },
+      select: {
+        cv_id: true,
+        current_stage_key: true,
+        current_stage_status: true,
+        final_outcome: true,
+      },
+    }),
+    prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } }),
+  ]);
+
+  const labelByKey = new Map(stages.map((s) => [s.stage_key, s.label]));
+  for (const j of journeys) {
+    const key = String(j.cv_id);
+    if (byCv.has(key)) continue; // ordered desc — first hit is the most recent
+    byCv.set(key, {
+      stage_key: j.current_stage_key,
+      stage_status: j.current_stage_status,
+      stage_label: labelByKey.get(j.current_stage_key) || j.current_stage_key,
+      final_outcome: j.final_outcome,
+    });
+  }
+  return byCv;
+}
+
+/**
+ * Attaches the real pipeline stage to a list of mapped candidates.
+ *
+ * Rows with no journey keep `stage: null` and are marked `stage_source:
+ * 'legacy'`, which is the signal for the dashboard to fall back to
+ * classifyStatus(FinalStatus). Candidates uploaded before the stage engine
+ * existed will never have a journey, so the fallback is permanent, not
+ * transitional.
+ *
+ * @param {Array<object>} candidates - already through mapCandidate()
+ * @returns {Promise<Array<object>>}
+ */
+export async function attachPipelineStage(candidates) {
+  if (!candidates || candidates.length === 0) return candidates || [];
+  const byCv = await vendorPipelineByCvId(candidates.map((c) => c.id));
+  return candidates.map((c) => {
+    const journey = byCv.get(String(c.id));
+    return journey
+      ? { ...c, stage: journey, stage_source: 'pipeline' }
+      : { ...c, stage: null, stage_source: 'legacy' };
+  });
 }
 
 /**
@@ -315,13 +384,14 @@ export async function vendorStats(vendorEmail) {
 export async function vendorStatusSummary(vendorEmail) {
   const base = vendorScopeWhere(vendorEmail);
 
-  const [stats, grouped] = await Promise.all([
+  const [stats, grouped, byStage] = await Promise.all([
     vendorStats(vendorEmail),
     prisma.rpa_cv.groupBy({
       by: ['FinalStatus'],
       where: base,
       _count: { _all: true },
     }),
+    vendorStageBreakdown(base),
   ]);
 
   const byFinalStatus = grouped
@@ -331,7 +401,51 @@ export async function vendorStatusSummary(vendorEmail) {
     }))
     .sort((a, b) => b.count - a.count);
 
-  return { ...stats, byFinalStatus };
+  return { ...stats, byFinalStatus, byStage };
+}
+
+/**
+ * Real stage counts for the vendor's candidates, straight from
+ * rpa_candidate_pipeline — the M6 replacement for inferring a pipeline from
+ * FinalStatus keyword matching.
+ *
+ * `untracked` is deliberately part of the result rather than dropped: it is the
+ * count of vendor candidates with no journey at all, which is exactly the
+ * population the dashboard's legacy fallback covers. Hiding it would make the
+ * stage tiles silently under-count and look like data loss.
+ *
+ * @param {object} candidateWhere - the vendor scope from vendorScopeWhere()
+ * @returns {Promise<{ stages: Array<{stage_key, stage_label, count}>, closed: number, untracked: number }>}
+ */
+async function vendorStageBreakdown(candidateWhere) {
+  const [scopedCandidates, stages] = await Promise.all([
+    prisma.rpa_cv.findMany({ where: candidateWhere, select: { id: true } }),
+    prisma.rpa_pipeline_stages.findMany({
+      where: { is_active: true },
+      orderBy: { sort_order: 'asc' },
+      select: { stage_key: true, label: true },
+    }),
+  ]);
+  if (scopedCandidates.length === 0) return { stages: [], closed: 0, untracked: 0 };
+
+  const byCv = await vendorPipelineByCvId(scopedCandidates.map((c) => c.id));
+
+  const counts = new Map();
+  let closed = 0;
+  for (const journey of byCv.values()) {
+    if (journey.final_outcome) { closed += 1; continue; }
+    counts.set(journey.stage_key, (counts.get(journey.stage_key) || 0) + 1);
+  }
+
+  return {
+    // Stage order comes from the admin-configured sort_order, so a stage added
+    // through PipelineConfigPanel shows up here without a code change.
+    stages: stages
+      .map((s) => ({ stage_key: s.stage_key, stage_label: s.label, count: counts.get(s.stage_key) || 0 }))
+      .filter((s) => s.count > 0),
+    closed,
+    untracked: scopedCandidates.length - byCv.size,
+  };
 }
 
 /**
@@ -409,79 +523,168 @@ export async function update(id, data) {
 
 /**
  * Build Prisma `where` clause from filter params.
- * Uses logical OR for name, email, and phone search criteria to align with legacy search functionality.
+ *
+ * Every supplied filter is AND'ed, so each one can only ever narrow the result.
+ * The name/email/phone trio stays OR'ed *with each other* inside its own group,
+ * which is the legacy "search by any identifier" behaviour.
+ *
+ * Previously each group assigned onto a bare `where` object, so two filters
+ * touching the same key silently clobbered one another — `search` overwrote the
+ * name/email/phone `OR` entirely, and `filterPosition` and `position` fought
+ * over `PositionApplied`. Combining a search term with a name filter therefore
+ * dropped the name and returned MORE rows than asked for. Now they compose.
+ *
  * @param {Object} filters
  * @returns {Object}
  */
-function buildWhereClause(filters) {
-  const where = {};
+export function buildWhereClause(filters = {}) {
+  const and = [];
 
-  const orConditions = [];
+  // Legacy identifier search — any one of these may match.
+  const identityOr = [];
   if (filters.email) {
-    orConditions.push({ EmailID: { contains: filters.email, mode: 'insensitive' } });
+    identityOr.push({ EmailID: { contains: filters.email, mode: 'insensitive' } });
   }
   if (filters.name) {
-    orConditions.push({ Name: { contains: filters.name, mode: 'insensitive' } });
+    identityOr.push({ Name: { contains: filters.name, mode: 'insensitive' } });
   }
   if (filters.phone) {
-    orConditions.push({ ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
+    identityOr.push({ ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
+  }
+  if (identityOr.length > 0) {
+    and.push({ OR: identityOr });
   }
 
-  if (orConditions.length > 0) {
-    where.OR = orConditions;
-  }
-
+  // Free-text search across the profile.
   if (filters.search) {
-    where.OR = [
-      { Name: { contains: filters.search, mode: 'insensitive' } },
-      { EmailID: { contains: filters.search, mode: 'insensitive' } },
-      { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
-      { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
-    ];
+    and.push({
+      OR: [
+        { Name: { contains: filters.search, mode: 'insensitive' } },
+        { EmailID: { contains: filters.search, mode: 'insensitive' } },
+        { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
+        { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
+      ],
+    });
   }
 
   // Discrete field filters (mirror the n8n vendor "My Uploads" filterName/filterEmail/filterPosition).
-  // Combined with AND so all supplied filters must match.
   if (filters.filterName) {
-    where.Name = { contains: filters.filterName, mode: 'insensitive' };
+    and.push({ Name: { contains: filters.filterName, mode: 'insensitive' } });
   }
   if (filters.filterEmail) {
-    where.EmailID = { contains: filters.filterEmail, mode: 'insensitive' };
+    and.push({ EmailID: { contains: filters.filterEmail, mode: 'insensitive' } });
   }
   if (filters.filterPosition) {
-    where.PositionApplied = { contains: filters.filterPosition, mode: 'insensitive' };
+    and.push({ PositionApplied: { contains: filters.filterPosition, mode: 'insensitive' } });
   }
 
   if (filters.status) {
-    where.statusActive = filters.status;
+    and.push({ statusActive: filters.status });
   }
 
   if (filters.finalStatus) {
-    where.FinalStatus = filters.finalStatus;
+    and.push({ FinalStatus: filters.finalStatus });
   }
 
   // Vendor isolation: exact (case-insensitive) match so a vendor only ever
   // sees their own uploads — matches the n8n `VendorEmail = <session email>` equality.
+  // See enforceVendorScope(), which guarantees this is set for vendor callers.
   if (filters.vendorEmail) {
-    where.VendorEmail = { equals: filters.vendorEmail, mode: 'insensitive' };
+    and.push({ VendorEmail: { equals: filters.vendorEmail, mode: 'insensitive' } });
   }
 
   if (filters.position) {
-    where.PositionApplied = { contains: filters.position, mode: 'insensitive' };
+    and.push({ PositionApplied: { contains: filters.position, mode: 'insensitive' } });
   }
 
   if (filters.location) {
-    where.CurrentLocation = { contains: filters.location, mode: 'insensitive' };
+    and.push({ CurrentLocation: { contains: filters.location, mode: 'insensitive' } });
   }
 
   // Restrict to all vendor-sourced candidates (recruiter "all vendors" overview).
   if (filters.vendorOnly) {
-    where.AND = [
-      ...(where.AND || []),
-      { VendorEmail: { not: null } },
-      { VendorEmail: { not: '' } },
-    ];
+    and.push({ VendorEmail: { not: null } });
+    and.push({ VendorEmail: { not: '' } });
   }
 
-  return where;
+  return and.length > 0 ? { AND: and } : {};
+}
+
+/**
+ * Re-exported from utils/vendorScope.js, where it now lives so it can be tested
+ * without loading this service's database and socket dependencies. Callers
+ * importing it from here continue to work unchanged.
+ */
+export { enforceVendorScope } from '../utils/vendorScope.js';
+
+/**
+ * Columns the CSV export renders. Deliberately narrow: `rpa_cv` is ~80 columns
+ * wide and includes `resume_full_text`, `MetaData` and `ai_profile_insights`.
+ * `search()` selects all of them, which is fine for a 20-row page and hundreds
+ * of megabytes at the production row count — so the export must not reuse it.
+ * Being an allowlist also means no unlisted column can ever leak into a file.
+ */
+export const EXPORT_SELECT = {
+  id: true,
+  Name: true,
+  EmailID: true,
+  ContactNumber: true,
+  PositionApplied: true,
+  Gender: true,
+  CurrentLocation: true,
+  TotalExperienceYears: true,
+  LastCompanyExperienceYears: true,
+  CurrentCompany: true,
+  CTC_LPA: true,
+  ExpectedCTC_LPA: true,
+  NoticePeriod: true,
+  HighestQualification: true,
+  Top5KeySkills: true,
+  EnglishCommunicationRating: true,
+  PreferredShift: true,
+  ReasonForJobChange: true,
+  JobSource: true,
+  RecruiterInfoAAPNA: true,
+  VendorEmail: true,
+  statusActive: true,
+  FinalStatus: true,
+  ZekoInterviewScore: true,
+  LinkedInProfile: true,
+  cvFileUrl: true,
+  createdAt: true,
+  modifiedAt: true,
+};
+
+/**
+ * Map an API sort key onto a real column. Shared by search() and the export so
+ * there is one mapping rather than two that can drift.
+ * @param {string} sort
+ * @returns {string}
+ */
+export function resolveSortField(sort) {
+  if (sort === 'id') return 'id';
+  if (sort === 'name') return 'Name';
+  if (sort === 'email') return 'EmailID';
+  if (sort === 'position') return 'PositionApplied';
+  if (sort === 'modifiedAt') return 'modifiedAt';
+  return 'createdAt';
+}
+
+/**
+ * Every candidate matching the filters, unpaginated, for CSV export.
+ * Same `where` as search() — only the pagination and the column set differ.
+ *
+ * @param {Object} filters
+ * @param {{ sort?: string, order?: string, max?: number }} [options]
+ * @returns {Promise<Array>}
+ */
+export async function findAllForExport(filters = {}, { sort = 'createdAt', order = 'desc', max } = {}) {
+  const rows = await prisma.rpa_cv.findMany({
+    where: buildWhereClause(filters),
+    select: EXPORT_SELECT,
+    orderBy: { [resolveSortField(sort)]: order === 'asc' ? 'asc' : 'desc' },
+    take: max,
+  });
+
+  return rows.map(mapCandidate);
 }

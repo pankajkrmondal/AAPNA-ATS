@@ -5,6 +5,7 @@
 import { createContext, useState, useEffect, useCallback, useMemo } from 'react';
 import authService from '../services/authService';
 import adminService from '../services/adminService';
+import { disconnectSocket } from '../services/socket';
 
 /** @type {React.Context} */
 export const AuthContext = createContext(null);
@@ -52,10 +53,11 @@ export function AuthProvider({ children }) {
    * @param {string} username
    * @param {string} password
    * @param {boolean} [isAdminPortal=false]
+   * @param {string} [captchaToken=''] - Turnstile token (when bot protection is enabled)
    * @returns {Promise<object>} user data
    */
-  const login = useCallback(async (username, password, isAdminPortal = false) => {
-    const response = await authService.login(username, password);
+  const login = useCallback(async (username, password, isAdminPortal = false, captchaToken = '') => {
+    const response = await authService.login(username, password, captchaToken);
     const { token, user: userData } = response.data.data;
 
     if (isAdminPortal) {
@@ -81,6 +83,10 @@ export function AuthProvider({ children }) {
     } finally {
       localStorage.removeItem('ats_token');
       localStorage.removeItem('ats_user');
+      // Drop the socket too. It is a module-level singleton holding the old token and
+      // joined to the previous user's room, so leaving it up meant the next user to
+      // log in on this tab got a cached connection that receives none of their events.
+      disconnectSocket();
       setUser(null);
     }
   }, []);

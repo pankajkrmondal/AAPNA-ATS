@@ -48,6 +48,7 @@ export const MODULES = Object.freeze({
   CANDIDATE_SCREENING: 'candidate_screening',
   SCREENING_ANALYTICS: 'screening_analytics',
   HR_ADMIN: 'hr_admin',
+  RECRUITMENT_PIPELINE: 'recruitment_pipeline',
 });
 
 export const MODULE_KEYS = Object.freeze(Object.values(MODULES));

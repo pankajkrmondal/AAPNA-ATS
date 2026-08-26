@@ -1,9 +1,11 @@
-import crypto from 'crypto';
 import prisma from '../config/database.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
+import { hashPassword } from '../services/auth.service.js';
 import { sendCredentialEmail } from '../services/emailNotification.service.js';
 import { restrictToCompanyScope } from '../middleware/auth.js';
+import runExport from '../exports/runExport.js';
+import adminExport from '../exports/admin.export.js';
 import {
   ROLES,
   ADMIN_ASSIGNABLE_ROLES,
@@ -42,6 +44,13 @@ const DEFAULT_MODULES_BY_ROLE = {
     'candidate_screening',
     'screening_analytics',
     'vendor_dashboard',
+    // Candidate Pipeline (Phase 3 M1). This list was NOT updated when the
+    // module shipped, so every recruiter created since then arrived without
+    // access to the pipeline — the comment above already claimed they get
+    // everything but `hr_admin`, which made the omission easy to miss.
+    // Existing recruiters are repaired by
+    // prisma/grant-recruiter-pipeline-access.js.
+    'recruitment_pipeline',
   ],
 };
 
@@ -113,6 +122,16 @@ export const listUsers = catchAsync(async (req, res) => {
 });
 
 /**
+ * Export users in scope as CSV — same tenant scoping as listUsers.
+ * @route GET /api/admin/users/export
+ */
+export const exportUsers = catchAsync(async (req, res) => runExport(
+  req,
+  res,
+  adminExport.usersSpecFor(req),
+));
+
+/**
  * Check if email duplicate exists.
  */
 export const checkEmail = catchAsync(async (req, res) => {
@@ -140,9 +159,12 @@ export const checkEmail = catchAsync(async (req, res) => {
 export const createUser = catchAsync(async (req, res) => {
   const { first_name, last_name, email, username, role, password, is_active, is_approved } = req.body;
 
-  if (!email || !username || !role || !password) {
-    throw new AppError('Required fields: email, username, role, password', 400);
+  if (!email || !role || !password) {
+    throw new AppError('Required fields: email, role, password', 400);
   }
+
+  // Username is optional — default to the email (it doubles as a login id).
+  const effectiveUsername = username?.trim() || email.trim();
 
   const requesterIsSuper = isSuperadmin(req.user.role);
   const targetRole = normalizeRole(role);
@@ -180,7 +202,7 @@ export const createUser = catchAsync(async (req, res) => {
     where: {
       OR: [
         { email: { equals: email.trim(), mode: 'insensitive' } },
-        { username: { equals: username.trim(), mode: 'insensitive' } },
+        { username: { equals: effectiveUsername, mode: 'insensitive' } },
       ],
     },
   });
@@ -195,10 +217,7 @@ export const createUser = catchAsync(async (req, res) => {
   // Multiple superadmins are allowed. Only a superadmin requester can create one
   // (a company admin is restricted to ADMIN_ASSIGNABLE_ROLES above).
 
-  // Generate Salt + Hash
-  const salt = crypto.randomBytes(8).toString('hex');
-  const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
-  const password_hash = `${salt}:${hash}`;
+  const password_hash = hashPassword(password);
 
   const normalizedRole = role.trim().toLowerCase();
 
@@ -207,7 +226,7 @@ export const createUser = catchAsync(async (req, res) => {
       first_name: first_name?.trim(),
       last_name: last_name?.trim(),
       email: email.trim(),
-      username: username.trim(),
+      username: effectiveUsername,
       role: targetRole,
       company_id: companyId,
       password_hash,
@@ -325,9 +344,30 @@ export const updateUser = catchAsync(async (req, res) => {
     if (!isSelf && !outranks(req.user.role, existingUser.role)) {
       throw new AppError("You cannot change another SuperAdmin's password.", 403);
     }
-    const salt = crypto.randomBytes(8).toString('hex');
-    const hash = crypto.createHash('sha512').update(password + salt).digest('hex');
-    updateData.password_hash = `${salt}:${hash}`;
+    updateData.password_hash = hashPassword(password);
+  }
+
+  // Prevent duplicate email/username on another account (case-insensitive).
+  const dupChecks = [];
+  if (updateData.email) {
+    dupChecks.push({ email: { equals: updateData.email, mode: 'insensitive' } });
+  }
+  if (updateData.username) {
+    dupChecks.push({ username: { equals: updateData.username, mode: 'insensitive' } });
+  }
+  if (dupChecks.length > 0) {
+    const duplicate = await prisma.rpa_users.findFirst({
+      where: {
+        OR: dupChecks,
+        NOT: { id: userId },
+      },
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        error: 'EMAIL_EXISTS',
+        message: 'Email or Username is already registered.',
+      });
+    }
   }
 
   const updatedUser = await prisma.rpa_users.update({

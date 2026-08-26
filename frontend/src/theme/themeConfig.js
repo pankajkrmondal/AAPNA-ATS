@@ -13,6 +13,7 @@
  *   --green: #4a7c59   (success)
  *   --red: #c0392b     (error)
  */
+import { theme } from 'antd';
 
 /** Shared tokens across both modes */
 const sharedTokens = {
@@ -28,6 +29,22 @@ const sharedTokens = {
 
 /** Light mode theme */
 export const lightTheme = {
+  /**
+   * STATED EXPLICITLY, and load-bearing — do not remove as redundant.
+   *
+   * A nested <ConfigProvider> INHERITS the parent's algorithm when it does not
+   * declare one. `<ForceLight>` (App.jsx) nests a `lightTheme` provider inside
+   * the app-wide one to pin the public token pages light; with no algorithm
+   * here, `darkAlgorithm` leaked through from the parent during a dark session.
+   * The CSS variables were correctly light, so text stayed dark — but AntD's
+   * generated component styles were dark-derived, and a candidate opening an
+   * emailed link while the operator's session was dark got, for example, an
+   * <Alert> with near-black text on a near-black fill.
+   *
+   * `defaultAlgorithm` is what AntD would use anyway with nothing set; naming it
+   * makes this provider authoritative rather than dependent on its parent.
+   */
+  algorithm: theme.defaultAlgorithm,
   token: {
     ...sharedTokens,
     colorPrimary: '#7a922e',
@@ -127,6 +144,10 @@ export const lightTheme = {
 
 /** Dark mode theme */
 export const darkTheme = {
+  // Derives dark-correct values for every token NOT explicitly set below
+  // (status backgrounds like colorErrorBg, Tag preset palettes, disabled
+  // fills). Explicit token entries still override the algorithm output.
+  algorithm: theme.darkAlgorithm,
   token: {
     ...sharedTokens,
     colorPrimary: '#a8c24a',
@@ -141,15 +162,28 @@ export const darkTheme = {
     colorBgContainer: '#121816',
     colorBgElevated: '#1a221f',
     colorBgLayout: '#0a0e0c',
-    colorBgSpotlight: '#a8c24a',
+    // Tooltip background — dark neutral (brand green + white text fails contrast on dark).
+    colorBgSpotlight: '#26302c',
+    colorBgMask: 'rgba(0, 0, 0, 0.6)',
     colorText: '#eaeae6',
     colorTextSecondary: '#9ca5a2',
     colorTextTertiary: '#6f7875',
     colorTextQuaternary: '#454e4b',
+    colorTextPlaceholder: '#6f7875',
+    colorIcon: '#9ca5a2',
+    colorIconHover: '#eaeae6',
+    colorLink: '#a8c24a',
+    colorLinkHover: '#bcd566',
+    colorLinkActive: '#94ad3f',
     colorBorder: '#233330',
     colorBorderSecondary: '#1b2624',
+    colorSplit: '#1b2624',
     colorFill: 'rgba(168, 194, 74, 0.10)',
     colorFillSecondary: 'rgba(168, 194, 74, 0.06)',
+    colorFillTertiary: 'rgba(168, 194, 74, 0.04)',
+    colorFillQuaternary: 'rgba(255, 255, 255, 0.03)',
+    controlItemBgHover: 'rgba(168, 194, 74, 0.08)',
+    controlItemBgActive: 'rgba(168, 194, 74, 0.18)',
     controlHeight: 40,
     controlHeightLG: 48,
     controlHeightSM: 32,
@@ -213,8 +247,18 @@ export const darkTheme = {
     Badge: {
       dotSize: 8,
     },
+    Modal: {
+      contentBg: '#1a221f',
+      headerBg: '#1a221f',
+    },
+    Drawer: {
+      colorBgElevated: '#1a221f',
+    },
+    Tooltip: {
+      colorBgSpotlight: '#26302c',
+      colorTextLightSolid: '#eaeae6',
+    },
     Tabs: {
-      style: { marginBottom: 0 },
       inkBarColor: '#a8c24a',
       itemSelectedColor: '#a8c24a',
       itemHoverColor: '#bcd566',
