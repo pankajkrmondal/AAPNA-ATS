@@ -284,19 +284,28 @@ describe('E2E-04 — two candidates racing the last opening', () => {
 // ── E2E-05 ────────────────────────────────────────────────────────────
 
 describe('E2E-05 — the manual Client round does not break the chain around it', () => {
-  test('a client booking is silent, yet documents still work normally afterwards', async () => {
+  test('the client round is marked, not booked, yet documents still work afterwards', async () => {
     const mrfId = await makeMrf(1);
     const { cv, journey } = await makeJourney({ name: 'E2E05', mrfId });
 
     await walkTo(journey.id, 'client');
     const before = await prisma.rpa_email_messages.count({ where: { candidate_id: cv.id } });
-    const booking = await scheduleInterviewRound(journey.id, {
-      stageKey: 'client', startAt: new Date(Date.now() + 48 * 3600 * 1000),
-      interviewerEmail: CANDIDATE_EMAIL, actedBy: ACTED_BY,
-    });
+
+    // 2026-08-25: the round is arranged offline, so the ATS refuses to book it
+    // rather than recording a silent booking as it used to.
+    await assert.rejects(
+      () => scheduleInterviewRound(journey.id, {
+        stageKey: 'client', startAt: new Date(Date.now() + 48 * 3600 * 1000),
+        interviewerEmail: CANDIDATE_EMAIL, actedBy: ACTED_BY,
+      }),
+      (err) => {
+        assert.equal(err.statusCode, 400);
+        return true;
+      }
+    );
+
     const after = await prisma.rpa_email_messages.count({ where: { candidate_id: cv.id } });
-    assert.equal(after, before, 'the client booking itself sends nothing');
-    assert.equal(booking.status, 'scheduled');
+    assert.equal(after, before, 'nothing is sent for the client round');
 
     // HR records the outcome manually; the chain resumes.
     await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });

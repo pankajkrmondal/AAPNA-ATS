@@ -1,5 +1,6 @@
 import * as pipelineService from '../services/pipeline.service.js';
 import * as offerService from '../services/offer.service.js';
+import * as clientRoundService from '../services/clientRound.service.js';
 import * as documentService from '../services/documentCollection.service.js';
 import prisma from '../config/database.js';
 import { success } from '../utils/apiResponse.js';
@@ -8,6 +9,13 @@ import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import pipelineExport from '../exports/pipeline.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
+// The generic-fallback chain and the never-email list are the dispatcher's, not
+// this controller's — listStageTemplates reads them so the admin screen shows
+// what actually sends. See stageNotification.service.js's resolveTemplate().
+import {
+  GENERIC_FALLBACK_BY_OUTCOME,
+  SILENT_FINAL_OUTCOMES,
+} from '../services/stageNotification.service.js';
 
 /**
  * GET /api/pipeline
@@ -400,6 +408,36 @@ export const setFinalOutcome = catchAsync(async (req, res) => {
   return success(res, result, 'Closure recorded successfully');
 });
 
+// ── Client round — marked, never booked; nothing reaches the client (Q14) ───
+
+/**
+ * POST /api/pipeline/:id/client-round/arranged
+ * Marks that the client interview took place, and when.
+ */
+export const recordClientRoundArranged = catchAsync(async (req, res) => {
+  const { happened_at, contact_name } = req.body;
+  const result = await clientRoundService.recordClientRoundArranged(pipelineIdFrom(req), {
+    happenedAt: happened_at || null,
+    contactName: contact_name || null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Client interview marked as arranged');
+});
+
+/**
+ * POST /api/pipeline/:id/client-round/feedback
+ * Records the client's transcribed verdict.
+ */
+export const recordClientRoundFeedback = catchAsync(async (req, res) => {
+  const { heard_at, feedback } = req.body;
+  const result = await clientRoundService.recordClientRoundFeedback(pipelineIdFrom(req), {
+    heardAt: heard_at || null,
+    feedback: feedback || null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Client feedback recorded');
+});
+
 // ── Offer round (Module 5) — record-only; letters live outside the ATS ──────
 
 /** Parses + validates :id, shared by the offer endpoints. */
@@ -409,27 +447,25 @@ function pipelineIdFrom(req) {
   return id;
 }
 
-/**
- * POST /api/pipeline/:id/offer/request-approval
- * Asks for internal sign-off and arms the daily nudge.
- */
+/* DISABLED 2026-08-25 — the two internal-approval endpoints. RT: the offer is
+ * handled offline and the app marks the round only. Reverses Q3/Q26; uncomment
+ * together with the service functions in offer.service.js and the routes in
+ * pipeline.routes.js if the sign-off is ever wanted back. */
+/*
 export const requestOfferApproval = catchAsync(async (req, res) => {
   const result = await offerService.requestApproval(pipelineIdFrom(req), { actedBy: req.user?.id });
   return success(res, result, 'Offer approval requested');
 });
 
-/**
- * POST /api/pipeline/:id/offer/approve
- * Records the internal sign-off.
- */
 export const approveOffer = catchAsync(async (req, res) => {
   const result = await offerService.approveOffer(pipelineIdFrom(req), { actedBy: req.user?.id });
   return success(res, result, 'Offer approved');
 });
+*/
 
 /**
  * POST /api/pipeline/:id/offer/share
- * Records that HR shared the offer (soft gate — approval is not required).
+ * Records that HR shared the offer — the first step of the offer round.
  */
 export const recordOfferShared = catchAsync(async (req, res) => {
   const { joining_date, remarks } = req.body;
@@ -685,12 +721,49 @@ export const updateReason = catchAsync(async (req, res) => {
  * rejected at Tech 2" needed a developer and a SQL client, which is the exact
  * opposite of RT's "changeable without development" ask (2026-07-13). Every
  * mapping row in staging today was inserted by hand; there were zero.
+ *
+ * Returns the resolution chain, not just the mappings (2026-08-26). Almost every
+ * pair is unmapped and therefore served by the generic per-outcome fallback, so
+ * a bare mapping list left the config screen showing 38 blank dropdowns with no
+ * way to tell "nothing is configured" from "nothing is sent". `fallbacks` names
+ * the template each outcome_key really lands on, resolved against the live
+ * rpa_email_templates rows so a renamed or deactivated generic shows up as
+ * missing here instead of silently failing at send time; `silent_outcomes`
+ * mirrors SILENT_FINAL_OUTCOMES, which short-circuits before any lookup.
  */
 export const listStageTemplates = catchAsync(async (_req, res) => {
   const mappings = await prisma.rpa_stage_email_templates.findMany({
     include: { rpa_email_templates: { select: { id: true, name: true, subject: true, is_active: true } } },
   });
-  return success(res, mappings, 'Stage email template mappings retrieved successfully');
+
+  // One query for all six generics rather than one per outcome; matched on the
+  // same (name, is_active) pair resolveTemplate() uses so the screen cannot
+  // claim a template the dispatcher would not find.
+  const fallbackNames = Object.values(GENERIC_FALLBACK_BY_OUTCOME);
+  const fallbackTemplates = await prisma.rpa_email_templates.findMany({
+    where: { name: { in: fallbackNames }, is_active: true },
+    select: { id: true, name: true, subject: true },
+  });
+  const byName = new Map(fallbackTemplates.map((t) => [t.name, t]));
+
+  const fallbacks = Object.entries(GENERIC_FALLBACK_BY_OUTCOME).map(([outcomeKey, name]) => {
+    const template = byName.get(name) || null;
+    return {
+      outcome_key: outcomeKey,
+      template_name: name,
+      template_id: template?.id ?? null,
+      subject: template?.subject ?? null,
+      // false = the named generic is missing or deactivated, so an unmapped pair
+      // on this outcome sends nothing at all. Worth surfacing loudly.
+      resolves: !!template,
+    };
+  });
+
+  return success(
+    res,
+    { mappings, fallbacks, silent_outcomes: [...SILENT_FINAL_OUTCOMES] },
+    'Stage email template mappings retrieved successfully'
+  );
 });
 
 /**

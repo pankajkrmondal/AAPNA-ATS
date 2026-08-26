@@ -100,8 +100,14 @@ router.post('/:id/documents/request', pipelineController.requestDocuments);
 router.post('/:id/documents/remind', pipelineController.remindDocuments);
 
 /** Offer round (Module 5) — record-only; the letter itself never enters the ATS. */
-router.post('/:id/offer/request-approval', pipelineController.requestOfferApproval);
-router.post('/:id/offer/approve', pipelineController.approveOffer);
+/** Client round — marked, never booked. Nothing here reaches the client (Q14). */
+router.post('/:id/client-round/arranged', pipelineController.recordClientRoundArranged);
+router.post('/:id/client-round/feedback', pipelineController.recordClientRoundFeedback);
+
+// Disabled 2026-08-25 — internal offer approval. RT: the offer is handled
+// offline and the app marks the round only. Reverses Q3/Q26.
+// router.post('/:id/offer/request-approval', pipelineController.requestOfferApproval);
+// router.post('/:id/offer/approve', pipelineController.approveOffer);
 router.post('/:id/offer/share', pipelineController.recordOfferShared);
 router.post('/:id/offer/decision', pipelineController.recordOfferDecision);
 /** POST /api/pipeline/:id/email — ad-hoc per-candidate email override (RT ask 2026-07-14). */

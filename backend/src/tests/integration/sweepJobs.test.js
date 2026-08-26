@@ -31,9 +31,10 @@ import config from '../../config/index.js';
 import { disconnectRedis } from '../../config/redis.js';
 import { createPipelineJourney } from '../../services/pipeline.service.js';
 import { requestDocuments } from '../../services/documentCollection.service.js';
-import { recordOfferShared, recordCandidateDecision, requestApproval } from '../../services/offer.service.js';
+import { recordOfferShared, recordCandidateDecision } from '../../services/offer.service.js';
 import { runDocumentReminders } from '../../jobs/documentReminder.js';
-import { runApprovalNudges, runPostJoiningAutoClose } from '../../jobs/offerSweep.js';
+// runApprovalNudges disabled 2026-08-25 with OFFER-14 below.
+import { runPostJoiningAutoClose } from '../../jobs/offerSweep.js';
 import { FINAL_OUTCOMES } from '../../config/pipelineStages.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL } from '../helpers/fixture.js';
 
@@ -245,74 +246,80 @@ describe('DOC-11 — the reminder sweep selects the right requests', () => {
   });
 });
 
-// ══════════════════════ OFFER-14 — approval nudge ══════════════════════
-
-describe('OFFER-14 — the approval nudge fires once a day, per pending offer', () => {
-  test('a pending approval request is nudged, and NOT nudged twice the same day', async () => {
-    const { journey } = await makeJourney({ name: 'OFFER14a' });
-    await putOnStage(journey.id, 'offer');
-    await requestApproval(journey.id, { actedBy: ACTED_BY });
-
-    // Requested a few days ago, never nudged.
-    await prisma.rpa_offers.updateMany({
-      where: { pipeline_id: BigInt(journey.id) },
-      data: { approval_requested_at: daysAgo(3), approval_nudged_at: null },
-    });
-
-    await runApprovalNudges();
-    const first = await prisma.rpa_offers.findFirst({
-      where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
-    });
-    assert.ok(first.approval_nudged_at, 'a pending offer must be nudged');
-
-    // Second run the same day: the OR clause is
-    // (nudged IS NULL OR nudged < startOfToday), so today's stamp excludes it.
-    await runApprovalNudges();
-    const second = await prisma.rpa_offers.findFirst({
-      where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
-    });
-    assert.equal(
-      second.approval_nudged_at.getTime(), first.approval_nudged_at.getTime(),
-      'a second run on the same day must NOT re-nudge — daily, not per-run'
-    );
-  });
-
-  test('an offer nudged YESTERDAY is nudged again today', async () => {
-    const { journey } = await makeJourney({ name: 'OFFER14b' });
-    await putOnStage(journey.id, 'offer');
-    await requestApproval(journey.id, { actedBy: ACTED_BY });
-    await prisma.rpa_offers.updateMany({
-      where: { pipeline_id: BigInt(journey.id) },
-      data: { approval_requested_at: daysAgo(5), approval_nudged_at: daysAgo(1) },
-    });
-
-    await runApprovalNudges();
-
-    const row = await prisma.rpa_offers.findFirst({
-      where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
-    });
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    assert.ok(row.approval_nudged_at >= startOfToday, 'yesterday\'s nudge must not suppress today\'s');
-  });
-
-  test('an already-APPROVED offer is never nudged', async () => {
-    const { journey } = await makeJourney({ name: 'OFFER14c' });
-    await putOnStage(journey.id, 'offer');
-    await requestApproval(journey.id, { actedBy: ACTED_BY });
-    await prisma.rpa_offers.updateMany({
-      where: { pipeline_id: BigInt(journey.id) },
-      data: { approval_status: 'approved', approval_requested_at: daysAgo(5), approval_nudged_at: null },
-    });
-
-    await runApprovalNudges();
-
-    const row = await prisma.rpa_offers.findFirst({
-      where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
-    });
-    assert.equal(row.approval_nudged_at, null, 'only PENDING approvals are chased');
-  });
-});
+// OFFER-14 — the daily approval nudge.
+//
+// Disabled 2026-08-25 with runApprovalNudges() in jobs/offerSweep.js: RT
+// handles the offer offline and the app marks the round only, so the nudge no
+// longer exists. Reverses Q3/Q26 — uncomment alongside the job.
+//
+// // ══════════════════════ OFFER-14 — approval nudge ══════════════════════
+//
+// describe('OFFER-14 — the approval nudge fires once a day, per pending offer', () => {
+//   test('a pending approval request is nudged, and NOT nudged twice the same day', async () => {
+//     const { journey } = await makeJourney({ name: 'OFFER14a' });
+//     await putOnStage(journey.id, 'offer');
+//     await requestApproval(journey.id, { actedBy: ACTED_BY });
+//
+//     // Requested a few days ago, never nudged.
+//     await prisma.rpa_offers.updateMany({
+//       where: { pipeline_id: BigInt(journey.id) },
+//       data: { approval_requested_at: daysAgo(3), approval_nudged_at: null },
+//     });
+//
+//     await runApprovalNudges();
+//     const first = await prisma.rpa_offers.findFirst({
+//       where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
+//     });
+//     assert.ok(first.approval_nudged_at, 'a pending offer must be nudged');
+//
+//     // Second run the same day: the OR clause is
+//     // (nudged IS NULL OR nudged < startOfToday), so today's stamp excludes it.
+//     await runApprovalNudges();
+//     const second = await prisma.rpa_offers.findFirst({
+//       where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
+//     });
+//     assert.equal(
+//       second.approval_nudged_at.getTime(), first.approval_nudged_at.getTime(),
+//       'a second run on the same day must NOT re-nudge — daily, not per-run'
+//     );
+//   });
+//
+//   test('an offer nudged YESTERDAY is nudged again today', async () => {
+//     const { journey } = await makeJourney({ name: 'OFFER14b' });
+//     await putOnStage(journey.id, 'offer');
+//     await requestApproval(journey.id, { actedBy: ACTED_BY });
+//     await prisma.rpa_offers.updateMany({
+//       where: { pipeline_id: BigInt(journey.id) },
+//       data: { approval_requested_at: daysAgo(5), approval_nudged_at: daysAgo(1) },
+//     });
+//
+//     await runApprovalNudges();
+//
+//     const row = await prisma.rpa_offers.findFirst({
+//       where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
+//     });
+//     const startOfToday = new Date();
+//     startOfToday.setHours(0, 0, 0, 0);
+//     assert.ok(row.approval_nudged_at >= startOfToday, 'yesterday\'s nudge must not suppress today\'s');
+//   });
+//
+//   test('an already-APPROVED offer is never nudged', async () => {
+//     const { journey } = await makeJourney({ name: 'OFFER14c' });
+//     await putOnStage(journey.id, 'offer');
+//     await requestApproval(journey.id, { actedBy: ACTED_BY });
+//     await prisma.rpa_offers.updateMany({
+//       where: { pipeline_id: BigInt(journey.id) },
+//       data: { approval_status: 'approved', approval_requested_at: daysAgo(5), approval_nudged_at: null },
+//     });
+//
+//     await runApprovalNudges();
+//
+//     const row = await prisma.rpa_offers.findFirst({
+//       where: { pipeline_id: BigInt(journey.id) }, select: { approval_nudged_at: true },
+//     });
+//     assert.equal(row.approval_nudged_at, null, 'only PENDING approvals are chased');
+//   });
+// });
 
 // ══════════════════════ OFFER-15 — post-joining auto-close ══════════════════════
 

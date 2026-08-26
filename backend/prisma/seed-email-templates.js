@@ -1154,21 +1154,26 @@ const TEMPLATES = [
       is_active: true,
     },
   },
-  {
-    // INTERNAL — goes to the recruitment mailbox, never the candidate
-    // (offerApprovalNudge flow key). Q26: a daily chase, not a communication.
-    find: { name: 'Offer Approval Reminder' },
-    data: {
-      name: 'Offer Approval Reminder',
-      category: 'offer',
-      subject: 'Offer approval pending — {{candidate_name}} ({{position}})',
-      body_html: `<p>The offer for <strong>{{candidate_name}}</strong> ({{position}}) is still waiting for internal approval — requested {{waiting_days}} day(s) ago.</p>
-<p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
-<p><a href="{{pipeline_link}}">Open the Candidate Pipeline</a></p>`,
-      placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
-      is_active: true,
-    },
-  },
+  // INTERNAL — goes to the recruitment mailbox, never the candidate
+  // (offerApprovalNudge flow key). Q26: a daily chase, not a communication.
+  //
+  // Disabled 2026-08-25 with the offer approval flow — RT: the offer is handled
+  // offline and the app marks the round only. The seed no longer creates this
+  // template; an existing row in a seeded environment is left alone (nothing
+  // reads it now) rather than being deleted. Reverses Q3/Q26.
+  // {
+  //   find: { name: 'Offer Approval Reminder' },
+  //   data: {
+  //     name: 'Offer Approval Reminder',
+  //     category: 'offer',
+  //     subject: 'Offer approval pending — {{candidate_name}} ({{position}})',
+  //     body_html: `<p>The offer for <strong>{{candidate_name}}</strong> ({{position}}) is still waiting for internal approval — requested {{waiting_days}} day(s) ago.</p>
+  // <p>Please approve it in the Candidate Pipeline so the offer can be shared with the candidate.</p>
+  // <p><a href="{{pipeline_link}}">Open the Candidate Pipeline</a></p>`,
+  //     placeholders: ['candidate_name', 'position', 'waiting_days', 'pipeline_link'],
+  //     is_active: true,
+  //   },
+  // },
   // Phase 3 Module 6 — the vendor half of the Q5 dual-notification. Sent by
   // vendorNotification.service.js as its OWN message, never as a cc on the
   // candidate's email, so nothing a recruiter types can reach a vendor.

@@ -36,7 +36,7 @@ import {
   Alert, App as AntApp, Avatar, Button, Card, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  CalendarOutlined, CheckOutlined, CloseOutlined, ExclamationCircleOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
   FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
   SendOutlined, StepForwardOutlined, UserOutlined,
 } from '@ant-design/icons';
@@ -148,16 +148,24 @@ function isZekoStageKey(key) {
 }
 
 /** Rounds the recruiter books directly (interviewer comes from the MRF).
- * Mirrors SCHEDULABLE_STAGES in backend/src/services/interviewSchedule.service.js. */
-const SCHEDULABLE_STAGE_KEYS = ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo', 'client'];
+ * Mirrors SCHEDULABLE_STAGES in backend/src/services/interviewSchedule.service.js.
+ *
+ * Disabled 2026-08-25 — 'client' removed: RT arranges the Client Interview
+ * entirely offline and the app only marks the round. Restore it here AND in the
+ * backend's SCHEDULABLE_STAGES together; if the two disagree the drawer offers a
+ * booking the API refuses (or hides one it would accept). */
+const SCHEDULABLE_STAGE_KEYS = ['tech1', 'tech2', 'tech3', 'hr_round', 'ceo' /* , 'client' */];
 function isSchedulableStageKey(key) {
   return SCHEDULABLE_STAGE_KEYS.includes(key);
 }
 
-/** Rounds booked WITHOUT the system inviting anyone — the recruiter coordinates
- * them by hand. Mirrors `autoInvite: false` in interviewSchedule.service.js. */
+/** Rounds the system never generates anything outward for — the recruiter
+ * coordinates them by hand. Mirrors MANUALLY_COORDINATED_STAGES in
+ * interviewSchedule.service.js. Kept separate from the list above because it
+ * still applies to bookings made before in-app booking was withdrawn. */
+const MANUALLY_COORDINATED_STAGE_KEYS = ['client'];
 function stageSendsInvites(key) {
-  return key !== 'client';
+  return !MANUALLY_COORDINATED_STAGE_KEYS.includes(key);
 }
 
 /**
@@ -258,8 +266,17 @@ const PIPELINE_LABELS = {
   // where the recruiter ACTS, so the label names the action, not a passive wait.
   scheduled_interview: ['Stage Entry', 'Schedule Interview', 'Awaiting Results', 'Approve / Reject'],
   document: ['Request Sent', 'Awaiting Upload', 'Awaiting Verification', 'Approve / Reject'],
-  offer: ['Offer Prepared', 'Offer Sent', 'Awaiting Response', 'Accepted / Declined'],
+  offer: ['Offer Prepared', 'Offer Shared', 'Awaiting Response', 'Accepted / Declined'],
 };
+
+/** The Client Interview is a scheduled_interview stage by type, but the ATS
+ * neither schedules nor invites for it — RT arranges it with the client
+ * directly and only marks the result here.
+ *
+ * "Client Meeting" rather than "Arranged Offline": the label is fixed for the
+ * life of the row, so it has to be true before the meeting has happened as well
+ * as after. The sentence underneath is what carries the state. */
+const CLIENT_ROUND_LABELS = ['Stage Entry', 'Client Meeting', 'Client Feedback', 'Approve / Reject'];
 
 /** Shortens an admin-configured stage label for the pill navigator. */
 function shortStageLabel(label) {
@@ -297,13 +314,16 @@ function fmtDateTime(d) {
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
 function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOutcome, zekoScores, zekoHrPipeline, zekoReportLink, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite, offer, documents }) {
-  const labels = PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual;
+  const labels = stage.stage_key === 'client'
+    ? CLIENT_ROUND_LABELS
+    : (PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual);
   const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
   const emails = [];
   let showScheduleButton = false;
   let showInviteButton = false;
   let showDocumentActions = false;
+  let showClientRoundActions = false;
 
   let s1 = { state: 'pending', detail: 'Not sent yet' };
   let s2 = { state: 'pending', detail: 'Not started yet' };
@@ -466,6 +486,39 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     }
     // Scheduling stays available while the round is genuinely open.
     showScheduleButton = isCurrent && !outcomeEvent;
+  } else if (stage.stage_key === 'client') {
+    // Mark-only round (2026-08-25): the recruitment team arranges the client
+    // interview directly with the client and the ATS records what happened.
+    // Nothing is scheduled, invited, chased or scored here — but each step is
+    // still individually markable, so the round reads like every other one.
+    //
+    // Both marks live on the same rpa_interview_schedule row (see
+    // backend/src/services/clientRound.service.js): the date on
+    // scheduled_start_at, the transcribed verdict on notes + occurrence_status.
+    // Each sentence has to read correctly BEFORE its step is marked as well as
+    // after — the labels are fixed, so this is what tells the recruiter whether
+    // something is still owed.
+    if (interviewSchedule) {
+      s2 = {
+        state: 'done',
+        detail: `Arranged offline — held ${fmtDateTime(interviewSchedule.scheduled_start_at)}${interviewSchedule.interviewer_name ? ` with ${interviewSchedule.interviewer_name}` : ''}`,
+      };
+    } else if (enteredEvent) {
+      s2 = { state: 'active', detail: 'Arrange this with the client, then mark it here once it has happened' };
+    }
+
+    if (interviewSchedule?.notes) {
+      s3 = {
+        state: 'done',
+        detail: `“${interviewSchedule.notes}”${interviewSchedule.occurrence_confirmed_at ? ` — recorded ${fmtDateTime(interviewSchedule.occurrence_confirmed_at)}` : ''}`,
+      };
+    } else if (interviewSchedule) {
+      s3 = { state: 'active', detail: 'Not recorded yet — add what the client said' };
+    } else if (enteredEvent) {
+      s3 = { state: 'pending', detail: 'Available once the meeting is marked as held' };
+    }
+
+    showClientRoundActions = isCurrent && !outcomeEvent;
   } else if (stage.stage_key === 'assessment') {
     // Phase 3 M2 — bulk-CSV Evalground import (results already land here even
     // though the round is still "manual"; there is no scheduling sub-state
@@ -497,14 +550,21 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     }
   } else if (stage.stage_key === 'offer') {
     // Record-only offer (Q3): the letter is prepared and shared by HR outside
-    // the ATS, so these segments track the internal approval, the share, and
-    // the candidate's answer — never a document.
-    if (offer?.approval_status === 'approved') {
-      s1 = { state: 'done', detail: `Approved internally${offer.approved_at ? ` · ${fmtDateTime(offer.approved_at)}` : ''}` };
-    } else if (offer?.approval_requested_at) {
-      s1 = { state: 'active', detail: `Requested ${fmtDateTime(offer.approval_requested_at)} — awaiting recruiter sign-off` };
-    } else if (enteredEvent) {
-      s1 = { state: 'active', detail: 'Internal approval not requested yet' };
+    // the ATS, so these segments track the share and the candidate's answer —
+    // never a document.
+    //
+    // Segment 1 keys off the journey ARRIVING on the stage. It used to key off
+    // the internal approval, which was disabled 2026-08-25 — leaving it there
+    // would have parked every offer on "not requested yet" forever.
+    // if (offer?.approval_status === 'approved') {
+    //   s1 = { state: 'done', detail: `Approved internally${offer.approved_at ? ` · ${fmtDateTime(offer.approved_at)}` : ''}` };
+    // } else if (offer?.approval_requested_at) {
+    //   s1 = { state: 'active', detail: `Requested ${fmtDateTime(offer.approval_requested_at)} — awaiting recruiter sign-off` };
+    // } else if (enteredEvent) {
+    //   s1 = { state: 'active', detail: 'Internal approval not requested yet' };
+    // }
+    if (enteredEvent) {
+      s1 = { state: 'done', detail: 'Prepared by the recruitment team outside the ATS' };
     }
 
     if (offer?.shared_at) {
@@ -512,21 +572,37 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
         state: 'done',
         detail: `Shared ${fmtDateTime(offer.shared_at)}${offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}`,
       };
-    } else if (offer?.approval_status === 'approved') {
-      s2 = { state: 'active', detail: 'Approved — not yet shared with the candidate' };
     } else if (enteredEvent) {
-      s2 = { state: 'pending', detail: 'Awaiting internal approval before the offer goes out' };
+      s2 = { state: 'active', detail: 'Not recorded yet — use “Record offer shared” below once HR has sent it' };
     }
 
-    if (offer?.candidate_decision === 'accepted' || offer?.candidate_decision === 'rejected') {
-      s3 = {
-        state: offer.candidate_decision === 'accepted' ? 'done' : 'rejected',
-        detail: `Candidate ${offer.candidate_decision}${offer.decision_at ? ` · ${fmtDateTime(offer.decision_at)}` : ''}`,
-      };
+    // Segments 3 and 4 are the WAIT and the ANSWER, matching their labels
+    // ("Awaiting Response" / "Accepted / Declined"). Both are set here rather
+    // than letting the generic tail below fill s4 in: that tail is written for
+    // interview rounds and would say "Awaiting your decision once results are
+    // in" — an offer has no results, and the decision is the CANDIDATE's, not
+    // the recruiter's.
+    const decided = offer?.candidate_decision === 'accepted' || offer?.candidate_decision === 'rejected';
+
+    if (decided) {
+      s3 = { state: 'done', detail: `Candidate replied${offer.decision_at ? ` · ${fmtDateTime(offer.decision_at)}` : ''}` };
     } else if (offer?.shared_at) {
-      s3 = { state: 'active', detail: 'Awaiting the candidate’s decision' };
+      s3 = { state: 'active', detail: 'Awaiting the candidate’s reply' };
     } else if (enteredEvent) {
       s3 = { state: 'pending', detail: 'Awaiting the offer to be shared' };
+    }
+
+    if (decided) {
+      s4 = offer.candidate_decision === 'accepted'
+        ? {
+          state: 'done',
+          detail: `Accepted${offer.joining_date ? ` · joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}`,
+        }
+        : { state: 'rejected', detail: `Declined by the candidate${offer.decision_at ? ` · ${fmtDateTime(offer.decision_at)}` : ''}` };
+    } else if (offer?.shared_at) {
+      s4 = { state: 'active', detail: 'Mark their answer below once they reply' };
+    } else if (enteredEvent) {
+      s4 = { state: 'pending', detail: 'Not yet — the offer has not gone out' };
     }
   } else if (stage.stage_key === 'documents') {
     const req = documents?.request;
@@ -583,7 +659,14 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       s4 = { state: 'done', detail: `${tag?.label || outcomeEvent.outcome} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
     }
     emails.push(`Outcome email → candidate · ${new Date(outcomeEvent.created_at).toLocaleDateString()} · ${outcomeEvent.email_sent ? 'delivered' : (outcomeEvent.email_error ? 'failed' : 'not sent')}`);
-  } else if (isCurrent && s3.state === 'done') {
+  } else if (stage.stage_key === 'offer') {
+    // Already set by the offer branch above, in the offer's own vocabulary.
+    // The two fallbacks below are written for interview rounds — they talk
+    // about "results" and about the RECRUITER deciding, neither of which is
+    // true here — so the offer stage deliberately opts out of them.
+  } else if (isCurrent && (s3.state === 'done' || stage.stage_key === 'client')) {
+    // The client round has no in-app result to wait for — the decision is
+    // available as soon as the recruiter has heard back from the client.
     s4 = { state: 'active', detail: 'Awaiting your decision' };
   } else if (isCurrent) {
     s4 = { state: 'pending', detail: 'Awaiting your decision once results are in' };
@@ -600,6 +683,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     showScheduleButton,
     showInviteButton,
     showDocumentActions,
+    showClientRoundActions,
   };
 }
 
@@ -664,6 +748,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const [schedEmailForKey, setSchedEmailForKey] = useState(null);
   const [cxlEmailForKey, setCxlEmailForKey] = useState(null);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  // Client round — the two "mark this step" modals. Nothing here emails anyone.
+  const [clientArrangedOpen, setClientArrangedOpen] = useState(false);
+  const [clientHappenedAt, setClientHappenedAt] = useState(null);
+  const [clientContactName, setClientContactName] = useState('');
+  const [clientFeedbackOpen, setClientFeedbackOpen] = useState(false);
+  const [clientFeedbackText, setClientFeedbackText] = useState('');
   // Offer round (Module 5) — the "record offer shared" and closure modals.
   const [offerShareOpen, setOfferShareOpen] = useState(false);
   const [offerJoiningDate, setOfferJoiningDate] = useState(null);
@@ -970,14 +1060,41 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   });
 
   /**
+   * The Client round's two marks. Both are pure record-keeping — the client is
+   * external and the ATS never generates anything for them (Q14).
+   */
+  const clientRoundMutation = useMutation({
+    mutationFn: ({ action, payload }) => (
+      action === 'arranged'
+        ? pipelineService.recordClientRoundArranged(pipelineId, payload)
+        : pipelineService.recordClientRoundFeedback(pipelineId, payload)
+    ),
+    onSuccess: (_res, { successMessage }) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      onChanged?.();
+      setClientArrangedOpen(false);
+      setClientFeedbackOpen(false);
+      setClientHappenedAt(null);
+      setClientContactName('');
+      setClientFeedbackText('');
+      message.success(successMessage);
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to update the client round.');
+    },
+  });
+
+  /**
    * The Offer round's actions (Module 5). All record-only: the appointment
    * letter itself is prepared and shared by HR outside the ATS, so nothing here
    * generates or stores one.
    */
   const offerMutation = useMutation({
     mutationFn: ({ action, payload }) => {
-      if (action === 'request-approval') return pipelineService.requestOfferApproval(pipelineId);
-      if (action === 'approve') return pipelineService.approveOffer(pipelineId);
+      // Disabled 2026-08-25 — internal offer approval (RT: offer handled
+      // offline, app marks the round only). Reverses Q3/Q26.
+      // if (action === 'request-approval') return pipelineService.requestOfferApproval(pipelineId);
+      // if (action === 'approve') return pipelineService.approveOffer(pipelineId);
       if (action === 'share') return pipelineService.recordOfferShared(pipelineId, payload);
       return pipelineService.recordOfferDecision(pipelineId, payload);
     },
@@ -1007,6 +1124,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       setClosureNotes('');
       setClosureOutcome(null);
       message.success('Candidate record closed.');
+      // Closure is terminal: the journey leaves the board, so leaving the
+      // drawer open would park the recruiter on a record that no longer has a
+      // card behind it, with every action bar disabled. Dismiss back to the
+      // board — closeDrawer() also clears the ?candidate= param, so a refresh
+      // or a shared link does not reopen a closed journey.
+      onClose?.();
     },
     onError: (err) => {
       message.error(err?.message || 'Failed to close the record.');
@@ -1463,7 +1586,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         }
       : null;
 
-    const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions } = buildPipelineSegments({
+    // The booking for the stage being VIEWED. Hoisted into a local because the
+    // segment JSX below needs the same value: the component-level
+    // `interviewSchedule` is the CURRENT round's row only, and the API leaves it
+    // null for any stage that is not schedulable — which the Client Interview no
+    // longer is. Reading that one from a client-round button therefore always
+    // saw null, which hid the "Record client feedback" action entirely.
+    const stageSchedule =
+      interviewSchedules?.[stage.stage_key] ||
+      (stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null);
+
+    const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions, showClientRoundActions } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
@@ -1477,9 +1610,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       // Each round gets its OWN booking, so a finished tech1 keeps showing when
       // the candidate has moved to tech2. Falls back to the current-stage row
       // for older payloads that predate interviewSchedules.
-      interviewSchedule:
-        interviewSchedules?.[stage.stage_key] ||
-        (stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null),
+      interviewSchedule: stageSchedule,
       // Hints are advice for booking the round that's up next, so they stay
       // scoped to the current stage.
       mrfInterviewHints: stage.stage_key === pipeline.current_stage_key ? mrfInterviewHints : null,
@@ -1564,6 +1695,43 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         <Button size="small" type="link" loading={inviteMutation.isPending}>Mark as sent manually</Button>
                       </Popconfirm>
                     </Space>
+                  </div>
+                )}
+                {/* Client round — each step is marked by hand, since the ATS
+                    has no visibility into a round arranged outside it. These
+                    read `stageSchedule`, NOT the component-level
+                    `interviewSchedule`, which is null for this stage. */}
+                {i === 1 && showClientRoundActions && (
+                  <div className="cp-pipeline-step__extra">
+                    <Button
+                      size="small"
+                      type={stageSchedule ? 'default' : 'primary'}
+                      icon={<CalendarOutlined />}
+                      loading={clientRoundMutation.isPending}
+                      onClick={() => {
+                        setClientHappenedAt(stageSchedule?.scheduled_start_at ? dayjs(stageSchedule.scheduled_start_at) : null);
+                        setClientContactName(stageSchedule?.interviewer_name || '');
+                        setClientArrangedOpen(true);
+                      }}
+                    >
+                      {stageSchedule ? 'Edit date' : 'Mark as held'}
+                    </Button>
+                  </div>
+                )}
+                {i === 2 && showClientRoundActions && stageSchedule && (
+                  <div className="cp-pipeline-step__extra">
+                    <Button
+                      size="small"
+                      type={stageSchedule.notes ? 'default' : 'primary'}
+                      icon={<EditOutlined />}
+                      loading={clientRoundMutation.isPending}
+                      onClick={() => {
+                        setClientFeedbackText(stageSchedule.notes || '');
+                        setClientFeedbackOpen(true);
+                      }}
+                    >
+                      {stageSchedule.notes ? 'Edit feedback' : 'Record client feedback'}
+                    </Button>
                   </div>
                 )}
                 {i === 0 && showDocumentActions && !documentsData?.request && (
@@ -1850,14 +2018,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
           {renderStagePanel()}
 
-          {/* The Offer round has its own lifecycle (approval → shared → decision
-              → close) instead of the generic Approve/Reject/Hold bar. */}
+          {/* The Offer round has its own lifecycle (shared → decision → close)
+              instead of the generic Approve/Reject/Hold bar. */}
           {isCurrentStageSelected && !pipeline.final_outcome && selectedStageKey === 'offer' && (
             <OfferActions
               offer={data?.offer}
               pending={offerMutation.isPending}
-              onRequestApproval={() => offerMutation.mutate({ action: 'request-approval', successMessage: 'Approval requested — a daily reminder is armed until it is approved.' })}
-              onApprove={() => offerMutation.mutate({ action: 'approve', successMessage: 'Offer approved internally.' })}
+              // Disabled 2026-08-25 — internal offer approval. Reverses Q3/Q26.
+              // onRequestApproval={() => offerMutation.mutate({ action: 'request-approval', successMessage: 'Approval requested — a daily reminder is armed until it is approved.' })}
+              // onApprove={() => offerMutation.mutate({ action: 'approve', successMessage: 'Offer approved internally.' })}
               onOpenShare={() => setOfferShareOpen(true)}
               onDecision={(decision) => offerMutation.mutate({
                 action: 'decision',
@@ -2455,6 +2624,79 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       onSend={(payload) => inviteMutation.mutate(payload)}
     />
 
+    {/* Client round — mark that it happened. Records only; sends nothing. */}
+    <Modal
+      open={clientArrangedOpen}
+      onCancel={() => setClientArrangedOpen(false)}
+      title="Mark the client interview as held"
+      width={MODAL_WIDTH.CONFIRM}
+      okText="Mark as held"
+      okButtonProps={{ disabled: !clientHappenedAt }}
+      confirmLoading={clientRoundMutation.isPending}
+      onOk={() => clientRoundMutation.mutate({
+        action: 'arranged',
+        payload: {
+          happened_at: clientHappenedAt ? clientHappenedAt.toISOString() : null,
+          contact_name: clientContactName || null,
+        },
+        successMessage: 'Client interview marked as held.',
+      })}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Alert
+          type="info"
+          showIcon
+          message="This round is arranged with the client directly. Marking it here only records what happened — no invite, reminder or feedback request is sent to anyone."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>When did it take place? <Text type="danger">*</Text></Text>
+          <DateTimeField
+            value={clientHappenedAt}
+            onChange={setClientHappenedAt}
+            datePlaceholder="Select a date"
+          />
+        </div>
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Who took it, on the client side?</Text>
+          <Input
+            placeholder="Optional — e.g. R. Fernandes, Northwind Corp"
+            value={clientContactName}
+            onChange={(e) => setClientContactName(e.target.value)}
+            style={{ marginTop: 4 }}
+            allowClear
+          />
+        </div>
+      </Space>
+    </Modal>
+
+    {/* Client round — transcribe what the client said. */}
+    <Modal
+      open={clientFeedbackOpen}
+      onCancel={() => setClientFeedbackOpen(false)}
+      title="Record client feedback"
+      width={MODAL_WIDTH.CONFIRM}
+      okText="Save feedback"
+      okButtonProps={{ disabled: !clientFeedbackText.trim() }}
+      confirmLoading={clientRoundMutation.isPending}
+      onOk={() => clientRoundMutation.mutate({
+        action: 'feedback',
+        payload: { feedback: clientFeedbackText },
+        successMessage: 'Client feedback recorded.',
+      })}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Text type="secondary" style={{ fontSize: 12.5 }}>
+          What did the client say? This is your transcription — the client never sees it, and it is not sent anywhere.
+        </Text>
+        <TextArea
+          rows={4}
+          placeholder="e.g. Happy with the technical depth, wants to proceed. Slight concern on notice period."
+          value={clientFeedbackText}
+          onChange={(e) => setClientFeedbackText(e.target.value)}
+        />
+      </Space>
+    </Modal>
+
     {/* Offer round — record what HR shared outside the ATS. */}
     <Modal
       open={offerShareOpen}
@@ -2644,15 +2886,17 @@ const CLOSURE_OPTIONS = [
  * Approve/Reject/Hold buttons every other stage gets.
  *
  * Record-only (Q3): HR prepares and shares the appointment letter entirely
- * outside the ATS, so this tracks the internal approval, the share date, and
- * the candidate's answer — never a letter file.
+ * outside the ATS, so this tracks the share date and the candidate's answer —
+ * never a letter file.
  *
- * The approval is a SOFT gate (Q26): "Record offer shared" stays available even
- * when approval was never recorded, so an exceptional case is never blocked.
+ * The internal approval step was disabled 2026-08-25 (RT: the offer is handled
+ * offline and the app marks the round only), so the bar now runs
+ * shared → decision → close. Its commented-out parts reverse Q3/Q26 and are
+ * kept in place should the sign-off ever be wanted back.
  */
-function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShare, onDecision, onClose }) {
-  const approved = offer?.approval_status === 'approved';
-  const awaitingApproval = offer?.approval_status === 'pending' && !!offer?.approval_requested_at;
+function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOpenShare, onDecision, onClose }) {
+  // const approved = offer?.approval_status === 'approved';
+  // const awaitingApproval = offer?.approval_status === 'pending' && !!offer?.approval_requested_at;
   const shared = !!offer?.shared_at;
   const decided = shared && offer?.candidate_decision !== 'pending';
 
@@ -2661,11 +2905,12 @@ function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShar
       <Title level={5} style={{ fontSize: 14 }}>Offer</Title>
 
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        {!offer && (
+        {!shared && (
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            Record-only: HR shares the letter from its own mailbox. Request internal approval first.
+            Record-only: HR prepares and shares the letter from its own mailbox. Record it here once it has gone out.
           </Text>
         )}
+        {/* Disabled 2026-08-25 — internal approval status lines. Reverses Q3/Q26.
         {awaitingApproval && (
           <Text type="warning" style={{ fontSize: 12.5 }}>
             Requested — awaiting recruiter sign-off. A daily reminder goes out until it is approved.
@@ -2676,6 +2921,7 @@ function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShar
             Approved internally{offer.approved_at ? ` · ${new Date(offer.approved_at).toLocaleDateString()}` : ''} — not yet shared with the candidate.
           </Text>
         )}
+        */}
         {shared && (
           <Text type="secondary" style={{ fontSize: 12.5 }}>
             Shared {new Date(offer.shared_at).toLocaleDateString()}
@@ -2685,6 +2931,7 @@ function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShar
         )}
 
         <Space wrap>
+          {/* Disabled 2026-08-25 — the two internal-approval buttons. Reverses Q3/Q26.
           {!offer || (!approved && !awaitingApproval) ? (
             <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onRequestApproval}>
               Request internal approval
@@ -2695,8 +2942,11 @@ function OfferActions({ offer, pending, onRequestApproval, onApprove, onOpenShar
               Mark approved
             </Button>
           )}
+          */}
           {!shared && (
-            <Button loading={pending} onClick={onOpenShare}>Record offer shared</Button>
+            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onOpenShare}>
+              Record offer shared
+            </Button>
           )}
           {shared && !decided && (
             <>

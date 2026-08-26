@@ -19,7 +19,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Card, Table, Button, Modal, Form, Input, InputNumber, Switch, Select,
-  Tabs, Tag, Space, Typography, message,
+  Tabs, Tag, Space, Tooltip, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, ApartmentOutlined, ArrowUpOutlined, ArrowDownOutlined,
@@ -60,6 +60,12 @@ export default function PipelineConfigPanel() {
   const [reasons, setReasons] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [mappings, setMappings] = useState([]);
+  // The generic per-outcome fallback each unmapped pair really lands on, plus
+  // the outcomes the dispatcher refuses to email at all. Both come from the
+  // server (stageNotification.service.js owns the chain) rather than being
+  // restated here, so the screen cannot drift from what actually sends.
+  const [fallbacks, setFallbacks] = useState([]);
+  const [silentOutcomes, setSilentOutcomes] = useState([]);
   const [flowKeys, setFlowKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -105,7 +111,15 @@ export default function PipelineConfigPanel() {
       if (stageRes.status === 'fulfilled') setStages(stageRes.value.data?.data || []);
       if (reasonRes.status === 'fulfilled') setReasons(reasonRes.value.data?.data || []);
       if (templateRes.status === 'fulfilled') setTemplates(templateRes.value.data?.data || []);
-      if (mappingRes.status === 'fulfilled') setMappings(mappingRes.value.data?.data || []);
+      if (mappingRes.status === 'fulfilled') {
+        // GET /stage-templates returns the whole resolution chain as of
+        // 2026-08-26; the `|| payload` keeps a cached/older array response
+        // working as the plain mapping list it used to be.
+        const payload = mappingRes.value.data?.data;
+        setMappings(payload?.mappings || (Array.isArray(payload) ? payload : []));
+        setFallbacks(payload?.fallbacks || []);
+        setSilentOutcomes(payload?.silent_outcomes || []);
+      }
       if (flowRes.status === 'fulfilled') setFlowKeys(flowRes.value.data?.data || []);
 
       if (stageRes.status === 'rejected') {
@@ -402,12 +416,15 @@ export default function PipelineConfigPanel() {
   // only-what-exists would hide every one of them. Staging had zero mapping
   // rows, so that view would have been empty.
   const mappingByPair = new Map(mappings.map((m) => [`${m.stage_key}:${m.outcome_key}`, m]));
+  const fallbackByOutcome = new Map(fallbacks.map((f) => [f.outcome_key, f]));
+  const silentOutcomeSet = new Set(silentOutcomes);
   const templateRows = stages
     .filter((s) => s.is_active !== false)
     .flatMap((stage) => (stage.rpa_stage_outcomes || [])
       .filter((o) => o.is_active !== false)
       .map((outcome) => {
         const mapped = mappingByPair.get(`${stage.stage_key}:${outcome.outcome_key}`);
+        const fallback = fallbackByOutcome.get(outcome.outcome_key) || null;
         return {
           key: `${stage.stage_key}:${outcome.outcome_key}`,
           stage_key: stage.stage_key,
@@ -416,6 +433,12 @@ export default function PipelineConfigPanel() {
           outcome_label: outcome.label,
           template_id: mapped?.template_id ?? null,
           template_name: mapped?.rpa_email_templates?.name || null,
+          // What this pair falls back to when nothing is picked above.
+          fallback_name: fallback?.template_name || null,
+          fallback_resolves: !!fallback?.resolves,
+          // Silent outcomes short-circuit in resolveTemplate() before the
+          // mapping is even read, so nothing picked here could ever send.
+          is_silent: silentOutcomeSet.has(outcome.outcome_key),
         };
       }));
 
@@ -426,6 +449,10 @@ export default function PipelineConfigPanel() {
    * offer to put it back, without adding a confirm-before-apply step.
    */
   const saveMapping = async (row, templateId) => {
+    // Belt and braces with the disabled Select above: resolveTemplate()
+    // short-circuits silent outcomes, so a mapping saved here would be dead
+    // config that reads as if it works.
+    if (row.is_silent) return;
     const previousValue = row.template_id;
     setSaving(true);
     try {
@@ -452,11 +479,56 @@ export default function PipelineConfigPanel() {
     }
   };
 
+  /**
+   * The tag that answers "what does this row actually send today?".
+   *
+   * Nearly every pair is unmapped, so before this the honest answer to that
+   * question was invisible: 38 identical blank dropdowns, with no way to tell a
+   * pair that quietly sends the generic Approved mail from one that sends
+   * nothing at all. The four states are deliberately distinct colours.
+   */
+  const renderEffectiveTemplate = (row) => {
+    if (row.is_silent) {
+      return (
+        <Tooltip title="Recording something the candidate already knows — joined, withdrew, backed out. The dispatcher refuses these before it reads any mapping, so nothing set here can send.">
+          <Tag color="default">No email — by design</Tag>
+        </Tooltip>
+      );
+    }
+    if (row.template_id) {
+      return (
+        <Tooltip title="This pair has its own template, chosen here. It overrides the generic.">
+          <Tag color="green">{row.template_name || `Template #${row.template_id}`}</Tag>
+        </Tooltip>
+      );
+    }
+    if (row.fallback_name && row.fallback_resolves) {
+      return (
+        <Tooltip title={`Nothing specific is set, so this pair sends the generic “${row.fallback_name}” template.`}>
+          <Tag color="blue">Generic · {row.fallback_name}</Tag>
+        </Tooltip>
+      );
+    }
+    return (
+      <Tooltip title={row.fallback_name
+        ? `The generic “${row.fallback_name}” template is missing or deactivated, so this pair currently sends nothing. Pick a template here, or reactivate it on the Email Templates screen.`
+        : 'This outcome has no generic fallback, so unless a template is picked here it sends nothing.'}>
+        <Tag color="red">Nothing sends</Tag>
+      </Tooltip>
+    );
+  };
+
   const templateColumns = [
     { title: 'Stage', dataIndex: 'stage_label', width: 190 },
     { title: 'Outcome', dataIndex: 'outcome_label', width: 150, render: (v, r) => <Tag>{v || r.outcome_key}</Tag> },
     {
-      title: 'Email sent',
+      title: 'Currently sends',
+      key: 'effective',
+      width: 260,
+      render: (_, row) => renderEffectiveTemplate(row),
+    },
+    {
+      title: 'Specific template',
       key: 'template_id',
       render: (_, row) => (
         <Space direction="vertical" size={2} style={{ width: '100%' }}>
@@ -465,9 +537,14 @@ export default function PipelineConfigPanel() {
             showSearch
             optionFilterProp="label"
             style={{ width: '100%', maxWidth: 380 }}
-            placeholder="Generic template for this outcome"
+            placeholder={row.fallback_name
+              ? `Generic · ${row.fallback_name}`
+              : 'Generic template for this outcome'}
             value={row.template_id}
-            disabled={saving}
+            // Offering a working dropdown on a silent outcome was a lie: it
+            // saved, said "Saved ✓", and could never send. Left disabled rather
+            // than hidden so the row still reads as a real stage×outcome pair.
+            disabled={saving || row.is_silent}
             onChange={(val) => saveMapping(row, val)}
             options={templates
               .filter((t) => t.is_active !== false)
@@ -608,9 +685,14 @@ export default function PipelineConfigPanel() {
             children: (
               <>
                 <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
-                  Which email a candidate receives for each stage outcome. Leave one blank and the
-                  generic Approved / Rejected / On&nbsp;Hold template is used instead — so nothing here
-                  can accidentally silence an email. Create new templates on the Email Templates screen.
+                  Which email a candidate receives for each stage outcome. <b>Currently sends</b> is
+                  what actually goes out today: <Tag color="green" style={{ marginInlineEnd: 4 }}>green</Tag>
+                  a template picked here, <Tag color="blue" style={{ marginInlineEnd: 4 }}>blue</Tag>
+                  the generic Approved / Rejected / On&nbsp;Hold (or Closure) template used when nothing
+                  specific is set, <Tag style={{ marginInlineEnd: 4 }}>grey</Tag> an outcome that never
+                  emails by design, and <Tag color="red" style={{ marginInlineEnd: 4 }}>red</Tag> a pair
+                  that would send nothing at all. Leaving a row blank is safe — it falls back to the
+                  generic rather than going silent. Create new templates on the Email Templates screen.
                 </Text>
                 <Table
                   rowKey="key"

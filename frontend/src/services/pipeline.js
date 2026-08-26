@@ -246,16 +246,37 @@ const pipelineService = {
     return api.post(`/pipeline/documents/${docId}/reject`, { reason });
   },
 
+  // ── Client round — marked, never booked. Nothing reaches the client (Q14) ──
+
+  /**
+   * Marks that the client interview took place, and when.
+   * @param {Object} payload - { happened_at, contact_name? }
+   */
+  recordClientRoundArranged(id, payload) {
+    return api.post(`/pipeline/${id}/client-round/arranged`, payload);
+  },
+  /**
+   * Records the client's transcribed verdict.
+   * @param {Object} payload - { feedback, heard_at? }
+   */
+  recordClientRoundFeedback(id, payload) {
+    return api.post(`/pipeline/${id}/client-round/feedback`, payload);
+  },
+
   // ── Offer round (Module 5) — record-only; the letter never enters the ATS ──
 
-  /** Asks for internal sign-off and arms the daily nudge. */
-  requestOfferApproval(id) {
-    return api.post(`/pipeline/${id}/offer/request-approval`, {});
-  },
-  /** Records the internal sign-off. */
-  approveOffer(id) {
-    return api.post(`/pipeline/${id}/offer/approve`, {});
-  },
+  // Disabled 2026-08-25 — internal offer approval. RT: the offer is handled
+  // offline and the app marks the round only. The routes behind these are
+  // commented out too, so calling them would 404. Reverses Q3/Q26.
+  //
+  // /** Asks for internal sign-off and arms the daily nudge. */
+  // requestOfferApproval(id) {
+  //   return api.post(`/pipeline/${id}/offer/request-approval`, {});
+  // },
+  // /** Records the internal sign-off. */
+  // approveOffer(id) {
+  //   return api.post(`/pipeline/${id}/offer/approve`, {});
+  // },
   /**
    * Records that HR shared the offer from their own mailbox.
    * @param {Object} payload - { joining_date?, remarks? }

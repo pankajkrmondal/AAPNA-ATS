@@ -27,8 +27,9 @@ import {
   getDocumentStatus,
 } from '../../services/documentCollection.service.js';
 import {
-  requestApproval,
-  approveOffer,
+  // Disabled 2026-08-25 with OFFER-01/02 below.
+  // requestApproval,
+  // approveOffer,
   recordOfferShared,
   recordCandidateDecision,
   getOffer,
@@ -282,33 +283,39 @@ describe('DOC-13 â€” no delete path exists', () => {
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• BLOCK D â€” OFFER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-describe('OFFER-01 / OFFER-02 â€” approval flow', () => {
-  test('OFFER-01: request-approval sets pending; a second request on an APPROVED offer is refused', async () => {
-    const { journey } = await makeJourney({ name: 'OFFER01' });
-    const row = await requestApproval(journey.id, { actedBy: ACTED_BY });
-    assert.equal(row.approval_status, 'pending');
-    assert.ok(row.approval_requested_at);
+// OFFER-01 / OFFER-02 â€” the internal approval flow.
+//
+// Disabled 2026-08-25 with requestApproval()/approveOffer() in
+// offer.service.js: RT handles the offer offline and the app marks the round
+// only. Reverses Q3/Q26 â€” uncomment alongside the service functions.
+//
+// describe('OFFER-01 / OFFER-02 â€” approval flow', () => {
+//   test('OFFER-01: request-approval sets pending; a second request on an APPROVED offer is refused', async () => {
+//     const { journey } = await makeJourney({ name: 'OFFER01' });
+//     const row = await requestApproval(journey.id, { actedBy: ACTED_BY });
+//     assert.equal(row.approval_status, 'pending');
+//     assert.ok(row.approval_requested_at);
+//
+//     await approveOffer(journey.id, { actedBy: ACTED_BY });
+//     await assert.rejects(
+//       () => requestApproval(journey.id, { actedBy: ACTED_BY }),
+//       (err) => {
+//         assert.equal(err.statusCode, 409);
+//         assert.equal(err.message, 'This offer has already been approved.');
+//         return true;
+//       }
+//     );
+//   });
+//
+//   test('OFFER-02: approving with no prior request-approval is allowed by design', async () => {
+//     const { journey } = await makeJourney({ name: 'OFFER02' });
+//     const row = await approveOffer(journey.id, { actedBy: ACTED_BY });
+//     assert.equal(row.approval_status, 'approved');
+//   });
+// });
 
-    await approveOffer(journey.id, { actedBy: ACTED_BY });
-    await assert.rejects(
-      () => requestApproval(journey.id, { actedBy: ACTED_BY }),
-      (err) => {
-        assert.equal(err.statusCode, 409);
-        assert.equal(err.message, 'This offer has already been approved.');
-        return true;
-      }
-    );
-  });
-
-  test('OFFER-02: approving with no prior request-approval is allowed by design', async () => {
-    const { journey } = await makeJourney({ name: 'OFFER02' });
-    const row = await approveOffer(journey.id, { actedBy: ACTED_BY });
-    assert.equal(row.approval_status, 'approved');
-  });
-});
-
-describe('OFFER-04 / OFFER-05 â€” share is a soft gate', () => {
-  test('OFFER-04: sharing without approval succeeds; an invalid joining date is refused', async () => {
+describe('OFFER-04 / OFFER-05 â€” recording the share', () => {
+  test('OFFER-04: sharing succeeds; an invalid joining date is refused', async () => {
     const { shortlist, journey } = await makeJourney({ name: 'OFFER04' });
     const row = await recordOfferShared(journey.id, {
       joiningDate: '2026-12-01', remarks: 'Test share', actedBy: ACTED_BY,

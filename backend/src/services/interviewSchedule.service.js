@@ -1,14 +1,13 @@
 /**
  * interviewSchedule.service.js — booking for the human interview rounds
- * (Technical Rounds 1-3, HR Round, CEO/Final Round, Client Interview) in the
- * Pipeline Tracker.
+ * (Technical Rounds 1-3, HR Round, CEO/Final Round) in the Pipeline Tracker.
+ * The Client Interview is arranged offline and is only marked, not booked.
  *
  * WHO interviews is defined on the MRF, not on a separate panel table:
  *   tech1    -> rpa_mrf.first_technical_round  + first_round_interview_slot
  *   tech2    -> rpa_mrf.second_technical_round + second_round_interview_slot
  *   hr_round -> rpa_mrf.hr_round
  *   ceo      -> rpa_mrf.ceo_management_round
- *   client   -> rpa_mrf.client_round
  *   tech3    -> (no MRF column exists for a third technical round)
  * Those columns are free text ("Naveen", "Harish M", "11 AM- 12 PM", "NA"),
  * so they are surfaced to the recruiter as read-only hints while the
@@ -40,25 +39,38 @@ const TEMPLATE_NAMES = Object.freeze({
 });
 
 /**
- * Stage keys this service can book, mapped to their MRF columns.
+ * Rounds the ATS never generates anything outward for — no calendar meeting,
+ * no invite/cancel email to either side, no reminder, no scorecard link.
  *
- * `autoInvite: false` books the round WITHOUT generating anything outward: no
- * Outlook/Teams meeting and no invite email to either side. Only the Client
- * Interview is set that way, per Q14 (RT, 2026-07-13): the client is external
- * and *"the system must not generate anything for the client"* — HR coordinates
- * that round by hand and transcribes the outcome. The booking is still recorded
- * so the round shows its schedule, occurrence and scorecard like any other.
- * Flip this to true if RT ever agrees to automate client communication.
+ * The Client Interview is the only member, per Q14 (RT, 2026-07-13): the client
+ * is external and *"the system must not generate anything for the client"*.
+ *
+ * This is deliberately its OWN set rather than an `autoInvite: false` flag on
+ * SCHEDULABLE_STAGES below. The round is no longer schedulable at all (see the
+ * commented-out entry there), and a flag on a commented-out entry would read as
+ * `undefined !== false` → true, i.e. silently re-enable outward mail on exactly
+ * the round that must never send any. Keeping the rule here means it holds for
+ * historical `rpa_interview_schedule` rows too.
+ */
+export const MANUALLY_COORDINATED_STAGES = Object.freeze(['client']);
+
+/**
+ * Stage keys this service can book, mapped to their MRF columns.
  */
 export const SCHEDULABLE_STAGES = Object.freeze({
-  tech1: { ownerField: 'first_technical_round', slotField: 'first_round_interview_slot', label: 'Technical Round 1', autoInvite: true },
-  tech2: { ownerField: 'second_technical_round', slotField: 'second_round_interview_slot', label: 'Technical Round 2', autoInvite: true },
+  tech1: { ownerField: 'first_technical_round', slotField: 'first_round_interview_slot', label: 'Technical Round 1' },
+  tech2: { ownerField: 'second_technical_round', slotField: 'second_round_interview_slot', label: 'Technical Round 2' },
   // Tech 3 has no dedicated MRF interviewer/slot column — mrfRoundHints() below
   // already handles a null ownerField/slotField gracefully ("not specified").
-  tech3: { ownerField: null, slotField: null, label: 'Technical Round 3', autoInvite: true },
-  hr_round: { ownerField: 'hr_round', slotField: null, label: 'HR Round', autoInvite: true },
-  ceo: { ownerField: 'ceo_management_round', slotField: null, label: 'CEO / Final Round', autoInvite: true },
-  client: { ownerField: 'client_round', slotField: null, label: 'Client Interview', autoInvite: false },
+  tech3: { ownerField: null, slotField: null, label: 'Technical Round 3' },
+  hr_round: { ownerField: 'hr_round', slotField: null, label: 'HR Round' },
+  ceo: { ownerField: 'ceo_management_round', slotField: null, label: 'CEO / Final Round' },
+  // Disabled 2026-08-25 — RT: the Client Interview is arranged entirely offline
+  // and the app only marks the round. Booking it in-app was beyond that scope,
+  // and the booking's interviewer address was what the scorecard link got sent
+  // to. Uncomment (and drop 'client' from MANUALLY_COORDINATED_STAGES) to bring
+  // in-app booking back.
+  // client: { ownerField: 'client_round_coordinator', slotField: null, label: 'Client Interview' },
 });
 
 /**
@@ -67,7 +79,7 @@ export const SCHEDULABLE_STAGES = Object.freeze({
  * @param {string} stageKey
  * @returns {boolean}
  */
-export const stageSendsInvites = (stageKey) => SCHEDULABLE_STAGES[stageKey]?.autoInvite !== false;
+export const stageSendsInvites = (stageKey) => !MANUALLY_COORDINATED_STAGES.includes(stageKey);
 
 /**
  * rpa_interview_schedule.occurrence_status — did the interview actually happen?
@@ -308,6 +320,14 @@ export async function listUnresolvedInterviews({ graceMin = 15 } = {}) {
   const rows = await prisma.rpa_interview_schedule.findMany({
     where: {
       status: { notIn: ['cancelled', 'completed', 'no_show'] },
+      // A manually-coordinated round is never chased for confirmation: the ATS
+      // did not arrange it and has no way of knowing whether it happened. A
+      // client round marked as arranged but not yet fed back would otherwise
+      // match every clause here (status 'scheduled', end date past, occurrence
+      // still null) and reappear in the "confirm this happened" queue this
+      // change set removed — labelled with the raw stage key, since its
+      // SCHEDULABLE_STAGES entry no longer exists to supply a label.
+      stage_key: { notIn: [...MANUALLY_COORDINATED_STAGES] },
       scheduled_end_at: { lt: cutoff },
       OR: [{ occurrence_status: null }, { occurrence_status: OCCURRENCE_UNCONFIRMED }],
     },

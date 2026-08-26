@@ -23,7 +23,12 @@ import config from '../config/index.js';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
-import { markInterviewOccurrence, OCCURRENCE_UNCONFIRMED } from '../services/interviewSchedule.service.js';
+import {
+  markInterviewOccurrence,
+  OCCURRENCE_UNCONFIRMED,
+  stageSendsInvites,
+  MANUALLY_COORDINATED_STAGES,
+} from '../services/interviewSchedule.service.js';
 import { getAttendanceOutcome, isAttendanceEnabled } from '../services/graphAttendance.service.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
 
@@ -194,10 +199,14 @@ export async function sweepInterviewOccurrence() {
 
   // Anything older than the re-check window is written off in one statement, so
   // it stops looking pending and drops out of every subsequent sweep.
+  // Manually-coordinated rounds are excluded here as well as in the loop below:
+  // writing one off as 'unconfirmed' would be a verdict the ATS has no basis
+  // for, since it never saw the meeting in the first place.
   const writtenOff = await prisma.rpa_interview_schedule.updateMany({
     where: {
       status: 'scheduled',
       occurrence_status: null,
+      stage_key: { notIn: [...MANUALLY_COORDINATED_STAGES] },
       scheduled_end_at: { lt: giveUpBefore },
     },
     data: {
@@ -218,6 +227,14 @@ export async function sweepInterviewOccurrence() {
   let held = 0, noShow = 0, nudged = 0;
 
   for (const row of due) {
+    // A round the system never invited is not chased by it either. The Client
+    // Interview is arranged offline, so the ATS has no way of knowing whether it
+    // happened — it would nudge three times and then write the round off as
+    // 'unconfirmed' on no evidence. Skipped rather than filtered in the query so
+    // the reason stays next to the rest of the occurrence rules. Historical
+    // bookings from before in-app booking was withdrawn are covered too.
+    if (!stageSendsInvites(row.stage_key)) continue;
+
     const candidate = row.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
 
     // Match attendance against the address that was actually PUT ON THE INVITE,

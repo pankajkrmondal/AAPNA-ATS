@@ -20,7 +20,7 @@ import AppError from '../utils/AppError.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
-import { parseInterviewerEmails } from './interviewSchedule.service.js';
+import { parseInterviewerEmails, stageSendsInvites } from './interviewSchedule.service.js';
 import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
@@ -123,6 +123,16 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   // Never dispatch for an interview that isn't confirmed held.
   if (schedule.occurrence_status !== 'held') {
     return { dispatched: false, alreadySent: false, reason: 'not_held' };
+  }
+  // Never dispatch for a round the system does not invite for. The recipient is
+  // whatever was typed into the booking's interviewer_email, and on the Client
+  // Interview that is plausibly the CLIENT's own address — emailing them a
+  // scorecard link is exactly what Q14 forbids ("the system must not generate
+  // anything for the client"). The same switch already gates invites, cancels
+  // and reminders; it was missing here.
+  if (!stageSendsInvites(schedule.stage_key)) {
+    logger.info(`Scorecard dispatch: schedule ${scheduleId} is a manually-coordinated round (${schedule.stage_key}) — nothing sent.`);
+    return { dispatched: false, alreadySent: false, reason: 'manually_coordinated' };
   }
   // Single-fire guard.
   if (schedule.scorecard_dispatched_at) {
