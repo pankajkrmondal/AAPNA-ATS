@@ -163,6 +163,97 @@ export function bucketFor(journey) {
   return 'in_progress';
 }
 
+/** Middle value of a numeric array, averaging the two middles when even. */
+function median(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Time-to-hire: how long a hire actually takes, plus the per-stage breakdown.
+ *
+ * The headline was previously the SUM of the per-stage averages, presented as
+ * "Average days, shortlist to offer". That number describes no real candidate:
+ * each stage is averaged over a DIFFERENT population — someone rejected at
+ * Tech-1 contributes to Tech-1's average and to no other — so adding them up
+ * mixes cohorts. It is now measured end-to-end on the only journeys that have
+ * an end: the hired ones, created_at → closed_at.
+ *
+ * MEDIAN, not mean. Hiring sets are small and long-tailed; one 200-day
+ * requisition drags a mean somewhere no candidate has ever been.
+ *
+ * `median_days` is null — never 0 — when nothing has been hired yet. A
+ * confident "0 days" over an empty set is the same class of defect as the one
+ * this function replaces.
+ *
+ * The per-stage rows are kept: averaged within a single stage they are honest,
+ * and the screen labels them separately. They now carry their own sample_size
+ * so a stage averaged over one journey cannot be read as a settled figure, and
+ * a stage that genuinely takes minutes reports 0 rather than being dropped.
+ *
+ * @param {Array} journeys - rpa_candidate_pipeline rows with rpa_pipeline_stage_events
+ * @param {Array} stages - active rpa_pipeline_stages, in sort order
+ * @returns {{median_days: number|null, sample_size: number, stages: Array}}
+ */
+export function timeToHireFor(journeys = [], stages = []) {
+  // ── Headline: end-to-end, hired journeys only ──
+  const hiredDurations = [];
+  for (const j of journeys) {
+    if (bucketFor(j) !== 'hired') continue;
+    const start = new Date(j.created_at).getTime();
+    const end = new Date(j.closed_at || j.modified_at).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    hiredDurations.push(Math.max(0, (end - start) / MS_PER_DAY));
+  }
+  const medianDays = median(hiredDurations);
+
+  // ── Per-stage: averaged across every CLOSED journey, hired or not ──
+  // Wider than the headline on purpose: a stage's duration is meaningful even
+  // for a journey that ended in a rejection, and restricting it to hires would
+  // leave most stages with a sample of nearly nothing.
+  const totals = new Map(); // stage_key -> { totalDays, count }
+  for (const j of journeys) {
+    if (!j.final_outcome) continue;
+    for (const [key, days] of stageDurations(j.rpa_pipeline_stage_events, j.closed_at || j.modified_at)) {
+      if (!totals.has(key)) totals.set(key, { totalDays: 0, count: 0 });
+      const agg = totals.get(key);
+      agg.totalDays += days;
+      agg.count += 1;
+    }
+  }
+
+  const stageRows = stages
+    .map((s) => {
+      const agg = totals.get(s.stage_key);
+      return {
+        stage_key: s.stage_key,
+        label: s.label,
+        // Rounded to 0.1d for display. A stage measured in minutes lands on 0
+        // and STAYS in the list — the old `avg_days > 0` filter deleted exactly
+        // the stages that are working fastest.
+        avg_days: agg && agg.count > 0 ? Math.round((agg.totalDays / agg.count) * 10) / 10 : 0,
+        sample_size: agg ? agg.count : 0,
+      };
+    })
+    .filter((row) => row.sample_size > 0);
+
+  return {
+    median_days: medianDays === null ? null : Math.round(medianDays * 10) / 10,
+    sample_size: hiredDurations.length,
+    stages: stageRows,
+  };
+}
+
 export default {
-  lastTransitionOf, stageClockStart, stageDurations, bucketFor, parseAnalyticsParams, MS_PER_DAY,
+  lastTransitionOf,
+  stageClockStart,
+  stageDurations,
+  bucketFor,
+  timeToHireFor,
+  parseAnalyticsParams,
+  MS_PER_DAY,
 };

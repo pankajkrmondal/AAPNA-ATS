@@ -192,6 +192,19 @@ export const METRICS = {
     formula: 'Counts candidates at the offer stage whose offer has neither been accepted nor turned down.',
     source: 'Your pipeline records.', // dev: tiles.offers_pending
   },
+  timeToHire: {
+    label: 'Time-to-hire',
+    short: 'How long a hire actually takes, from the day a candidate enters the pipeline to the day '
+      + 'their journey closes as hired.',
+    formula: 'The middle figure across every hire, not the average — one unusually long requisition '
+      + 'would drag an average somewhere no real hire has been. Only candidates who were hired '
+      + 'count; rejected and withdrawn journeys are excluded, since they have no hire date. '
+      + 'The stage bars below are a separate, wider calculation: average days per stage across '
+      + 'all closed journeys, however they ended.',
+    source: 'Your pipeline records.', // dev: GET /pipeline/analytics · timeToHire.median_days
+    caveat: 'Check the number of hires it is based on, shown beneath it. Over two or three hires '
+      + 'this is a description of those hires, not a benchmark you can plan against.',
+  },
 
   // ── Vendor / HR upload screens ───────────────────────────────────────────
   // For Phase 5. The vendor screens are the entire reachable app for the
@@ -253,27 +266,31 @@ export const METRICS = {
   analyticsTotal: {
     label: 'Total',
     short: 'Every candidate that has entered screening, all time.',
-    formula: 'The denominator for the other tiles: shortlisted, rejected and on-hold '
-      + 'are all subsets of this.',
+    formula: 'The denominator for the role breakdown: shortlisted, rejected, on-hold and '
+      + 'future prospect are all subsets of this, and together they account for '
+      + 'every candidate counted here.',
     source: 'Your candidate database.',
     caveat: 'Lifetime total. It does not follow the date controls on this page.',
   },
   analyticsZekoSent: {
     label: 'Zeko Sent',
-    short: 'Assessment invitations sent to candidates through Zeko.',
-    formula: 'Counts invitations sent, not candidates — a candidate re-invited after '
-      + 'a lapsed link counts twice.',
+    short: 'Candidates who have been sent a Zeko assessment.',
+    formula: 'Counts each candidate once, however many rounds they were invited to — '
+      + 'so it can be read directly against the four tiles beside it.',
     source: 'Your Zeko assessment records.',
+    caveat: 'Being sent an assessment is not the same as opening it. Read this '
+      + 'alongside Zeko Score Received to see how many actually came back.',
   },
-  analyticsZekoPassed: {
-    label: 'Zeko Passed',
-    short: 'Candidates who took a Zeko assessment and met the passing score.',
-    formula: 'Only counts assessments whose score has synced back. A candidate who has '
-      + 'sat the test but whose result has not arrived is in neither this nor a '
-      + 'failed count yet.',
+  analyticsZekoScoreReceived: {
+    label: 'Zeko Score Received',
+    short: 'Candidates whose Zeko assessment score has come back into the ATS.',
+    formula: 'Counts each candidate once, from the point their result syncs across. '
+      + 'Someone who has sat the test but whose score has not arrived yet is not '
+      + 'counted here.',
     source: 'Your Zeko assessment records.',
-    caveat: 'Read against Zeko Sent rather than on its own — sent includes people who '
-      + 'never opened the invitation.',
+    caveat: 'This is not a pass count — the ATS records the score Zeko returns and does '
+      + 'not judge it against a threshold. Read it against Zeko Sent, which '
+      + 'includes people who never opened the invitation.',
   },
 
   totalUploads: {

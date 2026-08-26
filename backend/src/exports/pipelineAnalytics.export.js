@@ -56,9 +56,13 @@ export const TABLES = {
 
   time_to_hire: {
     label: 'Pipeline-Time-To-Hire',
+    // "Sample Size" is not decoration: these averages are taken over closed
+    // journeys only, and a stage averaged across two of them reads identically
+    // to one averaged across two hundred without it.
     columns: [
       { header: 'Stage', key: 'label' },
       { header: 'Average Days', key: 'avg_days', numeric: true },
+      { header: 'Sample Size', key: 'sample_size', numeric: true },
     ],
     pick: (a) => a.timeToHire.stages,
   },

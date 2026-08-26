@@ -18,7 +18,6 @@ import {
 } from 'antd';
 import {
   TeamOutlined,
-  CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
   BarChartOutlined,
@@ -34,6 +33,7 @@ import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 import ExportButton from '../components/common/ExportButton';
 import KpiCard from '../components/common/KpiCard';
+import MetricInfo from '../components/common/MetricInfo';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 
 const { Title, Text } = Typography;
@@ -462,7 +462,9 @@ function RecruiterInsights({ data, loading, errored, params }) {
     return <Alert type="error" showIcon message="Failed to load recruiter insights." />;
   }
 
-  const timeToHire = data?.timeToHire || { total_days: 0, stages: [] };
+  // median_days is deliberately null (not 0) before the first hire closes — see
+  // timeToHireFor() in backend/src/services/pipelineAnalytics.helpers.js.
+  const timeToHire = data?.timeToHire || { median_days: null, sample_size: 0, stages: [] };
   const maxStageDays = Math.max(1, ...timeToHire.stages.map((s) => s.avg_days));
   const vendorPerformance = data?.vendorPerformance || [];
   const sourceOfHire = data?.sourceOfHire || [];
@@ -472,8 +474,15 @@ function RecruiterInsights({ data, loading, errored, params }) {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card
-            title={<SectionTitle accent={ACCENT.progress}>Time-to-hire</SectionTitle>}
-            extra={<Text type="secondary" style={{ fontSize: 12 }}>avg days per stage, closed journeys only</Text>}
+            title={(
+              <SectionTitle accent={ACCENT.progress}>
+                Time-to-hire <MetricInfo metric="timeToHire" />
+              </SectionTitle>
+            )}
+            // The caption describes the BARS, not the headline above them: the
+            // two are different statistics over different populations, and one
+            // caption spanning both is how they get conflated.
+            extra={<Text type="secondary" style={{ fontSize: 12 }}>bars: avg days per stage, all closed journeys</Text>}
             loading={loading}
             className="panel-shell" style={{ marginBottom: 16 }}
           >
@@ -481,21 +490,41 @@ function RecruiterInsights({ data, loading, errored, params }) {
               background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
             }}
             >
+              {/* Was "Average days, shortlist to offer" showing the SUM of the
+                  per-stage averages — each taken over a different population, so
+                  the total described no real candidate. It is now the median
+                  end-to-end duration of journeys that actually ended in a hire.
+
+                  An em-dash, not 0, when nothing has been hired: the old panel
+                  rendered a confident "0 days" over an empty set while the bars
+                  below it correctly showed "No closed journeys yet". */}
               <Statistic
-                title="Average days, shortlist to offer"
-                value={timeToHire.total_days}
-                suffix="days"
+                title="Median days, shortlist to hire"
+                value={timeToHire.median_days === null ? '—' : timeToHire.median_days}
+                suffix={timeToHire.median_days === null ? null : 'days'}
                 valueStyle={{ color: 'var(--kpi-b)', fontWeight: 800 }}
               />
+              {/* The sample size is not a footnote — a median of two hires and a
+                  median of two hundred read identically without it. */}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {timeToHire.sample_size === 0
+                  ? 'No hires closed yet'
+                  : `Based on ${timeToHire.sample_size} hire${timeToHire.sample_size === 1 ? '' : 's'}`}
+              </Text>
             </div>
             {timeToHire.stages.length === 0 ? (
               <Empty description="No closed journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               <Space direction="vertical" size={7} style={{ width: '100%' }}>
-                {timeToHire.stages.map(({ stage_key, label, avg_days }) => (
+                {timeToHire.stages.map(({ stage_key, label, avg_days, sample_size }) => (
                   <Row key={stage_key} gutter={10} align="middle" wrap={false}>
                     <Col flex="170px" style={{ textAlign: 'right' }}>
                       <Text type="secondary" style={{ fontSize: 12.5 }}>{label}</Text>
+                      {/* How many closed journeys this stage's average rests on.
+                          A stage averaged over one journey is an anecdote. */}
+                      <Text type="secondary" style={{ fontSize: 11, marginLeft: 6, opacity: 0.7 }}>
+                        n={sample_size}
+                      </Text>
                     </Col>
                     <Col flex="auto">
                       <div style={{
@@ -761,6 +790,7 @@ export default function Analytics() {
           shortlisted: 0,
           rejected: 0,
           on_hold: 0,
+          future_prospect: 0,
           total: 0
         };
       }
@@ -772,6 +802,12 @@ export default function Analytics() {
         groups[roleName].rejected += 1;
       } else if (status === 'on_hold' || status === 'on hold') {
         groups[roleName].on_hold += 1;
+      } else if (status === 'future_prospect') {
+        // The fourth status a recruiter can set. Before this branch existed it
+        // fell through into `total` and nothing else, so the columns quietly
+        // stopped adding up. Mirrored in groupByRole() (backend/src/exports/
+        // screening.export.js) so the CSV matches the table.
+        groups[roleName].future_prospect += 1;
       }
     });
     return Object.values(groups);
@@ -819,6 +855,15 @@ export default function Analytics() {
       render: (count) => <Badge count={count} showZero color={ACCENT.waiting.color} />
     },
     {
+      // Column order matches roleSummaryColumns in the CSV export exactly, so a
+      // downloaded file reads the same way as the table it came from.
+      title: 'Future Prospect',
+      dataIndex: 'future_prospect',
+      key: 'future_prospect',
+      align: 'center',
+      render: (count) => <Badge count={count} showZero color={ACCENT.progress.color} />
+    },
+    {
       title: 'Total Candidates',
       dataIndex: 'total',
       key: 'total',
@@ -835,7 +880,13 @@ export default function Analytics() {
     { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, metric: 'analyticsOnHold', ...ACCENT.waiting },
     { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, metric: 'analyticsTotal', ...ACCENT.neutral },
     { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, metric: 'analyticsZekoSent', ...ACCENT.progress },
-    { title: 'Zeko Passed', value: data.tiles?.zeko_passed || 0, icon: <CheckCircleOutlined />, metric: 'analyticsZekoPassed', ...ACCENT.success },
+    // Was "Zeko Passed", reading tiles.zeko_passed — a count of pipeline rows
+    // with status 'passed', which NOTHING in the app ever writes (a synced score
+    // marks the row 'completed'; there is no pass threshold anywhere). The tile
+    // was structurally 0 forever. It now shows what the system actually knows —
+    // that a score came back — and a document icon rather than a check mark,
+    // which claimed a verdict the ATS never reaches.
+    { title: 'Zeko Score Received', value: data.tiles?.zeko_completed || 0, icon: <FileDoneOutlined />, metric: 'analyticsZekoScoreReceived', ...ACCENT.success },
   ];
 
   return (

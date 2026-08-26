@@ -5,6 +5,100 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-26 — Candidate closure audit: decision register brought up to date (**docs only**)
+**Why:** the closure audit ([PHASE3-CLOSURE-AUDIT-2026-08-26.md](./PHASE3-CLOSURE-AUDIT-2026-08-26.md))
+found that closure was built as a per-journey state write, not as a process that winds things down —
+and that four documents would actively mislead the next reader into re-introducing the 2026-08-11
+regression. Every finding was re-verified against the code and a fix plan approved; **only the
+documentation half was executed.** The code fixes (audit §5 items 1–4) remain outstanding.
+
+- **No code changed. No schema change.**
+- `docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md` — new **§6a** records the verification pass: it corrects
+  two claims in the audit (`joined_at` is on `rpa_shortlisted_candidates`, not the journey model; the
+  drawer's real closed-journey leaks are the Evalground Re-invite button and the Teams card, not the
+  Schedule/Cancel buttons), documents **five downstream consequences the audit did not model**, and
+  fixes the four decisions the work needs — so it does not have to be re-litigated when picked up.
+- `docs/phase3/04-QUESTIONS.md` — the stranded-candidate decision, which existed only as an
+  unnumbered changelog section since 2026-08-07, is filed as **Q32** with its answer-sheet row. The
+  three questions RT still owes are filed as **Q32-confirmation / Q33 / Q34** (§D2). The §D
+  accepted-risk bullet *"Withdrawing a candidate auto-cancels their pending calendar invites and
+  scheduled reminders"* is marked **🚨 NOT BUILT** — it was recorded as settled and never
+  implemented, and is an unmet commitment to RT.
+- `docs/phase3/02-BUSINESS-DESIGN.md` — §2 rule 7 and the §3 Closure row promised *"each [closure
+  status] triggers its communication."* False for 5 of 8: `SILENT_FINAL_OUTCOMES` blocks them inside
+  `resolveTemplate()` *before* any lookup, so an admin mapping cannot re-enable them. Also records
+  that the UI reaches closure from the Offer stage only, contradicting Q12's *"at any stage."*
+- `docs/phase3/PHASE3-COVERAGE-AUDIT.md` — §2.3 *"Closure emails never send"* stamped superseded
+  (Pattern B, scoped separately from the notice already covering that section's other three items).
+- `docs/changelog/CHANGES-phase3-mrf-closure-on-offer-accepted.md` — stamped superseded-in-part
+  (Pattern A): fill state is `filled_at`, not `approval_status`; *"reopening is a manual DB update"*
+  is false; its verification steps check the wrong columns.
+
+## 2026-08-26 — Recruitment Analytics: four metrics that were silently wrong
+**Why:** the reported defect was that the **Zeko Passed** tile reads `0` while Zeko Sent reads `10`.
+It is not a display bug — the tile counted `rpa_zeko_candidate_pipeline.status = 'passed'`, and
+**nothing in this repo has ever written that value**. The four writers of that column produce only
+`pending` / `sent` / `completed` / `cancelled`; when a score syncs back, `zeko.service.js:917` marks
+the row `completed`. **There is no passing threshold anywhere in the system**, so the tile was
+structurally zero from the day it shipped while its tooltip described a score comparison that does
+not exist. Auditing the page for the same failure mode — *a metric filtered on a state the write path
+never produces, or aggregated in a way that silently drops rows* — found three more. Full write-up:
+[CHANGES-2026-08-26-recruitment-analytics-metric-fixes.md](./changelog/CHANGES-2026-08-26-recruitment-analytics-metric-fixes.md).
+
+- **No schema change, no migration, no backfill** — every fix is a read-side correction.
+- `frontend/src/pages/Analytics.jsx`, `frontend/src/constants/metricDefinitions.js` — the tile is
+  now **Zeko Score Received**, reading `tiles.zeko_completed`: the thing the system can actually
+  justify, being candidates whose result has come back. Icon changed from a check mark to a document,
+  because a check mark asserts a verdict the ATS never reaches, and the tooltip now says outright
+  that this is **not** a pass count. The three unreachable status aliases stay in the SQL under a
+  comment recording the real four-value vocabulary, so a future writer would be counted rather than
+  silently dropped.
+- `backend/src/services/screening.service.js`, `frontend/src/pages/Analytics.jsx`,
+  `backend/src/exports/screening.export.js` — **`future_prospect` fell out of every total.** It is
+  one of the four `CORE_OUTCOME_KEYS`, offered in the pipeline drawer, and `shortlistStatusFor()`
+  writes it to `pipeline_status` — but all three readers bucketed shortlisted/rejected/on-hold with
+  no final `else`, so such a candidate counted toward `Total` and nothing else. The strip adds up
+  today (79+21+2=102) **only because nobody has used the outcome yet**; the first one breaks the
+  arithmetic silently, on a strip whose own Total tooltip promises the parts account for the whole.
+  Fixed in all three, plus a Future Prospect column on the Role Summary table and CSV.
+- `backend/src/services/pipelineAnalytics.helpers.js` (new `timeToHireFor()`),
+  `backend/src/services/pipeline.service.js` — **time-to-hire summed averages taken over different
+  populations.** The headline was `sum(per-stage averages)` published as "Average days, shortlist to
+  offer", but each stage is averaged over a different set of journeys — someone rejected at Tech-1
+  sits in Tech-1's average and no other — so the total described a duration **no candidate has ever
+  experienced**. It is now the **median** end-to-end duration of journeys that closed as a hire.
+  Median because hiring sets are small and long-tailed. **`median_days` is `null`, never `0`**, when
+  nothing has been hired (the old panel rendered a confident "0 days" while the bars beneath it
+  correctly said "No closed journeys yet"), and **sample size is now published** beside the headline
+  and on every stage row. The computation moved into the helpers module because importing
+  `pipeline.service.js` opens Redis and hangs `node --test` — it was previously untestable.
+- `backend/src/services/screening.service.js` — **the Zeko tiles counted invitations while the four
+  tiles beside them counted candidates.** The table is unique on `(candidate_id, zeko_job_id, stage)`
+  and both Zeko rounds reuse the same job, so a candidate who sits both had two rows. Now
+  `COUNT(DISTINCT candidate_id)`. ⚠ **Zeko Sent will fall** for anyone who has run both rounds.
+- `backend/src/services/pipeline.service.js` — **the funnel counted stages that were skipped.** The
+  test was `current_stage.sort_order >= this stage's`, but a bypassed optional stage gets no event at
+  all (`setStageOutcome()` logs the `'skip'` against the stage the candidate *lands in*, `:762`), so
+  a stage nobody entered scored as though everyone had. An actual arrival event is now the primary
+  test; the `sort_order` rule survives only as a fallback for rows predating the event log, since
+  dropping it outright would swap an over-count for an under-count.
+- `frontend/src/theme/index.css` — the rename exposed a latent bug in the shared `KpiCard`:
+  `.kpi-card__label` had `white-space: nowrap` against the card's `overflow: hidden`, so a label
+  too long for its column was **silently truncated**. "Zeko Score Received" rendered as *"ZEKO
+  SCORE RECEIV"* at 1280px and took the info-tooltip icon off the card with it, since the icon
+  sits inside that span. The label now wraps, with `min-height` reserving both lines on every KPI
+  card so one wrapped tile cannot leave the strip ragged (these sit in a top-aligned Ant `Row`).
+  Shared component — every KPI card in the app gains ~10px of height, uniformly.
+- **Tests:** `pipelineAnalytics.test.js` had **no** time-to-hire coverage. Seven cases added —
+  null-not-zero on an empty set, the outlier case that justifies a median, hired-only membership,
+  and that a stage taking minutes reports `0d` rather than being dropped by the old `avg_days > 0`
+  filter. **23 pass, 0 fail** (16 pre-existing + 7 new).
+- ⚠ **Published numbers move**, all of them away from a wrong figure: Zeko Score Received rises off
+  zero, Zeko Sent falls, the time-to-hire headline changes statistic and population, and the funnel
+  falls for any MRF with a skipped optional stage. The write-up carries the full table.
+
+---
+
 ## 2026-08-25 — Client Round and Offer trimmed to "mark only" (+ a Q14 defect fix)
 **Why:** RT's instruction is that both modules happen entirely offline and the app is used to mark
 the rounds, nothing more. Auditing both stages against that found seven things the app still did

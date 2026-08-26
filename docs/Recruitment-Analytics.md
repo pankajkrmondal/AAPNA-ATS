@@ -9,6 +9,12 @@
 > the vendor rate was **dropped, not rebuilt** (the staging data check failed),
 > and a fourth event type (`skip`) had to be handled. §2.6 (Role Summary double
 > aggregation) is the one item deliberately left open.
+>
+> **⚠ Read §8 before trusting §1's status column.** A third pass on **2026-08-26**
+> found four further metrics that were silently wrong — including a headline tile
+> (`Zeko Passed`) that had been structurally `0` since it shipped, because it counted
+> a status no code path in the repo has ever written. §1 and §2 describe the state
+> before that pass.
 
 ---
 
@@ -41,7 +47,7 @@ numbers move and two CSVs get renamed headers. A release note ships with it (§5
 
 | Surface | Data source | Status |
 |---|---|---|
-| **KPI strip** (Shortlisted / Rejected / On Hold / Total / Zeko Sent / Zeko Passed) | `GET /api/screening/analytics/pipeline` → `backend/src/services/screening.service.js:2294-2305` | Real DB counts. Lifetime totals, unlabelled as such |
+| **KPI strip** (Shortlisted / Rejected / On Hold / Total / Zeko Sent / Zeko Score Received) | `GET /api/screening/analytics/pipeline` → `backend/src/services/screening.service.js:2294-2305` | Real DB counts. Lifetime totals, unlabelled as such. ⚠ The sixth tile was "Zeko Passed" and structurally `0` — see §8.1 |
 | **Role Summary** table | Same call, grouped client-side in `frontend/src/pages/Analytics.jsx:351-381` | Real, but duplicated logic (see 2.6) |
 | **Stage funnel** | `GET /api/pipeline/analytics` → `backend/src/services/pipeline.service.js:1113-1132` | Real. Auto-picks the busiest MRF when none passed |
 | **Stuck candidates** | Same endpoint, `pipeline.service.js:1135-1151` | Real rows, **wrong day counts** (2.3) |
@@ -417,3 +423,160 @@ new funnel fields (`available_mrfs`, `auto_selected`) are additive, and nothing
 outside this page consumes the payload.
 
 **117 unit tests pass** (13 helpers + 6 params, plus the existing 98).
+
+---
+
+## 8. Third pass — metric correctness (2026-08-26)
+
+Triggered by a single reported defect: the **Zeko Passed** tile reads `0` while Zeko Sent
+reads `10`. It turned out not to be a display bug, not a data problem, and not isolated.
+
+The failure mode is the one §2 was written about, in a form the earlier passes did not look
+for: **a metric filtered on a state the write path is incapable of producing, or aggregated in
+a way that silently drops or distorts rows.** The number renders, it is simply wrong. Four
+instances were found and all four are fixed. Full write-up:
+[CHANGES-2026-08-26-recruitment-analytics-metric-fixes.md](./changelog/CHANGES-2026-08-26-recruitment-analytics-metric-fixes.md).
+
+| # | Defect | Where | Impact |
+|---|---|---|---|
+| 8.1 | `zeko_passed` counts a status nothing writes — always `0` | `screening.service.js:2341` | **High** — silently wrong since it shipped |
+| 8.2 | `future_prospect` falls out of every status bucket | `screening.service.js`, `Analytics.jsx`, `screening.export.js` | **High** — latent; breaks the strip's arithmetic on first use |
+| 8.3 | Time-to-hire sums averages taken over different populations | `pipeline.service.js:1470-1477` | **High** — headline describes no real candidate |
+| 8.4 | Zeko tiles count invitations; neighbouring tiles count candidates | `screening.service.js:2338-2340` | Medium — mixed units in one strip |
+| 8.5 | Funnel counts stages that were skipped | `pipeline.service.js:1405` | Medium — over-counts optional stages |
+
+### 8.1 "Zeko Passed" counted an unreachable status
+
+`COUNT(*) FILTER (WHERE status IN ('passed'))` over `rpa_zeko_candidate_pipeline`. **Nothing in
+this repository writes `'passed'` to that column.** The complete writer set is four:
+
+| Writer | Value |
+|---|---|
+| `assignCandidateToZekoJob()` — `screening.service.js:2452, :2470`; schema default `schema.prisma:558` | `pending` |
+| `scheduleInterview()` — `screening.service.js:2633` | `sent` |
+| Zeko results sweep — `zeko.service.js:917` | `completed` |
+| `cancelInterview()` — `screening.service.js:2778` | `cancelled` |
+
+`'passed'`, `'failed'` and `'in_progress'` are unreachable. When a score syncs back the sweep
+writes it into `rpa_zeko_interview_results` / `rpa_cv."ZekoInterviewScore"` and marks the row
+**`completed`** — it never evaluates the score. **There is no passing threshold anywhere in the
+system**, so the tooltip's "met the passing score" described logic that does not exist.
+
+**Fixed:** the tile is **Zeko Score Received**, reading `tiles.zeko_completed`. Icon changed
+from a check mark to a document — a check mark asserts a verdict the ATS never reaches. The
+three unreachable aliases remain in the SQL under a comment recording the real vocabulary, so a
+future writer would be counted rather than dropped. **Do not build a tile on one without first
+confirming a writer exists.**
+
+### 8.2 `future_prospect` fell out of every total
+
+One of the four `CORE_OUTCOME_KEYS` (`PipelineConfigPanel.jsx:49`), offered in the pipeline
+drawer (`PipelineDrawer.jsx:141`), written to `pipeline_status` by `shortlistStatusFor()`
+(`pipelineStages.js:306-307`). All three readers bucketed shortlisted/rejected/on-hold with **no
+final `else`**, so such a candidate reached `Total` and nothing else.
+
+The strip adds up today (79+21+2=102) **only because the outcome has never been used**. This is
+the same defect class as 8.1 read from the other end: 8.1 counts a state that is never written,
+8.2 fails to count one that is.
+
+**Fixed:** a fourth bucket in all three readers, plus a Future Prospect column on the Role
+Summary table and CSV. No seventh headline tile — the strip is a 6-up grid (`lg={4}`) and a
+seventh wraps. The three readers must stay in lockstep; each now carries a comment naming the
+other two. (This makes 2.6 — the duplicated Role Summary aggregation — more expensive, not
+less. It is still open.)
+
+### 8.3 Time-to-hire summed averages over different populations
+
+The headline was `sum(per-stage averages)`, published as *"Average days, shortlist to offer"*.
+Each stage is averaged over a different set of journeys — a candidate rejected at Tech-1
+contributes to Tech-1's average and no other — so the sum mixes cohorts and yields a duration
+**no candidate has ever experienced**. Two aggravating details: `.filter(row => row.avg_days > 0)`
+deleted any stage averaging under 0.05 days (exactly the fastest-moving ones), and with no
+closed journeys the headline rendered a confident **"0 days"** while the bars beneath it
+correctly showed "No closed journeys yet".
+
+**Fixed:** the computation moved to a new `timeToHireFor()` in `pipelineAnalytics.helpers.js` —
+the module that exists so analytics arithmetic is testable, since importing `pipeline.service.js`
+opens Redis and hangs `node --test`. It was previously untestable and untested. The headline is
+now the **median** end-to-end duration (`created_at` → `closed_at`) of journeys closing as a
+hire per `bucketFor()`/`HIRED_OUTCOMES`; median because hiring sets are small and long-tailed.
+`median_days` is **`null`, never `0`**, on an empty set — a zero meaning "no data" is
+indistinguishable from one meaning "instant". Sample size is published beside the headline and
+on every stage row. Stage bars stay wider than the headline (all closed journeys) on purpose:
+a stage duration is informative for a rejected journey, and restricting them to hires would
+leave most stages with almost no sample.
+
+### 8.4 Zeko tiles counted rows, not candidates
+
+`rpa_zeko_candidate_pipeline` is unique on `(candidate_id, zeko_job_id, stage)`
+(`schema.prisma:569`) and both Zeko rounds reuse the same job — functional screening is a second
+interview against it — so a candidate sitting both rounds has two rows. `COUNT(*)` therefore
+reported invitations while the four tiles beside it in the same strip reported candidates.
+**Fixed:** `COUNT(DISTINCT candidate_id)`.
+
+### 8.5 The funnel counted skipped stages
+
+The reach test was `current_stage.sort_order >= this stage's`. But `setStageOutcome()` logs the
+`'skip'` event against the stage the candidate **lands in** (`:762`) and writes nothing for the
+bypassed one, so a stage nobody entered scored as though everyone had. **Fixed:** an arrival
+event (`isStageArrival`) is the primary test; the `sort_order` rule survives only for journeys
+with no arrival events at all — rows predating the event log. Dropping it outright would swap
+an over-count for an under-count.
+
+### 8.6 Numbers that move
+
+Every one moves away from a wrong figure; none is a regression.
+
+| Number | Direction |
+|---|---|
+| Zeko Score Received (was Zeko Passed) | `0` → real value |
+| Zeko Sent | **falls** (candidates, not invitations) |
+| Time-to-hire headline | changes statistic *and* population |
+| Time-to-hire stage list | may gain rows (fast stages no longer dropped) |
+| Stage funnel | **falls** for any MRF with a skipped optional stage |
+| Role Summary | gains a Future Prospect column |
+
+### 8.7 Tests
+
+`pipelineAnalytics.test.js` had **no** time-to-hire coverage — the logic lived in the
+Redis-tainted service. Seven cases added alongside the move: null-not-zero on an empty set, the
+outlier case that justifies a median, even-count median, hired-only membership
+(`joined_and_left`/`backed_out`/rejections excluded), a stage taking minutes reporting `0d`
+rather than being dropped, sample size on every stage row, and an open journey contributing no
+durations.
+
+**23 pass, 0 fail** in this file (16 pre-existing + 7 new). **No schema change** — every fix is
+a read-side correction, so there is no migration and nothing to backfill.
+
+### 8.8 A shared-component bug the rename exposed
+
+`.kpi-card__label` (`frontend/src/theme/index.css`) carried `white-space: nowrap` against the
+card's `overflow: hidden`, so **any label too long for its column was silently truncated**. The
+longer "Zeko Score Received" rendered as *"ZEKO SCORE RECEIV"* at a 1280px viewport, and because
+`MetricInfo`'s icon sits inside that same span, the tooltip affordance vanished off the card.
+
+The label now wraps, with `min-height: 2.5em` reserving both lines on **every** KPI card — the
+tiles sit in an Ant `Row` that aligns to the top, so without the reservation one wrapped tile
+leaves the strip ragged. Verified at 1280px: all six tiles hold a uniform 176px.
+
+`KpiCard` is shared with the Vendor Dashboard, HR Upload and Vendor screens, so every KPI card in
+the app gains ~10px of height. Uniformity holds by construction, since the reservation applies to
+all of them. Clipping a label was never correct — the rename only made a latent bug visible.
+
+### 8.9 Verification performed
+
+- `node --test src/tests/pipelineAnalytics.test.js` → **23 pass, 0 fail**.
+- `npm run build` (frontend) → clean; the ~3 MB chunk-size warning is pre-existing.
+- The **real built bundle** was driven headless at `:4173` with every `/api/**` call stubbed —
+  **23 browser assertions, all passing** across two runs: the tile label and its value (proving it
+  reads `zeko_completed`, not `zeko_passed`), the tooltip's absence of any "passing score" claim,
+  the Future Prospect column's presence *and position*, the row arithmetic (2+1+1+1=5), the
+  time-to-hire headline/median/sample-size/`n=` labels, a `0d` stage still being listed, the
+  1280px wrap, and the empty state rendering an em-dash rather than "0 days".
+- **The app was deliberately not run against the live database.** `DATABASE_URL` points at shared
+  infrastructure (`20.244.34.176`), and confirming §8.2 end-to-end would have required *writing* a
+  `future_prospect` outcome to it. The stubbed fixture covers that case instead. Anyone with a
+  disposable environment should still confirm on real data that
+  Shortlisted + Rejected + On Hold + Future Prospect **equals** Total, and that
+  `SELECT status, COUNT(*), COUNT(DISTINCT candidate_id) FROM rpa_zeko_candidate_pipeline GROUP BY status;`
+  returns only `pending` / `sent` / `completed` / `cancelled` — the query that proves §8.1.

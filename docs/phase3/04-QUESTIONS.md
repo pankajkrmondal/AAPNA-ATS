@@ -230,6 +230,9 @@ The integration asks are placed in the process where they fit (see 03-DEVELOPMEN
 | Q29 | **OPEN** — vendor: status-only line vs nothing at offer/doc stages; **never discussed on the 2026-07-14 call** | — | — |
 | Q30 | Future Prospect visible on Screening page; re-shortlistable; no cooling-off | Product owner (in-house) | 2026-07-13 |
 | Q31 | Interviewer resolves slot conflicts by updating published slots | Product owner (in-house) | 2026-07-13 |
+| Q32 | Nothing is auto-decided for candidates stranded when an MRF fills; manual only. Decided + shipped 2026-08-07, given a Q-number 2026-08-26. ⚠️ **RT was never told — confirmation owed (§D2)** | Product owner (in-house) | 2026-08-07 / filed 2026-08-26 |
+| Q33 | **OPEN** — is the Q13/Q25 manual pause/stop action still wanted? Never built; `is_paused` is read-only everywhere | — | — |
+| Q34 | **OPEN** — is a business-cancelled requisition a real case? No manual MRF close, no closure reason, no journey re-open | — | — |
 | — | ⚠️ **Sign-off of docs 01/02 — REVERTED 2026-07-14.** Was incorrectly marked received; a real written sign-off is still owed (see §E) | — | — |
 | — | 🚨 **Zeko API capability validation — UNASSIGNED.** Single biggest schedule risk; needs an owner | — | — |
 
@@ -289,6 +292,7 @@ New edge cases surfaced by RT's answers. Split into decisions already taken in-h
 - **Q28. 30-min-only candidate reminder (Q7):** **intentional** — the calendar invite sent at scheduling time is the advance notice; no day-before reminder.
 - **Q30. Future Prospect semantics:** parked-but-retrievable — Future Prospect candidates **remain visible on the Screening page** (matching existing behavior) and can be re-shortlisted into a new MRF. Cooling-off does **not** apply to them (they were not rejected).
 - **Q31. Self-scheduling slot conflicts (Q6):** the **interviewer resolves conflicts by updating/overwriting their published time slots**. Slot handling stays simple: first-come holds a slot; the interviewer can edit slots at any time.
+- **Q32. Candidates stranded when their MRF fills (Q10/Q13, filed 2026-08-26):** when `closeMrfIfFilled()` fills a requisition, other candidates may still be mid-journey against it. **Nothing is auto-decided about them** — no auto-close, no auto-rejection email, no bulk action. The system's only job is to *stop being silent*: the board shows an orange "Role filled" tag on each affected card, and the stranded count is folded into the existing "Requisition closed" notification. Auto-closing them would silently end real applications and fire rejection emails, and is hard to undo now that requisitions are re-openable. Consistent with Q10 ("manual only — no auto-close") and Q13/Q25 ("no automated conflict logic — RT decides manually"). **Origin:** this decision was taken and implemented on 2026-08-07 but recorded only as an unnumbered changelog section — [CHANGES-2026-08-07-candidate-pipeline-fixes.md](../changelog/CHANGES-2026-08-07-candidate-pipeline-fixes.md) §14. Given a Q-number on 2026-08-26 per [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../PHASE3-CLOSURE-AUDIT-2026-08-26.md) §2.5. **RT was never told — see D2 below.**
 
 ### D2. Still to ask RT before development
 
@@ -297,10 +301,24 @@ New edge cases surfaced by RT's answers. Split into decisions already taken in-h
 - **Q24. Shared assessments across concurrent journeys (Q13):** does a candidate on two MRFs sit Zeko HR / Evalground / Zeko Functional **once** (result reused for both journeys) or **once per journey**? Without a rule, the candidate receives duplicate test invites and duplicate outcome emails. **Not addressed on the 2026-07-14 call — still fully open.**
 - **Q29. Vendor suppression scope (Q5):** at the **Offer** and **Document Collection** stages, does the vendor receive a bare status-only line ("Offer shared with candidate on <date>") or **nothing at all**? Your answer supports both readings. **This fell off the agenda entirely on the 2026-07-14 call — still fully open; do not let it look resolved by proximity to the other vendor decisions that were confirmed that day.**
 
+*(Added 2026-08-26 from the closure audit — [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../PHASE3-CLOSURE-AUDIT-2026-08-26.md) §7.)*
+
+- **Q32 confirmation — stranded candidates (Q10/Q13):** the decision above was taken in-house on 2026-08-07 and shipped, but **there is no record that RT was ever told.** Confirm RT accepts that when a role fills, the other candidates' journeys stay open and untouched until a recruiter acts on each one — and that the "Role filled" tag plus one notification is a sufficient signal. If RT expects the system to do more, that is new work, not a bug fix.
+- **Q33. Is the Q13/Q25 pause/stop action still wanted?** Q25 closed on 2026-07-14 with *"the system's only job is to provide a manual action to pause/stop the other journey's status."* **It was never built** — `is_paused` exists in the schema, is read onto every card and exported to CSV, and **nothing anywhere writes it**; there is no pause/resume route or service. Given the Offer round went record-only on 2026-08-25, confirm the action is still wanted before it is built.
+- **Q34. Is a business-cancelled requisition a real case?** An MRF cancelled by the business — budget pulled, role withdrawn, hired externally — **has no representation at all today**: there is no manual close endpoint, the MRF status `Select` is disabled, fill state is written only by the automatic offer-acceptance path, and there is no closure-reason column anywhere on `rpa_mrf` (so even the automatic closure records *when*, never *why*). If this is a real case it needs both an action and a reason field, neither of which exists. **Mirror gap:** there is no journey **re-open** either — `assertJourneyOpen` tells the user *"Reopen it before you…"*, naming an action the system cannot perform.
+
 ### Accepted-risk confirmations (no answer needed unless RT objects)
 
 - Hold is **manual-only** (Q10), so the On-Hold aging view is the only guard against candidates rotting on Hold (residual of loophole L1).
 - No-show handling is fully manual (Q9) — statuses are recorded, consequences are the recruiter's call (residual of L4).
 - Evalground **retakes / multiple rows: RT-confirmed 2026-07-14** — a retake overwrites only the score on the existing row (latest wins); this is no longer just our assumed default.
 - **Interviewer replacement mid-round** (interviewer leaves/declines): handled as cancel + reschedule, recruiter-triggered — no automated reassignment.
-- **Withdrawing a candidate auto-cancels** their pending calendar invites and scheduled reminders.
+- ~~**Withdrawing a candidate auto-cancels** their pending calendar invites and scheduled reminders.~~
+  > 🚨 **NOT BUILT — flagged 2026-08-26.** This was recorded as settled and never implemented.
+  > `setFinalOutcome()` closes the document token, freezes the vendor lock and re-opens the MRF,
+  > but **never touches `rpa_interview_schedule` and never cancels the Graph/Teams event** —
+  > though `cancelInterviewRound()` already exists. A withdrawn or rejected candidate keeps a
+  > live Teams booking and still receives the 30-minute reminder mail, because
+  > `interviewReminder.js` has no `final_outcome` guard either. See
+  > [PHASE3-CLOSURE-AUDIT-2026-08-26.md](../PHASE3-CLOSURE-AUDIT-2026-08-26.md) §2.2 and §2.3 for
+  > the fix. **This is a commitment to RT that is currently unmet.**
