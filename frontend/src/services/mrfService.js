@@ -90,6 +90,25 @@ const mrfService = {
    * @param {string} email
    * @param {string} [role]
    */
+  /** The closure-reason vocabulary (Q34), served so the UI cannot drift from it. */
+  getClosureReasons() {
+    return api.get('/mrf/closure-reasons');
+  },
+
+  /**
+   * Closes a requisition by hand (Q34).
+   * @param {number|string} id
+   * @param {Object} payload - { reason, note? }
+   */
+  close(id, payload) {
+    return api.post(`/mrf/${id}/close`, payload);
+  },
+
+  /** Undoes a manual closure (Q34). */
+  reopen(id) {
+    return api.post(`/mrf/${id}/reopen`, {});
+  },
+
   getPrefillOptions(email, role) {
     const params = role ? { email, role } : { email };
     return axios.get('/api/mrf/prefill-options', { params }).then((res) => res.data);

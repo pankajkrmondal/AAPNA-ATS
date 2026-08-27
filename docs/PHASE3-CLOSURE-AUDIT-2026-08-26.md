@@ -15,10 +15,20 @@ implementation. Two findings collide with recorded RT decisions (Q10, Q13/Q25) a
 recorded RT commitment that was never built (§D) — those need RT before code, not just a ticket.
 
 > **Update 2026-08-26 (later same day).** Every finding was re-verified against the code, a fix
-> plan was approved, and the **documentation half was executed**. Read **[§6a](#6a-verification-pass-and-approved-fix-plan-2026-08-26-later-same-day)**
-> before acting on anything below: it corrects two claims here, records five downstream
-> consequences this audit did not model, and fixes the decisions so the work does not need
-> re-litigating. **No code has been changed** — §5 items 1–4 are all still outstanding.
+> plan was approved, and **the whole of §5 has since been built** — items 1–4 + 7 first, then
+> §2.5 / §2.6 / §2.7 once the product owner answered Q32–Q34. Read
+> **[§6a](#6a-verification-pass-and-approved-fix-plan-2026-08-26-later-same-day)** before acting on
+> anything below: it corrects two claims here and records five downstream consequences this audit
+> did not model.
+>
+> **Nothing in §2 is outstanding.** See
+> [CHANGES-2026-08-26-candidate-closure-graceful-exit.md](./changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md)
+> and [CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](./changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md),
+> with live status in [PHASE3-CLOSURE-FOLLOWON-PROGRESS.md](./PHASE3-CLOSURE-FOLLOWON-PROGRESS.md).
+>
+> 🚨 One premise in §6a proved **false**: `pipeline_status` *does* carry a CHECK constraint, so 5 of
+> the 7 closure values were silently rejected until `2026-08-26-shortlist-status-vocabulary.sql`
+> widened it. That also fixes a month-old `future_prospect` write failure this audit never saw.
 
 ---
 
@@ -327,7 +337,7 @@ implies, and the first two are regressions the fix itself would introduce:
 | Decision | Choice |
 |---|---|
 | Scope | §5 items **1–4 + 7**. §2.5 / §2.6 / §2.7 stay out of code — filed as Q32 / Q33 / Q34 in `phase3/04-QUESTIONS.md`. |
-| §2.4 `pipeline_status` map | **Add distinct closure values**, no DDL — the column is plain `VARCHAR(50)` with **no CHECK constraint** (`backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md:39`). `joined`/`closure_approved` → `'hired'`; `closure_rejected` → `'rejected'`; `closure_on_hold` → `'on_hold'`; `candidate_withdrawn` → `'withdrawn'`; `backed_out` → `'backed_out'`; `did_not_join` → `'did_not_join'`; `joined_and_left` → `'joined_and_left'`. **The distinct values are the point:** only `closure_rejected` may write `'rejected'`, because that column drives the 6-month Q11 cooling-off (`screening.service.js:1256`) — a withdrawal must not trip a cooling-off it did not earn. |
+| §2.4 `pipeline_status` map | **Add distinct closure values.** ~~no DDL — the column is plain `VARCHAR(50)` with **no CHECK constraint** (`backend/prisma/ddl/2026-07-21-pipeline-stage-engine.README.md:39`).~~ 🚨 **The no-CHECK premise was FALSE — corrected 2026-08-26.** `rpa_shortlisted_candidates_pipeline_status_check` exists and rejected 5 of the 7 values, silently, because the write is a best-effort `try/catch`. DDL WAS needed: `2026-08-26-shortlist-status-vocabulary.sql`. The distinct-values decision itself stands. `joined`/`closure_approved` → `'hired'`; `closure_rejected` → `'rejected'`; `closure_on_hold` → `'on_hold'`; `candidate_withdrawn` → `'withdrawn'`; `backed_out` → `'backed_out'`; `did_not_join` → `'did_not_join'`; `joined_and_left` → `'joined_and_left'`. **The distinct values are the point:** only `closure_rejected` may write `'rejected'`, because that column drives the 6-month Q11 cooling-off (`screening.service.js:1256`) — a withdrawal must not trip a cooling-off it did not earn. |
 | §2.4 `joined_at` | Stamp for `joined` **only**, using `closed_at` so the two reconcile. Not `closure_approved` (a verdict on the record, not evidence anyone started) and not `joined_and_left` (they joined, but "now" is the *leave* date, and there is no leave column). `dashboardAggregations.js:227` prefers `joined_at` over `offer_accepted_at`, so a fabricated date corrupts the one metric that reads it first. |
 | §2.2 cancellation email | **Panel always, candidate never.** The Graph/Teams event is always cancelled. Rationale: 5 of the 8 outcomes are in `SILENT_FINAL_OUTCOMES` precisely because there is nothing to tell someone who withdrew — but the panel must not show up to a room. |
 | §2.1 outcome picker | **All 8 at every stage, unfiltered** — matches the backend, which accepts any outcome at any stage, and matches Q10/Q13's "manual only, no system logic" posture. |
@@ -349,23 +359,62 @@ every backend fix above reachable.
 > `joined_at` and count as Hired while the requisition stays open in the JD dropdown forever.
 > §2.7 must be reconsidered at that point even though it is out of scope now.
 
-**Status: logged only — no code changed.** Steps completed on 2026-08-26: the four stale
-documents in §2.8 are stamped, and §2.5's orphaned decision is filed as **Q32** with the three RT
-questions as **Q32-confirmation / Q33 / Q34** in `phase3/04-QUESTIONS.md`. The §D accepted-risk
-bullet at `04-QUESTIONS.md:306` is now marked **NOT BUILT**. Everything in §5 items 1–4 remains
-outstanding; the in-app copy at `PipelineDrawer.jsx:2797` is still wrong and unfixed.
+**Status: ~~logged only — no code changed~~ → BUILT, 2026-08-26.** The documentation half landed
+first: the four stale documents in §2.8 are stamped, §2.5's orphaned decision is filed as **Q32**
+with the three RT questions as **Q32-confirmation / Q33 / Q34** in `phase3/04-QUESTIONS.md`, and the
+§D accepted-risk bullet at `04-QUESTIONS.md:306` is marked **NOT BUILT**.
+
+**§5 items 1–4 + 7 are now implemented** — see
+[CHANGES-2026-08-26-candidate-closure-graceful-exit.md](./changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md).
+Every decision in the table above was followed as written. The two regressions predicted in this
+section (the status strip, the recruiter leaderboard) and the two hardening items (items 4 and 5)
+landed in the same change set; the strip readers now end in a **catch-all** branch, so the "no final
+`else`" defect cannot recur. The in-app copy at `PipelineDrawer.jsx:2797` is corrected and now states
+the email outcome **per status**. One item beyond the letter of §5 was also fixed: the Evalground
+Re-invite button, which §6a identified above as a genuine drawer leak, was the only action missing
+the `!outcomeEvent` guard and could send an invite to a closed candidate.
+
+**~~Still outstanding: §2.5 / §2.6 / §2.7 (Q32 / Q33 / Q34)~~ → RESOLVED, 2026-08-26, later same
+day.** The product owner answered all three (§7 below) and they were built the same day as W1–W4 —
+see [CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](./changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md).
+The ⚠️ about §2.7 being promoted from theoretical to routine is what W1 fixed:
+`countAcceptedHires` → `countFilledSeats` now counts a hire-closure with no offer row, and dedupes
+so an offer *and* a `joined` closure on the same journey never double-counts.
+
+**~~The integration tests, which are written (E2E-06) but not run~~ → RUN, 2026-08-26.** The three
+changed files were executed individually against staging (never via the `**` glob, which recurses
+into `integration/`): `pipelineClosure.test.js` **21/21**, `sweepJobs.test.js` **10/10**,
+`crossModuleE2E.test.js` **7/7** (including the extended E2E-01 and new E2E-06). The unit suite
+stayed at 207/207 throughout.
+
+**One provenance gap this audit and §6a both missed.** §6a's regression #2 caught
+`dashboard.service.js:201`'s leaderboard `groupBy` equality-testing `pipeline_status`, but the
+identical instrument error also sat in the two "Shortlisted by" vector-search `LATERAL` joins at
+`screening.service.js:870` and `:1331` (§2.4's own text names the third site, the Prisma batch
+lookup at `:1447`, but not these two). All three matched `= 'shortlisted'`, so a closed candidate's
+sourcing attribution — the credit for who found the hire — vanished the moment §2.4 started writing
+terminal values. Found independently during the follow-on work and fixed the same way: `<> 'rejected'`.
+Verified with 20 targeted assertions across all three sites and all four outcome buckets.
 
 ---
 
 ## 7. Open questions for RT
 
-*(All three were filed in `phase3/04-QUESTIONS.md` on 2026-08-26 — see §6a.)*
+*(All three were filed in `phase3/04-QUESTIONS.md` on 2026-08-26 — see §6a. All three were answered
+by the product owner and built the same day.)*
 
-1. ~~**The §14 stranded-candidate decision needs a Q-number**~~ — **filed as Q32** (§D1, plus its
-   answer-sheet row). The written confirmation that RT was told is still owed and is now tracked
-   as the *Q32 confirmation* item in §D2.
-2. ~~**Q13/Q25 pause/stop action**~~ — **filed as Q33.** Confirm it is still wanted before it is
-   built, given the Offer round went record-only on 2026-08-25.
-3. ~~**Manual MRF closure (§2.6)**~~ — **filed as Q34.** Is a business-cancelled requisition a real
-   case? If so it needs both an action and a reason field, neither of which exists. The missing
-   journey **re-open** is folded into the same question.
+1. ~~**The §14 stranded-candidate decision needs a Q-number**~~ — **filed as Q32**, then
+   **✅ CONFIRMED** by the product owner: the shipped behaviour stands exactly as-is — manual only,
+   the "Role filled" tag plus one aggregate notification is a sufficient signal, a recruiter decides
+   each stranded candidate individually. No code follows. Recorded in D1; the Q32-confirmation item
+   is closed out of D2.
+2. ~~**Q13/Q25 pause/stop action**~~ — **filed as Q33**, **✅ ANSWERED "yes" and BUILT.** `is_paused`
+   is finally written (`setJourneyPaused()`, `POST /api/pipeline/:id/pause`), and — the detail that
+   makes the flag meaningful rather than cosmetic — a paused journey now drops out of all four
+   automated sweeps.
+3. ~~**Manual MRF closure (§2.6)**~~ — **filed as Q34**, **✅ ANSWERED "yes — action + reason" and
+   BUILT.** New `rpa_mrf.closed_at` / `closure_reason` / `closure_note`, `POST /api/mrf/:id/close`
+   and `/reopen`, never touching `approval_status` or `mrfstatus`. The missing journey **re-open**
+   was folded into the same question and built alongside — `reopenJourney()`,
+   `POST /api/pipeline/:id/reopen` — so `assertJourneyOpen`'s *"Reopen it before you…"* finally
+   names an action that exists.

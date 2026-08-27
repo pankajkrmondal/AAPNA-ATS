@@ -29,7 +29,7 @@ import assert from 'node:assert/strict';
 import prisma from '../../config/database.js';
 import config from '../../config/index.js';
 import { disconnectRedis } from '../../config/redis.js';
-import { createPipelineJourney } from '../../services/pipeline.service.js';
+import { createPipelineJourney, setFinalOutcome, setJourneyPaused } from '../../services/pipeline.service.js';
 import { requestDocuments } from '../../services/documentCollection.service.js';
 import { recordOfferShared, recordCandidateDecision } from '../../services/offer.service.js';
 import { runDocumentReminders } from '../../jobs/documentReminder.js';
@@ -103,6 +103,8 @@ after(async () => {
     }
     await prisma.rpa_document_requests.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
     await prisma.rpa_offers.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
+    await prisma.rpa_interview_schedule.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
+    await prisma.rpa_assessment_invites.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
     await prisma.rpa_pipeline_stage_events.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
     await prisma.rpa_notifications.deleteMany({ where: { pipeline_id: { in: createdJourneys } } });
     await prisma.rpa_candidate_pipeline.deleteMany({ where: { id: { in: createdJourneys } } });
@@ -405,5 +407,99 @@ describe('OFFER-15 — post-joining auto-close', () => {
       where: { id: BigInt(journey.id) }, select: { final_outcome: true },
     });
     assert.equal(row.final_outcome, null, 'no joining date means the clock never started');
+  });
+});
+
+// -- SWEEP-04 ---------------------------------------------------------------
+
+describe('SWEEP-04 - a closed or paused journey leaves every queue', () => {
+  test('the four selection guards all skip a journey that is closed, and one that is paused', async () => {
+    // documentReminder and offerSweep carried a `final_outcome: null` guard
+    // because someone hit the bug there. Four other queries did not - the same
+    // class of bug, unfixed - so a rejected candidate still got the 30-minute
+    // interview reminder, still got chased for "did this happen?", sat in the
+    // recruiter's unresolved queue forever, and still rang an overdue
+    // assessment bell. Audit section 2.3.
+    //
+    // is_paused was added to the same guards on 2026-08-26 (Q33): without it
+    // the pause lever writes a column nothing acts on.
+    //
+    // Asserted against the SELECTION QUERIES rather than by running the jobs,
+    // deliberately. The jobs send real mail, and what is being tested is which
+    // rows they pick - the selection is the whole feature. Running them would
+    // prove the same thing while mailing the fixture inbox four more times.
+    const mrfId = await makeMrf();
+    const { journey } = await makeJourney({ name: 'SWEEP04', mrfId });
+    await putOnStage(journey.id, 'tech1');
+
+    const sched = await prisma.rpa_interview_schedule.create({
+      data: {
+        pipeline_id: BigInt(journey.id),
+        stage_key: 'tech1',
+        // Inside the reminder window AND past-ended for the occurrence sweep is
+        // impossible at once, so each guard is checked on its own terms below.
+        scheduled_start_at: new Date(Date.now() + 20 * 60 * 1000),
+        scheduled_end_at: new Date(Date.now() + 80 * 60 * 1000),
+        status: 'scheduled',
+        interviewer_email: 'pkmondal@aapnainfotech.com',
+      },
+    });
+
+    // The guard every one of the four queries carries.
+    const OPEN_AND_RUNNING = { final_outcome: null, is_paused: false };
+    const inScope = () => prisma.rpa_interview_schedule.count({
+      where: { id: sched.id, status: 'scheduled', rpa_candidate_pipeline: OPEN_AND_RUNNING },
+    });
+
+    assert.equal(await inScope(), 1, 'an open, unpaused journey is in scope to begin with');
+
+    // 1) Paused - the Q33 half.
+    await setJourneyPaused(journey.id, { paused: true, reason: 'role filled', actedBy: ACTED_BY });
+    assert.equal(await inScope(), 0, 'a paused journey is out of every sweep');
+    await setJourneyPaused(journey.id, { paused: false, actedBy: ACTED_BY });
+    assert.equal(await inScope(), 1, 'resuming puts it back');
+
+    // 2) Closed - the section 2.3 half.
+    //
+    // Closure now CANCELS not-yet-started bookings, which would mask the guard:
+    // the row would drop out on `status` alone and the test would pass for the
+    // wrong reason. So the booking is put back to 'scheduled' afterwards, and
+    // only then is the guard asserted.
+    await setFinalOutcome(journey.id, { finalOutcomeKey: FINAL_OUTCOMES.REJECTED, actedBy: ACTED_BY });
+    await prisma.rpa_interview_schedule.update({
+      where: { id: sched.id },
+      data: { status: 'scheduled', cancelled_at: null, cancel_reason: null },
+    });
+    assert.equal(
+      await inScope(), 0,
+      'a closed journey is out of every sweep even with a live-looking booking'
+    );
+
+    // 3) The assessment sweep is raw SQL, so its guard is asserted in SQL.
+    const invite = await prisma.rpa_assessment_invites.create({
+      data: {
+        pipeline_id: BigInt(journey.id),
+        sent_at: new Date(Date.now() - 5 * 86400000),
+        deadline_at: new Date(Date.now() - 2 * 86400000),
+        deadline_days: 3,
+        method: 'email',
+      },
+    });
+    const overdue = await prisma.$queryRawUnsafe(
+      `SELECT count(*)::int AS n
+         FROM rpa_assessment_invites li
+        WHERE li.id = $1
+          AND li.deadline_at < NOW()
+          AND li.reminded_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM rpa_candidate_pipeline p
+             WHERE p.id = li.pipeline_id AND p.final_outcome IS NULL AND p.is_paused = FALSE
+          )`,
+      invite.id
+    );
+    assert.equal(overdue[0].n, 0, 'a closed journey rings no overdue assessment bell');
+
+    await prisma.rpa_assessment_invites.deleteMany({ where: { id: invite.id } });
+    await prisma.rpa_interview_schedule.deleteMany({ where: { id: sched.id } });
   });
 });

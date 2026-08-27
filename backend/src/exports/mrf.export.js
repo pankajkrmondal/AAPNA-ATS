@@ -86,7 +86,7 @@ export async function attachApprovalStatus(records) {
   const linked = mrfIds.length > 0
     ? await prisma.rpa_mrf.findMany({
       where: { id: { in: mrfIds } },
-      select: { id: true, approval_status: true, filled_at: true },
+      select: { id: true, approval_status: true, filled_at: true, closed_at: true, closure_reason: true },
     })
     : [];
 
@@ -101,6 +101,8 @@ export async function attachApprovalStatus(records) {
       approval_status: mrf?.approval_status || 'pending',
       mrf_filled: isMrfFilled(mrf),
       mrf_filled_at: mrf?.filled_at || null,
+      mrf_closed_at: mrf?.closed_at || null,
+      mrf_closure_reason: mrf?.closure_reason || null,
     };
   });
 }
@@ -119,6 +121,10 @@ export const columns = [
   // Independent of Approval Status — a requisition can be 'completed' AND filled.
   { header: 'Openings Filled', value: (r) => (r.mrf_filled ? 'YES' : 'NO') },
   { header: 'Filled On', key: 'mrf_filled_at', type: 'datetime' },
+  // Manual business closure (Q34) — distinct from 'filled'. Before these
+  // existed a closure recorded when but never why, even automatically.
+  { header: 'Closed On', key: 'mrf_closed_at', type: 'datetime' },
+  { header: 'Closure Reason', key: 'mrf_closure_reason' },
   { header: 'JD Document Link', key: 'jd_doc_link' },
   { header: 'Linked MRF ID', key: 'mrf_id' },
   { header: 'Created Date', key: 'created_at', type: 'date' },

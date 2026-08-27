@@ -16,6 +16,9 @@ import AppError from '../utils/AppError.js';
  * client-side confinement — a vendor's token can call the API directly.
  */
 const MRF_EXPORT_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
+// Who may close a requisition by hand (Q34). Same set as exports today, but
+// named separately so tightening one does not silently move the other.
+const MRF_CLOSURE_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
 
 const router = Router();
 
@@ -82,6 +85,11 @@ router.get('/:id/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfCon
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
 router.get('/main/:id', mrfController.getMainMrf);
 router.patch('/main/:id', mrfController.updateMainMrf);
+// Manual requisition closure (Q34). Two path segments, so no '/:id' collision.
+// Never writes approval_status or mrfstatus — closure lives in closed_at.
+router.get('/closure-reasons', mrfController.listClosureReasons);
+router.post('/:id/close', restrictTo(...MRF_CLOSURE_ROLES), mrfController.closeMrf);
+router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reopenMrf);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

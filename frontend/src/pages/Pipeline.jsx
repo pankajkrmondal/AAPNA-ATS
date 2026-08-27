@@ -29,7 +29,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
@@ -162,7 +162,7 @@ function CandidateCard({ card, onOpen }) {
             </Tooltip>
           </div>
           <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {card.position || 'No position on file'} · {sourceLabel(card)}
+            {card.position || 'No position on file'} · {sourceLabel(card)}{card.owner ? ` · ${card.owner}` : ''}
           </Text>
           <Space size={4} wrap style={{ marginBottom: 7 }}>
             <Tag color={status.color} style={{ fontSize: 11, marginInlineEnd: 0 }}>{status.label}</Tag>
@@ -177,6 +177,16 @@ function CandidateCard({ card, onOpen }) {
             {card.mrf_closed && !card.final_outcome && (
               <Tooltip title="All openings on this requisition are filled — this candidate is still in progress. Continue only if you intend to re-open the role or are holding them as a backup.">
                 <Tag color="orange" className="tag-attention" icon={<WarningOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Role filled</Tag>
+              </Tooltip>
+            )}
+            {/* Held by a recruiter (Q33). Sits next to "Role filled" because
+                that is the case it exists for: the role filled underneath this
+                candidate and someone chose to hold rather than close them.
+                is_paused has been on the card payload all along; nothing wrote
+                it until 2026-08-26. */}
+            {card.is_paused && !card.final_outcome && (
+              <Tooltip title="This journey is paused — interview reminders, occurrence chase-ups and assessment deadline bells are all suspended until it is resumed.">
+                <Tag color="orange" icon={<PauseCircleOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Paused</Tag>
               </Tooltip>
             )}
             {card.source === 'vendor' && <ShopOutlined style={{ color: 'var(--text-3)', fontSize: 11 }} />}
@@ -377,7 +387,12 @@ export default function Pipeline() {
   const [position, setPosition] = useState();
   const [source, setSource] = useState();
   const [onHoldOnly, setOnHoldOnly] = useState(false);
+  const [rejectedOnly, setRejectedOnly] = useState(false);
   const [stuckOnly, setStuckOnly] = useState(false);
+  // G6 — "my candidates". A view, not a permission: resolved server-side to
+  // the caller's own identity, so clearing it always shows the full shared
+  // board to any staff user.
+  const [myCandidatesOnly, setMyCandidatesOnly] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [openPipelineId, setOpenPipelineId] = useState(null);
   const [nlQuery, setNlQuery] = useState('');
@@ -412,8 +427,10 @@ export default function Pipeline() {
     position,
     source,
     on_hold_only: onHoldOnly ? '1' : undefined,
+    rejected_only: rejectedOnly ? '1' : undefined,
     stuck_days: stuckOnly ? 10 : undefined,
     include_closed: showClosed ? '1' : undefined,
+    owned_by: myCandidatesOnly ? 'me' : undefined,
   };
 
   // The board advertises itself as live, so it has to actually behave that way:
@@ -474,13 +491,15 @@ export default function Pipeline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient]);
 
-  const anyFilterActive = Boolean(position || source || onHoldOnly || stuckOnly || showClosed || nlQuery.trim());
+  const anyFilterActive = Boolean(position || source || onHoldOnly || rejectedOnly || stuckOnly || showClosed || myCandidatesOnly || nlQuery.trim());
   const clearFilters = () => {
     setPosition(undefined);
     setSource(undefined);
     setOnHoldOnly(false);
+    setRejectedOnly(false);
     setStuckOnly(false);
     setShowClosed(false);
+    setMyCandidatesOnly(false);
     setNlQuery('');
     setNlRead(null);
   };
@@ -501,6 +520,7 @@ export default function Pipeline() {
     setPosition(parsed.position);
     setSource(parsed.source);
     setOnHoldOnly(parsed.hold);
+    if (parsed.hold) setRejectedOnly(false);
     setStuckOnly(parsed.stuck);
     setNlRead(parsed.read);
   };
@@ -534,6 +554,7 @@ export default function Pipeline() {
   const columns = data?.columns || [];
   const total = data?.total ?? 0;
   const filteredTotal = data?.filteredTotal ?? total;
+  const closedCount = data?.closedCount ?? 0;
 
   return (
     <div style={{ padding: 24 }}>
@@ -603,10 +624,32 @@ export default function Pipeline() {
           onChange={setSource}
           options={Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }))}
         />
-        <Checkbox checked={onHoldOnly} onChange={(e) => setOnHoldOnly(e.target.checked)}>On Hold only</Checkbox>
+        <Checkbox
+          checked={onHoldOnly}
+          onChange={(e) => {
+            setOnHoldOnly(e.target.checked);
+            if (e.target.checked) setRejectedOnly(false);
+          }}
+        >
+          On Hold only
+        </Checkbox>
+        <Checkbox
+          checked={rejectedOnly}
+          onChange={(e) => {
+            setRejectedOnly(e.target.checked);
+            if (e.target.checked) setOnHoldOnly(false);
+          }}
+        >
+          Rejected only
+        </Checkbox>
         <Checkbox checked={stuckOnly} onChange={(e) => setStuckOnly(e.target.checked)}>Stuck &gt; 10 days</Checkbox>
+        <Tooltip title="Candidates you shortlisted — a view, not a permission. Clearing it always shows the full board.">
+          <Checkbox checked={myCandidatesOnly} onChange={(e) => setMyCandidatesOnly(e.target.checked)}>My candidates</Checkbox>
+        </Tooltip>
         <Tooltip title="Closed candidates are hidden by default — the board is for live work">
-          <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>Show closed</Checkbox>
+          <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>
+            Show closed{closedCount > 0 ? ` (${closedCount})` : ''}
+          </Checkbox>
         </Tooltip>
         {anyFilterActive && (
           <Button size="small" type="text" icon={<ClearOutlined />} onClick={clearFilters}>

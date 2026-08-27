@@ -12,6 +12,8 @@ import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney } from './pipeline.service.js';
 import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
+import { Prisma } from '@prisma/client';
+import { emailMatchesSql } from '../utils/emailMatch.js';
 
 /**
  * GET /api/screening/roles
@@ -35,6 +37,12 @@ export async function getApprovedRoles() {
       -- The approval test above MUST stay parenthesised: AND binds tighter than
       -- OR, so without the brackets plain 'approved' rows would skip this check.
       AND filled_at IS NULL
+      -- …and manually closed ones too (Q34, 2026-08-26). A requisition the
+      -- business cancelled — budget pulled, role withdrawn, hired externally —
+      -- had no representation at all before closed_at existed, so it sat in
+      -- this dropdown forever. THIS is the line that takes it out; the partial
+      -- index idx_rpa_mrf_open was widened to match both predicates.
+      AND closed_at IS NULL
     ORDER BY position_hiring_for, created_at DESC;`
   );
 
@@ -867,7 +875,13 @@ export async function searchRoleCandidates(mrfId, force = false) {
      LEFT JOIN LATERAL (
          SELECT rsc.shortlisted_by, rsc.shortlisted_at
          FROM public.rpa_shortlisted_candidates rsc
-         WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status = 'shortlisted'
+         -- "Not rejected", not "= shortlisted". From 2026-08-26 closure writes
+         -- terminal values here (hired / withdrawn / …), and an equality test
+         -- made the shortlisting recruiter's name VANISH from the record at the
+         -- moment their candidate was hired. Same instrument error the
+         -- leaderboard carried. The reject LATERAL below stays an equality test:
+         -- it genuinely means only 'rejected'.
+         WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status <> 'rejected'
          ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
          LIMIT 1
      ) sl ON true
@@ -1328,7 +1342,9 @@ export async function searchKeywordCandidates(filters) {
        LEFT JOIN LATERAL (
            SELECT rsc.shortlisted_by, rsc.shortlisted_at
            FROM public.rpa_shortlisted_candidates rsc
-           WHERE rsc.cv_id = c.id AND rsc.pipeline_status = 'shortlisted'
+           -- "Not rejected", not "= shortlisted" — see the note on the
+           -- MRF-scoped copy of this LATERAL above.
+           WHERE rsc.cv_id = c.id AND rsc.pipeline_status <> 'rejected'
            ORDER BY rsc.shortlisted_at DESC NULLS LAST, rsc.id DESC
            LIMIT 1
        ) sl ON true
@@ -1443,8 +1459,15 @@ export async function searchKeywordCandidates(filters) {
     // No correlated-join equivalent in Prisma's fluent API for this path — batch
     // lookup the most recent 'shortlisted' and 'rejected' row per candidate and attach both.
     if (candidates.length > 0) {
+      // No status filter: every shortlist row is a candidate for provenance.
+      // This used to select `in: ['shortlisted','rejected']` and bucket on
+      // `=== 'shortlisted'`, so once closure began writing terminal values here
+      // (2026-08-26) a hired candidate matched NEITHER arm and lost their
+      // "Shortlisted by / on" attribution entirely — the recruiter's credit
+      // disappeared at the moment their candidate was hired. The split below is
+      // now "rejected vs everything else", which is what was always meant.
       const statusRows = await prisma.rpa_shortlisted_candidates.findMany({
-        where: { cv_id: { in: candidates.map((c) => c.id) }, pipeline_status: { in: ['shortlisted', 'rejected'] } },
+        where: { cv_id: { in: candidates.map((c) => c.id) } },
         orderBy: { shortlisted_at: 'desc' },
         select: { cv_id: true, pipeline_status: true, shortlisted_by: true, shortlisted_at: true },
       });
@@ -1452,7 +1475,7 @@ export async function searchKeywordCandidates(filters) {
       const latestRejectByCv = new Map();
       for (const row of statusRows) {
         const key = row.cv_id.toString();
-        const target = row.pipeline_status === 'shortlisted' ? latestShortlistByCv : latestRejectByCv;
+        const target = row.pipeline_status === 'rejected' ? latestRejectByCv : latestShortlistByCv;
         if (!target.has(key)) target.set(key, row); // orderBy desc → first hit is most recent
       }
       candidates = candidates.map((c) => {
@@ -2412,22 +2435,37 @@ export async function getZekoPipeline() {
   }));
 
   // Compute candidate status counts (shortlisted, rejected, on_hold,
-  // future_prospect, total)
+  // future_prospect, closed, total)
   //
-  // future_prospect is counted because shortlistStatusFor() writes it
-  // (config/pipelineStages.js:306) — it is one of the four CORE_OUTCOME_KEYS a
-  // recruiter can pick in the pipeline drawer. Without a bucket of its own such
-  // a candidate landed in `total` and in NONE of the others, so the strip
-  // stopped adding up the moment anyone used the outcome. Keep these four in
-  // lockstep with the roleStats memo in frontend/src/pages/Analytics.jsx and
-  // groupByRole() in backend/src/exports/screening.export.js.
+  // These columns MUST sum to `total`. Every value shortlistStatusFor() can
+  // write needs a bucket, and a value without one lands in `total` and in NONE
+  // of the others — the strip silently stops adding up, with no error and no
+  // clue which column is short. That has happened twice: once with
+  // future_prospect, and again on 2026-08-26 when setFinalOutcome began writing
+  // the seven closure statuses into this column (audit §2.4 / §6a).
+  //
+  // So this is now a CLASSIFIER with a final else, not a set of independent
+  // filters: the sum holds by construction, and a ninth status invented next
+  // year lands in `closed` rather than vanishing. The five terminal closure
+  // values deliberately roll into one column — the strip reports screening
+  // progress, and nine columns would not help it do that. The distinct values
+  // survive in the column itself for anything that needs them.
+  //
+  // Keep in lockstep with SHORTLIST_STATUSES (config/pipelineStages.js), the
+  // roleStats memo in frontend/src/pages/Analytics.jsx, and groupByRole() in
+  // backend/src/exports/screening.export.js.
   const candidateCounts = {
-    shortlisted: candidates.filter(c => (c.pipeline_status || 'shortlisted').toLowerCase() === 'shortlisted').length,
-    rejected: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'rejected').length,
-    on_hold: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'on_hold' || (c.pipeline_status || '').toLowerCase() === 'on hold').length,
-    future_prospect: candidates.filter(c => (c.pipeline_status || '').toLowerCase() === 'future_prospect').length,
-    total: candidates.length
+    shortlisted: 0, rejected: 0, on_hold: 0, future_prospect: 0, closed: 0,
+    total: candidates.length,
   };
+  for (const c of candidates) {
+    const status = (c.pipeline_status || 'shortlisted').toLowerCase();
+    if (status === 'shortlisted') candidateCounts.shortlisted += 1;
+    else if (status === 'rejected') candidateCounts.rejected += 1;
+    else if (status === 'on_hold' || status === 'on hold') candidateCounts.on_hold += 1;
+    else if (status === 'future_prospect') candidateCounts.future_prospect += 1;
+    else candidateCounts.closed += 1;
+  }
 
   return {
     pipeline: serializedRows,
@@ -2834,10 +2872,18 @@ export async function cancelInterview(pipelineId, reason, user) {
 }
 
 /**
- * Fetch Outlook conversations and group into threads (migrated from n8n)
+ * Fetch Outlook conversations and group into threads (migrated from n8n).
+ *
+ * @param {string|string[]} email - One address, or several (a candidate can
+ *   have more than one on file). Matched with emailMatchesSql() rather than a
+ *   plain equality on both sides of the join: sc.candidate_email itself can
+ *   hold more than one address in a single field, same as rpa_cv."EmailID"
+ *   (see emailMatch.js) — a caller like the pipeline drawer, which knows all
+ *   of a candidate's addresses, can pass every one of them at once instead of
+ *   only ever finding threads filed under their primary address.
  */
 export async function getOutlookConversations(email) {
-  const query = `
+  const messages = await prisma.$queryRaw`
     SELECT
       m.id,
       m.graph_message_id,
@@ -2876,12 +2922,10 @@ export async function getOutlookConversations(email) {
     ) ob ON true
     WHERE m.graph_message_id IS NOT NULL AND m.graph_message_id != 'undefined'
       AND m.conversation_id IS NOT NULL AND m.conversation_id != 'undefined'
-      AND LOWER(COALESCE(sc.candidate_email, ob.ob_email)) = LOWER($1)
+      AND ${emailMatchesSql(Prisma.sql`COALESCE(sc.candidate_email, ob.ob_email)`, email)}
     ORDER BY COALESCE(m.sent_at, m.created_at) ASC
     LIMIT 500
   `;
-
-  const messages = await prisma.$queryRawUnsafe(query, email);
   const threadMap = {};
 
   for (const msg of messages) {

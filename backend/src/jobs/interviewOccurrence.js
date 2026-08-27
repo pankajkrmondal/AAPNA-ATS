@@ -190,6 +190,17 @@ export async function sweepInterviewOccurrence() {
       status: 'scheduled',
       occurrence_status: null,
       scheduled_end_at: { lt: cutoff, gt: giveUpBefore },
+      // "Did this interview happen?" is not worth asking once the journey is
+      // over — the answer changes nothing and the nudge goes to a recruiter who
+      // has already closed the record. Same guard as documentReminder.js:46.
+      // See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.3.
+      //
+      // Deliberately NOT added to the write-off updateMany below: stamping a
+      // stale row 'unconfirmed' sends nothing and is pure tidying, and leaving
+      // it to run keeps closed journeys' rows out of the pending state that
+      // other readers scan.
+      // is_paused likewise (Q33): a held journey is not chased.
+      rpa_candidate_pipeline: { final_outcome: null, is_paused: false },
     },
     include: {
       rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },

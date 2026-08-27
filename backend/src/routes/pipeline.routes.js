@@ -74,6 +74,11 @@ router.use('/assessment-import', assessmentImportRoutes);
 
 /** GET /api/pipeline/:id — full journey detail (feeds the per-round drawer). */
 router.get('/:id', pipelineController.getPipelineDetail);
+/** GET /api/pipeline/:id/conversations — real Outlook thread (G4), not the
+ * synthetic pipeline-event email log. Nested under "/:id/", so — unlike
+ * "/analytics" and "/export" above — it cannot be captured by the bare
+ * "/:id" route regardless of registration order. */
+router.get('/:id/conversations', pipelineController.getPipelineConversations);
 /** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
 router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
 /** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */
@@ -92,6 +97,12 @@ router.post('/:id/outcome', pipelineController.setStageOutcome);
 router.post('/:id/advance', pipelineController.advanceStage);
 /** POST /api/pipeline/:id/closure — set the final/closure outcome (Q12). */
 router.post('/:id/closure', pipelineController.setFinalOutcome);
+/** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
+ * action assertJourneyOpen has named since Module 1 without it existing. */
+router.post('/:id/reopen', pipelineController.reopenJourney);
+/** POST /api/pipeline/:id/pause — pause/resume a journey (Q33). The manual
+ * lever RT asked for when a role fills under a candidate still in flight. */
+router.post('/:id/pause', pipelineController.setJourneyPaused);
 
 /** Documents round (Module 4) — recruiter-facing half; the candidate uploads
  * through the public token route in document.routes.js. */

@@ -149,6 +149,17 @@ export async function sendInterviewReminders() {
     where: {
       status: 'scheduled',
       scheduled_start_at: { gte: now, lte: windowEnd },
+      // Never remind about an interview whose journey has been closed
+      // underneath it — the same guard documentReminder.js:46 and
+      // offerSweep.js carry. Closure now cancels future bookings outright, so
+      // in practice this catches the ones that slipped through: a closure whose
+      // best-effort cancellation tail failed, and every booking made before
+      // that cancellation existed. Without it a rejected candidate still got
+      // the 30-minute "your interview is starting soon" mail.
+      // See docs/PHASE3-CLOSURE-AUDIT-2026-08-26.md §2.3.
+      // is_paused is the Q33 lever: a recruiter holding a journey because its
+      // role filled must not keep getting reminder mail for it.
+      rpa_candidate_pipeline: { final_outcome: null, is_paused: false },
       OR: [{ candidate_reminded_at: null }, { interviewer_reminded_at: null }],
     },
     include: {

@@ -2,6 +2,14 @@ import * as pipelineService from '../services/pipeline.service.js';
 import * as offerService from '../services/offer.service.js';
 import * as clientRoundService from '../services/clientRound.service.js';
 import * as documentService from '../services/documentCollection.service.js';
+// screeningService, not a forked query — getOutlookConversations() already
+// exists for the Candidate Screening page (G4); this controller is a second
+// entry point onto it, not a new implementation. Importing it here rather
+// than from pipeline.service.js avoids a service-to-service import cycle:
+// screening.service.js already imports createPipelineJourney FROM
+// pipeline.service.js.
+import * as screeningService from '../services/screening.service.js';
+import { emailCandidates } from '../utils/emailMatch.js';
 import prisma from '../config/database.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
@@ -22,14 +30,20 @@ import {
  * Board data for the kanban view: columns (stages) + cards (journeys), filterable.
  */
 export const listPipeline = catchAsync(async (req, res) => {
-  const { source, on_hold_only, mrf_id, stuck_days, position, include_closed } = req.query;
+  const { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, include_closed, owned_by } = req.query;
   const result = await pipelineService.listPipeline({
     source: source || undefined,
     onHoldOnly: on_hold_only === '1' || on_hold_only === 'true',
+    rejectedOnly: rejected_only === '1' || rejected_only === 'true',
     mrfId: mrf_id ? parseInt(mrf_id, 10) : undefined,
     stuckDays: stuck_days ? parseInt(stuck_days, 10) : undefined,
     position: position || undefined,
     includeClosed: include_closed === '1' || include_closed === 'true',
+    // G6 — "my candidates". Resolved server-side to the caller's own
+    // identity; a client-supplied user id/name would let anyone view anyone
+    // else's filtered board, which defeats the point of the check being here
+    // rather than trusted from the request.
+    ownedByUsername: owned_by === 'me' ? req.user.username : undefined,
   });
   return success(res, result, 'Pipeline board retrieved successfully');
 });
@@ -127,6 +141,41 @@ export const getPipelineDetail = catchAsync(async (req, res) => {
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
   const detail = await pipelineService.getPipelineDetail(id);
   return success(res, detail, 'Pipeline detail retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/:id/conversations
+ * The real Outlook thread for this candidate (G4) — the drawer's "emails"
+ * tab is otherwise synthesised client-side from pipeline events and never
+ * shows what the candidate actually said. Delegates to the same
+ * screeningService.getOutlookConversations() the Candidate Screening page
+ * calls; one implementation, a second entry point, no forked query.
+ *
+ * Passes every address on file for the candidate, not just the primary one —
+ * candidate_email and candidate_email_all can each already hold more than
+ * one address (see emailMatch.js); a candidate with two addresses must not
+ * silently see only the thread filed under one of them.
+ */
+export const getPipelineConversations = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const journey = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(id) },
+    select: {
+      rpa_shortlisted_candidates: { select: { candidate_email: true, candidate_email_all: true } },
+    },
+  });
+  if (!journey) throw new AppError('Pipeline journey not found.', 404);
+
+  const sc = journey.rpa_shortlisted_candidates;
+  const knownAddresses = [sc?.candidate_email, sc?.candidate_email_all].flatMap((v) => emailCandidates(v));
+  if (knownAddresses.length === 0) {
+    return success(res, { success: true, threads: [] }, 'No candidate email on file for this journey.');
+  }
+
+  const result = await screeningService.getOutlookConversations(knownAddresses);
+  return success(res, result, 'Candidate conversations retrieved successfully');
 });
 
 /**
@@ -406,6 +455,44 @@ export const setFinalOutcome = catchAsync(async (req, res) => {
     actedBy: req.user?.id,
   });
   return success(res, result, 'Closure recorded successfully');
+});
+
+/**
+ * POST /api/pipeline/:id/reopen
+ * Re-opens a closed journey (audit §2.6). Reason is mandatory — a re-open is an
+ * exception, and until 2026-08-26 assertJourneyOpen named this action without
+ * it existing.
+ */
+export const reopenJourney = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  const { reason } = req.body;
+  if (!reason || !String(reason).trim()) throw new AppError('reason is required.', 400);
+
+  const result = await pipelineService.reopenJourney(id, {
+    reason: String(reason).trim(),
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Candidate record reopened');
+});
+
+/**
+ * POST /api/pipeline/:id/pause
+ * Pauses or resumes a journey (Q33). `paused` is explicit rather than a toggle
+ * so two recruiters acting at once cannot flip it past each other.
+ */
+export const setJourneyPaused = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  const { paused, reason } = req.body;
+  if (typeof paused !== 'boolean') throw new AppError('paused must be true or false.', 400);
+
+  const result = await pipelineService.setJourneyPaused(id, {
+    paused,
+    reason: reason ? String(reason).trim() : null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, paused ? 'Journey paused' : 'Journey resumed');
 });
 
 // ── Client round — marked, never booked; nothing reaches the client (Q14) ───

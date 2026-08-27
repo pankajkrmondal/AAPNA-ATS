@@ -176,7 +176,9 @@ export async function getRecentUploads(limit = 10) {
  * per person instead of two separate rankings. (Named "Shortlisted", not
  * "Tagged" — "Tag to Open JD" refers to picking a role during both Shortlist
  * *and* Reject, so "Tagged" would misleadingly imply rejects count too; this
- * metric is scoped to pipeline_status = 'shortlisted' only.)
+ * metric excludes pipeline_status = 'rejected'. It counts everything else,
+ * including the terminal closure statuses, because shortlisting someone who
+ * went on to be hired is the credit this table exists to show.)
  *
  * last_action_by and shortlisted_by use different identity formats (email vs.
  * username) for what's often the same person, so each raw value is resolved
@@ -198,7 +200,13 @@ export async function getRecruiterBreakdown(limit = 10) {
       }),
       prisma.rpa_shortlisted_candidates.groupBy({
         by: ['shortlisted_by'],
-        where: { pipeline_status: 'shortlisted' }, // exclude rows that only exist due to a reject() stamp
+        // Exclude rows that only exist due to a reject() stamp — the intent has
+        // always been "not a rejection", but an equality test was the wrong
+        // instrument for it. From 2026-08-26 setFinalOutcome writes terminal
+        // statuses here ('hired', 'withdrawn', …; audit §2.4), and under the old
+        // `=== 'shortlisted'` test a recruiter's score DROPPED at the moment
+        // their candidate was hired — the metric deducted credit for success.
+        where: { pipeline_status: { not: 'rejected' } },
         _count: { _all: true },
       }),
       prisma.rpa_users.findMany({

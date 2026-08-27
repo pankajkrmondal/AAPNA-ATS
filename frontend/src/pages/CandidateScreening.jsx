@@ -63,36 +63,10 @@ import SkillTags from '../components/common/SkillTags';
 import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
+import { cleanMsgBody } from '../utils/emailText';
 
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
-
-const cleanMsgBody = (s) => {
-  if (!s) return '(No content)';
-  // Strip HTML tags & decode entities
-  let text = s.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<[^>]*>/g, ' ')
-              .replace(/&amp;/gi, '&')
-              .replace(/&lt;/gi, '<')
-              .replace(/&gt;/gi, '>')
-              .replace(/&quot;/gi, '"')
-              .replace(/&#039;/gi, "'")
-              .replace(/&#x27;/gi, "'")
-              .replace(/&rsquo;/gi, "'")
-              .replace(/&lsquo;/gi, "'")
-              .replace(/&ldquo;/gi, '"')
-              .replace(/&rdquo;/gi, '"')
-              .replace(/&nbsp;/gi, ' ');
-  // Strip company disclaimer boilerplate (e.g. "EXTERNAL EMAIL: ... password.")
-  text = text.replace(/EXTERNAL EMAIL:[\s\S]*?password\./gi, '').trim();
-  // Strip quoted-reply thread — Gmail & Outlook formats
-  text = text.split(/\bOn\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2}[\/\-])/i)[0];
-  text = text.split(/\r?\nFrom:\s/i)[0];
-  text = text.split(/\r?\n-{3,}/)[0];
-  // Collapse whitespace
-  text = text.replace(/\s+/g, ' ').trim();
-  return text || '(No content)';
-};
 
 const formatCurrentCompany = (companyStr) => {
   if (!companyStr) return null;
