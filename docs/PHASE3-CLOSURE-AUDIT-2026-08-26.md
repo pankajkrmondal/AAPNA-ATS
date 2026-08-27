@@ -374,21 +374,47 @@ the email outcome **per status**. One item beyond the letter of §5 was also fix
 Re-invite button, which §6a identified above as a genuine drawer leak, was the only action missing
 the `!outcomeEvent` guard and could send an invite to a closed candidate.
 
-**Still outstanding:** §2.5 / §2.6 / §2.7 (Q32 / Q33 / Q34), the ⚠️ immediately above — which the
-§2.1 fix has now promoted from theoretical to routine — and the integration tests, which are written
-(E2E-06) but **not run**, since they execute against shared staging and send real mail.
+**~~Still outstanding: §2.5 / §2.6 / §2.7 (Q32 / Q33 / Q34)~~ → RESOLVED, 2026-08-26, later same
+day.** The product owner answered all three (§7 below) and they were built the same day as W1–W4 —
+see [CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](./changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md).
+The ⚠️ about §2.7 being promoted from theoretical to routine is what W1 fixed:
+`countAcceptedHires` → `countFilledSeats` now counts a hire-closure with no offer row, and dedupes
+so an offer *and* a `joined` closure on the same journey never double-counts.
+
+**~~The integration tests, which are written (E2E-06) but not run~~ → RUN, 2026-08-26.** The three
+changed files were executed individually against staging (never via the `**` glob, which recurses
+into `integration/`): `pipelineClosure.test.js` **21/21**, `sweepJobs.test.js` **10/10**,
+`crossModuleE2E.test.js` **7/7** (including the extended E2E-01 and new E2E-06). The unit suite
+stayed at 207/207 throughout.
+
+**One provenance gap this audit and §6a both missed.** §6a's regression #2 caught
+`dashboard.service.js:201`'s leaderboard `groupBy` equality-testing `pipeline_status`, but the
+identical instrument error also sat in the two "Shortlisted by" vector-search `LATERAL` joins at
+`screening.service.js:870` and `:1331` (§2.4's own text names the third site, the Prisma batch
+lookup at `:1447`, but not these two). All three matched `= 'shortlisted'`, so a closed candidate's
+sourcing attribution — the credit for who found the hire — vanished the moment §2.4 started writing
+terminal values. Found independently during the follow-on work and fixed the same way: `<> 'rejected'`.
+Verified with 20 targeted assertions across all three sites and all four outcome buckets.
 
 ---
 
 ## 7. Open questions for RT
 
-*(All three were filed in `phase3/04-QUESTIONS.md` on 2026-08-26 — see §6a.)*
+*(All three were filed in `phase3/04-QUESTIONS.md` on 2026-08-26 — see §6a. All three were answered
+by the product owner and built the same day.)*
 
-1. ~~**The §14 stranded-candidate decision needs a Q-number**~~ — **filed as Q32** (§D1, plus its
-   answer-sheet row). The written confirmation that RT was told is still owed and is now tracked
-   as the *Q32 confirmation* item in §D2.
-2. ~~**Q13/Q25 pause/stop action**~~ — **filed as Q33.** Confirm it is still wanted before it is
-   built, given the Offer round went record-only on 2026-08-25.
-3. ~~**Manual MRF closure (§2.6)**~~ — **filed as Q34.** Is a business-cancelled requisition a real
-   case? If so it needs both an action and a reason field, neither of which exists. The missing
-   journey **re-open** is folded into the same question.
+1. ~~**The §14 stranded-candidate decision needs a Q-number**~~ — **filed as Q32**, then
+   **✅ CONFIRMED** by the product owner: the shipped behaviour stands exactly as-is — manual only,
+   the "Role filled" tag plus one aggregate notification is a sufficient signal, a recruiter decides
+   each stranded candidate individually. No code follows. Recorded in D1; the Q32-confirmation item
+   is closed out of D2.
+2. ~~**Q13/Q25 pause/stop action**~~ — **filed as Q33**, **✅ ANSWERED "yes" and BUILT.** `is_paused`
+   is finally written (`setJourneyPaused()`, `POST /api/pipeline/:id/pause`), and — the detail that
+   makes the flag meaningful rather than cosmetic — a paused journey now drops out of all four
+   automated sweeps.
+3. ~~**Manual MRF closure (§2.6)**~~ — **filed as Q34**, **✅ ANSWERED "yes — action + reason" and
+   BUILT.** New `rpa_mrf.closed_at` / `closure_reason` / `closure_note`, `POST /api/mrf/:id/close`
+   and `/reopen`, never touching `approval_status` or `mrfstatus`. The missing journey **re-open**
+   was folded into the same question and built alongside — `reopenJourney()`,
+   `POST /api/pipeline/:id/reopen` — so `assertJourneyOpen`'s *"Reopen it before you…"* finally
+   names an action that exists.

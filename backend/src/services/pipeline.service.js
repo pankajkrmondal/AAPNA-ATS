@@ -161,7 +161,7 @@ async function vendorAttributionFor(cvIdBig) {
  * Board data for the Pipeline Tracker: one row per journey, grouped by stage,
  * with the filters the UI needs (position/MRF, stage, status, source/vendor,
  * aging, on-hold only).
- * @param {object} filters - { positionId, source, onHoldOnly, stuckDays }
+ * @param {object} filters - { positionId, source, onHoldOnly, rejectedOnly, stuckDays, ownedByUsername }
  * @returns {Promise<{ stages: object[], columns: object[] }>}
  */
 export async function listPipeline(filters = {}) {
@@ -173,13 +173,32 @@ export async function listPipeline(filters = {}) {
   const where = {};
   if (filters.source) where.source = filters.source;
   if (filters.onHoldOnly) where.current_stage_status = 'hold';
+  // Mutually exclusive with onHoldOnly on the same column — the UI presents
+  // them as a single-select status filter, so whichever the caller means last
+  // wins if both are somehow set.
+  if (filters.rejectedOnly) where.current_stage_status = STAGE_OUTCOMES.REJECTED;
   if (filters.mrfId) where.mrf_id = BigInt(filters.mrfId);
+  // G6 — "my candidates". shortlisted_by is a plain VARCHAR, not a foreign
+  // key (schema.prisma:232) — matched here as an exact string against the
+  // caller's own username, resolved server-side by the controller. A journey
+  // with no shortlist row (keyword shortlists carry no MRF) has no owner and
+  // is correctly excluded only while this filter is active, same as any
+  // other filter here.
+  if (filters.ownedByUsername) where.rpa_shortlisted_candidates = { shortlisted_by: filters.ownedByUsername };
   // A closed journey is finished work. setFinalOutcome's own notification says
   // "the card is about to leave the board" — it never did, because nothing
   // filtered on final_outcome, so finished candidates piled up in their last
   // column forever. Hidden by default; `includeClosed` brings them back for
   // anyone who wants the history.
   if (!filters.includeClosed) where.final_outcome = null;
+
+  // Discoverability for "Show closed" (G2.3): count what's hidden by the
+  // final_outcome exclusion above, scoped to the same position/MRF filters so
+  // the number on the checkbox matches what actually appears when it's ticked.
+  const closedWhere = { final_outcome: { not: null } };
+  if (filters.source) closedWhere.source = filters.source;
+  if (filters.mrfId) closedWhere.mrf_id = BigInt(filters.mrfId);
+  const closedCount = await prisma.rpa_candidate_pipeline.count({ where: closedWhere });
 
   const journeys = await prisma.rpa_candidate_pipeline.findMany({
     where,
@@ -352,6 +371,7 @@ export async function listPipeline(filters = {}) {
       // cancelled (Q34) must flag too. The mrf include is unfiltered, so
       // closed_at is already on the row.
       mrf_closed: isMrfClosed(j.rpa_shortlisted_candidates?.mrf),
+      owner: j.rpa_shortlisted_candidates?.shortlisted_by || null,
       source: j.source,
       vendor_email: j.vendor_email,
       is_paused: j.is_paused,
@@ -384,6 +404,7 @@ export async function listPipeline(filters = {}) {
     positions,
     total: cards.length,
     filteredTotal: filtered.length,
+    closedCount,
   };
 }
 

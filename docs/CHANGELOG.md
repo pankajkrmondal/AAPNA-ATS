@@ -5,6 +5,41 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-08-27 — Pipeline drawer: the conversation reply box gets a real rich-text editor
+**Why:** direct feedback on the Conversation panel shipped earlier the same day — the reply box was
+plain single-line text, unlike every other email-composing surface in the app. Full write-up:
+[CHANGES-2026-08-27-conversation-reply-rich-text.md](./changelog/CHANGES-2026-08-27-conversation-reply-rich-text.md).
+
+- Swapped the plain `<Input>` for `EmailEditorTabs` (the same rich-text editor used everywhere
+  else), called bare/no-wrapper so a reply doesn't inherit the branded email shell — mirrors
+  `DecisionEmailModal.jsx`'s existing no-wrapper usage. No new dependency, no backend change.
+- Along the way, found and fixed two latent bugs in how the shared editor behaves on a genuinely
+  empty body (a case none of its other callers ever hit): a literal "Empty." placeholder leaking
+  into the reply, and the editor not visually clearing after a successful send (it's
+  "uncontrolled after mount"). Both fixed at this call site only.
+- `npx vite build` clean; manually verified in-browser (toolbar, bold formatting, empty/disabled
+  state, no Enter-to-send). No message was sent against real data during verification.
+
+## 2026-08-27 — Candidate Pipeline gap closeout: rejected filter, real conversations, my candidates
+**Why:** the Recruitment Team FAQ/gap doc's real remaining gaps (G2 remainder, G4, G6), after
+verifying against the live code that the doc's G1/G3/G2-core claims were already stale — those
+three shipped same-day on 2026-08-26 in a session the doc never saw. Full write-up:
+[CHANGES-2026-08-27-pipeline-gap-closeout.md](./changelog/CHANGES-2026-08-27-pipeline-gap-closeout.md).
+
+- **G2 remainder** — a "Rejected only" board filter, a "Show closed (N)" count, and a
+  reject-and-close checkbox in the outcome modal (two sequential API calls, not a combined one).
+- **G4** — a real Outlook "Conversation" tab in the pipeline drawer, alongside the existing
+  synthetic "Emails in this round" log. Reuses `screeningService.getOutlookConversations()`
+  (now accepting multiple addresses, matched via `emailMatchesSql()`) rather than forking a query.
+  Reply reuses the existing `/screening/outlook/reply` endpoint, which had a frontend wrapper but
+  was wired to no UI anywhere until now.
+- **G6** — a "my candidates" board filter, resolved server-side to the caller's own username. A
+  staging data-quality check first (only 36% of `shortlisted_by` values match a current username,
+  the rest are stale test data) — decided a plain string filter needs no new column or backfill.
+- **No schema change.** Targeted unit tests green (63+ across `emailMatchSql`, `shortlistStatus`,
+  `mrfClosure`, `pipelineAnalytics`, `csvExport`, `analyticsParams`); `vite build` clean after each
+  item. **G5 (click reduction) logged, not started this session.**
+
 ## 2026-08-26 — Closure follow-on: the requisition lifecycle closes both ways
 **Why:** the closure audit's remaining findings (§2.5–§2.7), built once the product owner answered
 **Q32–Q34**. Full write-up:

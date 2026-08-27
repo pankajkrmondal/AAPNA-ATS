@@ -12,6 +12,8 @@ import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney } from './pipeline.service.js';
 import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
+import { Prisma } from '@prisma/client';
+import { emailMatchesSql } from '../utils/emailMatch.js';
 
 /**
  * GET /api/screening/roles
@@ -2870,10 +2872,18 @@ export async function cancelInterview(pipelineId, reason, user) {
 }
 
 /**
- * Fetch Outlook conversations and group into threads (migrated from n8n)
+ * Fetch Outlook conversations and group into threads (migrated from n8n).
+ *
+ * @param {string|string[]} email - One address, or several (a candidate can
+ *   have more than one on file). Matched with emailMatchesSql() rather than a
+ *   plain equality on both sides of the join: sc.candidate_email itself can
+ *   hold more than one address in a single field, same as rpa_cv."EmailID"
+ *   (see emailMatch.js) — a caller like the pipeline drawer, which knows all
+ *   of a candidate's addresses, can pass every one of them at once instead of
+ *   only ever finding threads filed under their primary address.
  */
 export async function getOutlookConversations(email) {
-  const query = `
+  const messages = await prisma.$queryRaw`
     SELECT
       m.id,
       m.graph_message_id,
@@ -2912,12 +2922,10 @@ export async function getOutlookConversations(email) {
     ) ob ON true
     WHERE m.graph_message_id IS NOT NULL AND m.graph_message_id != 'undefined'
       AND m.conversation_id IS NOT NULL AND m.conversation_id != 'undefined'
-      AND LOWER(COALESCE(sc.candidate_email, ob.ob_email)) = LOWER($1)
+      AND ${emailMatchesSql(Prisma.sql`COALESCE(sc.candidate_email, ob.ob_email)`, email)}
     ORDER BY COALESCE(m.sent_at, m.created_at) ASC
     LIMIT 500
   `;
-
-  const messages = await prisma.$queryRawUnsafe(query, email);
   const threadMap = {};
 
   for (const msg of messages) {

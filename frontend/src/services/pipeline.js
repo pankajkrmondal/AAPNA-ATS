@@ -8,7 +8,8 @@ import api from './api';
 const pipelineService = {
   /**
    * Board data: columns (stages) + cards (candidate-per-MRF journeys), filterable.
-   * @param {Object} [filters] - { source, on_hold_only, mrf_id, stuck_days, position }
+   * @param {Object} [filters] - { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, owned_by }
+   *   `owned_by: 'me'` is resolved server-side to the caller's own username (G6) — never send a user id/name directly.
    * @returns {Promise<{ data: { stages: Array, columns: Array, positions: Array } }>}
    */
   listPipeline(filters = {}) {
@@ -76,6 +77,19 @@ const pipelineService = {
    */
   getPipelineDetail(id) {
     return api.get(`/pipeline/${id}`);
+  },
+
+  /**
+   * The real Outlook thread for this candidate (G4) — every address on file,
+   * not just the synthetic pipeline-event email log the drawer otherwise
+   * shows. Reply goes through screeningService.replyToOutlookConversation —
+   * same Graph-backed endpoint the Candidate Screening page uses, no second
+   * reply implementation.
+   * @param {number} id
+   * @returns {Promise<{ data: { success: boolean, threads: Array } }>}
+   */
+  getConversations(id) {
+    return api.get(`/pipeline/${id}/conversations`);
   },
 
   /**

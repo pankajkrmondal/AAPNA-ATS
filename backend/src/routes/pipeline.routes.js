@@ -74,6 +74,11 @@ router.use('/assessment-import', assessmentImportRoutes);
 
 /** GET /api/pipeline/:id — full journey detail (feeds the per-round drawer). */
 router.get('/:id', pipelineController.getPipelineDetail);
+/** GET /api/pipeline/:id/conversations — real Outlook thread (G4), not the
+ * synthetic pipeline-event email log. Nested under "/:id/", so — unlike
+ * "/analytics" and "/export" above — it cannot be captured by the bare
+ * "/:id" route regardless of registration order. */
+router.get('/:id/conversations', pipelineController.getPipelineConversations);
 /** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
 router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
 /** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */

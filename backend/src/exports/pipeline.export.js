@@ -45,7 +45,9 @@ export function buildPipelineWhere(filters = {}) {
   const where = {};
   if (filters.source) where.source = filters.source;
   if (filters.onHoldOnly) where.current_stage_status = 'hold';
+  if (filters.rejectedOnly) where.current_stage_status = 'rejected';
   if (filters.mrfId) where.mrf_id = BigInt(filters.mrfId);
+  if (filters.ownedByUsername) where.rpa_shortlisted_candidates = { shortlisted_by: filters.ownedByUsername };
   if (!filters.includeClosed) where.final_outcome = null;
   return where;
 }
@@ -78,6 +80,7 @@ export const columns = [
       || '',
   },
   { header: 'MRF ID', key: 'mrf_id' },
+  { header: 'Shortlisted By', value: (j) => j.rpa_shortlisted_candidates?.shortlisted_by || '' },
   // Labels, never the raw stage_key — the CSV must read like the board. The
   // label comes from rpa_pipeline_stages, which is admin-editable, so it is
   // resolved per-fetch rather than from a hardcoded map.
@@ -113,17 +116,21 @@ export const columns = [
 /** Board filters arrive as snake_case query params. */
 export function parseFilters(req) {
   const {
-    position, source, on_hold_only: onHoldOnly, stuck_days: stuckDays,
-    include_closed: includeClosed, mrf_id: mrfId,
+    position, source, on_hold_only: onHoldOnly, rejected_only: rejectedOnly, stuck_days: stuckDays,
+    include_closed: includeClosed, mrf_id: mrfId, owned_by: ownedBy,
   } = req.query;
 
   return {
     position: position || undefined,
     source: source || undefined,
     onHoldOnly: onHoldOnly === 'true' || onHoldOnly === '1',
+    rejectedOnly: rejectedOnly === 'true' || rejectedOnly === '1',
     stuckDays: stuckDays ? Number(stuckDays) : undefined,
     includeClosed: includeClosed === 'true' || includeClosed === '1',
     mrfId: mrfId || undefined,
+    // Same server-side resolution as listPipeline — never trust a
+    // client-supplied identity for "my candidates".
+    ownedByUsername: ownedBy === 'me' ? req.user?.username : undefined,
   };
 }
 
@@ -144,6 +151,7 @@ export async function fetch({ filters, max }) {
           candidate_name: true,
           candidate_email: true,
           position_applied: true,
+          shortlisted_by: true,
           mrf: { select: { position_hiring_for: true } },
         },
       },

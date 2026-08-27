@@ -5,6 +5,42 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-08-27 — Conversation reply box: plain text → rich text
+
+Backend write-up: [CHANGES-2026-08-27-conversation-reply-rich-text.md](../docs/changelog/CHANGES-2026-08-27-conversation-reply-rich-text.md).
+
+`PipelineDrawer.jsx`'s "Conversation with candidate" panel (shipped earlier the same day) had a
+single-line plain-text reply box. It now uses the same rich-text editor as every other
+email-composing surface in the app — Editor / HTML Code / Live Preview tabs, with a
+Bold/Italic/Underline/lists/link/image toolbar — rendered as a bare, undecorated body (no branded
+AAPNA header/footer, since a reply shouldn't look like a shortlist notice). Enter now inserts a
+newline instead of sending; the "Reply" button, moved below the editor, is the only way to send.
+
+## 2026-08-27 — Pipeline board: rejected filter, real conversations, my candidates
+
+Backend write-up: [CHANGES-2026-08-27-pipeline-gap-closeout.md](../docs/changelog/CHANGES-2026-08-27-pipeline-gap-closeout.md).
+
+### `Pipeline.jsx` — three new filter-bar controls
+
+- **"Rejected only"** checkbox, alongside "On Hold only" (the two are mutually exclusive — checking
+  one unchecks the other, since both read the same underlying stage-status column).
+- **"Show closed"** now shows a count — `Show closed (48)` — so the hidden history is discoverable
+  instead of a checkbox with no indication of what it reveals.
+- **"My candidates"** toggle — filters to journeys shortlisted by the current user. A view, not a
+  permission: clearing it always shows the full shared board. The card's secondary line now also
+  shows who shortlisted them (`position · source · owner`).
+
+### `PipelineDrawer.jsx` — reject-and-close, and a real Conversations panel
+
+- The outcome modal's Reject flow gained a **"Close this candidate's record as Rejected"**
+  checkbox — defaults on for a normal interview round, off for the Zeko screening rounds. Saves a
+  separate trip to the standalone "Close this candidate's record" button for the common case.
+- A new collapsed-by-default **Conversation with candidate** panel shows the real Outlook thread
+  (every message, every address on file), distinct from the existing "Emails in this round" log,
+  which stays exactly as it was — it answers "did the system send it," not "what did they say."
+  Includes a reply box wired to the same Graph-backed endpoint Candidate Screening's Conversations
+  modal uses.
+
 ## 2026-08-26 — Candidate closure: the actions that were missing, and the copy that was wrong
 
 Backend write-up: [CHANGES-2026-08-26-candidate-closure-graceful-exit.md](../docs/changelog/CHANGES-2026-08-26-candidate-closure-graceful-exit.md).
