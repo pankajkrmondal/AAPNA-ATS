@@ -93,6 +93,18 @@ export function nonProdSafeAttendees(attendees) {
 }
 
 /**
+ * Our attendee shape -> Graph's, with the non-prod substitution applied. Used by
+ * BOTH the create and the patch path so an event can never be written with a
+ * guarded list on one and an unguarded one on the other.
+ */
+function toGraphAttendees(attendees) {
+  return nonProdSafeAttendees(attendees.filter((a) => a?.email)).map((a) => ({
+    emailAddress: { address: a.email, name: a.name || a.email },
+    type: 'required',
+  }));
+}
+
+/**
  * Creates an Outlook event (with a Teams meeting when the tenant allows it) on
  * the recruitment mailbox, inviting the candidate and the interviewer.
  *
@@ -116,17 +128,13 @@ export async function createInterviewEvent({ subject, bodyHtml, start, end, atte
   }
 
   const mailbox = config.microsoft.calendarMailbox;
-  const validAttendees = nonProdSafeAttendees(attendees.filter((a) => a?.email));
 
   const event = {
     subject,
     body: { contentType: 'HTML', content: bodyHtml },
     start: { dateTime: start.toISOString(), timeZone: 'UTC' },
     end: { dateTime: end.toISOString(), timeZone: 'UTC' },
-    attendees: validAttendees.map((a) => ({
-      emailAddress: { address: a.email, name: a.name || a.email },
-      type: 'required',
-    })),
+    attendees: toGraphAttendees(attendees),
     isOnlineMeeting: true,
     onlineMeetingProvider: 'teamsForBusiness',
     allowNewTimeProposals: false,
@@ -244,9 +252,14 @@ export async function getOnlineMeetingDetails(joinUrl) {
  * @param {Date} params.start
  * @param {Date} params.end
  * @param {string} [params.subject] - omitted leaves the existing subject alone
+ * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'}>} [params.attendees]
+ *   Re-states the guest list on the event. Omitted leaves the existing one
+ *   alone; passing it is what lets a reschedule pick up a changed panel AND
+ *   heal an event booked before the non-prod attendee guard existed, whose
+ *   real candidate address would otherwise ride along forever (see below).
  * @returns {Promise<{ok: boolean, eventId: string|null, joinUrl: string|null, onlineMeetingId: string|null, meetingId: string|null, passcode: string|null, error: string|null}>}
  */
-export async function updateInterviewEventTime(eventId, { start, end, subject } = {}) {
+export async function updateInterviewEventTime(eventId, { start, end, subject, attendees } = {}) {
   const failed = (error) => ({
     ok: false, eventId: null, joinUrl: null, onlineMeetingId: null, meetingId: null, passcode: null, error,
   });
@@ -259,6 +272,15 @@ export async function updateInterviewEventTime(eventId, { start, end, subject } 
       start: { dateTime: start.toISOString(), timeZone: 'UTC' },
       end: { dateTime: end.toISOString(), timeZone: 'UTC' },
       ...(subject ? { subject } : {}),
+      // Graph replaces the whole collection, so this re-asserts the guarded list
+      // over whatever is on the event. That matters most for events created
+      // BEFORE nonProdSafeAttendees existed: the patch path used to move only
+      // start/end, so a real candidate address written back then stayed on the
+      // event and Outlook kept mailing them an "Updated:" notice from staging on
+      // every reschedule. Re-stating the list drops them once and for all.
+      ...(Array.isArray(attendees) && attendees.length
+        ? { attendees: toGraphAttendees(attendees) }
+        : {}),
     };
     const res = await fetch(
       `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(eventId)}`,
