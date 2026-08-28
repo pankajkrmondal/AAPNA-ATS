@@ -1116,12 +1116,26 @@ export async function rescheduleInterviewRound(pipelineId, {
   //
   //    Patching start/end leaves onlineMeeting alone: the join URL, meeting id
   //    and passcode survive, and attendees get a normal "Updated:" notice.
+  //
+  //    The guest list goes with the patch. It used not to, which left the panel
+  //    on an event stale when the recruiter changed it mid-journey, and — worse
+  //    — meant an event booked before the non-prod attendee guard kept its REAL
+  //    candidate address for life, so staging went on mailing that candidate an
+  //    "Updated:"/"Canceled:" notice from Outlook every time the round moved.
+  const attendees = [
+    liveCandidateEmail(candidate)
+      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
+      : null,
+    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
+  ].filter(Boolean);
+
   const sendsInvitesForStage = stageSendsInvites(stageKey);
   const patched = sendsInvitesForStage
     ? await updateInterviewEventTime(oldRow.graph_event_id, {
       start,
       end,
       subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+      attendees,
     })
     : { ok: false, error: 'stage does not send invites' };
 
@@ -1156,12 +1170,6 @@ export async function rescheduleInterviewRound(pipelineId, {
   //    the new row. Only fall back to creating one when the patch could not
   //    happen (calendar off, no prior event, or Graph refused the PATCH).
   const sendsInvites = sendsInvitesForStage;
-  const attendees = [
-    liveCandidateEmail(candidate)
-      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
-      : null,
-    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
-  ].filter(Boolean);
 
   let calendar;
   if (patched.ok) {
