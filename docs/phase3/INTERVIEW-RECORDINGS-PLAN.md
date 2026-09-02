@@ -519,8 +519,8 @@ Recording a person requires telling them. Concretely:
 | Phase | Deliverable | Depends on | Est. |
 |---|---|---|---|
 | **0** | IT grants `OnlineMeetingRecording.Read.All` (+ transcript); verify Teams policies; confirm quota | IT | — |
-| **1** | ✅ **BUILT 2026-09-01** — `applyMeetingOptions()` in `graphCalendar.service.js`; `applyRecordingOptions()` wired into schedule + reschedule; `record_auto_applied_at` / `record_policy_error` columns + DDL; drawer shows "Recording: ON". **DDL not yet applied to any database** — see §11.1 | — | done |
-| **2** | ✅ **BUILT 2026-09-01** — DDL + Prisma for `rpa_interview_recording`; `graphRecording.service.js`; `jobs/interviewRecordings.js` discovery sweep; link persisted. **DDL not yet applied** — see §11.2 | Phase 1 | done |
+| **1** | ✅ **BUILT 2026-09-01** — `applyMeetingOptions()` in `graphCalendar.service.js`; `applyRecordingOptions()` wired into schedule + reschedule; `record_auto_applied_at` / `record_policy_error` columns + DDL; drawer shows "Recording: ON". DDL applied; **proven in a live call** (§11.1a) | — | done |
+| **2** | ✅ **BUILT 2026-09-01** — DDL + Prisma for `rpa_interview_recording`; `graphRecording.service.js`; `jobs/interviewRecordings.js` discovery sweep; link persisted. DDL applied; sweep live and **linked the real recording** | Phase 1 | done |
 | **3** | ✅ **BUILT 2026-09-01** — `interviewRecording.service.js`, gated list endpoint, **audited streaming proxy**, 10 unit tests. See §11.3 | Phase 2 | done |
 | **4** | ✅ **BUILT 2026-09-01** — drawer round panel + scorecard-report surfaces, in-app player. See §11.4 | Phase 3 | done |
 | **5** | ✅ **BUILT + VERIFIED 2026-09-01** — `uploadStreamToOneDrive()` (resumable session), archive pass, retry/give-up, playback prefers the copy. See §11.5 | Phase 2 | done |
@@ -872,7 +872,29 @@ All five design decisions are settled (§0). What remains is external:
 | 3 | Confirm which mailbox organizes (§8.1); if not `pkmondal@aapnainfotech.com`, extend the application access policy to it | Pankaj + IT | ⏳ assumed unchanged | Phase 1 |
 | 4 | OneDrive quota headroom on the organizer mailbox — **now more important**: with expiry Off, nothing is ever reclaimed | IT | ⏳ | Phase 5 |
 | 5 | Sign-off on the candidate recording notice, incl. the 12-month retention statement | Pankaj / HR | ⏳ | Phase 6 |
-| 6 | Decide whether the archive is worth it *given* expiry is Off — the case is now offboarding risk, not deletion risk (§4.1) | Pankaj | ⏳ | Phase 5 only |
+| 6 | Decide whether the archive is worth it *given* expiry is Off | Pankaj | ✅ **yes — built and verified**; `Recordings_ATS` chosen as the folder | — |
+
+### 13.1 Built but never exercised
+
+Honest separation, because "the code exists" and "we have seen it work" are different
+claims and only the second is worth relying on.
+
+| Path | State |
+|---|---|
+| Auto-record on booking | ✅ **proven** — live call, both clients showed the recording banner |
+| Discovery sweep | ✅ **proven** — linked the real recording, `recording_status='available'` |
+| Archive to `Recordings_ATS` | ✅ **proven** — 1,501,627 bytes, matches source exactly |
+| Playback from the archive | ✅ **proven at the Graph layer** — HTTP 206, `video/mp4`, seeking works |
+| Playback **through the ATS player in a browser** | ⚠️ **never confirmed.** The upstream is proven and the buttons render, but nobody has reported the video actually playing. The `?token=` query-string auth path in particular has not been exercised end to end. |
+| Role gate (403 for a vendor) | ⚠️ unit-tested only; no vendor account has hit the endpoint |
+| Audit row on view | ⚠️ never written — no one has played a recording through the app yet |
+| Consent notice in a real email | ⚠️ unit-tested only; **no sent invitation has yet carried it** (the notice was added after the last booking) |
+| `flagMissingRecordings` | ⚠️ never fired — needs a held round, 6h old, with no recording |
+| `purgeExpiredRecordings` | ⚠️ never run — needs a journey closed 12+ months ago |
+| Settings card | ⚠️ built; not yet confirmed visible by anyone |
+
+None of these are known-broken. They are simply untested paths, and the first three are the
+ones worth deliberately exercising before this is relied on in production.
 
 **Phase 1 is unblocked.** `OnlineMeetings.ReadWrite.All` is granted, the meeting policy is
 correct, and the application access policy covers the current mailbox — auto-recording can be
