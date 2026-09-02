@@ -150,6 +150,64 @@ export const stageIsRecorded = (stageKey) =>
  * @returns {Promise<{appliedAt: Date|null, error: string|null}>}
  *   Both null = not attempted (round not recorded, or the feature is off).
  */
+/**
+ * Undoes a booking that died between its INSERT and its final UPDATE.
+ *
+ * THE PROBLEM THIS SOLVES: a booking is written first (so it survives a Graph
+ * outage), then enriched with the event id, join URL and invite timestamp in a
+ * second statement minutes later. Anything that throws in between — a Graph
+ * failure, a template error, a Prisma mismatch after a schema change — leaves a
+ * row with status='scheduled' and nothing else. getLiveSchedule() then reports
+ * the round as already booked, so every retry is rejected with "This round
+ * already has a scheduled interview", and the only cure is a human cancelling a
+ * booking that never really existed. That is exactly what happened on
+ * 2026-09-01 when the Prisma client was a migration behind.
+ *
+ * A database transaction cannot fix this: the window spans several Graph calls
+ * that have taken 100+ seconds in practice, and holding a transaction open
+ * across them would be far worse than the bug. So this is a compensating action
+ * instead — undo what the failed attempt created.
+ *
+ * ONLY safe when nothing was communicated. Once an invitation has reached the
+ * candidate or the panel, the round genuinely IS booked; erasing it would leave
+ * people holding an invitation to a meeting the ATS denies exists. The caller
+ * decides that and passes it in.
+ *
+ * @param {bigint} scheduleId
+ * @param {object} calendar - the createInterviewEvent() result, if we got one
+ * @param {Error} err - what went wrong, recorded on the row for diagnosis
+ */
+export async function rollbackFailedBooking(scheduleId, calendar, err) {
+  // Cancel the Teams meeting first: leaving it would put a live invitation on
+  // the panel's calendar for a booking the ATS has just disowned.
+  if (calendar?.eventId) {
+    try {
+      await cancelInterviewEvent(calendar.eventId, 'This booking could not be completed.');
+    } catch (e) {
+      logger.error(`Booking rollback: could not cancel event ${calendar.eventId} — ${e.message}. A stray meeting may remain on the calendar.`);
+    }
+  }
+  try {
+    // Cancelled rather than deleted: getLiveSchedule() ignores cancelled rows,
+    // so the round is immediately bookable again, and the failed attempt stays
+    // visible with its reason instead of vanishing.
+    await prisma.rpa_interview_schedule.update({
+      where: { id: scheduleId },
+      data: {
+        status: 'cancelled',
+        cancelled_at: new Date(),
+        cancel_reason: `Booking failed before it completed: ${err.message}`.slice(0, 500),
+        modified_at: new Date(),
+      },
+    });
+    logger.warn(`Booking rollback: schedule ${scheduleId} rolled back after "${err.message}". The round is bookable again.`);
+  } catch (e) {
+    // Both statements failing means the database itself is unreachable; say so
+    // loudly, because this is the one path that still leaves a phantom.
+    logger.error(`Booking rollback FAILED for schedule ${scheduleId} — ${e.message}. A phantom booking may block this round until someone cancels it by hand.`);
+  }
+}
+
 async function applyRecordingOptions(stageKey, onlineMeetingId) {
   if (!stageIsRecorded(stageKey) || !isMeetingRecordAuto()) return { appliedAt: null, error: null };
   const result = await applyMeetingOptions(onlineMeetingId);
@@ -798,147 +856,182 @@ export async function scheduleInterviewRound(pipelineId, {
     ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
   ].filter(Boolean);
 
-  const calendar = sendsInvites
-    ? await createInterviewEvent({
-      subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
-      start,
-      end,
-      attendees,
-    })
-    : NO_CALENDAR;
-
-  // 2b) Make the meeting record itself, and demote the candidate to attendee so
-  //     they cannot stop it. Best-effort: a failure is recorded on the row (and
-  //     surfaced in the drawer) rather than costing the recruiter the booking.
-  const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
-
-  // 3) Notify both sides. Recipients follow the usual prod/non-prod redirect.
-  //    Copy comes from the modal when the recruiter edited it, else the seeded
-  //    templates compiled with this booking's real details (incl. Teams link).
-  const when = fmtIst(start);
-  const defaults = await buildInterviewEmails('schedule', {
-    candidate,
-    stageLabel,
-    position,
-    when,
-    durationMinutes,
-    joinUrl: calendar.joinUrl,
-    meetingId: calendar.meetingId,
-    passcode: calendar.passcode,
-    reason: null,
-    interviewerName: resolvedName,
-    interviewerEmail: interviewerEmailList,
-  });
-
-  // The recruiter-edited copy from the modal was previewed before the meeting
-  // existed, so ensure the Teams block is present on the body actually sent.
-  // Branding is applied AFTER that, so the Teams block lands inside the card
-  // rather than after </html> (plan §3.2).
-  // Each side's header headline is its own final subject.
-  const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
-  const panelFinalSubject = panelSubject ?? defaults.panel.subject;
-  // The recording notice is applied AFTER the Teams block and BEFORE branding,
-  // so it lands inside the branded card rather than after </html> — same
-  // reasoning as the Teams block above.
-  const isRecorded = Boolean(recording.appliedAt);
-  const candidateEmail = {
-    subject: candidateFinalSubject,
-    body: wrapBrandedEmail(
-      ensureRecordingNotice(
-        ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
-        'candidate', isRecorded
-      ),
-      interviewWrapOpts(candidateFinalSubject)
-    ),
-  };
-  const panelEmail = {
-    subject: panelFinalSubject,
-    body: wrapBrandedEmail(
-      ensureRecordingNotice(
-        ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
-        'panel', isRecorded
-      ),
-      interviewWrapOpts(panelFinalSubject)
-    ),
-  };
-
-  const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
+  // ── DANGER WINDOW ────────────────────────────────────────────────────────
+  // The booking row now exists but carries none of its detail. Everything from
+  // here to the final update is wrapped so that a failure rolls the row back
+  // rather than stranding it as a phantom that blocks the round forever. See
+  // rollbackFailedBooking() for why this is a compensating action and not a
+  // transaction.
+  let calendar = NO_CALENDAR;
   let inviteSentAt = null;
-  if (sendsInvites && candidateTo && candidateEmail.subject) {
-    try {
-      await sendGraphEmail({
-        sender: config.microsoft.defaultSender,
-        to: candidateTo,
-        subject: candidateEmail.subject,
-        html: candidateEmail.body,
-      });
-      inviteSentAt = new Date();
-    } catch (err) {
-      logger.error(`Interview schedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+  let updated;
+  let when = fmtIst(start);
+  try {
+    calendar = sendsInvites
+      ? await createInterviewEvent({
+        subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+        bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
+        start,
+        end,
+        attendees,
+      })
+      : NO_CALENDAR;
+
+    // 2b) Make the meeting record itself, and demote the candidate to attendee so
+    //     they cannot stop it. Best-effort: a failure is recorded on the row (and
+    //     surfaced in the drawer) rather than costing the recruiter the booking.
+    const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
+
+    // 3) Notify both sides. Recipients follow the usual prod/non-prod redirect.
+    //    Copy comes from the modal when the recruiter edited it, else the seeded
+    //    templates compiled with this booking's real details (incl. Teams link).
+    const defaults = await buildInterviewEmails('schedule', {
+      candidate,
+      stageLabel,
+      position,
+      when,
+      durationMinutes,
+      joinUrl: calendar.joinUrl,
+      meetingId: calendar.meetingId,
+      passcode: calendar.passcode,
+      reason: null,
+      interviewerName: resolvedName,
+      interviewerEmail: interviewerEmailList,
+    });
+
+    // The recruiter-edited copy from the modal was previewed before the meeting
+    // existed, so ensure the Teams block is present on the body actually sent.
+    // Branding is applied AFTER that, so the Teams block lands inside the card
+    // rather than after </html> (plan §3.2).
+    // Each side's header headline is its own final subject.
+    const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
+    const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+    // The recording notice is applied AFTER the Teams block and BEFORE branding,
+    // so it lands inside the branded card rather than after </html> — same
+    // reasoning as the Teams block above.
+    const isRecorded = Boolean(recording.appliedAt);
+    const candidateEmail = {
+      subject: candidateFinalSubject,
+      body: wrapBrandedEmail(
+        ensureRecordingNotice(
+          ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+          'candidate', isRecorded
+        ),
+        interviewWrapOpts(candidateFinalSubject)
+      ),
+    };
+    const panelEmail = {
+      subject: panelFinalSubject,
+      body: wrapBrandedEmail(
+        ensureRecordingNotice(
+          ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+          'panel', isRecorded
+        ),
+        interviewWrapOpts(panelFinalSubject)
+      ),
+    };
+
+    const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
+    if (sendsInvites && candidateTo && candidateEmail.subject) {
+      try {
+        await sendGraphEmail({
+          sender: config.microsoft.defaultSender,
+          to: candidateTo,
+          subject: candidateEmail.subject,
+          html: candidateEmail.body,
+        });
+        inviteSentAt = new Date();
+      } catch (err) {
+        logger.error(`Interview schedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+      }
     }
+
+    const { to: interviewerTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
+    if (sendsInvites && interviewerTo && panelEmail.subject) {
+      try {
+        // OPERATOR_ADDRESSED: the panel address was typed into the Schedule modal
+        // for this very booking, so it is reached in every environment.
+        await sendGraphEmail({
+          sender: config.microsoft.defaultSender,
+          to: interviewerTo,
+          subject: panelEmail.subject,
+          html: panelEmail.body,
+          allowRealRecipients: true,
+        });
+        inviteSentAt = inviteSentAt || new Date();
+      } catch (err) {
+        logger.error(`Interview schedule: interviewer email failed for pipeline ${pipelineId}: ${err.message}`);
+      }
+    }
+
+    updated = await prisma.rpa_interview_schedule.update({
+      where: { id: row.id },
+      data: {
+        graph_event_id: calendar.eventId,
+        teams_join_url: calendar.joinUrl,
+        // Stored so the occurrence sweep can read the Teams attendance report
+        // after the meeting ends (null unless the calendar integration is on).
+        online_meeting_id: calendar.onlineMeetingId,
+        // Dial-in details shown in the invite emails (mirror the Outlook block).
+        teams_meeting_id: calendar.meetingId,
+        teams_passcode: calendar.passcode,
+        // Null here means this round is NOT recording — either the feature is off,
+        // the round is not in the recorded set, or Graph refused the PATCH (in
+        // which case record_policy_error says why).
+        record_auto_applied_at: recording.appliedAt,
+        record_policy_error: recording.error,
+        invite_sent_at: inviteSentAt,
+        modified_at: new Date(),
+      },
+    });
+  } catch (err) {
+    // Nothing reached anybody → undo the booking so the round stays bookable.
+    // Something DID reach somebody → the round is genuinely booked, however
+    // incomplete the row is; erasing it would strand a real invitation. Keep it
+    // and shout, so a human can repair rather than a recruiter be told to retry
+    // a booking that already exists.
+    if (!inviteSentAt) {
+      await rollbackFailedBooking(row.id, calendar, err);
+    } else {
+      logger.error(
+        `Interview schedule: booking ${row.id} (pipeline ${pipelineId} ${stageKey}) failed AFTER invitations went out — ${err.message}. `
+        + 'The booking is kept because people have already been invited, but its row is incomplete; check it in the drawer.'
+      );
+    }
+    throw err;
   }
 
-  const { to: interviewerTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
-  if (sendsInvites && interviewerTo && panelEmail.subject) {
-    try {
-      // OPERATOR_ADDRESSED: the panel address was typed into the Schedule modal
-      // for this very booking, so it is reached in every environment.
-      await sendGraphEmail({
-        sender: config.microsoft.defaultSender,
-        to: interviewerTo,
-        subject: panelEmail.subject,
-        html: panelEmail.body,
-        allowRealRecipients: true,
-      });
-      inviteSentAt = inviteSentAt || new Date();
-    } catch (err) {
-      logger.error(`Interview schedule: interviewer email failed for pipeline ${pipelineId}: ${err.message}`);
-    }
+  // ── PAST THE DANGER WINDOW ───────────────────────────────────────────────
+  // The booking is complete and committed. What follows is bookkeeping, and a
+  // failure in it must NOT surface as a failed booking: doing so would send the
+  // recruiter round again to a round that is now genuinely booked, and the
+  // second attempt would be refused with "already has a scheduled interview" —
+  // the very symptom this rewrite exists to remove.
+  try {
+    // Record the booking on the journey's audit trail.
+    await prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: stageKey,
+        event_type: 'note',
+        notes: `${stageLabel} scheduled for ${when}${resolvedName ? ` with ${resolvedName}` : ''}${calendar.joinUrl ? ' (Teams)' : ''}${sendsInvites ? '' : ' — coordinated manually, no invite sent'}`,
+        acted_by: actedBy || null,
+      },
+    });
+
+    // Vendor status line (M6). Says the round was booked — never the time, the
+    // panel, or the Teams link, none of which are a vendor's business.
+    await notifyVendor({
+      pipelineRow: pipeline,
+      candidate: { name: candidate?.candidate_name },
+      eventType: VENDOR_EVENTS.INTERVIEW_SCHEDULED,
+      stageKey,
+      stageLabel,
+      positionLabel: position,
+    });
+  } catch (err) {
+    logger.error(`Interview schedule: booking ${row.id} succeeded but its follow-up bookkeeping failed — ${err.message}`);
   }
-
-  const updated = await prisma.rpa_interview_schedule.update({
-    where: { id: row.id },
-    data: {
-      graph_event_id: calendar.eventId,
-      teams_join_url: calendar.joinUrl,
-      // Stored so the occurrence sweep can read the Teams attendance report
-      // after the meeting ends (null unless the calendar integration is on).
-      online_meeting_id: calendar.onlineMeetingId,
-      // Dial-in details shown in the invite emails (mirror the Outlook block).
-      teams_meeting_id: calendar.meetingId,
-      teams_passcode: calendar.passcode,
-      // Null here means this round is NOT recording — either the feature is off,
-      // the round is not in the recorded set, or Graph refused the PATCH (in
-      // which case record_policy_error says why).
-      record_auto_applied_at: recording.appliedAt,
-      record_policy_error: recording.error,
-      invite_sent_at: inviteSentAt,
-      modified_at: new Date(),
-    },
-  });
-
-  // Record the booking on the journey's audit trail.
-  await prisma.rpa_pipeline_stage_events.create({
-    data: {
-      pipeline_id: pipeline.id,
-      stage_key: stageKey,
-      event_type: 'note',
-      notes: `${stageLabel} scheduled for ${when}${resolvedName ? ` with ${resolvedName}` : ''}${calendar.joinUrl ? ' (Teams)' : ''}${sendsInvites ? '' : ' — coordinated manually, no invite sent'}`,
-      acted_by: actedBy || null,
-    },
-  });
-
-  // Vendor status line (M6). Says the round was booked — never the time, the
-  // panel, or the Teams link, none of which are a vendor's business.
-  await notifyVendor({
-    pipelineRow: pipeline,
-    candidate: { name: candidate?.candidate_name },
-    eventType: VENDOR_EVENTS.INTERVIEW_SCHEDULED,
-    stageKey,
-    stageLabel,
-    positionLabel: position,
-  });
 
   logger.info(`Interview scheduled: pipeline ${pipelineId} ${stageKey} at ${start.toISOString()} (calendar=${calendar.eventId ? 'yes' : isCalendarEnabled() ? 'failed' : 'disabled'}).`);
   return serialize(updated);
@@ -1282,100 +1375,127 @@ export async function rescheduleInterviewRound(pipelineId, {
   //    happen (calendar off, no prior event, or Graph refused the PATCH).
   const sendsInvites = sendsInvitesForStage;
 
+  // ── DANGER WINDOW (same shape as scheduleInterviewRound) ─────────────────
+  // Worse here than on a fresh booking: the OLD row has already been cancelled,
+  // so a failure now would leave the round with one cancelled booking and one
+  // phantom — no live interview, and no way to rebook without a hand cleanup.
   let calendar;
-  if (patched.ok) {
-    calendar = {
-      eventId: patched.eventId,
-      joinUrl: patched.joinUrl,
-      onlineMeetingId: patched.onlineMeetingId,
-      meetingId: patched.meetingId,
-      passcode: patched.passcode,
-      skipped: false,
-      error: null,
-    };
-  } else if (sendsInvites) {
-    calendar = await createInterviewEvent({
-      subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
-      start,
-      end,
-      attendees,
-    });
-  } else {
-    calendar = NO_CALENDAR;
-  }
-
-  // 3b) Re-assert auto-recording. Usually a no-op — the patched meeting keeps
-  //     its options — but it heals bookings made before this feature existed and
-  //     covers the cancel-and-recreate branch above, which mints a NEW meeting
-  //     carrying Teams' defaults (recording off, everyone a presenter).
-  const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
-
-  // 4) One "rescheduled" email per side, old → new time.
-  const when = fmtIst(start);
-  const defaults = await buildInterviewEmails('reschedule', {
-    candidate, stageLabel, position, when, previousWhen, durationMinutes,
-    joinUrl: calendar.joinUrl, meetingId: calendar.meetingId, passcode: calendar.passcode, reason: null,
-    interviewerName: resolvedName, interviewerEmail: interviewerEmailList,
-  });
-  const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
-  const panelFinalSubject = panelSubject ?? defaults.panel.subject;
-  const isRecorded = Boolean(recording.appliedAt);
-  const candidateEmail = {
-    subject: candidateFinalSubject,
-    body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded), interviewWrapOpts(candidateFinalSubject)),
-  };
-  const panelEmail = {
-    subject: panelFinalSubject,
-    body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded), interviewWrapOpts(panelFinalSubject)),
-  };
-
-  const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
   let inviteSentAt = null;
-  if (sendsInvites && candidateTo && candidateEmail.subject) {
-    try {
-      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body });
-      inviteSentAt = new Date();
-    } catch (err) {
-      logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+  let updated;
+  try {
+    if (patched.ok) {
+      calendar = {
+        eventId: patched.eventId,
+        joinUrl: patched.joinUrl,
+        onlineMeetingId: patched.onlineMeetingId,
+        meetingId: patched.meetingId,
+        passcode: patched.passcode,
+        skipped: false,
+        error: null,
+      };
+    } else if (sendsInvites) {
+      calendar = await createInterviewEvent({
+        subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
+        bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
+        start,
+        end,
+        attendees,
+      });
+    } else {
+      calendar = NO_CALENDAR;
     }
-  }
-  const { to: panelTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
-  if (sendsInvites && panelTo && panelEmail.subject) {
-    try {
-      // OPERATOR_ADDRESSED: panel address typed into the Reschedule modal.
-      await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body, allowRealRecipients: true });
-      inviteSentAt = inviteSentAt || new Date();
-    } catch (err) {
-      logger.error(`Interview reschedule: panel email failed for pipeline ${pipelineId}: ${err.message}`);
+
+    // 3b) Re-assert auto-recording. Usually a no-op — the patched meeting keeps
+    //     its options — but it heals bookings made before this feature existed and
+    //     covers the cancel-and-recreate branch above, which mints a NEW meeting
+    //     carrying Teams' defaults (recording off, everyone a presenter).
+    const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
+
+    // 4) One "rescheduled" email per side, old → new time.
+    const when = fmtIst(start);
+    const defaults = await buildInterviewEmails('reschedule', {
+      candidate, stageLabel, position, when, previousWhen, durationMinutes,
+      joinUrl: calendar.joinUrl, meetingId: calendar.meetingId, passcode: calendar.passcode, reason: null,
+      interviewerName: resolvedName, interviewerEmail: interviewerEmailList,
+    });
+    const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
+    const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+    const isRecorded = Boolean(recording.appliedAt);
+    const candidateEmail = {
+      subject: candidateFinalSubject,
+      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded), interviewWrapOpts(candidateFinalSubject)),
+    };
+    const panelEmail = {
+      subject: panelFinalSubject,
+      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded), interviewWrapOpts(panelFinalSubject)),
+    };
+
+    const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
+    if (sendsInvites && candidateTo && candidateEmail.subject) {
+      try {
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body });
+        inviteSentAt = new Date();
+      } catch (err) {
+        logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
+      }
     }
+    const { to: panelTo } = resolveRecipients('interviewScheduledPanel', interviewerEmailList);
+    if (sendsInvites && panelTo && panelEmail.subject) {
+      try {
+        // OPERATOR_ADDRESSED: panel address typed into the Reschedule modal.
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body, allowRealRecipients: true });
+        inviteSentAt = inviteSentAt || new Date();
+      } catch (err) {
+        logger.error(`Interview reschedule: panel email failed for pipeline ${pipelineId}: ${err.message}`);
+      }
+    }
+
+    updated = await prisma.rpa_interview_schedule.update({
+      where: { id: row.id },
+      data: { graph_event_id: calendar.eventId, teams_join_url: calendar.joinUrl, online_meeting_id: calendar.onlineMeetingId, teams_meeting_id: calendar.meetingId, teams_passcode: calendar.passcode, record_auto_applied_at: recording.appliedAt, record_policy_error: recording.error, invite_sent_at: inviteSentAt, modified_at: new Date() },
+    });
+  } catch (err) {
+    // Same rule as the fresh-booking path: roll back only while nothing has
+    // reached anybody. Note the new event is NOT cancelled when the reschedule
+    // PATCHED an existing meeting — that meeting belongs to the round, not to
+    // this attempt, and cancelling it would wipe out the booking we were only
+    // trying to move.
+    if (!inviteSentAt) {
+      await rollbackFailedBooking(row.id, patched.ok ? null : calendar, err);
+    } else {
+      logger.error(
+        `Interview reschedule: booking ${row.id} (pipeline ${pipelineId} ${stageKey}) failed AFTER invitations went out — ${err.message}. Kept, but incomplete.`
+      );
+    }
+    throw err;
   }
 
-  const updated = await prisma.rpa_interview_schedule.update({
-    where: { id: row.id },
-    data: { graph_event_id: calendar.eventId, teams_join_url: calendar.joinUrl, online_meeting_id: calendar.onlineMeetingId, teams_meeting_id: calendar.meetingId, teams_passcode: calendar.passcode, record_auto_applied_at: recording.appliedAt, record_policy_error: recording.error, invite_sent_at: inviteSentAt, modified_at: new Date() },
-  });
+  try {
+    await prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: stageKey,
+        event_type: 'note',
+        notes: `${stageLabel} rescheduled: ${previousWhen} → ${when}${resolvedName ? ` with ${resolvedName}` : ''}`,
+        acted_by: actedBy || null,
+      },
+    });
 
-  await prisma.rpa_pipeline_stage_events.create({
-    data: {
-      pipeline_id: pipeline.id,
-      stage_key: stageKey,
-      event_type: 'note',
-      notes: `${stageLabel} rescheduled: ${previousWhen} → ${when}${resolvedName ? ` with ${resolvedName}` : ''}`,
-      acted_by: actedBy || null,
-    },
-  });
-
-  // Vendor status line (M6) — the round moved; neither the old nor the new
-  // time goes out.
-  await notifyVendor({
-    pipelineRow: pipeline,
-    candidate: { name: candidate?.candidate_name },
-    eventType: VENDOR_EVENTS.INTERVIEW_RESCHEDULED,
-    stageKey,
-    stageLabel,
-    positionLabel: position,
-  });
+    // Vendor status line (M6) — the round moved; neither the old nor the new
+    // time goes out.
+    await notifyVendor({
+      pipelineRow: pipeline,
+      candidate: { name: candidate?.candidate_name },
+      eventType: VENDOR_EVENTS.INTERVIEW_RESCHEDULED,
+      stageKey,
+      stageLabel,
+      positionLabel: position,
+    });
+  } catch (err) {
+    // Bookkeeping only — the reschedule itself is committed. Surfacing this as a
+    // failure would send the recruiter back to a round that has already moved.
+    logger.error(`Interview reschedule: booking ${row.id} succeeded but its follow-up bookkeeping failed — ${err.message}`);
+  }
 
   logger.info(`Interview rescheduled: pipeline ${pipelineId} ${stageKey} ${previousWhen} -> ${start.toISOString()}.`);
   return serialize(updated);

@@ -3764,6 +3764,24 @@ html.theme-transition *::after {
   color: var(--text-muted, #9ca3af);
   box-shadow: none;
 }
+/* "Copy link" — an antd green Tag (so it matches "Held · scorecard sent" in both
+   themes without hardcoding a hex the theme algorithm would contradict), sized
+   to the small Button beside it. A Tag is 22px tall by default against the
+   button's controlHeightSM of 32, and the mismatch read as a misalignment rather
+   than a pair. Colours are deliberately NOT set here — they come from
+   .ant-tag-green. */
+.cp-recording-copy.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px; /* matches borderRadiusSM for Button, not Tag's own 6 */
+}
+
 /* The label, so the row reads as "recording" before the button is even seen.
    Carries the darker brand green so it stays legible against the light card. */
 .cp-recording-label {

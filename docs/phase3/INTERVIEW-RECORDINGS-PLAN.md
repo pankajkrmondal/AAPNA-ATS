@@ -519,8 +519,8 @@ Recording a person requires telling them. Concretely:
 | Phase | Deliverable | Depends on | Est. |
 |---|---|---|---|
 | **0** | IT grants `OnlineMeetingRecording.Read.All` (+ transcript); verify Teams policies; confirm quota | IT | — |
-| **1** | ✅ **BUILT 2026-09-01** — `applyMeetingOptions()` in `graphCalendar.service.js`; `applyRecordingOptions()` wired into schedule + reschedule; `record_auto_applied_at` / `record_policy_error` columns + DDL; drawer shows "Recording: ON". **DDL not yet applied to any database** — see §11.1 | — | done |
-| **2** | ✅ **BUILT 2026-09-01** — DDL + Prisma for `rpa_interview_recording`; `graphRecording.service.js`; `jobs/interviewRecordings.js` discovery sweep; link persisted. **DDL not yet applied** — see §11.2 | Phase 1 | done |
+| **1** | ✅ **BUILT 2026-09-01** — `applyMeetingOptions()` in `graphCalendar.service.js`; `applyRecordingOptions()` wired into schedule + reschedule; `record_auto_applied_at` / `record_policy_error` columns + DDL; drawer shows "Recording: ON". DDL applied; **proven in a live call** (§11.1a) | — | done |
+| **2** | ✅ **BUILT 2026-09-01** — DDL + Prisma for `rpa_interview_recording`; `graphRecording.service.js`; `jobs/interviewRecordings.js` discovery sweep; link persisted. DDL applied; sweep live and **linked the real recording** | Phase 1 | done |
 | **3** | ✅ **BUILT 2026-09-01** — `interviewRecording.service.js`, gated list endpoint, **audited streaming proxy**, 10 unit tests. See §11.3 | Phase 2 | done |
 | **4** | ✅ **BUILT 2026-09-01** — drawer round panel + scorecard-report surfaces, in-app player. See §11.4 | Phase 3 | done |
 | **5** | ✅ **BUILT + VERIFIED 2026-09-01** — `uploadStreamToOneDrive()` (resumable session), archive pass, retry/give-up, playback prefers the copy. See §11.5 | Phase 2 | done |
@@ -834,6 +834,47 @@ quotes 12 months and the purge enforces it, and those two numbers must not drift
 Phases 1–4 deliver the business ask (recording happens, link is visible to the right people).
 Phase 5 is what makes it durable. **~8–9 working days** after the grants land.
 
+### 11.7 Share link — "Copy link" next to Watch (2026-09-02)
+
+Requirement 6's second half ("so a recruiter can share it with Sanghamitra / Abhijit") had no
+button: the drawer and the scorecard report could *play* a recording but offered nothing to paste
+into an email. Every recording row now carries **Watch** and **Copy link** as one joined control,
+on every recorded round — `tech1`, `tech2`, `tech3`, `hr_round`, `ceo` — in both surfaces.
+
+Files: `PipelineDrawer.jsx` (`recordingShareLink`, `copyToClipboard`, `stageKeyLabel`,
+`RoundRecordings`, drawer-level `RecordingPlayerModal` + `focusRecordingId`), `Pipeline.jsx`
+(`?recording=` param), `theme/index.css` (`.cp-recording-copy`).
+
+**What gets copied is deliberately NOT the stream URL.**
+`pipelineService.recordingStreamUrl()` puts the viewer's own JWT in the query string, because a
+`<video>` element cannot send an `Authorization` header (§11.4). Mailing that URL would hand the
+recipient the sender's entire session, let anyone it is forwarded to watch without signing in, and
+record every one of those views against the wrong person. Access was left broad (§0.4) *on the
+understanding that viewing is audited* — a shareable stream URL would quietly cancel the one
+control that decision rests on.
+
+The button copies a deep link into the app instead — `/pipeline?candidate=<id>&recording=<id>` —
+which is exactly what §6.4 called for ("the recruiter shares the ATS page, not a OneDrive link").
+The recipient signs in as themselves, the recruiter-tier gate applies to them, and the audit row
+names whoever actually pressed play. It also sidesteps §3.6's external-access problem: a forwarded
+OneDrive link would simply 403 for anyone outside the tenant.
+
+Three details worth keeping:
+
+- **The drawer validates the id against the recordings list before opening the player.** A
+  recording id in a forwarded URL is not trustworthy, and the list is already scoped to the
+  journey — the same reason `getRecordingForStream()` scopes by `pipeline_id` as well as `id`.
+- **A recipient below recruiter tier gets no player at all.** The list query 403s, so nothing
+  opens — the same silent answer the round panels give them, rather than a modal that could only
+  fail to play.
+- **`copyToClipboard()` falls back to the legacy `execCommand` path.** `navigator.clipboard` is
+  undefined on a plain-http origin, and the older helper in `TeamsDetails` silently does nothing
+  there — a copy button that appears to work and doesn't is worse than none.
+
+Also fixed alongside: the report's "Interview recordings" card (rounds with no scorecard at all)
+labelled itself with the raw stage key, so a recruiter read "hr_round". `stageKeyLabel()` maps the
+keys to the names in `seed-pipeline-stages.js`.
+
 ---
 
 ## 12. Verification plan
@@ -872,7 +913,29 @@ All five design decisions are settled (§0). What remains is external:
 | 3 | Confirm which mailbox organizes (§8.1); if not `pkmondal@aapnainfotech.com`, extend the application access policy to it | Pankaj + IT | ⏳ assumed unchanged | Phase 1 |
 | 4 | OneDrive quota headroom on the organizer mailbox — **now more important**: with expiry Off, nothing is ever reclaimed | IT | ⏳ | Phase 5 |
 | 5 | Sign-off on the candidate recording notice, incl. the 12-month retention statement | Pankaj / HR | ⏳ | Phase 6 |
-| 6 | Decide whether the archive is worth it *given* expiry is Off — the case is now offboarding risk, not deletion risk (§4.1) | Pankaj | ⏳ | Phase 5 only |
+| 6 | Decide whether the archive is worth it *given* expiry is Off | Pankaj | ✅ **yes — built and verified**; `Recordings_ATS` chosen as the folder | — |
+
+### 13.1 Built but never exercised
+
+Honest separation, because "the code exists" and "we have seen it work" are different
+claims and only the second is worth relying on.
+
+| Path | State |
+|---|---|
+| Auto-record on booking | ✅ **proven** — live call, both clients showed the recording banner |
+| Discovery sweep | ✅ **proven** — linked the real recording, `recording_status='available'` |
+| Archive to `Recordings_ATS` | ✅ **proven** — 1,501,627 bytes, matches source exactly |
+| Playback from the archive | ✅ **proven at the Graph layer** — HTTP 206, `video/mp4`, seeking works |
+| Playback **through the ATS player in a browser** | ⚠️ **never confirmed.** The upstream is proven and the buttons render, but nobody has reported the video actually playing. The `?token=` query-string auth path in particular has not been exercised end to end. |
+| Role gate (403 for a vendor) | ⚠️ unit-tested only; no vendor account has hit the endpoint |
+| Audit row on view | ⚠️ never written — no one has played a recording through the app yet |
+| Consent notice in a real email | ⚠️ unit-tested only; **no sent invitation has yet carried it** (the notice was added after the last booking) |
+| `flagMissingRecordings` | ⚠️ never fired — needs a held round, 6h old, with no recording |
+| `purgeExpiredRecordings` | ⚠️ never run — needs a journey closed 12+ months ago |
+| Settings card | ⚠️ built; not yet confirmed visible by anyone |
+
+None of these are known-broken. They are simply untested paths, and the first three are the
+ones worth deliberately exercising before this is relied on in production.
 
 **Phase 1 is unblocked.** `OnlineMeetings.ReadWrite.All` is granted, the meeting policy is
 correct, and the application access policy covers the current mailbox — auto-recording can be
