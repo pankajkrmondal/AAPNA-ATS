@@ -3730,6 +3730,51 @@ html.theme-transition *::after {
 .cp-pipeline-step__detail { font-size: 12.5px; color: var(--text-2); margin-top: 2px; line-height: 1.5; }
 .cp-pipeline-step__extra { margin-top: 8px; }
 
+/* Interview recording play button — brand green (RT, 2026-09-01: green is the
+   company colour; the earlier violet read as "blue" and off-brand).
+   Drawn from the brand tokens rather than a literal hex so it follows the theme
+   in both light and dark mode.
+
+   Note the trade-off this accepts: green is also the Approve/primary colour, so
+   this button now carries the same visual weight as a decision button. They stay
+   apart because Approve lives in its own "Record outcome" section lower down —
+   but colour alone no longer separates them, so the label does that work
+   instead ("Interview recording", with a camera icon). */
+.cp-recording-btn.ant-btn {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(122, 146, 46, 0.35);
+}
+.cp-recording-btn.ant-btn:hover,
+.cp-recording-btn.ant-btn:focus {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+  color: #fff;
+}
+.cp-recording-btn.ant-btn:active {
+  background: var(--brand-primary-active);
+  border-color: var(--brand-primary-active);
+}
+.cp-recording-btn.ant-btn:disabled,
+.cp-recording-btn.ant-btn:disabled:hover {
+  background: var(--ink-2, #e5e7eb);
+  border-color: var(--ink-3, #d1d5db);
+  color: var(--text-muted, #9ca3af);
+  box-shadow: none;
+}
+/* The label, so the row reads as "recording" before the button is even seen.
+   Carries the darker brand green so it stays legible against the light card. */
+.cp-recording-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gold-dark);
+}
+
 /* Compact colour-coded stat chip — replaces the old flat, near-empty
    Statistic cards for Zeko/Assessment scores. Colour is driven by the
    score itself (>=70 green / 50-69 amber / <50 red) so it carries real

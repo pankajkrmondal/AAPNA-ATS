@@ -220,6 +220,35 @@ const pipelineService = {
   },
 
   /**
+   * Teams recordings linked to a candidate's rounds. Metadata only — the bytes
+   * come from recordingStreamUrl() below.
+   * @param {number} id - pipeline id
+   */
+  getRecordings(id) {
+    return api.get(`/pipeline/${id}/recordings`);
+  },
+
+  /**
+   * The <video> src for one recording.
+   *
+   * The JWT rides in the query string because a media element cannot carry an
+   * Authorization header, and the backend's authenticate middleware already
+   * accepts `?token=` for exactly this kind of link. The alternative — fetching
+   * the file through axios into a blob — would download the whole recording
+   * (hundreds of MB) before playing a single frame and would kill seeking, since
+   * a blob URL cannot serve byte ranges.
+   *
+   * @param {number} pipelineId
+   * @param {number} recordingId
+   * @returns {string}
+   */
+  recordingStreamUrl(pipelineId, recordingId) {
+    const token = localStorage.getItem('ats_token') || '';
+    return `${api.defaults.baseURL}/pipeline/${pipelineId}/recordings/${recordingId}/stream`
+      + `?token=${encodeURIComponent(token)}`;
+  },
+
+  /**
    * Sets the final/closure outcome (Q12 — 8 closure statuses).
    * @param {number} id
    * @param {Object} payload - { final_outcome_key, notes? }

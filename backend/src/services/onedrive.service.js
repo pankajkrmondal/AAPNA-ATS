@@ -141,6 +141,170 @@ async function ensureChildFolder(accessToken, parentId, folderName) {
 }
 
 /**
+ * Resolves (creating as needed) a chain of folders anchored at the DRIVE ROOT,
+ * rather than under MS_ONEDRIVE_PARENT_ID.
+ *
+ * Needed because the recording archive lives in its own top-level folder
+ * (Recordings_ATS, created by hand in the mailbox's OneDrive), which is a
+ * sibling of the resume parent rather than a child of it. Reusing
+ * ensureOneDriveFolderPath() would have buried recordings inside the CV folder.
+ *
+ * @param {string[]} folderPath - e.g. ['Recordings_ATS', 'Asha R (pipeline-1396)']
+ * @returns {Promise<string>} drive item id of the deepest folder
+ */
+export async function ensureDriveFolderPathFromRoot(folderPath = []) {
+  const accessToken = await getAccessToken();
+  const defaultSender = config.microsoft.defaultSender;
+  const driveBase = defaultSender
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
+    : 'https://graph.microsoft.com/v1.0/drive';
+
+  const rootRes = await fetch(`${driveBase}/root?$select=id`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
+  });
+  if (!rootRes.ok) throw new Error(`Could not read the OneDrive root: ${rootRes.statusText}`);
+  let parentId = (await rootRes.json()).id;
+
+  for (const rawName of folderPath) {
+    const name = sanitizeFolderName(rawName);
+    if (!name) continue;
+    parentId = await ensureChildFolder(accessToken, parentId, name);
+  }
+  return parentId;
+}
+
+/**
+ * Uploads a stream to OneDrive via a resumable upload session.
+ *
+ * WHY NOT uploadFileToOneDrive(): that one does readFileSync into a Buffer and a
+ * single PUT with a 90-second budget. Fine for a CV; hopeless for an interview
+ * recording, which Microsoft sizes at roughly 400 MB per hour — it would hold
+ * the whole file in memory and time out long before finishing.
+ *
+ * This streams source → destination in fixed chunks, so peak memory is one chunk
+ * regardless of whether the recording is 2 MB or 2 GB, and each chunk gets its
+ * own timeout instead of the transfer sharing one.
+ *
+ * @param {object} params
+ * @param {ReadableStream} params.webStream - a fetch Response.body
+ * @param {number} params.totalBytes - exact size; Graph requires it per chunk
+ * @param {string} params.parentItemId - destination folder
+ * @param {string} params.fileName
+ * @returns {Promise<{id: string, webUrl: string, size: number}>}
+ */
+export async function uploadStreamToOneDrive({ webStream, totalBytes, parentItemId, fileName }) {
+  const accessToken = await getAccessToken();
+  const defaultSender = config.microsoft.defaultSender;
+  const driveBase = defaultSender
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
+    : 'https://graph.microsoft.com/v1.0/drive';
+
+  const sessionRes = await fetch(
+    `${driveBase}/items/${parentItemId}:/${encodeURIComponent(fileName)}:/createUploadSession`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      // 'replace' so a retried archive overwrites its own half-finished attempt
+      // rather than leaving "Tech 1 1.mp4" next to "Tech 1.mp4".
+      body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } }),
+      signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
+    }
+  );
+  if (!sessionRes.ok) {
+    const body = await sessionRes.json().catch(() => ({}));
+    throw new Error(`Could not start an upload session for "${fileName}": ${sessionRes.status} ${JSON.stringify(body)}`);
+  }
+  // The session URL carries its own short-lived credential — deliberately NOT
+  // sent with the app's bearer token, which Graph rejects on these PUTs.
+  const { uploadUrl } = await sessionRes.json();
+
+  // Graph requires every chunk except the last to be a multiple of 320 KiB.
+  const CHUNK = 320 * 1024 * 25; // 8 MiB
+  const reader = webStream.getReader();
+  let pending = Buffer.alloc(0);
+  let offset = 0;
+  let finalItem = null;
+
+  const putChunk = async (buf) => {
+    const start = offset;
+    const end = offset + buf.length - 1;
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Length': String(buf.length),
+        'Content-Range': `bytes ${start}-${end}/${totalBytes}`,
+      },
+      body: buf,
+      signal: AbortSignal.timeout(GRAPH_UPLOAD_TIMEOUT_MS),
+    });
+    // 202 = chunk accepted, more expected. 200/201 = final chunk, item returned.
+    if (res.status === 200 || res.status === 201) {
+      finalItem = await res.json();
+    } else if (res.status !== 202) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Chunk ${start}-${end} rejected: ${res.status} ${body.slice(0, 300)}`);
+    }
+    offset += buf.length;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value) pending = Buffer.concat([pending, Buffer.from(value)]);
+      // Flush whole chunks while enough has accumulated; the remainder rides
+      // along with the next read, so no chunk is ever short except the last.
+      while (pending.length >= CHUNK) {
+        await putChunk(pending.subarray(0, CHUNK));
+        pending = pending.subarray(CHUNK);
+      }
+      if (done) break;
+    }
+    if (pending.length > 0) await putChunk(pending);
+  } catch (err) {
+    // Abandon the session so a failed attempt does not leave a half-written
+    // placeholder occupying the name for the next retry.
+    await fetch(uploadUrl, { method: 'DELETE' }).catch(() => {});
+    throw err;
+  }
+
+  if (!finalItem) {
+    throw new Error(`Upload of "${fileName}" ended after ${offset}/${totalBytes} bytes without a completed item.`);
+  }
+  logger.info(`OneDrive: archived "${fileName}" (${finalItem.size ?? offset} bytes).`);
+  return { id: finalItem.id, webUrl: finalItem.webUrl, size: finalItem.size ?? offset };
+}
+
+/**
+ * Deletes one drive item. Used by the recording retention job.
+ *
+ * A 404 counts as success: the goal is "this file no longer exists", and
+ * something already having removed it satisfies that. Treating it as a failure
+ * would leave the row stuck in 'copied' forever, retried daily against a file
+ * that is not there.
+ *
+ * @param {string} itemId - drive item id
+ * @returns {Promise<void>}
+ * @throws {Error} on any failure other than a missing item
+ */
+export async function deleteDriveItem(itemId) {
+  const accessToken = await getAccessToken();
+  const defaultSender = config.microsoft.defaultSender;
+  const driveBase = defaultSender
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
+    : 'https://graph.microsoft.com/v1.0/drive';
+
+  const res = await fetch(`${driveBase}/items/${itemId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
+  });
+  if (res.status === 204 || res.status === 404) return;
+  const body = await res.text().catch(() => '');
+  throw new Error(`Could not delete drive item ${itemId}: ${res.status} ${body.slice(0, 200)}`);
+}
+
+/**
  * Resolves (creating as needed) a chain of nested folders under the configured
  * parent, and returns the deepest folder's id.
  *

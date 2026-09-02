@@ -16,7 +16,14 @@ import {
   getInterviewOccurrenceSettings,
   restartInterviewOccurrenceJob,
 } from '../jobs/interviewOccurrence.js';
+import {
+  SETTING_KEYS as INTERVIEW_RECORDING_KEYS,
+  ALLOWED_INTERVALS as RECORDING_INTERVALS,
+  getInterviewRecordingSettings,
+  restartInterviewRecordingJob,
+} from '../jobs/interviewRecordings.js';
 import { isAttendanceEnabled, isGuestCandidateMode } from '../services/graphAttendance.service.js';
+import { isRecordingFetchEnabled } from '../services/graphRecording.service.js';
 import { isAdminTier } from '../config/roles.js';
 import { describeFlowKeys, isKnownFlowKey, reloadEmailRecipients } from '../config/emailRecipients.js';
 import {
@@ -292,6 +299,84 @@ export const saveInterviewOccurrenceConfig = catchAsync(async (req, res) => {
     interval_minutes: saved.intervalMin,
     grace_minutes: saved.graceMin,
   }, `Interview occurrence sweep ${saved.enabled ? 'enabled' : 'disabled'}`);
+});
+
+/**
+ * @desc    Get the interview recording capture configuration
+ * @route   GET /api/settings/interview-recording
+ * @access  Private
+ */
+export const getInterviewRecordingConfig = catchAsync(async (req, res) => {
+  const settings = await getInterviewRecordingSettings();
+  return success(res, {
+    enabled: settings.enabled,
+    interval_minutes: settings.intervalMin,
+    grace_minutes: settings.graceMin,
+    allowed_intervals: RECORDING_INTERVALS,
+    // Read-only, from MS_RECORDING_FETCH_ENABLED. Without it the sweep cannot
+    // run at all, so the card reports it rather than offering a toggle that
+    // would save happily and then do nothing.
+    fetch_enabled: isRecordingFetchEnabled(),
+  }, 'Interview recording settings retrieved successfully');
+});
+
+/**
+ * @desc    Update the recording capture sweep (on/off, poll interval, grace)
+ * @route   POST /api/settings/interview-recording
+ * @access  Private
+ */
+export const saveInterviewRecordingConfig = catchAsync(async (req, res) => {
+  const { enabled, interval_minutes, grace_minutes } = req.body;
+
+  if (enabled === undefined) {
+    throw new AppError('enabled must be provided.', 400);
+  }
+  const isEnabled = enabled === true || enabled === 'true';
+
+  const intervalMin = interval_minutes === undefined ? undefined : parseInt(interval_minutes, 10);
+  if (intervalMin !== undefined && !RECORDING_INTERVALS.includes(intervalMin)) {
+    throw new AppError(`interval_minutes must be one of: ${RECORDING_INTERVALS.join(', ')}.`, 400);
+  }
+
+  const graceMin = grace_minutes === undefined ? undefined : parseInt(grace_minutes, 10);
+  if (graceMin !== undefined && (isNaN(graceMin) || graceMin < 0 || graceMin > 1440)) {
+    throw new AppError('grace_minutes must be between 0 and 1440.', 400);
+  }
+
+  const upserts = [
+    prisma.rpa_settings.upsert({
+      where: { key: INTERVIEW_RECORDING_KEYS.ENABLED },
+      update: { value: String(isEnabled) },
+      create: { key: INTERVIEW_RECORDING_KEYS.ENABLED, value: String(isEnabled) },
+    }),
+  ];
+  if (intervalMin !== undefined) {
+    upserts.push(prisma.rpa_settings.upsert({
+      where: { key: INTERVIEW_RECORDING_KEYS.INTERVAL_MIN },
+      update: { value: String(intervalMin) },
+      create: { key: INTERVIEW_RECORDING_KEYS.INTERVAL_MIN, value: String(intervalMin) },
+    }));
+  }
+  if (graceMin !== undefined) {
+    upserts.push(prisma.rpa_settings.upsert({
+      where: { key: INTERVIEW_RECORDING_KEYS.GRACE_MIN },
+      update: { value: String(graceMin) },
+      create: { key: INTERVIEW_RECORDING_KEYS.GRACE_MIN, value: String(graceMin) },
+    }));
+  }
+  await prisma.$transaction(upserts);
+
+  // Apply immediately — no server restart needed. Until this endpoint existed,
+  // changing the row by hand did nothing until the backend was restarted.
+  await restartInterviewRecordingJob();
+
+  const saved = await getInterviewRecordingSettings();
+  return success(res, {
+    enabled: saved.enabled,
+    interval_minutes: saved.intervalMin,
+    grace_minutes: saved.graceMin,
+    fetch_enabled: isRecordingFetchEnabled(),
+  }, `Interview recording capture ${saved.enabled ? 'enabled' : 'disabled'}`);
 });
 
 /**

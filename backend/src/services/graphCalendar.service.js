@@ -230,6 +230,105 @@ export async function getOnlineMeetingDetails(joinUrl) {
 }
 
 /**
+ * Presenter modes Graph accepts for onlineMeeting.allowedPresenters.
+ *
+ * 'roleIsPresenter' is deliberately absent: Graph requires the full attendee
+ * list with per-attendee roles alongside it, which this endpoint does not send.
+ * Configuring it would fail every call, so it is treated as invalid input.
+ */
+const PRESENTER_MODES = new Set(['everyone', 'organization', 'organizer']);
+
+/** Whether automatic Teams recording is switched on for this environment. */
+export const isMeetingRecordAuto = () => Boolean(config.microsoft.meetingRecordAuto);
+
+/**
+ * Turns the Teams meeting behind a booking into a self-recording one.
+ *
+ * WHY this is a separate call: the meeting is created as a side effect of
+ * POSTing an Outlook EVENT (isOnlineMeeting: true), and the event payload has
+ * nowhere to put meeting options. `recordAutomatically` lives on the
+ * onlineMeeting resource, so it takes a second round trip against the
+ * cloud-comms endpoint — the same one getOnlineMeetingDetails() already uses,
+ * with the same GUID-not-UPN requirement.
+ *
+ * What it sets, and why each one:
+ *   recordAutomatically  — the whole point: the interview records itself, so a
+ *                          panel that forgets to press Record still produces the
+ *                          recording the final decision-makers are promised.
+ *   allowedPresenters    — Teams cannot lock a recording ON. Only presenters can
+ *                          stop one, so demoting the candidate to attendee is
+ *                          the only mechanism that stops the person with the
+ *                          most reason to object from ending the recording.
+ *                          Interviewers stay presenters and keep screen sharing.
+ *   allowTranscription   — a transcript is ~300 KB against ~400 MB of video, and
+ *                          it is what makes a round searchable later.
+ *
+ * Needs OnlineMeetings.ReadWrite.All (application) + the application access
+ * policy on the calendar mailbox. Both were confirmed in place on 2026-09-01.
+ *
+ * Best-effort like everything else here: a failure NEVER costs the recruiter
+ * their booking. It returns the reason instead, which the caller stores on the
+ * row so "this round is not actually being recorded" is visible in the drawer
+ * rather than discovered when someone goes looking for the recording.
+ *
+ * @param {string|null} onlineMeetingId - rpa_interview_schedule.online_meeting_id
+ * @returns {Promise<{applied: boolean, skipped: boolean, error: string|null}>}
+ *   skipped:true means the feature is off, not that anything went wrong.
+ */
+export async function applyMeetingOptions(onlineMeetingId) {
+  const skip = () => ({ applied: false, skipped: true, error: null });
+  const fail = (error) => ({ applied: false, skipped: false, error });
+
+  if (!isCalendarEnabled() || !isMeetingRecordAuto()) return skip();
+  // No meeting id means the tenant returned an event without an online meeting,
+  // or the onlineMeeting lookup was refused. Either way there is nothing to
+  // patch, and the caller needs to know the round is unrecorded.
+  if (!onlineMeetingId) return fail('no online meeting id — the booking has no Teams meeting to record');
+
+  let presenters = config.microsoft.meetingPresenters;
+  if (!PRESENTER_MODES.has(presenters)) {
+    logger.warn(`Graph calendar: MS_MEETING_PRESENTERS="${presenters}" is not one of ${[...PRESENTER_MODES].join('/')} — falling back to "organization".`);
+    presenters = 'organization';
+  }
+
+  try {
+    const token = await getAccessToken();
+    // onlineMeetings requires the mailbox's object GUID in the path (a UPN 400s).
+    const userId = await resolveUserId(config.microsoft.calendarMailbox);
+    if (!userId) return fail('could not resolve the calendar mailbox to an object id');
+
+    const res = await fetch(
+      `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(onlineMeetingId)}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordAutomatically: true,
+          allowedPresenters: presenters,
+          allowTranscription: Boolean(config.microsoft.meetingTranscribe),
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = body?.error?.message || res.statusText;
+      // 403 here means either OnlineMeetings.ReadWrite.All is missing (Read.All
+      // alone cannot PATCH) or the application access policy does not cover this
+      // mailbox — the two things §8 of the plan tells IT to check.
+      logger.error(`Graph calendar: meeting options PATCH failed (${res.status}) — ${detail}. This round will NOT record automatically.`);
+      return fail(detail);
+    }
+
+    logger.info(`Graph calendar: meeting ${onlineMeetingId} set to auto-record (presenters: ${presenters}).`);
+    return { applied: true, skipped: false, error: null };
+  } catch (err) {
+    logger.error(`Graph calendar: meeting options PATCH threw — ${err.message}. This round will NOT record automatically.`);
+    return fail(err.message);
+  }
+}
+
+/**
  * Moves an existing event to a new time, KEEPING its Teams meeting.
  *
  * This is what a reschedule should do. The previous implementation cancelled

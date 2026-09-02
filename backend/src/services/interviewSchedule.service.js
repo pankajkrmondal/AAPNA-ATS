@@ -25,7 +25,7 @@ import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRec
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { interviewerGreeting } from '../utils/emailGreeting.js';
-import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled } from './graphCalendar.service.js';
+import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled, applyMeetingOptions, isMeetingRecordAuto } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 // From pure config, not pipeline.service.js: that module imports THIS one, so
 // reaching back for its assertJourneyOpen would close an import cycle.
@@ -121,6 +121,41 @@ const NO_CALENDAR = Object.freeze({
 
 /** True when the drawer should offer a "Schedule Interview" action for a stage. */
 export const isSchedulableStage = (stageKey) => Object.hasOwn(SCHEDULABLE_STAGES, stageKey || '');
+
+/**
+ * True when this round's Teams meeting should record itself.
+ *
+ * Driven by config rather than "every schedulable stage" so the set stays an
+ * explicit decision (plan §0.2: tech1-3, hr_round, ceo). The Client Interview is
+ * absent from both this list and SCHEDULABLE_STAGES today, but stating it here
+ * means re-enabling that round for booking cannot silently start recording a
+ * meeting with an external client in it.
+ */
+export const stageIsRecorded = (stageKey) =>
+  config.microsoft.recordedStages.includes(stageKey || '');
+
+/**
+ * Applies the auto-record meeting options to a freshly created or rescheduled
+ * booking, and maps the outcome onto the two columns the drawer reads.
+ *
+ * Shared by the schedule and reschedule paths so the two can never diverge on
+ * which rounds record. Re-asserting on reschedule is deliberate and idempotent:
+ * a reschedule PATCHes the same Teams meeting, so the options are usually
+ * already there — but re-applying also heals a booking made before this feature
+ * existed, and covers the cancel-and-recreate fallback, which mints a brand-new
+ * meeting with Teams' defaults.
+ *
+ * @param {string} stageKey
+ * @param {string|null} onlineMeetingId
+ * @returns {Promise<{appliedAt: Date|null, error: string|null}>}
+ *   Both null = not attempted (round not recorded, or the feature is off).
+ */
+async function applyRecordingOptions(stageKey, onlineMeetingId) {
+  if (!stageIsRecorded(stageKey) || !isMeetingRecordAuto()) return { appliedAt: null, error: null };
+  const result = await applyMeetingOptions(onlineMeetingId);
+  if (result.skipped) return { appliedAt: null, error: null };
+  return { appliedAt: result.applied ? new Date() : null, error: result.error };
+}
 
 /**
  * Placeholder values recruiters typed into the MRF's interviewer/slot columns
@@ -449,6 +484,62 @@ function ensureTeamsBlock(html, joinUrl, meetingId, passcode) {
   return `${html}${buildTeamsBlock(joinUrl, meetingId, passcode)}`;
 }
 
+/**
+ * Marker used to keep the recording notice idempotent across the compile →
+ * recruiter-edit → send round trip. An HTML comment rather than a class, so it
+ * survives a recruiter pasting the body through a rich-text editor.
+ */
+const RECORDING_NOTICE_MARKER = '<!--ats-recording-notice-->';
+
+/**
+ * The "this interview is recorded" notice, worded for whoever is reading it.
+ *
+ * WHY THIS IS NOT OPTIONAL: recording a person requires telling them. The
+ * candidate half is a consent notice with a stated purpose, audience and
+ * retention period — under India's DPDP Act an interview recording is personal
+ * data under purpose limitation, and "we recorded you and kept it forever"
+ * is not a defensible position. The panel half is operational.
+ *
+ * @param {'candidate'|'panel'} audience
+ * @returns {string} HTML
+ */
+export function buildRecordingNotice(audience) {
+  const body = audience === 'panel'
+    ? `<p style="margin:0 0 8px 0;font-weight:700;color:#8a6d1f;">This round records automatically</p>
+       <p style="margin:0;font-size:13px;color:#374151;">You do not need to press Record — it starts on its own. Please do not stop it: the recording is what later interviewers and the final decision-makers review.</p>
+       <p style="margin:6px 0 0 0;font-size:13px;color:#374151;">The candidate joins as an attendee, so they cannot share their screen by default. If you need them to, make them a presenter from the participant list during the call.</p>`
+    : `<p style="margin:0 0 8px 0;font-weight:700;color:#8a6d1f;">This interview will be recorded</p>
+       <p style="margin:0;font-size:13px;color:#374151;">The recording is used only to help our hiring team review your interview and reach a decision. It is kept confidential, is not shared outside the company, and is deleted within 12 months of your application closing.</p>
+       <p style="margin:6px 0 0 0;font-size:13px;color:#374151;">If you have any concerns about being recorded, please reply to this email before the interview.</p>`;
+
+  return `${RECORDING_NOTICE_MARKER}<table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;background:#fdf8e7;border-left:4px solid #d0a72c;border-radius:8px;">
+         <tr><td style="padding:16px 18px;">${body}</td></tr></table>`;
+}
+
+/**
+ * Appends the recording notice to a final email body.
+ *
+ * Applied at SEND time, next to ensureTeamsBlock, for the same reason that one
+ * exists: the modal's preview is compiled before the meeting exists, and the
+ * recruiter-edited copy that comes back would otherwise carry no notice. Doing
+ * it here means a recruiter cannot remove the consent line by editing the body,
+ * accidentally or otherwise.
+ *
+ * `recorded` is the booking's OWN state (record_auto_applied_at), not the global
+ * feature flag, so the email never promises — or warns about — a recording that
+ * is not actually going to happen.
+ *
+ * @param {string} html
+ * @param {'candidate'|'panel'} audience
+ * @param {boolean} recorded - whether THIS round will record
+ * @returns {string}
+ */
+function ensureRecordingNotice(html, audience, recorded) {
+  if (!recorded || !html) return html;
+  if (html.includes(RECORDING_NOTICE_MARKER)) return html;
+  return `${html}${buildRecordingNotice(audience)}`;
+}
+
 function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen, interviewerName, interviewerEmail }) {
   const teamsLine = buildTeamsBlock(joinUrl, meetingId, passcode);
   const reasonLine = reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '';
@@ -717,6 +808,11 @@ export async function scheduleInterviewRound(pipelineId, {
     })
     : NO_CALENDAR;
 
+  // 2b) Make the meeting record itself, and demote the candidate to attendee so
+  //     they cannot stop it. Best-effort: a failure is recorded on the row (and
+  //     surfaced in the drawer) rather than costing the recruiter the booking.
+  const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
+
   // 3) Notify both sides. Recipients follow the usual prod/non-prod redirect.
   //    Copy comes from the modal when the recruiter edited it, else the seeded
   //    templates compiled with this booking's real details (incl. Teams link).
@@ -742,17 +838,27 @@ export async function scheduleInterviewRound(pipelineId, {
   // Each side's header headline is its own final subject.
   const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
   const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+  // The recording notice is applied AFTER the Teams block and BEFORE branding,
+  // so it lands inside the branded card rather than after </html> — same
+  // reasoning as the Teams block above.
+  const isRecorded = Boolean(recording.appliedAt);
   const candidateEmail = {
     subject: candidateFinalSubject,
     body: wrapBrandedEmail(
-      ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+      ensureRecordingNotice(
+        ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+        'candidate', isRecorded
+      ),
       interviewWrapOpts(candidateFinalSubject)
     ),
   };
   const panelEmail = {
     subject: panelFinalSubject,
     body: wrapBrandedEmail(
-      ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+      ensureRecordingNotice(
+        ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+        'panel', isRecorded
+      ),
       interviewWrapOpts(panelFinalSubject)
     ),
   };
@@ -802,6 +908,11 @@ export async function scheduleInterviewRound(pipelineId, {
       // Dial-in details shown in the invite emails (mirror the Outlook block).
       teams_meeting_id: calendar.meetingId,
       teams_passcode: calendar.passcode,
+      // Null here means this round is NOT recording — either the feature is off,
+      // the round is not in the recorded set, or Graph refused the PATCH (in
+      // which case record_policy_error says why).
+      record_auto_applied_at: recording.appliedAt,
+      record_policy_error: recording.error,
       invite_sent_at: inviteSentAt,
       modified_at: new Date(),
     },
@@ -1194,6 +1305,12 @@ export async function rescheduleInterviewRound(pipelineId, {
     calendar = NO_CALENDAR;
   }
 
+  // 3b) Re-assert auto-recording. Usually a no-op — the patched meeting keeps
+  //     its options — but it heals bookings made before this feature existed and
+  //     covers the cancel-and-recreate branch above, which mints a NEW meeting
+  //     carrying Teams' defaults (recording off, everyone a presenter).
+  const recording = await applyRecordingOptions(stageKey, calendar.onlineMeetingId);
+
   // 4) One "rescheduled" email per side, old → new time.
   const when = fmtIst(start);
   const defaults = await buildInterviewEmails('reschedule', {
@@ -1203,13 +1320,14 @@ export async function rescheduleInterviewRound(pipelineId, {
   });
   const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
   const panelFinalSubject = panelSubject ?? defaults.panel.subject;
+  const isRecorded = Boolean(recording.appliedAt);
   const candidateEmail = {
     subject: candidateFinalSubject,
-    body: wrapBrandedEmail(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), interviewWrapOpts(candidateFinalSubject)),
+    body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded), interviewWrapOpts(candidateFinalSubject)),
   };
   const panelEmail = {
     subject: panelFinalSubject,
-    body: wrapBrandedEmail(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), interviewWrapOpts(panelFinalSubject)),
+    body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded), interviewWrapOpts(panelFinalSubject)),
   };
 
   const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
@@ -1235,7 +1353,7 @@ export async function rescheduleInterviewRound(pipelineId, {
 
   const updated = await prisma.rpa_interview_schedule.update({
     where: { id: row.id },
-    data: { graph_event_id: calendar.eventId, teams_join_url: calendar.joinUrl, online_meeting_id: calendar.onlineMeetingId, teams_meeting_id: calendar.meetingId, teams_passcode: calendar.passcode, invite_sent_at: inviteSentAt, modified_at: new Date() },
+    data: { graph_event_id: calendar.eventId, teams_join_url: calendar.joinUrl, online_meeting_id: calendar.onlineMeetingId, teams_meeting_id: calendar.meetingId, teams_passcode: calendar.passcode, record_auto_applied_at: recording.appliedAt, record_policy_error: recording.error, invite_sent_at: inviteSentAt, modified_at: new Date() },
   });
 
   await prisma.rpa_pipeline_stage_events.create({
