@@ -81,6 +81,15 @@ router.get('/:id', pipelineController.getPipelineDetail);
 router.get('/:id/conversations', pipelineController.getPipelineConversations);
 /** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
 router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
+
+/** GET /api/pipeline/:id/recordings — Teams recordings linked to this journey.
+ *  Gated by the router-wide requireStaff (rank >= recruiter, so never a vendor)
+ *  and re-asserted in the controller. Metadata only. */
+router.get('/:id/recordings', pipelineController.getPipelineRecordings);
+/** GET /api/pipeline/:id/recordings/:recordingId/stream — proxied playback.
+ *  Every open is written to the journey's stage timeline; see
+ *  interviewRecording.service.js for why that audit is load-bearing. */
+router.get('/:id/recordings/:recordingId/stream', pipelineController.streamPipelineRecording);
 /** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */
 router.post('/:id/interview', pipelineController.scheduleInterview);
 /** GET /api/pipeline/:id/interview-preview — editable invite email preview. */

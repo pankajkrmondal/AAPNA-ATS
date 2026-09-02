@@ -55,6 +55,25 @@ const settingsService = {
   },
 
   /**
+   * Get the interview recording capture config (on/off, poll interval, grace).
+   * Also reports fetch_enabled — the environment-level permission gate, without
+   * which the sweep cannot run whatever this toggle says.
+   * @returns {Promise}
+   */
+  getInterviewRecordingConfig() {
+    return api.get('/settings/interview-recording');
+  },
+
+  /**
+   * Update the interview recording capture. Applies immediately — no restart.
+   * @param {object} payload — { enabled, interval_minutes?, grace_minutes? }
+   * @returns {Promise}
+   */
+  saveInterviewRecordingConfig(payload) {
+    return api.post('/settings/interview-recording', payload);
+  },
+
+  /**
    * Get Evalground Assessment automation settings (invite deadline days +
    * the global auto-advance/auto-reject toggle).
    * @returns {Promise}

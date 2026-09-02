@@ -51,6 +51,8 @@ permissions, then click **Grant admin consent**:
 | **`OnlineMeetings.ReadWrite.All`** (or `.ReadWrite`) | Attach a Teams meeting to the event AND read it back (Meeting ID + Passcode). `ReadWrite.All` already includes read — no separate `OnlineMeetings.Read.All` needed. | "Join Teams meeting" button **+** Meeting ID / Passcode in invites |
 | **`User.Read.All`** *(or skip — see note)* | Resolve the recruitment mailbox UPN → its Entra object GUID | Needed only because the onlineMeetings API wants the GUID in the URL, not the email |
 | **`OnlineMeetingArtifact.Read.All`** | Read the **attendance report** after a meeting ends | **Automatic no-show detection** (see below) |
+| **`OnlineMeetingRecording.Read.All`** | Read the **recording** of a meeting. NOTE: `OnlineMeetingArtifact.Read.All` covers attendance only — it does **not** grant recordings. | Interview recordings attached to the candidate's record *(granted + verified 2026-09-01)* |
+| **`OnlineMeetingTranscript.Read.All`** | Read the **transcript** of a meeting | Searchable transcript alongside each recording *(granted 2026-09-01, but see §3a — a tenant switch is still blocking it)* |
 
 > **`OnlineMeetings.Read.All` is NOT separately required** if
 > `OnlineMeetings.ReadWrite.All` is already granted — the ReadWrite scope is the
@@ -111,6 +113,56 @@ Notes:
 - Only the **organizer mailbox** (the one in `MS_CALENDAR_MAILBOX`) needs the
   grant — that is who owns the interview events and their attendance reports.
 - Policy propagation can take up to ~30 minutes.
+
+---
+
+## 3a. Interview recording — the tenant-side settings (2026-09-01)
+
+Interview rounds booked from the ATS now record themselves. Three of the four
+requirements are already in place on this tenant; one is outstanding.
+
+**Already verified working** (checked 2026-09-01, no action needed):
+
+| Setting | Where | Value |
+|---|---|---|
+| Meeting recording | Meeting policies → Global → Recording & transcription | **On** |
+| Require participant agreement for recording | same | **Off** — if this is ever turned On, automatic recording stops starting on its own |
+| Transcription | same | **On** |
+| Recordings automatically expire | same | **Off** — Teams never deletes them, so storage only grows |
+| Licensing | Microsoft 365 Business Basic | covers cloud recording + transcription. Teams **Premium** is not held |
+
+**⚠️ Still outstanding — one switch:**
+
+> **Teams admin center → Meetings → Meeting settings → Transcript API access →
+> Microsoft Graph access = On**
+>
+> or in Teams PowerShell:
+> ```powershell
+> Set-CsTeamsMeetingConfiguration -Identity Global `
+>   -EnableGraphTranscriptAccess $true -EnableAttributedTranscripts $true
+> ```
+
+This is **not** a permissions problem — `OnlineMeetingTranscript.Read.All` is
+already granted. Microsoft introduced a separate tenant-level control for
+transcript API access, enforced from 31 July 2026 and **off by default**. Until
+it is switched on, transcript requests return `403 Graph API access to
+transcripts is disabled for this tenant`, regardless of consent. **Recordings are
+unaffected and working.**
+
+### Storage — worth IT knowing
+
+- Teams saves each recording to the **organizer's OneDrive** (`MS_CALENDAR_MAILBOX`,
+  currently `pkmondal@aapnainfotech.com`) at roughly **400 MB per recorded hour**.
+- The ATS keeps a **second copy** in a `Recordings_ATS` folder in the same
+  OneDrive. That copy exists because a personal OneDrive is deleted at
+  offboarding — without it, every interview recording the company holds would
+  leave with one employee's account.
+- So budget **~800 MB per recorded interview-hour**, and note that with auto-expiry
+  Off, Teams' own copy is never reclaimed. The ATS deletes **its** copy 12 months
+  after a candidate's journey closes.
+- **Do not move `MS_CALENDAR_MAILBOX` to a shared mailbox without a OneDrive
+  licence.** Microsoft's fallback is organizer → co-organizer → recording
+  initiator → temporary storage deleted after 21 days.
 
 ---
 
@@ -178,6 +230,12 @@ interviewer emails and checks `totalAttendanceInSeconds ≥ MS_ATTENDANCE_MIN_SE
 - [ ] Give the developer the recruitment mailbox for `MS_CALENDAR_MAILBOX` —
       preferably its **object GUID** (lets you skip `User.Read.All`), or the UPN.
 - [ ] Developer flips `MS_CALENDAR_ENABLED=true`, `MS_ATTENDANCE_ENABLED=true` and restarts.
+- [ ] **Recordings (§3a):** grant `OnlineMeetingRecording.Read.All` +
+      `OnlineMeetingTranscript.Read.All` → *done 2026-09-01*.
+- [ ] **Recordings (§3a):** turn on **Transcript API access → Microsoft Graph access**
+      in Meeting settings → *still outstanding; recordings work without it*.
+- [ ] **Recordings (§3a):** confirm OneDrive headroom on the organizer mailbox
+      (~800 MB per recorded interview-hour across both copies).
 
 ---
 

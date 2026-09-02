@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
-import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined } from '@ant-design/icons';
+import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
@@ -54,6 +54,17 @@ export default function Settings() {
   });
   const [occurrenceLoading, setOccurrenceLoading] = useState(true);
   const [occurrenceSaving, setOccurrenceSaving] = useState(false);
+
+  // Recording capture sweep — same save-on-change contract again. fetch_enabled
+  // is read-only (MS_RECORDING_FETCH_ENABLED) and gates the whole card.
+  const [recordingCfg, setRecordingCfg] = useState({
+    enabled: false,
+    interval_minutes: 15,
+    grace_minutes: 10,
+    fetch_enabled: false,
+  });
+  const [recordingLoading, setRecordingLoading] = useState(true);
+  const [recordingSaving, setRecordingSaving] = useState(false);
 
   // Load existing settings on mount
   useEffect(() => {
@@ -190,6 +201,55 @@ export default function Settings() {
       setOccurrenceCfg(previous); // roll back the optimistic change
     } finally {
       setOccurrenceSaving(false);
+    }
+  };
+
+  // Load the recording capture config
+  useEffect(() => {
+    const fetchRecordingCfg = async () => {
+      try {
+        const res = await settingsService.getInterviewRecordingConfig();
+        const data = res.data?.data;
+        if (data) setRecordingCfg(data);
+      } catch {
+        message.error('Failed to load interview recording settings.');
+      } finally {
+        setRecordingLoading(false);
+      }
+    };
+    fetchRecordingCfg();
+  }, []);
+
+  /**
+   * Persists a recording-capture change straight away, like the two cards above.
+   */
+  const saveRecordingCfg = async (patch) => {
+    const previous = recordingCfg;
+    const next = { ...recordingCfg, ...patch };
+    setRecordingCfg(next);
+    setRecordingSaving(true);
+    try {
+      const res = await settingsService.saveInterviewRecordingConfig({
+        enabled: next.enabled,
+        interval_minutes: next.interval_minutes,
+        grace_minutes: next.grace_minutes,
+      });
+      const saved = res.data?.data;
+      if (saved) {
+        setRecordingCfg((cur) => ({
+          ...cur,
+          enabled: saved.enabled,
+          interval_minutes: saved.interval_minutes,
+          grace_minutes: saved.grace_minutes,
+          fetch_enabled: saved.fetch_enabled,
+        }));
+      }
+      message.success(res.data?.message || 'Interview recording capture updated.');
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update recording capture.');
+      setRecordingCfg(previous); // roll back the optimistic change
+    } finally {
+      setRecordingSaving(false);
     }
   };
 
@@ -603,6 +663,155 @@ export default function Settings() {
               goes out once an interview is marked held in the Candidate Pipeline.
             </div>
           )}
+        </div>
+      </Card>
+
+      {/* Recording capture — the next link in the same chain: book → remind →
+          confirm held → capture the recording. */}
+      <Card
+        bordered={false}
+        className="glass-card"
+        style={{ marginBottom: 24 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
+              <VideoCameraOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
+              <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
+                Interview Recording Capture
+              </Title>
+              <Tag color={recordingCfg.enabled && recordingCfg.fetch_enabled ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
+                {recordingCfg.enabled && recordingCfg.fetch_enabled ? 'ON' : 'OFF'}
+              </Tag>
+            </div>
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              After a recorded interview ends, finds the Microsoft Teams recording and attaches it to
+              the candidate’s round, so the final decision-makers can watch the earlier interviews.
+              Without this the recording still exists in Teams, but nothing in the ATS points to it.
+            </Text>
+          </div>
+          <Spin spinning={recordingLoading || recordingSaving}>
+            <Switch
+              checked={recordingCfg.enabled}
+              onChange={(checked) => saveRecordingCfg({ enabled: checked })}
+              disabled={recordingLoading || !recordingCfg.fetch_enabled}
+              checkedChildren="ON"
+              unCheckedChildren="OFF"
+              style={{ marginTop: 4 }}
+            />
+          </Spin>
+        </div>
+
+        {/* The environment gate. Stated before anything else, because with it off
+            the toggle above cannot do anything and would otherwise look broken. */}
+        {!recordingCfg.fetch_enabled && !recordingLoading && (
+          <div
+            style={{
+              marginTop: 16,
+              background: 'var(--warn-bg)',
+              border: '1px solid var(--warn-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--warn-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Recording capture is not available in this environment.</strong> It needs the
+            Microsoft permission that lets the ATS read meeting recordings, which is switched on by
+            a developer rather than here. Interviews still record themselves — only the automatic
+            link-back is unavailable, so a recording would have to be found in Teams by hand.
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 20,
+            opacity: recordingCfg.enabled && recordingCfg.fetch_enabled ? 1 : 0.45,
+            pointerEvents: recordingCfg.enabled && recordingCfg.fetch_enabled ? 'auto' : 'none',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              Wait
+            </span>
+            <InputNumber
+              min={0}
+              max={1440}
+              step={5}
+              value={recordingCfg.grace_minutes}
+              onChange={(val) => val !== null && saveRecordingCfg({ grace_minutes: val })}
+              addonAfter="minutes"
+              style={{ width: 160 }}
+            />
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              after the interview ends before looking
+            </span>
+          </div>
+
+          <div style={{ marginTop: 22, marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+              How often the system looks for new recordings
+            </span>
+            <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginTop: 2 }}>
+              Microsoft Teams decides when a recording becomes available — usually a few minutes
+              after the call, sometimes longer. Checking more often than every 5 minutes mostly asks
+              a question Teams cannot answer yet, so 10–15 minutes is the sensible range.
+            </Text>
+          </div>
+          <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 2 }}>
+            <Segmented
+              value={recordingCfg.interval_minutes}
+              onChange={(val) => saveRecordingCfg({ interval_minutes: val })}
+              options={INTERVIEW_CHECK_INTERVALS.map((m) => ({
+                label: m === 60 ? '1 hour' : `${m} min`,
+                value: m,
+              }))}
+            />
+          </div>
+
+          <div
+            style={{
+              marginTop: 18,
+              background: 'var(--info-bg)',
+              border: '1px solid var(--info-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--info-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>What this means:</strong> an interview ending at 8:00 PM is first looked at
+            around {' '}
+            <strong>
+              {dayjs().hour(20).minute(0).second(0).add(recordingCfg.grace_minutes || 0, 'minute').format('h:mm A')}
+            </strong>
+            {`, and is re-checked every ${recordingCfg.interval_minutes} minute${recordingCfg.interval_minutes === 1 ? '' : 's'} until the recording appears.`}
+            {' '}A round that turns out never to have been recorded is simply left alone.
+          </div>
+
+          {/* The cost of leaving this off is delayed and silent, so it is spelled
+              out rather than left for someone to discover months later. */}
+          <div
+            style={{
+              marginTop: 12,
+              background: 'var(--warn-bg)',
+              border: '1px solid var(--warn-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--warn-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>If you switch this off:</strong> interviews carry on recording and nothing is
+            lost in Teams — but the ATS stops linking those recordings to candidates, so nobody can
+            open them from a candidate’s record. Switching it back on picks up anything from the
+            last 45 days; older rounds can no longer be matched automatically, because Microsoft
+            stops serving a meeting’s recording about 60 days after it took place.
+          </div>
         </div>
       </Card>
 

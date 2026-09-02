@@ -9,8 +9,17 @@ import * as documentService from '../services/documentCollection.service.js';
 // screening.service.js already imports createPipelineJourney FROM
 // pipeline.service.js.
 import * as screeningService from '../services/screening.service.js';
+import {
+  getRecordingsForPipeline,
+  getRecordingForStream,
+  resolveStreamSource,
+  logRecordingView,
+  canViewRecordings,
+} from '../services/interviewRecording.service.js';
+import { getAccessToken } from '../services/onedrive.service.js';
 import { emailCandidates } from '../utils/emailMatch.js';
 import prisma from '../config/database.js';
+import logger from '../config/logger.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -437,6 +446,103 @@ export const getScorecardReport = catchAsync(async (req, res) => {
 
   const result = await pipelineService.getCandidateScorecardReport(id);
   return success(res, result, 'Scorecard report retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/recordings
+ * The Teams recordings linked to a candidate's rounds. Metadata only — playback
+ * goes through the stream endpoint below, which is where viewing is audited.
+ *
+ * The route already sits behind requireStaff (rank >= recruiter), so vendors
+ * cannot reach it. canViewRecordings() is asserted anyway: this is the one
+ * endpoint whose whole purpose is footage of a person, and a second explicit
+ * check costs nothing next to the cost of being wrong if that router-level
+ * middleware is ever reordered or relaxed.
+ */
+export const getPipelineRecordings = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to view interview recordings.', 403);
+  }
+
+  const recordings = await getRecordingsForPipeline(id);
+  return success(res, recordings, 'Interview recordings retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/recordings/:recordingId/stream
+ * Streams the recording through the ATS.
+ *
+ * PROXIED RATHER THAN REDIRECTED, for three reasons:
+ *   1. The Graph content URL only works with the application's own token. A
+ *      redirect would either leak that token to the browser or 401.
+ *   2. It keeps the permission check on every byte served, not just on the page
+ *      that offered the link.
+ *   3. It is what makes the audit trail real — a redirect would record that
+ *      someone was given a link, not that they opened the recording.
+ *
+ * Range headers are passed through in both directions so the player can seek
+ * without downloading a 400 MB file first.
+ */
+export const streamPipelineRecording = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const recordingId = parseInt(req.params.recordingId, 10);
+  if (Number.isNaN(id) || Number.isNaN(recordingId)) throw new AppError('Invalid id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to view interview recordings.', 403);
+  }
+
+  const row = await getRecordingForStream(id, recordingId);
+
+  // Audited BEFORE the bytes go out: a viewer who closes the tab mid-download
+  // has still watched, and an audit written only on success would quietly miss
+  // exactly the cases most worth having a record of.
+  await logRecordingView(row, req.user);
+
+  // Our archived copy when we have one, the Teams original otherwise — see
+  // resolveStreamSource() for why that order matters.
+  const { url, source } = resolveStreamSource(row);
+  const token = await getAccessToken();
+  const upstream = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Seeking: hand the upstream the browser's byte range untouched.
+      ...(req.headers.range ? { Range: req.headers.range } : {}),
+    },
+  });
+
+  if (!upstream.ok && upstream.status !== 206) {
+    logger.error(`Recording stream: ${source} source returned ${upstream.status} for recording ${recordingId}.`);
+    // 404 upstream means the meeting aged out (Microsoft stops serving a
+    // meeting's artifacts ~60 days on), which is a different story for the user
+    // than "you may not see this".
+    throw new AppError(
+      upstream.status === 404
+        ? 'This recording is no longer available from Microsoft Teams.'
+        : 'The recording could not be loaded.',
+      upstream.status === 404 ? 404 : 502
+    );
+  }
+
+  res.status(upstream.status === 206 ? 206 : 200);
+  for (const header of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const value = upstream.headers.get(header);
+    if (value) res.setHeader(header, value);
+  }
+  // Never cached by a shared proxy: this is footage of a named individual.
+  res.setHeader('Cache-Control', 'private, no-store');
+
+  if (!upstream.body) return res.end();
+  // Web stream → Node stream. Errors mid-flight are logged rather than thrown:
+  // the response is already committed, so there is no status code left to send.
+  const { Readable } = await import('node:stream');
+  Readable.fromWeb(upstream.body)
+    .on('error', (err) => {
+      logger.warn(`Recording stream: aborted for recording ${recordingId} — ${err.message}`);
+      res.destroy();
+    })
+    .pipe(res);
 });
 
 /**

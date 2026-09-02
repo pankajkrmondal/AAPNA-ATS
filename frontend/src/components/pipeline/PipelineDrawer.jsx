@@ -37,8 +37,8 @@ import {
 } from 'antd';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, PlayCircleOutlined,
+  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import pipelineService from '../../services/pipeline';
@@ -866,6 +866,27 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   });
   const hasScorecards = (scorecardReport?.overall?.count || 0) > 0
     || (scorecardReport?.pending_rounds?.length || 0) > 0;
+
+  // Teams recordings linked to this journey's rounds. One fetch per open
+  // journey, shared by every round panel and the scorecard report — the drawer
+  // renders up to six rounds, and a per-round query would fan out to six calls
+  // for a list that is almost always shorter than that.
+  //
+  // A 403 is an expected answer, not a failure: the endpoint is recruiter-tier
+  // and above, so a lower-privileged user simply sees no recording controls.
+  // Retrying it would be pointless noise.
+  const { data: recordings } = useQuery({
+    queryKey: ['pipeline-recordings', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getRecordings(pipelineId);
+      return res.data?.data || res.data || [];
+    },
+    enabled: open && !!pipelineId,
+    retry: false,
+    // Recordings appear minutes after a call ends, via a sweep the drawer knows
+    // nothing about, so a re-open should look again rather than trust a cache.
+    staleTime: 0,
+  });
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -1944,6 +1965,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   && !interviewSchedule.occurrence_status && (
                   <div className="cp-pipeline-step__extra">
                     <TeamsDetails schedule={interviewSchedule} />
+                  </div>
+                )}
+                {/* The recording outlives the join link: the Teams card above
+                    disappears once the round is resolved, which is exactly when
+                    the recording becomes the useful artifact. So this is its own
+                    block rather than part of that card, and it survives the
+                    occurrence verdict. */}
+                {i === 1 && isSchedulableStageKey(stage.stage_key) && (
+                  <div className="cp-pipeline-step__extra">
+                    <RoundRecordings
+                      pipelineId={pipelineId}
+                      stageKey={stage.stage_key}
+                      stageLabel={stage.label}
+                      recordings={recordings}
+                    />
                   </div>
                 )}
                 {i === 1 && showScheduleButton && isSchedulableStageKey(stage.stage_key) && (
@@ -3343,6 +3379,11 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
  * TeamsDetails — in-app view of the Teams meeting a booking carries: the Join
  * link plus the dial-in Meeting ID / Passcode (the same block the invite email
  * shows). Meeting ID / Passcode appear only when the tenant returned them.
+ *
+ * Also states whether the round will record itself. That is worth surfacing
+ * BEFORE the interview rather than after: if the meeting options could not be
+ * applied, the recruiter can still start the recording by hand — but only if
+ * they know, and only while the interview has not happened yet.
  */
 function TeamsDetails({ schedule }) {
   const { message } = AntApp.useApp();
@@ -3374,6 +3415,18 @@ function TeamsDetails({ schedule }) {
             </Tag>
           </Tooltip>
         )}
+        {schedule.record_auto_applied_at ? (
+          <Tooltip title="This meeting starts recording on its own. The candidate joins as an attendee and cannot stop it.">
+            <Tag color="green">Recording: ON</Tag>
+          </Tooltip>
+        ) : schedule.record_policy_error ? (
+          // Only shown when the PATCH was attempted and refused. A round that is
+          // simply not in the recorded set says nothing at all — an absent tag
+          // means "not applicable", a red one means "we tried and failed".
+          <Tooltip title={`Automatic recording could not be set: ${schedule.record_policy_error}. Someone must press Record in the meeting.`}>
+            <Tag color="red">Recording: not set</Tag>
+          </Tooltip>
+        ) : null}
       </Space>
     </div>
   );
@@ -3456,6 +3509,105 @@ function HrScorecardFields({ hr }) {
   );
 }
 
+/** mm:ss for a recording length; null stays an em dash rather than "0:00". */
+function fmtDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * RecordingPlayerModal — plays one interview recording, streamed through the
+ * ATS rather than from Microsoft directly.
+ *
+ * The <video> element is created only while the modal is open (`destroyOnClose`)
+ * so closing it actually aborts the download. Left mounted, a 400 MB recording
+ * would carry on streaming in the background after the reviewer had moved on.
+ */
+function RecordingPlayerModal({ open, onClose, pipelineId, recording, stageLabel }) {
+  return (
+    <Modal
+      open={open}
+      onCancel={onClose}
+      title={`${stageLabel || 'Interview'} recording`}
+      width={MODAL_WIDTH.EMAIL}
+      destroyOnClose
+      footer={<Button onClick={onClose}>Close</Button>}
+    >
+      {recording && (
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption -- no caption
+              track exists: Teams transcripts are blocked tenant-side (see the
+              recordings plan §13), and a fabricated one would be worse. */}
+          <video
+            src={pipelineService.recordingStreamUrl(pipelineId, recording.id)}
+            controls
+            preload="metadata"
+            style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 8 }}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Recorded {recording.recorded_start_at ? fmtDateTime(recording.recorded_start_at) : '—'}
+            {recording.duration_seconds !== null ? ` · ${fmtDuration(recording.duration_seconds)}` : ''}
+          </Text>
+          {/* Said plainly, because it is: opening this is recorded against the
+              candidate's timeline. Better stated up front than discovered. */}
+          <Text type="secondary" style={{ fontSize: 11.5 }}>
+            Interview recordings are confidential. Opening one is recorded on this candidate’s
+            history.
+          </Text>
+        </Space>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * RoundRecordings — the Recording row inside a round panel.
+ *
+ * Renders nothing at all when the round has no recording, rather than an empty
+ * "no recording" line on every round: most rounds in a journey are not recorded
+ * (older bookings, rounds held before this feature), and a permanent negative
+ * would be noise on every panel.
+ */
+function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
+  const [playing, setPlaying] = useState(null);
+  const mine = (recordings || []).filter((r) => r.stage_key === stageKey && r.kind === 'recording');
+  if (mine.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <Space size={8} wrap>
+        <span className="cp-recording-label">
+          <VideoCameraOutlined /> Interview recording
+        </span>
+        {mine.map((r, i) => (
+          <Button
+            key={r.id}
+            size="small"
+            className="cp-recording-btn"
+            icon={<PlayCircleOutlined />}
+            disabled={!r.playable}
+            onClick={() => setPlaying(r)}
+          >
+            {/* Numbered only when a round produced several — an interviewer who
+                stopped and restarted mid-interview gets one file per segment. */}
+            {mine.length > 1 ? `Watch ${i + 1}` : 'Watch'}
+            {r.duration_seconds !== null ? ` · ${fmtDuration(r.duration_seconds)}` : ''}
+          </Button>
+        ))}
+      </Space>
+      <RecordingPlayerModal
+        open={Boolean(playing)}
+        onClose={() => setPlaying(null)}
+        pipelineId={pipelineId}
+        recording={playing}
+        stageLabel={stageLabel}
+      />
+    </div>
+  );
+}
+
 /**
  * ScorecardReportModal — lazy-loads GET /pipeline/:id/scorecard-report when
  * opened and renders each submitted round's score plus the overall average/sum.
@@ -3468,6 +3620,21 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     enabled: open && !!pipelineId,
   });
 
+  // Recordings alongside the scores. THIS is the surface the requirement was
+  // really about: whoever takes the final decision opens this report, and the
+  // ask was that they can watch the earlier technical rounds from here rather
+  // than chase a link. Same query key as the drawer, so opening the report after
+  // browsing rounds costs nothing.
+  const { data: recordings } = useQuery({
+    queryKey: ['pipeline-recordings', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getRecordings(pipelineId);
+      return res.data?.data || res.data || [];
+    },
+    enabled: open && !!pipelineId,
+    retry: false, // a 403 means "not your permission", not "try again"
+  });
+
   const rounds = data?.rounds || [];
   const pendingRounds = data?.pending_rounds || [];
 
@@ -3475,8 +3642,11 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
-      ) : !data || (rounds.length === 0 && pendingRounds.length === 0) ? (
-        <Empty description="No scorecards for this candidate yet." />
+      ) : !data || (rounds.length === 0 && pendingRounds.length === 0 && (recordings || []).length === 0) ? (
+        // Recordings count towards "there is something to show here". Without
+        // them in this test, a candidate with a recording but no scorecard at
+        // all would get an empty report while the recording sat one query away.
+        <Empty description="No scorecards or recordings for this candidate yet." />
       ) : (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -3523,11 +3693,54 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                         </Text>
                       )}
                     </div>
+                    {/* The recording belongs here MORE than on a scored round,
+                        not less: with no written feedback yet, watching is the
+                        only way to know how the interview went. Leaving it off
+                        this card was the original mistake — the report stayed
+                        silent about a recording that existed. */}
+                    <RoundRecordings
+                      pipelineId={pipelineId}
+                      stageKey={p.stage_key}
+                      stageLabel={p.stage_label}
+                      recordings={recordings}
+                    />
                   </div>
                 ))}
               </Space>
             </Card>
           )}
+
+          {/* Any recording whose round appears in NEITHER list — a round whose
+              scorecard was never dispatched, or one held before scorecards
+              existed. Without this the report could still hide a recording it
+              holds, which is the whole failure this section exists to prevent. */}
+          {(() => {
+            const covered = new Set([
+              ...rounds.map((r) => r.stage_key),
+              ...pendingRounds.map((p) => p.stage_key),
+            ]);
+            const orphanStages = [...new Set(
+              (recordings || [])
+                .filter((rec) => rec.kind === 'recording' && !covered.has(rec.stage_key))
+                .map((rec) => rec.stage_key)
+            )];
+            if (orphanStages.length === 0) return null;
+            return (
+              <Card size="small" title="Interview recordings">
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {orphanStages.map((sk) => (
+                    <RoundRecordings
+                      key={sk}
+                      pipelineId={pipelineId}
+                      stageKey={sk}
+                      stageLabel={sk}
+                      recordings={recordings}
+                    />
+                  ))}
+                </Space>
+              </Card>
+            );
+          })()}
 
           {/* Consolidated feedback — every interviewer's verdict in one place,
               above the per-round cards. Whoever makes the final call (the CEO
@@ -3577,6 +3790,26 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                     </Tag>
                   ))}
                 </div>
+
+                {/* Directly under this round's numbers, so "watch what was
+                    actually said" sits next to the score it explains. */}
+                <RoundRecordings
+                  pipelineId={pipelineId}
+                  stageKey={r.stage_key}
+                  stageLabel={r.stage_label}
+                  recordings={recordings}
+                />
+
+                {/* The interviewer's own pasted link, kept as the fallback for
+                    rounds the automatic capture never reached (booked before the
+                    feature, held outside Teams, or Graph refused). Shown only
+                    when there is no captured recording for the round, so the two
+                    never compete for the same eye. */}
+                {r.recording_url && !(recordings || []).some((rec) => rec.stage_key === r.stage_key && rec.kind === 'recording') && (
+                  <a href={r.recording_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
+                    Recording link (added by the interviewer)
+                  </a>
+                )}
                 {(r.skills || []).filter((s) => s.label || s.rating !== null).length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
