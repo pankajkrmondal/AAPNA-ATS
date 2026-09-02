@@ -36,7 +36,7 @@ import {
   Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, ExclamationCircleOutlined,
   FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, PlayCircleOutlined,
   SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined, VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -698,7 +698,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   };
 }
 
-export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict }) {
+export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict, focusRecordingId }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -887,6 +887,30 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     // nothing about, so a re-open should look again rather than trust a cache.
     staleTime: 0,
   });
+
+  // The other half of the Copy link button: /pipeline?candidate=…&recording=…
+  // opens straight into the player. Waits for the recordings list because that
+  // list is the authority on whether this recording belongs to this journey —
+  // the id in a forwarded URL is not to be trusted, and the API scopes the
+  // stream by pipeline for the same reason.
+  //
+  // A recipient below recruiter tier gets a 403 on the list, so `recordings`
+  // stays undefined and no player opens — the same silent answer the round
+  // panels give them, rather than a modal that would only fail to play.
+  const [deepLinkRecording, setDeepLinkRecording] = useState(null);
+  const handledLinkRef = useRef(null);
+  useEffect(() => {
+    if (!focusRecordingId || !recordings) return;
+    // Once per link, so dismissing the player does not reopen it on the next
+    // render while the query string still carries the id.
+    if (handledLinkRef.current === focusRecordingId) return;
+    handledLinkRef.current = focusRecordingId;
+    const hit = recordings.find(
+      (r) => Number(r.id) === Number(focusRecordingId) && r.kind === 'recording'
+    );
+    if (hit) setDeepLinkRecording(hit);
+    else message.warning('That recording is not available on this candidate.');
+  }, [focusRecordingId, recordings, message]);
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -2814,6 +2838,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             )}
           </div>
 
+          {/* Earlier rounds this candidate already has a recording for. Booking
+              the next round is when someone wants to look back at the last one,
+              so the recordings sit here rather than only in the round panels.
+              Self-hiding when there are none. */}
+          <PriorRecordingsPanel
+            pipelineId={pipelineId}
+            recordings={recordings}
+            allStages={allStages}
+          />
+
           {/* Editable emails — prefilled from the seeded templates, tweakable
               before send, exactly like the Approve outcome flow. Hidden on
               manually-coordinated rounds, which send nothing. */}
@@ -2960,6 +2994,20 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
     {/* Per-candidate scorecard report — submitted round scores + overall avg/sum. */}
     <ScorecardReportModal open={reportOpen} onClose={() => setReportOpen(false)} pipelineId={pipelineId} />
+
+    {/* Player for a shared link (?recording=…). Lives at drawer level rather
+        than inside a round panel because the shared round is not necessarily the
+        one the drawer opens on. */}
+    <RecordingPlayerModal
+      open={Boolean(deepLinkRecording)}
+      onClose={() => setDeepLinkRecording(null)}
+      pipelineId={pipelineId}
+      recording={deepLinkRecording}
+      stageLabel={
+        allStages.find((s) => s.stage_key === deepLinkRecording?.stage_key)?.label
+        || stageKeyLabel(deepLinkRecording?.stage_key)
+      }
+    />
     <AssessmentInviteModal
       open={inviteModalOpen}
       onClose={() => setInviteModalOpen(false)}
@@ -3509,6 +3557,85 @@ function HrScorecardFields({ hr }) {
   );
 }
 
+/**
+ * The link a recruiter pastes into an email so somebody else can watch a
+ * recording.
+ *
+ * Deliberately NOT the stream URL. That one carries the viewer's own JWT in the
+ * query string (see pipelineService.recordingStreamUrl) because a <video>
+ * element cannot send an Authorization header — mailing it would hand the
+ * recipient the sender's whole session, let anyone it is forwarded to watch
+ * without ever signing in, and attribute every one of those views to the wrong
+ * person in the audit trail. Access was left broad on the understanding that
+ * viewing is recorded (recordings plan §0.4/§6.3); a shareable stream URL would
+ * quietly cancel that.
+ *
+ * So this is a deep link into the app instead (plan §6.4: "the recruiter shares
+ * the ATS page, not a OneDrive link"). The recipient signs in as themselves, the
+ * recruiter-tier gate still applies, and the audit row names whoever actually
+ * pressed play.
+ */
+function recordingShareLink(pipelineId, recordingId) {
+  return `${window.location.origin}/pipeline?candidate=${pipelineId}&recording=${recordingId}`;
+}
+
+/**
+ * Copies text, falling back to the legacy path when the async Clipboard API is
+ * unavailable — `navigator.clipboard` is undefined on a plain-http origin (a LAN
+ * IP, an internal test box), which is exactly where the older copy helper in
+ * TeamsDetails silently does nothing.
+ *
+ * @returns {Promise<boolean>} whether the text reached the clipboard
+ */
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Permission denied or a non-focused document — try the legacy path below.
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stage labels for the places that hold only a stage key — the scorecard
+ * report's recordings card and the shared-link player both know which round a
+ * recording belongs to but not what that round is called, and "hr_round" is not
+ * a round name anybody uses out loud.
+ *
+ * Mirrors seed-pipeline-stages.js. An unknown key is prettified rather than
+ * dropped: a stage renamed in the seed still reads sensibly here, and a
+ * recording is never hidden because its label was missing.
+ */
+const STAGE_KEY_LABELS = {
+  tech1: 'Technical Round 1',
+  tech2: 'Technical Round 2',
+  tech3: 'Technical Round 3',
+  hr_round: 'HR Round',
+  ceo: 'CEO / Final Round',
+  client: 'Client Interview',
+};
+function stageKeyLabel(key) {
+  if (!key) return '';
+  return STAGE_KEY_LABELS[key]
+    || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** mm:ss for a recording length; null stays an em dash rather than "0:00". */
 function fmtDuration(seconds) {
   if (seconds === null || seconds === undefined) return '—';
@@ -3581,21 +3708,7 @@ function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
         <span className="cp-recording-label">
           <VideoCameraOutlined /> Interview recording
         </span>
-        {mine.map((r, i) => (
-          <Button
-            key={r.id}
-            size="small"
-            className="cp-recording-btn"
-            icon={<PlayCircleOutlined />}
-            disabled={!r.playable}
-            onClick={() => setPlaying(r)}
-          >
-            {/* Numbered only when a round produced several — an interviewer who
-                stopped and restarted mid-interview gets one file per segment. */}
-            {mine.length > 1 ? `Watch ${i + 1}` : 'Watch'}
-            {r.duration_seconds !== null ? ` · ${fmtDuration(r.duration_seconds)}` : ''}
-          </Button>
-        ))}
+        <RecordingLinks pipelineId={pipelineId} recordings={mine} onPlay={setPlaying} />
       </Space>
       <RecordingPlayerModal
         open={Boolean(playing)}
@@ -3603,6 +3716,171 @@ function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
         pipelineId={pipelineId}
         recording={playing}
         stageLabel={stageLabel}
+      />
+    </div>
+  );
+}
+
+/**
+ * RecordingLinks — the Watch/Copy pair for one round's recordings, already
+ * filtered by the caller. Shared by the round panel's Recording row and the
+ * Schedule modal's list of earlier rounds so the two cannot drift apart; the
+ * player itself stays with the caller, which is the one that knows the round
+ * label to title it with.
+ */
+function RecordingLinks({ pipelineId, recordings, onPlay }) {
+  const { message } = AntApp.useApp();
+  const mine = recordings || [];
+
+  const copyLink = async (r) => {
+    const ok = await copyToClipboard(recordingShareLink(pipelineId, r.id));
+    if (ok) {
+      // Says what was copied, because it is not the video file: someone who
+      // expects a raw media link would otherwise paste this and wonder why the
+      // recipient landed on a sign-in page.
+      message.success('Recording link copied — the person you send it to signs in to the ATS to watch it.');
+    } else {
+      message.error('Could not copy the link.');
+    }
+  };
+
+  return (
+    <Space size={8} wrap>
+      {mine.map((r, i) => (
+        // One inline-flex box per recording, so a round with several segments
+        // never leaves it ambiguous which Copy belongs to which Watch.
+        //
+        // NOT Space.Compact: joining the two controls ran them into each other
+        // and over the label beside them. They read as a pair from proximity.
+        <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Button
+            size="small"
+            className="cp-recording-btn"
+            icon={<PlayCircleOutlined />}
+            disabled={!r.playable}
+            onClick={() => onPlay(r)}
+          >
+            {/* Numbered only when a round produced several — an interviewer who
+                stopped and restarted mid-interview gets one file per segment. */}
+            {mine.length > 1 ? `Watch ${i + 1}` : 'Watch'}
+            {r.duration_seconds !== null ? ` · ${fmtDuration(r.duration_seconds)}` : ''}
+          </Button>
+          {/* Only when there is something to link to — a link to a recording
+              that cannot play would just waste the recipient's sign-in.
+              A green Tag rather than a second button: sharing is secondary to
+              watching, and this is already the drawer's click-to-copy idiom
+              (the Teams Meeting ID / Passcode tags). Using antd's own green
+              keeps it identical to the "Held · scorecard sent" tag in both
+              light and dark, which a hardcoded hex would not. */}
+          {r.playable && (
+            <Tooltip title="Copy a link to this recording to paste into an email. The link opens the recording inside the ATS — the recipient signs in as themselves, so their view is audited like any other.">
+              <Tag
+                color="green"
+                className="cp-recording-copy"
+                icon={<CopyOutlined />}
+                role="button"
+                tabIndex={0}
+                onClick={() => copyLink(r)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    copyLink(r);
+                  }
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                Copy link
+              </Tag>
+            </Tooltip>
+          )}
+        </span>
+      ))}
+    </Space>
+  );
+}
+
+/**
+ * PriorRecordingsPanel — the "Interview recording" block in the Schedule /
+ * Reschedule modal: every round of this journey that already has a recording,
+ * one row per round, so whoever books the next round can rewatch the earlier
+ * ones without closing the modal and hunting through the round panels.
+ *
+ * Collapsed by default and shaped exactly like the "Invitation → candidate"
+ * editors below it — booking the round is the task here, the recordings are
+ * reference material.
+ *
+ * Renders nothing when the candidate has no recordings (every first round, and
+ * any journey whose earlier rounds pre-date this feature): an empty panel that
+ * never opens onto anything is worse than no panel.
+ */
+function PriorRecordingsPanel({ pipelineId, recordings, allStages }) {
+  const [playing, setPlaying] = useState(null);
+
+  // Grouped by round and ordered the way the journey runs, so Technical Round 1
+  // comes before Technical Round 2 regardless of the order the sweep imported
+  // the files in. A stage the journey does not list (renamed in the seed since
+  // the recording was captured) still gets a row, at the end.
+  const rounds = useMemo(() => {
+    const byStage = new Map();
+    (recordings || [])
+      .filter((r) => r.kind === 'recording' && r.stage_key)
+      .forEach((r) => {
+        if (!byStage.has(r.stage_key)) byStage.set(r.stage_key, []);
+        byStage.get(r.stage_key).push(r);
+      });
+    const order = (allStages || []).map((s) => s.stage_key);
+    return [...byStage.entries()]
+      .sort((a, b) => {
+        const ia = order.indexOf(a[0]);
+        const ib = order.indexOf(b[0]);
+        return (ia === -1 ? Number.MAX_SAFE_INTEGER : ia) - (ib === -1 ? Number.MAX_SAFE_INTEGER : ib);
+      })
+      .map(([stageKey, items]) => ({
+        stageKey,
+        label: (allStages || []).find((s) => s.stage_key === stageKey)?.label || stageKeyLabel(stageKey),
+        items,
+      }));
+  }, [recordings, allStages]);
+
+  if (rounds.length === 0) return null;
+
+  return (
+    <div>
+      <Collapse
+        size="small"
+        items={[{
+          key: 'recordings',
+          label: (
+            <span>
+              <VideoCameraOutlined style={{ marginInlineEnd: 6 }} />
+              Interview recording
+              <Text type="secondary" style={{ fontWeight: 400, marginInlineStart: 6 }}>
+                ({rounds.length} previous {rounds.length === 1 ? 'round' : 'rounds'})
+              </Text>
+            </span>
+          ),
+          children: (
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              {rounds.map((r) => (
+                <div key={r.stageKey} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                  <Text strong style={{ fontSize: 12.5 }}>{r.label}</Text>
+                  <RecordingLinks
+                    pipelineId={pipelineId}
+                    recordings={r.items}
+                    onPlay={(rec) => setPlaying({ ...rec, stageLabel: r.label })}
+                  />
+                </div>
+              ))}
+            </Space>
+          ),
+        }]}
+      />
+      <RecordingPlayerModal
+        open={Boolean(playing)}
+        onClose={() => setPlaying(null)}
+        pipelineId={pipelineId}
+        recording={playing}
+        stageLabel={playing?.stageLabel}
       />
     </div>
   );
@@ -3729,13 +4007,15 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
               <Card size="small" title="Interview recordings">
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
                   {orphanStages.map((sk) => (
-                    <RoundRecordings
-                      key={sk}
-                      pipelineId={pipelineId}
-                      stageKey={sk}
-                      stageLabel={sk}
-                      recordings={recordings}
-                    />
+                    <div key={sk}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{stageKeyLabel(sk)}</Text>
+                      <RoundRecordings
+                        pipelineId={pipelineId}
+                        stageKey={sk}
+                        stageLabel={stageKeyLabel(sk)}
+                        recordings={recordings}
+                      />
+                    </div>
                   ))}
                 </Space>
               </Card>
