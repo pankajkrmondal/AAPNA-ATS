@@ -82,6 +82,19 @@ router.get('/:id/conversations', pipelineController.getPipelineConversations);
 /** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
 router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
 
+/** GET /api/pipeline/:id/dossier — JSON preview of exactly what the downloadable
+ *  pack will contain, POST-redaction. Feeds the "what will be shared" modal so
+ *  the recruiter sees the redaction before the file leaves the building. */
+router.get('/:id/dossier', pipelineController.getCandidateDossier);
+/** GET /api/pipeline/:id/dossier/download?format=zip|html|xlsx
+ *  The pack itself — the file a recruiter emails to an external interviewer.
+ *  Rate-limited with the CSV exports: it is bulk PII leaving the building by
+ *  design, so a bulk sweep must be both limited and visible in the audit log.
+ *  Both routes inherit the router-wide authenticate -> requireStaff ->
+ *  checkModuleAccess chain above, which is the whole of the access decision — a
+ *  vendor is refused by rank before the module toggle is even consulted. */
+router.get('/:id/dossier/download', exportLimiter, pipelineController.downloadCandidateDossier);
+
 /** GET /api/pipeline/:id/recordings — Teams recordings linked to this journey.
  *  Gated by the router-wide requireStaff (rank >= recruiter, so never a vendor)
  *  and re-asserted in the controller. Metadata only. */

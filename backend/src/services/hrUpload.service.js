@@ -1128,10 +1128,16 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
 
           // Upload original file to OneDrive once
           let cvUrl = `/uploads/${path.basename(file.path)}`;
+          // The drive-item id beside the URL: a webUrl cannot be read back
+          // app-only (it is a browser link behind a Microsoft login) and does
+          // not survive a rename. Null when the upload fell back to local
+          // storage, which the dossier's fetch treats as "no attachment".
+          let cvItemId = null;
           try {
-            const onedriveUrl = await onedriveService.uploadFileToOneDrive(file.path, file.originalname);
-            if (onedriveUrl) {
-              cvUrl = onedriveUrl;
+            const uploaded = await onedriveService.uploadFileToOneDriveDetailed(file.path, file.originalname);
+            if (uploaded?.webUrl) {
+              cvUrl = uploaded.webUrl;
+              cvItemId = uploaded.id || null;
             }
           } catch (odErr) {
             logger.warn(`OneDrive: Failed to upload to OneDrive for file ${file.originalname}, using local fallback: ${odErr.message}`);
@@ -1321,6 +1327,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                     HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || existingCandidate.HasLaptopForInitialDays || null,
                     LinkedInProfile: parsed.LinkedInProfile || existingCandidate.LinkedInProfile || null,
                     cvFileUrl: cvUrl,
+                    cv_file_item_id: cvItemId,
                     uploadedByHRName: fullName,
                     uploadSource: isVendorSource ? 'Vendor Portal' : 'HR Manual Upload',
                     // New review-queue columns — only sent when provisioned (table + client).
@@ -1462,6 +1469,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 updateData.VendorEmail = existingCandidate.VendorEmail;
                 updateData.vendorName = existingCandidate.vendorName;
                 updateData.cvFileUrl = cvUrl;
+                updateData.cv_file_item_id = cvItemId;
 
                 // Recompute missing fields against the MERGED record so a sparser resubmission
                 // does not re-flag fields already stored on the existing candidate (which would
@@ -1562,6 +1570,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                   HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || null,
                   LinkedInProfile: parsed.LinkedInProfile || null,
                   cvFileUrl: cvUrl,
+                  cv_file_item_id: cvItemId,
                   statusActive: statusActive,
                   missingData: missingDataJson,
                   VendorEmail: attrEmail,

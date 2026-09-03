@@ -36,11 +36,13 @@ import {
   Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, PlayCircleOutlined,
-  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined, VideoCameraOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
+  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import useAuth from '../../hooks/useAuth';
 import pipelineService from '../../services/pipeline';
 import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
@@ -48,6 +50,7 @@ import { cleanMsgBody } from '../../utils/emailText';
 import assessmentImportService from '../../services/assessmentImportService';
 import settingsService from '../../services/settingsService';
 import AssessmentInviteModal from './AssessmentInviteModal';
+import DossierDownloadModal from './DossierDownloadModal';
 import { EmailEditorTabs } from '../common/EmailBodyEditor';
 import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
@@ -764,6 +767,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const [noShowReason, setNoShowReason] = useState('');
   // Scorecard report panel (per-round scores + overall avg/sum).
   const [reportOpen, setReportOpen] = useState(false);
+  // "Download dossier" — the pack a recruiter emails to an external interviewer.
+  const [dossierOpen, setDossierOpen] = useState(false);
+  // The drawer did not read the current user before this. It does now, only to
+  // decide whether to OFFER the dossier download: the tracker row asks for it to
+  // be "restricted to recruiter and final decision-makers", and the ranks below
+  // mirror ROLE_RANK in backend/src/config/roles.js (final decision-makers are
+  // admin-tier accounts, so no new role is needed).
+  //
+  // THIS GATE IS CONVENIENCE ONLY. The server is the authority — the route sits
+  // behind requireStaff, which refuses a vendor by rank before the module toggle
+  // is consulted. Hiding the button is so nobody is offered an action they will
+  // be refused, not a security boundary.
+  const { user } = useAuth();
+  const canDownloadDossier = ['recruiter', 'hr', 'admin', 'superadmin']
+    .includes(String(user?.role || '').trim().toLowerCase());
   // Editable emails for the schedule/cancel modals (candidate + panel), each
   // prefilled from the server preview. `touched` = recruiter edited it, so we
   // stop overwriting it when the preview refetches (e.g. after a date change).
@@ -2231,17 +2249,43 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 : <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>}
             </div>
           )}
-          {hasScorecards && (
-            <Button
-              size="small"
-              type="primary"
-              className="cta-primary btn-sheen"
-              icon={<FileTextOutlined />}
-              style={{ marginBottom: 10 }}
-              onClick={() => setReportOpen(true)}
-            >
-              Scorecard report
-            </Button>
+          {/* The candidate's evidence, in the two forms it is asked for: on
+              screen, and as a file to send to an interviewer outside the
+              company. Same header block and same visual weight, because this is
+              already where someone goes to read what the panel concluded. */}
+          {(hasScorecards || canDownloadDossier) && (
+            <Space style={{ marginBottom: 10 }} wrap>
+              {hasScorecards && (
+                <Button
+                  size="small"
+                  type="primary"
+                  className="cta-primary btn-sheen"
+                  icon={<FileTextOutlined />}
+                  onClick={() => setReportOpen(true)}
+                >
+                  Scorecard report
+                </Button>
+              )}
+              {canDownloadDossier && (
+                <Tooltip title="Download everything on this candidate as one file you can email to an interviewer outside the company">
+                  {/* Same treatment as "Scorecard report" beside it: the two are
+                      the candidate's evidence in its two forms — on screen and
+                      as a file — and a default-styled button next to a primary
+                      one read as the lesser, incidental action. A candidate with
+                      no scorecards yet shows this one alone, where a grey button
+                      in an otherwise green header looked disabled. */}
+                  <Button
+                    size="small"
+                    type="primary"
+                    className="cta-primary btn-sheen"
+                    icon={<DownloadOutlined />}
+                    onClick={() => setDossierOpen(true)}
+                  >
+                    Download dossier
+                  </Button>
+                </Tooltip>
+              )}
+            </Space>
           )}
           {screening?.notes && (
             <Alert type="info" showIcon message={screening.notes} style={{ marginBottom: 10, fontSize: 12.5 }} />
@@ -2994,6 +3038,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
     {/* Per-candidate scorecard report — submitted round scores + overall avg/sum. */}
     <ScorecardReportModal open={reportOpen} onClose={() => setReportOpen(false)} pipelineId={pipelineId} />
+
+    {/* "What will be shared" before the pack leaves the building. */}
+    <DossierDownloadModal
+      open={dossierOpen}
+      onClose={() => setDossierOpen(false)}
+      pipelineId={pipelineId}
+      candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
+    />
 
     {/* Player for a shared link (?recording=…). Lives at drawer level rather
         than inside a round panel because the shared round is not necessarily the

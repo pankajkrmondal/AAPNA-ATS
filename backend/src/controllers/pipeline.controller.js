@@ -24,6 +24,18 @@ import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
+// The candidate dossier: model (aggregation + redaction) and view (HTML/XLSX/ZIP)
+// are separate modules on purpose — see candidateDossier.service.js's header.
+import {
+  applyAttachments,
+  applyZekoExtras,
+  buildDossierModel,
+  collectAttachments,
+  collectZekoExtras,
+  describeIncludedCategories,
+  logDossierDownload,
+} from '../services/candidateDossier.service.js';
+import { buildPack, sendPack } from '../exports/candidateDossier.export.js';
 import pipelineExport from '../exports/pipeline.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
@@ -446,6 +458,167 @@ export const getScorecardReport = catchAsync(async (req, res) => {
 
   const result = await pipelineService.getCandidateScorecardReport(id);
   return success(res, result, 'Scorecard report retrieved');
+});
+
+/**
+ * Whether the caller asked to keep the candidate's phone and email in the pack.
+ *
+ * Defaults to INCLUDED (HR decision #10, 2026-09-02) — an external interviewer
+ * usually needs to reach the candidate to agree a slot. Only an explicit "0" or
+ * "false" removes them, so a malformed or missing parameter yields the agreed
+ * default rather than silently stripping data the recruiter expected to send.
+ */
+function wantsContactDetails(req) {
+  const raw = req.query.contact_details;
+  if (raw === undefined) return true;
+  return !['0', 'false', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+/**
+ * GET /api/pipeline/:id/dossier
+ * A JSON preview of exactly what the downloadable pack will contain, AFTER
+ * redaction.
+ *
+ * This exists so the "what will be shared" modal can show a recruiter the real
+ * post-redaction content before the file leaves the building — not a description
+ * of it, the thing itself. Making the preview a different code path from the
+ * download is how the two drift apart, so both call buildDossierModel().
+ *
+ * Not audited: looking at what a pack WOULD contain is not the same as taking
+ * one out of the building. The audit is written when bytes are actually sent —
+ * the same distinction getPipelineRecordings() draws against the stream route.
+ */
+export const getCandidateDossier = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const model = await buildDossierModel(id, {
+    includeContactDetails: wantsContactDetails(req),
+    generatedBy: req.user,
+  });
+  return success(res, model, 'Dossier preview retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/dossier/download
+ *   ?format=zip|html|xlsx&contact_details=0|1&resume=0|1&documents=0|1
+ *   &screening_detail=0|1&screening_report=0|1
+ * The pack itself.
+ *
+ * Access is the router's requireStaff (rank >= recruiter, so never a vendor) —
+ * decision #5, and the reason no new middleware appears here. "Final
+ * decision-makers" are admin-tier accounts and are already above that floor.
+ *
+ * Rate-limited alongside the CSV exports at the route. The row cap does NOT
+ * apply: one candidate is one candidate, and refusing a dossier for being too
+ * long would be refusing the feature.
+ *
+ * The audit is written AFTER the pack is built but BEFORE it is sent, for the
+ * same reason logRecordingView() is: someone whose download fails halfway has
+ * still had the file generated for them, and an audit written only on a clean
+ * send would quietly miss exactly the cases worth reviewing.
+ */
+export const downloadCandidateDossier = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const requested = String(req.query.format || 'zip').trim().toLowerCase();
+  if (!['zip', 'html', 'xlsx'].includes(requested)) {
+    throw new AppError('Unsupported dossier format. Use zip, html or xlsx.', 400);
+  }
+
+  const includeContactDetails = wantsContactDetails(req);
+  // Resume defaults ON; personal documents default OFF and must be asked for
+  // explicitly — HR chose opt-in over exclusion (decision #11), so the deterrent
+  // is that the choice is deliberate AND recorded, not that it is impossible.
+  const includeResume = req.query.resume === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.resume).trim().toLowerCase());
+  const includeDocuments = ['1', 'true', 'yes'].includes(
+    String(req.query.documents ?? '').trim().toLowerCase(),
+  );
+  // The screening ASSESSMENT, rendered into the pack under our own redaction
+  // (plan §6.7). Defaults ON: it is what HR asked for (decision #8), it carries
+  // no compensation, nothing is playable from it, and it needs no link — so it
+  // is the safe half of the Zeko story and the one most readers want.
+  const includeScreeningDetail = req.query.screening_detail === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.screening_detail).trim().toLowerCase());
+
+  // The vendor's own page, as a NO-LOGIN link. A separate decision from the
+  // above, and a much bigger one — the PDF is unreachable to us (it 403s), so a
+  // link is the only form it can take.
+  //
+  // OFF by default, like personal documents, and for a sharper reason: the page
+  // that link opens is OUTSIDE this pack's redaction. A real staging report
+  // (2026-09-03) states the candidate's current and expected CTC in prose, their
+  // email address and an IP-derived location — all three of which §8 strips from
+  // the pack itself. Defaulting it on would have made the dossier's own promise
+  // ("compensation and contact details removed") false by one click, and the
+  // §10.3 leak scan would not have caught it: the link text carries no CTC, the
+  // page behind it does. See plan §6.6.
+  const includeScreeningReport = ['1', 'true', 'yes'].includes(
+    String(req.query.screening_report ?? '').trim().toLowerCase(),
+  );
+
+  const model = await buildDossierModel(id, { includeContactDetails, generatedBy: req.user });
+
+  // Attachments only travel in a ZIP; the single-file formats have nowhere to
+  // put them, so we do not spend Graph round trips fetching what cannot ship.
+  const attachments = requested === 'zip'
+    ? await collectAttachments(id, {
+      includeResume, includeDocuments, candidateName: model.candidate.name,
+    })
+    : { files: [], notes: {}, degraded: false, documentCount: 0, totalBytes: 0 };
+  applyAttachments(model, attachments, {
+    includeResume, includeDocuments, supportsAttachments: requested === 'zip',
+  });
+
+  // Unlike attachments, neither of these is a file — one is rendered text, the
+  // other a link — so both work in all three formats. Fetched here rather than
+  // in buildDossierModel() because opening the preview must not spend Zeko round
+  // trips, nor create public links, as a side effect of looking.
+  const zeko = await collectZekoExtras(id, {
+    includeReport: includeScreeningDetail,
+    includeShareLink: includeScreeningReport,
+  });
+  applyZekoExtras(model, zeko, { includeScreeningDetail, includeScreeningReport });
+
+  const { buffer, filename, contentType } = buildPack(model, requested, attachments.files);
+
+  const includedCategories = describeIncludedCategories(model);
+  await logDossierDownload({
+    pipelineId: id,
+    user: req.user,
+    model,
+    format: requested,
+    bytes: buffer.length,
+    includedCategories,
+    stageKey: model.status.stage_key,
+    url: req.originalUrl,
+  });
+
+  logger.info(`Dossier download: pipeline ${id}`, {
+    user: req.user?.email,
+    role: req.user?.role,
+    format: requested,
+    bytes: buffer.length,
+    included: includedCategories.join(','),
+  });
+
+  // X-Export-Degraded, not a dossier-specific name: that is the header
+  // downloadFile() already reads for every export in the app (runExport.js:121),
+  // and inventing a second spelling would mean the warning silently never fired.
+  //
+  // "Degraded" means something the recruiter asked for could not be fetched —
+  // never that the pack is empty. The download still succeeds; the UI warns, and
+  // the pack's own manifest says which item and why.
+  const degraded = attachments.degraded
+    || zeko.degraded
+    || model.manifest.some((m) => m.included === false && m.degraded === true);
+
+  return sendPack(res, buffer, filename, contentType, {
+    'X-Dossier-Format': requested,
+    ...(degraded ? { 'X-Export-Degraded': 'true' } : {}),
+  });
 });
 
 /**

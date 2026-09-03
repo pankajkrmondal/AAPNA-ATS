@@ -229,6 +229,35 @@ const pipelineService = {
   },
 
   /**
+   * What the downloadable dossier WILL contain, after redaction.
+   *
+   * Feeds the "what will be shared" modal. The point of previewing the real
+   * post-redaction model rather than describing it is that the recruiter sees
+   * the actual file's contents before it leaves the building — a description
+   * would drift from the file the first time either changed.
+   *
+   * @param {number} id - pipeline id
+   * @param {{ contact_details?: boolean }} [params]
+   */
+  getDossierPreview(id, params = {}) {
+    return api.get(`/pipeline/${id}/dossier`, { params });
+  },
+
+  /**
+   * The dossier pack itself — the file a recruiter emails to an external
+   * interviewer. Call through downloadFile() so blob handling, the server's
+   * filename and object-URL cleanup are shared with every other export.
+   *
+   * @param {number} id - pipeline id
+   * @param {{ format?: 'zip'|'html'|'xlsx', contact_details?: boolean, resume?: boolean,
+   *   documents?: boolean, screening_report?: boolean }} params
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  downloadDossier(id, params = {}, config = {}) {
+    return api.get(`/pipeline/${id}/dossier/download`, { params, ...config });
+  },
+
+  /**
    * The <video> src for one recording.
    *
    * The JWT rides in the query string because a media element cannot carry an

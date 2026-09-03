@@ -42,7 +42,12 @@ app.use(
     // hides them on cross-origin responses, so staging/production (where
     // VITE_API_URL points at another origin) would name every download
     // "export.csv" while dev — proxied same-origin by Vite — looked fine.
-    exposedHeaders: ['Content-Disposition', 'X-Export-Row-Count', 'X-Export-Degraded'],
+    exposedHeaders: [
+      'Content-Disposition', 'X-Export-Row-Count', 'X-Export-Degraded',
+      // The candidate dossier reuses X-Export-Degraded above (downloadFile()
+      // only reads that one); this says which format the pack came back as.
+      'X-Dossier-Format',
+    ],
   }),
 );
 

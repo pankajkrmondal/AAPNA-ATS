@@ -294,6 +294,9 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
   // Check if a resume file was uploaded
   let parsedResume = null;
   let cvUrl = null;
+  // Null when the OneDrive upload failed and cvUrl fell back to local storage;
+  // the dossier's fetch treats a missing id plus a local path as "no attachment".
+  let cvItemId = null;
 
   if (req.file) {
     logger.info(`File uploaded in missing JD submission: ${req.file.originalname}. Size: ${req.file.size} bytes.`);
@@ -301,9 +304,13 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     // 1) Upload to MS OneDrive
     cvUrl = `/uploads/${path.basename(req.file.path)}`;
     try {
-      const onedriveUrl = await onedriveService.uploadFileToOneDrive(req.file.path, req.file.originalname);
-      if (onedriveUrl) {
-        cvUrl = onedriveUrl;
+      // Detailed variant so the drive-item id is stored beside the URL — a
+      // webUrl cannot be read back app-only, which is what the candidate
+      // dossier needs in order to carry the resume (onedrive.service.js).
+      const uploaded = await onedriveService.uploadFileToOneDriveDetailed(req.file.path, req.file.originalname);
+      if (uploaded?.webUrl) {
+        cvUrl = uploaded.webUrl;
+        cvItemId = uploaded.id || null;
       }
     } catch (odErr) {
       logger.warn(`OneDrive: Failed to upload missing JD resume for candidate ${candidate.id}, using local fallback: ${odErr.message}`);
@@ -393,6 +400,7 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
 
   if (cvUrl) {
     finalUpdateData.cvFileUrl = cvUrl;
+    finalUpdateData.cv_file_item_id = cvItemId;
   }
 
   // Recheck what fields are still missing

@@ -324,17 +324,26 @@ export async function ensureOneDriveFolderPath(folderPath = []) {
 }
 
 /**
- * Upload a local file to MS OneDrive target folder.
- * @param {string} localFilePath - Path of the file on disk
- * @param {string} originalName - The original name of the uploaded file
- * @param {object} [options]
- * @param {string[]} [options.folderPath] - nested folders under the configured
- *   parent to upload into, created on demand (e.g.
- *   ['Document Collection', 'Asha R (cv-4821)']). Omit to upload flat into the
- *   parent folder, which is what every pre-existing caller does.
- * @returns {Promise<string>} The SharePoint/OneDrive webUrl of the uploaded file
+ * Upload a local file and return the full item — id AND webUrl.
+ *
+ * uploadFileToOneDrive() below keeps returning just the webUrl so that none of
+ * its six existing callers has to change. Callers that PERSIST the location
+ * (rpa_cv.cvFileUrl, rpa_candidate_documents.file_url) use this one instead and
+ * store the id alongside, because:
+ *
+ *   1. A webUrl cannot be read back by an application. It is a browser URL
+ *      behind a Microsoft login, so handing it to an external interviewer
+ *      produces a login wall rather than a resume — the whole reason the
+ *      candidate dossier needs the bytes (plan §6.3).
+ *   2. An item id survives the file being renamed or moved in the drive. A
+ *      webUrl does not: every stored URL is one rename from being a dead link.
+ *
+ * @param {string} localFilePath
+ * @param {string} originalName
+ * @param {{ folderPath?: string[] }} [options]
+ * @returns {Promise<{id: string, webUrl: string, name: string, size: number}>}
  */
-export async function uploadFileToOneDrive(localFilePath, originalName, { folderPath = [] } = {}) {
+export async function uploadFileToOneDriveDetailed(localFilePath, originalName, { folderPath = [] } = {}) {
   try {
     const accessToken = await getAccessToken();
     const parentId = folderPath.length
@@ -374,9 +383,151 @@ export async function uploadFileToOneDrive(localFilePath, originalName, { folder
 
     const item = await response.json();
     logger.info(`OneDrive: Successfully uploaded file to OneDrive. webUrl: ${item.webUrl}`);
-    return item.webUrl;
+    return {
+      id: item.id, webUrl: item.webUrl, name: item.name || cleanFilename, size: item.size ?? fileBuffer.length,
+    };
   } catch (err) {
     logger.warn(`OneDrive: Failed to upload file "${originalName}" to OneDrive: ${err.message}`);
     throw err;
   }
+}
+
+/**
+ * Upload a local file to the OneDrive target folder.
+ *
+ * Unchanged signature and return type — a bare webUrl string — so the callers
+ * that only need somewhere to link to (MRF job descriptions, assessment import
+ * files) keep working exactly as before.
+ *
+ * @param {string} localFilePath - Path of the file on disk
+ * @param {string} originalName - The original name of the uploaded file
+ * @param {object} [options]
+ * @param {string[]} [options.folderPath] - nested folders under the configured
+ *   parent to upload into, created on demand (e.g.
+ *   ['Document Collection', 'Asha R (cv-4821)']). Omit to upload flat into the
+ *   parent folder, which is what every pre-existing caller does.
+ * @returns {Promise<string>} The SharePoint/OneDrive webUrl of the uploaded file
+ */
+export async function uploadFileToOneDrive(localFilePath, originalName, options = {}) {
+  const item = await uploadFileToOneDriveDetailed(localFilePath, originalName, options);
+  return item.webUrl;
+}
+
+/**
+ * Graph's encoding for "resolve this sharing URL to a drive item".
+ * https://learn.microsoft.com/en-us/graph/api/shares-get
+ */
+function encodeShareUrl(webUrl) {
+  const b64 = Buffer.from(webUrl, 'utf8').toString('base64');
+  return `u!${b64.replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
+}
+
+/**
+ * A Graph failure with the response body kept OFF the message.
+ *
+ * Errors from this path can end up quoted in a candidate dossier — a file that
+ * is emailed outside the company by design. A raw Graph error body carries
+ * request ids, drive and item identifiers and sometimes internal host names,
+ * none of which belongs in a stranger's inbox. So the message stays short and
+ * safe to repeat, and the detail rides on `.detail` for the server log.
+ *
+ * @param {string} what - short, human, safe to show
+ * @param {number} status - HTTP status
+ * @param {string} body - Graph's response body, for logging only
+ */
+function graphError(what, status, body) {
+  const err = new Error(`${what} (HTTP ${status}).`);
+  err.status = status;
+  err.detail = String(body || '').slice(0, 400);
+  return err;
+}
+
+/**
+ * Fetch a drive item's BYTES, app-only, so a file can travel INSIDE a dossier.
+ *
+ * Two routes, in order of preference:
+ *
+ *   by id   GET /users/{owner}/drive/items/{itemId}/content     direct
+ *   by url  GET /shares/{encoded}/driveItem[/content]           legacy rows
+ *
+ * The URL route exists only because rows written before 2026-09-02 have no
+ * stored id. It costs an extra round trip, so the resolved id is returned for
+ * the caller to write back — the backfill is lazy, happens only for files
+ * somebody actually asks for, and costs that extra trip exactly once per file.
+ *
+ * PERMISSIONS: this runs on the existing Sites.Selected grant, verified against
+ * staging on 2026-09-02 (Files.Read.All was requested and declined by IT, and is
+ * not needed). Production uses a separate app registration whose per-site grant
+ * is issued separately — re-test there before relying on it.
+ *
+ * NEVER THROWS FOR THE CALLER'S BENEFIT — it throws, but callers are expected to
+ * catch. A resume that cannot be fetched must degrade to a line in the dossier's
+ * manifest, not a failed download: the pack is still worth sending without it.
+ *
+ * @param {{itemId?: string|null, webUrl?: string|null, maxBytes?: number, timeoutMs?: number}} args
+ * @returns {Promise<{buffer: Buffer, name: string|null, itemId: string|null, contentType: string|null, resolvedFromUrl: boolean}>}
+ * @throws {Error} on a missing locator, a Graph failure, or an oversized file
+ */
+export async function downloadDriveItem({ itemId, webUrl, maxBytes, timeoutMs = 10_000 } = {}) {
+  if (!itemId && !webUrl) throw new Error('downloadDriveItem needs an itemId or a webUrl.');
+
+  const accessToken = await getAccessToken();
+  const owner = config.microsoft.defaultSender;
+  const driveBase = owner
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(owner)}/drive`
+    : 'https://graph.microsoft.com/v1.0/drive';
+  const auth = { Authorization: `Bearer ${accessToken}` };
+
+  let resolvedId = itemId || null;
+  let name = null;
+  let resolvedFromUrl = false;
+
+  // Legacy row: resolve the stored URL to an item first, so we learn its id and
+  // its real filename (which the URL only approximates).
+  if (!resolvedId) {
+    const metaRes = await fetch(`https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(webUrl)}/driveItem`, {
+      headers: auth,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!metaRes.ok) {
+      throw graphError('Could not resolve the stored file link', metaRes.status, await metaRes.text().catch(() => ''));
+    }
+    const meta = await metaRes.json();
+    resolvedId = meta.id;
+    name = meta.name || null;
+    resolvedFromUrl = true;
+    // Refuse before downloading rather than after — the point of a size cap is
+    // not to pull 200 MB into memory to discover it was too big.
+    if (maxBytes && Number(meta.size) > maxBytes) {
+      throw new Error(`File is ${Math.round(meta.size / 1024 / 1024)} MB, over the ${Math.round(maxBytes / 1024 / 1024)} MB attachment limit.`);
+    }
+  }
+
+  const res = await fetch(`${driveBase}/items/${resolvedId}/content`, {
+    headers: auth,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    throw graphError('Could not read the file from OneDrive', res.status, await res.text().catch(() => ''));
+  }
+
+  const declared = Number(res.headers.get('content-length'));
+  if (maxBytes && Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`File is ${Math.round(declared / 1024 / 1024)} MB, over the ${Math.round(maxBytes / 1024 / 1024)} MB attachment limit.`);
+  }
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  // Content-Length can be absent on a redirected download, so the real size is
+  // checked again once the bytes are in hand.
+  if (maxBytes && buffer.length > maxBytes) {
+    throw new Error(`File is ${Math.round(buffer.length / 1024 / 1024)} MB, over the ${Math.round(maxBytes / 1024 / 1024)} MB attachment limit.`);
+  }
+
+  return {
+    buffer,
+    name,
+    itemId: resolvedId,
+    contentType: res.headers.get('content-type'),
+    resolvedFromUrl,
+  };
 }
