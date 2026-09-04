@@ -336,6 +336,20 @@ const config = {
      * opens, used for the drawer's "View full report on Zeko".
      */
     reportLinkBase: env('ZEKO_REPORT_LINK_BASE', 'https://app.zeko.ai/app/new-report'),
+    /**
+     * Base for the PUBLIC, no-login view of the same report — the link Zeko's
+     * own Share button mints. Takes ?linkId=. This is what a candidate dossier
+     * carries, because reportLinkBase above is behind Zeko's login and an
+     * external interviewer opening it gets a sign-in wall rather than a report.
+     * See utils/zekoShareLink.js.
+     */
+    sharedReportLinkBase: env('ZEKO_SHARED_REPORT_LINK_BASE', 'https://app.zeko.ai/app/shared-report'),
+    /**
+     * Timeout for the share-link mint. Short on purpose: it runs inside a
+     * recruiter's dossier download, and a slow Zeko must degrade that download to
+     * "ask the recruiter" rather than hold it open.
+     */
+    shareLinkTimeoutMs: parseInt(env('ZEKO_SHARE_LINK_TIMEOUT_MS', '10000'), 10),
     /** Client id for the API-key token grant (differs per environment). */
     clientId: env('ZEKO_CLIENT_ID', ''),
     /** Company/workflow id used by the dashboard job-catalog API. */
@@ -477,6 +491,100 @@ const config = {
     rateWindowMs: parseInt(env('EXPORT_RATE_WINDOW_MS', String(5 * 60 * 1000)), 10),
     /** Exports allowed per window per USER (not per IP — the office shares one). */
     rateMax: parseInt(env('EXPORT_RATE_MAX', '20'), 10),
+  },
+
+  /**
+   * Candidate dossier — the "complete download" a recruiter emails to an
+   * external interviewer (see src/services/candidateDossier.service.js).
+   */
+  dossier: {
+    /**
+     * How many days the pack asks its recipient to keep it before deleting.
+     * HR agreed to the request but did not name a period (2026-09-02); 30 days
+     * was confirmed by the project owner. Changing it here changes the READ-ME,
+     * the download modal and the HTML footer together — the recipient and the
+     * recruiter must never be shown two different periods.
+     */
+    deletionDays: parseInt(env('DOSSIER_DELETION_DAYS', '30'), 10),
+    /**
+     * Whether to walk every finished dossier model and throw on a forbidden
+     * field (plan §8.3). Default ON, including in production: the cost is one
+     * walk of a small object, against a leak that cannot be undone once the file
+     * is sent. There is a switch only so an incident can be worked around
+     * without a deploy — turning it off is not a supported configuration.
+     */
+    assertRedaction: env('DOSSIER_ASSERT_REDACTION', 'true') !== 'false',
+
+    /**
+     * Largest single attachment. Over this the file is skipped and the pack's
+     * manifest says so — a resume is normally well under 1 MB, so anything near
+     * this ceiling is a scan or a mis-upload rather than a document an
+     * interviewer needs.
+     */
+    maxAttachmentBytes: parseInt(env('DOSSIER_MAX_ATTACHMENT_BYTES', String(25 * 1024 * 1024)), 10),
+    /**
+     * Largest whole pack. Above this, attachments are dropped in priority order
+     * rather than the download failing — an incomplete pack that arrives beats a
+     * complete one that does not.
+     *
+     * Deliberately ABOVE the ~25 MB Outlook attachment ceiling: the recruiter is
+     * warned past warnPackBytes so they can share it via a link instead, which
+     * is a better answer than us silently truncating to fit an email.
+     */
+    maxPackBytes: parseInt(env('DOSSIER_MAX_PACK_BYTES', String(40 * 1024 * 1024)), 10),
+    /** Past this the UI warns that the pack may not send as an email attachment. */
+    warnPackBytes: parseInt(env('DOSSIER_WARN_PACK_BYTES', String(20 * 1024 * 1024)), 10),
+    /** Per-attachment Graph timeout — one dead file must not hang the request. */
+    attachmentTimeoutMs: parseInt(env('DOSSIER_ATTACHMENT_TIMEOUT_MS', '10000'), 10),
+    /** Total time allowed for ALL attachment fetches, after which the rest are skipped. */
+    attachmentBudgetMs: parseInt(env('DOSSIER_ATTACHMENT_BUDGET_MS', '30000'), 10),
+    /**
+     * Total time allowed for minting the Zeko report share links.
+     *
+     * Needed as well as the per-call ZEKO_SHARE_LINK_TIMEOUT_MS because the
+     * expensive step is not the mint. If the stored dashboard cookie has been
+     * invalidated, the Zeko client re-runs the OTP login — request an OTP, poll
+     * the mailbox for it, verify — which measured 38 SECONDS on staging
+     * (2026-09-03). That is fine in a cron and unacceptable inside a recruiter's
+     * download, so the whole step is bounded: past this the pack says "ask the
+     * recruiter" while the login finishes in the background and the next
+     * download gets its link.
+     */
+    zekoLinkBudgetMs: parseInt(env('DOSSIER_ZEKO_LINK_BUDGET_MS', '20000'), 10),
+
+    /**
+     * How long a recording share link stays alive (plan §6.5, HR decision #7).
+     *
+     * 14 days is HR's number, not a technical one: long enough that an
+     * interviewer who is handed the pack on a Friday can still watch the round
+     * the following week, short enough that a forwarded mailbox is not a
+     * permanent window onto a candidate's interview.
+     *
+     * Read at MINT time only. Shortening it here does not shorten a link
+     * somebody already holds — that is what revocation is for.
+     */
+    shareLinkDays: parseInt(env('DOSSIER_SHARE_LINK_DAYS', '14'), 10),
+
+    /**
+     * Rate limit on the PUBLIC share-link routes, keyed on token + IP.
+     *
+     * A separate limiter from exportLimiter because that one is per-user and
+     * there is no user here — the token is the only identity. Generous enough
+     * for one interviewer watching one interview (a video player opens the page
+     * once and then issues range requests to the stream route), tight enough
+     * that a link being passed around a group shows up as refusals.
+     */
+    shareRateWindowMs: parseInt(env('DOSSIER_SHARE_RATE_WINDOW_MS', String(15 * 60 * 1000)), 10),
+    shareRateMax: parseInt(env('DOSSIER_SHARE_RATE_MAX', '120'), 10),
+    /**
+     * The same window, for the STREAM route, which has its own budget.
+     *
+     * Opening the page is one request; playing an hour of video and scrubbing
+     * through it is many, and a browser's range requests are not something the
+     * viewer can moderate. Sharing the page's 120 meant a normal viewing session
+     * could 429 the recording mid-sentence, with nothing on screen to say why.
+     */
+    shareStreamRateMax: parseInt(env('DOSSIER_SHARE_STREAM_RATE_MAX', '900'), 10),
   },
 
   /**

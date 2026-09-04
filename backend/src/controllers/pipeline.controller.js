@@ -17,13 +17,41 @@ import {
   canViewRecordings,
 } from '../services/interviewRecording.service.js';
 import { getAccessToken } from '../services/onedrive.service.js';
+// Phase 4 — the no-login recording links a dossier can carry (plan §6.5).
+// Minting is NOT imported here on purpose: it happens inside
+// collectRecordingShareLinks() during a download, so there is exactly one place
+// in the system where a public URL to someone's interview comes into existence.
+import {
+  listShareLinks,
+  revokeShareLink,
+} from '../services/recordingShare.service.js';
 import { emailCandidates } from '../utils/emailMatch.js';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
+// The dossier's pack-size threshold lives in config (§6.4). Imported explicitly:
+// this file previously pulled in only database.js and logger.js from config/,
+// and referencing a bare `config` without this line throws at REQUEST time, not
+// at import time — so it 500s every download while the module still loads fine.
+import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
+// The candidate dossier: model (aggregation + redaction) and view (HTML/XLSX/ZIP)
+// are separate modules on purpose — see candidateDossier.service.js's header.
+import {
+  applyAttachments,
+  applyRecordingShareLinks,
+  applyZekoExtras,
+  buildDossierModel,
+  collectAttachments,
+  collectRecordingShareLinks,
+  collectZekoExtras,
+  describeIncludedCategories,
+  logDossierDownload,
+} from '../services/candidateDossier.service.js';
+import { packSizeNotice } from '../utils/dossierModel.js';
+import { buildPack, sendPack } from '../exports/candidateDossier.export.js';
 import pipelineExport from '../exports/pipeline.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
@@ -449,6 +477,213 @@ export const getScorecardReport = catchAsync(async (req, res) => {
 });
 
 /**
+ * Whether the caller asked to keep the candidate's phone and email in the pack.
+ *
+ * Defaults to INCLUDED (HR decision #10, 2026-09-02) — an external interviewer
+ * usually needs to reach the candidate to agree a slot. Only an explicit "0" or
+ * "false" removes them, so a malformed or missing parameter yields the agreed
+ * default rather than silently stripping data the recruiter expected to send.
+ */
+function wantsContactDetails(req) {
+  const raw = req.query.contact_details;
+  if (raw === undefined) return true;
+  return !['0', 'false', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+/**
+ * GET /api/pipeline/:id/dossier
+ * A JSON preview of exactly what the downloadable pack will contain, AFTER
+ * redaction.
+ *
+ * This exists so the "what will be shared" modal can show a recruiter the real
+ * post-redaction content before the file leaves the building — not a description
+ * of it, the thing itself. Making the preview a different code path from the
+ * download is how the two drift apart, so both call buildDossierModel().
+ *
+ * Not audited: looking at what a pack WOULD contain is not the same as taking
+ * one out of the building. The audit is written when bytes are actually sent —
+ * the same distinction getPipelineRecordings() draws against the stream route.
+ */
+export const getCandidateDossier = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const model = await buildDossierModel(id, {
+    includeContactDetails: wantsContactDetails(req),
+    generatedBy: req.user,
+  });
+  return success(res, model, 'Dossier preview retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/dossier/download
+ *   ?format=zip|html|xlsx&contact_details=0|1&resume=0|1&documents=0|1
+ *   &screening_detail=0|1&screening_report=0|1&assessment_detail=0|1
+ *   &recording_links=0|1
+ * The pack itself.
+ *
+ * Access is the router's requireStaff (rank >= recruiter, so never a vendor) —
+ * decision #5, and the reason no new middleware appears here. "Final
+ * decision-makers" are admin-tier accounts and are already above that floor.
+ *
+ * Rate-limited alongside the CSV exports at the route. The row cap does NOT
+ * apply: one candidate is one candidate, and refusing a dossier for being too
+ * long would be refusing the feature.
+ *
+ * The audit is written AFTER the pack is built but BEFORE it is sent, for the
+ * same reason logRecordingView() is: someone whose download fails halfway has
+ * still had the file generated for them, and an audit written only on a clean
+ * send would quietly miss exactly the cases worth reviewing.
+ */
+export const downloadCandidateDossier = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const requested = String(req.query.format || 'zip').trim().toLowerCase();
+  if (!['zip', 'html', 'xlsx'].includes(requested)) {
+    throw new AppError('Unsupported dossier format. Use zip, html or xlsx.', 400);
+  }
+
+  const includeContactDetails = wantsContactDetails(req);
+  // Resume defaults ON; personal documents default OFF and must be asked for
+  // explicitly — HR chose opt-in over exclusion (decision #11), so the deterrent
+  // is that the choice is deliberate AND recorded, not that it is impossible.
+  const includeResume = req.query.resume === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.resume).trim().toLowerCase());
+  const includeDocuments = ['1', 'true', 'yes'].includes(
+    String(req.query.documents ?? '').trim().toLowerCase(),
+  );
+  // The screening ASSESSMENT, rendered into the pack under our own redaction
+  // (plan §6.7). Defaults ON: it is what HR asked for (decision #8), it carries
+  // no compensation, nothing is playable from it, and it needs no link — so it
+  // is the safe half of the Zeko story and the one most readers want.
+  const includeScreeningDetail = req.query.screening_detail === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.screening_detail).trim().toLowerCase());
+
+  // The vendor's own page, as a NO-LOGIN link. A separate decision from the
+  // above, and a much bigger one — the PDF is unreachable to us (it 403s), so a
+  // link is the only form it can take.
+  //
+  // OFF by default, like personal documents, and for a sharper reason: the page
+  // that link opens is OUTSIDE this pack's redaction. A real staging report
+  // (2026-09-03) states the candidate's current and expected CTC in prose, their
+  // email address and an IP-derived location — all three of which §8 strips from
+  // the pack itself. Defaulting it on would have made the dossier's own promise
+  // ("compensation and contact details removed") false by one click, and the
+  // §10.3 leak scan would not have caught it: the link text carries no CTC, the
+  // page behind it does. See plan §6.6.
+  const includeScreeningReport = ['1', 'true', 'yes'].includes(
+    String(req.query.screening_report ?? '').trim().toLowerCase(),
+  );
+
+  // The written assessment's own breakdown — question counts, difficulty split
+  // and topic scores, read out of the Evalground import. Defaults ON for the
+  // same reasons the screening assessment does: it is rendered inside the pack
+  // under our redaction, it carries no link and no login, and it is the whole
+  // of what an interviewer asks for after seeing a bare percentage.
+  const includeAssessmentDetail = req.query.assessment_detail === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.assessment_detail).trim().toLowerCase());
+
+  const model = await buildDossierModel(id, {
+    includeContactDetails, includeAssessmentDetail, generatedBy: req.user,
+  });
+
+  // Attachments only travel in a ZIP; the single-file formats have nowhere to
+  // put them, so we do not spend Graph round trips fetching what cannot ship.
+  const attachments = requested === 'zip'
+    ? await collectAttachments(id, {
+      includeResume, includeDocuments, candidateName: model.candidate.name,
+    })
+    : { files: [], notes: {}, degraded: false, documentCount: 0, totalBytes: 0 };
+  applyAttachments(model, attachments, {
+    includeResume, includeDocuments, supportsAttachments: requested === 'zip',
+  });
+
+  // Unlike attachments, neither of these is a file — one is rendered text, the
+  // other a link — so both work in all three formats. Fetched here rather than
+  // in buildDossierModel() because opening the preview must not spend Zeko round
+  // trips, nor create public links, as a side effect of looking.
+  const zeko = await collectZekoExtras(id, {
+    includeReport: includeScreeningDetail,
+    includeShareLink: includeScreeningReport,
+  });
+  applyZekoExtras(model, zeko, { includeScreeningDetail, includeScreeningReport });
+
+  // Recordings as expiring, no-login links (HR decision #7, plan §6.5).
+  //
+  // Defaults ON, unlike the Zeko report link, and the difference is the point:
+  // these links are OURS. One link per round, 14-day expiry enforced on the
+  // server, revocable from the drawer the moment a recruiter changes their mind,
+  // and every open written onto the candidate's timeline with the viewer's IP.
+  // None of that is true of a vendor's page, which is why that one is opt-in and
+  // this one is not.
+  //
+  // Minted here rather than in buildDossierModel() for the same reason as the
+  // Zeko links: opening the preview must not create public URLs to someone's
+  // interview as a side effect of looking.
+  const includeRecordingLinks = req.query.recording_links === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.recording_links).trim().toLowerCase());
+  const recordingLinks = await collectRecordingShareLinks(id, {
+    include: includeRecordingLinks, user: req.user,
+  });
+  applyRecordingShareLinks(model, recordingLinks, { includeRecordingLinks });
+
+  const { buffer, filename, contentType } = buildPack(model, requested, attachments.files);
+
+  const includedCategories = describeIncludedCategories(model);
+  await logDossierDownload({
+    pipelineId: id,
+    user: req.user,
+    model,
+    format: requested,
+    bytes: buffer.length,
+    includedCategories,
+    stageKey: model.status.stage_key,
+    url: req.originalUrl,
+  });
+
+  const sizeNotice = packSizeNotice(buffer.length, config.dossier.warnPackBytes);
+
+  logger.info(`Dossier download: pipeline ${id}`, {
+    user: req.user?.email,
+    role: req.user?.role,
+    format: requested,
+    bytes: buffer.length,
+    included: includedCategories.join(','),
+    // Logged when it fires so a recruiter reporting "my email bounced" can be
+    // matched to the download that produced the oversized pack.
+    ...(sizeNotice ? { oversize: sizeNotice.message } : {}),
+  });
+
+  // X-Export-Degraded, not a dossier-specific name: that is the header
+  // downloadFile() already reads for every export in the app (runExport.js:121),
+  // and inventing a second spelling would mean the warning silently never fired.
+  //
+  // "Degraded" means something the recruiter asked for could not be fetched —
+  // never that the pack is empty. The download still succeeds; the UI warns, and
+  // the pack's own manifest says which item and why.
+  // recordingLinks.degraded is read explicitly rather than left to the manifest
+  // sweep below: applyRecordingShareLinks() sets `included = true` as soon as
+  // ONE link mints, so a PARTIAL failure — two rounds linked, the third's mint
+  // threw — would never satisfy `included === false` and the recruiter would be
+  // told nothing, while a total failure warned them. Partial silence is the
+  // worse of the two: they send a pack believing every round is watchable.
+  const degraded = attachments.degraded
+    || zeko.degraded
+    || recordingLinks.degraded
+    || model.manifest.some((m) => m.included === false && m.degraded === true);
+
+  return sendPack(res, buffer, filename, contentType, {
+    'X-Dossier-Format': requested,
+    ...(degraded ? { 'X-Export-Degraded': 'true' } : {}),
+    // The message travels with the response rather than being rebuilt in the
+    // browser: the threshold is server config, and a second copy of it in the
+    // frontend would drift the first time somebody changed the env var.
+    ...(sizeNotice ? { 'X-Dossier-Oversize': String(sizeNotice.megabytes) } : {}),
+  });
+});
+
+/**
  * GET /api/pipeline/:id/recordings
  * The Teams recordings linked to a candidate's rounds. Metadata only — playback
  * goes through the stream endpoint below, which is where viewing is audited.
@@ -468,6 +703,44 @@ export const getPipelineRecordings = catchAsync(async (req, res) => {
 
   const recordings = await getRecordingsForPipeline(id);
   return success(res, recordings, 'Interview recordings retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/share-links
+ * What no-login recording links exist for this candidate, and what state each is in.
+ *
+ * Staff-only by the router's requireStaff, like every other route on this
+ * router. Not audited: listing the links a recruiter minted is not the same as
+ * watching a recording, and the audit that matters here is written when an
+ * external viewer opens one.
+ */
+export const getRecordingShareLinks = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to view interview recordings.', 403);
+  }
+  const links = await listShareLinks(id);
+  return success(res, links, 'Recording share links retrieved');
+});
+
+/**
+ * POST /api/pipeline/:id/share-links/:linkId/revoke
+ * Withdraw one link. Refusal is immediate, not at next expiry.
+ *
+ * This is the control that makes decision #7 defensible: a no-login URL to a
+ * video of a real person is only acceptable if the person who sent it can take
+ * it back the moment they realise they should not have.
+ */
+export const revokeRecordingShareLink = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const linkId = parseInt(req.params.linkId, 10);
+  if (Number.isNaN(id) || Number.isNaN(linkId)) throw new AppError('Invalid id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to manage recording links.', 403);
+  }
+  const result = await revokeShareLink(id, linkId, req.user);
+  return success(res, result, result.already_revoked ? 'That link was already revoked' : 'Share link revoked');
 });
 
 /**
@@ -756,6 +1029,24 @@ export const sendAdHocEmail = catchAsync(async (req, res) => {
 
   const result = await pipelineService.sendAdHocEmail(id, { subject, body });
   return success(res, result, 'Email sent successfully');
+});
+
+/**
+ * POST /api/pipeline/:id/zeko-report-link
+ * The no-login url for one AI screening round's full report.
+ *
+ * POST rather than GET because the first call for a round CREATES something that
+ * outlives the request — a permanent, public Zeko url for a real person's
+ * screening report. Later calls return the stored one, but a reader that can
+ * publish on its first use is not a GET.
+ */
+export const getZekoSharedReportLink = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const stageKey = req.body?.stageKey || req.query?.stageKey || null;
+  const link = await pipelineService.getZekoSharedReportLink(id, { stageKey });
+  return success(res, link, link.cached ? 'Report link ready' : 'Report link created');
 });
 
 // ── Admin config CRUD (RT ask 2026-07-13): stages / outcomes / reasons ──────

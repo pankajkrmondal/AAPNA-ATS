@@ -229,6 +229,64 @@ const pipelineService = {
   },
 
   /**
+   * What the downloadable dossier WILL contain, after redaction.
+   *
+   * Feeds the "what will be shared" modal. The point of previewing the real
+   * post-redaction model rather than describing it is that the recruiter sees
+   * the actual file's contents before it leaves the building — a description
+   * would drift from the file the first time either changed.
+   *
+   * @param {number} id - pipeline id
+   * @param {{ contact_details?: boolean }} [params]
+   */
+  getDossierPreview(id, params = {}) {
+    return api.get(`/pipeline/${id}/dossier`, { params });
+  },
+
+  /**
+   * The dossier pack itself — the file a recruiter emails to an external
+   * interviewer. Call through downloadFile() so blob handling, the server's
+   * filename and object-URL cleanup are shared with every other export.
+   *
+   * @param {number} id - pipeline id
+   * @param {{ format?: 'zip'|'html'|'xlsx', contact_details?: boolean, resume?: boolean,
+   *   documents?: boolean, screening_detail?: boolean, screening_report?: boolean,
+   *   assessment_detail?: boolean, recording_links?: boolean }} params
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  downloadDossier(id, params = {}, config = {}) {
+    return api.get(`/pipeline/${id}/dossier/download`, { params, ...config });
+  },
+
+  /**
+   * Every no-login recording link ever minted for this candidate — live,
+   * expired and revoked.
+   *
+   * The dead ones are included on purpose: the list's job is to answer "what did
+   * we send out, and is it still open?", which a list of only-live links cannot,
+   * and it is how a recruiter sees that the revoke they clicked actually took.
+   *
+   * @param {number} id - pipeline id
+   */
+  getShareLinks(id) {
+    return api.get(`/pipeline/${id}/share-links`);
+  },
+
+  /**
+   * Withdraw one recording link. Refused immediately, not at next expiry.
+   *
+   * This is the undo that makes HR decision #7 (recordings travel as no-login
+   * links) defensible, which is why it is a button in the drawer rather than
+   * something support has to run.
+   *
+   * @param {number} id - pipeline id
+   * @param {number} linkId
+   */
+  revokeShareLink(id, linkId) {
+    return api.post(`/pipeline/${id}/share-links/${linkId}/revoke`);
+  },
+
+  /**
    * The <video> src for one recording.
    *
    * The JWT rides in the query string because a media element cannot carry an
@@ -282,6 +340,20 @@ const pipelineService = {
    */
   sendAdHocEmail(id, payload) {
     return api.post(`/pipeline/${id}/email`, payload);
+  },
+
+  /**
+   * The AI screening report's NO-LOGIN url for one round, minted on first use.
+   *
+   * POST, not GET: the first call for a round creates a permanent public Zeko
+   * link. Can take a few seconds — and up to ~20 on a cold Zeko session — so
+   * call it from a click with a spinner, never on render.
+   *
+   * @param {number} id - pipeline journey id
+   * @param {string} stageKey - 'zeko_hr' | 'zeko_fn'
+   */
+  getZekoSharedReportLink(id, stageKey) {
+    return api.post(`/pipeline/${id}/zeko-report-link`, { stageKey });
   },
 
   // ── Documents round (Module 4) — recruiter-facing half ────────────────────

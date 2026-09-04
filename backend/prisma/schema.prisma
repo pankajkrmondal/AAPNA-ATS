@@ -147,6 +147,7 @@ model rpa_cv {
   ai_profile_insights          Json?
   last_action_by               String?
   last_action_context          String?
+  cv_file_item_id              String?                      @db.VarChar(512)
   emails                       rpa_email_messages[]
   shortlisted                  rpa_shortlisted_candidates[]
 
@@ -591,6 +592,8 @@ model rpa_zeko_interview_results {
   created_at                DateTime? @db.Timestamptz(6)
   zeko_job_id               String
   pipeline_id               String
+  shared_report_link        String?   @db.VarChar(512)
+  shared_report_link_at     DateTime? @db.Timestamptz(6)
 }
 
 model rpa_zeko_jobs {
@@ -704,6 +707,7 @@ model rpa_candidate_pipeline {
   rpa_notifications          rpa_notifications[]
   rpa_offers                 rpa_offers?
   rpa_pipeline_stage_events  rpa_pipeline_stage_events[]
+  rpa_recording_share_link   rpa_recording_share_link[]
 
   @@index([cv_id], map: "idx_candidate_pipeline_cv")
   @@index([mrf_id], map: "idx_candidate_pipeline_mrf")
@@ -836,10 +840,10 @@ model rpa_interview_schedule {
   record_policy_error     String?
   recording_status        String?                   @db.VarChar(20)
   recording_checked_at    DateTime?                 @db.Timestamptz(6)
+  rpa_interview_recording rpa_interview_recording[]
   rpa_users               rpa_users?                @relation(fields: [created_by], references: [id])
   rpa_candidate_pipeline  rpa_candidate_pipeline    @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
   rpa_pipeline_stages     rpa_pipeline_stages       @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
-  rpa_interview_recording rpa_interview_recording[]
   rpa_interview_scorecard rpa_interview_scorecard[]
 
   @@index([pipeline_id], map: "idx_interview_schedule_pipeline")
@@ -890,6 +894,18 @@ model rpa_assessment_results {
   created_at             DateTime                @default(now()) @db.Timestamptz(6)
   modified_at            DateTime                @default(now()) @db.Timestamptz(6)
   overall_marks_scored   Decimal?                @db.Decimal(8, 2)
+  raw_row                Json?
+  started_on_text        String?                 @db.VarChar(60)
+  started_on             DateTime?               @db.Timestamptz(6)
+  duration_text          String?                 @db.VarChar(60)
+  total_correct          Int?
+  total_wrong            Int?
+  total_unattempted      Int?
+  section_detail         Json?
+  topic_scores           Json?
+  attempt_status         String?                 @db.VarChar(30)
+  marked_as              String?                 @db.VarChar(60)
+  public_report_url      String?                 @db.VarChar(512)
   rpa_assessment_imports rpa_assessment_imports  @relation(fields: [import_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   rpa_candidate_pipeline rpa_candidate_pipeline? @relation(fields: [pipeline_id], references: [id], onUpdate: NoAction)
 
@@ -919,40 +935,65 @@ model rpa_assessment_test_mappings {
 /// because one meeting can produce several recording segments (stop/start
 /// mid-interview), and a reschedule reuses one online_meeting_id.
 model rpa_interview_recording {
-  id                     BigInt                 @id @default(autoincrement())
-  schedule_id            BigInt
-  pipeline_id            BigInt
-  stage_key              String                 @db.VarChar(50)
+  id                       BigInt                     @id @default(autoincrement())
+  schedule_id              BigInt
+  pipeline_id              BigInt
+  stage_key                String                     @db.VarChar(50)
   /// 'recording' (MP4) | 'transcript' (VTT)
-  kind                   String                 @default("recording") @db.VarChar(20)
+  kind                     String                     @default("recording") @db.VarChar(20)
   /// callRecording.id / callTranscript.id. UNIQUE: the discovery sweep re-lists
   /// the same meeting on every tick, and getAllRecordings has a documented
   /// duplicate-on-pagination-reset issue, so dedupe lives in the database.
-  graph_recording_id     String                 @unique @db.VarChar(1024)
-  online_meeting_id      String                 @db.VarChar(512)
-  recorded_start_at      DateTime?              @db.Timestamptz(6)
-  recorded_end_at        DateTime?              @db.Timestamptz(6)
+  graph_recording_id       String                     @unique @db.VarChar(1024)
+  online_meeting_id        String                     @db.VarChar(512)
+  recorded_start_at        DateTime?                  @db.Timestamptz(6)
+  recorded_end_at          DateTime?                  @db.Timestamptz(6)
   /// Graph-authenticated URL. NEVER handed to a browser — playback is proxied.
-  graph_content_url      String?
+  graph_content_url        String?
   /// OneDrive/SharePoint web URL, when it can be resolved (Phase 5).
-  teams_web_url          String?
-  archive_status         String                 @default("pending") @db.VarChar(20)
-  archive_item_id        String?                @db.VarChar(512)
-  archive_web_url        String?
-  archive_bytes          BigInt?
-  archive_error          String?
-  discovered_at          DateTime               @default(now()) @db.Timestamptz(6)
-  archived_at            DateTime?              @db.Timestamptz(6)
-  created_at             DateTime               @default(now()) @db.Timestamptz(6)
-  modified_at            DateTime               @default(now()) @db.Timestamptz(6)
-  rpa_candidate_pipeline rpa_candidate_pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
-  rpa_interview_schedule rpa_interview_schedule @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
-  rpa_pipeline_stages    rpa_pipeline_stages    @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction)
+  teams_web_url            String?
+  archive_status           String                     @default("pending") @db.VarChar(20)
+  archive_item_id          String?                    @db.VarChar(512)
+  archive_web_url          String?
+  archive_bytes            BigInt?
+  archive_error            String?
+  discovered_at            DateTime                   @default(now()) @db.Timestamptz(6)
+  archived_at              DateTime?                  @db.Timestamptz(6)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                   @default(now()) @db.Timestamptz(6)
+  rpa_candidate_pipeline   rpa_candidate_pipeline     @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rpa_interview_schedule   rpa_interview_schedule     @relation(fields: [schedule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rpa_pipeline_stages      rpa_pipeline_stages        @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction, onUpdate: NoAction)
+  rpa_recording_share_link rpa_recording_share_link[]
 
   @@index([pipeline_id], map: "idx_interview_recording_pipeline")
   @@index([schedule_id], map: "idx_interview_recording_schedule")
   @@index([pipeline_id, stage_key], map: "idx_interview_recording_stage")
   @@index([archive_status], map: "idx_interview_recording_archive")
+}
+
+/// One no-login, expiring, revocable link to ONE interview recording (Phase 4,
+/// plan §6.5). Minted when a dossier is downloaded with recording links
+/// included; enforced server-side on every request.
+model rpa_recording_share_link {
+  id                      BigInt                  @id @default(autoincrement())
+  token                   String                  @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recording_id            BigInt
+  pipeline_id             BigInt
+  expires_at              DateTime                @db.Timestamptz(6)
+  created_by              String?                 @db.VarChar(255)
+  created_by_id           Int?
+  created_at              DateTime                @default(now()) @db.Timestamptz(6)
+  revoked_at              DateTime?               @db.Timestamptz(6)
+  revoked_by              String?                 @db.VarChar(255)
+  revoked_by_id           Int?
+  view_count              Int                     @default(0)
+  last_viewed_at          DateTime?               @db.Timestamptz(6)
+  rpa_candidate_pipeline  rpa_candidate_pipeline  @relation(fields: [pipeline_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_recording_share_pipeline")
+  rpa_interview_recording rpa_interview_recording @relation(fields: [recording_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_recording_share_recording")
+
+  @@index([recording_id], map: "idx_recording_share_recording")
+  @@index([pipeline_id], map: "idx_recording_share_pipeline")
 }
 
 model rpa_interview_scorecard {
@@ -1050,6 +1091,7 @@ model rpa_candidate_documents {
   verified_at                  DateTime?                    @db.Timestamptz(6)
   created_at                   DateTime                     @default(now()) @db.Timestamptz(6)
   modified_at                  DateTime                     @default(now()) @db.Timestamptz(6)
+  file_item_id                 String?                      @db.VarChar(512)
   rpa_document_checklist_items rpa_document_checklist_items @relation(fields: [checklist_item_id], references: [id], onDelete: NoAction)
   rpa_document_requests        rpa_document_requests        @relation(fields: [request_id], references: [id], onDelete: Cascade)
   rpa_users                    rpa_users?                   @relation(fields: [verified_by], references: [id])

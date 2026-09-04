@@ -36,11 +36,13 @@ import {
   Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
-  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, EditOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined, PlayCircleOutlined,
-  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined, VideoCameraOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
+  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import useAuth from '../../hooks/useAuth';
 import pipelineService from '../../services/pipeline';
 import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
@@ -48,6 +50,7 @@ import { cleanMsgBody } from '../../utils/emailText';
 import assessmentImportService from '../../services/assessmentImportService';
 import settingsService from '../../services/settingsService';
 import AssessmentInviteModal from './AssessmentInviteModal';
+import DossierDownloadModal from './DossierDownloadModal';
 import { EmailEditorTabs } from '../common/EmailBodyEditor';
 import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
@@ -245,11 +248,23 @@ function assessmentScoreSegment(result) {
 
   const chips = sections.map((s) => ({ value: s.value, label: map[s.key]?.skill_label || s.key.replace('section_', 'Section ') }));
 
+  // The import now keeps the whole export row, so the line can say how the
+  // marks were earned rather than only what they came to — the same numbers
+  // section 7 of the dossier prints. Both parts are optional: results imported
+  // before those columns existed simply have none, and the line shortens.
+  const effort = [
+    result.duration_text ? `took ${result.duration_text}` : null,
+    result.total_correct != null
+      ? `${result.total_correct} correct${result.total_wrong != null ? ` / ${result.total_wrong} wrong` : ''}`
+      : null,
+  ].filter(Boolean).join(' · ');
+
   return {
     detail: (result.overall_result
       ? `Evalground result: ${result.overall_result}${result.overall_percentage != null ? ` (${result.overall_percentage}%)` : ''}`
       : chips.length > 0 ? chips.map((c) => `${c.label} ${c.value}`).join(' · ') : 'Result imported — no numeric scores returned'
-    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : ''),
+    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : '')
+      + (effort ? ` · ${effort}` : ''),
   };
 }
 
@@ -698,6 +713,99 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   };
 }
 
+/**
+ * "View full report" for an AI screening round — without a Zeko login.
+ *
+ * WHAT CHANGED AND WHY. This used to be a plain anchor to
+ * rpa_zeko_interview_results.reportlink, which is Zeko's RECRUITER page
+ * (`app/new-report?candidateId=…`). That URL is behind Zeko's own sign-in, so
+ * every ATS user without a Zeko account clicked it and got a login wall instead
+ * of a report. This asks the backend for the same report's public share link —
+ * the one the candidate dossier already carries.
+ *
+ * WHY A BUTTON RATHER THAN AN `href`. The link may not exist yet: the first
+ * person to open a round's report has it minted for them, which is a call into
+ * Zeko and can take a few seconds (up to ~20 on a cold Zeko session). An anchor
+ * cannot wait, so this clicks, spins, then opens. Once minted it is stored, so
+ * every later open — by anyone — is instant and the drawer already knows the url.
+ *
+ * THE RECRUITER LINK STAYS as a quiet fallback rather than being deleted: Zeko
+ * can be down, its session can be stale, and a round synced by an old build has
+ * no ids to mint from. In all three the recruiter with a Zeko account still needs
+ * a way through, and a dead end here is worse than a login wall.
+ *
+ * @param {{pipelineId: number, stageKey: string, recruiterLink: string,
+ *   sharedLink: string|null}} props
+ */
+function ZekoReportLink({ pipelineId, stageKey, recruiterLink, sharedLink }) {
+  const { message } = AntApp.useApp();
+  const [url, setUrl] = useState(sharedLink || null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  // A different round (or a freshly minted link elsewhere) must not leave the
+  // previous round's url sitting in this button.
+  useEffect(() => {
+    setUrl(sharedLink || null);
+    setFailed(false);
+  }, [sharedLink, stageKey, pipelineId]);
+
+  const openReport = async () => {
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await pipelineService.getZekoSharedReportLink(pipelineId, stageKey);
+      const minted = (res.data?.data || res.data)?.url;
+      if (!minted) throw new Error('No link was returned.');
+      setUrl(minted);
+      setFailed(false);
+      // Pop-up blockers refuse window.open once it is no longer inside the click
+      // handler's own tick — which is exactly where an awaited mint leaves us.
+      // The button keeps the url either way, so a blocked pop-up costs one more
+      // click rather than the report.
+      const win = window.open(minted, '_blank', 'noopener,noreferrer');
+      if (!win) message.info('Your browser blocked the new tab — click again to open the report.');
+    } catch (err) {
+      setFailed(true);
+      message.warning(
+        err?.response?.data?.message
+        || 'Could not open the report without a login. Use the Zeko link instead.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <Button
+        size="small"
+        type="primary"
+        icon={<FileTextOutlined />}
+        loading={loading}
+        onClick={openReport}
+      >
+        {loading ? 'Preparing the report…' : 'View full report'}
+      </Button>
+      {url && (
+        <Text type="secondary" style={{ fontSize: 11.5 }}>
+          Opens with no login — treat it as confidential.
+        </Text>
+      )}
+      {/* Only offered once the no-login route has actually let someone down —
+          before that it is the same report behind an extra sign-in. */}
+      {failed && recruiterLink && (
+        <a href={recruiterLink} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+          <LinkOutlined /> Open in Zeko (needs a Zeko login)
+        </a>
+      )}
+    </div>
+  );
+}
+
 export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict, focusRecordingId }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
@@ -764,6 +872,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const [noShowReason, setNoShowReason] = useState('');
   // Scorecard report panel (per-round scores + overall avg/sum).
   const [reportOpen, setReportOpen] = useState(false);
+  // "Download dossier" — the pack a recruiter emails to an external interviewer.
+  const [dossierOpen, setDossierOpen] = useState(false);
+  // The drawer did not read the current user before this. It does now, only to
+  // decide whether to OFFER the dossier download: the tracker row asks for it to
+  // be "restricted to recruiter and final decision-makers", and the ranks below
+  // mirror ROLE_RANK in backend/src/config/roles.js (final decision-makers are
+  // admin-tier accounts, so no new role is needed).
+  //
+  // THIS GATE IS CONVENIENCE ONLY. The server is the authority — the route sits
+  // behind requireStaff, which refuses a vendor by rank before the module toggle
+  // is consulted. Hiding the button is so nobody is offered an action they will
+  // be refused, not a security boundary.
+  const { user } = useAuth();
+  const canDownloadDossier = ['recruiter', 'hr', 'admin', 'superadmin']
+    .includes(String(user?.role || '').trim().toLowerCase());
   // Editable emails for the schedule/cancel modals (candidate + panel), each
   // prefilled from the server preview. `touched` = recruiter edited it, so we
   // stop overwriting it when the preview refetches (e.g. after a date change).
@@ -1532,6 +1655,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const zekoScores = data?.zekoScores;
   const zekoHrPipeline = data?.zekoHrPipeline;
   const zekoReportLink = data?.zekoReportLink;
+  // Null until someone has opened this round's report at least once; when set,
+  // the button skips the mint and opens straight away.
+  const zekoSharedReportLink = data?.zekoSharedReportLink;
   const mrfInterviewHints = data?.mrfInterviewHints;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
@@ -1867,10 +1993,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                     ))}
                   </div>
                 )}
+                {/* Only the two Zeko rounds ever set `link` (see
+                    buildPipelineSegments), and both go through the no-login
+                    route now — see ZekoReportLink. */}
                 {s.link && (
-                  <a href={s.link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
-                    <LinkOutlined /> View full report on Zeko
-                  </a>
+                  <ZekoReportLink
+                    pipelineId={pipelineId}
+                    stageKey={stage.stage_key}
+                    recruiterLink={s.link}
+                    sharedLink={stage.stage_key === pipeline.current_stage_key ? zekoSharedReportLink : null}
+                  />
                 )}
                 {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
                   <div className="cp-pipeline-step__extra">
@@ -2231,18 +2363,50 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 : <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>}
             </div>
           )}
-          {hasScorecards && (
-            <Button
-              size="small"
-              type="primary"
-              className="cta-primary btn-sheen"
-              icon={<FileTextOutlined />}
-              style={{ marginBottom: 10 }}
-              onClick={() => setReportOpen(true)}
-            >
-              Scorecard report
-            </Button>
+          {/* The candidate's evidence, in the two forms it is asked for: on
+              screen, and as a file to send to an interviewer outside the
+              company. Same header block and same visual weight, because this is
+              already where someone goes to read what the panel concluded. */}
+          {(hasScorecards || canDownloadDossier) && (
+            <Space style={{ marginBottom: 10 }} wrap>
+              {hasScorecards && (
+                <Button
+                  size="small"
+                  type="primary"
+                  className="cta-primary btn-sheen"
+                  icon={<FileTextOutlined />}
+                  onClick={() => setReportOpen(true)}
+                >
+                  Scorecard report
+                </Button>
+              )}
+              {canDownloadDossier && (
+                <Tooltip title="Download everything on this candidate as one file you can email to an interviewer outside the company">
+                  {/* Same treatment as "Scorecard report" beside it: the two are
+                      the candidate's evidence in its two forms — on screen and
+                      as a file — and a default-styled button next to a primary
+                      one read as the lesser, incidental action. A candidate with
+                      no scorecards yet shows this one alone, where a grey button
+                      in an otherwise green header looked disabled. */}
+                  <Button
+                    size="small"
+                    type="primary"
+                    className="cta-primary btn-sheen"
+                    icon={<DownloadOutlined />}
+                    onClick={() => setDossierOpen(true)}
+                  >
+                    Download dossier
+                  </Button>
+                </Tooltip>
+              )}
+            </Space>
           )}
+          {/* What has already left the building, next to the button that sends
+              it. A recruiter who is about to download another pack should be
+              able to see the links the last one minted — and close any that
+              should not still be open. Self-hiding when there are none. */}
+          <SharedRecordingLinksPanel pipelineId={pipelineId} canManage={canDownloadDossier} />
+
           {screening?.notes && (
             <Alert type="info" showIcon message={screening.notes} style={{ marginBottom: 10, fontSize: 12.5 }} />
           )}
@@ -2995,6 +3159,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     {/* Per-candidate scorecard report — submitted round scores + overall avg/sum. */}
     <ScorecardReportModal open={reportOpen} onClose={() => setReportOpen(false)} pipelineId={pipelineId} />
 
+    {/* "What will be shared" before the pack leaves the building. */}
+    <DossierDownloadModal
+      open={dossierOpen}
+      onClose={() => setDossierOpen(false)}
+      pipelineId={pipelineId}
+      candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
+    />
+
     {/* Player for a shared link (?recording=…). Lives at drawer level rather
         than inside a round panel because the shared round is not necessarily the
         one the drawer opens on. */}
@@ -3697,6 +3869,128 @@ function RecordingPlayerModal({ open, onClose, pipelineId, recording, stageLabel
  * (older bookings, rounds held before this feature), and a permanent negative
  * would be noise on every panel.
  */
+/**
+ * SharedRecordingLinksPanel — every no-login recording link this candidate's
+ * packs have minted, and the button that closes one.
+ *
+ * WHY THIS EXISTS AT ALL. HR chose (decision #7) that recordings travel to an
+ * external interviewer as an expiring, no-login link rather than as bytes. That
+ * is a URL to a video of a real person, sitting in a file we cannot recall, and
+ * it is only a defensible trade if the recruiter who sent it can take it back
+ * the moment they realise they should not have. Revocation via a support ticket
+ * is not that; a button here is. Plan §6.5.
+ *
+ * Expired and revoked links stay listed. The recruiter's question is "what did
+ * we send out?", and a list that quietly drops the dead ones cannot answer it —
+ * nor show that last week's revoke actually took.
+ */
+function SharedRecordingLinksPanel({ pipelineId, canManage }) {
+  const { message } = AntApp.useApp();
+  const queryClient = useQueryClient();
+
+  const { data: links } = useQuery({
+    queryKey: ['recording-share-links', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getShareLinks(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: Boolean(pipelineId) && canManage,
+    staleTime: 30 * 1000,
+  });
+
+  const revoke = useMutation({
+    mutationFn: (linkId) => pipelineService.revokeShareLink(pipelineId, linkId),
+    onSuccess: () => {
+      message.success('Link revoked — it stops playing immediately.');
+      queryClient.invalidateQueries({ queryKey: ['recording-share-links', pipelineId] });
+      // The timeline gains a note for the revoke, so it is stale too.
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+    },
+    onError: (err) => message.error(err?.message || 'Could not revoke that link.'),
+  });
+
+  if (!canManage || !links?.length) return null;
+
+  const live = links.filter((l) => l.state === 'live');
+
+  return (
+    <Collapse
+      size="small"
+      style={{ marginBottom: 10 }}
+      items={[{
+        key: 'shared-links',
+        label: (
+          <Text style={{ fontSize: 12.5 }}>
+            <LinkOutlined />{' '}
+            Shared recording links
+            {' '}
+            <Text type="secondary">
+              ({live.length} live of {links.length})
+            </Text>
+          </Text>
+        ),
+        children: (
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {links.map((l) => (
+              <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Tag color={l.state === 'live' ? 'green' : l.state === 'revoked' ? 'red' : 'default'}>
+                  {l.state === 'live' ? 'Live' : l.state === 'revoked' ? 'Revoked' : 'Expired'}
+                </Tag>
+                <Text style={{ fontSize: 12.5 }}>{l.stage_label}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {l.summary} · opened {l.view_count} time{l.view_count === 1 ? '' : 's'}
+                  {l.created_by ? ` · sent by ${l.created_by}` : ''}
+                </Text>
+                {/* A link opened many times is not one interviewer watching one
+                    interview. Surfaced rather than left in a number nobody reads. */}
+                {l.unusual && (
+                  <Tooltip title="This link has been opened an unusual number of times — it may have been forwarded.">
+                    <Tag color="orange">Check</Tag>
+                  </Tooltip>
+                )}
+                {l.state === 'live' && (
+                  <>
+                    {l.url && (
+                      <Button
+                        size="small"
+                        type="link"
+                        icon={<CopyOutlined />}
+                        style={{ padding: 0 }}
+                        // copyToClipboard(), not navigator.clipboard directly:
+                        // that API is undefined on a plain-http origin (a LAN
+                        // IP, an internal test box), where the optional chain
+                        // silently did nothing and the toast still said the
+                        // link was copied. A recruiter then pasted whatever was
+                        // on their clipboard into an email to an interviewer.
+                        onClick={async () => {
+                          const ok = await copyToClipboard(l.url);
+                          if (ok) message.success('Link copied.');
+                          else message.error('Could not copy the link — select and copy it manually.');
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    )}
+                    <Popconfirm
+                      title="Revoke this link?"
+                      description="Anyone holding it stops being able to watch, immediately."
+                      okText="Revoke"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => revoke.mutate(l.id)}
+                    >
+                      <Button size="small" danger type="link" style={{ padding: 0 }}>Revoke</Button>
+                    </Popconfirm>
+                  </>
+                )}
+              </div>
+            ))}
+          </Space>
+        ),
+      }]}
+    />
+  );
+}
+
 function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
   const [playing, setPlaying] = useState(null);
   const mine = (recordings || []).filter((r) => r.stage_key === stageKey && r.kind === 'recording');

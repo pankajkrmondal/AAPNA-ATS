@@ -59,8 +59,14 @@ function needsInjectionGuard(text) {
  * Fixed export timezone. Not the server's local zone on purpose — a CSV
  * produced from staging and one from production must format the same instant
  * identically, or the two files can't be diffed.
+ *
+ * Exported because the dossier is no longer the only thing that renders one of
+ * these instants for a reader. The public recording-share page prints the same
+ * expiry the pack does, and formatting one of them in the server's local zone
+ * had the page and the file naming different days for the same link.
  */
-const TZ = process.env.EXPORT_TZ || 'Asia/Kolkata';
+export const EXPORT_TIMEZONE = process.env.EXPORT_TZ || 'Asia/Kolkata';
+const TZ = EXPORT_TIMEZONE;
 
 const dateFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',

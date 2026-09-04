@@ -35,6 +35,10 @@ import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../utils/rejectionCooldown.js';
 import { emailCandidates } from '../utils/emailMatch.js';
+import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
+import { withDeadline } from '../utils/withDeadline.js';
+import { generateZekoShareLink } from './zeko.service.js';
+import config from '../config/index.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -409,6 +413,174 @@ export async function listPipeline(filters = {}) {
 }
 
 /**
+ * One journey's Zeko round for a given stage, and THAT CANDIDATE'S result row.
+ *
+ * The result lives in a separate table keyed by Zeko's own external interview id
+ * (`round.pipeline_id`) — NOT this journey's id. fetchInterviewResults()
+ * (zeko.service.js) writes both under that external id when the hourly poll
+ * syncs a completed interview's score.
+ *
+ * That interview id belongs to the JOB's interview, shared by EVERY candidate
+ * booked against that job, so rpa_zeko_interview_results holds one row per
+ * candidate under the same pipeline_id. Filtering on pipeline_id alone therefore
+ * returned whichever candidate happened to sync last — showing a stranger's
+ * score and, worse, a "View full report on Zeko" link opening another
+ * candidate's report (RT, 2026-08-24: Haris M's HR round rendered Samarth
+ * Tiwari's 0 and report link). The candidate's own address is what identifies
+ * their row, matched the same way fetchInterviewResults() picks their entry out
+ * of the interview's roster.
+ *
+ * Extracted so the drawer's read and the share-link mint below cannot drift
+ * apart on this: the mint hands out a PUBLIC url, so picking the wrong row there
+ * would publish one candidate's report under another's name.
+ *
+ * @param {object} pipeline - a journey row, with rpa_shortlisted_candidates
+ * @param {string} stageKey - 'zeko_hr' | 'zeko_fn'
+ * @returns {Promise<{round: object|null, result: object|null}>}
+ */
+async function findZekoRoundResult(pipeline, stageKey) {
+  if (!isZekoStage(stageKey) || !pipeline.shortlist_id) return { round: null, result: null };
+
+  const round = await prisma.rpa_zeko_candidate_pipeline.findFirst({
+    where: {
+      candidate_id: pipeline.shortlist_id,
+      stage: normalizeZekoRoundStage(stageKey),
+      status: { not: 'cancelled' },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+  if (!round) return { round: null, result: null };
+
+  const wantedEmails = emailCandidates(
+    round.candidate_email || pipeline.rpa_shortlisted_candidates?.candidate_email
+  );
+  // No address to match on means we cannot prove a row is this candidate's, so
+  // the round honestly reports no result rather than guessing.
+  const result = wantedEmails.length
+    ? await prisma.rpa_zeko_interview_results.findFirst({
+        where: {
+          pipeline_id: round.pipeline_id,
+          OR: wantedEmails.map((email) => ({ candidate_email: { equals: email, mode: 'insensitive' } })),
+        },
+        orderBy: { created_at: 'desc' },
+      })
+    : null;
+
+  return { round, result };
+}
+
+/**
+ * The no-login url for one AI screening round's full report, minted on demand.
+ *
+ * WHAT THIS REPLACES. rpa_zeko_interview_results.reportlink is Zeko's RECRUITER
+ * page (`app/new-report?candidateId=…&jobId=…`), which is behind Zeko's login —
+ * so the drawer's "View full report on Zeko" showed a sign-in wall to every ATS
+ * user without a Zeko account. This returns the share link Zeko's own Share
+ * button mints for the same report, the one the dossier already carries.
+ *
+ * ON DEMAND, AND CACHED, for two separate reasons:
+ *
+ *   cost      the mint is a Zeko round trip, and on an expired dashboard cookie
+ *             it runs the OTP login — 38 seconds on staging. Fine once; not on
+ *             every drawer open, which is why getPipelineDetail() only ever
+ *             READS the stored column and never mints.
+ *   exposure  the url is public and permanent — Zeko gives us no way to revoke
+ *             it, unlike our own recording links (plan §6.5). Minting one for
+ *             every synced round would publish a report for every candidate ever
+ *             screened; minting on a click publishes only what someone asked to
+ *             read.
+ *
+ * FAILS SOFT BY DESIGN. Every refusal here is a message the drawer can show
+ * beside the old recruiter link, which stays as the fallback — a Zeko outage
+ * must not leave a recruiter with no route to the report at all.
+ *
+ * @param {number|string} pipelineId
+ * @param {{ stageKey?: string }} [options] - defaults to the journey's current stage
+ * @returns {Promise<{url: string, stageKey: string, cached: boolean, mintedAt: Date|null}>}
+ */
+export async function getZekoSharedReportLink(pipelineId, { stageKey } = {}) {
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { select: { candidate_email: true } } },
+  });
+  if (!pipeline) {
+    throw new AppError('Pipeline journey not found.', 404);
+  }
+
+  const key = stageKey || pipeline.current_stage_key;
+  if (!isZekoStage(key)) {
+    throw new AppError('That round is not an AI screening round, so it has no Zeko report.', 400);
+  }
+
+  const { result } = await findZekoRoundResult(pipeline, key);
+  if (!result) {
+    throw new AppError('No AI screening result has synced for this round yet.', 404);
+  }
+
+  // Already minted — for this candidate, on this round, by whoever opened it
+  // first. Zeko returns the same link id for the same report anyway, so re-using
+  // the stored one costs a query instead of a round trip and creates nothing new.
+  if (result.shared_report_link) {
+    return {
+      url: result.shared_report_link,
+      stageKey: key,
+      cached: true,
+      mintedAt: result.shared_report_link_at || null,
+    };
+  }
+
+  // Rows written before zekoReportUrl() existed hold a shared-report link or a
+  // bare id rather than a recruiter URL, so there are no ids to mint from. The
+  // recruiter link is all that round will ever have.
+  const locator = parseZekoReportUrl(result.reportlink);
+  if (!locator) {
+    throw new AppError(
+      'The stored report link for this round is in an older format, so a no-login link '
+      + 'cannot be created for it. Use the recruiter link instead.',
+      409,
+    );
+  }
+
+  let minted;
+  try {
+    minted = await withDeadline(
+      generateZekoShareLink(locator),
+      config.dossier.zekoLinkBudgetMs,
+    );
+  } catch (err) {
+    logger.warn(
+      `Zeko share link: could not mint for pipeline ${pipelineId} round ${key} — ${err.message}`,
+    );
+    // The losing work is not cancelled (see withDeadline): a timeout here is
+    // usually the OTP login still running, which finishes in the background and
+    // makes the next click fast. So the message asks for a retry rather than
+    // reporting a dead end.
+    throw new AppError(
+      'Zeko could not produce a no-login link for this report just now. '
+      + 'Try again in a moment, or use the recruiter link.',
+      502,
+    );
+  }
+
+  const mintedAt = new Date();
+  try {
+    await prisma.rpa_zeko_interview_results.update({
+      where: { id: result.id },
+      data: { shared_report_link: minted.url, shared_report_link_at: mintedAt },
+    });
+  } catch (err) {
+    // The link is already public whether or not we managed to store it, so the
+    // caller still gets it; only the caching is lost.
+    logger.error(`Zeko share link: minted but could not be stored for pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  logger.info(`Zeko share link minted for pipeline ${pipelineId} round ${key}.`);
+  return {
+    url: minted.url, stageKey: key, cached: false, mintedAt,
+  };
+}
+
+/**
  * Full detail for one journey: the row, its outcome sets for the current
  * stage, its event timeline, and its emails — feeds the per-round drawer.
  * @param {number} pipelineId
@@ -486,58 +658,29 @@ export async function getPipelineDetail(pipelineId) {
   // never pick up the HR round's schedule.
   let zekoHrPipeline = null;
   let zekoReportLink = null;
+  let zekoSharedReportLink = null;
   if (isZekoStage(pipeline.current_stage_key) && pipeline.shortlist_id) {
-    zekoHrPipeline = await prisma.rpa_zeko_candidate_pipeline.findFirst({
-      where: {
-        candidate_id: pipeline.shortlist_id,
-        stage: normalizeZekoRoundStage(pipeline.current_stage_key),
-        status: { not: 'cancelled' },
-      },
-      orderBy: { created_at: 'desc' },
-    });
+    const { round, result: zekoResult } = await findZekoRoundResult(
+      pipeline,
+      pipeline.current_stage_key,
+    );
+    zekoHrPipeline = round;
+    zekoReportLink = zekoResult?.reportlink || null;
+    // A link somebody has already asked for on this round. Sent so the drawer
+    // can open it with no wait and no second Zeko round trip; null just means
+    // nobody has asked yet — see getZekoSharedReportLink().
+    zekoSharedReportLink = zekoResult?.shared_report_link || null;
 
-    // reportLink lives in a separate table, keyed by Zeko's own external
-    // interview id (zekoHrPipeline.pipeline_id) — NOT this journey's id.
-    // fetchInterviewResults() (zeko.service.js) writes both under that same
-    // external id when the hourly poll syncs a completed interview's score.
-    //
-    // That interview id is the JOB's interview, shared by EVERY candidate
-    // booked against that job, so rpa_zeko_interview_results holds one row per
-    // candidate under the same pipeline_id. Filtering on pipeline_id alone
-    // therefore returned whichever candidate happened to sync last — showing a
-    // stranger's score and, worse, a "View full report on Zeko" link opening
-    // another candidate's report (RT, 2026-08-24: Haris M's HR round rendered
-    // Samarth Tiwari's 0 and report link). The candidate's own address is what
-    // identifies their row, matched the same way fetchInterviewResults() picks
-    // their entry out of the interview's roster.
-    if (zekoHrPipeline) {
-      const wantedEmails = emailCandidates(
-        zekoHrPipeline.candidate_email || pipeline.rpa_shortlisted_candidates?.candidate_email
-      );
-      // No address to match on means we cannot prove a row is this candidate's,
-      // so the round honestly reports no result rather than guessing.
-      const zekoResult = wantedEmails.length
-        ? await prisma.rpa_zeko_interview_results.findFirst({
-            where: {
-              pipeline_id: zekoHrPipeline.pipeline_id,
-              OR: wantedEmails.map((email) => ({ candidate_email: { equals: email, mode: 'insensitive' } })),
-            },
-            orderBy: { created_at: 'desc' },
-          })
-        : null;
-      zekoReportLink = zekoResult?.reportlink || null;
-
-      // The ONLY source of this round's scores — keyed by THIS round's external
-      // interview id, so it can't be clobbered by the other Zeko round syncing
-      // later. A round with no result row here reports no score at all rather
-      // than borrowing the candidate-level one (see the rpa_cv note above).
-      if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
-        zekoScores = {
-          ZekoInterviewScore: zekoResult.scores_overallscore,
-          ZekoCodingScore: zekoResult.scores_technicalscore,
-          ZekoCommunicationScore: zekoResult.scores_communicationscore,
-        };
-      }
+    // The ONLY source of this round's scores — keyed by THIS round's external
+    // interview id, so it can't be clobbered by the other Zeko round syncing
+    // later. A round with no result row here reports no score at all rather
+    // than borrowing the candidate-level one (see the rpa_cv note above).
+    if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
+      zekoScores = {
+        ZekoInterviewScore: zekoResult.scores_overallscore,
+        ZekoCodingScore: zekoResult.scores_technicalscore,
+        ZekoCommunicationScore: zekoResult.scores_communicationscore,
+      };
     }
   }
 
@@ -571,6 +714,7 @@ export async function getPipelineDetail(pipelineId) {
     screening,
     zekoHrPipeline,
     zekoReportLink,
+    zekoSharedReportLink,
     interviewSchedule,
     interviewSchedules,
     mrfInterviewHints,
@@ -1940,5 +2084,6 @@ export default {
   advanceStage,
   setFinalOutcome,
   sendAdHocEmail,
+  getZekoSharedReportLink,
   createPipelineJourney,
 };

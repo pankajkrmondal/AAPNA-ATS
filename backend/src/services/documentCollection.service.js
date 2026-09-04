@@ -23,7 +23,7 @@ import AppError from '../utils/AppError.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
-import { uploadFileToOneDrive } from './onedrive.service.js';
+import { uploadFileToOneDriveDetailed } from './onedrive.service.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
 /** Email templates for this flow, overridable from the Email Templates page. */
@@ -364,10 +364,16 @@ export async function uploadDocument(token, { checklistItemId, file }) {
 
   const pipeline = request.rpa_candidate_pipeline;
   let fileUrl;
+  let fileItemId = null;
   try {
-    fileUrl = await uploadFileToOneDrive(file.path, file.originalname, {
+    // Detailed variant: the drive-item id is kept alongside the URL so the file
+    // can later be READ back (a webUrl cannot be, app-only) and so the record
+    // survives a rename or move in the drive. See onedrive.service.js.
+    const item = await uploadFileToOneDriveDetailed(file.path, file.originalname, {
       folderPath: ['Document Collection', candidateFolderName(pipeline)],
     });
+    fileUrl = item.webUrl;
+    fileItemId = item.id;
   } catch (err) {
     // A storage failure is ours, not the candidate's — they see a plain message
     // on a public page while the Graph detail goes to the log for us.
@@ -382,6 +388,7 @@ export async function uploadDocument(token, { checklistItemId, file }) {
     where: { id: doc.id },
     data: {
       file_url: fileUrl,
+      file_item_id: fileItemId,
       original_name: file.originalname.slice(0, 255),
       uploaded_at: new Date(),
       status: 'uploaded',
