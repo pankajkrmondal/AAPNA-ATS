@@ -2,6 +2,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
+import { mapReferralFields } from '../utils/referralView.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
 
 /**
@@ -102,6 +103,14 @@ export function mapCandidate(c) {
     resumeTextQuality: c.resume_text_quality || 'unknown',
     resumeTechnicalTerms: c.resume_technical_terms || [],
     resumeTermUpdatedAt: c.resume_term_updated_at || null,
+
+    // Referral (P1). Internal to superadmin/admin/recruiter — never an
+    // interviewer, never a vendor, never a dossier. When the caller is a vendor
+    // these columns are not even SELECTed (see REFERRAL_COLUMNS below), so `c`
+    // has no such keys and this maps to "not a referral" — the rule, and why it
+    // has to fail closed, live in utils/referralView.js where they are testable
+    // without a database.
+    ...mapReferralFields(c),
 
     // Mapped fields for high fidelity modals
     lastCompanyExperience: c.LastCompanyExperienceYears || '',
@@ -238,7 +247,23 @@ export function unmapCandidate(data) {
  * @param {string} [order='desc'] - Sort order: 'asc' | 'desc'
  * @returns {Promise<{ data: Array, total: number }>}
  */
-export async function search(filters = {}, page = 1, limit = 20, sort = 'createdAt', order = 'desc') {
+/**
+ * The referral columns, as a Prisma `omit` fragment.
+ *
+ * Dropped from the QUERY for vendor callers rather than stripped from the
+ * result: this endpoint returns nearly every rpa_cv column, so a field added to
+ * mapCandidate() later would otherwise reach a vendor by default. Not selecting
+ * them means there is nothing to forget to hide.
+ */
+const REFERRAL_COLUMNS = Object.freeze({
+  is_referral: true,
+  referred_by: true,
+  referral_note: true,
+  referral_set_by: true,
+  referral_set_at: true,
+});
+
+export async function search(filters = {}, page = 1, limit = 20, sort = 'createdAt', order = 'desc', { redactReferral = false } = {}) {
   const where = buildWhereClause(filters);
 
   // Shared with the CSV export so both order rows identically.
@@ -255,7 +280,11 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
       // neither — mapCandidate() ignores them, and the screening service pulls
       // them through its own raw queries — so shipping them made every page of
       // results far larger over the wire than the rows it actually renders.
-      omit: { resume_full_text: true, ai_profile_insights: true },
+      omit: {
+        resume_full_text: true,
+        ai_profile_insights: true,
+        ...(redactReferral ? REFERRAL_COLUMNS : {}),
+      },
     }),
     prisma.rpa_cv.count({ where }),
   ]);
@@ -454,9 +483,10 @@ async function vendorStageBreakdown(candidateWhere) {
  * @returns {Promise<Object>}
  * @throws {AppError} If not found
  */
-export async function findById(id) {
+export async function findById(id, { redactReferral = false } = {}) {
   const candidate = await prisma.rpa_cv.findUnique({
     where: { id: BigInt(id) },
+    ...(redactReferral ? { omit: REFERRAL_COLUMNS } : {}),
   });
 
   if (!candidate) {
@@ -468,12 +498,23 @@ export async function findById(id) {
 
 /**
  * Update a candidate record.
+ *
+ * `actor` is the authenticated user, threaded through so an edit is attributable
+ * in the log. It is deliberately NOT written to `last_action_by`: that column is
+ * what dashboard.service.js groups on to count how many candidates each recruiter
+ * ADDED, so stamping it on every edit would credit whoever last touched a record
+ * with having sourced it. Editing is not adding.
+ *
+ * The referral fields are not settable here — unmapCandidate() is an allowlist
+ * and does not map them. See referral.service.js for the one way in.
+ *
  * @param {number|string} id
  * @param {Object} data - Fields to update
+ * @param {Object} [actor] - The authenticated user (req.user), for attribution in the log
  * @returns {Promise<Object>} Updated candidate
  * @throws {AppError} If not found
  */
-export async function update(id, data) {
+export async function update(id, data, actor = null) {
   // Verify existence first
   await findById(id);
 
@@ -497,7 +538,10 @@ export async function update(id, data) {
     },
   });
 
-  logger.info(`Candidate ${id} updated`, { fields: Object.keys(dbData) });
+  logger.info(`Candidate ${id} updated`, {
+    fields: Object.keys(dbData),
+    by: actor?.username || actor?.email || 'unknown',
+  });
 
   // Pre-generate AI insights in the background on update (fire-and-forget)
   setImmediate(async () => {

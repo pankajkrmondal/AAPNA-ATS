@@ -44,6 +44,7 @@ import {
 import dayjs from 'dayjs';
 import useAuth from '../../hooks/useAuth';
 import pipelineService from '../../services/pipeline';
+import ReferralChip from '../candidates/ReferralChip';
 import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
 import { cleanMsgBody } from '../../utils/emailText';
@@ -1661,6 +1662,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const mrfInterviewHints = data?.mrfInterviewHints;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
+  // Referral state for this candidate. The drawer is where the recruiter and the
+  // final decision-maker actually weigh someone, so unlike the board it names the
+  // referrer. Staff-only: this whole router is requireStaff, and the interviewer
+  // scorecard builds its payload from a separate named whitelist.
+  const referral = data?.referral;
   const zekoJobs = zekoJobsData || [];
   // Scoped to whichever Zeko round is being scheduled, so a job published
   // for the wrong round (e.g. HR when scheduling Functional) isn't even
@@ -2265,11 +2271,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     <Drawer
       title={pipeline && (
         <Space direction="vertical" size={2}>
-          <Space><UserOutlined /><Text strong style={{ fontSize: 16 }}>{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text></Space>
+          <Space>
+            <UserOutlined />
+            <Text strong style={{ fontSize: 16 }}>{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text>
+            {referral?.is_referral && <ReferralChip referredBy={referral.referred_by} />}
+          </Space>
           <Text type="secondary" style={{ fontSize: 12.5, fontWeight: 400 }}>
             {pipeline.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline.rpa_shortlisted_candidates?.position_applied || 'No position on file'}
             {' · '}
             {pipeline.rpa_shortlisted_candidates?.candidate_email || '—'}
+            {referral?.is_referral && referral.referred_by ? (
+              <> {' · '}Referred by <Text strong style={{ fontSize: 12.5 }}>{referral.referred_by}</Text></>
+            ) : null}
           </Text>
         </Space>
       )}

@@ -312,8 +312,11 @@ export default function MainLayout() {
                     {adminRoleLabel}
                   </span>
                 </div>
+                {/* Built from what this account can actually open, not a fixed
+                    list: Companies is superadmin-only, so a plain admin was
+                    already being promised a tab they do not have. */}
                 <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>
-                  Users · Access · Companies
+                  {['Users', 'Access', 'Referrals', ...(isSuperadmin ? ['Companies'] : [])].join(' · ')}
                 </span>
               </div>
             </div>

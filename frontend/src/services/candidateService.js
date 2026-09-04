@@ -57,6 +57,51 @@ const candidateService = {
     return api.get(`/candidates/${id}/emails`);
   },
 
+  // ── Referral candidate ──────────────────────────────────────────────
+  // Separate from update() on purpose: the flag is audited, and setting it and
+  // removing it carry different permissions server-side (any recruiter may set;
+  // only admin-tier may remove, with a reason). Posting `is_referral` to
+  // update() is silently ignored — these are the only way in.
+
+  /**
+   * Current referral state for a candidate plus its full audit history.
+   * @param {string} id
+   * @returns {Promise<{ data: { data: { referral: object, history: Array } } }>}
+   */
+  getReferral(id) {
+    return api.get(`/candidates/${id}/referral`);
+  },
+
+  /**
+   * Mark as a referral, or change the referrer / note.
+   * @param {string} id
+   * @param {{ referredBy: string, note?: string }} payload — referredBy is required
+   * @returns {Promise}
+   */
+  setReferral(id, payload) {
+    return api.patch(`/candidates/${id}/referral`, payload);
+  },
+
+  /**
+   * Remove a referral. Admin-tier only; the reason is mandatory and is recorded
+   * against the remover's name.
+   * @param {string} id
+   * @param {string} reason
+   * @returns {Promise}
+   */
+  removeReferral(id, reason) {
+    return api.delete(`/candidates/${id}/referral`, { data: { reason } });
+  },
+
+  /**
+   * Referrer names already used, to seed the "Referred by" autocomplete so the
+   * same person is not recorded four different ways.
+   * @returns {Promise<{ data: { data: string[] } }>}
+   */
+  getReferrers() {
+    return api.get('/candidates/referral/referrers');
+  },
+
   /**
    * Get approved MRF roles for the public missing-JD form (no auth required).
    * @returns {Promise}

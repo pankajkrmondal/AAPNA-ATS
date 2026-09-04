@@ -1,4 +1,6 @@
 import * as candidateService from '../services/candidate.service.js';
+import * as referralService from '../services/referral.service.js';
+import { isVendor } from '../utils/vendorScope.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import prisma from '../config/database.js';
@@ -46,7 +48,12 @@ export const searchCandidates = catchAsync(async (req, res) => {
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 20));
 
-  const result = await candidateService.search(filters, pageNum, limitNum, sort, order);
+  // The referral flag is for internal staff only. A vendor legitimately reaches
+  // this endpoint for their own submissions, and it returns nearly every rpa_cv
+  // column — so the referral columns are dropped from the query for them.
+  const result = await candidateService.search(filters, pageNum, limitNum, sort, order, {
+    redactReferral: isVendor(req.user),
+  });
 
   return paginated(res, result.data, pageNum, limitNum, result.total, 'Candidates retrieved');
 });
@@ -70,7 +77,9 @@ export const exportCandidates = catchAsync(async (req, res) => runExport(req, re
  * @access  Private
  */
 export const getCandidate = catchAsync(async (req, res) => {
-  const candidate = await candidateService.findById(req.params.id);
+  const candidate = await candidateService.findById(req.params.id, {
+    redactReferral: isVendor(req.user),
+  });
   return success(res, candidate, 'Candidate retrieved');
 });
 
@@ -78,10 +87,84 @@ export const getCandidate = catchAsync(async (req, res) => {
  * @desc    Update a candidate record
  * @route   PATCH /api/candidates/:id
  * @access  Private
+ *
+ * NOTE the referral fields are NOT reachable here. unmapCandidate() is an
+ * allowlist and does not map them, so a client posting `is_referral` to this
+ * endpoint is ignored. They have their own routes below because setting and
+ * removing a referral carry different permissions and must write an audit row.
  */
 export const updateCandidate = catchAsync(async (req, res) => {
-  const candidate = await candidateService.update(req.params.id, req.body);
+  const candidate = await candidateService.update(req.params.id, req.body, req.user);
   return success(res, candidate, 'Candidate updated');
+});
+
+/** Best-effort client IP for an audit row, as scorecard.controller.js records. */
+const clientIp = (req) =>
+  (req.headers['x-forwarded-for']?.split(',')[0]?.trim()) || req.socket?.remoteAddress || null;
+
+/**
+ * @desc    Referrer names already in use, for the "Referred by" autocomplete
+ * @route   GET /api/candidates/referral/referrers
+ * @access  Private — staff only
+ */
+export const getReferrerSuggestions = catchAsync(async (req, res) => {
+  const referrers = await referralService.getKnownReferrers();
+  return success(res, referrers, 'Referrers retrieved');
+});
+
+/**
+ * @desc    Current referral state for a candidate, plus its history
+ * @route   GET /api/candidates/:id/referral
+ * @access  Private — staff only (superadmin / admin / recruiter)
+ *
+ * State and history in one response because the Edit Candidate modal shows both
+ * together, and two round trips to render one panel is two chances to disagree.
+ */
+export const getCandidateReferral = catchAsync(async (req, res) => {
+  const [referral, history] = await Promise.all([
+    referralService.getReferral(req.params.id),
+    referralService.getReferralHistory(req.params.id),
+  ]);
+  return success(res, { referral, history }, 'Referral retrieved');
+});
+
+/**
+ * @desc    Mark a candidate as a referral, or change who referred them
+ * @route   PATCH /api/candidates/:id/referral
+ * @access  Private — staff only (any recruiter may set)
+ */
+export const setCandidateReferral = catchAsync(async (req, res) => {
+  const { referredBy, note } = req.body || {};
+  const result = await referralService.setReferral(
+    req.params.id,
+    { referredBy, note },
+    { user: req.user, ip: clientIp(req) },
+  );
+  // "no change" is a success, not an error — a recruiter re-saving the same
+  // values has not done anything wrong; it simply writes no audit row.
+  return success(
+    res,
+    result,
+    result.changed ? 'Referral saved' : 'No change — referral already recorded',
+  );
+});
+
+/**
+ * @desc    Remove a referral. Records who removed it and why.
+ * @route   DELETE /api/candidates/:id/referral
+ * @access  Private — ADMIN-TIER ONLY (requireAdmin on the route)
+ *
+ * The reason is mandatory and is stored against the remover's name: this is the
+ * incident the audit log exists to make investigable.
+ */
+export const removeCandidateReferral = catchAsync(async (req, res) => {
+  const { reason } = req.body || {};
+  const result = await referralService.removeReferral(
+    req.params.id,
+    { reason },
+    { user: req.user, ip: clientIp(req) },
+  );
+  return success(res, result, 'Referral removed');
 });
 
 /**

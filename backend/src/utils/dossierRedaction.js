@@ -97,6 +97,19 @@ export const FORBIDDEN_KEYS = Object.freeze(new Set([
   'jobsource',
   'recruiterinfoaapna',
   'lockforninetydays',
+  // Referral status (P1). Sanghamitra, 2026-08-28 23:33–26:08: the recruiter and
+  // the final decision-maker may know; "none of the interview process should
+  // know that it is a, because then you can't be non-bias". The dossier is the
+  // artefact that reaches interviewers with no ATS account, so it is the exact
+  // hole that rule would otherwise have. Listed here AND caught by shape below.
+  'is_referral',
+  'referred_by',
+  'referral_note',
+  'referral_set_by',
+  'referral_set_at',
+  // The audit table's own columns, in case a future join drags one in.
+  'old_referred_by',
+  'new_referred_by',
   // Commercial.
   'budget_min',
   'budget_max',
@@ -173,6 +186,14 @@ export const FORBIDDEN_KEY_PATTERNS = Object.freeze([
   /(^|_)budget(_|$)/i,
   /(^|_)salary(_|$)/i,
   /session_?id/i,
+  // Anything referral-shaped: is_referral, referred_by, referral_note,
+  // old_referred_by, and whatever the next one is called.
+  //
+  // ANCHORED, and that is the whole trick. An unanchored /referr/i also matches
+  // `PreferredShift` — "p-REFERR-ed" — which is a whitelisted profile field and
+  // the single most-used column in this table. A guard that deletes the notice
+  // period from every dossier is a guard somebody switches off by Friday.
+  /(^|_)referr/i,
 ]);
 
 /** Normalise a key for comparison — Prisma hands us three naming conventions. */
@@ -297,6 +318,7 @@ export function redactionSummary({ includeContactDetails = true } = {}) {
   const removed = [
     'Current and expected compensation (CTC)',
     'Vendor / agency name, vendor contact and how the candidate was sourced',
+    'Whether the candidate was referred by an employee, and by whom',
     'Requisition budget range',
     'Offer details, joining date and offer remarks',
     'Internal tokens, tracking links and system identifiers',

@@ -69,24 +69,73 @@ async function getTemplate(name) {
   return prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
 }
 
-/** Serializes a scorecard row for the API (BigInt -> Number, Decimal -> Number). */
+/**
+ * Serializes a scorecard row for the API (BigInt -> Number, Decimal -> Number).
+ *
+ * NAMED FIELDS, NEVER A SPREAD — and that is the whole point of this function
+ * rather than an incidental style choice.
+ *
+ * getScorecardByToken() loads this row with `include: { rpa_candidate_pipeline:
+ * { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } } }`,
+ * and returns the result through here to a PUBLIC route: scorecard.routes.js
+ * mounts /scorecard with no authenticate middleware, because interviewers have
+ * no ATS session. A `...row` therefore put the entire shortlist row
+ * (recruiter_notes, stage_notes, email_body_snapshot), the entire rpa_mrf row
+ * (client_details, hiring_manager_name, ceo_panel_details, submitter_email) and
+ * the schedule's teams_passcode / graph_event_id into an unauthenticated
+ * response body. The page never rendered any of it, so it was over-transmission
+ * rather than display — but it was on the wire, and app.js's global BigInt json
+ * replacer meant nothing failed loudly to reveal it.
+ *
+ * Same construction, and the same reason, as serializeRecording() in
+ * interviewRecording.service.js and pickCvProfile() in dossierRedaction.js: a
+ * column added to rpa_interview_scorecard next month is invisible to this
+ * response until somebody consciously adds it here, and a future `include`
+ * cannot leak a relation at all.
+ *
+ * Deliberately absent: `token` (the caller already holds it; echoing a
+ * credential back is pointless risk), `submitted_ip`, `created_at`,
+ * `modified_at`, and every relation except the skill rows.
+ *
+ * Four callers depend on this shape — the public getScorecardByToken() and
+ * submitScorecardByToken(), plus the recruiter-facing getCandidateScorecardReport(),
+ * which additionally reads every HR_TEXT_FIELDS key off the result. Anything
+ * removed from this list must be checked against all four.
+ */
 function serializeCard(row) {
   if (!row) return null;
   const num = (v) => (v === null || v === undefined ? null : Number(v));
   return {
-    ...row,
     id: Number(row.id),
     schedule_id: Number(row.schedule_id),
     pipeline_id: Number(row.pipeline_id),
+    stage_key: row.stage_key,
+    card_type: row.card_type,
+    recipient_email: row.recipient_email,
+    recipient_name: row.recipient_name,
+    recipient_role: row.recipient_role,
+    status: row.status,
+    token_expires_at: row.token_expires_at,
+    sent_at: row.sent_at,
+    opened_at: row.opened_at,
+    submitted_at: row.submitted_at,
     communication: num(row.communication),
     attitude: num(row.attitude),
     final_rating: num(row.final_rating),
     avg_score: num(row.avg_score),
+    recommendation: row.recommendation,
+    comments: row.comments,
+    recording_url: row.recording_url,
+    // The HR round's own free-text block. Copied by name from the same list the
+    // submit path writes and the drawer report reads, so the three cannot drift.
+    ...Object.fromEntries(HR_TEXT_FIELDS.map((f) => [f, row[f] ?? null])),
     rpa_interview_scorecard_skill: (row.rpa_interview_scorecard_skill || []).map((s) => ({
-      ...s,
       id: Number(s.id),
       scorecard_id: Number(s.scorecard_id),
+      skill_label: s.skill_label,
       rating: num(s.rating),
+      remark: s.remark,
+      sort_order: s.sort_order,
     })),
   };
 }
