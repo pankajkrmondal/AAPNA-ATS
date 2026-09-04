@@ -64,7 +64,7 @@ function listArg(flag) {
 if (!target || !existsSync(target)) {
   console.error('Usage: node scripts/dossier-leak-scan.mjs <pack.zip|unzipped-folder> [--ctc 18,26]'
     + ' [--vendor "Acme Staffing"] [--domain acme.example] [--budget 1800000,2600000]'
-    + ' [--other "Name,email@x.com"] [--json]');
+    + ' [--other "Name,email@x.com"] [--referrer "Anuj Kumar"] [--json]');
   process.exit(2);
 }
 
@@ -83,6 +83,17 @@ const ALWAYS = [
   ['salary wording', /\b(salary|remuneration|stipend)\b/i],
   ['budget wording', /\b(budget)\b/i],
   ['vendor wording', /\b(vendor|agency\s+name|sourced\s+(from|by))\b/i],
+  // Referral status (P1). Sanghamitra, 2026-08-28: "none of the interview
+  // process should know that it is a, because then you can't be non-bias" — and
+  // the dossier is the one artefact designed to reach an interviewer with no ATS
+  // account. dossierRedaction.js stops the FIELDS; this catches the WORDS, which
+  // is the half a key-name guard cannot see: a recruiter typing "referred by
+  // Anuj" into a note that some future section renders.
+  //
+  // \b-anchored, and "referr" is NOT matched loosely, for the same reason the
+  // key guard is anchored: "preferred" contains it. \b(referral|referred)\b
+  // cannot match inside "preferred", where the r is not preceded by a boundary.
+  ['referral wording', /\b(referral|referrals|referred\s+by|referrer)\b/i],
   ['credential', /\b(token|api[_-]?key|password|bearer)\b/i],
   // URLs that only work with the application's own Microsoft token. These must
   // never appear: the recording player proxies bytes precisely so they do not.
@@ -99,6 +110,7 @@ const VENDORS = listArg('--vendor');
 const DOMAINS = listArg('--domain');
 const BUDGETS = listArg('--budget');
 const OTHERS = listArg('--other');
+const REFERRERS = listArg('--referrer');
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const CASE_SPECIFIC = [
@@ -110,6 +122,10 @@ const CASE_SPECIFIC = [
   // spreadsheet covering many candidates, so a pack about one of them must not
   // name any of the others.
   ...OTHERS.map((v) => [`ANOTHER CANDIDATE (${v})`, new RegExp(escapeRe(v), 'i')]),
+  // The employee who referred this candidate. Their NAME is the disclosure that
+  // matters most — "Referral" in the abstract tells an interviewer little; "Anuj
+  // sent this one" tells them exactly who to please.
+  ...REFERRERS.map((v) => [`REFERRER (${v})`, new RegExp(escapeRe(v), 'i')]),
 ];
 
 const CHECKS = [...ALWAYS, ...CASE_SPECIFIC];

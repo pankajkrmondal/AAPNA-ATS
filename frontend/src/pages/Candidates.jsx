@@ -21,6 +21,8 @@ import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typograp
 import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
+import ReferralPanel from '../components/candidates/ReferralPanel';
+import ReferralChip from '../components/candidates/ReferralChip';
 import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
@@ -428,7 +430,24 @@ export default function Candidates() {
       title: 'NAME',
       dataIndex: 'name',
       key: 'name',
-      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>,
+      // The chip rides with the name rather than taking its own column: the
+      // table is already wide, and a referral is a fact about the person. No
+      // referrer name here — this is a broad, screenshot-able list.
+      //
+      // Plain inline flow, NOT an antd <Space>. Space is inline-flex, and inside
+      // this narrow auto-width column its children shrink to their minimum
+      // content width — which broke a long name into one character per line.
+      render: (text, record) => (
+        <>
+          <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>
+          {record.isReferral ? (
+            <>
+              {' '}
+              <ReferralChip compact />
+            </>
+          ) : null}
+        </>
+      ),
     },
     {
       title: 'EMAIL',
@@ -828,6 +847,20 @@ export default function Candidates() {
               </Form.Item>
             </Col>
           </Row>
+
+          {/* Referral sits next to Job Source because that is the free-text field
+              recruiters have been using for it ("Referral - Anuj"). This is the
+              structured replacement; it saves through its own audited endpoints,
+              NOT through "Update Candidate" — see ReferralPanel's header.
+              Mounted only while the modal is open, and keyed by candidate, so
+              reopening always shows current state rather than a stale cache. */}
+          {editOpen && selectedCandidate?.id ? (
+            <ReferralPanel
+              key={selectedCandidate.id}
+              candidateId={selectedCandidate.id}
+              onChanged={loadCandidates}
+            />
+          ) : null}
 
           <Row gutter={16}>
             <Col span={12}>

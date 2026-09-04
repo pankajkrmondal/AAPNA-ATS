@@ -102,6 +102,29 @@ const adminService = {
     });
   },
 
+  // ── Referral Log — admin-tier only ─────────────────────────────────────
+  // The audit trail behind the referral flag. Admin-tier because any recruiter
+  // may SET a referral, but only admin-tier may remove one or read the record of
+  // who did — and this endpoint is the record.
+
+  /**
+   * Paginated referral audit trail.
+   * @param {object} [params] - { action?, candidate?, referrer?, from?, to?, page?, limit? }
+   * @returns {Promise<{ data: { data: Array, removals: number, pagination: object } }>}
+   */
+  getReferralLog(params = {}) {
+    return api.get('/admin/referral-log', { params });
+  },
+
+  /**
+   * CSV of the referral log, using the same filters as the screen.
+   * @param {object} [filters]
+   * @param {object} [config] - blob/timeout config from downloadFile
+   */
+  exportReferralLog(filters = {}, config = {}) {
+    return api.get('/admin/referral-log/export', { params: filters, ...config });
+  },
+
   // ── Company (tenant) management — superadmin only ──────────────────────
 
   /**

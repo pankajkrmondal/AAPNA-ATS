@@ -328,6 +328,29 @@ export async function listPipeline(filters = {}) {
     results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
   }
 
+  // Referral flags for the board chip, one lookup keyed by cv_id.
+  //
+  // The flag lives on rpa_cv while a card is built from the journey + shortlist
+  // row, so it cannot ride along on the include above. Only the TRUE rows are
+  // fetched — referrals are a small minority, so this returns almost nothing.
+  //
+  // No vendor redaction is needed here: this whole router is behind
+  // authenticate -> requireStaff -> checkModuleAccess, and requireStaff is
+  // rank-based, so a vendor never reaches it.
+  //
+  // The BOARD carries only the boolean. `referred_by` is deliberately left to
+  // the drawer: the board is a wide, screenshot-able surface, and the chip
+  // answers the question ("is this a referral?") without naming the employee.
+  const cvIds = [...new Set(journeys.map((j) => j.cv_id).filter(Boolean))];
+  const referralCvIds = new Set();
+  if (cvIds.length > 0) {
+    const rows = await prisma.rpa_cv.findMany({
+      where: { id: { in: cvIds }, is_referral: true },
+      select: { id: true },
+    });
+    rows.forEach((r) => referralCvIds.add(String(r.id)));
+  }
+
   const now = Date.now();
   const cards = journeys.map((j) => {
     const lastEvent = j.rpa_pipeline_stage_events[0];
@@ -377,6 +400,8 @@ export async function listPipeline(filters = {}) {
       mrf_closed: isMrfClosed(j.rpa_shortlisted_candidates?.mrf),
       owner: j.rpa_shortlisted_candidates?.shortlisted_by || null,
       source: j.source,
+      // Recruiter/admin only, and never the referrer's name — see the lookup above.
+      is_referral: referralCvIds.has(String(j.cv_id)),
       vendor_email: j.vendor_email,
       is_paused: j.is_paused,
       days_in_stage: daysInStage,
@@ -627,12 +652,34 @@ export async function getPipelineDetail(pipelineId) {
   // round-scoped rpa_zeko_interview_results lookup below is now the only source.
   let zekoScores = null;
   let cvFileUrl = null;
+  // The drawer DOES show the referrer's name — it is the surface where the
+  // recruiter and the final decision-maker actually weigh the candidate, which
+  // is the whole point of the requirement. Never reaches an interviewer: this
+  // router is requireStaff, and the interviewer-facing scorecard builds its own
+  // payload from a named whitelist.
+  let referral = null;
   if (pipeline.cv_id) {
     const cv = await prisma.rpa_cv.findUnique({
       where: { id: pipeline.cv_id },
-      select: { cvFileUrl: true },
+      select: {
+        cvFileUrl: true,
+        is_referral: true,
+        referred_by: true,
+        referral_note: true,
+        referral_set_by: true,
+        referral_set_at: true,
+      },
     });
     cvFileUrl = cv?.cvFileUrl || null;
+    referral = cv
+      ? {
+          is_referral: !!cv.is_referral,
+          referred_by: cv.referred_by || null,
+          note: cv.referral_note || null,
+          set_by: cv.referral_set_by || null,
+          set_at: cv.referral_set_at || null,
+        }
+      : null;
   }
 
   // Screening context (v8+ prototype direction): shortlisting happens on
@@ -711,6 +758,7 @@ export async function getPipelineDetail(pipelineId) {
     reasons,
     zekoScores,
     cvFileUrl,
+    referral,
     screening,
     zekoHrPipeline,
     zekoReportLink,

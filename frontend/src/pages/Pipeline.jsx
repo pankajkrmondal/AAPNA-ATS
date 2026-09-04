@@ -32,6 +32,7 @@ import {
 import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
+import ReferralChip from '../components/candidates/ReferralChip';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
@@ -190,6 +191,10 @@ function CandidateCard({ card, onOpen }) {
               </Tooltip>
             )}
             {card.source === 'vendor' && <ShopOutlined style={{ color: 'var(--text-3)', fontSize: 11 }} />}
+            {/* Recruiter/admin only — this board is behind requireStaff, so a
+                vendor never loads it. No referrer name on the board: the chip
+                answers "is this a referral?" and the drawer names who. */}
+            {card.is_referral && <ReferralChip compact />}
           </Space>
           <Tooltip title={segTooltip}>
             <div style={{ display: 'flex', gap: 3 }} aria-label={segTooltip}>

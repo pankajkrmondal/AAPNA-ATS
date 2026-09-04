@@ -24,4 +24,13 @@ router.post('/users/toggle-status', adminController.toggleStatus);
 router.get('/modules/get-access', adminController.getModulesAccess);
 router.post('/modules/set-access', adminController.setModulesAccess);
 
+// Referral Log — the audit trail behind the referral flag.
+//
+// Admin-tier by inheritance from the router-wide restrictTo above, which is the
+// whole access decision. Deliberately here rather than beside the recruiter
+// screens: any recruiter may SET a referral, but only admin-tier may remove one
+// or read the record of who did (docs/REFERRAL-CANDIDATE-PLAN.md section 6.4).
+router.get('/referral-log', adminController.listReferralAudit);
+router.get('/referral-log/export', exportLimiter, adminController.exportReferralAudit);
+
 export default router;

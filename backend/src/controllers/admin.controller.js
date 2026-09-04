@@ -6,6 +6,8 @@ import { sendCredentialEmail } from '../services/emailNotification.service.js';
 import { restrictToCompanyScope } from '../middleware/auth.js';
 import runExport from '../exports/runExport.js';
 import adminExport from '../exports/admin.export.js';
+import referralAuditExport from '../exports/referralAudit.export.js';
+import * as referralService from '../services/referral.service.js';
 import {
   ROLES,
   ADMIN_ASSIGNABLE_ROLES,
@@ -130,6 +132,58 @@ export const exportUsers = catchAsync(async (req, res) => runExport(
   res,
   adminExport.usersSpecFor(req),
 ));
+
+/**
+ * The Referral Log — every mark, change and removal of a referral flag.
+ *
+ * Admin-tier only, inherited from the router-wide restrictTo('admin','superadmin')
+ * in admin.routes.js. Two reasons it lives behind the Admin Portal rather than
+ * beside the recruiter screens: it is an investigation tool rather than daily
+ * work, and it is a list of exactly what "nobody in the other people in the
+ * system knows that it is a referred person" excludes, gathered in one place.
+ *
+ * @route GET /api/admin/referral-log
+ */
+export const listReferralAudit = catchAsync(async (req, res) => {
+  const { page = 1, limit = 25 } = req.query;
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit, 10) || 25));
+
+  const result = await referralService.queryReferralAudit(
+    referralAuditExport.parseFilters(req),
+    pageNum,
+    limitNum,
+  );
+
+  return res.status(200).json({
+    status: 'success',
+    message: 'Referral log retrieved',
+    data: result.data,
+    // Alongside the page count because removals are why this report exists: a
+    // zero answers "has anyone been quietly undoing referrals?" without paging.
+    removals: result.removals,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: result.total,
+      totalPages: Math.ceil(result.total / limitNum),
+      hasNext: pageNum * limitNum < result.total,
+      hasPrev: pageNum > 1,
+    },
+  });
+});
+
+/**
+ * CSV of the Referral Log, using the same filters as the screen.
+ * @route GET /api/admin/referral-log/export
+ */
+export const exportReferralAudit = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'referral_log',
+  label: 'Referral-Log',
+  columns: referralAuditExport.columns,
+  filters: referralAuditExport.parseFilters(req),
+  fetch: referralAuditExport.fetch,
+}));
 
 /**
  * Check if email duplicate exists.

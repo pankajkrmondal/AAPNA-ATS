@@ -46,6 +46,7 @@ model rpa_users {
   rpa_offers_rpa_offers_shared_byTorpa_users   rpa_offers[]                   @relation("rpa_offers_shared_byTorpa_users")
   rpa_outlook_accounts                         rpa_outlook_accounts[]
   rpa_pipeline_stage_events                    rpa_pipeline_stage_events[]
+  rpa_referral_audit                           rpa_referral_audit[]
   sessions                                     rpa_sessions[]
   company                                      rpa_companies?                 @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
@@ -148,7 +149,13 @@ model rpa_cv {
   last_action_by               String?
   last_action_context          String?
   cv_file_item_id              String?                      @db.VarChar(512)
+  is_referral                  Boolean                      @default(false)
+  referred_by                  String?                      @db.VarChar(255)
+  referral_note                String?
+  referral_set_by              String?                      @db.VarChar(255)
+  referral_set_at              DateTime?                    @db.Timestamptz(6)
   emails                       rpa_email_messages[]
+  rpa_referral_audit           rpa_referral_audit[]
   shortlisted                  rpa_shortlisted_candidates[]
 
   @@index([resume_tsvector], map: "idx_rpa_cv_resume_tsvector", type: Gin)
@@ -1164,6 +1171,33 @@ model rpa_notifications {
   rpa_users              rpa_users               @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id, created_at(sort: Desc)], map: "idx_notifications_user_created")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_referral_audit {
+  id              BigInt     @id @default(autoincrement())
+  cv_id           BigInt?
+  candidate_name  String?    @db.VarChar(255)
+  candidate_email String?    @db.VarChar(255)
+  action          String     @db.VarChar(20)
+  old_is_referral Boolean?
+  new_is_referral Boolean?
+  old_referred_by String?    @db.VarChar(255)
+  new_referred_by String?    @db.VarChar(255)
+  note            String?
+  reason          String?
+  acted_by        Int?
+  acted_by_name   String     @db.VarChar(255)
+  acted_by_email  String?    @db.VarChar(255)
+  acted_at        DateTime   @default(now()) @db.Timestamptz(6)
+  acted_ip        String?    @db.VarChar(64)
+  rpa_cv          rpa_cv?    @relation(fields: [cv_id], references: [id], onUpdate: NoAction, map: "fk_referral_audit_cv")
+  rpa_users       rpa_users? @relation(fields: [acted_by], references: [id], onUpdate: NoAction, map: "fk_referral_audit_user")
+
+  @@index([acted_at(sort: Desc)], map: "idx_referral_audit_acted")
+  @@index([acted_by], map: "idx_referral_audit_actor")
+  @@index([cv_id], map: "idx_referral_audit_cv")
 }
 
 enum approval_status {

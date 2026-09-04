@@ -38,9 +38,11 @@ import {
   SafetyOutlined,
   BankOutlined,
   TeamOutlined,
+  AuditOutlined,
 } from '@ant-design/icons';
 import adminService from '../services/adminService';
 import ExportButton from '../components/common/ExportButton';
+import ReferralLogPanel from '../components/admin/ReferralLogPanel';
 import useAuth from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
@@ -634,6 +636,14 @@ export default function AdminDashboard() {
           >
             Module Access
           </Button>
+          <Button
+            type="text"
+            className={`admin-tab ${activeTab === 'referrals' ? 'admin-tab--active' : ''}`}
+            onClick={() => setActiveTab('referrals')}
+            icon={<AuditOutlined />}
+          >
+            Referral Log
+          </Button>
           {isSuper && (
             <Button
               type="text"
@@ -645,11 +655,16 @@ export default function AdminDashboard() {
             </Button>
           )}
         </div>
-        <ReloadOutlined
-          style={{ color: 'var(--gold)', cursor: 'pointer', fontSize: 16 }}
-          onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
-          spin={loading || companiesLoading}
-        />
+        {/* The Referral Log owns its own Refresh (it has its own filters and
+            pagination), so this shared one would either do nothing useful or
+            reload the wrong list. Hidden there rather than left as a dead icon. */}
+        {activeTab !== 'referrals' && (
+          <ReloadOutlined
+            style={{ color: 'var(--gold)', cursor: 'pointer', fontSize: 16 }}
+            onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
+            spin={loading || companiesLoading}
+          />
+        )}
       </div>
 
       {/* Tab Content 1: User Management */}
@@ -1015,7 +1030,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Tab Content 3: Companies (superadmin only) */}
+      {/* Tab Content 3: Referral Log — the audit trail behind the referral flag.
+          Owns its own loading, filters and refresh, so nothing above needs to
+          know about it. */}
+      {activeTab === 'referrals' && <ReferralLogPanel />}
+
+      {/* Tab Content 4: Companies (superadmin only) */}
       {activeTab === 'companies' && isSuper && (
         <div className="animate-fade-in">
           <Card
