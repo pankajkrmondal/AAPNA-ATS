@@ -11,19 +11,17 @@
  *
  * SCOPE (docs/phase3/CANDIDATE-COMPLETE-DOWNLOAD-PLAN.md §9). Live controls:
  * contact details (HR decision #10), the resume and personal documents (Phase 2,
- * decision #11), the AI screening report link (Phase 3, decision #8), and the
- * format. The plan's remaining checkbox — recording share links — is deliberately
- * ABSENT rather than present and disabled: it depends on Phase 4, and a ticked
- * box that silently sends nothing is worse than no box at all. What the pack
- * cannot yet carry is stated in the "Not included yet" list instead, in the
- * recruiter's words rather than as a greyed-out control.
+ * decision #11), the written-test breakdown, the AI screening assessment and its
+ * vendor link (Phase 3, decision #8), the recording share links (Phase 4,
+ * decision #7), and the format.
  *
  * A checkbox appears only once the thing it controls can actually travel — the
- * screening-report tick is hidden for a candidate with no Zeko report, so it
- * never implies one exists.
+ * screening-report tick is hidden for a candidate with no Zeko report, and the
+ * recordings tick for one with no recordings, so neither ever implies something
+ * exists. A ticked box that silently sends nothing is worse than no box at all.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, App as AntApp, Button, Checkbox, Descriptions, Modal, Radio, Space, Spin, Tag, Typography,
 } from 'antd';
@@ -35,8 +33,25 @@ import { MODAL_WIDTH } from './modalWidths';
 
 const { Text, Paragraph } = Typography;
 
+/**
+ * What the written test will contribute, in the recruiter's terms.
+ *
+ * Three states, not two. A result whose breakdown was never captured (imported
+ * before the ATS kept it) reads differently from one the recruiter chose to send
+ * as scores only — otherwise "scores only" looks like a setting they got wrong.
+ */
+function assessmentSummary(model, includeAssessmentDetail) {
+  const results = model.assessments?.length || 0;
+  if (!results) return '0 result(s)';
+  const withDetail = model.assessments.filter((a) => a.detail_available).length;
+  if (!withDetail) return `${results} result(s) — scores only (imported before the breakdown was recorded)`;
+  return `${results} result(s) — ${includeAssessmentDetail ? 'full breakdown included' : 'scores only'}`;
+}
+
 /** One row per section, so the recruiter sees volume as well as presence. */
-function contentsSummary(model, { includeScreeningDetail, includeScreeningReport } = {}) {
+function contentsSummary(model, {
+  includeScreeningDetail, includeScreeningReport, includeAssessmentDetail, includeRecordingLinks,
+} = {}) {
   if (!model) return [];
   const rounds = model.zeko?.length || 0;
   // The preview deliberately fetches nothing from Zeko — looking at what a pack
@@ -58,10 +73,12 @@ function contentsSummary(model, { includeScreeningDetail, includeScreeningReport
     ['Interviewer scorecards', `${model.scorecards?.length || 0} submitted`],
     ['Consolidated feedback', model.consolidated_feedback ? 'Included' : 'None yet'],
     ['Screening scores', screening],
-    ['Assessment results', `${model.assessments?.length || 0} result(s)`],
+    ['Assessment results', assessmentSummary(model, includeAssessmentDetail)],
     ['Interview history', `${model.interviews?.length || 0} booking(s)`],
     ['Recordings', model.recordings?.length
-      ? `${model.recordings.length} listed — not playable from the pack`
+      ? `${model.recordings.length} ${includeRecordingLinks
+        ? 'watchable from the pack, without a login'
+        : 'listed — not playable from the pack'}`
       : 'None'],
   ];
 }
@@ -71,6 +88,7 @@ function contentsSummary(model, { includeScreeningDetail, includeScreeningReport
  */
 export default function DossierDownloadModal({ open, onClose, pipelineId, candidateName }) {
   const { message } = AntApp.useApp();
+  const queryClient = useQueryClient();
   const [includeContact, setIncludeContact] = useState(true);
   // On by default: the resume is the single thing an external interviewer is
   // most likely to need, and the whole point of Phase 2 was getting it into the
@@ -94,6 +112,18 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
   // Three of those four are things §8 strips from the pack itself. So it is a
   // conscious tick with the exposure named, exactly like personal documents.
   const [includeScreeningReport, setIncludeScreeningReport] = useState(false);
+  // ON by default: the written test's own breakdown, read out of the Evalground
+  // import and rendered into section 7 under the same redaction as everything
+  // else. No link, no login, nothing to withdraw — and a bare "90.5%" is the
+  // thing interviewers ask a follow-up question about.
+  const [includeAssessmentDetail, setIncludeAssessmentDetail] = useState(true);
+  // ON by default, unlike the Zeko report link — and the difference is the
+  // point. These links are OURS: one per round, a 14-day expiry enforced on the
+  // server, revocable from this drawer the moment the recruiter changes their
+  // mind, and every open written onto the candidate's timeline with the
+  // viewer's IP. HR chose the share-link end state (decision #7) precisely
+  // because attaching hundreds of MB of video was not sendable.
+  const [includeRecordingLinks, setIncludeRecordingLinks] = useState(true);
   const [format, setFormat] = useState('zip');
   const [downloading, setDownloading] = useState(false);
 
@@ -143,18 +173,49 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
             documents: includeDocuments ? 1 : 0,
             screening_detail: includeScreeningDetail ? 1 : 0,
             screening_report: includeScreeningReport ? 1 : 0,
+            assessment_detail: includeAssessmentDetail ? 1 : 0,
+            recording_links: includeRecordingLinks ? 1 : 0,
           },
           cfg,
         ),
         { fallbackName: 'AAPNA-ATS_Candidate-Dossier.zip' },
       );
       message.success(`Downloaded ${result.filename}`);
+      // This download just minted (or reused) the no-login recording links, and
+      // the drawer's "Shared recording links" panel is the only place a
+      // recruiter can see or close them. Without this it kept showing the state
+      // from before the download — so the links they had just sent out were
+      // invisible, and the revoke button for them was not there. The timeline
+      // gains the audit note for the download too, so the detail is stale as well.
+      queryClient.invalidateQueries({ queryKey: ['recording-share-links', pipelineId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      // Too big to email. Said here rather than left for a bounce message
+      // hours later, by which time the recruiter believes the interviewer
+      // already has the candidate's details (plan §6.4).
+      if (result.oversizeMb) {
+        // Deliberately quotes no second threshold. An earlier version said
+        // "over about 25 MB" while the server's own limit defaults to 20, so a
+        // 21 MB pack warned that it was too big and then named a bigger number
+        // — the exact drift the server-side threshold was meant to prevent.
+        message.warning(
+          `This pack is ${result.oversizeMb} MB, which is larger than most mailboxes accept as an `
+          + 'attachment. Share it as a OneDrive link, or download it again with the resume and '
+          + 'documents unticked.',
+          10,
+        );
+      }
       if (result.degraded) {
         // The download still succeeded — something the recruiter asked for could
         // not be fetched. The pack says which and why; this makes sure they know
         // to look rather than discovering it after they have sent it on.
+        //
+        // Worded for any of the four things that can degrade, not just files: a
+        // Zeko link, a screening report and a recording link all set this header,
+        // and "a file could not be attached" sent a recruiter looking for a
+        // missing resume when what was missing was a way to watch a round.
         message.warning(
-          'The pack was created, but a file could not be attached. Open "What is in this pack" in the report to see which.',
+          'The pack was created, but something you asked for could not be included. Open "What is in '
+          + 'this pack" in the report to see which, and why.',
           8,
         );
       }
@@ -165,6 +226,30 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
       setDownloading(false);
     }
   };
+
+  // What this particular pack will NOT carry. Built here rather than inline so
+  // the alert below can be skipped entirely when the list is empty.
+  const notIncluded = [
+    model?.recordings?.length > 0 && !includeRecordingLinks ? (
+      <>
+        The interviewer <Text strong>cannot watch the recordings</Text> from this pack — the report
+        lists which ones exist and tells them to ask you.
+      </>
+    ) : null,
+    model?.assessments?.length > 0 ? (
+      <>
+        The Evalground <Text strong>spreadsheet itself</Text> is never attached — it covers every
+        candidate who sat that test, so it cannot go out in a pack about one of them. This
+        candidate&apos;s own result is written into the report instead.
+      </>
+    ) : null,
+    model?.zeko?.some((z) => z.report_available) ? (
+      <>
+        The AI screening <Text strong>transcript and recording</Text> are not in the pack — they are
+        reachable only through Zeko&apos;s own report link above.
+      </>
+    ) : null,
+  ].filter(Boolean);
 
   return (
     <Modal
@@ -234,7 +319,10 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
             style={{ marginBottom: 16 }}
             styles={{ label: { width: 200, fontSize: 12.5 }, content: { fontSize: 12.5 } }}
           >
-            {contentsSummary(model, { includeScreeningDetail, includeScreeningReport })
+            {contentsSummary(model, {
+              includeScreeningDetail, includeScreeningReport, includeAssessmentDetail,
+              includeRecordingLinks,
+            })
               .map(([label, value]) => (
                 <Descriptions.Item key={label} label={label}>{value}</Descriptions.Item>
               ))}
@@ -278,6 +366,66 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
                 Off by default. Only tick this if the interviewer genuinely needs them.
               </Text>
             </Checkbox>
+
+            {/* Shown only when the candidate has recordings — a tick offering to
+                share footage that does not exist would be a promise the pack
+                cannot keep. */}
+            {model.recordings?.length > 0 && (
+              <Checkbox
+                checked={includeRecordingLinks}
+                onChange={(e) => setIncludeRecordingLinks(e.target.checked)}
+              >
+                Let the interviewer watch the interview recordings
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  On by default. Each round gets its own link that plays in a browser with no login,
+                  expires after 14 days, and can be revoked from this candidate&apos;s drawer at any time.
+                </Text>
+              </Checkbox>
+            )}
+
+            {includeRecordingLinks && model.recordings?.length > 0 && (
+              // Stated plainly rather than buried: this is the one thing in the
+              // pack that lets an outsider watch a real person's interview.
+              //
+              // No scrollIntoView here, unlike the two warnings below: this box
+              // is ticked by default, so scrolling on open would yank the dialog
+              // before the recruiter has read the top of it.
+              <div>
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ fontSize: 12.5 }}
+                  message="Anyone with this file can watch these interviews"
+                  description={(
+                    <>
+                      The links need <Text strong>no login</Text>, so whoever the file is forwarded to
+                      can watch too, for <Text strong>14 days</Text>.
+                      <br />
+                      You can <Text strong>revoke any link immediately</Text> from
+                      the &quot;Shared recording links&quot; list on this candidate. Every time a link
+                      is opened is recorded on their timeline, with the viewer&apos;s IP address.
+                    </>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Same rule as the screening tick below: shown only when this
+                candidate actually has a breakdown to send, so it never implies
+                a written test that was never taken. */}
+            {model.assessments?.some((a) => a.detail_available) && (
+              <Checkbox
+                checked={includeAssessmentDetail}
+                onChange={(e) => setIncludeAssessmentDetail(e.target.checked)}
+              >
+                Include the written test breakdown
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  On by default. Section marks, correct/wrong/unattempted counts, the
+                  easy-medium-hard split and topic scores, written into section 7 of the pack.
+                  Untick to send the section scores alone.
+                </Text>
+              </Checkbox>
+            )}
 
             {/* Shown only when there is a screening report — a tick that would do
                 nothing is worse than no tick, and it would invite the recruiter
@@ -373,29 +521,23 @@ export default function DossierDownloadModal({ open, onClose, pipelineId, candid
             </div>
           </Space>
 
-          {/* Stated positively rather than shown as disabled checkboxes: these
-              are not options the recruiter is declining, they are things the
-              pack cannot carry yet. */}
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginTop: 16, fontSize: 12.5 }}
-            message="Not included yet"
-            description={(
-              <>
-                The assessment (Evalground) <Text strong>report file</Text>, and any way to watch a
-                panel interview recording, are not in this pack. The report says so and tells the
-                interviewer to ask you. Send them separately if they are needed now.
-                {model.zeko?.some((z) => z.report_available) && (
-                  <>
-                    <br />
-                    The AI screening <Text strong>transcript and recording</Text> are not in the pack
-                    either — they are reachable only through Zeko&apos;s own report link above.
-                  </>
-                )}
-              </>
-            )}
-          />
+          {/* Stated positively rather than as disabled checkboxes: these are not
+              options the recruiter is declining, they are things the pack cannot
+              carry — or has been told to leave out. Rendered only when there is
+              something to say, because an empty warning box trains people to
+              ignore the next one that is not empty. */}
+          {notIncluded.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: 16, fontSize: 12.5 }}
+              message="Not included"
+              description={notIncluded.map((note, i) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <div key={i} style={{ marginTop: i ? 6 : 0 }}>{note}</div>
+              ))}
+            />
+          )}
 
           <Paragraph type="secondary" style={{ fontSize: 12, marginTop: 14, marginBottom: 0 }}>
             This download is recorded against your name on the candidate&apos;s timeline, along with

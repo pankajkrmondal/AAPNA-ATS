@@ -5,8 +5,13 @@ travels two ways: the **assessment rendered into the pack** under our redaction,
 **opt-in no-login link** to Zeko's own page for the reader who needs the recording or transcript (§6.6). HR sign-off done (§2); the
 OneDrive read test passed, so no IT action is outstanding (§6.3). Built on `pankaj-work-staging-v16` and
 verified end to end against staging data — the pack carries the candidate's actual resume, and now a no-login
-link to their full Zeko screening report (§6.6). **Remaining: the Evalground half of Phase 3** (blocked on the
-separate assessment-report upload item), **Phase 4** (recording share links) and **Phase 5** (final test pass).
+link to their full Zeko screening report (§6.6). **The Evalground half of Phase 3 was built 2026-09-03** and
+did not need the assessment-report upload item at all: Evalground exports no per-candidate file, only a
+multi-candidate spreadsheet, so the import now keeps the candidate's whole row and section 7 of the pack
+renders their written test — see `ASSESSMENT-REPORT-UPLOAD-PLAN.md`. **Phase 4 (recording share links) was
+built 2026-09-03** — table, public token route, player page, rate limiter, per-view audit and the drawer's
+revoke list (§6.5); 320 unit tests pass. **Remaining: Phase 5** (the §10 test pass), plus applying the two new
+DDLs and turning on `MS_RECORDING_ARCHIVE_ENABLED` before any of it ships to production.
 
 **One item for HR before this ships to production**, and it concerns only the optional link, not the
 assessment: the Zeko share link opens Zeko's full report UI —
@@ -171,7 +176,7 @@ Scorecard Report modal already guards against (`PipelineDrawer.jsx:3991-3999`).
 | **No candidate-level export of any kind** — every existing export is list-shaped | The feature itself | §5, §6 |
 | **`cvFileUrl` is a SharePoint web URL requiring a Microsoft login** | An external interviewer clicking it gets a login wall. The resume must be fetched server-side and put **inside** the pack. Probably already permitted via the existing `Sites.Selected` grant — needs a read test, not a new permission. | §6.3 — new `downloadDriveItem()` |
 | **OneDrive item ids are discarded at upload** — only `webUrl` is stored | Forces read-back through the awkward `/shares/` URL-resolution route, and a renamed or moved file breaks the link | §6.3 — persist `item.id` + backfill |
-| **No per-candidate Evalground report file exists anywhere** — we store section scores from the bulk CSV, never the PDF report | The dossier cannot include what Sanghamitra explicitly asked for (32:45, 33:06: *"they just need to download it and upload it here"*) | **Separate P0 item — "Assessment report upload".** This plan builds the attachment slot; the upload feature fills it. Tracked as a dependency, not a blocker. |
+| ~~**No per-candidate Evalground report file exists anywhere**~~ **Resolved 2026-09-03 — there is no such file to store.** Evalground exports one workbook per TEST with one ROW per candidate, and its `Public Report` link is truncated mid-id by the vendor's own exporter | The source file can never travel in a pack: it lists every other candidate who sat that test. So the import keeps the candidate's own row in full and §7 of the pack renders it — the §6.7 move, applied again | **`ASSESSMENT-REPORT-UPLOAD-PLAN.md` — BUILT.** The "Assessment report upload" item as originally framed is closed, not deferred; a per-candidate file slot survives only as an optional fast-follow if HR turns out to want a hand-saved PDF |
 | **No PDF/HTML generator, no ZIP writer wired up** | — | §6.1 (both deps already present) |
 | **No redaction layer anywhere in the codebase** | Every current export assumes an internal audience | §8 |
 | **`PipelineDrawer` never reads the current user's role** | The button cannot be gated client-side today | §7.2 |
@@ -354,7 +359,37 @@ Both as `config.dossier.*` env-backed values, alongside `config.exports.*` (`con
 40 MB is above the ~25 MB Outlook attachment ceiling on purpose — the recruiter is told when a pack exceeds
 20 MB so they can share it via OneDrive link instead.
 
-### 6.5 Recording share links (decision #7 — HR confirmed, 14-day expiry)
+**The warning — BUILT 2026-09-03.** `packSizeNotice()` (`utils/dossierModel.js`, pure and unit-tested) decides;
+the download sets `X-Dossier-Oversize: <MB>` when it fires; `downloadFile()` reads it and the modal warns with
+the size, the consequence and the way out. The threshold stays server-side and travels in the header rather
+than being duplicated in the frontend, where it would drift the first time somebody changed the env var. The
+header is on the CORS expose-list — without that it would silently never fire on staging or production, which
+are cross-origin, exactly the failure that list's own comment was written about.
+
+To test it without a 20 MB candidate: set `DOSSIER_WARN_PACK_BYTES=10000` in `.env`, restart, download any
+pack. Put it back afterwards.
+
+### 6.5 Recording share links (decision #7 — HR confirmed, 14-day expiry) — BUILT 2026-09-03
+
+**What shipped**, against the design below: `rpa_recording_share_link`
+(`prisma/ddl/2026-09-03-recording-share-links.sql`); `utils/recordingShareModel.js` holding the pure
+expiry/revocation decision; `services/recordingShare.service.js` (mint-or-reuse, list, revoke, resolve, audit);
+a public, unauthenticated `routes/recordingShare.routes.js` mounted at `/api/recording-share` beside the
+scorecard and document token routes; `middleware/shareRateLimit.js` keyed on token + IP; the pack's section 9
+rendered as a play button per round with the expiry stated; `recording_no_login_link(n)` in the audit; and a
+**Shared recording links** list in the drawer with a Revoke button, a Copy button and an "opened unusually
+often" flag.
+
+Two things came out differently from the sketch below, both deliberate:
+
+- **The token serves a PAGE, not bytes.** `GET /api/recording-share/:token` returns a small self-contained
+  player page and `…/stream` serves the video. A single route streaming an MP4 would drop a 400 MB download
+  into an interviewer's Downloads folder with no context, no expiry notice and no way to explain a dead link.
+- **A view is counted on the page open, not per byte range.** A player seeking through an hour of interview
+  issues dozens of requests; counting each would leave a timeline nobody reads and a `view_count` that means
+  nothing. The stream route still re-checks the token on every range, so a revoke bites mid-video.
+
+The original design follows.
 
 The pack carries, per recording, a URL that plays the interview **with no login** and stops working after
 14 days. This is the single highest-risk surface in the feature: an unauthenticated URL to a video of a real
@@ -640,9 +675,9 @@ The share links minted by that download are joined to it by `rpa_recording_share
 | **0** | ~~HR sign-off~~ **done**; ~~`Files.Read.All`~~ **declined by IT, withdrawn**; ~~read test against the existing `Sites.Selected` grant~~ — **✅ DONE 2026-09-02, PASSED.** File bytes read back app-only with no new grant. No IT action outstanding for staging. | ~~~1 hour~~ **done** | none |
 | **1** | Aggregation endpoint, redaction + whitelist + guard, HTML + XLSX, ZIP with **no binary attachments**, content-level audit (§8.4), drawer button + modal | ~~4–5 days~~ **✅ BUILT 2026-09-02** — 189 unit tests pass; packs generated and leak-scanned against three real staging journeys (open, closed, and one with a recording) | none |
 | **2** | Persist OneDrive item ids + backfill; resume and documents fetched into `attachments/` | ~~2–3 days~~ **✅ BUILT 2026-09-02** — 206 unit tests pass; a real resume verified inside a pack downloaded through the browser (`.docx`, byte-identical, opens). Backfill measured: **7.7s** first read via `/shares/`, **0.8s** thereafter by stored id. | re-run the read test against production before shipping there |
-| **3** | Zeko report — **assessment rendered into the pack** (§6.7, on by default) **plus an opt-in no-login share link** (§6.6): ~~**✅ BUILT 2026-09-03**~~ — 238 unit tests pass; verified against a real staging journey, with the packed ZIP bytes grep-clean of CTC and the minted link opening with no session at all. Evalground report attachment slot: **still open** | ~~1–2 days~~ **Zeko done** | Evalground: **the separate "Assessment report upload" P0 item**, confirmed by HR as next |
-| **4** | Recording share links: new table, public token route, rate limiter, view audit, revoke UI (§6.5) | **3–4 days** | archive flag on in the target environment |
-| **5** | Test pass §10 + staging verification with a real hiring case | **1–2 days** | Phases 1–4 |
+| **3** | Zeko report — **assessment rendered into the pack** (§6.7, on by default) **plus an opt-in no-login share link** (§6.6): ~~**✅ BUILT 2026-09-03**~~ — 238 unit tests pass; verified against a real staging journey, with the packed ZIP bytes grep-clean of CTC and the minted link opening with no session at all. **Evalground: ✅ BUILT 2026-09-03** — the import keeps the candidate's whole export row and §7 renders the written test in full (`ASSESSMENT-REPORT-UPLOAD-PLAN.md`); the vendor's spreadsheet itself is never attached, because it covers every candidate who sat the test | ~~1–2 days~~ **done** | none — the Evalground dependency dissolved once the export's real shape was read |
+| **4** | Recording share links: new table, public token route, rate limiter, view audit, revoke UI (§6.5) | ~~3–4 days~~ **✅ BUILT 2026-09-03** — 320 unit tests pass, including the full expiry/revocation state machine and an assertion that no Graph or SharePoint URL can reach an unauthenticated caller. **Not yet exercised end to end**: needs the DDL applied and `prisma generate` | archive flag on in the target environment — still `false` in production |
+| **5** | Test pass §10 + staging verification with a real hiring case | **In progress** — §10.1 (320 unit tests), §10.2a (28/28 against the live server) and the §10.3 leak scan **done 2026-09-03**; §10.2's 11 staging checks and the §10.3 disconnected-machine acceptance test still need a browser session. Checklist with expected results: `docs/test-plans/phase3-dossier-phase5-test-pass.md` | Phases 1–4 |
 
 **Phase 1 alone satisfies the transcript.** Everything Sanghamitra asked to be shareable — what the candidate
 "has cleared so far", the scorecards, the scores, the stage history — is database content, not files. Phases 2–4
@@ -701,7 +736,19 @@ archive flag (§6.5).
     manifest says "ask the recruiter" (**verified 2026-09-03**: degraded cleanly at 20s rather than hanging
     for the 38s an OTP login takes).
 
-### 10.2a Share links (§6.5), once Phase 4 lands
+### 10.2a Share links (§6.5) — RUN 2026-09-03, 28/28 PASS
+
+Executed against the running server with no ATS session: a live link streamed a real recording as
+`206 bytes 0-2047/1501627` (`video/mp4`), expired and revoked links were refused with byte-identical bodies, a
+link revoked mid-use stopped on the next range request, the open was counted and written to the timeline with
+the viewer's IP and no internal attribution, and the limiter tripped. Three throwaway links were created and
+deleted; the audit note was deliberately left. Full results and evidence:
+`docs/test-plans/phase3-dossier-phase5-test-pass.md` §2.
+
+Item 2 below is satisfied **structurally** — the URL carries only the token, so there is no recording id to
+swap. Item 8 is **not tested**: it needs a genuinely aged recording, and faking one means mutating a real row.
+
+The checklist as designed:
 
 1. A minted link plays in a browser with **no session at all** — private window, no ATS cookie, no token.
 2. The link is for **one** recording: swapping the recording id in the URL does not reach another round.
@@ -721,9 +768,24 @@ Run on a machine with **no ATS session and the network disconnected**:
 1. Unzip. Double-click `Candidate-Dossier.html`. It must render fully — no broken images, no blank sections.
 2. Ctrl+P → the PDF is legible and paginated.
 3. Open `Candidate-Summary.xlsx` in Excel. All four sheets present.
-4. **Automated leak scan** (add as a script, don't do it by eye): unzip to a temp dir and grep the entire tree —
-   HTML, XLSX (unzipped XML), manifest — for the candidate's known CTC values, the vendor name, the vendor
-   email domain, the MRF budget figures, and the strings `ctc`, `vendor`, `budget`, `token`. Any hit fails the build.
+4. **Automated leak scan — BUILT 2026-09-03**: `backend/scripts/dossier-leak-scan.mjs`, run as
+   `npm run dossier:leakscan -- <pack.zip> --ctc 18,26 --vendor "Acme Staffing" --other "Other Candidate"`.
+   Exit code 1 on any finding, so it can gate a release. Verified against a deliberately leaky pack (CTC,
+   vendor and another candidate's name inside a scorecard comment): 6 findings, exit 1; and against a clean
+   pack: exit 0.
+
+   Two properties that make it usable rather than shelf-ware:
+   - **The pack's own redaction notice is not a leak.** The footer and READ-ME literally say "Current and
+     expected compensation (CTC)" was removed, so a naive grep fires on the sentence promising there is none.
+     Those lines are stripped first, and they are *imported from* `dossierRedaction.js` rather than restated,
+     so the scan follows the wording instead of going stale.
+   - **Attachments are listed, not scanned.** `attachments/` holds the candidate's own resume and documents,
+     included by design. A resume that says "Current CTC: 18 LPA" is the candidate's sentence about
+     themselves; failing on it would get the scan switched off within a week. What is scanned is what *we*
+     composed — the report, the workbook, the manifest, the READ-ME.
+
+   The workbook is parsed and its sheets stringified rather than grepped as bytes: an `.xlsx` is itself a zip,
+   so a byte grep finds nothing and the "Spreadsheet only" format would go unchecked.
 5. Repeat for a **vendor-sourced** candidate — that is the case where a leak is most likely and most damaging.
 
 ---

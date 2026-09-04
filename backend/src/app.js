@@ -47,6 +47,11 @@ app.use(
       // The candidate dossier reuses X-Export-Degraded above (downloadFile()
       // only reads that one); this says which format the pack came back as.
       'X-Dossier-Format',
+      // Set (to the pack's size in MB) only when the pack is too large to send
+      // as an email attachment. Must be exposed or the warning silently never
+      // fires on staging and production, which are cross-origin — exactly the
+      // failure this list's comment above was written about.
+      'X-Dossier-Oversize',
     ],
   }),
 );

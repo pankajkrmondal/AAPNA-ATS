@@ -18,13 +18,15 @@
  * to leave the building, and its safety property has to be testable in
  * isolation.
  *
- * WHAT IS DELIBERATELY NOT HERE (Phase 1 — plan §9):
- *   - No binary attachments. Resumes and candidate documents live behind a
- *     Microsoft login and need Graph read-back (Phase 2); the pack says so
- *     honestly rather than shipping a link an outsider cannot open.
- *   - No recording share links. The pack lists which recordings exist and tells
- *     the reader to ask the recruiter (Phase 4 mints 14-day no-login links).
- * Both degrade to an explicit line in the manifest, never to silence.
+ * WHAT TRAVELS, AND WHAT DOES NOT (plan §9). Attachments (Phase 2), the Zeko
+ * screening report and its no-login link (Phase 3) and the recording share links
+ * (Phase 4) are all collected here, each by a separate step that runs only on a
+ * real download — never on the preview, which must not fetch from a vendor or
+ * mint a public URL as a side effect of somebody looking at what a pack would
+ * contain. Every one of them degrades to an explicit line in the manifest,
+ * never to silence, and "we could not" is kept distinct from "there is none":
+ * collapsing those two is what warns a recruiter that something broke when
+ * nothing did.
  *
  * Plan: docs/phase3/CANDIDATE-COMPLETE-DOWNLOAD-PLAN.md §5, §8.
  */
@@ -38,15 +40,19 @@ import { serializeRecording } from './interviewRecording.service.js';
 import { getCandidateScorecardReport } from './interviewScorecard.service.js';
 import { generateZekoShareLink, getZekoReport } from './zeko.service.js';
 import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
+import { withDeadline } from '../utils/withDeadline.js';
 import {
   assertNoForbiddenFields,
   pickCvProfile,
   redactionSummary,
 } from '../utils/dossierRedaction.js';
 import {
-  applyAttachments, applyZekoExtras, describeIncludedCategories, describeJourneyStatus,
-  extensionFor,
+  applyAttachments, applyRecordingShareLinks, applyZekoExtras, describeIncludedCategories,
+  describeJourneyStatus, extensionFor,
 } from '../utils/dossierModel.js';
+// Phase 4 — the no-login recording links the pack can carry (plan §6.5).
+import { mintShareLinks } from './recordingShare.service.js';
+import { shareUrlFor } from '../utils/recordingShareModel.js';
 
 // Re-exported so the controller keeps a single dossier import, and so callers do
 // not have to know that these are pure helpers living elsewhere. They are
@@ -54,8 +60,67 @@ import {
 // service pulls in email and notifications) cannot be imported from a unit test
 // — see dossierModel.js's header.
 export {
-  applyAttachments, applyZekoExtras, describeIncludedCategories, describeJourneyStatus,
+  applyAttachments, applyRecordingShareLinks, applyZekoExtras, describeIncludedCategories,
+  describeJourneyStatus,
 };
+
+/**
+ * Mint the no-login viewing links the pack will carry, one per recording.
+ *
+ * ON DOWNLOAD ONLY, NEVER ON THE PREVIEW — the same rule collectZekoExtras()
+ * follows, and here it matters more: opening the "what will be shared" dialog
+ * must not create public URLs to a candidate's interview as a side effect of
+ * looking at what a pack would contain.
+ *
+ * Reads its own rows rather than taking them off the model, in the same order
+ * buildDossierModel() does, and hands back POSITIONS: the model's recordings are
+ * the redacted view and carry no database id, and adding one so this could join
+ * by it would put an internal identifier on the object that gets rendered.
+ *
+ * @param {number|string} pipelineId
+ * @param {{ include?: boolean, user?: object }} [options]
+ */
+export async function collectRecordingShareLinks(pipelineId, { include = false, user = null } = {}) {
+  const none = {
+    links: [], requested: false, degraded: false, minted: 0, reused: 0, playable: 0,
+  };
+  if (!include) return none;
+
+  const rows = await prisma.rpa_interview_recording.findMany({
+    where: { pipeline_id: BigInt(pipelineId), kind: 'recording' },
+    orderBy: [{ recorded_start_at: 'asc' }, { id: 'asc' }],
+  });
+  if (rows.length === 0) return { ...none, requested: true };
+
+  const {
+    links: byRecording, minted, reused, playable, degraded,
+  } = await mintShareLinks(pipelineId, { recordings: rows, user });
+
+  const links = [];
+  rows.forEach((row, index) => {
+    const link = byRecording.get(Number(row.id));
+    if (!link) return;
+    const url = shareUrlFor(link.token, config.publicBaseUrl);
+    // No PUBLIC_BASE_URL configured means we would emit a relative URL into a
+    // file opened from someone's Downloads folder. Better to carry no link and
+    // say so than a link that cannot resolve.
+    if (url) links.push({ index, url, expires_at: link.expires_at });
+  });
+
+  // `degraded` means something FAILED, not that something is absent — the same
+  // distinction applyAttachments() had to learn. A recording with no playable
+  // content gets no link and that is a fact about the recording, not a fault in
+  // this download; counting it here would warn the recruiter that "a file could
+  // not be attached" every time an unarchived round existed.
+  //
+  // `playable` carries that distinction onward. Leaving it out of the return was
+  // exactly how the flag came back anyway: applyRecordingShareLinks() saw zero
+  // links, could not tell why, and degraded the pack — which is the failure this
+  // comment claimed to have prevented.
+  return {
+    links, requested: true, degraded, minted, reused, playable,
+  };
+}
 
 /**
  * rpa_cv columns fetched from the database.
@@ -188,35 +253,6 @@ async function fetchZekoRounds(pipeline, candidateEmail) {
 }
 
 /**
- * Give a promise a wall-clock ceiling, whatever it is waiting on internally.
- *
- * The Zeko client's own fetches carry AbortSignal timeouts, but the step that
- * actually runs long is not a fetch: an invalidated dashboard cookie sends it
- * through the OTP login — request a code, poll the mailbox, verify — which
- * measured 38 seconds against staging. No signal reaches inside that, so it is
- * raced instead.
- *
- * The losing work is NOT cancelled, deliberately: the login finishes in the
- * background and stores a fresh cookie, so the download that paid the cost is
- * the only one that degrades. The timer is unref'd so a pending race can never
- * hold the process open.
- *
- * @param {Promise<*>} promise
- * @param {number} ms
- */
-function withDeadline(promise, ms) {
-  if (!(ms > 0)) return Promise.reject(new Error('the time budget for this step was already spent'));
-  let timer;
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
-      timer.unref?.();
-    }),
-  ]);
-}
-
-/**
  * Fetch what the pack carries from Zeko: the screening report itself, and
  * optionally the public share link (plan §6.6, §6.7).
  *
@@ -338,13 +374,47 @@ export async function collectZekoExtras(pipelineId, options = {}) {
 }
 
 /**
- * Evalground / assessment section scores for a journey.
+ * What one section of a test is called.
  *
  * section_label_map is the import's own record of what section_1..3 meant for
  * that test, so a pack generated a year later still reads "Logical Reasoning"
- * rather than "Section 2".
+ * rather than "Section 2". It is written by the import's AI mapping step, which
+ * stores an OBJECT per section — `{ skill_label, legacy_field }` — while older
+ * rows and hand-edited mappings hold a plain string. Both shapes are read here,
+ * because the alternative is `[object Object]` as a column heading in a file
+ * sent to someone outside the company.
  */
-async function fetchAssessments(pipelineId) {
+function sectionLabel(labels, n) {
+  const entry = labels[`section_${n}`] ?? labels[String(n)];
+  if (entry && typeof entry === 'object') return entry.skill_label || `Section ${n}`;
+  return entry || `Section ${n}`;
+}
+
+/**
+ * Evalground / assessment results for a journey — scores, and the breakdown
+ * behind them.
+ *
+ * THE BREAKDOWN IS THE REPORT. Evalground has no API and exports no
+ * per-candidate report file: the "report" is that candidate's row in a
+ * multi-candidate workbook, which the import now keeps in full (see
+ * evalgroundRow.js and plan ASSESSMENT-REPORT-UPLOAD-PLAN.md §3). Rendering it
+ * here is what lets the pack show the assessment rather than name it — the same
+ * resolution §6.7 reached for the Zeko report when its PDF proved unreachable.
+ *
+ * `detail_available` is reported separately from `detail` on purpose. A result
+ * imported before the detail columns existed has no breakdown at all, and a
+ * recruiter who unticked the box has one that was withheld; the manifest has to
+ * tell a reader which of those happened, and cannot if both arrive as null.
+ *
+ * NEVER READ HERE: raw_row (the archive — dossierRedaction.js asserts it can
+ * never reach a pack), marked_as (our own recruiter's tag on the attempt) and
+ * public_report_url (truncated by Evalground in every export seen so far, so it
+ * would be a dead link in a file we cannot correct once it is sent).
+ *
+ * @param {number|string} pipelineId
+ * @param {{ includeDetail?: boolean }} [options]
+ */
+async function fetchAssessments(pipelineId, { includeDetail = true } = {}) {
   const rows = await prisma.rpa_assessment_results.findMany({
     where: { pipeline_id: BigInt(pipelineId) },
     include: { rpa_assessment_imports: { select: { file_name: true, uploaded_at: true } } },
@@ -354,11 +424,13 @@ async function fetchAssessments(pipelineId) {
   return rows.map((r) => {
     const labels = (r.section_label_map && typeof r.section_label_map === 'object') ? r.section_label_map : {};
     const sections = [1, 2, 3]
-      .map((n) => ({
-        label: labels[`section_${n}`] || labels[String(n)] || `Section ${n}`,
-        score: num(r[`section_${n}_score`]),
-      }))
+      .map((n) => ({ label: sectionLabel(labels, n), score: num(r[`section_${n}_score`]) }))
       .filter((s) => s.score !== null);
+
+    const rawSections = Array.isArray(r.section_detail) ? r.section_detail : [];
+    const rawTopics = Array.isArray(r.topic_scores) ? r.topic_scores : [];
+    const detailAvailable = rawSections.length > 0 || rawTopics.length > 0
+      || r.total_correct !== null || r.duration_text !== null || r.started_on_text !== null;
 
     return {
       test_name: r.test_name,
@@ -368,6 +440,34 @@ async function fetchAssessments(pipelineId) {
       overall_marks: num(r.overall_marks_scored),
       result: r.overall_result || null,
       imported_at: r.rpa_assessment_imports?.uploaded_at || r.created_at,
+      detail_available: detailAvailable,
+      detail: includeDetail && detailAvailable
+        ? {
+          started_on: r.started_on_text || null,
+          duration: r.duration_text || null,
+          totals: {
+            correct: r.total_correct,
+            wrong: r.total_wrong,
+            unattempted: r.total_unattempted,
+          },
+          // Labelled from section_label_map rather than from the stored row, so
+          // the breakdown and the score table above always name a section the
+          // same way. `index` is the section's own number, which is how the two
+          // are lined up — the export omits a section the test did not have.
+          sections: rawSections.map((s) => ({
+            label: sectionLabel(labels, s.index),
+            marks: s.marks ?? null,
+            correct: s.correct ?? null,
+            wrong: s.wrong ?? null,
+            unattempted: s.unattempted ?? null,
+            easy_correct: s.easy_correct ?? null,
+            medium_correct: s.medium_correct ?? null,
+            hard_correct: s.hard_correct ?? null,
+            result: s.result ?? null,
+          })),
+          topics: rawTopics.map((t) => ({ label: t.label, value: t.value ?? null })),
+        }
+        : null,
     };
   });
 }
@@ -385,7 +485,15 @@ async function fetchAssessments(pipelineId) {
  * @throws {AppError} 404 when the journey does not exist
  */
 export async function buildDossierModel(pipelineId, options = {}) {
-  const { includeContactDetails = true, generatedBy = null } = options;
+  const {
+    includeContactDetails = true,
+    // The Evalground breakdown, rendered into section 7. Defaults ON for the
+    // same reason the screening assessment does (§6.7): it is ours, it is
+    // redacted, it needs no link and it works offline — so the safe half is the
+    // one that happens by itself.
+    includeAssessmentDetail = true,
+    generatedBy = null,
+  } = options;
   const id = BigInt(pipelineId);
 
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
@@ -425,7 +533,7 @@ export async function buildDossierModel(pipelineId, options = {}) {
       orderBy: [{ recorded_start_at: 'asc' }, { id: 'asc' }],
     }),
     getCandidateScorecardReport(Number(pipelineId)),
-    fetchAssessments(pipelineId),
+    fetchAssessments(pipelineId, { includeDetail: includeAssessmentDetail }),
   ]);
 
   const labelByKey = Object.fromEntries(stageRows.map((r) => [r.stage_key, r.label]));
@@ -528,7 +636,9 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // ---- Section 9: recordings ----------------------------------------------
   // serializeRecording() is the browser-safe projection and is reused unchanged,
   // so graph_content_url and archive_item_id are excluded by construction here
-  // exactly as they are in the API. Phase 1 carries no playable link at all.
+  // exactly as they are in the API. The MODEL carries no way to watch anything:
+  // applyRecordingShareLinks() adds share_url later, on a download only, so the
+  // preview cannot mint a public URL by being looked at.
   const recordingRows = recordings.map(serializeRecording).map((r) => ({
     stage_label: stageLabel(r.stage_key),
     recorded_start_at: r.recorded_start_at,
@@ -542,7 +652,6 @@ export async function buildDossierModel(pipelineId, options = {}) {
       by: generatedBy?.username || generatedBy?.email || 'the ATS',
       by_email: generatedBy?.email || null,
       pipeline_id: Number(pipelineId),
-      phase_note: 'Phase 1',
     },
     candidate: {
       name: shortlist?.candidate_name || cv?.Name || 'Unnamed candidate',
@@ -574,13 +683,19 @@ export async function buildDossierModel(pipelineId, options = {}) {
     })),
     zeko,
     assessments,
+    // Counted for the audit (§8.4): "assessment_detail(1)" says a full
+    // breakdown of someone's test left the building, which "assessments(1)" —
+    // three numbers — does not.
+    assessment_details: { count: assessments.filter((a) => a.detail).length },
     interviews,
     recordings: recordingRows,
     redaction: redactionSummary({ includeContactDetails }),
     // Section 10: what is in attachments/ and what could not be fetched, AND
     // WHY. Phase 1 attaches no binaries, so this is where the pack stays honest
     // about it rather than silently omitting a resume the reader expected.
-    manifest: buildManifest({ cvPresent: Boolean(cv), recordings: recordingRows, assessments, zeko }),
+    manifest: buildManifest({
+      cvPresent: Boolean(cv), recordings: recordingRows, assessments, zeko, includeAssessmentDetail,
+    }),
   };
 
   // The belt to the whitelist's braces. Runs before the model can reach any
@@ -604,7 +719,9 @@ export async function buildDossierModel(pipelineId, options = {}) {
  * resume to omit, and the reader has no way to tell which — the same failure the
  * "No records" rule guards against elsewhere.
  */
-function buildManifest({ cvPresent, recordings, assessments, zeko }) {
+function buildManifest({
+  cvPresent, recordings, assessments, zeko, includeAssessmentDetail = true,
+}) {
   const entries = [
     {
       item: 'Candidate report (HTML)',
@@ -626,12 +743,32 @@ function buildManifest({ cvPresent, recordings, assessments, zeko }) {
         : 'No resume is on file for this candidate in the ATS.',
     },
     {
+      // Four outcomes that have to read differently, because the reader's next
+      // step differs in each (the same rule applyAttachments() follows):
+      //
+      //   included      the breakdown is in section 7
+      //   withheld      the recruiter unticked it — not a fault, and not an absence
+      //   never captured  imported before the ATS kept the breakdown at all
+      //   no result     the candidate has not sat the test
+      //
+      // Note what is NOT offered: the source file. It is a MULTI-CANDIDATE
+      // workbook — one row per candidate — so attaching it would put every other
+      // candidate's name, email, phone and score into a pack about one person.
       item: 'Assessment report (Evalground)',
-      included: false,
-      note: assessments.length
-        ? 'Section scores are included in this report. The original PDF report is not yet '
-          + 'stored in the ATS — ask the recruiter if you need it.'
-        : 'No assessment result has been recorded for this candidate.',
+      included: assessments.some((a) => a.detail),
+      note: (() => {
+        if (!assessments.length) return 'No assessment result has been recorded for this candidate.';
+        if (assessments.some((a) => a.detail)) {
+          return 'The full result is set out in section 7 of this report — section scores, '
+            + 'question counts and topic breakdown.';
+        }
+        if (!includeAssessmentDetail) {
+          return 'Scores only — the detailed breakdown was left out of this download, by the '
+            + "recruiter's choice.";
+        }
+        return 'Section scores only — this result was imported before the ATS recorded the full '
+          + 'breakdown. Ask the recruiter if you need the original.';
+      })(),
     },
     {
       // Overwritten by applyZekoShareLinks() once the share link has been
@@ -921,8 +1058,10 @@ export default {
   buildDossierModel,
   collectAttachments,
   collectZekoExtras,
+  collectRecordingShareLinks,
   applyAttachments,
   applyZekoExtras,
+  applyRecordingShareLinks,
   describeJourneyStatus,
   describeIncludedCategories,
   logDossierDownload,

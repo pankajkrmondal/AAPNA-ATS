@@ -103,6 +103,15 @@ router.get('/:id/recordings', pipelineController.getPipelineRecordings);
  *  Every open is written to the journey's stage timeline; see
  *  interviewRecording.service.js for why that audit is load-bearing. */
 router.get('/:id/recordings/:recordingId/stream', pipelineController.streamPipelineRecording);
+/** GET /api/pipeline/:id/share-links — every recording share link ever minted for
+ *  this journey, live or not. Dead ones are included on purpose: the list has to
+ *  answer "what did we send out?", not only "what is open right now". */
+router.get('/:id/share-links', pipelineController.getRecordingShareLinks);
+/** POST /api/pipeline/:id/share-links/:linkId/revoke — withdraw one link, now.
+ *  Decision #7 (recordings travel as no-login links) has no undo without this,
+ *  which is why it is a button in the drawer and not an API call for support. */
+router.post('/:id/share-links/:linkId/revoke', pipelineController.revokeRecordingShareLink);
+
 /** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */
 router.post('/:id/interview', pipelineController.scheduleInterview);
 /** GET /api/pipeline/:id/interview-preview — editable invite email preview. */
@@ -145,5 +154,9 @@ router.post('/:id/offer/share', pipelineController.recordOfferShared);
 router.post('/:id/offer/decision', pipelineController.recordOfferDecision);
 /** POST /api/pipeline/:id/email — ad-hoc per-candidate email override (RT ask 2026-07-14). */
 router.post('/:id/email', pipelineController.sendAdHocEmail);
+/** POST /api/pipeline/:id/zeko-report-link — the AI screening report's NO-LOGIN url,
+ * minted on first use and cached. POST because that first call publishes a public
+ * Zeko link; see the controller. */
+router.post('/:id/zeko-report-link', pipelineController.getZekoSharedReportLink);
 
 export default router;

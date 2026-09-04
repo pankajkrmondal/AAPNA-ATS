@@ -100,6 +100,32 @@ export const FORBIDDEN_KEYS = Object.freeze(new Set([
   // Commercial.
   'budget_min',
   'budget_max',
+  // The Evalground export row. The import keeps the candidate's whole row so the
+  // dossier can render their test properly (evalgroundRow.js), and three parts of
+  // it must not travel with the rest:
+  //   raw_row           the archive — the renderers read the typed columns, and
+  //                     a shortcut that spread this into the model would carry
+  //                     the vendor's contact and resume columns with it
+  //   marked_as         our own recruiter's tag on the attempt, not the
+  //                     candidate's work
+  //   public_report_url Evalground truncates it mid-id in every export seen, so
+  //                     it is a dead link, and a dead link in a file we cannot
+  //                     correct once sent reads as our failure
+  // The row's own email and resume columns are named too: the pack has exactly
+  // one contact block, governed by decision #10, and a second one sourced from
+  // the vendor would eventually disagree with it.
+  //
+  // `contact_number` is deliberately NOT here. It is an innocent key name — the
+  // guard already refuses to fire on it (see the isForbiddenKey test), and a
+  // guard that rejects ordinary names is a guard someone turns off. The export's
+  // phone column cannot reach a pack anyway: it travels only inside raw_row,
+  // which is forbidden, and Excel has destroyed it into "8.48E+09" regardless.
+  'raw_row',
+  'marked_as',
+  'public_report_url',
+  'candidate_resume',
+  'candidate_email',
+  'previous_assessments',
   // Internal plumbing and live credentials.
   'cvmissingtoken',
   'cvmissingtokenstatus',

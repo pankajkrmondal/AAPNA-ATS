@@ -281,6 +281,125 @@ export function applyZekoExtras(model, result = {}, chosen = {}) {
 }
 
 /**
+ * Fold the minted recording share links into the model (plan §6.5, Phase 4).
+ *
+ * The sibling of applyZekoExtras(), joined by INDEX rather than by id for the
+ * same reason: the model's recordings are the redacted, serialized view and
+ * deliberately do not carry the database id, so the collector — which reads the
+ * same rows in the same order — hands back positions.
+ *
+ * Five outcomes have to read differently to whoever opens the pack:
+ *
+ *   linked         watch it here, until this date
+ *   not requested  the recruiter chose not to share the footage (not a fault)
+ *   not playable   the recording exists but has no content we can serve
+ *   mint failed    we tried and could not; ask the recruiter
+ *   none exist     there are no recordings for this candidate at all
+ *
+ * `playable` is what keeps "not playable" and "mint failed" apart, and the two
+ * must not be collapsed. A candidate whose rounds were recorded but not yet
+ * archived has nothing to link; treating that as a failure told the pack's
+ * reader "no viewing link could be created — please ask the recruiter" and set
+ * X-Export-Degraded, so the recruiter was warned that a file could not be
+ * attached when nothing had gone wrong. An older caller that does not report it
+ * keeps the previous, pessimistic reading.
+ *
+ * @param {object} model
+ * @param {{links?: Array<{index: number, url: string, expires_at: *}>, requested?: boolean,
+ *   playable?: number, degraded?: boolean}} [result]
+ * @param {{includeRecordingLinks?: boolean}} [chosen]
+ * @returns {object} the same model, mutated
+ */
+export function applyRecordingShareLinks(model, result = {}, chosen = {}) {
+  const { links = [], playable, degraded = false } = result;
+  const { includeRecordingLinks = false } = chosen;
+  const nothingToLink = playable === 0;
+
+  for (const link of links) {
+    const recording = model.recordings?.[link.index];
+    if (recording) {
+      recording.share_url = link.url;
+      recording.share_expires_at = link.expires_at;
+    }
+  }
+
+  const linked = (model.recordings || []).filter((r) => r.share_url).length;
+  model.recording_share_links = { count: linked };
+
+  const entry = model.manifest?.find((m) => m.item === 'Interview recordings');
+  if (!entry || !(model.recordings || []).length) return model;
+
+  if (linked) {
+    entry.included = true;
+    entry.note = `${linked} recording(s) can be watched from the links in section 9 of this report. `
+      + 'They open with no login, expire, and can be withdrawn by the recruiter at any time.';
+    // Asked for links on every round and got fewer: say so rather than let the
+    // reader assume the rounds without a link were never recorded.
+    if (linked < model.recordings.length) {
+      entry.note += ` ${model.recordings.length - linked} other recording(s) are not shared here — `
+        + 'ask the recruiter.';
+    }
+  } else if (!includeRecordingLinks) {
+    entry.note = `${model.recordings.length} recording(s) exist for this candidate. They were not shared `
+      + "in this download, by the recruiter's choice — ask them if you need to watch one.";
+  } else if (nothingToLink) {
+    // Absence, not failure. The round happened and is listed; there is simply no
+    // file behind it yet — the archive copy has not landed, or Microsoft has
+    // aged the original out. Nothing went wrong with this download, so it must
+    // not be flagged as degraded.
+    entry.note = `${model.recordings.length} recording(s) are listed for this candidate, but none of `
+      + 'them has a playable file, so there is nothing to link to — please ask the recruiter.';
+  } else {
+    entry.note = `${model.recordings.length} recording(s) exist for this candidate, but no viewing link `
+      + 'could be created — please ask the recruiter.';
+    entry.degraded = true;
+  }
+  if (degraded) entry.degraded = true;
+  return model;
+}
+
+/**
+ * Whether a finished pack is too big to email, and what to tell the recruiter.
+ *
+ * §6.4 set a 40 MB ceiling on the pack deliberately ABOVE Outlook's ~25 MB
+ * attachment limit, so that a big pack is produced rather than silently
+ * truncated to fit — and then said the recruiter must be TOLD when it will not
+ * send. Without this they find out from a bounce message hours later, by which
+ * point they believe the candidate's details are already with the interviewer.
+ *
+ * Pure, and separate from the controller, because the threshold comparison is
+ * the whole of the behaviour and it should be pinned by a test rather than by
+ * someone re-reading an if-statement in a request handler.
+ *
+ * @param {number} bytes - the built pack's size
+ * @param {number} warnBytes - config.dossier.warnPackBytes
+ * @returns {null|{bytes: number, megabytes: number, message: string}} null when it will send fine
+ */
+export function packSizeNotice(bytes, warnBytes) {
+  const size = Number(bytes);
+  const limit = Number(warnBytes);
+  if (!Number.isFinite(size) || !Number.isFinite(limit) || limit <= 0 || size <= limit) return null;
+
+  // Floored at 0.1, never 0. Two reasons, both found by testing this with the
+  // threshold turned down: a header reading "0" is nonsense to whoever reads it,
+  // and 0 is FALSY — the modal's `if (result.oversizeMb)` would skip the warning
+  // entirely, so the one configuration where the warning fires hardest would be
+  // the one where it silently did not fire at all.
+  const mb = (n) => Math.max(0.1, Math.round((n / (1024 * 1024)) * 10) / 10);
+  const megabytes = mb(size);
+
+  return {
+    bytes: size,
+    megabytes,
+    // Says the size, the consequence and the way out — a warning that only says
+    // "this file is large" leaves the recruiter to guess what to do about it.
+    message: `This pack is ${megabytes} MB, which is above the usual ${mb(limit)} MB `
+      + 'limit for email attachments. Send it as a OneDrive link instead, or download it again with the '
+      + 'resume and documents unticked.',
+  };
+}
+
+/**
  * What a given download actually contained, in plain terms, for both audit
  * surfaces and the READ-ME.
  *
@@ -298,6 +417,13 @@ export function describeIncludedCategories(model) {
   if (model.contact_details_included) included.push('contact_details');
   if (model.scorecards.length) included.push(`scorecards(${model.scorecards.length})`);
   if (model.assessments.length) included.push(`assessments(${model.assessments.length})`);
+  // Separate from the line above, and for the same reason the two screening
+  // categories are separate: "assessments(1)" means three section scores left
+  // the building, while "assessment_detail(1)" means the whole of someone's
+  // test — question counts, difficulty split and topic scores — did.
+  if (model.assessment_details?.count) {
+    included.push(`assessment_detail(${model.assessment_details.count})`);
+  }
   if (model.zeko.length) included.push(`screening_scores(${model.zeko.length})`);
   if (model.stages.length) included.push('stage_history');
   if (model.interviews.length) included.push(`interview_history(${model.interviews.length})`);
@@ -331,6 +457,12 @@ export function describeIncludedCategories(model) {
   if (model.zeko_report_links?.count) {
     included.push(`screening_report_no_login_link(${model.zeko_report_links.count})`);
   }
+  // The same distinction one more time, and here it is the sharpest in the whole
+  // audit: "recordings_listed" means the pack said an interview exists;
+  // "recording_no_login_link" means someone outside the company can watch it.
+  if (model.recording_share_links?.count) {
+    included.push(`recording_no_login_link(${model.recording_share_links.count})`);
+  }
   return included;
 }
 
@@ -339,5 +471,7 @@ export default {
   describeIncludedCategories,
   applyAttachments,
   applyZekoExtras,
+  applyRecordingShareLinks,
+  packSizeNotice,
   extensionFor,
 };

@@ -32,7 +32,7 @@ import {
 // holds the event loop open and hangs `node --test`. Same functions, reachable.
 import {
   applyAttachments, applyZekoExtras, describeIncludedCategories, describeJourneyStatus,
-  extensionFor,
+  extensionFor, packSizeNotice,
 } from '../../utils/dossierModel.js';
 import {
   buildZekoReportSection, flattenSoftSkills, isCommercialParameter, mentionsCompensation,
@@ -52,7 +52,6 @@ function fullModel(overrides = {}) {
       by: 'chhaya.k',
       by_email: 'chhaya.k@aapnainfotech.com',
       pipeline_id: 4821,
-      phase_note: 'Phase 1',
     },
     candidate: {
       name: 'Pankaj Mondal',
@@ -140,6 +139,9 @@ function fullModel(overrides = {}) {
       communication_score: 88,
       report_available: true,
     }],
+    // Shaped exactly as fetchAssessments() returns one, detail included: the
+    // numbers are the real ones out of the sample Evalground export in docs/,
+    // down to the blank section result that file actually carries.
     assessments: [{
       test_name: 'Java Backend Assessment',
       taken_note: null,
@@ -148,7 +150,36 @@ function fullModel(overrides = {}) {
       overall_marks: 62,
       result: 'Pass',
       imported_at: new Date('2026-08-22T06:00:00Z'),
+      detail_available: true,
+      detail: {
+        started_on: '27 Jul 2026, 15:59',
+        duration: '37 minutes 27 seconds',
+        totals: { correct: 55, wrong: 2, unattempted: 0 },
+        sections: [{
+          label: 'Core Java',
+          marks: 34,
+          correct: 24,
+          wrong: 1,
+          unattempted: 0,
+          easy_correct: 8,
+          medium_correct: 8,
+          hard_correct: 7,
+          result: null,
+        }, {
+          label: 'SQL',
+          marks: 28,
+          correct: 23,
+          wrong: 1,
+          unattempted: 0,
+          easy_correct: 8,
+          medium_correct: 9,
+          hard_correct: 7,
+          result: null,
+        }],
+        topics: [{ label: 'Sql', value: 0 }, { label: 'Playwright', value: 6 }],
+      },
     }],
+    assessment_details: { count: 1 },
     interviews: [{
       stage_label: 'Technical 1',
       interviewer: 'Harish',
@@ -201,6 +232,7 @@ function emptyModel() {
     scorecards_pending: [],
     zeko: [],
     assessments: [],
+    assessment_details: { count: 0 },
     interviews: [],
     recordings: [],
   });
@@ -267,6 +299,181 @@ describe('renderDossierHtml — opens with no login and no internet (tracker row
     // occurrence === null is a genuine third state: nobody has said either way.
     assert.ok(html.includes('Not confirmed'));
     assert.ok(html.includes('Yes'));
+  });
+});
+
+describe('renderDossierHtml — the written test, rendered rather than named (Evalground)', () => {
+  const html = renderDossierHtml(fullModel());
+
+  test('carries the breakdown, not just a section score', () => {
+    // The whole point of keeping the import's full row: an interviewer given
+    // "74.5%" asks what it was made of, and the pack can now answer.
+    assert.ok(html.includes('Core Java'));
+    assert.ok(/Unattempted/i.test(html), 'the question counts are rendered');
+    assert.ok(html.includes('37 minutes 27 seconds'), 'time taken');
+    assert.ok(html.includes('27 Jul 2026, 15:59'), 'when it was taken');
+    assert.ok(html.includes('8 / 8 / 7'), 'the easy/medium/hard split');
+  });
+
+  test("reports the vendor's own totals unaltered", () => {
+    // Never recomputed from what survived rendering: an interviewer holding an
+    // Evalground screenshot must not find two different numbers for one attempt.
+    const flat = html.replace(/\s+/g, ' ');
+    assert.ok(/55 correct, 2 wrong, 0 unattempted/.test(flat));
+  });
+
+  test('renders the topic columns this test defined', () => {
+    assert.ok(html.includes('Topic scores'));
+    assert.ok(html.includes('Playwright'));
+  });
+
+  test('a blank section result is not printed as a zero', () => {
+    // 'S1 Result' is empty in every real export. A falsy 0 there would tell an
+    // interviewer the candidate scored nought on a section they passed.
+    assert.ok(!/>0<\/td><td>—<\/td>/.test(html));
+    assert.ok(html.includes('—'), 'blank cells render as a dash');
+  });
+
+  test('vendor topic labels cannot inject markup', () => {
+    // Topic names are free text in Evalground's console, and they reach this
+    // file — so the escape here is a real XSS boundary, not decoration.
+    const nasty = renderDossierHtml(fullModel({
+      assessments: [{
+        ...fullModel().assessments[0],
+        detail: {
+          ...fullModel().assessments[0].detail,
+          topics: [{ label: '<img src=x onerror=alert(1)>', value: 3 }],
+        },
+      }],
+    }));
+    assert.ok(!nasty.includes('<img src=x'), 'no live markup');
+    assert.ok(nasty.includes('&lt;img'), 'escaped instead');
+  });
+
+  test('a result imported before the breakdown existed says so', () => {
+    // Absence is not omission: without this line a reader concludes the
+    // candidate answered nothing beyond three numbers.
+    const legacy = renderDossierHtml(fullModel({
+      assessments: [{
+        ...fullModel().assessments[0], detail: null, detail_available: false,
+      }],
+      assessment_details: { count: 0 },
+    }));
+    const flat = legacy.replace(/\s+/g, ' ');
+    assert.ok(/breakdown was not captured/i.test(flat));
+    assert.ok(legacy.includes('Core Java'), 'the section scores still render');
+  });
+
+  test('a withheld breakdown still renders the section scores', () => {
+    // The recruiter unticked it: the pack loses the detail, never the result.
+    const scoresOnly = renderDossierHtml(fullModel({
+      assessments: [{ ...fullModel().assessments[0], detail: null }],
+      assessment_details: { count: 0 },
+    }));
+    assert.ok(scoresOnly.includes('Core Java'));
+    assert.ok(!scoresOnly.includes('37 minutes 27 seconds'));
+  });
+});
+
+describe('renderDossierHtml — recordings as no-login links (Phase 4, §6.5)', () => {
+  const withLink = (over = {}) => fullModel({
+    recordings: [{
+      stage_label: 'Technical 1',
+      recorded_start_at: new Date('2026-08-28T10:02:00Z'),
+      duration_seconds: 3300,
+      available: true,
+      share_url: 'https://ats-staging.aapnainfotech.com/api/recording-share/2c6f9fd3-0424-47ab-9f21-0c1d2e3f4a5b',
+      share_expires_at: new Date('2026-09-17T12:00:00Z'),
+      ...over,
+    }],
+  });
+  const html = renderDossierHtml(withLink());
+
+  test('the link is a button, not a URL buried in a table cell', () => {
+    // §6.6 learned this the hard way with the screening report: an underlined
+    // round name in a grey footnote is scrolled straight past.
+    assert.ok(html.includes('class="reportlink"'));
+    assert.ok(/Play the Technical 1 recording/.test(html));
+  });
+
+  test('it says the link needs no login and when it stops working', () => {
+    const flat = html.replace(/\s+/g, ' ');
+    assert.ok(/no login/i.test(flat));
+    assert.ok(/stops working after/i.test(flat));
+    // YYYY-MM-DD, like every other date in the pack — one format, so a reader
+    // never has to work out whether 09-08 is August or September.
+    assert.ok(/2026-09-17/.test(flat), 'the expiry date is stated');
+  });
+
+  test('it says every open is recorded and that it can be withdrawn', () => {
+    const flat = html.replace(/\s+/g, ' ');
+    assert.ok(/recorded/i.test(flat));
+    assert.ok(/withdraw/i.test(flat));
+  });
+
+  test('a hyperlink is still not an external REQUEST', () => {
+    // Tracker row 5: the pack must render complete with no network. A link waits
+    // to be clicked; it does not fetch.
+    assert.ok(!/src\s*=\s*["']https?:/i.test(html), 'no remote src');
+    assert.ok(!/<script\b/i.test(html));
+    assert.ok(!/<link\b/i.test(html));
+  });
+
+  test('the URL is escaped inside its href', () => {
+    const nasty = renderDossierHtml(withLink({
+      share_url: 'https://x.example.com/a"><script>alert(1)</script>',
+    }));
+    assert.ok(!nasty.includes('"><script>'), 'no breaking out of the attribute');
+    assert.ok(nasty.includes('&quot;&gt;&lt;script&gt;'));
+  });
+
+  test('a round with no link says so rather than looking un-recorded', () => {
+    const mixed = fullModel({
+      recordings: [
+        { stage_label: 'Technical 1', duration_seconds: 3300, available: true, share_url: 'https://x.example.com/a' },
+        { stage_label: 'Technical 2', duration_seconds: 2700, available: true },
+      ],
+    });
+    const out = renderDossierHtml(mixed);
+    assert.ok(/was not shared in this pack/i.test(out.replace(/\s+/g, ' ')));
+  });
+
+  test('the workbook carries the link too, so "Spreadsheet only" loses nothing', () => {
+    const book = XLSX.read(renderDossierWorkbook(withLink()), { type: 'buffer' });
+    const flat = JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Summary, { header: 1 }));
+    assert.ok(flat.includes('Interview recordings'));
+    assert.ok(flat.includes('/api/recording-share/'));
+  });
+
+  test('the READ-ME warns about the video links, not only the vendor report', () => {
+    // The READ-ME is what a recipient reads in Notepad before opening anything
+    // else, and it is the only control that survives the file leaving. It
+    // carried a paragraph about the Zeko report link and said nothing at all
+    // about these — which are the larger disclosure of the two: video of a real
+    // person, playable by anyone the file reaches.
+    const readme = renderReadMe(withLink());
+    assert.match(readme, /INTERVIEW RECORDINGS/);
+    assert.match(readme, /WITHOUT a login/);
+    assert.match(readme, /do not forward/i);
+    assert.match(readme, /stop working after 2026-09-17/, 'the expiry is stated in the pack format');
+    assert.match(readme, /recorded against the candidate/i);
+  });
+
+  test('a pack that shares no recording says nothing about watching one', () => {
+    // The same rule the screening link follows: no warning about a disclosure
+    // that did not happen, or the next one that matters gets skimmed past.
+    assert.ok(!/INTERVIEW RECORDINGS/.test(renderReadMe(fullModel())));
+  });
+
+  test('an unshared pack carries no recording URL anywhere in the ZIP', () => {
+    // The default-off case for a candidate whose recruiter untickled the box:
+    // nothing in the bytes should offer a way to watch.
+    const { buffer } = buildPack(fullModel(), 'zip', []);
+    const zip = new AdmZip(buffer);
+    const text = zip.getEntries()
+      .filter((e) => !e.entryName.endsWith('.xlsx'))
+      .map((e) => e.getData().toString('utf8')).join('');
+    assert.ok(!text.includes('/api/recording-share/'));
   });
 });
 
@@ -443,6 +650,15 @@ describe('renderDossierWorkbook — the four sheets in plan §3.2', () => {
     assert.ok(flat.includes('HR screening'));
     assert.ok(flat.includes('Java Backend Assessment'));
     assert.ok(flat.includes('Core Java'));
+  });
+
+  test('Assessments carries the written-test breakdown too', () => {
+    // "Spreadsheet only" is one of the three formats a recruiter can pick, and
+    // it must not silently lose what section 7 of the report shows.
+    const flat = JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Assessments, { header: 1 }));
+    assert.ok(flat.includes('Time taken'));
+    assert.ok(flat.includes('Total unattempted'));
+    assert.ok(flat.includes('Topic — Playwright'));
   });
 
   test('an empty model still produces four sheets with their headers', () => {
@@ -737,6 +953,45 @@ describe('buildPack and dossierFilename', () => {
   });
 });
 
+describe('packSizeNotice — a pack too big to email says so before it is sent', () => {
+  const MB = 1024 * 1024;
+  const WARN = 20 * MB;
+
+  test('a pack that will send fine says nothing', () => {
+    assert.equal(packSizeNotice(8 * MB, WARN), null);
+    assert.equal(packSizeNotice(WARN, WARN), null, 'exactly at the threshold still sends');
+  });
+
+  test('a pack over the threshold names its size, the consequence and the way out', () => {
+    const notice = packSizeNotice(31.5 * MB, WARN);
+    assert.equal(notice.megabytes, 31.5);
+    assert.match(notice.message, /31\.5 MB/);
+    assert.match(notice.message, /email attachments/i);
+    assert.match(notice.message, /OneDrive link/i, 'a warning without a way out is just an alarm');
+  });
+
+  test('the size is rounded to something a person reads, not bytes', () => {
+    assert.equal(packSizeNotice(20 * MB + 512 * 1024, WARN).megabytes, 20.5);
+  });
+
+  test('the reported size is never 0, however small the pack', () => {
+    // Found by running the real download with the threshold turned down to
+    // 10 KB: a 12 KB pack reported "0 MB", and 0 is FALSY — the modal's
+    // `if (result.oversizeMb)` would have skipped the warning in exactly the
+    // configuration where it fires hardest.
+    const notice = packSizeNotice(12 * 1024, 10 * 1024);
+    assert.ok(notice.megabytes > 0, 'a truthy size, or the UI warning never shows');
+    assert.ok(!/\b0 MB\b/.test(notice.message), 'never tells the recruiter the pack is 0 MB');
+  });
+
+  test('a missing or nonsensical threshold never fires the warning', () => {
+    // A misconfigured env var must not make every download shout.
+    assert.equal(packSizeNotice(50 * MB, 0), null);
+    assert.equal(packSizeNotice(50 * MB, undefined), null);
+    assert.equal(packSizeNotice(undefined, WARN), null);
+  });
+});
+
 describe('describeIncludedCategories — the audit records contents, not just the event', () => {
   test('names each category with a count where one exists', () => {
     // "Someone ticked a box" is unanswerable months later; "2 scorecards and 1
@@ -746,6 +1001,20 @@ describe('describeIncludedCategories — the audit records contents, not just th
     assert.ok(listed.includes('contact_details'));
     assert.ok(listed.includes('scorecards(2)'));
     assert.ok(listed.includes('recordings_listed(1)'));
+  });
+
+  test('a written test that travelled in full is recorded apart from its scores', () => {
+    // "assessments(1)" is three numbers; "assessment_detail(1)" is the whole of
+    // someone's test. A review months later has to be able to tell them apart.
+    const listed = describeIncludedCategories(fullModel());
+    assert.ok(listed.includes('assessments(1)'));
+    assert.ok(listed.includes('assessment_detail(1)'));
+  });
+
+  test('a withheld breakdown is not claimed in the audit', () => {
+    const listed = describeIncludedCategories(fullModel({ assessment_details: { count: 0 } }));
+    assert.ok(listed.includes('assessments(1)'));
+    assert.ok(!listed.some((c) => c.startsWith('assessment_detail')));
   });
 
   test('records when contact details were withheld', () => {

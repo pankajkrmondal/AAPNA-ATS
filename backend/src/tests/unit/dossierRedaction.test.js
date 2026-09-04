@@ -155,6 +155,17 @@ describe('assertNoForbiddenFields — nothing forbidden survives to the pack', (
     'recording Teams web URL': { recordings: [{ teams_web_url: 'https://…sharepoint.com/…' }] },
     'scorecard token': { scorecards: [{ token: 'c0ffee…' }] },
     'schedule Teams join URL': { interviews: [{ teams_join_url: 'https://teams…' }] },
+    // The Evalground import keeps the candidate's whole export row so the pack
+    // can render their test properly. These are the parts of that row that must
+    // not travel with the rest of it.
+    'Evalground raw row': { assessments: [{ raw_row: { 'Contact Number': 8480000000 } }] },
+    'Evalground recruiter tag': { assessments: [{ marked_as: 'Shortlisted' }] },
+    'Evalground public report link': {
+      assessments: [{ public_report_url: 'https://evalground.com/code4/#/candidatereport/2c6f9fd3' }],
+    },
+    'Evalground resume link': { assessments: [{ candidate_resume: 'https://docs.google.com/' }] },
+    'Evalground candidate email': { assessments: [{ candidate_email: 'a@example.com' }] },
+    'Evalground other assessments': { assessments: [{ previous_assessments: 'N/A' }] },
   };
 
   for (const [what, model] of Object.entries(forbidden)) {
@@ -199,6 +210,18 @@ describe('assertNoForbiddenFields — nothing forbidden survives to the pack', (
         skills: [{ label: 'Java', rating: 5, remark: 'Strong' }],
       }],
       recordings: [{ id: 7, stage_key: 'tech1', duration_seconds: 330, playable: true }],
+      // The written test's breakdown, as fetchAssessments() renders it: the
+      // candidate's own performance, and none of the row's contact columns.
+      assessments: [{
+        test_name: 'General Aptitude, Python, SQL MCQ Test',
+        detail: {
+          started_on: '27 Jul 2026, 15:59',
+          duration: '37 minutes 27 seconds',
+          totals: { correct: 55, wrong: 2, unattempted: 0 },
+          sections: [{ label: 'Python', marks: 23, correct: 23, wrong: 1, unattempted: 0 }],
+          topics: [{ label: 'Playwright', value: 6 }],
+        },
+      }],
     };
     assert.doesNotThrow(() => assertNoForbiddenFields(model));
   });

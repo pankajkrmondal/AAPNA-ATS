@@ -625,11 +625,78 @@ export function renderDossierHtml(model) {
       + '.</p></div>'
     : '';
 
+  // The written assessment, rendered in full rather than named.
+  //
+  // Evalground has no API and exports no per-candidate report file — what HR can
+  // export is a MULTI-CANDIDATE workbook, one row per person, which is why it
+  // can never travel inside a pack about one of them. So the pack renders that
+  // candidate's own row instead: the same resolution §6.7 reached for the Zeko
+  // report, and for the same reason — it works offline, it is under our
+  // redaction, and it cannot be withdrawn from under the reader months later.
+  //
+  // The vendor's counts are printed unaltered, never recomputed. An interviewer
+  // holding an Evalground screenshot must not find two different numbers for one
+  // attempt (the same rule buildZekoReportSection() follows for its ratios).
   const assessmentHtml = model.assessments.map((a) => {
-    const rows = a.sections.map((s) => [s.label, s.score]);
-    if (a.overall_percentage !== null) rows.push(['Overall', `${a.overall_percentage}%`]);
-    if (a.result) rows.push(['Result', a.result]);
-    return `<h3>${esc(a.test_name)}</h3>${dataTable(['Section', 'Score'], rows)}`;
+    const d = a.detail;
+
+    const tags = [
+      a.result ? `<b>Result:</b> ${esc(a.result)}` : null,
+      a.overall_marks !== null && a.overall_marks !== undefined
+        ? `<b>Marks:</b> ${esc(a.overall_marks)}` : null,
+      a.overall_percentage !== null && a.overall_percentage !== undefined
+        ? `<b>Score:</b> ${esc(a.overall_percentage)}%` : null,
+      d?.started_on ? `<b>Taken:</b> ${esc(d.started_on)}` : null,
+      d?.duration ? `<b>Time taken:</b> ${esc(d.duration)}` : null,
+    ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+    // One combined column rather than three: easy/medium/hard is read as a
+    // shape, and three near-empty columns push the table into a scroll on paper.
+    const split = (s) => (s.easy_correct === null && s.medium_correct === null && s.hard_correct === null
+      ? null
+      : `${s.easy_correct ?? '—'} / ${s.medium_correct ?? '—'} / ${s.hard_correct ?? '—'}`);
+
+    // The detailed table CARRIES the marks, so the simple score table is not
+    // printed alongside it — the same numbers twice invites a reader to look for
+    // a difference that is not there.
+    const sectionsHtml = d?.sections?.length
+      ? dataTable(
+        ['Section', 'Marks', 'Correct', 'Wrong', 'Unattempted', 'Easy / med / hard correct', 'Result'],
+        d.sections.map((s) => [
+          s.label, s.marks, s.correct, s.wrong, s.unattempted, split(s), s.result,
+        ]),
+      )
+      : dataTable(['Section', 'Score'], a.sections.map((s) => [s.label, s.score]));
+
+    const totals = d?.totals || null;
+    const totalsHtml = totals && (totals.correct !== null || totals.wrong !== null
+      || totals.unattempted !== null)
+      ? `<p class="note">Across the whole test: ${esc(totals.correct ?? '—')} correct, `
+        + `${esc(totals.wrong ?? '—')} wrong, ${esc(totals.unattempted ?? '—')} unattempted.</p>`
+      : '';
+
+    // Discovered per test, never a fixed list — one test's topics are "Sql,
+    // Python, Playwright", the next one's are something else entirely.
+    const topicsHtml = d?.topics?.length
+      ? `<h3>Topic scores</h3>${dataTable(['Topic', 'Score'], d.topics.map((t) => [t.label, t.value]))}`
+      : '';
+
+    // Absence is not omission (§3.1). A result recorded before the ATS kept the
+    // breakdown must say so, or a reader concludes the candidate answered
+    // nothing beyond three numbers.
+    const legacyHtml = !d && a.detail_available === false
+      ? '<p class="note">Only the section scores were recorded for this attempt — the full '
+        + 'breakdown was not captured when it was imported.</p>'
+      : '';
+
+    return '<div class="card">'
+      + `<h3>${esc(a.test_name)}</h3>`
+      + (tags ? `<div class="tags">${tags}</div>` : '')
+      + sectionsHtml
+      + totalsHtml
+      + topicsHtml
+      + legacyHtml
+      + '</div>';
   }).join('');
 
   // ---- 8/9. Interviews and recordings --------------------------------------
@@ -645,15 +712,50 @@ export function renderDossierHtml(model) {
     ]),
   );
 
-  const recordingsHtml = dataTable(
-    ['Round', 'Recorded on', 'Length', 'How to watch'],
-    model.recordings.map((r) => [
-      r.stage_label,
-      formatDateTime(r.recorded_start_at),
-      r.duration_seconds !== null ? `${Math.round(r.duration_seconds / 60)} min` : null,
-      'Ask the recruiter',
-    ]),
-  );
+  // Recordings travel as expiring, revocable links rather than as bytes (HR
+  // decision #7): an MP4 round is hundreds of MB and three of them would make
+  // the pack unmailable.
+  //
+  // When links are present the section becomes cards with a button, not a table
+  // cell holding a URL — the same lesson §6.6 produced for the screening report,
+  // where readers scrolled straight past an underlined round name in a grey
+  // footnote. A recording nobody notices they can watch may as well not be here.
+  //
+  // A hyperlink is not an external RESOURCE: nothing is fetched when the file is
+  // opened, so the pack still renders complete with no network (tracker row 5).
+  const anyRecordingLinked = model.recordings.some((r) => r.share_url);
+  const recordingsHtml = anyRecordingLinked
+    ? model.recordings.map((r) => {
+      const facts = [
+        r.recorded_start_at ? `<b>Recorded:</b> ${esc(formatDateTime(r.recorded_start_at))}` : null,
+        r.duration_seconds !== null && r.duration_seconds !== undefined
+          ? `<b>Length:</b> ${esc(Math.round(r.duration_seconds / 60))} min` : null,
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+      return '<div class="card">'
+        + `<h3>${esc(r.stage_label)}</h3>`
+        + (facts ? `<div class="tags">${facts}</div>` : '')
+        + (r.share_url
+          ? '<div class="linkbox"><p class="linktitle">Watch this interview</p><p>'
+            + `<a href="${esc(r.share_url)}" class="reportlink" target="_blank" rel="noopener noreferrer">`
+            + `Play the ${esc(r.stage_label)} recording &rarr;</a></p>`
+            + '<p class="note">Opens in a browser with no login'
+            + (r.share_expires_at ? `, and stops working after ${esc(formatDate(r.share_expires_at))}` : '')
+            + '. Please treat it as confidential and do not forward it — every time it is opened is '
+            + 'recorded, and the recruiter can withdraw it at any time.</p></div>'
+          : '<p class="note">This round was not shared in this pack — ask the recruiter if you need to '
+            + 'watch it.</p>')
+        + '</div>';
+    }).join('')
+    : dataTable(
+      ['Round', 'Recorded on', 'Length', 'How to watch'],
+      model.recordings.map((r) => [
+        r.stage_label,
+        formatDateTime(r.recorded_start_at),
+        r.duration_seconds !== null ? `${Math.round(r.duration_seconds / 60)} min` : null,
+        'Ask the recruiter',
+      ]),
+    );
 
   const manifestHtml = dataTable(
     ['Item', 'In this pack?', 'Note'],
@@ -770,6 +872,17 @@ export function renderDossierWorkbook(model) {
   if (model.consolidated_feedback) {
     summary.push(['Feedback', 'Consolidated interviewer feedback', model.consolidated_feedback]);
   }
+  // Recording links belong in the spreadsheet too: "Spreadsheet only" is one of
+  // the three formats, and a recruiter who picks it must not silently lose the
+  // one thing in the pack that lets an interviewer watch the round. Only linked
+  // recordings are listed — an unlinked one has nothing to put in the cell.
+  for (const r of model.recordings.filter((rec) => rec.share_url)) {
+    summary.push([
+      'Interview recordings',
+      `${r.stage_label}${r.share_expires_at ? ` (link expires ${formatDate(r.share_expires_at)})` : ''}`,
+      r.share_url,
+    ]);
+  }
   for (const r of model.redaction) summary.push(['Removed from this pack', r, '']);
 
   const s1 = XLSX.utils.aoa_to_sheet(summary);
@@ -845,6 +958,38 @@ export function renderDossierWorkbook(model) {
       assess.push(['Assessment', a.test_name, 'Overall %', cell(a.overall_percentage)]);
     }
     if (a.result) assess.push(['Assessment', a.test_name, 'Result', cell(a.result)]);
+
+    // Carried in the spreadsheet too: "Spreadsheet only" is one of the three
+    // formats, and a recruiter who picks it should not silently lose the
+    // breakdown that section 7 of the report carries.
+    const d = a.detail;
+    if (!d) continue;
+    if (d.started_on) assess.push(['Assessment', a.test_name, 'Taken on', d.started_on]);
+    if (d.duration) assess.push(['Assessment', a.test_name, 'Time taken', d.duration]);
+    if (d.totals?.correct !== null && d.totals?.correct !== undefined) {
+      assess.push(['Assessment', a.test_name, 'Total correct', cell(d.totals.correct)]);
+    }
+    if (d.totals?.wrong !== null && d.totals?.wrong !== undefined) {
+      assess.push(['Assessment', a.test_name, 'Total wrong', cell(d.totals.wrong)]);
+    }
+    if (d.totals?.unattempted !== null && d.totals?.unattempted !== undefined) {
+      assess.push(['Assessment', a.test_name, 'Total unattempted', cell(d.totals.unattempted)]);
+    }
+    for (const s of d.sections) {
+      assess.push([
+        'Assessment', a.test_name, `${s.label} — correct / wrong / unattempted`,
+        `${s.correct ?? '—'} / ${s.wrong ?? '—'} / ${s.unattempted ?? '—'}`,
+      ]);
+      if (s.easy_correct !== null || s.medium_correct !== null || s.hard_correct !== null) {
+        assess.push([
+          'Assessment', a.test_name, `${s.label} — easy / medium / hard correct`,
+          `${s.easy_correct ?? '—'} / ${s.medium_correct ?? '—'} / ${s.hard_correct ?? '—'}`,
+        ]);
+      }
+    }
+    for (const t of d.topics) {
+      assess.push(['Assessment', a.test_name, `Topic — ${t.label}`, cell(t.value)]);
+    }
   }
   const s4 = XLSX.utils.aoa_to_sheet(assess);
   s4['!cols'] = [{ wch: 16 }, { wch: 30 }, { wch: 26 }, { wch: 12 }];
@@ -895,6 +1040,29 @@ export function renderReadMe(model) {
         'opens in a browser WITHOUT a login, so anyone you forward it to can read the',
         'screening report in full. Please treat it as confidential.',
       ]
+      : []),
+    // Said here as well as in section 9, and said the most plainly of anything in
+    // this file. This is the one thing in the pack that lets somebody outside the
+    // company watch a real person's interview, and the READ-ME is the part a
+    // recipient reads in Notepad before opening anything else — it carried a
+    // paragraph about the vendor's screening report and nothing at all about the
+    // video links, which are the larger disclosure of the two.
+    ...(model.recordings?.some((r) => r.share_url)
+      ? (() => {
+        const linked = model.recordings.filter((r) => r.share_url);
+        const expiry = linked.find((r) => r.share_expires_at)?.share_expires_at;
+        return [
+          '',
+          'INTERVIEW RECORDINGS',
+          '--------------------',
+          `Section 9 of the report carries ${linked.length} link(s) that play this candidate's`,
+          'interview in a browser WITHOUT a login. Anyone the file is forwarded to can',
+          'watch. Please do not forward it.',
+          ...(expiry ? [`The links stop working after ${formatDate(expiry)}.`] : []),
+          'Every time a link is opened is recorded against the candidate, and the',
+          'recruiter can withdraw any of them at any time.',
+        ];
+      })()
       : []),
     '',
     'WHAT HAS BEEN REMOVED, DELIBERATELY',

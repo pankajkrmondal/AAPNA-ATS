@@ -551,6 +551,40 @@ const config = {
      * download gets its link.
      */
     zekoLinkBudgetMs: parseInt(env('DOSSIER_ZEKO_LINK_BUDGET_MS', '20000'), 10),
+
+    /**
+     * How long a recording share link stays alive (plan §6.5, HR decision #7).
+     *
+     * 14 days is HR's number, not a technical one: long enough that an
+     * interviewer who is handed the pack on a Friday can still watch the round
+     * the following week, short enough that a forwarded mailbox is not a
+     * permanent window onto a candidate's interview.
+     *
+     * Read at MINT time only. Shortening it here does not shorten a link
+     * somebody already holds — that is what revocation is for.
+     */
+    shareLinkDays: parseInt(env('DOSSIER_SHARE_LINK_DAYS', '14'), 10),
+
+    /**
+     * Rate limit on the PUBLIC share-link routes, keyed on token + IP.
+     *
+     * A separate limiter from exportLimiter because that one is per-user and
+     * there is no user here — the token is the only identity. Generous enough
+     * for one interviewer watching one interview (a video player opens the page
+     * once and then issues range requests to the stream route), tight enough
+     * that a link being passed around a group shows up as refusals.
+     */
+    shareRateWindowMs: parseInt(env('DOSSIER_SHARE_RATE_WINDOW_MS', String(15 * 60 * 1000)), 10),
+    shareRateMax: parseInt(env('DOSSIER_SHARE_RATE_MAX', '120'), 10),
+    /**
+     * The same window, for the STREAM route, which has its own budget.
+     *
+     * Opening the page is one request; playing an hour of video and scrubbing
+     * through it is many, and a browser's range requests are not something the
+     * viewer can moderate. Sharing the page's 120 meant a normal viewing session
+     * could 429 the recording mid-sentence, with nothing on screen to say why.
+     */
+    shareStreamRateMax: parseInt(env('DOSSIER_SHARE_STREAM_RATE_MAX', '900'), 10),
   },
 
   /**

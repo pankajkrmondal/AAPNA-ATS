@@ -22,6 +22,47 @@ import { MODAL_WIDTH } from './modalWidths';
 const { Text, Paragraph } = Typography;
 const { Dragger } = Upload;
 
+/**
+ * What the file said about one candidate, beyond the three section scores.
+ *
+ * Shown BEFORE the import is confirmed, and that is the whole point: this is
+ * the data that will travel to an external interviewer in the candidate's
+ * dossier, so the recruiter should be able to see it was read correctly while
+ * they can still cancel. Read by header (evalgroundRow.js), never by the AI.
+ */
+function RowBreakdown({ breakdown }) {
+  if (!breakdown) return <Text type="secondary">No breakdown was read from this row.</Text>;
+  const { totals, sections, topics } = breakdown;
+  return (
+    <Space direction="vertical" size={6} style={{ fontSize: 12.5 }}>
+      <Text type="secondary">
+        {[
+          breakdown.startedOnText ? `Taken ${breakdown.startedOnText}` : null,
+          breakdown.durationText,
+          totals?.correct != null
+            ? `${totals.correct} correct · ${totals.wrong ?? '—'} wrong · ${totals.unattempted ?? '—'} unattempted`
+            : null,
+        ].filter(Boolean).join('  ·  ') || 'No attempt details in this row.'}
+      </Text>
+      {sections?.map((s) => (
+        <div key={s.index}>
+          <Text strong>{`Section ${s.index}`}</Text>
+          {`  ${s.marks ?? '—'} marks · ${s.correct ?? '—'} correct / ${s.wrong ?? '—'} wrong / ${s.unattempted ?? '—'} unattempted`}
+          {(s.easy_correct != null || s.medium_correct != null || s.hard_correct != null)
+            && ` · easy-med-hard ${s.easy_correct ?? '—'}/${s.medium_correct ?? '—'}/${s.hard_correct ?? '—'}`}
+        </div>
+      ))}
+      {topics?.length > 0 && (
+        <div>
+          {topics.map((t) => (
+            <Tag key={t.label} style={{ marginBottom: 4 }}>{`${t.label}: ${t.value ?? '—'}`}</Tag>
+          ))}
+        </div>
+      )}
+    </Space>
+  );
+}
+
 const LEGACY_FIELD_OPTIONS = [
   { value: 'IQScore', label: 'General Aptitude (IQScore)' },
   { value: 'TechScore', label: 'Technical (TechScore)' },
@@ -182,6 +223,8 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
       <Paragraph type="secondary" style={{ fontSize: 12.5 }}>
         Matched by candidate email. Nothing is written until you confirm the import at the end.
         A row already on file is skipped unless the score changed — a changed score only overwrites the score, nothing else.
+        A result imported before the ATS kept the full breakdown gets its breakdown filled in, without touching the score.
+        Expand any row below to see everything the file says about that candidate.
       </Paragraph>
       <Steps size="small" current={step} items={stepItems} style={{ marginBottom: 16 }} />
 
@@ -271,6 +314,14 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
             dataSource={previewData.rows}
             pagination={{ pageSize: 8 }}
             scroll={{ x: true }}
+            expandable={{
+              // Expandable rather than more columns: the breakdown is 20-odd
+              // numbers per candidate, and widening the table would push the
+              // status and journey controls — the things a recruiter acts on —
+              // off the side of the modal.
+              rowExpandable: (row) => Boolean(row.breakdown),
+              expandedRowRender: (row) => <RowBreakdown breakdown={row.breakdown} />,
+            }}
           />
         </>
       )}

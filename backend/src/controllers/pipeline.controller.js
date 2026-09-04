@@ -17,9 +17,22 @@ import {
   canViewRecordings,
 } from '../services/interviewRecording.service.js';
 import { getAccessToken } from '../services/onedrive.service.js';
+// Phase 4 — the no-login recording links a dossier can carry (plan §6.5).
+// Minting is NOT imported here on purpose: it happens inside
+// collectRecordingShareLinks() during a download, so there is exactly one place
+// in the system where a public URL to someone's interview comes into existence.
+import {
+  listShareLinks,
+  revokeShareLink,
+} from '../services/recordingShare.service.js';
 import { emailCandidates } from '../utils/emailMatch.js';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
+// The dossier's pack-size threshold lives in config (§6.4). Imported explicitly:
+// this file previously pulled in only database.js and logger.js from config/,
+// and referencing a bare `config` without this line throws at REQUEST time, not
+// at import time — so it 500s every download while the module still loads fine.
+import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -28,13 +41,16 @@ import runExport from '../exports/runExport.js';
 // are separate modules on purpose — see candidateDossier.service.js's header.
 import {
   applyAttachments,
+  applyRecordingShareLinks,
   applyZekoExtras,
   buildDossierModel,
   collectAttachments,
+  collectRecordingShareLinks,
   collectZekoExtras,
   describeIncludedCategories,
   logDossierDownload,
 } from '../services/candidateDossier.service.js';
+import { packSizeNotice } from '../utils/dossierModel.js';
 import { buildPack, sendPack } from '../exports/candidateDossier.export.js';
 import pipelineExport from '../exports/pipeline.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
@@ -502,7 +518,8 @@ export const getCandidateDossier = catchAsync(async (req, res) => {
 /**
  * GET /api/pipeline/:id/dossier/download
  *   ?format=zip|html|xlsx&contact_details=0|1&resume=0|1&documents=0|1
- *   &screening_detail=0|1&screening_report=0|1
+ *   &screening_detail=0|1&screening_report=0|1&assessment_detail=0|1
+ *   &recording_links=0|1
  * The pack itself.
  *
  * Access is the router's requireStaff (rank >= recruiter, so never a vendor) —
@@ -559,7 +576,17 @@ export const downloadCandidateDossier = catchAsync(async (req, res) => {
     String(req.query.screening_report ?? '').trim().toLowerCase(),
   );
 
-  const model = await buildDossierModel(id, { includeContactDetails, generatedBy: req.user });
+  // The written assessment's own breakdown — question counts, difficulty split
+  // and topic scores, read out of the Evalground import. Defaults ON for the
+  // same reasons the screening assessment does: it is rendered inside the pack
+  // under our redaction, it carries no link and no login, and it is the whole
+  // of what an interviewer asks for after seeing a bare percentage.
+  const includeAssessmentDetail = req.query.assessment_detail === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.assessment_detail).trim().toLowerCase());
+
+  const model = await buildDossierModel(id, {
+    includeContactDetails, includeAssessmentDetail, generatedBy: req.user,
+  });
 
   // Attachments only travel in a ZIP; the single-file formats have nowhere to
   // put them, so we do not spend Graph round trips fetching what cannot ship.
@@ -582,6 +609,25 @@ export const downloadCandidateDossier = catchAsync(async (req, res) => {
   });
   applyZekoExtras(model, zeko, { includeScreeningDetail, includeScreeningReport });
 
+  // Recordings as expiring, no-login links (HR decision #7, plan §6.5).
+  //
+  // Defaults ON, unlike the Zeko report link, and the difference is the point:
+  // these links are OURS. One link per round, 14-day expiry enforced on the
+  // server, revocable from the drawer the moment a recruiter changes their mind,
+  // and every open written onto the candidate's timeline with the viewer's IP.
+  // None of that is true of a vendor's page, which is why that one is opt-in and
+  // this one is not.
+  //
+  // Minted here rather than in buildDossierModel() for the same reason as the
+  // Zeko links: opening the preview must not create public URLs to someone's
+  // interview as a side effect of looking.
+  const includeRecordingLinks = req.query.recording_links === undefined
+    || !['0', 'false', 'no'].includes(String(req.query.recording_links).trim().toLowerCase());
+  const recordingLinks = await collectRecordingShareLinks(id, {
+    include: includeRecordingLinks, user: req.user,
+  });
+  applyRecordingShareLinks(model, recordingLinks, { includeRecordingLinks });
+
   const { buffer, filename, contentType } = buildPack(model, requested, attachments.files);
 
   const includedCategories = describeIncludedCategories(model);
@@ -596,12 +642,17 @@ export const downloadCandidateDossier = catchAsync(async (req, res) => {
     url: req.originalUrl,
   });
 
+  const sizeNotice = packSizeNotice(buffer.length, config.dossier.warnPackBytes);
+
   logger.info(`Dossier download: pipeline ${id}`, {
     user: req.user?.email,
     role: req.user?.role,
     format: requested,
     bytes: buffer.length,
     included: includedCategories.join(','),
+    // Logged when it fires so a recruiter reporting "my email bounced" can be
+    // matched to the download that produced the oversized pack.
+    ...(sizeNotice ? { oversize: sizeNotice.message } : {}),
   });
 
   // X-Export-Degraded, not a dossier-specific name: that is the header
@@ -611,13 +662,24 @@ export const downloadCandidateDossier = catchAsync(async (req, res) => {
   // "Degraded" means something the recruiter asked for could not be fetched —
   // never that the pack is empty. The download still succeeds; the UI warns, and
   // the pack's own manifest says which item and why.
+  // recordingLinks.degraded is read explicitly rather than left to the manifest
+  // sweep below: applyRecordingShareLinks() sets `included = true` as soon as
+  // ONE link mints, so a PARTIAL failure — two rounds linked, the third's mint
+  // threw — would never satisfy `included === false` and the recruiter would be
+  // told nothing, while a total failure warned them. Partial silence is the
+  // worse of the two: they send a pack believing every round is watchable.
   const degraded = attachments.degraded
     || zeko.degraded
+    || recordingLinks.degraded
     || model.manifest.some((m) => m.included === false && m.degraded === true);
 
   return sendPack(res, buffer, filename, contentType, {
     'X-Dossier-Format': requested,
     ...(degraded ? { 'X-Export-Degraded': 'true' } : {}),
+    // The message travels with the response rather than being rebuilt in the
+    // browser: the threshold is server config, and a second copy of it in the
+    // frontend would drift the first time somebody changed the env var.
+    ...(sizeNotice ? { 'X-Dossier-Oversize': String(sizeNotice.megabytes) } : {}),
   });
 });
 
@@ -641,6 +703,44 @@ export const getPipelineRecordings = catchAsync(async (req, res) => {
 
   const recordings = await getRecordingsForPipeline(id);
   return success(res, recordings, 'Interview recordings retrieved');
+});
+
+/**
+ * GET /api/pipeline/:id/share-links
+ * What no-login recording links exist for this candidate, and what state each is in.
+ *
+ * Staff-only by the router's requireStaff, like every other route on this
+ * router. Not audited: listing the links a recruiter minted is not the same as
+ * watching a recording, and the audit that matters here is written when an
+ * external viewer opens one.
+ */
+export const getRecordingShareLinks = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to view interview recordings.', 403);
+  }
+  const links = await listShareLinks(id);
+  return success(res, links, 'Recording share links retrieved');
+});
+
+/**
+ * POST /api/pipeline/:id/share-links/:linkId/revoke
+ * Withdraw one link. Refusal is immediate, not at next expiry.
+ *
+ * This is the control that makes decision #7 defensible: a no-login URL to a
+ * video of a real person is only acceptable if the person who sent it can take
+ * it back the moment they realise they should not have.
+ */
+export const revokeRecordingShareLink = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const linkId = parseInt(req.params.linkId, 10);
+  if (Number.isNaN(id) || Number.isNaN(linkId)) throw new AppError('Invalid id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to manage recording links.', 403);
+  }
+  const result = await revokeShareLink(id, linkId, req.user);
+  return success(res, result, result.already_revoked ? 'That link was already revoked' : 'Share link revoked');
 });
 
 /**
@@ -929,6 +1029,24 @@ export const sendAdHocEmail = catchAsync(async (req, res) => {
 
   const result = await pipelineService.sendAdHocEmail(id, { subject, body });
   return success(res, result, 'Email sent successfully');
+});
+
+/**
+ * POST /api/pipeline/:id/zeko-report-link
+ * The no-login url for one AI screening round's full report.
+ *
+ * POST rather than GET because the first call for a round CREATES something that
+ * outlives the request — a permanent, public Zeko url for a real person's
+ * screening report. Later calls return the stored one, but a reader that can
+ * publish on its first use is not a GET.
+ */
+export const getZekoSharedReportLink = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+
+  const stageKey = req.body?.stageKey || req.query?.stageKey || null;
+  const link = await pipelineService.getZekoSharedReportLink(id, { stageKey });
+  return success(res, link, link.cached ? 'Report link ready' : 'Report link created');
 });
 
 // ── Admin config CRUD (RT ask 2026-07-13): stages / outcomes / reasons ──────

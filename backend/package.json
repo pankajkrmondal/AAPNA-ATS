@@ -30,6 +30,7 @@
     "report:experience:staging": "cross-env NODE_ENV=staging node scripts/report-experience-anomalies.js",
     "report:experience:prod": "cross-env NODE_ENV=production node scripts/report-experience-anomalies.js",
     "queue:worker": "node src/workers/resumeWorker.js",
+    "dossier:leakscan": "node scripts/dossier-leak-scan.mjs",
     "test": "jest --passWithNoTests",
     "test:unit": "node --test \"src/tests/**/*.test.js\"",
     "test:watch": "jest --watch",
