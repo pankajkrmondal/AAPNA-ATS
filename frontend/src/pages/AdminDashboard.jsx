@@ -38,9 +38,11 @@ import {
   SafetyOutlined,
   BankOutlined,
   TeamOutlined,
+  AuditOutlined,
 } from '@ant-design/icons';
 import adminService from '../services/adminService';
 import ExportButton from '../components/common/ExportButton';
+import ReferralLogPanel from '../components/admin/ReferralLogPanel';
 import useAuth from '../hooks/useAuth';
 import { DesignScope, PageShell, Surface, StatTile, Segmented, Button } from '../ui';
 // After '../ui' so page rules win on equal specificity.
@@ -616,14 +618,20 @@ export default function AdminDashboard() {
           options={[
             { value: 'users', label: <><UserOutlined /> User Management</> },
             { value: 'modules', label: <><SettingOutlined /> Module Access</> },
+            { value: 'referrals', label: <><AuditOutlined /> Referral Log</> },
             ...(isSuper ? [{ value: 'companies', label: <><BankOutlined /> Companies</> }] : []),
           ]}
         />
-        <ReloadOutlined
-          className="ad-refresh"
-          onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
-          spin={loading || companiesLoading}
-        />
+        {/* The Referral Log owns its own Refresh (it has its own filters and
+            pagination), so this shared one would either do nothing useful or
+            reload the wrong list. Hidden there rather than left as a dead icon. */}
+        {activeTab !== 'referrals' && (
+          <ReloadOutlined
+            className="ad-refresh"
+            onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
+            spin={loading || companiesLoading}
+          />
+        )}
       </Surface>
 
       {/* Tab Content 1: User Management */}
@@ -911,7 +919,12 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Tab Content 3: Companies (superadmin only) */}
+      {/* Tab Content 3: Referral Log — the audit trail behind the referral flag.
+          Owns its own loading, filters and refresh, so nothing above needs to
+          know about it. */}
+      {activeTab === 'referrals' && <ReferralLogPanel />}
+
+      {/* Tab Content 4: Companies (superadmin only) */}
       {activeTab === 'companies' && isSuper && (
         <div className="animate-fade-in">
           <Surface

@@ -116,3 +116,42 @@ Company-scoped external role — the most restricted account type.
 | Change own role / status, delete self | ❌ | ❌ | ❌ | ❌ |
 | Manage companies / reassign company | ✅ | ❌ | ❌ | ❌ |
 | Module permissions | set for anyone; bypasses checks | set for own company; bypasses checks | per grant | per grant (vendor surfaces) |
+| **See a candidate's referral flag** | ✅ | ✅ | ✅ | ❌ |
+| **Mark a candidate as a referral** | ✅ | ✅ | ✅ | ❌ |
+| **Remove a referral** (reason required) | ✅ | ✅ | ❌ | ❌ |
+| **Read the Referral Log** | ✅ | ✅ | ❌ | ❌ |
+
+---
+
+## Referral candidates — the one rule that is not about accounts
+
+Every other row in this document is about what a logged-in role may do. The referral flag adds a rule about
+somebody who **has no account at all**.
+
+Sanghamitra Roy, 2026-08-28: *"the recruiter need to see that it is a referral candidate"* — and, in the same
+breath — *"I don't want the interviewer to see… none of the interview process should know that it is a,
+because then you can't be non-bias."*
+
+An **interviewer is not a role in this system**. They are an email address plus a `uuid` token: a calendar
+invite, an emailed scorecard link, sometimes a dossier, sometimes a recording link. So this rule cannot be
+expressed as a permission — there is no subject to check. It is enforced **surface by surface**:
+
+- **Visible** on the authenticated screens, to `superadmin` / `admin` / `recruiter` (rank ≥ 20, which is what
+  `requireStaff` already means). `vendor` is excluded, and not automatically — candidate search returns nearly
+  every `rpa_cv` column, so the referral columns are dropped from the *query* for vendor callers.
+- **Never** on any public token surface: `/scorecard/:token` for **every** recipient role including `ceo`,
+  `/documents/:token`, `/recording-share/:token`.
+- **Never** in a candidate dossier, an interviewer email, or a Teams calendar invite.
+
+Setting and removing are split on purpose: any recruiter may **set** a referral, but only admin-tier may
+**remove** one, and only with a typed reason, which is recorded against their name in `rpa_referral_audit`.
+Removing erases the referrer's name from the candidate, so it is the action worth constraining and logging
+hardest.
+
+Two rules no code can enforce, which recruiters have to be told:
+
+1. **Never write the referral on the résumé file itself** — the dossier ships attachments byte for byte and the
+   leak scan deliberately does not read them.
+2. **Do not use `Job Source` for it** — that free-text field is rendered on Candidate Screening.
+
+Full reasoning: [REFERRAL-CANDIDATE-PLAN.md](../REFERRAL-CANDIDATE-PLAN.md) §5.

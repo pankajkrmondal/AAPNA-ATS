@@ -4,6 +4,8 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { fetchMessagesSince } from './outlookReader.service.js';
 import { emailCandidates, emailMatchesSql } from '../utils/emailMatch.js';
+import { parseZekoReportUrl, parseZekoResponseId, zekoSharedReportUrl } from '../utils/zekoShareLink.js';
+import { buildZekoReportSection } from '../utils/zekoReportModel.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
 
@@ -356,6 +358,56 @@ function extractOtp(rawBody) {
 }
 
 /**
+ * The stored dashboard cookie, unvalidated — or null when there is none.
+ *
+ * The unvalidated half of getDashboardCookieHeader(), for callers that would
+ * rather ask the endpoint they actually want than pay for a ping. Two reasons a
+ * caller might: the ping's verdict is not always right for other Zeko APIs (it
+ * checks the dashboard workflow endpoint, which can refuse a cookie the report
+ * API accepts), and its "no" costs an OTP login — fine in a cron, far too slow
+ * inside a user's request. See generateZekoShareLink().
+ *
+ * @returns {Promise<string|null>} `authcookie=...`, or null
+ */
+async function storedDashboardCookieHeader() {
+  const cookie = await prisma.rpa_zeko_auth_cookie.findFirst({
+    where: { is_active: true, expires_at: { gt: new Date() } },
+    orderBy: { created_at: 'desc' },
+  });
+  return cookie?.cookie_value ? toCookieHeader(cookie.cookie_value) : null;
+}
+
+/** Zeko saying "not you", as opposed to "not that". Only the first is worth a login. */
+const isAuthFailure = (err) => err?.status === 401 || err?.status === 403;
+
+/**
+ * Run a cookie-authenticated Zeko call, cheapest credential first.
+ *
+ * The stored cookie is tried before anything is validated, and the OTP login
+ * runs only when Zeko itself answers 401/403. Doing it the other way round —
+ * validating first, as getDashboardCookieHeader() does — is correct for a cron
+ * and wrong for a user-facing request twice over: the liveness ping checks the
+ * dashboard workflow endpoint, which on staging refuses cookies the report API
+ * accepts, and its "no" costs a full OTP login (request a code, poll the
+ * mailbox, verify) measured at 38 seconds inside a recruiter's click.
+ *
+ * @param {(cookieHeader: string) => Promise<*>} run
+ * @param {string} [label] - for the log line when a re-login is needed
+ */
+async function withDashboardCookie(run, label = 'Zeko call') {
+  const stored = await storedDashboardCookieHeader();
+  if (stored) {
+    try {
+      return await run(stored);
+    } catch (err) {
+      if (!isAuthFailure(err)) throw err;
+      logger.warn(`${label}: the stored dashboard cookie was refused; logging in again.`);
+    }
+  }
+  return run(await getDashboardCookieHeader());
+}
+
+/**
  * Resolves a *live* dashboard cookie header, refreshing via OTP login when needed.
  *
  * Strategy: use the stored active cookie only if a real dashboard ping accepts it;
@@ -578,7 +630,7 @@ async function fetchInterviewResponses(cookieHeader, jobId, interviewId) {
  * @param {string} jobId - Zeko role/job id (rpa_zeko_candidate_pipeline.zeko_job_id).
  * @returns {Promise<object|null>} The report's `data.data` object, or null when absent.
  */
-async function fetchCandidateReport(cookieHeader, candidateId, jobId) {
+async function fetchCandidateReport(cookieHeader, candidateId, jobId, { timeoutMs } = {}) {
   const qs = new URLSearchParams({ candidateId: String(candidateId), jobId: String(jobId) });
   const url = `${config.zeko.reportApiBase}/interview-report?${qs}`;
   const res = await fetch(url, {
@@ -588,14 +640,21 @@ async function fetchCandidateReport(cookieHeader, candidateId, jobId) {
       Origin: 'https://app.zeko.ai',
       Referer: 'https://app.zeko.ai/',
     },
+    // Unbounded for the cron, which has all the time it needs; bounded when a
+    // user is waiting on it (the dossier download).
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   });
 
   if (res.status === 410) return null; // no report for this candidate — not an error
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(
+    const err = new Error(
       `Zeko interview-report failed (candidate ${candidateId}, job ${jobId}, ${res.status}): ${JSON.stringify(body).slice(0, 300)}`
     );
+    // Carried so callers can tell "not you" from "not that" — only the first is
+    // worth an OTP login. See withDashboardCookie().
+    err.status = res.status;
+    throw err;
   }
   return body?.data?.data || null;
 }
@@ -676,6 +735,165 @@ export function zekoReportUrl(candidateId, jobId) {
     tab: 'Overview',
   });
   return `${config.zeko.reportLinkBase}?${qs}`;
+}
+
+/**
+ * Mints (or re-reads) the PUBLIC share link for one candidate's Zeko report.
+ *
+ * WHY THIS EXISTS. The link we store per round is Zeko's recruiter report page,
+ * which requires a Zeko login. A candidate dossier is emailed to an interviewer
+ * who has no ATS account and certainly no Zeko account, so that URL is useless to
+ * them — Phase 1 therefore carried only the FACT that a report existed. Zeko's
+ * report page has a Share button that mints a no-login view of the same report,
+ * and this is that button, called server-side with the dashboard cookie the ATS
+ * already holds.
+ *
+ * THREE THINGS VERIFIED AGAINST STAGING (2026-09-03), because all three shape
+ * the code:
+ *
+ *   1. The call is IDEMPOTENT. Three calls for the same candidate returned the
+ *      same link id — and the same id the recruiter's own browser had minted by
+ *      hand. So there is nothing to cache and nothing to clean up: re-minting on
+ *      every download does not litter Zeko with links.
+ *   2. `responseId` is OPTIONAL. Zeko's UI sends it, but candidateId + jobId
+ *      alone return the same link. It is kept as a FALLBACK rather than the
+ *      normal path: recovering it costs an extra report round trip, and it is
+ *      only worth paying when the cheap call has already failed.
+ *   3. The STORED cookie must be tried before the liveness ping. This path does
+ *      NOT call getDashboardCookieHeader() first, which is the obvious thing to
+ *      do and the wrong one: that helper validates the cookie against the
+ *      dashboard workflow endpoint, and a cookie that endpoint rejects can still
+ *      be perfectly good for the report API (observed on staging, where the ping
+ *      fails and both report calls return 200). Believing the ping sent every
+ *      single download through a fresh OTP login — 38 seconds, inside a
+ *      recruiter's click. So the stored cookie is used optimistically and the
+ *      login is run only when Zeko itself answers 401/403.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO: expire or revoke. The link lives on Zeko's
+ * side and we have no API to withdraw it — unlike the recording share links of
+ * plan §6.5, which are ours and are revocable. That difference is stated to the
+ * recruiter at the download dialog rather than hidden here, because it is the
+ * kind of thing that must be decided by the person sending the file.
+ *
+ * @param {object} args
+ * @param {string} [args.candidateId] - Zeko candidate id
+ * @param {string} [args.jobId] - Zeko role/job id
+ * @param {string} [args.reportUrl] - a stored rpa_zeko_interview_results.reportlink,
+ *   from which both ids are parsed when they are not passed explicitly
+ * @param {number} [args.timeoutMs] - defaults to config.zeko.shareLinkTimeoutMs
+ * @returns {Promise<{ linkId: string, url: string, candidateId: string, jobId: string }>}
+ * @throws {Error} when the ids cannot be resolved or Zeko refuses the request
+ */
+export async function generateZekoShareLink({
+  candidateId, jobId, reportUrl, timeoutMs,
+} = {}) {
+  const fromUrl = parseZekoReportUrl(reportUrl);
+  const cid = candidateId || fromUrl?.candidateId;
+  const jid = jobId || fromUrl?.jobId;
+  if (!cid || !jid) {
+    throw new Error('Zeko share link: no candidateId/jobId — the stored report link is not a Zeko report URL.');
+  }
+
+  const budget = Number(timeoutMs) > 0 ? Number(timeoutMs) : config.zeko.shareLinkTimeoutMs;
+
+  /** One call to Zeko's Share endpoint. Returns the link id, or null. */
+  const mint = async (cookieHeader, params) => {
+    const qs = new URLSearchParams(params);
+    const res = await fetch(`${config.zeko.reportApiBase}/report/generate-link?${qs}`, {
+      headers: {
+        Cookie: cookieHeader,
+        Accept: 'application/json',
+        Origin: 'https://app.zeko.ai',
+        Referer: 'https://app.zeko.ai/',
+      },
+      signal: AbortSignal.timeout(budget),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(
+        `Zeko generate-link failed (candidate ${cid}, job ${jid}, ${res.status}): ${JSON.stringify(body).slice(0, 300)}`,
+      );
+      err.status = res.status;
+      throw err;
+    }
+    return body?.data?.link || null;
+  };
+
+  /** Both forms of the call, with one cookie. */
+  const attempt = async (cookieHeader) => {
+    try {
+      const id = await mint(cookieHeader, { candidateId: cid, jobId: jid });
+      if (id) return id;
+    } catch (err) {
+      if (isAuthFailure(err)) throw err;
+      // Not an auth problem, so a new cookie would not help. Fall through to the
+      // responseId form, which is exactly what Zeko's own UI sends.
+      logger.warn(`Zeko share link: two-id attempt failed for candidate ${cid} — ${err.message}`);
+    }
+
+    // The response id is not a field on the report — it is buried in the
+    // recording player URL (see parseZekoResponseId).
+    const report = await fetchCandidateReport(cookieHeader, cid, jid, { timeoutMs: budget });
+    const responseId = parseZekoResponseId(report);
+    if (!responseId) {
+      throw new Error(
+        `Zeko share link: no shareable report for candidate ${cid} on job ${jid} `
+        + '(the report is missing or carries no response id).',
+      );
+    }
+    return mint(cookieHeader, { responseId, candidateId: cid, jobId: jid });
+  };
+
+  const linkId = await withDashboardCookie(attempt, `Zeko share link (candidate ${cid})`);
+
+  const url = zekoSharedReportUrl(linkId);
+  if (!url) {
+    throw new Error(`Zeko share link: generate-link returned no link for candidate ${cid} on job ${jid}.`);
+  }
+  return {
+    linkId, url, candidateId: cid, jobId: jid,
+  };
+}
+
+/**
+ * One candidate's screening report, redacted for a dossier.
+ *
+ * The alternative to the share link, and the better answer for most readers:
+ * the same assessment rendered INSIDE the pack, under our own redaction, rather
+ * than as a link to a page Zeko composes and we cannot revoke. What gets kept
+ * and what gets dropped is buildZekoReportSection()'s business — this function's
+ * only job is getting the payload, cheaply and without hanging on Zeko.
+ *
+ * Returns null rather than throwing when there is simply no report (Zeko answers
+ * 410 for a candidate who never sat the interview) or when the payload carries
+ * no screening evaluation: an absent report is a normal state, and the dossier
+ * says so in its manifest.
+ *
+ * @param {object} args
+ * @param {string} [args.candidateId]
+ * @param {string} [args.jobId]
+ * @param {string} [args.reportUrl] - a stored reportlink, parsed for both ids
+ * @param {number} [args.timeoutMs]
+ * @returns {Promise<object|null>} the redacted section, or null
+ * @throws {Error} only on a real failure — a refused login, a 5xx, a timeout
+ */
+export async function getZekoReport({
+  candidateId, jobId, reportUrl, timeoutMs,
+} = {}) {
+  const fromUrl = parseZekoReportUrl(reportUrl);
+  const cid = candidateId || fromUrl?.candidateId;
+  const jid = jobId || fromUrl?.jobId;
+  if (!cid || !jid) {
+    throw new Error('Zeko report: no candidateId/jobId — the stored report link is not a Zeko report URL.');
+  }
+
+  const budget = Number(timeoutMs) > 0 ? Number(timeoutMs) : config.zeko.shareLinkTimeoutMs;
+  const report = await withDashboardCookie(
+    (cookieHeader) => fetchCandidateReport(cookieHeader, cid, jid, { timeoutMs: budget }),
+    `Zeko report (candidate ${cid})`,
+  );
+
+  return buildZekoReportSection(report);
 }
 
 /**
@@ -1007,4 +1225,6 @@ export default {
   syncZekoJobs,
   fetchInterviewResults,
   repairZeroZekoScores,
+  generateZekoShareLink,
+  getZekoReport,
 };

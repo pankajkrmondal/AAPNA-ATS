@@ -14,6 +14,7 @@ import trackingRoutes from './tracking.routes.js';
 import pipelineRoutes from './pipeline.routes.js';
 import scorecardRoutes from './scorecard.routes.js';
 import documentRoutes from './document.routes.js';
+import recordingShareRoutes from './recordingShare.routes.js';
 import notificationRoutes from './notification.routes.js';
 
 const router = Router();
@@ -35,6 +36,10 @@ router.use('/track', trackingRoutes);
 router.use('/scorecard', scorecardRoutes);
 // Public candidate document-upload link (no auth — see document.routes.js).
 router.use('/documents', documentRoutes);
+// Public, expiring interview-recording share link (no auth — see
+// recordingShare.routes.js). The only route in this system that serves media to
+// someone with no account, so every control on it is server-side and per-request.
+router.use('/recording-share', recordingShareRoutes);
 
 // ── Placeholder routes (to be implemented in later phases) ────────────
 // Each placeholder returns a friendly "coming soon" message so the

@@ -71,7 +71,8 @@ async function readBlobError(err) {
  *
  * @param {(config: object) => Promise<import('axios').AxiosResponse>} request
  * @param {{ fallbackName?: string }} [options]
- * @returns {Promise<{ filename: string, rowCount: number|null, degraded: boolean }>}
+ * @returns {Promise<{ filename: string, rowCount: number|null, degraded: boolean,
+ *   oversizeMb: number|null }>}
  */
 export async function downloadFile(request, { fallbackName = 'export.csv' } = {}) {
   let objectUrl;
@@ -98,11 +99,16 @@ export async function downloadFile(request, { fallbackName = 'export.csv' } = {}
     link.remove();
 
     const count = Number(res.headers?.['x-export-row-count']);
+    // Set by the dossier download only, and only when the pack is too big to
+    // email. The value is its size in MB — the threshold lives in server config,
+    // so the caller is told the number rather than recomputing it.
+    const oversizeMb = Number(res.headers?.['x-dossier-oversize']);
 
     return {
       filename,
       rowCount: Number.isFinite(count) ? count : null,
       degraded: res.headers?.['x-export-degraded'] === 'true',
+      oversizeMb: Number.isFinite(oversizeMb) ? oversizeMb : null,
     };
   } catch (err) {
     throw new Error(await readBlobError(err));

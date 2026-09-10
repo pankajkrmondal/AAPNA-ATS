@@ -9,6 +9,7 @@ import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 import { startReminderSchedulerJob, stopReminderSchedulerJob } from './jobs/reminderScheduler.js';
 import { startInterviewReminderJob, stopInterviewReminderJob } from './jobs/interviewReminder.js';
 import { startInterviewOccurrenceJob, stopInterviewOccurrenceJob } from './jobs/interviewOccurrence.js';
+import { startInterviewRecordingJob, stopInterviewRecordingJob } from './jobs/interviewRecordings.js';
 import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
 import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
@@ -46,6 +47,11 @@ async function startServer() {
     // attendance or a confirm nudge) so a scorecard is never sent for a
     // no-show; self-gated by interview_occurrence_enabled.
     await startInterviewOccurrenceJob();
+
+    // Post-interview recording discovery — links the Teams recording to the
+    // booking once Teams has finished processing it; self-gated by
+    // MS_RECORDING_FETCH_ENABLED and interview_recording_enabled.
+    await startInterviewRecordingJob();
 
     // Consolidated Outlook mailbox poller — one delta fetch per tick fanned out
     // to resume intake + inbound sync (replaces n8n "Outlook Trigger2" + "WF2");
@@ -97,6 +103,7 @@ async function gracefulShutdown(signal) {
   stopReminderSchedulerJob();
   stopInterviewReminderJob();
   stopInterviewOccurrenceJob();
+  stopInterviewRecordingJob();
   stopMailboxPollerJob();
   stopZekoSchedulerJob();
   stopAssessmentDeadlineJob();

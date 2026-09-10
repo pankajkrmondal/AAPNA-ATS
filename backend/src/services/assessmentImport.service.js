@@ -31,6 +31,7 @@ import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
+import { parseEvalgroundRow } from '../utils/evalgroundRow.js';
 
 const PREVIEW_KEY_PREFIX = 'assessment-import:preview:';
 const PREVIEW_TTL_SECONDS = 3600;
@@ -44,8 +45,15 @@ const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (type
 /**
  * Reads every row of a .csv/.xlsx file and flattens each to plain `key: value`
  * text — the exact same shape hrUpload.service.js hands to its AI parser.
+ *
+ * The parsed `row` is returned ALONGSIDE the flattened text, rather than being
+ * dropped once the text has been built. The AI reads the text and answers the
+ * fuzzy questions (which cell is the email? which is the overall percentage?);
+ * the row object is read by name for the 40-odd columns whose headers have never
+ * varied — the breakdown the dossier renders. See evalgroundRow.js.
+ *
  * @param {string} filePath
- * @returns {{ rowNumber: number, rawText: string }[]}
+ * @returns {{ rowNumber: number, rawText: string, row: object }[]}
  */
 function extractRowsFromFile(filePath) {
   const workbook = XLSX.readFile(filePath);
@@ -58,7 +66,67 @@ function extractRowsFromFile(filePath) {
   return rows.map((row, idx) => ({
     rowNumber: idx + 2, // header is row 1
     rawText: Object.entries(row).map(([k, v]) => `${k}: ${v ?? ''}`).join('\n'),
+    row,
   }));
+}
+
+/**
+ * The detail columns for one row, as Prisma data.
+ *
+ * Written on create, on a score overwrite, AND as a backfill onto a row that
+ * predates these columns (see the duplicate_skipped branch in commitImport) —
+ * so it lives in one place rather than being spelled out at three call sites
+ * that would drift apart.
+ *
+ * `detail` has been through JSON (it is cached in Redis between preview and
+ * commit), so `startedOn` arrives as an ISO string rather than a Date.
+ *
+ * @param {object|null} detail - parseEvalgroundRow() output, post-JSON
+ * @returns {object} Prisma data fields; empty when there is no detail to write
+ */
+function detailColumns(detail, { clearWhenMissing = false } = {}) {
+  if (!detail) {
+    // On a CREATE there is nothing to clear, so write nothing. On an UPDATE
+    // there is: leaving the previous import's counts and topic scores attached
+    // to a NEW score would make section 7 of the next pack print two
+    // inconsistent accounts of one attempt — 55 correct against a total that no
+    // longer matches. The breakdown belongs to the same attempt as the score, so
+    // when a re-import brings a score without one, the old one goes.
+    if (!clearWhenMissing) return {};
+    return {
+      raw_row: Prisma.DbNull,
+      started_on_text: null,
+      started_on: null,
+      duration_text: null,
+      total_correct: null,
+      total_wrong: null,
+      total_unattempted: null,
+      section_detail: Prisma.DbNull,
+      topic_scores: Prisma.DbNull,
+      attempt_status: null,
+      marked_as: null,
+      public_report_url: null,
+    };
+  }
+  const startedOn = detail.startedOn ? new Date(detail.startedOn) : null;
+  // Prisma refuses a plain `null` on a nullable Json column — it cannot tell
+  // "store SQL NULL" from "store the JSON value null" — so an absent breakdown
+  // is written as Prisma.DbNull rather than null.
+  const json = (value) => (value && value.length ? value : Prisma.DbNull);
+  return {
+    raw_row: detail.rawRow ? detail.rawRow : Prisma.DbNull,
+    started_on_text: detail.startedOnText ?? null,
+    started_on: startedOn && !Number.isNaN(startedOn.getTime()) ? startedOn : null,
+    duration_text: detail.durationText ?? null,
+    total_correct: detail.totals?.correct ?? null,
+    total_wrong: detail.totals?.wrong ?? null,
+    total_unattempted: detail.totals?.unattempted ?? null,
+    section_detail: json(detail.sections),
+    topic_scores: json(detail.topics),
+    attempt_status: detail.attemptStatus ?? null,
+    marked_as: detail.markedAs ?? null,
+    public_report_url: detail.publicReportUrl ?? null,
+  };
 }
 
 /** Uploaded file name, minus extension, used verbatim as the test identity. */
@@ -261,9 +329,9 @@ export async function previewImport({ filePath, originalName, uploadedByUser }) 
   const parsedRows = await mapWithConcurrency(rawRows, async (row) => {
     try {
       const parsed = await parseRowWithAI(row.rawText);
-      return { rowNumber: row.rowNumber, parsed, error: null };
+      return { rowNumber: row.rowNumber, parsed, row: row.row, error: null };
     } catch (err) {
-      return { rowNumber: row.rowNumber, parsed: null, error: err.message };
+      return { rowNumber: row.rowNumber, parsed: null, row: row.row, error: err.message };
     }
   });
 
@@ -332,6 +400,16 @@ export async function previewImport({ filePath, originalName, uploadedByUser }) 
       overallPercentage: row.parsed.overallPercentage ?? null,
       overallResult: row.parsed.overallResult ?? null,
       overallMarksScored: row.parsed.overallMarksScored ?? null,
+      // Everything else the export said about this candidate — read by header,
+      // not by the AI (evalgroundRow.js). Carried on the preview row so the
+      // recruiter can see the breakdown was read correctly BEFORE confirming,
+      // and so commitImport() writes it without re-reading the file, which by
+      // then has been moved to OneDrive.
+      //
+      // NOT called `detail`: that key already means "what went wrong with this
+      // row" on the error branch above, and the preview table renders it as
+      // text. An object under the same name renders as a React crash.
+      breakdown: parseEvalgroundRow(row.row),
       cvId: match.cvId,
       matchedPipelineId: match.matchedPipelineId,
       otherOpenPipelineIds: match.otherOpenPipelineIds,
@@ -474,7 +552,24 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
 
     if (computedStatus === 'duplicate_skipped') {
       duplicateSkippedCount += 1;
-      continue; // skip-unless-changed — no write at all, not even modified_at
+      // Skip-unless-changed — no score is touched here, and no stage event or
+      // write-back happens either.
+      //
+      // ONE exception: a result imported before the detail columns existed has
+      // NULL in them, and a NULL has nothing to protect. Filling it is not an
+      // overwrite, and it is the only route by which a candidate assessed
+      // earlier ever gets a full report in their dossier — the alternative is
+      // that they are permanently stuck with three numbers while HR still holds
+      // the file that could explain them. Scores, status and import_id are left
+      // exactly as they were: this row's provenance is still the import that
+      // first recorded it.
+      if (existing && !existing.raw_row && row.breakdown) {
+        await prisma.rpa_assessment_results.update({
+          where: { id: existing.id },
+          data: { ...detailColumns(row.breakdown), modified_at: new Date() },
+        });
+      }
+      continue;
     }
 
     if (computedStatus === 'unmatched' || !pipelineId) {
@@ -496,6 +591,7 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
           match_note: row.matchNote,
           source_row_number: row.rowNumber,
           status: 'unmatched',
+          ...detailColumns(row.breakdown),
         },
       });
       continue;
@@ -514,6 +610,11 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
           overall_result: row.overallResult ?? null,
           overall_marks_scored: row.overallMarksScored ?? null,
           status: 'score_overwritten',
+          // The breakdown belongs to the same attempt as the score, so a
+          // changed score brings a fresh breakdown with it — and when the new
+          // file has none, clears the old one rather than leaving it describing
+          // numbers that no longer exist.
+          ...detailColumns(row.breakdown, { clearWhenMissing: true }),
           modified_at: new Date(),
         },
       });
@@ -535,6 +636,7 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
           match_note: row.matchNote,
           source_row_number: row.rowNumber,
           status: 'matched',
+          ...detailColumns(row.breakdown),
         },
       });
     }

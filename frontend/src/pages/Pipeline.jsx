@@ -33,6 +33,7 @@ import {
 import { ClearOutlined, DownOutlined, FilterOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UpOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
+import ReferralChip from '../components/candidates/ReferralChip';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
@@ -218,6 +219,10 @@ function CandidateCard({ card, onOpen }) {
               </Tooltip>
             )}
             {card.source === 'vendor' && <ShopOutlined className="pl-muted" />}
+            {/* Recruiter/admin only — this board is behind requireStaff, so a
+                vendor never loads it. No referrer name on the board: the chip
+                answers "is this a referral?" and the drawer names who. */}
+            {card.is_referral && <ReferralChip compact />}
           </Space>
           <Tooltip title={segTooltip}>
             <div className="pl-chips" aria-label={segTooltip}>
@@ -464,20 +469,26 @@ export default function Pipeline() {
   // "Feedback received" should land on the candidate, not just the board.
   const [searchParams, setSearchParams] = useSearchParams();
   const candidateParam = searchParams.get('candidate');
+  // …&recording=<id> goes one step further and opens that recording's player.
+  // This is the link the drawer's "Copy link" button hands out, so a recruiter
+  // can email a round to whoever decides — the recipient signs in and their
+  // view is audited, which a raw stream URL would defeat.
+  const recordingParam = searchParams.get('recording');
   useEffect(() => {
     const id = Number(candidateParam);
     if (Number.isFinite(id) && id > 0) setOpenPipelineId(id);
   }, [candidateParam]);
 
-  /** Closes the drawer and drops the deep-link param so a refresh doesn't reopen it. */
+  /** Closes the drawer and drops the deep-link params so a refresh doesn't reopen it. */
   const closeDrawer = useCallback(() => {
     setOpenPipelineId(null);
-    if (candidateParam) {
+    if (candidateParam || recordingParam) {
       const next = new URLSearchParams(searchParams);
       next.delete('candidate');
+      next.delete('recording');
       setSearchParams(next, { replace: true });
     }
-  }, [candidateParam, searchParams, setSearchParams]);
+  }, [candidateParam, recordingParam, searchParams, setSearchParams]);
 
   const filters = {
     position,
@@ -932,6 +943,7 @@ export default function Pipeline() {
 
       <PipelineDrawer
         pipelineId={openPipelineId}
+        focusRecordingId={Number(recordingParam) > 0 ? Number(recordingParam) : null}
         onClose={closeDrawer}
         onChanged={() => {
           refreshBoard();

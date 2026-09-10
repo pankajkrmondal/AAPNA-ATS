@@ -24,6 +24,21 @@ function handlePrismaError(err) {
     return new AppError('Service temporarily unavailable. Please try again later.', 503);
   }
 
+  // Prisma rejected the query before it ever reached the database — a bad
+  // select/where built by OUR code, never anything the caller did. It carries
+  // no `err.code`, so without this branch it falls past every test below,
+  // reaches the response as a non-operational error, and sendDevError ships the
+  // raw message — which enumerates the entire model's column list — to the
+  // browser. That leaked on 2026-08-28: GET /api/mrf selected a `paused_at`
+  // that the generated client did not have, and the reply was the full
+  // rpa_mrf field list (see prisma/ddl/2026-08-28-mrf-paused.sql).
+  // 500, not 4xx: the request was fine, the server's query was not.
+  // Mapping it costs no diagnostics — sendBackendErrorAlert() is handed the
+  // ORIGINAL err, so the alert email still carries the real message and stack.
+  if (err.name === 'PrismaClientValidationError') {
+    return new AppError('A database query failed. Please try again or contact support.', 500);
+  }
+
   // Prisma known request errors (P2xxx)
   if (err.code === 'P2002') {
     const fields = err.meta?.target?.join(', ') || 'unknown field(s)';

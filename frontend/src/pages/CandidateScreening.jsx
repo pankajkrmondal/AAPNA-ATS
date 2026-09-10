@@ -63,6 +63,7 @@ import SkillTags from '../components/common/SkillTags';
 import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
+import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
 import { DesignScope, PageShell, PageHeader, Surface, Button, SegmentedTabs } from '../ui';
 // After '../ui' so page rules win on equal specificity.
@@ -1579,6 +1580,11 @@ export default function CandidateScreening() {
                         <Space direction="vertical" size={5} className="cs-full">
                           <Space align="center" size={8} wrap>
                             <span className="cand-name">{c.Name}</span>
+                            {/* This is the surface the requirement actually needs:
+                                the recruiter sees the referral WHILE deciding
+                                whether to shortlist, not after. No referrer name
+                                in a results list — the detail panel names them. */}
+                            {c.is_referral ? <ReferralChip compact /> : null}
                             <StatusBadge status={
                               c.FinalStatus === 'Rejected' ? 'rejected'
                                 : c.FinalStatus ? 'shortlisted'
@@ -2337,6 +2343,20 @@ export default function CandidateScreening() {
                             <Col span={12}>
                               <Text type="secondary" className="cs-label">Job Source</Text>
                               <Text strong className="cs-body">{selectedCandidate.JobSource || '—'}</Text>
+                            </Col>
+                            {/* Referral sits beside Job Source, the free-text field
+                                this replaces. Screening is behind requireStaff +
+                                the candidate_screening module, so no vendor or
+                                interviewer reaches it. */}
+                            <Col span={12}>
+                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Referral</Text>
+                              {selectedCandidate.is_referral ? (
+                                <Text strong style={{ fontSize: 13 }}>
+                                  Yes — referred by {selectedCandidate.referred_by || '—'}
+                                </Text>
+                              ) : (
+                                <Text strong style={{ fontSize: 13 }}>—</Text>
+                              )}
                             </Col>
                             <Col span={12}>
                               <Text type="secondary" className="cs-label">Reason for Change</Text>

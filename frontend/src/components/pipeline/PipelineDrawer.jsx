@@ -39,18 +39,22 @@ import {
 } from 'antd';
 import { Button } from '../../ui';
 import {
-  CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
-  FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
+  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import useAuth from '../../hooks/useAuth';
 import pipelineService from '../../services/pipeline';
+import ReferralChip from '../candidates/ReferralChip';
 import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
 import { cleanMsgBody } from '../../utils/emailText';
 import assessmentImportService from '../../services/assessmentImportService';
 import settingsService from '../../services/settingsService';
 import AssessmentInviteModal from './AssessmentInviteModal';
+import DossierDownloadModal from './DossierDownloadModal';
 import { EmailEditorTabs } from '../common/EmailBodyEditor';
 import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
@@ -268,11 +272,23 @@ function assessmentScoreSegment(result) {
 
   const chips = sections.map((s) => ({ value: s.value, label: map[s.key]?.skill_label || s.key.replace('section_', 'Section ') }));
 
+  // The import now keeps the whole export row, so the line can say how the
+  // marks were earned rather than only what they came to — the same numbers
+  // section 7 of the dossier prints. Both parts are optional: results imported
+  // before those columns existed simply have none, and the line shortens.
+  const effort = [
+    result.duration_text ? `took ${result.duration_text}` : null,
+    result.total_correct != null
+      ? `${result.total_correct} correct${result.total_wrong != null ? ` / ${result.total_wrong} wrong` : ''}`
+      : null,
+  ].filter(Boolean).join(' · ');
+
   return {
     detail: (result.overall_result
       ? `Evalground result: ${result.overall_result}${result.overall_percentage != null ? ` (${result.overall_percentage}%)` : ''}`
       : chips.length > 0 ? chips.map((c) => `${c.label} ${c.value}`).join(' · ') : 'Result imported — no numeric scores returned'
-    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : ''),
+    ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : '')
+      + (effort ? ` · ${effort}` : ''),
   };
 }
 
@@ -721,7 +737,100 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   };
 }
 
-export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict }) {
+/**
+ * "View full report" for an AI screening round — without a Zeko login.
+ *
+ * WHAT CHANGED AND WHY. This used to be a plain anchor to
+ * rpa_zeko_interview_results.reportlink, which is Zeko's RECRUITER page
+ * (`app/new-report?candidateId=…`). That URL is behind Zeko's own sign-in, so
+ * every ATS user without a Zeko account clicked it and got a login wall instead
+ * of a report. This asks the backend for the same report's public share link —
+ * the one the candidate dossier already carries.
+ *
+ * WHY A BUTTON RATHER THAN AN `href`. The link may not exist yet: the first
+ * person to open a round's report has it minted for them, which is a call into
+ * Zeko and can take a few seconds (up to ~20 on a cold Zeko session). An anchor
+ * cannot wait, so this clicks, spins, then opens. Once minted it is stored, so
+ * every later open — by anyone — is instant and the drawer already knows the url.
+ *
+ * THE RECRUITER LINK STAYS as a quiet fallback rather than being deleted: Zeko
+ * can be down, its session can be stale, and a round synced by an old build has
+ * no ids to mint from. In all three the recruiter with a Zeko account still needs
+ * a way through, and a dead end here is worse than a login wall.
+ *
+ * @param {{pipelineId: number, stageKey: string, recruiterLink: string,
+ *   sharedLink: string|null}} props
+ */
+function ZekoReportLink({ pipelineId, stageKey, recruiterLink, sharedLink }) {
+  const { message } = AntApp.useApp();
+  const [url, setUrl] = useState(sharedLink || null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  // A different round (or a freshly minted link elsewhere) must not leave the
+  // previous round's url sitting in this button.
+  useEffect(() => {
+    setUrl(sharedLink || null);
+    setFailed(false);
+  }, [sharedLink, stageKey, pipelineId]);
+
+  const openReport = async () => {
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await pipelineService.getZekoSharedReportLink(pipelineId, stageKey);
+      const minted = (res.data?.data || res.data)?.url;
+      if (!minted) throw new Error('No link was returned.');
+      setUrl(minted);
+      setFailed(false);
+      // Pop-up blockers refuse window.open once it is no longer inside the click
+      // handler's own tick — which is exactly where an awaited mint leaves us.
+      // The button keeps the url either way, so a blocked pop-up costs one more
+      // click rather than the report.
+      const win = window.open(minted, '_blank', 'noopener,noreferrer');
+      if (!win) message.info('Your browser blocked the new tab — click again to open the report.');
+    } catch (err) {
+      setFailed(true);
+      message.warning(
+        err?.response?.data?.message
+        || 'Could not open the report without a login. Use the Zeko link instead.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <Button
+        size="small"
+        type="primary"
+        icon={<FileTextOutlined />}
+        loading={loading}
+        onClick={openReport}
+      >
+        {loading ? 'Preparing the report…' : 'View full report'}
+      </Button>
+      {url && (
+        <Text type="secondary" style={{ fontSize: 11.5 }}>
+          Opens with no login — treat it as confidential.
+        </Text>
+      )}
+      {/* Only offered once the no-login route has actually let someone down —
+          before that it is the same report behind an extra sign-in. */}
+      {failed && recruiterLink && (
+        <a href={recruiterLink} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+          <LinkOutlined /> Open in Zeko (needs a Zeko login)
+        </a>
+      )}
+    </div>
+  );
+}
+
+export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict, focusRecordingId }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -787,6 +896,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const [noShowReason, setNoShowReason] = useState('');
   // Scorecard report panel (per-round scores + overall avg/sum).
   const [reportOpen, setReportOpen] = useState(false);
+  // "Download dossier" — the pack a recruiter emails to an external interviewer.
+  const [dossierOpen, setDossierOpen] = useState(false);
+  // The drawer did not read the current user before this. It does now, only to
+  // decide whether to OFFER the dossier download: the tracker row asks for it to
+  // be "restricted to recruiter and final decision-makers", and the ranks below
+  // mirror ROLE_RANK in backend/src/config/roles.js (final decision-makers are
+  // admin-tier accounts, so no new role is needed).
+  //
+  // THIS GATE IS CONVENIENCE ONLY. The server is the authority — the route sits
+  // behind requireStaff, which refuses a vendor by rank before the module toggle
+  // is consulted. Hiding the button is so nobody is offered an action they will
+  // be refused, not a security boundary.
+  const { user } = useAuth();
+  const canDownloadDossier = ['recruiter', 'hr', 'admin', 'superadmin']
+    .includes(String(user?.role || '').trim().toLowerCase());
   // Editable emails for the schedule/cancel modals (candidate + panel), each
   // prefilled from the server preview. `touched` = recruiter edited it, so we
   // stop overwriting it when the preview refetches (e.g. after a date change).
@@ -889,6 +1013,51 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   });
   const hasScorecards = (scorecardReport?.overall?.count || 0) > 0
     || (scorecardReport?.pending_rounds?.length || 0) > 0;
+
+  // Teams recordings linked to this journey's rounds. One fetch per open
+  // journey, shared by every round panel and the scorecard report — the drawer
+  // renders up to six rounds, and a per-round query would fan out to six calls
+  // for a list that is almost always shorter than that.
+  //
+  // A 403 is an expected answer, not a failure: the endpoint is recruiter-tier
+  // and above, so a lower-privileged user simply sees no recording controls.
+  // Retrying it would be pointless noise.
+  const { data: recordings } = useQuery({
+    queryKey: ['pipeline-recordings', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getRecordings(pipelineId);
+      return res.data?.data || res.data || [];
+    },
+    enabled: open && !!pipelineId,
+    retry: false,
+    // Recordings appear minutes after a call ends, via a sweep the drawer knows
+    // nothing about, so a re-open should look again rather than trust a cache.
+    staleTime: 0,
+  });
+
+  // The other half of the Copy link button: /pipeline?candidate=…&recording=…
+  // opens straight into the player. Waits for the recordings list because that
+  // list is the authority on whether this recording belongs to this journey —
+  // the id in a forwarded URL is not to be trusted, and the API scopes the
+  // stream by pipeline for the same reason.
+  //
+  // A recipient below recruiter tier gets a 403 on the list, so `recordings`
+  // stays undefined and no player opens — the same silent answer the round
+  // panels give them, rather than a modal that would only fail to play.
+  const [deepLinkRecording, setDeepLinkRecording] = useState(null);
+  const handledLinkRef = useRef(null);
+  useEffect(() => {
+    if (!focusRecordingId || !recordings) return;
+    // Once per link, so dismissing the player does not reopen it on the next
+    // render while the query string still carries the id.
+    if (handledLinkRef.current === focusRecordingId) return;
+    handledLinkRef.current = focusRecordingId;
+    const hit = recordings.find(
+      (r) => Number(r.id) === Number(focusRecordingId) && r.kind === 'recording'
+    );
+    if (hit) setDeepLinkRecording(hit);
+    else message.warning('That recording is not available on this candidate.');
+  }, [focusRecordingId, recordings, message]);
   // Phase 3 M2 — latest Evalground result (+ suggested outcome) for this
   // journey, if it's on the Assessment stage. Fetched once per open journey
   // (not re-fetched on every stage-pill click) — cheap enough at this scale.
@@ -1530,9 +1699,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   const zekoScores = data?.zekoScores;
   const zekoHrPipeline = data?.zekoHrPipeline;
   const zekoReportLink = data?.zekoReportLink;
+  // Null until someone has opened this round's report at least once; when set,
+  // the button skips the mint and opens straight away.
+  const zekoSharedReportLink = data?.zekoSharedReportLink;
   const mrfInterviewHints = data?.mrfInterviewHints;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
+  // Referral state for this candidate. The drawer is where the recruiter and the
+  // final decision-maker actually weigh someone, so unlike the board it names the
+  // referrer. Staff-only: this whole router is requireStaff, and the interviewer
+  // scorecard builds its payload from a separate named whitelist.
+  const referral = data?.referral;
   const zekoJobs = zekoJobsData || [];
   // Scoped to whichever Zeko round is being scheduled, so a job published
   // for the wrong round (e.g. HR when scheduling Functional) isn't even
@@ -1870,10 +2047,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                     ))}
                   </div>
                 )}
+                {/* Only the two Zeko rounds ever set `link` (see
+                    buildPipelineSegments), and both go through the no-login
+                    route now — see ZekoReportLink. */}
                 {s.link && (
-                  <a href={s.link} target="_blank" rel="noreferrer" className="pd-body--inline">
-                    <LinkOutlined /> View full report on Zeko
-                  </a>
+                  <ZekoReportLink
+                    pipelineId={pipelineId}
+                    stageKey={stage.stage_key}
+                    recruiterLink={s.link}
+                    sharedLink={stage.stage_key === pipeline.current_stage_key ? zekoSharedReportLink : null}
+                  />
                 )}
                 {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
                   <div className="cp-pipeline-step__extra">
@@ -1994,6 +2177,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   && !interviewSchedule.occurrence_status && (
                   <div className="cp-pipeline-step__extra">
                     <TeamsDetails schedule={interviewSchedule} />
+                  </div>
+                )}
+                {/* The recording outlives the join link: the Teams card above
+                    disappears once the round is resolved, which is exactly when
+                    the recording becomes the useful artifact. So this is its own
+                    block rather than part of that card, and it survives the
+                    occurrence verdict. */}
+                {i === 1 && isSchedulableStageKey(stage.stage_key) && (
+                  <div className="cp-pipeline-step__extra">
+                    <RoundRecordings
+                      pipelineId={pipelineId}
+                      stageKey={stage.stage_key}
+                      stageLabel={stage.label}
+                      recordings={recordings}
+                    />
                   </div>
                 )}
                 {i === 1 && showScheduleButton && isSchedulableStageKey(stage.stage_key) && (
@@ -2123,11 +2321,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     <Drawer
       title={pipeline && (
         <Space direction="vertical" size={2}>
-          <Space><UserOutlined /><Text strong className="pd-icon">{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text></Space>
+          <Space>
+            <UserOutlined />
+            <Text strong className="pd-icon">{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text>
+            {referral?.is_referral && <ReferralChip referredBy={referral.referred_by} />}
+          </Space>
           <Text type="secondary" className="pd-body--normal">
             {pipeline.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline.rpa_shortlisted_candidates?.position_applied || 'No position on file'}
             {' · '}
             {pipeline.rpa_shortlisted_candidates?.candidate_email || '—'}
+            {referral?.is_referral && referral.referred_by ? (
+              <> {' · '}Referred by <Text strong style={{ fontSize: 12.5 }}>{referral.referred_by}</Text></>
+            ) : null}
           </Text>
         </Space>
       )}
@@ -2218,21 +2423,52 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 : <Text type="secondary" className="pd-caption">No resume on file</Text>}
             </div>
           )}
-          {hasScorecards && (
-            <Button
-              size="sm"
-              emphasis="solid"
-              /* `.cta-primary btn-sheen` dropped — both are legacy button treatments
-                 that `emphasis="solid"` replaces, and `.cta-primary` paints its own
-                 background, which would have fought `.ui-btn--solid` for it. Only the
-                 margin utility stays. */
-              className="pd-mb-2-5"
-              icon={<FileTextOutlined />}
-              onClick={() => setReportOpen(true)}
-            >
-              Scorecard report
-            </Button>
+          {/* The candidate's evidence, in the two forms it is asked for: on
+              screen, and as a file to send to an interviewer outside the
+              company. Same header block and same visual weight, because this is
+              already where someone goes to read what the panel concluded. */}
+          {(hasScorecards || canDownloadDossier) && (
+            /* `.cta-primary btn-sheen` dropped from both buttons — both are legacy
+               treatments that `emphasis="solid"` replaces, and `.cta-primary` paints
+               its own background, which would have fought `.ui-btn--solid` for it.
+               Only the margin utility stays, now carried by the row. */
+            <Space className="pd-mb-2-5" wrap>
+              {hasScorecards && (
+                <Button
+                  size="sm"
+                  emphasis="solid"
+                  icon={<FileTextOutlined />}
+                  onClick={() => setReportOpen(true)}
+                >
+                  Scorecard report
+                </Button>
+              )}
+              {canDownloadDossier && (
+                <Tooltip title="Download everything on this candidate as one file you can email to an interviewer outside the company">
+                  {/* Same treatment as "Scorecard report" beside it: the two are
+                      the candidate's evidence in its two forms — on screen and
+                      as a file — and a default-styled button next to a primary
+                      one read as the lesser, incidental action. A candidate with
+                      no scorecards yet shows this one alone, where a grey button
+                      in an otherwise green header looked disabled. */}
+                  <Button
+                    size="sm"
+                    emphasis="solid"
+                    icon={<DownloadOutlined />}
+                    onClick={() => setDossierOpen(true)}
+                  >
+                    Download dossier
+                  </Button>
+                </Tooltip>
+              )}
+            </Space>
           )}
+          {/* What has already left the building, next to the button that sends
+              it. A recruiter who is about to download another pack should be
+              able to see the links the last one minted — and close any that
+              should not still be open. Self-hiding when there are none. */}
+          <SharedRecordingLinksPanel pipelineId={pipelineId} canManage={canDownloadDossier} />
+
           {screening?.notes && (
             <Alert type="info" showIcon message={screening.notes} className="pd-caption--stack-3" />
           )}
@@ -2827,6 +3063,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             )}
           </div>
 
+          {/* Earlier rounds this candidate already has a recording for. Booking
+              the next round is when someone wants to look back at the last one,
+              so the recordings sit here rather than only in the round panels.
+              Self-hiding when there are none. */}
+          <PriorRecordingsPanel
+            pipelineId={pipelineId}
+            recordings={recordings}
+            allStages={allStages}
+          />
+
           {/* Editable emails — prefilled from the seeded templates, tweakable
               before send, exactly like the Approve outcome flow. Hidden on
               manually-coordinated rounds, which send nothing. */}
@@ -2973,6 +3219,28 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
     {/* Per-candidate scorecard report — submitted round scores + overall avg/sum. */}
     <ScorecardReportModal open={reportOpen} onClose={() => setReportOpen(false)} pipelineId={pipelineId} />
+
+    {/* "What will be shared" before the pack leaves the building. */}
+    <DossierDownloadModal
+      open={dossierOpen}
+      onClose={() => setDossierOpen(false)}
+      pipelineId={pipelineId}
+      candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
+    />
+
+    {/* Player for a shared link (?recording=…). Lives at drawer level rather
+        than inside a round panel because the shared round is not necessarily the
+        one the drawer opens on. */}
+    <RecordingPlayerModal
+      open={Boolean(deepLinkRecording)}
+      onClose={() => setDeepLinkRecording(null)}
+      pipelineId={pipelineId}
+      recording={deepLinkRecording}
+      stageLabel={
+        allStages.find((s) => s.stage_key === deepLinkRecording?.stage_key)?.label
+        || stageKeyLabel(deepLinkRecording?.stage_key)
+      }
+    />
     <AssessmentInviteModal
       open={inviteModalOpen}
       onClose={() => setInviteModalOpen(false)}
@@ -3392,6 +3660,11 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
  * TeamsDetails — in-app view of the Teams meeting a booking carries: the Join
  * link plus the dial-in Meeting ID / Passcode (the same block the invite email
  * shows). Meeting ID / Passcode appear only when the tenant returned them.
+ *
+ * Also states whether the round will record itself. That is worth surfacing
+ * BEFORE the interview rather than after: if the meeting options could not be
+ * applied, the recruiter can still start the recording by hand — but only if
+ * they know, and only while the interview has not happened yet.
  */
 function TeamsDetails({ schedule }) {
   const { message } = AntApp.useApp();
@@ -3423,6 +3696,18 @@ function TeamsDetails({ schedule }) {
             </Tag>
           </Tooltip>
         )}
+        {schedule.record_auto_applied_at ? (
+          <Tooltip title="This meeting starts recording on its own. The candidate joins as an attendee and cannot stop it.">
+            <Tag color="green">Recording: ON</Tag>
+          </Tooltip>
+        ) : schedule.record_policy_error ? (
+          // Only shown when the PATCH was attempted and refused. A round that is
+          // simply not in the recorded set says nothing at all — an absent tag
+          // means "not applicable", a red one means "we tried and failed".
+          <Tooltip title={`Automatic recording could not be set: ${schedule.record_policy_error}. Someone must press Record in the meeting.`}>
+            <Tag color="red">Recording: not set</Tag>
+          </Tooltip>
+        ) : null}
       </Space>
     </div>
   );
@@ -3500,6 +3785,457 @@ function HrScorecardFields({ hr }) {
 }
 
 /**
+ * The link a recruiter pastes into an email so somebody else can watch a
+ * recording.
+ *
+ * Deliberately NOT the stream URL. That one carries the viewer's own JWT in the
+ * query string (see pipelineService.recordingStreamUrl) because a <video>
+ * element cannot send an Authorization header — mailing it would hand the
+ * recipient the sender's whole session, let anyone it is forwarded to watch
+ * without ever signing in, and attribute every one of those views to the wrong
+ * person in the audit trail. Access was left broad on the understanding that
+ * viewing is recorded (recordings plan §0.4/§6.3); a shareable stream URL would
+ * quietly cancel that.
+ *
+ * So this is a deep link into the app instead (plan §6.4: "the recruiter shares
+ * the ATS page, not a OneDrive link"). The recipient signs in as themselves, the
+ * recruiter-tier gate still applies, and the audit row names whoever actually
+ * pressed play.
+ */
+function recordingShareLink(pipelineId, recordingId) {
+  return `${window.location.origin}/pipeline?candidate=${pipelineId}&recording=${recordingId}`;
+}
+
+/**
+ * Copies text, falling back to the legacy path when the async Clipboard API is
+ * unavailable — `navigator.clipboard` is undefined on a plain-http origin (a LAN
+ * IP, an internal test box), which is exactly where the older copy helper in
+ * TeamsDetails silently does nothing.
+ *
+ * @returns {Promise<boolean>} whether the text reached the clipboard
+ */
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Permission denied or a non-focused document — try the legacy path below.
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stage labels for the places that hold only a stage key — the scorecard
+ * report's recordings card and the shared-link player both know which round a
+ * recording belongs to but not what that round is called, and "hr_round" is not
+ * a round name anybody uses out loud.
+ *
+ * Mirrors seed-pipeline-stages.js. An unknown key is prettified rather than
+ * dropped: a stage renamed in the seed still reads sensibly here, and a
+ * recording is never hidden because its label was missing.
+ */
+const STAGE_KEY_LABELS = {
+  tech1: 'Technical Round 1',
+  tech2: 'Technical Round 2',
+  tech3: 'Technical Round 3',
+  hr_round: 'HR Round',
+  ceo: 'CEO / Final Round',
+  client: 'Client Interview',
+};
+function stageKeyLabel(key) {
+  if (!key) return '';
+  return STAGE_KEY_LABELS[key]
+    || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** mm:ss for a recording length; null stays an em dash rather than "0:00". */
+function fmtDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/**
+ * RecordingPlayerModal — plays one interview recording, streamed through the
+ * ATS rather than from Microsoft directly.
+ *
+ * The <video> element is created only while the modal is open (`destroyOnClose`)
+ * so closing it actually aborts the download. Left mounted, a 400 MB recording
+ * would carry on streaming in the background after the reviewer had moved on.
+ */
+function RecordingPlayerModal({ open, onClose, pipelineId, recording, stageLabel }) {
+  return (
+    <Modal
+      open={open}
+      onCancel={onClose}
+      title={`${stageLabel || 'Interview'} recording`}
+      width={MODAL_WIDTH.EMAIL}
+      destroyOnClose
+      footer={<Button onClick={onClose}>Close</Button>}
+    >
+      {recording && (
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption -- no caption
+              track exists: Teams transcripts are blocked tenant-side (see the
+              recordings plan §13), and a fabricated one would be worse. */}
+          <video
+            src={pipelineService.recordingStreamUrl(pipelineId, recording.id)}
+            controls
+            preload="metadata"
+            style={{ width: '100%', maxHeight: '60vh', background: '#000', borderRadius: 8 }}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Recorded {recording.recorded_start_at ? fmtDateTime(recording.recorded_start_at) : '—'}
+            {recording.duration_seconds !== null ? ` · ${fmtDuration(recording.duration_seconds)}` : ''}
+          </Text>
+          {/* Said plainly, because it is: opening this is recorded against the
+              candidate's timeline. Better stated up front than discovered. */}
+          <Text type="secondary" style={{ fontSize: 11.5 }}>
+            Interview recordings are confidential. Opening one is recorded on this candidate’s
+            history.
+          </Text>
+        </Space>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * RoundRecordings — the Recording row inside a round panel.
+ *
+ * Renders nothing at all when the round has no recording, rather than an empty
+ * "no recording" line on every round: most rounds in a journey are not recorded
+ * (older bookings, rounds held before this feature), and a permanent negative
+ * would be noise on every panel.
+ */
+/**
+ * SharedRecordingLinksPanel — every no-login recording link this candidate's
+ * packs have minted, and the button that closes one.
+ *
+ * WHY THIS EXISTS AT ALL. HR chose (decision #7) that recordings travel to an
+ * external interviewer as an expiring, no-login link rather than as bytes. That
+ * is a URL to a video of a real person, sitting in a file we cannot recall, and
+ * it is only a defensible trade if the recruiter who sent it can take it back
+ * the moment they realise they should not have. Revocation via a support ticket
+ * is not that; a button here is. Plan §6.5.
+ *
+ * Expired and revoked links stay listed. The recruiter's question is "what did
+ * we send out?", and a list that quietly drops the dead ones cannot answer it —
+ * nor show that last week's revoke actually took.
+ */
+function SharedRecordingLinksPanel({ pipelineId, canManage }) {
+  const { message } = AntApp.useApp();
+  const queryClient = useQueryClient();
+
+  const { data: links } = useQuery({
+    queryKey: ['recording-share-links', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getShareLinks(pipelineId);
+      return res.data?.data || res.data;
+    },
+    enabled: Boolean(pipelineId) && canManage,
+    staleTime: 30 * 1000,
+  });
+
+  const revoke = useMutation({
+    mutationFn: (linkId) => pipelineService.revokeShareLink(pipelineId, linkId),
+    onSuccess: () => {
+      message.success('Link revoked — it stops playing immediately.');
+      queryClient.invalidateQueries({ queryKey: ['recording-share-links', pipelineId] });
+      // The timeline gains a note for the revoke, so it is stale too.
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+    },
+    onError: (err) => message.error(err?.message || 'Could not revoke that link.'),
+  });
+
+  if (!canManage || !links?.length) return null;
+
+  const live = links.filter((l) => l.state === 'live');
+
+  return (
+    <Collapse
+      size="small"
+      style={{ marginBottom: 10 }}
+      items={[{
+        key: 'shared-links',
+        label: (
+          <Text style={{ fontSize: 12.5 }}>
+            <LinkOutlined />{' '}
+            Shared recording links
+            {' '}
+            <Text type="secondary">
+              ({live.length} live of {links.length})
+            </Text>
+          </Text>
+        ),
+        children: (
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {links.map((l) => (
+              <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Tag color={l.state === 'live' ? 'green' : l.state === 'revoked' ? 'red' : 'default'}>
+                  {l.state === 'live' ? 'Live' : l.state === 'revoked' ? 'Revoked' : 'Expired'}
+                </Tag>
+                <Text style={{ fontSize: 12.5 }}>{l.stage_label}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {l.summary} · opened {l.view_count} time{l.view_count === 1 ? '' : 's'}
+                  {l.created_by ? ` · sent by ${l.created_by}` : ''}
+                </Text>
+                {/* A link opened many times is not one interviewer watching one
+                    interview. Surfaced rather than left in a number nobody reads. */}
+                {l.unusual && (
+                  <Tooltip title="This link has been opened an unusual number of times — it may have been forwarded.">
+                    <Tag color="orange">Check</Tag>
+                  </Tooltip>
+                )}
+                {l.state === 'live' && (
+                  <>
+                    {l.url && (
+                      <Button
+                        size="small"
+                        type="link"
+                        icon={<CopyOutlined />}
+                        style={{ padding: 0 }}
+                        // copyToClipboard(), not navigator.clipboard directly:
+                        // that API is undefined on a plain-http origin (a LAN
+                        // IP, an internal test box), where the optional chain
+                        // silently did nothing and the toast still said the
+                        // link was copied. A recruiter then pasted whatever was
+                        // on their clipboard into an email to an interviewer.
+                        onClick={async () => {
+                          const ok = await copyToClipboard(l.url);
+                          if (ok) message.success('Link copied.');
+                          else message.error('Could not copy the link — select and copy it manually.');
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    )}
+                    <Popconfirm
+                      title="Revoke this link?"
+                      description="Anyone holding it stops being able to watch, immediately."
+                      okText="Revoke"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => revoke.mutate(l.id)}
+                    >
+                      <Button size="small" danger type="link" style={{ padding: 0 }}>Revoke</Button>
+                    </Popconfirm>
+                  </>
+                )}
+              </div>
+            ))}
+          </Space>
+        ),
+      }]}
+    />
+  );
+}
+
+function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
+  const [playing, setPlaying] = useState(null);
+  const mine = (recordings || []).filter((r) => r.stage_key === stageKey && r.kind === 'recording');
+  if (mine.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <Space size={8} wrap>
+        <span className="cp-recording-label">
+          <VideoCameraOutlined /> Interview recording
+        </span>
+        <RecordingLinks pipelineId={pipelineId} recordings={mine} onPlay={setPlaying} />
+      </Space>
+      <RecordingPlayerModal
+        open={Boolean(playing)}
+        onClose={() => setPlaying(null)}
+        pipelineId={pipelineId}
+        recording={playing}
+        stageLabel={stageLabel}
+      />
+    </div>
+  );
+}
+
+/**
+ * RecordingLinks — the Watch/Copy pair for one round's recordings, already
+ * filtered by the caller. Shared by the round panel's Recording row and the
+ * Schedule modal's list of earlier rounds so the two cannot drift apart; the
+ * player itself stays with the caller, which is the one that knows the round
+ * label to title it with.
+ */
+function RecordingLinks({ pipelineId, recordings, onPlay }) {
+  const { message } = AntApp.useApp();
+  const mine = recordings || [];
+
+  const copyLink = async (r) => {
+    const ok = await copyToClipboard(recordingShareLink(pipelineId, r.id));
+    if (ok) {
+      // Says what was copied, because it is not the video file: someone who
+      // expects a raw media link would otherwise paste this and wonder why the
+      // recipient landed on a sign-in page.
+      message.success('Recording link copied — the person you send it to signs in to the ATS to watch it.');
+    } else {
+      message.error('Could not copy the link.');
+    }
+  };
+
+  return (
+    <Space size={8} wrap>
+      {mine.map((r, i) => (
+        // One inline-flex box per recording, so a round with several segments
+        // never leaves it ambiguous which Copy belongs to which Watch.
+        //
+        // NOT Space.Compact: joining the two controls ran them into each other
+        // and over the label beside them. They read as a pair from proximity.
+        <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Button
+            size="small"
+            className="cp-recording-btn"
+            icon={<PlayCircleOutlined />}
+            disabled={!r.playable}
+            onClick={() => onPlay(r)}
+          >
+            {/* Numbered only when a round produced several — an interviewer who
+                stopped and restarted mid-interview gets one file per segment. */}
+            {mine.length > 1 ? `Watch ${i + 1}` : 'Watch'}
+            {r.duration_seconds !== null ? ` · ${fmtDuration(r.duration_seconds)}` : ''}
+          </Button>
+          {/* Only when there is something to link to — a link to a recording
+              that cannot play would just waste the recipient's sign-in.
+              A green Tag rather than a second button: sharing is secondary to
+              watching, and this is already the drawer's click-to-copy idiom
+              (the Teams Meeting ID / Passcode tags). Using antd's own green
+              keeps it identical to the "Held · scorecard sent" tag in both
+              light and dark, which a hardcoded hex would not. */}
+          {r.playable && (
+            <Tooltip title="Copy a link to this recording to paste into an email. The link opens the recording inside the ATS — the recipient signs in as themselves, so their view is audited like any other.">
+              <Tag
+                color="green"
+                className="cp-recording-copy"
+                icon={<CopyOutlined />}
+                role="button"
+                tabIndex={0}
+                onClick={() => copyLink(r)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    copyLink(r);
+                  }
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                Copy link
+              </Tag>
+            </Tooltip>
+          )}
+        </span>
+      ))}
+    </Space>
+  );
+}
+
+/**
+ * PriorRecordingsPanel — the "Interview recording" block in the Schedule /
+ * Reschedule modal: every round of this journey that already has a recording,
+ * one row per round, so whoever books the next round can rewatch the earlier
+ * ones without closing the modal and hunting through the round panels.
+ *
+ * Collapsed by default and shaped exactly like the "Invitation → candidate"
+ * editors below it — booking the round is the task here, the recordings are
+ * reference material.
+ *
+ * Renders nothing when the candidate has no recordings (every first round, and
+ * any journey whose earlier rounds pre-date this feature): an empty panel that
+ * never opens onto anything is worse than no panel.
+ */
+function PriorRecordingsPanel({ pipelineId, recordings, allStages }) {
+  const [playing, setPlaying] = useState(null);
+
+  // Grouped by round and ordered the way the journey runs, so Technical Round 1
+  // comes before Technical Round 2 regardless of the order the sweep imported
+  // the files in. A stage the journey does not list (renamed in the seed since
+  // the recording was captured) still gets a row, at the end.
+  const rounds = useMemo(() => {
+    const byStage = new Map();
+    (recordings || [])
+      .filter((r) => r.kind === 'recording' && r.stage_key)
+      .forEach((r) => {
+        if (!byStage.has(r.stage_key)) byStage.set(r.stage_key, []);
+        byStage.get(r.stage_key).push(r);
+      });
+    const order = (allStages || []).map((s) => s.stage_key);
+    return [...byStage.entries()]
+      .sort((a, b) => {
+        const ia = order.indexOf(a[0]);
+        const ib = order.indexOf(b[0]);
+        return (ia === -1 ? Number.MAX_SAFE_INTEGER : ia) - (ib === -1 ? Number.MAX_SAFE_INTEGER : ib);
+      })
+      .map(([stageKey, items]) => ({
+        stageKey,
+        label: (allStages || []).find((s) => s.stage_key === stageKey)?.label || stageKeyLabel(stageKey),
+        items,
+      }));
+  }, [recordings, allStages]);
+
+  if (rounds.length === 0) return null;
+
+  return (
+    <div>
+      <Collapse
+        size="small"
+        items={[{
+          key: 'recordings',
+          label: (
+            <span>
+              <VideoCameraOutlined style={{ marginInlineEnd: 6 }} />
+              Interview recording
+              <Text type="secondary" style={{ fontWeight: 400, marginInlineStart: 6 }}>
+                ({rounds.length} previous {rounds.length === 1 ? 'round' : 'rounds'})
+              </Text>
+            </span>
+          ),
+          children: (
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              {rounds.map((r) => (
+                <div key={r.stageKey} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                  <Text strong style={{ fontSize: 12.5 }}>{r.label}</Text>
+                  <RecordingLinks
+                    pipelineId={pipelineId}
+                    recordings={r.items}
+                    onPlay={(rec) => setPlaying({ ...rec, stageLabel: r.label })}
+                  />
+                </div>
+              ))}
+            </Space>
+          ),
+        }]}
+      />
+      <RecordingPlayerModal
+        open={Boolean(playing)}
+        onClose={() => setPlaying(null)}
+        pipelineId={pipelineId}
+        recording={playing}
+        stageLabel={playing?.stageLabel}
+      />
+    </div>
+  );
+}
+
+/**
  * ScorecardReportModal — lazy-loads GET /pipeline/:id/scorecard-report when
  * opened and renders each submitted round's score plus the overall average/sum.
  */
@@ -3511,6 +4247,21 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     enabled: open && !!pipelineId,
   });
 
+  // Recordings alongside the scores. THIS is the surface the requirement was
+  // really about: whoever takes the final decision opens this report, and the
+  // ask was that they can watch the earlier technical rounds from here rather
+  // than chase a link. Same query key as the drawer, so opening the report after
+  // browsing rounds costs nothing.
+  const { data: recordings } = useQuery({
+    queryKey: ['pipeline-recordings', pipelineId],
+    queryFn: async () => {
+      const res = await pipelineService.getRecordings(pipelineId);
+      return res.data?.data || res.data || [];
+    },
+    enabled: open && !!pipelineId,
+    retry: false, // a 403 means "not your permission", not "try again"
+  });
+
   const rounds = data?.rounds || [];
   const pendingRounds = data?.pending_rounds || [];
 
@@ -3518,8 +4269,11 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
     <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
         <div className="pd-center--text"><Spin /></div>
-      ) : !data || (rounds.length === 0 && pendingRounds.length === 0) ? (
-        <Empty description="No scorecards for this candidate yet." />
+      ) : !data || (rounds.length === 0 && pendingRounds.length === 0 && (recordings || []).length === 0) ? (
+        // Recordings count towards "there is something to show here". Without
+        // them in this test, a candidate with a recording but no scorecard at
+        // all would get an empty report while the recording sat one query away.
+        <Empty description="No scorecards or recordings for this candidate yet." />
       ) : (
         <Space direction="vertical" size={12} className="pd-full">
           <div className="pd-wrap--wide">
@@ -3566,11 +4320,56 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                         </Text>
                       )}
                     </div>
+                    {/* The recording belongs here MORE than on a scored round,
+                        not less: with no written feedback yet, watching is the
+                        only way to know how the interview went. Leaving it off
+                        this card was the original mistake — the report stayed
+                        silent about a recording that existed. */}
+                    <RoundRecordings
+                      pipelineId={pipelineId}
+                      stageKey={p.stage_key}
+                      stageLabel={p.stage_label}
+                      recordings={recordings}
+                    />
                   </div>
                 ))}
               </Space>
             </Card>
           )}
+
+          {/* Any recording whose round appears in NEITHER list — a round whose
+              scorecard was never dispatched, or one held before scorecards
+              existed. Without this the report could still hide a recording it
+              holds, which is the whole failure this section exists to prevent. */}
+          {(() => {
+            const covered = new Set([
+              ...rounds.map((r) => r.stage_key),
+              ...pendingRounds.map((p) => p.stage_key),
+            ]);
+            const orphanStages = [...new Set(
+              (recordings || [])
+                .filter((rec) => rec.kind === 'recording' && !covered.has(rec.stage_key))
+                .map((rec) => rec.stage_key)
+            )];
+            if (orphanStages.length === 0) return null;
+            return (
+              <Card size="small" title="Interview recordings">
+                <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                  {orphanStages.map((sk) => (
+                    <div key={sk}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{stageKeyLabel(sk)}</Text>
+                      <RoundRecordings
+                        pipelineId={pipelineId}
+                        stageKey={sk}
+                        stageLabel={stageKeyLabel(sk)}
+                        recordings={recordings}
+                      />
+                    </div>
+                  ))}
+                </Space>
+              </Card>
+            );
+          })()}
 
           {/* Consolidated feedback — every interviewer's verdict in one place,
               above the per-round cards. Whoever makes the final call (the CEO
@@ -3620,6 +4419,26 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                     </Tag>
                   ))}
                 </div>
+
+                {/* Directly under this round's numbers, so "watch what was
+                    actually said" sits next to the score it explains. */}
+                <RoundRecordings
+                  pipelineId={pipelineId}
+                  stageKey={r.stage_key}
+                  stageLabel={r.stage_label}
+                  recordings={recordings}
+                />
+
+                {/* The interviewer's own pasted link, kept as the fallback for
+                    rounds the automatic capture never reached (booked before the
+                    feature, held outside Teams, or Graph refused). Shown only
+                    when there is no captured recording for the round, so the two
+                    never compete for the same eye. */}
+                {r.recording_url && !(recordings || []).some((rec) => rec.stage_key === r.stage_key && rec.kind === 'recording') && (
+                  <a href={r.recording_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
+                    Recording link (added by the interviewer)
+                  </a>
+                )}
                 {(r.skills || []).filter((s) => s.label || s.rating !== null).length > 0 && (
                   <div className="pd-mt-1">
                     <Text type="secondary" className="pd-caption--tracked">

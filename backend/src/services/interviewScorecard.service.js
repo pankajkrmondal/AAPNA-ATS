@@ -68,24 +68,73 @@ async function getTemplate(name) {
   return prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
 }
 
-/** Serializes a scorecard row for the API (BigInt -> Number, Decimal -> Number). */
+/**
+ * Serializes a scorecard row for the API (BigInt -> Number, Decimal -> Number).
+ *
+ * NAMED FIELDS, NEVER A SPREAD — and that is the whole point of this function
+ * rather than an incidental style choice.
+ *
+ * getScorecardByToken() loads this row with `include: { rpa_candidate_pipeline:
+ * { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } } }`,
+ * and returns the result through here to a PUBLIC route: scorecard.routes.js
+ * mounts /scorecard with no authenticate middleware, because interviewers have
+ * no ATS session. A `...row` therefore put the entire shortlist row
+ * (recruiter_notes, stage_notes, email_body_snapshot), the entire rpa_mrf row
+ * (client_details, hiring_manager_name, ceo_panel_details, submitter_email) and
+ * the schedule's teams_passcode / graph_event_id into an unauthenticated
+ * response body. The page never rendered any of it, so it was over-transmission
+ * rather than display — but it was on the wire, and app.js's global BigInt json
+ * replacer meant nothing failed loudly to reveal it.
+ *
+ * Same construction, and the same reason, as serializeRecording() in
+ * interviewRecording.service.js and pickCvProfile() in dossierRedaction.js: a
+ * column added to rpa_interview_scorecard next month is invisible to this
+ * response until somebody consciously adds it here, and a future `include`
+ * cannot leak a relation at all.
+ *
+ * Deliberately absent: `token` (the caller already holds it; echoing a
+ * credential back is pointless risk), `submitted_ip`, `created_at`,
+ * `modified_at`, and every relation except the skill rows.
+ *
+ * Four callers depend on this shape — the public getScorecardByToken() and
+ * submitScorecardByToken(), plus the recruiter-facing getCandidateScorecardReport(),
+ * which additionally reads every HR_TEXT_FIELDS key off the result. Anything
+ * removed from this list must be checked against all four.
+ */
 function serializeCard(row) {
   if (!row) return null;
   const num = (v) => (v === null || v === undefined ? null : Number(v));
   return {
-    ...row,
     id: Number(row.id),
     schedule_id: Number(row.schedule_id),
     pipeline_id: Number(row.pipeline_id),
+    stage_key: row.stage_key,
+    card_type: row.card_type,
+    recipient_email: row.recipient_email,
+    recipient_name: row.recipient_name,
+    recipient_role: row.recipient_role,
+    status: row.status,
+    token_expires_at: row.token_expires_at,
+    sent_at: row.sent_at,
+    opened_at: row.opened_at,
+    submitted_at: row.submitted_at,
     communication: num(row.communication),
     attitude: num(row.attitude),
     final_rating: num(row.final_rating),
     avg_score: num(row.avg_score),
+    recommendation: row.recommendation,
+    comments: row.comments,
+    recording_url: row.recording_url,
+    // The HR round's own free-text block. Copied by name from the same list the
+    // submit path writes and the drawer report reads, so the three cannot drift.
+    ...Object.fromEntries(HR_TEXT_FIELDS.map((f) => [f, row[f] ?? null])),
     rpa_interview_scorecard_skill: (row.rpa_interview_scorecard_skill || []).map((s) => ({
-      ...s,
       id: Number(s.id),
       scorecard_id: Number(s.scorecard_id),
+      skill_label: s.skill_label,
       rating: num(s.rating),
+      remark: s.remark,
+      sort_order: s.sort_order,
     })),
   };
 }
@@ -115,7 +164,7 @@ function initialSkillRows() {
  * @param {object} ctx - { role, stageLabel, candidateName, position }
  * @returns {Promise<{delivered: number, failed: number, failures: Array<{email: string, error: string}>}>}
  */
-async function deliverScorecards(cards, { role, stageLabel, candidateName, position }) {
+async function deliverScorecards(cards, { role, stageLabel, candidateName, position, allEmails = '' }) {
   const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
   const tpl = await getTemplate(tplName);
 
@@ -139,7 +188,9 @@ async function deliverScorecards(cards, { role, stageLabel, candidateName, posit
       candidate_name: candidateName,
       position,
       stage_label: stageLabel,
-      interviewer_name: card.recipient_name || 'there',
+      // "Hi all," when the round has more than one interviewer — the recipient
+      // name is only stored on the card when there was exactly one.
+      interviewer_name: interviewerGreeting(card.recipient_name, allEmails),
       scorecard_link: link,
     };
     const compiled = tpl
@@ -236,7 +287,6 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
   const position = mrf?.position_hiring_for || candidate?.position_applied || 'the role';
 
   const candidateName = candidate?.candidate_name || 'the candidate';
-  const deliveryCtx = { role, stageLabel, candidateName, position };
 
   const { emails } = parseInterviewerEmails(schedule.interviewer_email || '');
   if (emails.length === 0) {
@@ -248,6 +298,11 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     logger.warn(`Scorecard dispatch: schedule ${scheduleId} has no interviewer email — nothing to send.`);
     return { dispatched: false, count: 0, delivered: 0, failed: 0, reason: 'no_recipient' };
   }
+
+  // Everything deliverScorecards() needs to compile the email. `allEmails` is
+  // what decides between "Hi <name>," and "Hi all," — the card itself only
+  // carries a recipient_name when the round had a single interviewer.
+  const deliveryCtx = { role, stageLabel, candidateName, position, allEmails: emails.join(',') };
 
   // Already dispatched → the only work left is retrying anything that was
   // created but never actually delivered (sent_at IS NULL). This is what makes
@@ -302,6 +357,12 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
   });
 
+  // Compile + send each link. deliverScorecards() is the ONLY sender: this
+  // function used to inline a second, near-identical compile-and-send loop here
+  // before calling it, so every interviewer received the same scorecard email
+  // twice (one copy from each loop) — visible in Outlook as two identical
+  // messages in the same minute, with only one rpa_interview_scorecard row and
+  // one sent_at behind them.
   const { delivered, failed, failures } = await deliverScorecards(created, deliveryCtx);
 
   // Audit trail on the journey — records what was actually delivered, so a

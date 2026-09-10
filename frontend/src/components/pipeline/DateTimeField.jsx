@@ -6,7 +6,7 @@
  * button — three fiddly interactions to set one time.
  *
  * Outlook and Teams instead split the two: a calendar for the date, and a
- * plain dropdown LIST of half-hour slots for the time. Picking 2:30 PM is one
+ * plain dropdown LIST of quarter-hour slots for the time. Picking 2:30 PM is one
  * click in a list you can also type into. That is what this reproduces.
  *
  *   Date                    Time
@@ -28,7 +28,7 @@ const minutesToLabel = (mins) => dayjs().startOf('day').add(mins, 'minute').form
  * @param {object} props
  * @param {import('dayjs').Dayjs|null} props.value
  * @param {(next: import('dayjs').Dayjs|null) => void} props.onChange
- * @param {number} [props.minuteStep=30] - slot spacing, as in Outlook's 30-min list
+ * @param {number} [props.minuteStep=15] - slot spacing, as in Outlook's 15-min list
  * @param {number} [props.defaultHour=9] - hour applied when a date is picked before a time
  * @param {(current: import('dayjs').Dayjs) => boolean} [props.disabledDate]
  * @param {string} [props.datePlaceholder]
@@ -39,7 +39,7 @@ const minutesToLabel = (mins) => dayjs().startOf('day').add(mins, 'minute').form
 export default function DateTimeField({
   value,
   onChange,
-  minuteStep = 30,
+  minuteStep = 15,
   defaultHour = 9,
   disabledDate,
   datePlaceholder = 'Select a date',

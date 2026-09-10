@@ -28,6 +28,18 @@ const STAGE_STATUS_LABEL = {
   skipped: 'Skipped',
 };
 
+/**
+ * Referral columns are included here but NEVER in a candidate dossier.
+ *
+ * Different audiences: this CSV is produced behind requireStaff for the
+ * recruiter's own use, and the referral is exactly what they need when comparing
+ * two shortlisted candidates. A dossier goes to an interviewer with no ATS
+ * account, which is the audience the requirement excludes — dossierRedaction.js
+ * asserts it cannot carry these fields.
+ *
+ * Recorded as a conscious decision because a CSV is forwardable too: a recruiter
+ * who mails this file has disclosed the referral, and no code can stop that.
+ */
 /** Matches SOURCE_LABEL in frontend/src/pages/Pipeline.jsx. */
 const SOURCE_LABEL = {
   recruiter: 'Recruiter',
@@ -105,6 +117,9 @@ export const columns = [
       ? (j.vendor_email || 'Vendor')
       : (SOURCE_LABEL[j.source] || j.source || '')),
   },
+  // Recruiter-facing only — see the note above SOURCE_LABEL. Never in a dossier.
+  { header: 'Referral', value: (j) => (j._referral?.is_referral ? 'Yes' : 'No') },
+  { header: 'Referred By', value: (j) => j._referral?.referred_by || '' },
   { header: 'Vendor Email', key: 'vendor_email' },
   { header: 'Days In Stage', value: (j) => j._daysInStage, numeric: true },
   { header: 'Concurrent Journeys', value: (j) => j._concurrent, numeric: true },
@@ -179,6 +194,19 @@ export async function fetch({ filters, max }) {
     }
   }
 
+  // Referral lives on rpa_cv, not on the journey or the shortlist row, so it
+  // needs its own keyed lookup — the same shape listPipeline() uses. Only the
+  // flagged rows are fetched; referrals are a small minority.
+  const cvIds = [...new Set(journeys.map((j) => j.cv_id).filter(Boolean))];
+  const referralByCv = new Map();
+  if (cvIds.length > 0) {
+    const referrals = await prisma.rpa_cv.findMany({
+      where: { id: { in: cvIds }, is_referral: true },
+      select: { id: true, referred_by: true },
+    });
+    referrals.forEach((r) => referralByCv.set(String(r.id), { is_referral: true, referred_by: r.referred_by }));
+  }
+
   const now = Date.now();
   const rows = journeys.map((j) => {
     const lastEvent = j.rpa_pipeline_stage_events[0];
@@ -187,6 +215,7 @@ export async function fetch({ filters, max }) {
       _daysInStage: Math.floor((now - new Date(since).getTime()) / (1000 * 60 * 60 * 24)),
       _concurrent: activeByCv.get(String(j.cv_id)) || 1,
       _stageLabel: labelByKey[j.current_stage_key] || j.current_stage_key || '',
+      _referral: referralByCv.get(String(j.cv_id)) || null,
     });
   });
 

@@ -38,4 +38,25 @@ export function enforceVendorScope(filters = {}, user) {
   };
 }
 
-export default { enforceVendorScope };
+/**
+ * True when the caller is a vendor — the one role that must never see the
+ * referral flag.
+ *
+ * Referral visibility is `superadmin` / `admin` / `recruiter` (rank >= 20), and
+ * that exclusion is NOT automatic: candidate search selects nearly every rpa_cv
+ * column, and a vendor can legitimately call it for their own submissions. So
+ * the columns are dropped from the query rather than filtered afterwards —
+ * nothing to leak beats something correctly hidden.
+ *
+ * Pure, and here rather than in the service for the same reason
+ * enforceVendorScope is: it is security-relevant and must be testable with no
+ * database.
+ *
+ * @param {{role?: string}} [user]
+ * @returns {boolean}
+ */
+export function isVendor(user) {
+  return normalizeRole(user?.role) === ROLES.VENDOR;
+}
+
+export default { enforceVendorScope, isVendor };

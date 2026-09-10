@@ -34,6 +34,19 @@ import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js'
 
 let job = null;
 
+/**
+ * Overlap guard, like mailboxPoller.js and inboundEmailSync.js.
+ *
+ * A pass reads a Teams attendance report per due booking and sends mail through
+ * Graph, so it can easily outlast its own interval (the UI offers one as short as
+ * 1 minute). Without this, a slow pass was still selecting and nudging while the
+ * next tick started on the same rows — the nudge is only stamped after the email
+ * is away, so both passes saw an unstamped row and both emailed it. That is what
+ * put two identical "Did the … take place?" messages in the recruiter's inbox in
+ * the same minute, above a single occurrence_nudge_at.
+ */
+let sweeping = false;
+
 export const SETTING_KEYS = Object.freeze({
   ENABLED: 'interview_occurrence_enabled',
   INTERVAL_MIN: 'interview_occurrence_interval_min',
@@ -129,10 +142,17 @@ export async function startInterviewOccurrenceJob() {
     }
     const expression = cronForInterval(intervalMin);
     job = cron.schedule(expression, async () => {
+      if (sweeping) {
+        logger.warn('[Occurrence Sweep] previous pass still running — skipping this tick.');
+        return;
+      }
+      sweeping = true;
       try {
         await sweepInterviewOccurrence();
       } catch (err) {
         logger.error(`Interview occurrence sweep failed: ${err.message}`);
+      } finally {
+        sweeping = false;
       }
     });
     logger.info(`🕵️  Interview occurrence sweep running every ${intervalMin} min ("${expression}").`);
@@ -305,7 +325,7 @@ export async function sweepInterviewOccurrence() {
     const nudgeDue =
       !row.occurrence_nudge_at || new Date(row.occurrence_nudge_at) < nudgeAgainBefore;
     if (withinNudgeWindow && nudgeDue) {
-      nudged += await sendConfirmationNudge(row, candidate) ? 1 : 0;
+      nudged += await sendConfirmationNudge(row, candidate, nudgeAgainBefore) ? 1 : 0;
     }
   }
 
@@ -396,7 +416,31 @@ async function sendNoShowAlert(row, candidate, absentParty) {
  * alert instead.
  * @returns {Promise<boolean>} true when the nudge was sent
  */
-async function sendConfirmationNudge(row, candidate) {
+async function sendConfirmationNudge(row, candidate, nudgeAgainBefore) {
+  // Claim the nudge BEFORE composing or sending anything. The stamp used to go
+  // in at the very end, which left the whole compile-send-notify stretch as a
+  // window in which a second sweep pass (or a second server process) could read
+  // the same still-unstamped row and send the identical email again.
+  //
+  // updateMany with the freshness condition in the WHERE makes the claim atomic:
+  // whoever's UPDATE matches the row owns this nudge, the loser matches nothing
+  // and returns without sending. The in-process guard in the cron callback covers
+  // the common case; this covers the rest.
+  const claim = await prisma.rpa_interview_schedule.updateMany({
+    where: {
+      id: row.id,
+      OR: [
+        { occurrence_nudge_at: null },
+        { occurrence_nudge_at: { lt: nudgeAgainBefore } },
+      ],
+    },
+    data: { occurrence_nudge_at: new Date(), modified_at: new Date() },
+  });
+  if (claim.count === 0) {
+    logger.info(`[Occurrence Sweep] nudge for schedule ${row.id} already claimed by a concurrent pass — not sending again.`);
+    return false;
+  }
+
   const stageLabel = row.rpa_pipeline_stages?.label || row.stage_key;
   const position = candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role';
   const when = fmtIst(row.scheduled_start_at);
@@ -458,14 +502,11 @@ async function sendConfirmationNudge(row, candidate) {
     meta: { stage_key: row.stage_key, schedule_id: Number(row.id) },
   });
 
-  // Stamp regardless of whether the email got out — the timestamp is what
-  // spaces the next nudge NUDGE_REPEAT_HOURS away, so a booking with no
-  // reachable recipient backs off like any other instead of being retried every
-  // tick. The give-up window in sweepInterviewOccurrence() ends the sequence;
-  // a human can still resolve it from the drawer at any point.
-  await prisma.rpa_interview_schedule.update({
-    where: { id: row.id },
-    data: { occurrence_nudge_at: new Date(), modified_at: new Date() },
-  });
+  // The stamp was taken up front and is deliberately NOT rolled back on a send
+  // failure: the timestamp is what spaces the next nudge NUDGE_REPEAT_HOURS
+  // away, so a booking with no reachable recipient backs off like any other
+  // instead of being retried every tick. The give-up window in
+  // sweepInterviewOccurrence() ends the sequence; a human can still resolve it
+  // from the drawer at any point.
   return sentAny;
 }
