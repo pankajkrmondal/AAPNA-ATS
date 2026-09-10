@@ -17,6 +17,15 @@ const RERANK_DEGRADED_FALLBACK_SIZE = 250;
 // requests-per-minute limit regardless of pool size, without capping how many
 // candidates eventually get reranked (batches just queue instead of failing).
 const RERANK_MAX_CONCURRENT_BATCHES = 5;
+// Node's fetch has no default timeout, so a half-open or stalled connection to Cohere
+// hangs this await for as long as their edge holds it. Measured 2026-09-01: two
+// searches sat on a single rerank call for 183s and 185s before Cohere answered 504.
+// The recruiter's axios client gives up at 120s and react-query then retries once, so
+// an unbounded call here reads as "the screen loaded forever" and the degraded
+// fallback below — which exists precisely for a bad Cohere day — never got to run.
+// 30s is ~10x a healthy rerank (1-4s) and, at 5 concurrent batches, keeps even a
+// multi-wave pool well inside the client's budget.
+const COHERE_TIMEOUT_MS = 30_000;
 
 /** Runs `worker` over `items` with at most `limit` calls in flight at once. */
 async function mapWithConcurrency(items, limit, worker) {
@@ -174,20 +183,33 @@ function toDocument(c) {
 async function rerankBatch(query, batch) {
   const documents = batch.map(toDocument);
 
-  const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
-    method: 'POST',
-    headers: {
-      'accept': 'application/json',
-      'content-type': 'application/json',
-      'Authorization': `Bearer ${config.cohere.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.cohere.model || 'rerank-v3.5',
-      query,
-      documents,
-      top_n: documents.length
-    })
-  });
+  let response;
+  try {
+    response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'Authorization': `Bearer ${config.cohere.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.cohere.model || 'rerank-v3.5',
+        query,
+        documents,
+        top_n: documents.length
+      }),
+      signal: AbortSignal.timeout(COHERE_TIMEOUT_MS)
+    });
+  } catch (err) {
+    // AbortSignal.timeout rejects with a bare TimeoutError ("The operation was
+    // aborted due to timeout"), which names the mechanism and not the cause. Restate
+    // it the way the status branch below does, so rerankCandidates' error log says
+    // which upstream gave up and after how long.
+    if (err?.name === 'TimeoutError') {
+      throw new Error(`Cohere Rerank API timed out after ${COHERE_TIMEOUT_MS} ms.`);
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     const errText = await response.text();

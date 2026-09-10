@@ -1,4 +1,4 @@
-import { Button } from 'antd';
+import { Button } from '../../ui';
 import { ExclamationCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 
 /**
@@ -44,15 +44,18 @@ export default function ErrorState({
       <div className="state-block__title">{title}</div>
       {body && <div className="state-block__body">{body}</div>}
       {detail && (
-        <div className="state-block__body" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+        <div className="state-block__body cmp-caption--muted">
           {detail}
         </div>
       )}
       {(onRetry || action) && (
         <div className="state-block__actions">
+          {/* `soft`, not the default outline: a Retry sitting alone in an error block
+              should read as the offered action, not as a disabled control. */}
           {onRetry && (
             <Button
-              size={size === 'sm' ? 'small' : 'middle'}
+              emphasis="soft"
+              size={size === 'sm' ? 'sm' : 'md'}
               icon={<ReloadOutlined />}
               onClick={onRetry}
             >

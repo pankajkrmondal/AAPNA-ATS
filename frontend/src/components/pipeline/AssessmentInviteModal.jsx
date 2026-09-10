@@ -9,7 +9,9 @@
  * already-large file.
  */
 import { useEffect, useState } from 'react';
-import { Modal, Input, Button, Space, Typography, Alert } from 'antd';
+// Button now comes from src/ui — see the import below.
+import { Modal, Input, Space, Typography, Alert } from 'antd';
+import { Button } from '../../ui';
 import { MailOutlined } from '@ant-design/icons';
 import { MODAL_WIDTH } from './modalWidths';
 
@@ -42,7 +44,7 @@ export default function AssessmentInviteModal({ open, onClose, candidateName, po
       width={MODAL_WIDTH.FORM}
       footer={[
         <Button key="cancel" onClick={onClose}>Cancel</Button>,
-        <Button key="send" type="primary" icon={<MailOutlined />} loading={sending} disabled={!subject.trim() || !body.trim()} onClick={() => onSend({ method: 'email', subject, body })}>
+        <Button key="send" emphasis="solid" icon={<MailOutlined />} loading={sending} disabled={!subject.trim() || !body.trim()} onClick={() => onSend({ method: 'email', subject, body })}>
           Send Invite
         </Button>,
       ]}

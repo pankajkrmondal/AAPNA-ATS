@@ -5,11 +5,17 @@
  *   2) Submitted Records Listing (Search records, Status filter tabs, Export CSV, and paginated table)
  */
 import { useState, useEffect } from 'react';
-import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Radio, Modal, Select, Tooltip } from 'antd';
+/* Button comes from src/ui — a raw AntD button renders flat inside <DesignScope>,
+   which zeroes AntD's own shadow on the assumption `.ui-btn` repaints the glow. */
+import { Form, Input, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Modal, Select, Tooltip } from 'antd';
 import { SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import ExportButton from '../components/common/ExportButton';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
+import { DesignScope, PageShell, PageHeader, Surface, Button, Segmented, FieldValue } from '../ui';
+// Imported after '../ui' on purpose: page rules must land after the component layer
+// in the cascade so they win on equal specificity.
+import '../styles/pages/mrf.css';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -127,18 +133,45 @@ const MAIN_MRF_FIELD_GROUPS = [
   },
 ];
 
+// Columns holding a URL rather than prose. Not derivable from MAIN_MRF_FIELD_TYPES:
+// these have no entry in MrfSubmit's FIELDS at all, which is why they fall through to
+// a plain Input when edited.
+const URL_FIELDS = new Set(['jd_document_link']);
+
+// The link view of a URL column. Form.Item hands the value down as `value`; the anchor
+// needs it as `href` as well, and the full URL stays reachable on hover rather than
+// being spelled out across seven lines.
+const MainMrfLinkValue = ({ value }) => (
+  <FieldValue href={value} title={value || undefined}>
+    {value ? <>Open document &nbsp;&thinsp;↗</> : null}
+  </FieldValue>
+);
+
 // Renders the correct widget for a Main MRF field based on its canonical type from
 // MrfSubmit.jsx — Select for dropdowns (legacy values not in the option list are kept
 // visible via an extra option rather than rendering blank), InputNumber for numeric
 // fields, TextArea for long-form text, plain Input otherwise.
-const renderMainMrfField = (name, currentValue) => {
+const renderMainMrfField = (name, currentValue, isEditing) => {
   const meta = MAIN_MRF_FIELD_TYPES[name];
+
+  // VIEW MODE IS NOT THE DISABLED STATE. Form.Item clones `value` onto whatever sits
+  // here, so FieldValue reads the same store the editable control writes — nothing is
+  // re-seeded on the way in or out of edit, and the row keeps --ctl-h so the dialog
+  // does not jump.
+  if (!isEditing) {
+    // A URL is a link when you are reading, and a string when you are editing it.
+    // Left as raw text this one wrapped to SEVEN lines of SharePoint query string —
+    // an input hid that behind a single-line scroll. `MrfApprovalAction` already
+    // renders the same column as a link, so this is the established treatment.
+    if (URL_FIELDS.has(name)) return <MainMrfLinkValue />;
+    return <FieldValue multiline={meta?.type === 'textarea'} />;
+  }
 
   if (meta?.type === 'select') {
     const options = meta.options || [];
     const hasLegacyValue = currentValue && !options.includes(currentValue);
     return (
-      <Select style={{ width: '100%' }} placeholder="Select your answer">
+      <Select className="mrf-full" placeholder="Select your answer">
         {hasLegacyValue && <Select.Option value={currentValue}>{currentValue}</Select.Option>}
         {options.map((opt) => (
           <Select.Option key={opt} value={opt}>{opt}</Select.Option>
@@ -148,14 +181,33 @@ const renderMainMrfField = (name, currentValue) => {
   }
 
   if (meta?.type === 'number') {
-    return <InputNumber min={0} max={60} style={{ width: '100%' }} />;
+    return <InputNumber min={0} max={60} className="mrf-full" />;
   }
 
   if (meta?.type === 'textarea') {
-    return <TextArea rows={3} style={{ borderRadius: 6 }} />;
+    return <TextArea rows={3} />;
   }
 
-  return <Input style={{ borderRadius: 6 }} />;
+  return <Input />;
+};
+
+// Raise-status codes as the workflow writes them, mapped to what a reader should
+// see. View mode shows the label; edit mode still shows the (disabled) Select, whose
+// options carry the same strings.
+const MRF_STATUS_LABELS = {
+  pending: 'Pending',
+  pendingfromleader: 'Pending from Leader',
+  managersubmitted: 'Manager Submitted',
+  closed: 'Closed — all openings filled',
+};
+
+// Live rows carry raise-status codes the Select's own option list never had — #181
+// reads `approved`. The Select rendered those raw and so does this, sentence-cased so
+// a legacy code does not sit next to "Manager Submitted" looking like a bug. Never
+// invents a label: an unknown code is shown, not swallowed.
+const mrfStatusLabel = (code) => {
+  if (!code) return code;
+  return MRF_STATUS_LABELS[code] ?? (code.charAt(0).toUpperCase() + code.slice(1));
 };
 
 // "Other" detail fields → the select that gates them. The detail textarea is only
@@ -192,6 +244,11 @@ export default function MRF() {
   const [closeMrfNote, setCloseMrfNote] = useState('');
   const [closureReasons, setClosureReasons] = useState([]);
   const [mrfClosurePending, setMrfClosurePending] = useState(false);
+  // Requisition pause — distinct from closure: still open/hiring, just
+  // temporarily out of new candidate sourcing.
+  const [pauseMrfOpen, setPauseMrfOpen] = useState(false);
+  const [pauseMrfReason, setPauseMrfReason] = useState('');
+  const [mrfPausePending, setMrfPausePending] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
 
@@ -377,6 +434,41 @@ export default function MRF() {
     }
   };
 
+  // ── Requisition pause ───────────────────────────────────────────────
+  //
+  // Writes rpa_mrf.paused_at, never closed_at/filled_at/approval_status/
+  // mrfstatus. Distinct from Close: a paused requisition is still open, just
+  // temporarily out of new candidate sourcing.
+
+  const handlePauseMrf = async () => {
+    if (!pauseMrfReason.trim()) return;
+    setMrfPausePending(true);
+    try {
+      await mrfService.pause(selectedRecord.mrf_id, { reason: pauseMrfReason.trim() });
+      message.success('Requisition paused — it has left JD filtering.');
+      setPauseMrfOpen(false);
+      setPauseMrfReason('');
+      await refreshAfterClosure();
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Could not pause the requisition.');
+    } finally {
+      setMrfPausePending(false);
+    }
+  };
+
+  const handleResumeMrf = async () => {
+    setMrfPausePending(true);
+    try {
+      await mrfService.resume(selectedRecord.mrf_id);
+      message.success('Requisition resumed — it is back in JD filtering.');
+      await refreshAfterClosure();
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Could not resume the requisition.');
+    } finally {
+      setMrfPausePending(false);
+    }
+  };
+
   // Saves whichever section(s) actually have unsaved changes — "New MRF Request"
   // (rpa_mrf_jd_send) and/or "Submitted MRF Details" (rpa_mrf) — via their separate
   // endpoints, in parallel. A failure in one section never blocks or discards the other.
@@ -552,9 +644,9 @@ export default function MRF() {
     loadRecords(1, val, statusTab);
   };
 
-  // Handle status tab filters changes
-  const handleStatusFilterChange = (e) => {
-    const val = e.target.value;
+  // Handle status tab filters changes. Takes the VALUE — Segmented is a real
+  // radiogroup of buttons, not an AntD control, so there is no event to unwrap.
+  const handleStatusFilterChange = (val) => {
     setStatusTab(val);
     setPage(1);
     loadRecords(1, searchQuery, val);
@@ -574,43 +666,43 @@ export default function MRF() {
       title: 'FIRST NAME',
       dataIndex: 'first_name',
       key: 'first_name',
-      render: (text) => <Text style={{ fontSize: 13 }}>{text}</Text>,
+      render: (text) => <Text className="mrf-cell">{text}</Text>,
     },
     {
       title: 'LAST NAME',
       dataIndex: 'last_name',
       key: 'last_name',
-      render: (text) => <Text style={{ fontSize: 13 }}>{text}</Text>,
+      render: (text) => <Text className="mrf-cell">{text}</Text>,
     },
     {
       title: 'EMAIL',
       dataIndex: 'email',
       key: 'email',
-      render: (text) => <Text style={{ fontSize: 13, fontFamily: 'monospace' }}>{text}</Text>,
+      render: (text) => <Text className="mrf-mono">{text}</Text>,
     },
     {
       title: 'ROLE',
       dataIndex: 'role',
       key: 'role',
-      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text}</Text>,
+      render: (text) => <Text strong className="mrf-cell--strong">{text}</Text>,
     },
     {
       title: 'MIN BUDGET',
       dataIndex: 'budget_min',
       key: 'budget_min',
-      render: (val) => <Text style={{ fontSize: 13, fontFamily: 'monospace' }}>{formatCurrency(val)}</Text>,
+      render: (val) => <Text className="mrf-mono">{formatCurrency(val)}</Text>,
     },
     {
       title: 'MAX BUDGET',
       dataIndex: 'budget_max',
       key: 'budget_max',
-      render: (val) => <Text style={{ fontSize: 13, fontFamily: 'monospace' }}>{formatCurrency(val)}</Text>,
+      render: (val) => <Text className="mrf-mono">{formatCurrency(val)}</Text>,
     },
     {
       title: 'MRF STATUS',
       dataIndex: 'mrfstatus',
       key: 'mrfstatus',
-      render: (status) => {
+      render: (status, record) => {
         const statusStr = (status || '').trim().toLowerCase();
         let displayStatus = 'PENDING';
         let color = 'gold';
@@ -633,9 +725,32 @@ export default function MRF() {
         }
 
         return (
-          <Tag color={color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
-            {displayStatus}
-          </Tag>
+          <Space size={4} wrap>
+            <Tag color={color} className="mrf-tag mrf-tag--caps">
+              {displayStatus}
+            </Tag>
+            {record?.mrf_filled && (
+              <Tooltip title="Every opening on this requisition has been filled, so it no longer appears in JD filtering.">
+                <Tag color="success" className="mrf-tag">
+                  FILLED
+                </Tag>
+              </Tooltip>
+            )}
+            {record?.mrf_closed_at && (
+              <Tooltip title={`Closed by a recruiter${record?.mrf_closure_reason ? ` — ${String(record.mrf_closure_reason).replace(/_/g, ' ')}` : ''}. It is out of JD filtering until it is re-opened.`}>
+                <Tag color="red" className="mrf-tag">
+                  CLOSED
+                </Tag>
+              </Tooltip>
+            )}
+            {record?.mrf_paused_at && (
+              <Tooltip title={`Paused by a recruiter${record?.mrf_paused_reason ? `: ${record.mrf_paused_reason}` : ''}. It is out of JD filtering until it is resumed.`}>
+                <Tag color="orange" className="mrf-tag">
+                  PAUSED
+                </Tag>
+              </Tooltip>
+            )}
+          </Space>
         );
       },
     },
@@ -647,27 +762,36 @@ export default function MRF() {
         if (!val) return '—';
         const date = new Date(val);
         const options = { day: 'numeric', month: 'short', year: 'numeric' };
-        return <Text style={{ fontSize: 13 }}>{date.toLocaleDateString('en-GB', options)}</Text>;
+        return <Text className="mrf-cell">{date.toLocaleDateString('en-GB', options)}</Text>;
       },
     },
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
+    <DesignScope>
+      <PageShell width="standard" className="stagger-children">
       {/* MRF Create Request Form Card — tier 2, this page's feature surface.
           Radius and shadow now come from `.glass-card`; the green `borderTop`
           rail goes for the same reason it went on /candidates — a flat bar under
           a gradient rim is the pre-glass vocabulary showing through. */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ marginBottom: 28 }}
-      >
-        <div style={{ marginBottom: 24 }}>
-          <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 4px 0' }}>
-            New MRF Request
-          </Title>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)' }}>
+      {/* Page header, lifted out of the form card — 2026-08-31. Same change as
+          /candidates: `Title level={3}` is 20px against the lab's 32px, and a title
+          nested inside a tier-2 Surface reads as that card's label.
+
+          The old markup put "Hiring Manager Details" BELOW the title in `.mrf-eyebrow`
+          — an eyebrow's styling (uppercase, brand ink) in a subtitle's position. It is
+          not a subtitle: it labels the first section of the form. So it stays with the
+          form as a section heading and the page gets a real subtitle saying what the
+          screen is for. */}
+      <PageHeader
+        eyebrow="Requisitions"
+        title="New MRF Request"
+        subtitle="Raise a Manpower Requisition Form to open a role for hiring. It goes to the approver before recruiting starts."
+      />
+
+      <Surface tier={2} padding="relaxed" bloom className="mrf-mb-6">
+        <div className="mrf-mb-5">
+          <Text type="secondary" className="mrf-eyebrow">
             Hiring Manager Details
           </Text>
         </div>
@@ -676,33 +800,34 @@ export default function MRF() {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
+          className="mrf-form"
         >
           <Row gutter={16}>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>First Name *</span>}
+                label={<span className="mrf-label">First Name</span>}
                 name="first_name"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Input placeholder="e.g. Abhijit" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. Abhijit" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Last Name *</span>}
+                label={<span className="mrf-label">Last Name</span>}
                 name="last_name"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Input placeholder="e.g. Roy" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. Roy" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email *</span>}
+                label={<span className="mrf-label">Email</span>}
                 name="email"
                 rules={[{ required: true, message: 'Required' }, { pattern: EMAIL_PATTERN, message: 'Please enter a valid Email' }]}
               >
-                <Input placeholder="e.g. aroy@aapnainfotech.com" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. aroy@aapnainfotech.com" />
               </Form.Item>
             </Col>
           </Row>
@@ -710,29 +835,29 @@ export default function MRF() {
           <Row gutter={16}>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>CC Email (Keep Comma Separated)</span>}
+                label={<span className="mrf-label">CC Email (Keep Comma Separated)</span>}
                 name="cc_email"
                 rules={[{ validator: validateCcEmail }]}
               >
-                <Input placeholder="e.g. example1@aapnainfotech.com, example2@aapnainfotech.com" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. example1@aapnainfotech.com, example2@aapnainfotech.com" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Role *</span>}
+                label={<span className="mrf-label">Role</span>}
                 name="role"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Input placeholder="e.g. Senior Software Engineer" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. Senior Software Engineer" />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>JD Link *</span>}
+                label={<span className="mrf-label">JD Link</span>}
                 name="jd_doc_link"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Input placeholder="e.g. https://link-to-jd.com" style={{ height: 42, borderRadius: 8 }} />
+                <Input placeholder="e.g. https://link-to-jd.com" />
               </Form.Item>
             </Col>
           </Row>
@@ -740,7 +865,7 @@ export default function MRF() {
           <Row gutter={16}>
             <Col xs={24} sm={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Min (Annual CTC) *</span>}
+                label={<span className="mrf-label">Budget Min (Annual CTC)</span>}
                 name="budget_min"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -748,13 +873,13 @@ export default function MRF() {
                   placeholder="Min 1,00,000 (e.g. 5,00,000)"
                   formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={value => value.replace(/\$\s?|(,*)/g, '')}
-                  style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                  className="mrf-radio-cell"
                 />
               </Form.Item>
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Max (Annual CTC) *</span>}
+                label={<span className="mrf-label">Budget Max (Annual CTC)</span>}
                 name="budget_max"
                 rules={[{ required: true, message: 'Required' }]}
               >
@@ -762,90 +887,76 @@ export default function MRF() {
                   placeholder="e.g. 10,00,000"
                   formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                   parser={value => value.replace(/\$\s?|(,*)/g, '')}
-                  style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                  className="mrf-radio-cell"
                 />
               </Form.Item>
             </Col>
           </Row>
 
           <Form.Item
-            label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)' }}>Email Body</span>}
+            label={<span className="mrf-label">Email Body</span>}
             name="email_body_content"
           >
-            <Input.TextArea rows={5} style={{ borderRadius: 8 }} placeholder={DEFAULT_EMAIL_BODY} />
+            <Input.TextArea rows={5} placeholder={DEFAULT_EMAIL_BODY} />
           </Form.Item>
 
           <Space size={12}>
             <Button
-              type="primary"
+              emphasis="solid"
+              size="lg"
               htmlType="submit"
               icon={<SendOutlined />}
               loading={submitting}
-              style={{
-                height: 42,
-                borderRadius: 8,
-                fontWeight: 600,
-                padding: '0 24px',
-              }}
             >
               Submit Request
             </Button>
             <Button
+              emphasis="soft"
+              tone="neutral"
+              size="lg"
               onClick={handleClear}
               icon={<ClearOutlined />}
-              style={{
-                height: 42,
-                borderRadius: 8,
-                fontWeight: 600,
-                padding: '0 20px',
-              }}
             >
               Clear
             </Button>
           </Space>
         </Form>
-      </Card>
+      </Surface>
 
       {/* Submitted MRF Records Listing Table Card — tier 3, reusing exactly what
           Phase 3 verified on /candidates. */}
-      <Card
-        bordered={false}
-        className="glass-3 no-lift"
-        styles={{ body: { padding: 0 } }}
-      >
+      <Surface tier={3} padding="none">
         {/* Table Toolbar */}
-        <div
-          style={{
-            padding: '18px 24px',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 16,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+        <div className="mrf-toolbar">
+          <div className="mrf-toolbar__group">
+            <span className="mrf-group-label">
               Records
             </span>
             <Input
               placeholder="Search records..."
               value={searchQuery}
               onChange={handleSearchChange}
-              style={{ width: 220, borderRadius: 6 }}
+              className="mrf-search"
             />
-            <Radio.Group
-              optionType="button"
-              buttonStyle="solid"
+            {/* The design system's Segmented, not AntD's Radio.Group. The group it
+                replaces was six tab stops instead of one, 15px/400 instead of the
+                13px/600 every other tab bar in the app uses, and painted its selected
+                cell with a raw solid brand fill on a 15px-0-0-15px joined slab. The
+                values are unchanged, so loadRecords and the CSV export query are
+                untouched by the swap. */}
+            <Segmented
+              aria-label="Filter records by status"
               value={statusTab}
               onChange={handleStatusFilterChange}
-            >
-              <Radio.Button value="All">All</Radio.Button>
-              <Radio.Button value="pending">Pending</Radio.Button>
-              <Radio.Button value="manager submitted">Manager Submitted</Radio.Button>
-              <Radio.Button value="closed">Closed</Radio.Button>
-            </Radio.Group>
+              options={[
+                { value: 'All', label: 'All' },
+                { value: 'pending', label: 'Pending' },
+                { value: 'manager submitted', label: 'Manager Submitted' },
+                { value: 'filled', label: 'Filled' },
+                { value: 'paused', label: 'Paused' },
+                { value: 'closed', label: 'Closed' },
+              ]}
+            />
           </div>
           <ExportButton
             request={(cfg) => mrfService.exportCsv(
@@ -876,17 +987,17 @@ export default function MRF() {
             style: { paddingRight: 20 },
           }}
         />
-      </Card>
+      </Surface>
 
       {/* 2) VIEW/EDIT MRF DETAILS MODAL (High Fidelity) */}
       <Modal
         title={
           selectedRecord && (
-            <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border-light)' }}>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--text)' }}>
+            <div className="mrf-modal-head">
+              <div className="mrf-modal-title">
                 {selectedRecord.first_name} {selectedRecord.last_name} — {selectedRecord.role}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)', marginTop: 2 }}>
+              <div className="mrf-hint">
                 Submitted {formatSubmittedDate(selectedRecord.created_at)} &bull; ID #{selectedRecord.id}
               </div>
             </div>
@@ -898,10 +1009,10 @@ export default function MRF() {
         footer={[
           isEditing ? (
             <Space key="footer-edit">
-              <Button onClick={handleCancelEdit} style={{ borderRadius: 6, fontWeight: 600 }}>
+              <Button emphasis="soft" tone="neutral" onClick={handleCancelEdit}>
                 Cancel
               </Button>
-              <Button type="primary" onClick={handleSaveAll} loading={updating} style={{ borderRadius: 6, fontWeight: 600 }}>
+              <Button emphasis="solid" onClick={handleSaveAll} loading={updating}>
                 Save Changes
               </Button>
             </Space>
@@ -915,37 +1026,37 @@ export default function MRF() {
                 request={(cfg) => mrfService.exportDetailCsv(selectedRecord?.id, cfg)}
                 fallbackName={`AAPNA-ATS_MRF-${selectedRecord?.id}.csv`}
               />
-              <Button onClick={() => setIsEditing(true)} style={{ borderRadius: 6, color: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', fontWeight: 600 }}>
+              <Button emphasis="soft" onClick={() => setIsEditing(true)}>
                 Edit
               </Button>
-              <Button onClick={() => setDetailsOpen(false)} style={{ borderRadius: 6, fontWeight: 600 }}>
+              <Button emphasis="soft" tone="neutral" onClick={() => setDetailsOpen(false)}>
                 Close
               </Button>
             </Space>
           )
         ]}
-        styles={{ body: { padding: '20px 0 0 0' } }}
+        classNames={{ body: 'mrf-modal-body' }}
       >
         {selectedRecord && (
           <div>
             {/* Section 1: Workflow Summary */}
-            <div style={{ background: 'var(--ink-4)', padding: '16px 24px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 24 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
+            <div className="mrf-note-box">
+              <div className="mrf-group-label mrf-group-label--gap">
                 Workflow Summary
               </div>
               <Row gutter={16}>
                 <Col span={12}>
                   <Space>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Raise Status:</span>
-                    <Tag color={getWorkflowSummaryTags(selectedRecord).raise.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                    <span className="mrf-label">MRF Raise Status:</span>
+                    <Tag color={getWorkflowSummaryTags(selectedRecord).raise.color} className="mrf-tag">
                       {getWorkflowSummaryTags(selectedRecord).raise.label}
                     </Tag>
                   </Space>
                 </Col>
-                <Col span={12} style={{ textAlign: 'right' }}>
+                <Col span={12} className="mrf-right">
                   <Space>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Approval Status:</span>
-                    <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                    <span className="mrf-label">MRF Approval Status:</span>
+                    <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} className="mrf-tag">
                       {getWorkflowSummaryTags(selectedRecord).approval.label}
                     </Tag>
                     {/* Independent of approval status — a requisition can be
@@ -955,7 +1066,7 @@ export default function MRF() {
                         approval value. */}
                     {selectedRecord?.mrf_filled && (
                       <Tooltip title="Every opening on this requisition has been filled, so it no longer appears in JD filtering. It re-opens automatically if a hire falls through.">
-                        <Tag color="default" style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                        <Tag color="success" className="mrf-tag">
                           FILLED
                         </Tag>
                       </Tooltip>
@@ -967,8 +1078,18 @@ export default function MRF() {
                         good. */}
                     {selectedRecord?.mrf_closed_at && (
                       <Tooltip title={`Closed by a recruiter${selectedRecord?.mrf_closure_reason ? ` — ${String(selectedRecord.mrf_closure_reason).replace(/_/g, ' ')}` : ''}${selectedRecord?.mrf_closure_note ? `: ${selectedRecord.mrf_closure_note}` : ''}. It is out of JD filtering until it is re-opened.`}>
-                        <Tag color="red" style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                        <Tag color="red" className="mrf-tag">
                           CLOSED
+                        </Tag>
+                      </Tooltip>
+                    )}
+                    {/* Paused — a THIRD independent fact from Filled/Closed. The
+                        requisition is still open/hiring, just temporarily out of
+                        new candidate sourcing. */}
+                    {selectedRecord?.mrf_paused_at && (
+                      <Tooltip title={`Paused by a recruiter${selectedRecord?.mrf_paused_reason ? `: ${selectedRecord.mrf_paused_reason}` : ''}. It is out of JD filtering until it is resumed.`}>
+                        <Tag color="orange" className="mrf-tag">
+                          PAUSED
                         </Tag>
                       </Tooltip>
                     )}
@@ -982,82 +1103,123 @@ export default function MRF() {
                   workflow column, and expressing closure by overwriting it is
                   the lossy bug removed on 2026-08-11. This writes closed_at. */}
               {selectedRecord?.mrf_id && (
-                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-light)', textAlign: 'right' }}>
+                <div className="mrf-modal-foot">
                   {selectedRecord?.mrf_closed_at ? (
                     <Button
-                      size="small"
+                      size="sm"
+                      emphasis="soft"
                       loading={mrfClosurePending}
                       onClick={handleReopenMrf}
                     >
                       Re-open requisition
                     </Button>
                   ) : selectedRecord?.mrf_filled ? (
-                    <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                    <span className="mrf-caption--muted">
                       All openings are filled — this requisition closed itself.
                     </span>
-                  ) : (
+                  ) : selectedRecord?.mrf_paused_at ? (
                     <Button
-                      size="small"
-                      danger
-                      loading={mrfClosurePending}
-                      onClick={() => setCloseMrfOpen(true)}
+                      size="sm"
+                      emphasis="soft"
+                      loading={mrfPausePending}
+                      onClick={handleResumeMrf}
                     >
-                      Close requisition…
+                      Resume requisition
                     </Button>
+                  ) : (
+                    <Space>
+                      <Button
+                        size="sm"
+                        emphasis="soft"
+                        tone="neutral"
+                        loading={mrfPausePending}
+                        onClick={() => setPauseMrfOpen(true)}
+                      >
+                        Pause…
+                      </Button>
+                      {/* `tone="danger"`, not AntD's `danger` prop — closing a
+                          requisition is the destructive action in this group and the
+                          tone feeds --ui-tone/--ui-glow, so it survives a preset or
+                          tenant swap. `soft` rather than `solid`: it sits beside two
+                          neutral controls, and a glowing red button in a detail
+                          footer overstates a reversible action. */}
+                      <Button
+                        size="sm"
+                        emphasis="soft"
+                        tone="danger"
+                        loading={mrfClosurePending}
+                        onClick={() => setCloseMrfOpen(true)}
+                      >
+                        Close requisition…
+                      </Button>
+                    </Space>
                   )}
                 </div>
               )}
             </div>
 
             {/* Section 2: New MRF Request Info */}
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)', marginBottom: 16 }}>
+            <div className="mrf-group-label mrf-group-label--brand mrf-group-label--gap-lg">
               New MRF Request Info
             </div>
 
             <Form
               form={editForm}
               layout="vertical"
+              /* Kept even though view mode renders no controls: a field missed by the
+                 view/edit swap degrades to the old disabled behaviour rather than
+                 silently becoming editable. */
               disabled={!isEditing}
+              /* A required marker is an instruction, and in view mode there is nothing
+                 to act on — the rules themselves stay, so saving still validates. */
+              requiredMark={isEditing}
             >
               <Row gutter={16}>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>First Name</span>}
+                    label={<span className="mrf-label">First Name</span>}
                     name="first_name"
                     rules={[{ required: true, message: 'Required' }]}
                   >
-                    <Input style={{ borderRadius: 6 }} />
+                    {isEditing ? <Input /> : <FieldValue />}
                   </Form.Item>
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Last Name</span>}
+                    label={<span className="mrf-label">Last Name</span>}
                     name="last_name"
                     rules={[{ required: true, message: 'Required' }]}
                   >
-                    <Input style={{ borderRadius: 6 }} />
+                    {isEditing ? <Input /> : <FieldValue />}
                   </Form.Item>
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Manager Email</span>}
+                    label={<span className="mrf-label">Manager Email</span>}
                     name="email"
                     rules={[{ required: true, message: 'Required' }, { type: 'email', message: 'Invalid email' }]}
                   >
-                    <Input style={{ borderRadius: 6, fontFamily: 'monospace' }} />
+                    {isEditing ? <Input className="mrf-mono" /> : <FieldValue className="mrf-mono" />}
                   </Form.Item>
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Min</span>}
+                    label={<span className="mrf-label">Budget Min</span>}
                     name="budget_min"
                     rules={[{ required: true, message: 'Required' }]}
                   >
-                    <InputNumber
-                      formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                      parser={value => value.replace(/\$\s?|(,*)/g, '')}
-                      style={{ width: '100%', borderRadius: 6 }}
-                    />
+                    {isEditing ? (
+                      <InputNumber
+                        formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                        className="mrf-full"
+                      />
+                    ) : (
+                      // The records table already renders budgets through formatCurrency;
+                      // view mode reads from the same helper so the modal cannot disagree
+                      // with the row that opened it.
+                      <FieldValue format={formatCurrency} />
+                    )}
                   </Form.Item>
                 </Col>
               </Row>
@@ -1065,47 +1227,36 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Budget Max</span>}
+                    label={<span className="mrf-label">Budget Max</span>}
                     name="budget_max"
                     rules={[{ required: true, message: 'Required' }]}
                   >
-                    <InputNumber
-                      formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                      parser={value => value.replace(/\$\s?|(,*)/g, '')}
-                      style={{ width: '100%', borderRadius: 6 }}
-                    />
+                    {isEditing ? (
+                      <InputNumber
+                        formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        parser={value => value.replace(/\$\s?|(,*)/g, '')}
+                        className="mrf-full"
+                      />
+                    ) : (
+                      // The records table already renders budgets through formatCurrency;
+                      // view mode reads from the same helper so the modal cannot disagree
+                      // with the row that opened it.
+                      <FieldValue format={formatCurrency} />
+                    )}
                   </Form.Item>
                 </Col>
                 <Col span={6}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>JD Resource</span>}
+                    label={<span className="mrf-label">JD Resource</span>}
                     name="jd_doc_link"
                     rules={[{ required: true, message: 'Required' }]}
                   >
                     {isEditing ? (
-                      <Input placeholder="JD document link" style={{ borderRadius: 6 }} />
+                      <Input placeholder="JD document link" />
                     ) : (
-                      <a
-                        href={selectedRecord.jd_doc_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          height: 32,
-                          background: 'var(--ink-4)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '0 12px',
-                          color: 'var(--info-strong)',
-                          fontWeight: 600,
-                          fontSize: 12,
-                          width: '100%',
-                          justifyContent: 'center',
-                        }}
-                      >
+                      <FieldValue href={selectedRecord.jd_doc_link}>
                         View Document &nbsp;&thinsp;↗
-                      </a>
+                      </FieldValue>
                     )}
                   </Form.Item>
                 </Col>
@@ -1114,11 +1265,11 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={24}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Position Title</span>}
+                    label={<span className="mrf-label">Position Title</span>}
                     name="role"
                     rules={[{ required: true, message: 'Required' }]}
                   >
-                    <Input style={{ borderRadius: 6 }} />
+                    {isEditing ? <Input /> : <FieldValue />}
                   </Form.Item>
                 </Col>
               </Row>
@@ -1126,27 +1277,31 @@ export default function MRF() {
               <Row gutter={16}>
                 <Col span={12}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>MRF Raise Status</span>}
+                    label={<span className="mrf-label">MRF Raise Status</span>}
                     name="mrfstatus"
                   >
-                    <Select style={{ width: '100%', borderRadius: 6 }} disabled>
-                      <Select.Option value="pending">Pending</Select.Option>
-                      <Select.Option value="pendingfromleader">Pending from Leader</Select.Option>
-                      <Select.Option value="managersubmitted">Manager Submitted</Select.Option>
-                      <Select.Option value="closed">Closed — all openings filled</Select.Option>
-                    </Select>
+                    {isEditing ? (
+                      <Select className="mrf-full" disabled>
+                        <Select.Option value="pending">Pending</Select.Option>
+                        <Select.Option value="pendingfromleader">Pending from Leader</Select.Option>
+                        <Select.Option value="managersubmitted">Manager Submitted</Select.Option>
+                        <Select.Option value="closed">Closed — all openings filled</Select.Option>
+                      </Select>
+                    ) : (
+                      <FieldValue format={mrfStatusLabel} />
+                    )}
                   </Form.Item>
                 </Col>
                 <Col span={12}>
                   <Form.Item
-                    label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Form Submission Date</span>}
+                    label={<span className="mrf-label">Form Submission Date</span>}
                   >
-                    <Input
-                      value={selectedRecord.created_at ? new Date(selectedRecord.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
-                      readOnly
-                      disabled
-                      style={{ borderRadius: 6 }}
-                    />
+                    {/* Display-only in BOTH modes — a submission date is a fact, not a
+                        field. It was a `readOnly disabled` Input, which said "you may
+                        not type here" when the truth is "there is nothing to type". */}
+                    <FieldValue>
+                      {selectedRecord.created_at ? new Date(selectedRecord.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
+                    </FieldValue>
                   </Form.Item>
                 </Col>
               </Row>
@@ -1154,20 +1309,20 @@ export default function MRF() {
 
             {/* Section 3: Submitted MRF Details (rpa_mrf) — only when HM has submitted */}
             {selectedRecord.mrf_id && (
-              <div style={{ marginTop: 28, borderTop: '1px solid var(--border-light)', paddingTop: 20 }}>
-                <div style={{ marginBottom: 16 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)' }}>
+              <div className="mrf-section-rule">
+                <div className="mrf-mb-4">
+                  <span className="mrf-group-label mrf-group-label--brand">
                     Submitted MRF Details
                   </span>
                 </div>
 
                 {mainMrfLoading ? (
-                  <Text type="secondary" style={{ fontSize: 12 }}>Loading submitted MRF details…</Text>
+                  <Text type="secondary" className="mrf-caption">Loading submitted MRF details…</Text>
                 ) : mainMrf ? (
-                  <Form form={mainForm} layout="vertical" disabled={!isEditing}>
+                  <Form form={mainForm} layout="vertical" disabled={!isEditing} requiredMark={isEditing}>
                     {MAIN_MRF_FIELD_GROUPS.map((group) => (
-                      <div key={group.title} style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--text-3)', margin: '4px 0 10px' }}>
+                      <div key={group.title} className="mrf-mb-2">
+                        <div className="mrf-group-label mrf-group-label--stack">
                           {group.title}
                         </div>
                         <Row gutter={16}>
@@ -1182,20 +1337,17 @@ export default function MRF() {
                               {name === 'date_of_request' ? (
                                 // Read-only display only — never bound to mainForm, so it can
                                 // never be touched/submitted (submission dates stay non-editable).
-                                <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>{label}</span>}>
-                                  <Input
-                                    value={mainMrf.date_of_request ? new Date(mainMrf.date_of_request).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
-                                    readOnly
-                                    disabled
-                                    style={{ borderRadius: 6 }}
-                                  />
+                                <Form.Item label={<span className="mrf-label">{label}</span>}>
+                                  <FieldValue>
+                                    {mainMrf.date_of_request ? new Date(mainMrf.date_of_request).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null}
+                                  </FieldValue>
                                 </Form.Item>
                               ) : (
                                 <Form.Item
-                                  label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>{label}</span>}
+                                  label={<span className="mrf-label">{label}</span>}
                                   name={name}
                                 >
-                                  {renderMainMrfField(name, mainMrf?.[name])}
+                                  {renderMainMrfField(name, mainMrf?.[name], isEditing)}
                                 </Form.Item>
                               )}
                             </Col>
@@ -1206,39 +1358,36 @@ export default function MRF() {
                     ))}
 
                     {mainMrf.parsed_jd_json && (
-                      <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px dashed var(--border-light)' }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: 'var(--text-3)', margin: '4px 0 10px' }}>
+                      <div className="mrf-section-rule--dashed">
+                        <div className="mrf-group-label mrf-group-label--stack">
                           AI-Parsed JD Summary
                         </div>
                         <Row gutter={16}>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Experience Range (AI)</span>}>
-                              <Input
-                                readOnly
-                                disabled
+                            <Form.Item label={<span className="mrf-label">Experience Range (AI)</span>}>
+                              <FieldValue
                                 value={`${mainMrf.parsed_jd_json.min_experience_years ?? '—'} - ${mainMrf.parsed_jd_json.max_experience_years ?? '—'} years`}
-                                style={{ borderRadius: 6 }}
                               />
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Education (AI)</span>}>
-                              <Input readOnly disabled value={mainMrf.parsed_jd_json.education || '—'} style={{ borderRadius: 6 }} />
+                            <Form.Item label={<span className="mrf-label">Education (AI)</span>}>
+                              <FieldValue value={mainMrf.parsed_jd_json.education} />
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Mandatory Skills (AI)</span>}>
-                              <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.mandatory_skills || '—'} style={{ borderRadius: 6 }} />
+                            <Form.Item label={<span className="mrf-label">Mandatory Skills (AI)</span>}>
+                              <FieldValue multiline value={mainMrf.parsed_jd_json.mandatory_skills} />
                             </Form.Item>
                           </Col>
                           <Col span={12}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Good to Have Skills (AI)</span>}>
-                              <TextArea readOnly disabled rows={2} value={mainMrf.parsed_jd_json.good_to_have_skills || '—'} style={{ borderRadius: 6 }} />
+                            <Form.Item label={<span className="mrf-label">Good to Have Skills (AI)</span>}>
+                              <FieldValue multiline value={mainMrf.parsed_jd_json.good_to_have_skills} />
                             </Form.Item>
                           </Col>
                           <Col span={24}>
-                            <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Roles & Responsibilities (AI)</span>}>
-                              <TextArea readOnly disabled rows={3} value={mainMrf.parsed_jd_json.roles_and_responsibilities || '—'} style={{ borderRadius: 6 }} />
+                            <Form.Item label={<span className="mrf-label">Roles & Responsibilities (AI)</span>}>
+                              <FieldValue multiline value={mainMrf.parsed_jd_json.roles_and_responsibilities} />
                             </Form.Item>
                           </Col>
                         </Row>
@@ -1246,7 +1395,7 @@ export default function MRF() {
                     )}
                   </Form>
                 ) : (
-                  <Text type="secondary" style={{ fontSize: 12 }}>No submitted MRF details available.</Text>
+                  <Text type="secondary" className="mrf-caption">No submitted MRF details available.</Text>
                 )}
               </div>
             )}
@@ -1269,16 +1418,16 @@ export default function MRF() {
         confirmLoading={mrfClosurePending}
         onOk={handleCloseMrf}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+        <Space direction="vertical" size={12} className="mrf-full">
+          <div className="mrf-sub--muted">
             This takes the role out of JD filtering and the screening dropdowns straight away.
             Candidates already in progress against it are <strong>not</strong> touched — close or
             pause their journeys individually if that is what you intend.
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text></Text>
+            <Text strong className="mrf-sub">Reason <Text type="danger">*</Text></Text>
             <Select
-              style={{ width: '100%', marginTop: 4 }}
+              className="mrf-full mrf-mt-1"
               placeholder="Why is this requisition closing?"
               value={closeMrfReason}
               onChange={setCloseMrfReason}
@@ -1286,12 +1435,12 @@ export default function MRF() {
             />
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>
+            <Text strong className="mrf-sub">
               Note {closeMrfReason === 'other' ? <Text type="danger">*</Text> : <Text type="secondary">(optional)</Text>}
             </Text>
             <Input.TextArea
               rows={2}
-              style={{ marginTop: 4 }}
+              className="mrf-mt-1"
               placeholder={closeMrfReason === 'other' ? 'Required — say what happened' : 'Any detail worth keeping'}
               value={closeMrfNote}
               onChange={(e) => setCloseMrfNote(e.target.value)}
@@ -1299,6 +1448,37 @@ export default function MRF() {
           </div>
         </Space>
       </Modal>
-    </div>
+
+      {/* Pause a requisition. Distinct from Close: the role stays open/hiring,
+          just temporarily out of JD filtering, and resumes with one click. */}
+      <Modal
+        open={pauseMrfOpen}
+        onCancel={() => setPauseMrfOpen(false)}
+        title="Pause requisition"
+        okText="Pause it"
+        okButtonProps={{ disabled: !pauseMrfReason.trim() }}
+        confirmLoading={mrfPausePending}
+        onOk={handlePauseMrf}
+      >
+        <Space direction="vertical" size={12} className="mrf-full">
+          <div className="mrf-sub--muted">
+            This takes the role out of JD filtering and the screening dropdowns until you resume
+            it. Candidates already in progress against it are <strong>not</strong> touched — pause
+            their journeys individually if that is what you intend.
+          </div>
+          <div>
+            <Text strong className="mrf-sub">Reason <Text type="danger">*</Text></Text>
+            <Input.TextArea
+              rows={2}
+              className="mrf-mt-1"
+              placeholder="Why is this requisition pausing?"
+              value={pauseMrfReason}
+              onChange={(e) => setPauseMrfReason(e.target.value)}
+            />
+          </div>
+        </Space>
+      </Modal>
+      </PageShell>
+    </DesignScope>
   );
 }

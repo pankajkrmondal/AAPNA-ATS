@@ -21,11 +21,11 @@ import { Card, Skeleton, Row, Col } from 'antd';
 function ShimmerBlock({ width = '100%', height = 16, borderRadius = 6, style }) {
   return (
     <div
-      className="shimmer"
+      className="shimmer ls-bar"
       style={{
-        width,
-        height,
-        borderRadius,
+        '--ls-w': typeof width === 'number' ? width + 'px' : width,
+        '--ls-h': typeof height === 'number' ? height + 'px' : height,
+        '--ls-r': typeof borderRadius === 'number' ? borderRadius + 'px' : borderRadius,
         ...style,
       }}
     />
@@ -73,9 +73,9 @@ function CardsSkeleton({ cards = 4 }) {
             style={{ animation: `fadeIn 0.3s ease ${i * 0.08}s both` }}
             styles={{ body: { padding: 24 } }}
           >
-            <ShimmerBlock width={48} height={48} borderRadius={12} style={{ marginBottom: 16 }} />
-            <ShimmerBlock width="60%" height={12} style={{ marginBottom: 12 }} />
-            <ShimmerBlock width="40%" height={28} style={{ marginBottom: 12 }} />
+            <ShimmerBlock width={48} height={48} borderRadius={12} className="cmp-mb-4" />
+            <ShimmerBlock width="60%" height={12} className="cmp-mb-3" />
+            <ShimmerBlock width="40%" height={28} className="cmp-mb-3" />
             <ShimmerBlock width="50%" height={10} />
           </Card>
         </Col>
@@ -90,8 +90,8 @@ function DetailSkeleton() {
       <div style={{ display: 'flex', gap: 20, marginBottom: 32 }}>
         <ShimmerBlock width={80} height={80} borderRadius={40} />
         <div style={{ flex: 1 }}>
-          <ShimmerBlock width="30%" height={24} style={{ marginBottom: 12 }} />
-          <ShimmerBlock width="20%" height={14} style={{ marginBottom: 8 }} />
+          <ShimmerBlock width="30%" height={24} className="cmp-mb-3" />
+          <ShimmerBlock width="20%" height={14} className="cmp-mb-2" />
           <ShimmerBlock width="40%" height={14} />
         </div>
       </div>
@@ -103,19 +103,12 @@ function DetailSkeleton() {
 /** A dense stack of rows — the screening results list, a drawer's activity feed. */
 function ListSkeleton({ rows = 6 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="cmp-stack">
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: 'var(--row-py) var(--row-px)',
-            border: '1px solid var(--border-light)',
-            borderRadius: 12,
-            animation: `fadeIn 0.3s ease ${i * 0.05}s both`,
-          }}
+          className="ls-frame ls-row"
+          style={{ '--ls-delay': `${i * 0.05}s` }}
         >
           <ShimmerBlock width={36} height={36} borderRadius={18} />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -137,24 +130,17 @@ function BoardSkeleton({ columns = 5, rows = 3 }) {
       {Array.from({ length: columns }).map((_, c) => (
         <div
           key={c}
-          style={{
-            flex: '0 0 280px',
-            border: '1px solid var(--border-light)',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--card-pad-compact)',
-            animation: `fadeIn 0.3s ease ${c * 0.06}s both`,
+          className="ls-frame ls-col"
+          style={{ '--ls-delay': `${c * 0.06}s`,
           }}
         >
           <ShimmerBlock width="55%" height={13} style={{ marginBottom: 14 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="cmp-stack">
             {Array.from({ length: rows }).map((_, r) => (
               <div
                 key={r}
+                className="ls-frame ls-card"
                 style={{
-                  border: '1px solid var(--border-light)',
-                  borderRadius: 10,
-                  padding: 12,
-                  display: 'flex',
                   flexDirection: 'column',
                   gap: 8,
                 }}
@@ -178,14 +164,8 @@ function ChartSkeleton({ height = 240 }) {
     <div style={{ padding: '8px 0' }}>
       <ShimmerBlock width="28%" height={12} style={{ marginBottom: 18 }} />
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: 8,
-          height,
-          padding: '0 4px',
-          borderBottom: '1px solid var(--border-light)',
-        }}
+        className="ls-chart"
+        style={{ '--ls-h': typeof height === 'number' ? height + 'px' : height }}
       >
         {bars.map((h, i) => (
           <ShimmerBlock

@@ -24,6 +24,13 @@
   --brand-primary-active: var(--brand-primary-active-light, #5f7424);
   --brand-accent: var(--brand-accent-light, #92a339);
   --brand-primary-bg: var(--brand-primary-bg-light, #eef3da);
+  /* Contrast-bearing pair — see the note in theme/brands.js. --brand-solid is the
+     solid-button FILL (a shade below --brand-primary in light so a white label clears
+     4.5:1); --brand-on-solid is that label; --brand-ink is the brand colour at a value
+     safe for text on a light tint. */
+  --brand-solid: var(--brand-solid-light, #66792a);
+  --brand-on-solid: var(--brand-on-solid-light, #ffffff);
+  --brand-ink: var(--brand-ink-light, #55671e);
   --brand-canvas: var(--brand-canvas-light, #f7f6f3);
   --brand-canvas-deep: var(--brand-canvas-deep-light, #fbfcf7);
   --brand-surface: var(--brand-surface-light, #ffffff);
@@ -40,7 +47,10 @@
   --gold-light: var(--brand-primary-hover);
   --text: #2b2b2b;
   --text-2: #5f6664;
-  --text-3: #8b938a;
+  /* Darkened from #8b938a, which measured 2.93:1 on a glass surface — far under the
+     4.5:1 AA floor, and it carries real content (stat footnotes, field hints), not
+     decoration. Tertiary text still reads as tertiary; it just does so legibly. */
+  --text-3: #687065;
   --green: #4a7c59;
   --red: #c0392b;
   /* Conversations / email-thread accent. Sat as a lone `#7c3aed` on the
@@ -65,9 +75,14 @@
   --glow-accent: 0 4px 14px color-mix(in srgb, var(--brand-primary) 30%, transparent); /* primary buttons only */
 
   /* Typography */
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-heading: 'Sora', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'DM Mono', 'Fira Code', 'Courier New', monospace;
+  /* MOVED OUT of this block — see the standalone :root rule right after it.
+     These three sat inside `:root, [data-theme='light']`, which meant any subtree
+     pinned to light re-declared them. That is fine for the app-wide light mode (same
+     values) but wrong for <DesignScope mode="light"> on the public token pages: it
+     reset --font to this hardcoded Inter stack and silently discarded the active font
+     pack, so those pages rendered in Inter while the rest of the app was in Segoe UI
+     Variable. Typography is not mode-dependent, so it does not belong in a mode
+     block. */
 
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.72);
@@ -277,6 +292,50 @@
   --kpi-e-2: #d2a85a;
   --kpi-e-tint: rgba(182, 136, 58, 0.14);
 
+  /* Skill palette — eight hues cycled across skill tags, and the nine candidate
+     status colours. Added in Stage 6. Both were literal hexes inside
+     components/common/SkillTags.jsx and StatusBadge.jsx, which meant no tenant could
+     re-theme them and — the real bug — they had NO DARK-MODE PAIR: the light values
+     were carried straight onto a dark ground, where #2c3e50 and #7f8c8d go muddy.
+     Same reasoning as --module-* and --avatar-* below: they only have to stay
+     distinguishable from each other, not carry meaning. */
+  --skill-1: #7a922e;
+  --skill-2: #4a7c59;
+  --skill-3: #2980b9;
+  --skill-4: #8e44ad;
+  --skill-5: #d4a017;
+  --skill-6: #16a085;
+  --skill-7: #c0392b;
+  --skill-8: #2c3e50;
+
+  /* Candidate status. Where a token already existed it is reused rather than
+     duplicated, so a change to --red or the brand reaches these too. */
+  --status-new: var(--kpi-b);
+  --status-screening: var(--brand-primary-hover);
+  --status-shortlisted: var(--brand-primary);
+  --status-interview: var(--status-hold);
+  --status-offered: var(--kpi-c);
+  --status-hired: var(--status-approved);
+  --status-withdrawn: #7f8c8d;
+  --status-onhold: #95a5a6;
+
+  /* Module palette — the identity hue for each module row on /admin.
+     Added in Stage 5.7. These were nine raw hexes inside MODULES_INFO in
+     pages/AdminDashboard.jsx, which meant two things: no tenant could re-theme
+     them, and they had NO DARK-MODE PAIR — the light values were carried straight
+     onto a dark ground, where #1890ff and #722ed1 both go muddy. Same reasoning as
+     the avatar palette above: they only have to stay distinguishable from each
+     other, not carry meaning. */
+  --module-mrf: #1890ff;
+  --module-search: #52c41a;
+  --module-hr-upload: #faad14;
+  --module-config: #722ed1;
+  --module-vendor-upload: var(--warning);
+  --module-vendor-dash: #2f54eb;
+  --module-screening: #13c2c2;
+  --module-analytics: #eb2f96;
+  --module-pipeline: #08979c;
+
   /* Avatar palette — deterministic per name, so it only has to be distinguishable,
      not meaningful. Six hues that stay apart at 28px. */
   --avatar-1: #7a922e;
@@ -299,6 +358,17 @@
 }
 
 /* ----- Dark Mode ----- */
+/* ----- Typography, mode-INdEPENDENT -----
+   A plain :root rule so a mode-scoped subtree cannot re-declare it. The values here
+   are only fallbacks: theme/fonts.js is the source of truth and DesignContext writes
+   the active pack inline on <html>, which beats this. They exist so the app still
+   renders in something sensible if that provider never mounts. */
+:root {
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Sora', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'DM Mono', 'Fira Code', 'Courier New', monospace;
+}
+
 [data-theme='dark'] {
   /* Brand axis — dark half of the pairs BrandProvider emits. */
   --brand-primary: var(--brand-primary-dark, #a8c24a);
@@ -306,6 +376,10 @@
   --brand-primary-active: var(--brand-primary-active-dark, #94ad3f);
   --brand-accent: var(--brand-accent-dark, #a8c24a);
   --brand-primary-bg: var(--brand-primary-bg-dark, rgba(168, 194, 74, 0.12));
+  /* Dark deepens the FILL and keeps the white label — see theme/brands.js. */
+  --brand-solid: var(--brand-solid-dark, #657c26);
+  --brand-on-solid: var(--brand-on-solid-dark, #ffffff);
+  --brand-ink: var(--brand-ink-dark, #bcd566);
   --brand-canvas: var(--brand-canvas-dark, #0a0e0c);
   --brand-canvas-deep: var(--brand-canvas-deep-dark, #0a0e0c);
   --brand-surface: var(--brand-surface-dark, #121816);
@@ -318,7 +392,8 @@
   --gold-light: var(--brand-primary-hover);
   --text: #eaeae6;
   --text-2: #9ca5a2;
-  --text-3: #6f7875;
+  /* Lightened from #6f7875 (4.27:1 — marginally under AA). */
+  --text-3: #8b948f;
   --green: #5a9c6e;
   --red: #e74c3c;
   --violet: #a78bfa;   /* lifted for a dark ground; #7c3aed reads near-black there */
@@ -442,6 +517,32 @@
   --kpi-d-2: #f08a7b;
   --kpi-e: #d2a85a;
   --kpi-e-2: #e3c283;
+
+  /* Skill + status, lifted for a dark ground. The four that alias other tokens
+     (--status-new/screening/shortlisted/interview/offered/hired) follow those
+     automatically and are not restated here. */
+  --skill-1: #a8c24a;
+  --skill-2: #6faa82;
+  --skill-3: #5aa3d8;
+  --skill-4: #b07cd0;
+  --skill-5: #e8c157;
+  --skill-6: #45c4b0;
+  --skill-7: #e7614f;
+  --skill-8: #7b93ab;
+
+  --status-withdrawn: #9aa8a5;
+  --status-onhold: #b0bcb9;
+
+  /* Lifted for a dark ground — same hues, raised value and slightly desaturated so
+     they read as chips rather than as glare. */
+  --module-mrf: #4aa8ff;
+  --module-search: #73d13d;
+  --module-hr-upload: #ffc53d;
+  --module-config: #9a6ae1;
+  --module-vendor-dash: #6379f0;
+  --module-screening: #45d3d3;
+  --module-analytics: #f759ab;
+  --module-pipeline: #3fb5b8;
 
   --avatar-1: #a8c24a;
   --avatar-2: #5b7ff0;
@@ -651,6 +752,9 @@ h1, h2, h3, h4, h5, h6,
   50% { transform: translateY(-8px); }
 }
 
+/* UNUSED as of 2026-08-29 — .auth-background was its only consumer and now animates a
+   transform instead (see the note on that rule). Kept per the no-delete rule; do not
+   wire anything new to it, since animating background-position repaints every frame. */
 @keyframes gradientShift {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -1339,6 +1443,16 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* CTA buttons — gradient, lift, press, focus ring */
+/* RETIRED 2026-08-31 — the two legacy CTA treatments, replaced by
+   emphasis="solid" / "soft".
+
+   THE ONLY REMAINING REFERENCE is CandidatePipelinePrototype.jsx, which is commented
+   out of App.jsx and renders nowhere; re-enabling that route would need this block
+   uncommented or those call sites converted. Every live page is off it — including
+   ForgotPassword and ResetPassword, which were still applying `.cta-primary` on top of
+   emphasis="solid" until today, one treatment painting over the other.
+
+   Kept per the no-delete rule; uncomment to restore.
 .cta-primary {
   background: var(--gradient-primary) !important;
   border: none !important;
@@ -1359,6 +1473,7 @@ h1, h2, h3, h4, h5, h6,
   outline: 2px solid var(--gold);
   outline-offset: 2px;
 }
+*/
 
 /* Quick-action rows */
 .quick-action-row {
@@ -1379,6 +1494,19 @@ h1, h2, h3, h4, h5, h6,
 .ant-layout-sider .ant-menu-item {
   position: relative;
 }
+/* RETIRED 2026-08-31 — a SECOND rail, competing with the glass one.
+
+   aurora-glass.css:249 paints this same ::before as a brand gradient with a glow; this
+   one paints a flat --gold with none. Both selectors are (0,2,0), so the only reason the
+   glass rail wins is that main.jsx imports aurora-glass.css AFTER index.css — one
+   import-order edit from silently downgrading the selected item app-wide.
+
+   Provably dead as written: there is exactly one <Sider> in the app
+   (layouts/MainLayout.jsx:412) and it always carries .ats-v2, so nothing can match this
+   without also matching the glass rule. Commented rather than deleted, per the no-delete
+   rule — restore by uncommenting, but delete the aurora-glass rule first or the tie
+   comes back with it.
+
 .ant-layout-sider .ant-menu-item-selected::before {
   content: '';
   position: absolute;
@@ -1390,6 +1518,7 @@ h1, h2, h3, h4, h5, h6,
   border-radius: 0 3px 3px 0;
   background: var(--gold);
 }
+*/
 
 /* ----- Split-screen Auth Layout ----- */
 .auth-split {
@@ -1406,7 +1535,16 @@ h1, h2, h3, h4, h5, h6,
   justify-content: space-between;
   padding: 56px 56px 48px;
   color: #fff;
-  background: linear-gradient(150deg, #5f7424 0%, #7a922e 48%, #92a63c 100%);
+  /* Derived from --brand-solid rather than three literal hexes (2026-08-29, Stage 5.2).
+     The old midpoint was #7a922e, and white on it measures 3.51:1 — under AA for the
+     15.5px lede that sits on this panel. --brand-solid is the contrast-checked fill, so
+     building the gradient from it keeps the whole panel legible and lets a tenant brand
+     repaint it. PREVIOUS:
+     background: linear-gradient(150deg, #5f7424 0%, #7a922e 48%, #92a63c 100%); */
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--brand-solid) 86%, black) 0%,
+    var(--brand-solid) 48%,
+    color-mix(in srgb, var(--brand-solid) 88%, white) 100%);
 }
 /* soft dotted texture + glow on the brand panel */
 .auth-brand-panel::before {
@@ -1473,12 +1611,14 @@ h1, h2, h3, h4, h5, h6,
   border-radius: 6px !important;
 }
 
-/* Education / qualification accordion panels in the keyword filter. */
+/* Education / qualification accordion panels in the keyword filter.
+   Radius retokened 2026-09-01 with the filter form around it — 8px here, 12px in the
+   .ats-v2 twin and 15px on the fields inside was three radii on one nested surface. */
 .screening-edu-panel {
   background: var(--ink-3) !important;
   border: 1px solid var(--border-secondary) !important;
-  border-radius: 8px !important;
-  margin-bottom: 8px !important;
+  border-radius: var(--radius-ctl) !important;
+  margin-bottom: var(--space-2) !important;
 }
 
 /* The selected role's JD context panel (JD Filtering tab). */
@@ -1512,6 +1652,15 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* Unified card action buttons */
+/* RETIRED 2026-08-31 — /filtering's row-action buttons became Button emphasis levels
+   (soft for the two secondary actions, solid for the one that opens the record).
+
+   This block is the clearest specimen of what the Button primitive replaced: every
+   declaration carried `!important`, so it did not lose to `.ui-btn` — it OVERRODE it,
+   and the class had to come off rather than simply be outranked. Its `.primary` variant
+   painted `--gold`, a colour the token layer no longer owns.
+
+   Kept per the no-delete rule; uncomment to restore.
 .screening-action-btn {
   width: 36px !important;
   height: 36px !important;
@@ -1541,8 +1690,22 @@ h1, h2, h3, h4, h5, h6,
   border-color: var(--gold) !important;
   color: #fff !important;
 }
+*/
 
-/* Segmented (capsule) mode tabs */
+/* RETIRED 2026-09-01 (screen sweep) — `.screening-tabs` has NO CONSUMERS. Both pages
+   that carried it, /filtering and /analytics, moved to <SegmentedTabs>, which uses the
+   design system's `Segmented`; ui/Segmented.jsx's own header named this class as one
+   of the three ad-hoc tab bars it was built to replace.
+
+   Measured before it went, so the reason is on the record rather than "it looked old":
+   nav-list 10px radius / tab 8px / tab height 35.3px / nav margin 18px — none of them
+   a ramp step — and the ACTIVE TAB'S LABEL at 3.51:1 in light mode, under the 4.5 AA
+   floor for 15px text, because it painted --brand-primary on an opaque pane. The
+   segmented item measures 5.81:1 for the same label because it uses --brand-ink.
+
+   Kept per the no-delete rule; uncomment to restore. Note the coupling recorded in
+   AURORA-GLASS-ROLLOUT-PLAN.md §I.4 — restoring this restores it for BOTH pages.
+
 .screening-tabs .ant-tabs-nav { margin-bottom: 18px; }
 .screening-tabs .ant-tabs-nav::before { border-bottom: none !important; }
 .screening-tabs .ant-tabs-nav-list {
@@ -1564,72 +1727,131 @@ h1, h2, h3, h4, h5, h6,
 .screening-tabs .ant-tabs-tab .ant-tabs-tab-btn { font-weight: 600; }
 .screening-tabs .ant-tabs-ink-bar { display: none !important; }
 
-/* Spacing between a tab's leading icon and its label (icons were glued to text). */
 .screening-tabs .ant-tabs-tab .tab-ico { margin-right: 8px; }
+*/
 
-/* ───────────────── Premium screening filter form ───────────────── */
-.screening-filter .ant-form-item-label { padding-bottom: 4px; }
+/* ───────────────── Screening filter form ─────────────────
+   Retoken 2026-09-01, screen sweep. This block predated the token contract and was
+   the whole of "the keyword fields don't follow the design lab". Every value below
+   is now a ramp step; the SHAPE is unchanged, so nothing moves except the numbers
+   that were wrong. Measured before/after is in UI-CHANGELOG.md.
+
+   The reference is `.ui-field` (ui/ui.css) — the lab's field — and `.auth-form-inner`
+   (ui/ui.css), which is the app's other RELAXED-height form and therefore the closer
+   precedent for the two places the two disagree (control height and input font size).
+
+   WHY THE 11px MATTERED AND WHY NOTHING CAUGHT IT: `type-floor.mjs` scans /filtering,
+   but AntD `<Tabs>` mounted only the active pane and the active tab defaults to 'jd',
+   so this form was never in the DOM when the scan ran. Measured: 0 sub-12px elements
+   on load, 14 the moment the Keyword tab is clicked (7 labels + 7 hints). The
+   `<SegmentedTabs>` swap does not change that — the pane is still lazy — so the floor
+   here is held by these rules, not by the scan. */
+.screening-filter .ant-form-item-label { padding-bottom: var(--space-1); }
 .screening-filter .ant-form-item-label > label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
+  /* The caption role, not a hand-built approximation of it. Was 11px/700/0.6px —
+     under the 12px floor, and a fourth weight for a label that has three elsewhere. */
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
   text-transform: uppercase;
   color: var(--text-2);
   height: auto;
 }
 .screening-filter .ant-form-item-label > label::after { content: none; }
 
-/* Inline helper/hint text under a field. */
+/* Inline helper/hint text under a field. Was 11px — the second sub-floor size.
+   Matches `.ui-field__hint`. NOTE the bare `.field-hint` selector is global; grep
+   confirms CandidateScreening is its only consumer, so this stays a single rule
+   rather than being split. */
 .screening-filter .field-hint,
 .field-hint {
-  font-size: 11px;
+  font-size: var(--fs-footnote);
   color: var(--text-3);
-  line-height: 1.4;
+  line-height: var(--lh-footnote);
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
-/* Inputs / selects — rounded, subtle, with a soft green focus ring. */
+/* Inputs / selects. Radius was a flat 10px !important on all six — `--radius-ctl` is
+   15px, which is what the lab's field and every converted control render. */
 .screening-filter .ant-input-affix-wrapper,
 .screening-filter .ant-input,
 .screening-filter .ant-input-number,
 .screening-filter .ant-input-number-group-wrapper,
 .screening-filter .ant-select .ant-select-selector,
 .screening-filter .ant-picker {
-  border-radius: 10px !important;
+  border-radius: var(--radius-ctl);
   border-color: var(--border-light);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
+
+/* The controls take `size="large"`, which resolveTokens maps to --control-h-relaxed
+   (46px) and fontSizeLG to the HEADLINE size (17px). 46px is deliberate and stays —
+   it matches the role Select on the JD tab. 17px is not: it made the filter inputs
+   the largest body text on the screen, 3px above the lab's field and 2px above the
+   app's other relaxed form. `--fs-body`, following `.auth-form-inner`. */
+.screening-filter .ant-input-affix-wrapper,
+.screening-filter .ant-input,
+.screening-filter .ant-input-number-input,
+.screening-filter .ant-select-selection-item,
+.screening-filter .ant-select-selection-placeholder {
+  font-size: var(--fs-body);
+}
+
+/* And the height has to be pinned once the font shrinks. MEASURED, after getting this
+   wrong: an affix wrapper is sized by its content, so dropping 17px -> 15px took the
+   three text inputs from 46.1px to 43.3px while the Selects and InputNumbers beside
+   them — which take controlHeightLG directly — stayed at 46. A 2.7px stagger across
+   one filter row. `.auth-form-inner` pins the same height for the same reason; the
+   `min-height: auto` on the nested input is part of that fix, not decoration, or the
+   inner <input> claims 46px of its own inside an already-46px wrapper. */
+.screening-filter .ant-input-affix-wrapper,
+.screening-filter .ant-input {
+  min-height: var(--control-h-relaxed);
+}
+.screening-filter .ant-input-affix-wrapper .ant-input { min-height: auto; }
+
 .screening-filter .ant-input-affix-wrapper:hover,
 .screening-filter .ant-input:hover,
 .screening-filter .ant-input-number:hover,
 .screening-filter .ant-select:hover .ant-select-selector,
 .screening-filter .ant-picker:hover {
-  border-color: var(--green);
+  /* Was `--green`, which is #4a7c59 — a DIFFERENT green from the brand olive. The
+     hovered border and the focus ring were two unrelated greens on one control. */
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent);
 }
 .screening-filter .ant-input-affix-wrapper-focused,
 .screening-filter .ant-input:focus,
 .screening-filter .ant-input-number-focused,
 .screening-filter .ant-select-focused .ant-select-selector,
 .screening-filter .ant-picker-focused {
-  border-color: var(--green) !important;
-  box-shadow: 0 0 0 3px rgba(122, 146, 46, 0.14) !important;
+  /* Was `border-color: var(--green)` + `box-shadow: 0 0 0 3px rgba(122,146,46,0.14)`
+     — a raw brand hex, invisible to a tenant brand swap and to dark mode alike
+     (it measured identical in both). `--glow-focus` is the token for this and is
+     already what every converted control uses. */
+  border-color: var(--brand-primary);
+  box-shadow: var(--glow-focus);
 }
 /* Compact Min/Max groups — round only the outer corners so they read as one control. */
 .screening-filter .ant-input-group.ant-input-group-compact > *:first-child,
-.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:first-child { border-radius: 10px 0 0 10px !important; }
+.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:first-child {
+  border-radius: var(--radius-ctl) 0 0 var(--radius-ctl);
+}
 .screening-filter .ant-input-group.ant-input-group-compact > *:last-child,
-.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:last-child { border-radius: 0 10px 10px 0 !important; }
+.screening-filter .ant-input-group.ant-input-group-compact .ant-input-number:last-child {
+  border-radius: 0 var(--radius-ctl) var(--radius-ctl) 0;
+}
 
-/* Education accordion — premium panel feel + hover. */
+/* Education accordion. 12px was a sixth radius on a screen that already had five. */
 .screening-filter .ant-collapse-item {
-  border-radius: 12px !important;
+  border-radius: var(--radius-ctl) !important;
   overflow: hidden;
   transition: box-shadow var(--transition-fast);
 }
 .screening-filter .ant-collapse-item:hover { box-shadow: var(--shadow-sm); }
 .screening-filter .ant-collapse-header { align-items: center !important; }
-.screening-filter .ant-checkbox-wrapper { font-size: 13px; padding: 3px 0; }
+.screening-filter .ant-checkbox-wrapper { font-size: var(--fs-subhead); padding: 3px 0; }
 
 /* ───────────────── Shared Candidate Detail Card ───────────────── */
 .cdc-root { animation: cdc-fade-in 0.35s ease both; }
@@ -2049,17 +2271,68 @@ h1, h2, h3, h4, h5, h6,
   transform: scale(0.97);
 }
 
-/* ----- Auth Page Background ----- */
+/* ----- Auth Page Background -----
+   REWRITTEN 2026-08-29 (Design System V3, Stage 5.2).
+
+   CORRECTION, recorded rather than quietly fixed: this rule is DEAD CSS. No component
+   references `.auth-background` — AuthLayout uses `.auth-split` / `.auth-brand-panel`,
+   and MissingJdUpload and MrfApprovalAction both carry comments saying they were moved
+   off this shell. The banned animation described below was therefore not running
+   anywhere, and this rewrite is precautionary rather than a performance fix. The LIVE
+   offender was `meshDrift` on `.dash-hero__mesh` — see that rule.
+
+   The previous rule is kept commented below per the no-delete rule. It animated
+   `background-position` across a `background-size: 400% 400%` gradient, which is the
+   one motion pattern this design system explicitly bans: a background-position
+   animation cannot be composited, so it REPAINTS the entire viewport on every frame,
+   for 15 seconds, forever, on the first screen every user sees. The same finding is
+   recorded against the dashboard hero's old `meshDrift` in the rollout plan.
+
+   The replacement keeps the identical look — the same `--gradient-hero`, drifting the
+   same way — but moves the motion onto an oversized `::after` layer animated with
+   `transform`. Transform is compositor work: no paint, no layout.
+
+   PREVIOUS (do not restore without reading the above):
+   .auth-background {
+     min-height: 100vh;
+     background: var(--gradient-hero);
+     background-size: 400% 400%;
+     animation: gradientShift 15s ease infinite;
+     ...
+   }
+*/
 .auth-background {
   min-height: 100vh;
   background: var(--gradient-hero);
-  background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
+  isolation: isolate;
+}
+
+/* The drift, as a transform. Oversized so the edges never enter the viewport as it
+   moves, and `will-change` because this one genuinely animates continuously. */
+.auth-background::after {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  background: var(--gradient-hero);
+  opacity: 0.9;
+  animation: authDrift 18s ease-in-out infinite alternate;
+  will-change: transform;
+  pointer-events: none;
+}
+
+@keyframes authDrift {
+  from { transform: translate3d(-4%, -2%, 0) scale(1.04); }
+  to { transform: translate3d(4%, 2%, 0) scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-background::after { animation: none; }
 }
 
 .auth-background::before {
@@ -2291,6 +2564,16 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* --- Secondary toggle buttons styling (Approve Instead / Reject Instead) --- */
+/* DISABLED 2026-08-29 (Stage 5.3) — no longer referenced by any component.
+   These styled the "Approve Instead" / "Reject Instead" toggles on
+   MrfApprovalAction. Stage 5.2 converted those buttons to the ui Button classes
+   but left BOTH className attributes on each element; React keeps only the last,
+   so these rules had already stopped applying — silently, since the page still
+   rendered, just with the approve/reject colour distinction gone. The tone they
+   encoded (soft red / soft green) is now expressed as `ui-btn--soft ui-btn--danger`
+   and `ui-btn--soft ui-btn--success`.
+   Kept per the no-delete rule. To restore: remove this wrapper and put the class
+   names back on the two Buttons in pages/MrfApprovalAction.jsx.
 .btn-reject-secondary {
   background-color: #fff1f0 !important;
   border: 1px solid #ffa39e !important;
@@ -2344,6 +2627,7 @@ h1, h2, h3, h4, h5, h6,
   border-color: #bcd566 !important;
   color: #bcd566 !important;
 }
+*/
 
 /* --- Custom premium horizontal menu (Workable-style capsule tabs) --- */
 .ant-menu-horizontal {
@@ -2482,21 +2766,30 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* Refined, uppercase table header — scoped to the portal so other tables are untouched */
+/* Brought onto the ramp 2026-08-31. This header is an uppercase micro-label, which is
+   exactly the caption role — but it was written at 11px with a literal 0.5px of
+   tracking, one under the 12px floor `theme/fonts.js` promises and on the densest text
+   in the admin portal. `type-floor.mjs` never caught it because its route list cannot
+   reach /admin/dashboard. The role carries size, weight, tracking and the small optical
+   cut together, which is the point of naming it rather than restating three values. */
 .admin-portal .ant-table-thead > tr > th {
   background: var(--gold-subtle) !important;
   text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  font-weight: 700;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--tracking-caption);
+  font-weight: var(--fw-caption);
   color: var(--text-2) !important;
   border-bottom: 1px solid var(--border) !important;
 }
+/* Was a literal rgba of the brand at 4.5%. color-mix on the token follows a tenant
+   swap; the literal could not. */
 .admin-portal .ant-table-tbody > tr:hover > td {
-  background: rgba(122, 146, 46, 0.045) !important;
+  background: color-mix(in srgb, var(--brand-primary) 5%, transparent) !important;
 }
 
 /* Card hover lift for the toolbar/companies cards */
-.admin-portal .ant-table-wrapper { border-radius: 12px; overflow: hidden; }
+.admin-portal .ant-table-wrapper { border-radius: var(--radius-surface); overflow: hidden; }
 
 /* Capsule / segmented tab bar */
 .admin-portal .admin-tabbar {
@@ -2573,30 +2866,43 @@ h1, h2, h3, h4, h5, h6,
 }
 
 /* ===== Admin top bar (MainLayout admin branch) ===== */
+/* Brought onto the system 2026-08-31, to match `.ml-topbar` — the recruitment shell's
+   equivalent, which is already tier-1 chrome. Was a raw `#ffffff -> #fbfcf8` gradient
+   with a second `#121816 -> #0e1412` pair for dark, a hardcoded 28px inset and two
+   literal rgba shadows: none of it could follow a tenant brand, and the two shells sat
+   at different insets for no reason.
+
+   `--material-thick` is the same tier-1 material the other topbar takes, so light stays
+   opaque and dark gets the glass — the split `.ml-topbar` documents. The dark override
+   below is no longer needed and is retired with it. */
 .admin-topbar {
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcf8 100%) !important;
+  background: var(--material-thick) !important;
   border-bottom: 1px solid var(--border-light) !important;
   height: 64px !important;
-  padding: 0 28px !important;
+  padding: 0 var(--space-5) !important;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: sticky;
   top: 0;
   z-index: 90;
-  box-shadow: 0 1px 0 rgba(122, 146, 46, 0.06), 0 2px 14px rgba(0, 0, 0, 0.035);
+  box-shadow: var(--depth-1);
 }
+/* Tokenised 2026-08-31. `border-radius: 10px` and `font-size: 16px` were on neither
+   scale; `#fff` on a brand fill is what `--brand-on-solid` exists for (and the literal
+   is what produced a 3.51:1 contrast elsewhere in this file); the rgba shadow is
+   `--glow-brand` spelled out, so it could not soften under a preset that disables glow. */
 .admin-brand-icon {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius-ctl);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 16px;
+  color: var(--brand-on-solid);
+  font-size: var(--fs-headline);
   background: var(--gradient-primary);
-  box-shadow: 0 3px 10px rgba(122, 146, 46, 0.32);
+  box-shadow: var(--glow-brand);
 }
 .admin-top-btn.ant-btn {
   height: 32px !important;
@@ -2629,12 +2935,14 @@ h1, h2, h3, h4, h5, h6,
   gap: 8px;
   height: 32px;
   padding: 0 12px 0 4px;
-  background: var(--gold-bg);
+  /* Tokenised 2026-08-31: literal 999px -> --radius-pill, literal 12px -> the footnote
+     role, and the `--gold` aliases spelled as the brand tokens they point at. */
+  background: var(--brand-primary-bg);
   border: 1px solid var(--border-light);
-  border-radius: 999px;
-  font-size: 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-footnote);
   font-weight: 600;
-  color: var(--gold);
+  color: var(--brand-primary);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 .admin-user-chip:hover {
@@ -2642,13 +2950,18 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: var(--shadow-sm);
 }
 
-/* Dark-mode parity for the admin top bar chrome (light hexes above). */
+/* RETIRED 2026-08-31 — both overrides existed to patch light-mode hexes that are gone.
+   `.admin-topbar` now takes `--material-thick`, which is already mode-aware, and
+   `.admin-top-btn` is retired entirely (its three buttons became `emphasis="soft"` and
+   `emphasis="text" tone="danger"`). Kept per the no-delete rule.
+
 [data-theme='dark'] .admin-topbar {
   background: linear-gradient(180deg, #121816 0%, #0e1412 100%) !important;
 }
 [data-theme='dark'] .admin-top-btn.ant-btn {
   background: var(--ink-2) !important;
 }
+*/
 [data-theme='dark'] .admin-top-btn--logout.ant-btn:hover {
   color: #e74c3c !important;
   border-color: rgba(231, 76, 60, 0.4) !important;
@@ -2753,10 +3066,35 @@ h1, h2, h3, h4, h5, h6,
     radial-gradient(circle at 82% 18%, rgba(37, 99, 235, 0.12) 0%, transparent 40%),
     radial-gradient(circle at 70% 85%, rgba(217, 119, 6, 0.10) 0%, transparent 42%),
     radial-gradient(circle at 30% 80%, rgba(22, 163, 74, 0.10) 0%, transparent 40%);
-  background-size: 200% 200%;
-  animation: meshDrift 18s ease-in-out infinite;
+  /* REWRITTEN 2026-08-29 (Stage 5.2).
+     This carried `background-size: 200% 200%` + `animation: meshDrift`, which animates
+     `background-position` — the pattern this design system bans, and the one the
+     rollout plan names against this exact element. It repainted a four-gradient,
+     8px-blurred, oversized layer every frame, 18s a cycle, forever, on the landing
+     screen of the app.
+
+     PREVIOUS:  background-size: 200% 200%;
+                animation: meshDrift 18s ease-in-out infinite;
+
+     The element is already `inset: -40%` and `pointer-events: none`, so it can simply
+     drift itself: a transform is compositor work, no paint, and it needs no extra
+     layer. The look is unchanged. */
+  animation: dashMeshDrift 18s ease-in-out infinite alternate;
+  will-change: transform;
   filter: blur(8px);
 }
+
+@keyframes dashMeshDrift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1.04); }
+  to   { transform: translate3d(3%, 2%, 0) scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-hero__mesh { animation: none; }
+}
+/* UNUSED as of 2026-08-29 — .dash-hero__mesh was its only consumer and now animates a
+   transform. Kept per the no-delete rule; do not wire anything new to it, because
+   animating background-position cannot be composited. */
 @keyframes meshDrift {
   0%, 100% { background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%; }
   50%      { background-position: 30% 20%, 70% 30%, 70% 70%, 30% 70%; }
@@ -2827,8 +3165,12 @@ h1, h2, h3, h4, h5, h6,
 /* ----- Shared widget card header ----- */
 .dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .dash-card-metric { text-align: right; line-height: 1.1; cursor: help; }
-.dash-card-metric__num { display: block; font-size: 22px; font-weight: 800; font-family: var(--mono); color: var(--text); }
-.dash-card-metric__cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); font-weight: 600; }
+/* 22px -> --fs-metric-sm (25px), 2026-08-31. This is a metric readout, and the metric
+   scale is 25/33/46; 22 was on neither the text ramp nor the metric one. The design
+   system's own StatTile value renders at --fs-metric-md, so a secondary metric beside
+   it belongs one step down rather than at an invented size. */
+.dash-card-metric__num { display: block; font-size: var(--fs-metric-sm); font-weight: 800; font-family: var(--mono); color: var(--text); }
+.dash-card-metric__cap { font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); font-weight: 600; }
 .dash-funnel-metrics { display: flex; gap: 18px; }
 .dash-card-link { font-size: 12.5px; font-weight: 600; color: var(--gold); cursor: pointer; white-space: nowrap; }
 .dash-card-link:hover { color: var(--gold-light); }
@@ -2847,7 +3189,7 @@ h1, h2, h3, h4, h5, h6,
 /* ----- Conversion funnel step connector ----- */
 .dash-funnel-step {
   display: flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 600; color: var(--text-3);
+  font-size: var(--fs-caption); font-weight: 600; color: var(--text-3);
   padding: 3px 0 3px 2px;
 }
 .dash-funnel-step .anticon { color: var(--gold); font-size: 10px; }
@@ -2865,7 +3207,10 @@ h1, h2, h3, h4, h5, h6,
 .dash-action-row.is-empty { opacity: 0.6; }
 .dash-action-row__icon { width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
 .dash-action-row__label { flex: 1; font-size: 13.5px; font-weight: 500; display: flex; align-items: center; }
-.dash-action-row__count { font-size: 18px; font-weight: 800; font-family: var(--mono); }
+/* 18px -> --fs-title-3 (20px), 2026-08-31. Off the ramp, and NOT sent to the metric
+   scale: this count sits inside a list row in "Needs Your Attention", where 25px would
+   shout over the label beside it. Title-3 is the nearest role that fits a row. */
+.dash-action-row__count { font-size: var(--fs-title-3); font-weight: 800; font-family: var(--mono); }
 .dash-action-row__arrow { color: var(--text-3); font-size: 12px; transition: transform var(--transition-fast); }
 .dash-action-row:hover .dash-action-row__arrow { transform: translateX(3px); color: var(--row-color); }
 .dash-allclear {
@@ -3085,7 +3430,7 @@ h1, h2, h3, h4, h5, h6,
 }
 .template-list-item.is-selected .template-list-item__name { color: var(--brand-primary-active); }
 .template-list-item__sub {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   color: var(--text-3);
   margin-top: 2px;
   white-space: nowrap;
@@ -3447,7 +3792,11 @@ h1, h2, h3, h4, h5, h6,
    scroll surface. The template list is bounded and sticky so it stays
    reachable as the editor scrolls past it. */
 @media (min-width: 768px) {
-  /* Tighter card head — identity only now that Save lives in the toolbar. */
+  /* DISABLED 2026-08-29 (Stage 5.4) — the three panes are <Surface> now, not <Card>,
+     so `.ant-card-head` / `.ant-card-body` match nothing on this page. Both rules are
+     reproduced against the new structure as `.em-pane__head` and `.em-placeholder` in
+     styles/pages/email-management.css. Kept per the no-delete rule; to restore, swap
+     the Surfaces back to Cards in pages/EmailManagement.jsx and uncomment.
   .email-editor-card .ant-card-head { padding-top: 10px; padding-bottom: 10px; min-height: 0; }
 
   .email-placeholder-card .ant-card-body {
@@ -3457,6 +3806,7 @@ h1, h2, h3, h4, h5, h6,
     text-align: center;
     min-height: 400px;
   }
+  */
 
   /* Bounded, NOT sticky. Sticky only has travel while its containing block is
      taller than it, so pinning the card here made it drift out of line with the

@@ -1,0 +1,581 @@
+/**
+ * /screening — the ranking workspace. Stage 5.8.
+ *
+ * The largest file in the rollout at 438 violations, and the one with the worst type
+ * scale: it sets **9px and 9.5px** labels. The scale's floor is 12px, and it exists
+ * because the app was set between 9 and 13 — this file is where the 9 came from.
+ *
+ * `.screening-tabs` WAS shared with /analytics and is retired as of 2026-09-01 — both
+ * pages moved to <SegmentedTabs>. The retired rules and the measurements that
+ * condemned them are in theme/index.css; nothing in this file styles the strip.
+ *
+ * Imported after '../ui'.
+ */
+
+/* ------------------------------------------------------------------
+   Type
+   Three uppercase label variants (11px block, 11px tracked, 9px tracked) for one
+   role. All caption now.
+   ------------------------------------------------------------------ */
+.cs-label {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+}
+.cs-legend {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cs-legend--strong {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cs-legend--gap { margin-block-end: var(--space-2); }
+.cs-legend--gap-sm { margin-block-end: 5px; }
+.cs-legend--ink { color: var(--text-2); }
+
+.cs-body { font-size: var(--fs-subhead); }
+.cs-body--break { font-size: var(--fs-subhead); word-break: break-all; }
+.cs-body--strong { font-size: var(--fs-subhead); font-weight: 600; }
+.cs-caption { font-size: var(--fs-footnote); }
+.cs-caption--muted { font-size: var(--fs-footnote); color: var(--text-3); }
+.cs-caption--auto { font-size: var(--fs-footnote); margin-inline-start: auto; }
+.cs-caption--caps { font-size: var(--fs-footnote); text-transform: uppercase; letter-spacing: 0.05em; }
+.cs-lede { font-size: var(--fs-body); }
+.cs-lede--sm { font-size: var(--fs-callout); }
+.cs-strong { font-weight: 600; }
+.cs-strong--lg { font-weight: 700; font-size: var(--fs-body); }
+.cs-strong--gap { font-weight: 700; margin-block-end: var(--space-1); }
+.cs-page-title.ant-typography { margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+.cs-section-title {
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  color: var(--text);
+  margin-block-end: 6px;
+}
+.cs-muted { color: var(--text-3); }
+.cs-ink { color: var(--text-2); }
+.cs-ok { color: var(--green); }
+.cs-brand { color: var(--brand-ink); }
+.cs-brand--lg { font-size: var(--fs-title-2); color: var(--brand-ink); }
+.cs-brand--strong { font-weight: 700; color: var(--brand-ink); }
+
+/* The "(optional)" / count suffixes beside a heading. Were 9px and 9.5px at 0.6-0.7
+   opacity — two sizes below the floor AND dimmed, which is the combination the
+   contrast work exists to prevent. One role, at the caption size. */
+.cs-suffix {
+  margin-inline-start: 3px;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--text-3);
+}
+.cs-note--info {
+  margin-block-start: 5px;
+  font-size: var(--fs-footnote);
+  color: var(--info-strong);
+  line-height: 1.4;
+}
+.cs-summary {
+  font-size: var(--fs-subhead);
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-block-start: 6px;
+  max-height: 110px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* ------------------------------------------------------------------
+   Layout
+   ------------------------------------------------------------------ */
+.cs-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-block-end: 20px;
+}
+.cs-main { min-height: calc(100vh - 200px); }
+.cs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-block-start: var(--space-2);
+}
+.cs-row--tight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-block-start: var(--space-1);
+}
+.cs-col {
+  margin-block-start: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cs-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.cs-flex { display: flex; }
+.cs-grow { flex: 1; min-width: 0; }
+.cs-half { width: 50%; text-align: center; }
+.cs-full { width: 100%; }
+.cs-full--tall { width: 100%; height: var(--control-h-relaxed); }
+.cs-spread {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding-inline-end: var(--space-3);
+}
+.cs-pad-y { padding: var(--space-2) 0; }
+.cs-empty { padding: 64px var(--space-5); text-align: center; }
+
+.cs-mt-1 { margin-block-start: var(--space-1); }
+.cs-mt-1-5 { margin-block-start: 6px; }
+.cs-mt-2 { margin-block-start: var(--space-2); }
+.cs-mt-3 { margin-block-start: var(--space-3); }
+.cs-mt-neg { margin-block-start: -1px; }
+.cs-mb-1 { margin-block-end: var(--space-1); }
+.cs-mb-2 { margin-block-end: var(--space-2); }
+.cs-mb-3 { margin-block-end: 14px; }
+.cs-ml-1 { margin-inline-start: var(--space-1); }
+.cs-ml-2 { margin-inline-start: var(--space-2); }
+.cs-ml-3 { margin-inline-start: var(--space-3); }
+.cs-my-2 { margin-block: var(--space-2); }
+.cs-my-3 { margin-block: var(--space-3); }
+.cs-flush { margin: 0; }
+.cs-flush--edge { margin: 0; border: 1px solid transparent; }
+
+/* ------------------------------------------------------------------
+   Wells, chips and controls
+   ------------------------------------------------------------------ */
+.cs-well {
+  border-radius: var(--radius-ctl);
+  background: var(--ink-3);
+  margin-block-start: var(--space-1);
+}
+/* A danger callout. Was `rgba(192,57,43,0.05)` over `rgba(192,57,43,0.2)` — the
+   --red token at 5% and 20%, spelled out, so no theme could reach it. */
+.cs-alert {
+  margin-block-end: 14px;
+  padding: var(--space-3) 14px;
+  background: color-mix(in srgb, var(--red) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 20%, transparent);
+  border-radius: var(--radius-ctl);
+}
+/* A neutral key/value chip. Was `#f1f3f5` / `#ced4da` / `#495057` — three greys with
+   no dark pair, so in dark mode it stayed a light chip with dark text on a dark card. */
+.cs-chip.ant-typography,
+.cs-chip {
+  margin: 0;
+  font-size: var(--fs-footnote);
+  padding: var(--space-1) 10px;
+  border-radius: var(--radius-ctl);
+  background: var(--ink-3);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-weight: 500;
+}
+.cs-tag.ant-tag { border-radius: var(--radius-xs); font-weight: 600; }
+.cs-tag--stack.ant-tag { border-radius: var(--radius-xs); margin-block-start: 2px; }
+/* RETIRED 2026-08-31 — was applied to two BUTTONS but scoped to `.ant-tag`, so it never matched anything. Dead on arrival, not dead by this work.
+   Kept per the no-delete rule; uncomment to restore.
+
+.cs-pill.ant-tag { border-radius: var(--radius-ctl); font-weight: 700; }
+*/
+.cs-avatar { width: 44px; height: 44px; border-radius: var(--radius-pill); flex-shrink: 0; }
+
+/* The relevance meter beside each candidate. */
+.cs-meter {
+  width: 80px;
+  height: 4px;
+  background: var(--ink-4);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.cs-meter__fill { height: 100%; width: var(--cs-meter, 0%); background: var(--brand-primary); }
+.cs-progress .ant-progress-bg { background-color: var(--brand-primary); }
+
+/* RETIRED 2026-08-31 — /filtering's buttons took `size="lg"`, which owns the height, radius and weight these set.
+   Kept per the no-delete rule; uncomment to restore.
+
+.cs-btn.ant-btn {
+  height: var(--control-h-relaxed);
+  border-radius: var(--radius-btn);
+  font-weight: 600;
+}
+*/
+/* RETIRED 2026-08-31 — three per-button widths and a control height, all now carried
+   by the Button size scale. The three widths are the clearest example of what that
+   scale replaces: 26/22/18px of side padding, chosen per button, for the same control.
+   Kept per the no-delete rule; uncomment to restore.
+
+.cs-btn--wide.ant-btn { padding-inline: 26px; }
+.cs-btn--mid.ant-btn { padding-inline: 22px; }
+.cs-btn--narrow.ant-btn { padding-inline: 18px; }
+.cs-ctl { height: var(--control-h-relaxed); }
+*/
+
+/* ------------------------------------------------------------------
+   The AI profile drawer
+   Its verdict / shortlist / trajectory panels are one shape written four times, with
+   the tint, border and text colour all data (they encode the verdict). Those three
+   arrive as custom properties; the rule owns everything else.
+   ------------------------------------------------------------------ */
+.cs-panel {
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-ctl);
+  background: var(--cs-panel-bg, var(--ink-3));
+  border: 1px solid var(--cs-panel-border, var(--border));
+}
+.cs-panel--row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-block-end: 14px;
+}
+.cs-panel__body {
+  font-size: var(--fs-footnote);
+  color: var(--text);
+  line-height: 1.5;
+}
+.cs-panel__body--strong { font-weight: 500; }
+.cs-panel__verdict {
+  font-size: var(--fs-subhead);
+  font-weight: 700;
+  color: var(--cs-panel-ink, var(--cs-tone, var(--text)));
+  margin-block-end: 3px;
+}
+.cs-panel__reason {
+  font-size: var(--fs-footnote);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.cs-panel__icon {
+  color: var(--cs-panel-ink, var(--cs-tone, var(--text)));
+  font-size: var(--fs-body);
+  flex-shrink: 0;
+  margin-block-start: 2px;
+}
+
+/* Skill-gap chips. Present/missing were `#4a7c59` and `rgba(74,124,89,0.12|0.25)`
+   written out — the --kpi-c token at 12% and 25%. As literals they had no dark pair,
+   so a "present" chip kept its light-mode green on a dark drawer. */
+.cs-skill {
+  font-size: var(--fs-footnote);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--cs-skill) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cs-skill) 25%, transparent);
+  color: var(--cs-skill);
+}
+.cs-skill--present { --cs-skill: var(--kpi-c); }
+.cs-skill--missing { --cs-skill: var(--red); }
+.cs-skill-label {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--cs-skill, var(--text-3));
+  margin-block-end: var(--space-1);
+}
+
+.cs-split-center {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+/* Mode indicator beside the score header — an identifier, so mono is right, but from
+   the font pack rather than the browser default. */
+.cs-mode { font-size: var(--fs-caption); color: var(--text-3); font-family: var(--mono); }
+
+/* Skeleton bars: width/height/gap are all props, so they arrive as properties. */
+.cs-bar {
+  width: var(--cs-bar-w, 100%);
+  height: var(--cs-bar-h, 12px);
+  border-radius: var(--radius-ctl);
+  margin-block-end: var(--cs-bar-mb, 0);
+}
+
+/* Stars. The filled/empty split is state; the size is a prop. */
+.cs-star { font-size: var(--cs-star-size, 12px); margin-inline-end: 2px; color: var(--border-secondary); }
+.cs-star--on { color: var(--star); }
+
+/* A data-tinted status tag (verdict / rating badges). */
+.cs-vtag.ant-tag {
+  margin: 0;
+  font-size: var(--fs-footnote);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-weight: 500;
+  background: var(--cs-tag-bg);
+  border: 1px solid var(--cs-tag-border);
+  color: var(--cs-tag-ink);
+}
+.cs-vtag--secondary.ant-tag { opacity: 0.85; }
+
+.cs-collapse { background: transparent; margin-block-start: 6px; }
+
+/* More skill-chip tones. `#6d7e3d` is an olive with no token; --brand-ink is the
+   brand at a value safe as text, which is what it was reaching for. */
+.cs-skill--partial { --cs-skill: var(--brand-ink); }
+.cs-skill--none {
+  background: var(--ink-4);
+  border-color: var(--border-secondary);
+  color: var(--text-3);
+}
+
+.cs-score {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--brand-ink);
+  font-family: var(--mono);
+  line-height: 1;
+}
+.cs-score-cell {
+  font-size: var(--fs-subhead);
+  font-weight: 700;
+  color: var(--cs-cell-ink, var(--text));
+  font-family: var(--mono);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.cs-foot-note {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+  line-height: 1.5;
+  border-block-start: var(--hairline);
+  padding-block-start: 6px;
+}
+.cs-param {
+  font-size: var(--fs-footnote);
+  color: var(--text-2);
+  font-weight: 500;
+  flex: 1;
+}
+.cs-danger-body { font-size: var(--fs-footnote); color: var(--red); line-height: 1.5; }
+.cs-danger-label {
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--red);
+}
+.cs-danger-icon { color: var(--red); font-size: var(--fs-footnote); flex-shrink: 0; margin-block-start: 1px; }
+.cs-danger-text { color: var(--red); font-size: var(--fs-footnote); }
+.cs-help { font-size: var(--fs-caption); margin: 0; cursor: help; }
+.cs-faded { color: var(--text-3); opacity: 0.6; }
+.cs-muted--sm { color: var(--text-3); font-size: var(--fs-footnote); }
+.cs-title-ink { color: var(--text); font-weight: 800; }
+.cs-title-ink--lg { color: var(--text); font-size: var(--fs-body); letter-spacing: -0.01em; }
+/* A stage dot whose hue is the stage — data. */
+.cs-dot-stage { background: var(--cs-dot, var(--border)); }
+/* Conversation message subject. Outbound messages sit on a filled bubble and need a
+   light label; inbound ones sit on the pane and take the brand olive. */
+.cs-msg-subject { color: var(--olive); }
+.cs-msg-subject--out { color: rgba(255, 255, 255, 0.95); }
+
+/* ------------------------------------------------------------------
+   Layout one-offs
+   ------------------------------------------------------------------ */
+.cs-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-block-end: 14px; }
+.cs-end { display: flex; justify-content: flex-end; }
+.cs-end--gap { display: flex; justify-content: flex-end; margin-block-start: var(--space-4); }
+.cs-end--gap-2 { display: flex; justify-content: flex-end; gap: var(--space-3); margin-block-start: var(--space-4); }
+.cs-end--center { display: flex; justify-content: flex-end; align-items: center; }
+.cs-end--meta { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-4); margin-inline-start: auto; }
+.cs-drawer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  background: var(--ink-2);
+  border-block-start: 1px solid var(--border-secondary);
+}
+.cs-wrap { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.cs-wrap--gap { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-block-start: 5px; }
+.cs-wrap--sm { display: flex; gap: 6px; flex-wrap: wrap; margin-block-start: 2px; }
+.cs-wrap--chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-wrap--wide { display: flex; gap: 32px; flex-wrap: wrap; margin-block-end: 10px; }
+.cs-inline { display: flex; gap: 6px; }
+.cs-stack { display: flex; flex-direction: column; }
+.cs-stack--sm { display: flex; flex-direction: column; gap: var(--space-2); }
+.cs-stack--md { display: flex; flex-direction: column; gap: var(--space-4); margin-block-start: 10px; }
+.cs-stack--lg { display: flex; flex-direction: column; gap: 20px; margin-block-start: 10px; }
+.cs-stack--end { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+.cs-mid { display: flex; align-items: center; gap: var(--space-2); }
+.cs-mid--wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cs-mid--wide { display: flex; align-items: center; gap: 18px; }
+.cs-mid--bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: 6px var(--space-3);
+  margin-block-end: 10px;
+}
+.cs-mid--gap { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.cs-mid--label { display: flex; align-items: center; gap: 6px; margin-block-end: var(--space-2); }
+.cs-mid--head { display: flex; align-items: center; gap: 10px; margin-block-start: 6px; margin-block-end: 14px; }
+.cs-mid--row { display: flex; align-items: center; gap: 10px; margin-block-end: 7px; }
+.cs-mid--row-flush { display: flex; align-items: center; gap: 10px; margin-block-end: 0; }
+.cs-top { display: flex; align-items: flex-start; gap: 7px; margin-block-end: 5px; }
+.cs-base { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+/* RETIRED 2026-08-31 — the drawer's Close button took emphasis="soft", which owns its radius.
+   Kept per the no-delete rule; uncomment to restore.
+
+.cs-round { border-radius: var(--radius-ctl); }
+*/
+
+/* ------------------------------------------------------------------
+   Verdict / score tones
+   The page computed these in JS as rgba() strings and bare hexes — five tones, each
+   spelled three times (border 30-35%, fill 6-8%, text). They are tokens now, mixed in
+   CSS, so a tenant brand and dark mode both reach them; the JS picks a TONE NAME.
+   ------------------------------------------------------------------ */
+.cs-tone {
+  border: 1px solid color-mix(in srgb, var(--cs-tone) 35%, transparent);
+  background: color-mix(in srgb, var(--cs-tone) 8%, transparent);
+  color: var(--cs-tone);
+}
+.cs-tone--good { --cs-tone: var(--kpi-c); }
+.cs-tone--fair { --cs-tone: var(--brand-ink); }
+.cs-tone--mid { --cs-tone: var(--kpi-b); }
+.cs-tone--warn { --cs-tone: var(--kpi-e); }
+.cs-tone--bad { --cs-tone: var(--red); }
+
+/* The parameter rows want a quieter version of the same five tones. */
+.cs-tone--soft {
+  border-color: color-mix(in srgb, var(--cs-tone) 15%, transparent);
+  background: color-mix(in srgb, var(--cs-tone) 7%, transparent);
+  color: inherit;
+}
+.cs-param-row {
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-ctl);
+  display: flex;
+  flex-direction: column;
+}
+
+.cs-score-badge {
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-xs);
+}
+
+/* Candidate avatar in the list. Selected gets the brand gradient. */
+.cs-avatar-chip.ant-avatar {
+  background: var(--ink-2);
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: var(--fs-body);
+}
+.cs-avatar-chip--on.ant-avatar {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--green) 100%);
+  color: var(--brand-on-solid);
+}
+
+/* "Top rated" badge. Was rgba(122,146,46,...) — the brand at 6% and 25%. */
+.cs-top-tag.ant-tag {
+  margin: 0;
+  border-radius: var(--radius-pill);
+  font-weight: 800;
+  font-size: var(--fs-caption);
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 25%, transparent);
+  background: color-mix(in srgb, var(--brand-primary) 6%, transparent);
+  color: var(--brand-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+}
+
+.cs-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-pill);
+  background: var(--gold-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-block-end: 18px;
+}
+
+/* The floating bulk-action bar. */
+.cs-floatbar {
+  background: var(--brand-primary-bg);
+  border: 2.5px solid var(--brand-primary);
+  box-shadow: var(--depth-3);
+  border-radius: var(--radius-surface);
+  padding: var(--space-3) var(--space-5);
+}
+
+.cs-primary-btn.ant-btn {
+  border-radius: var(--radius-ctl);
+  background: var(--brand-solid);
+  border-color: var(--brand-solid);
+  color: var(--brand-on-solid);
+}
+.cs-primary-btn--dim.ant-btn { opacity: 0.75; }
+
+/* The AI profile summary: a tinted quote block with a brand leading rule. The rule is
+   its own property, never a `border` shorthand — the same discipline the pipeline
+   status edge needs, for the same reason. */
+.cs-ai-summary {
+  font-size: var(--fs-footnote);
+  color: var(--text);
+  line-height: 1.7;
+  margin-block-end: 14px;
+  padding: 14px var(--space-4);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-ink) 8%, transparent), transparent);
+  border-inline-start: 3px solid var(--brand-ink);
+  border-radius: 0 var(--radius-ctl) var(--radius-ctl) 0;
+}
+
+.cs-term {
+  font-size: var(--fs-footnote);
+  background: var(--ink-4);
+  color: var(--text-2);
+  padding: 3px 9px;
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--border-light);
+  font-weight: 500;
+}
+
+.cs-meter__bar { height: 100%; width: var(--cs-meter, 0%); background: var(--cs-meter-ink, var(--brand-primary)); border-radius: var(--radius-xs); }
+.cs-criteria {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
+  font-family: var(--mono);
+  display: flex;
+}
+.cs-criteria--after {
+  margin-block-start: var(--space-1);
+  padding-block-start: var(--space-1);
+  border-block-start: var(--hairline);
+}
+.cs-floatbar--fixed {
+  position: fixed;
+  bottom: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 10000;
+}

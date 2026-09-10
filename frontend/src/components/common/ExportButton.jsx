@@ -14,10 +14,18 @@
  * asks for it and hands the result to the browser.
  */
 import { useState } from 'react';
-import { Button, App as AntApp, Tooltip } from 'antd';
+import { App as AntApp, Tooltip } from 'antd';
 import { FileExcelOutlined } from '@ant-design/icons';
 
+import { Button } from '../../ui';
 import { downloadFile } from '../../utils/downloadFile';
+
+/**
+ * Callers pass AntD's size vocabulary (`small`), and there are seventeen of them, so
+ * the prop's API is kept and translated here rather than edited at every call site.
+ * `undefined` is AntD's default size, which is `md`.
+ */
+const SIZE = { small: 'sm', middle: 'md', large: 'lg' };
 
 export default function ExportButton({
   /** (config) => Promise<AxiosResponse>. Receives the blob/timeout config. */
@@ -109,19 +117,27 @@ export default function ExportButton({
     <Tooltip title={tooltipText}>
       {/* span wrapper: AntD tooltips do not fire on a disabled button, and the
           disabled case is exactly when the explanation is most needed. */}
-      <span style={{ display: 'inline-block', cursor: isDisabled ? 'not-allowed' : 'pointer' }}>
+      <span className={'eb-wrap' + (isDisabled ? ' eb-wrap--off' : '')}>
+        {/* `soft` — 2026-08-31. `.eb-btn` hand-rolled an outlined-brand treatment
+            (own radius, own font-weight, brand ink on a brand border) that exists in
+            the system as `emphasis="soft"`: a tinted fill rather than an outline.
+            ui.css states why the outline was wrong — "an outlined button next to a
+            glowing solid one reads as disabled" — and Export sits beside a solid
+            primary on most of the seventeen screens that use it.
+
+            `.eb-btn--off` is kept and is load-bearing: it sets `pointer-events: none`
+            so the wrapping span receives the hover, which is the only way the tooltip
+            fires while the button is disabled — and the disabled case is exactly when
+            the explanation is most needed. */}
         <Button
           icon={<FileExcelOutlined />}
           onClick={handleClick}
           loading={loading}
           disabled={isDisabled}
-          size={size}
-          style={{
-            borderRadius: 6,
-            fontWeight: 600,
-            ...(isDisabled ? { pointerEvents: 'none' } : { color: '#7a922e', borderColor: '#7a922e' }),
-            ...style,
-          }}
+          size={SIZE[size] || 'md'}
+          emphasis="soft"
+          className={isDisabled ? 'eb-btn--off' : ''}
+          style={style}
         >
           {label}
         </Button>

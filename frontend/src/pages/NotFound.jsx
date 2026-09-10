@@ -2,7 +2,8 @@
  * NotFound — 404 page with fun illustration and navigation back to home.
  */
 import { useNavigate } from 'react-router-dom';
-import { Button, Typography, Space } from 'antd';
+import { Typography, Space } from 'antd';
+import { Button } from '../ui';
 import { HomeOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -12,58 +13,31 @@ export default function NotFound() {
 
   return (
     <div
-      className="animate-fade-in"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 'calc(100vh - 160px)',
-        textAlign: 'center',
-        padding: 40,
-      }}
+      className="animate-fade-in nf-page"
     >
       {/* Large 404 */}
       <div
-        style={{
-          fontSize: 140,
-          fontWeight: 800,
-          lineHeight: 1,
-          fontFamily: "'DM Mono', monospace",
-          background: 'var(--gradient-primary)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-          marginBottom: 8,
-          opacity: 0.9,
-          animation: 'float 4s ease-in-out infinite',
-        }}
+        className="nf-code"
       >
         404
       </div>
 
       <Space direction="vertical" size={8} align="center">
-        <Title level={3} style={{ margin: 0, fontWeight: 700 }}>
+        <Title level={3} className="cmp-flush--strong">
           Page Not Found
         </Title>
-        <Text type="secondary" style={{ fontSize: 15, maxWidth: 400 }}>
+        <Text type="secondary" className="nf-body">
           Oops! The page you're looking for seems to have taken an unscheduled break.
           Maybe it's out interviewing candidates? 🤷
         </Text>
       </Space>
 
       <Button
-        type="primary"
+        emphasis="solid"
         icon={<HomeOutlined />}
-        size="large"
+        size="lg"
         onClick={() => navigate('/dashboard')}
-        style={{
-          marginTop: 32,
-          borderRadius: 10,
-          height: 48,
-          paddingInline: 32,
-          fontWeight: 600,
-        }}
+        className="nf-cta"
       >
         Back to Dashboard
       </Button>

@@ -1,0 +1,216 @@
+/**
+ * The app shell — layouts/MainLayout. Converted LAST, on purpose.
+ *
+ * Every page converted underneath familiar chrome, so each intermediate state stayed
+ * coherent and a shell regression would have been one revert rather than a permanent
+ * backdrop behind twelve finished routes.
+ *
+ * Unlike styles/pages/*, this is not scoped to one route — it is the frame every
+ * route renders inside.
+ */
+
+.ml-shell { min-height: 100vh; background: transparent; }
+.ml-main { background: transparent; }
+
+.ml-sider-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 64px;
+}
+.ml-sider-brand--open { padding: 0 var(--space-3); justify-content: flex-start; }
+.ml-sider-brand--collapsed { padding: 0; justify-content: center; }
+.ml-logo { width: 30px; height: 30px; color: var(--text); flex-shrink: 0; }
+
+/* The GPTW badge is a fixed two-colour asset. Inverting it in dark mode turned its
+   red to cyan, so it gets a light chip instead — as a `[data-theme]` rule rather than
+   a spread `isDark &&` object, so the cascade decides rather than React state. */
+.ml-logo-wrap { flex: 1 1 auto; min-width: 0; height: 38px; }
+[data-theme='dark'] .ml-logo-wrap {
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 7px;
+  padding: 3px 5px;
+}
+.ml-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+  display: block;
+}
+
+/* Was 9.5px — the smallest type in the app and well under the 12px floor. */
+.ml-product-label {
+  flex-shrink: 0;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-2);
+  text-transform: uppercase;
+  line-height: 1.15;
+  white-space: nowrap;
+  /* Moved off an inline style on MainLayout.jsx, 2026-08-31. eslint never flagged it:
+     the rule matches `border`, not `borderLeft`. Logical properties to match this
+     file; identical rendering in LTR. */
+  border-inline-start: 1px solid var(--border);
+  padding-inline-start: 8px;
+}
+
+.ml-menu { border: none; background: transparent; padding: var(--space-3) var(--space-2); }
+
+/* Nav items, 2026-08-31. The shell was the last surface in the app still on AntD's
+   LEGACY_GEOMETRY: DesignScope switches the preset geometry on and it wraps PAGES,
+   never MainLayout, so the sidebar never entered the V3 rollout. Measured before
+   this block: radius 8px against the system's 15px, height 48px, padding 24px/16px
+   asymmetric, and the selected label at the same weight 400 as every resting one.
+   The 14px was already right by coincidence, not derivation — it comes from the ramp now.
+
+   NO font-family here on purpose: the nav already resolves to --font and matches page
+   content exactly, which is the one thing that measured correct.
+
+   NO color here on purpose either: a rule broad enough to set the resting colour also
+   hits .ant-menu-item-selected and would silently erase the brand green that
+   themeConfig's itemSelectedColor and aurora-glass.css:245 put there. Failure B, and it
+   raises no error. Weight is the only text property this touches.
+
+   Scoped (0,4,0) rather than `.ml-menu .ant-menu-item` (0,2,0), which merely TIES
+   AntD's own `.ant-menu-inline .ant-menu-item` and would then win or lose on runtime
+   injection order — the same trap documented below for .ml-sider, which cost the
+   sidebar its stickiness. */
+.ats-v2 .ml-menu.ant-menu .ant-menu-item {
+  border-radius: var(--radius-ctl);
+  height: var(--control-h-relaxed);
+  line-height: var(--control-h-relaxed);
+  font-size: var(--fs-callout);
+  font-weight: 500;
+}
+.ats-v2 .ml-menu.ant-menu .ant-menu-item-selected { font-weight: 600; }
+
+
+.ml-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 64px;
+  padding: 0 var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-end: 1px solid var(--border-light);
+  /* No `background` here. The inline one it replaced overrode the element's own
+     `.glass` class, so the class could never do anything.
+
+     CORRECTED after measuring: the material that now applies is NOT glass in both
+     modes. `aurora-glass.css` deliberately paints light-mode chrome opaque white —
+     a translucent pane is only ever as neutral as what shows through it, so a neutral
+     nav cannot be had by lowering alpha. Measured: light is rgb(255,255,255) with no
+     backdrop; dark is rgba(16,22,20,0.62) with blur(30px) saturate(1.5). Both are
+     intended. The claim that removing the inline background "lets the tier-1 blur
+     take effect" was only ever true in dark. */
+}
+.ml-topbar-left { min-width: 0; }
+.ml-collapse-btn.ant-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-ctl);
+  font-size: var(--fs-headline);
+}
+/* RETIRED 2026-08-31 with the JSX that used it — the topbar title duplicated the page
+   header on every route (character-identical on /candidates and /settings).
+.ml-page-title { font-size: var(--fs-headline); font-weight: 600; color: var(--text); }
+*/
+
+/* ---- topbar: breadcrumb + omnibar ------------------------------------------
+   The bar is `justify-content: space-between` with three children now (was two, and
+   ~700px of nothing between them). A gap keeps them off each other when the trail is
+   long. */
+.ml-topbar { gap: var(--space-4); }
+.ml-topbar-left { min-width: 0; flex-shrink: 1; }
+
+/* The notification glyph rendered at 14px against the theme toggle's 22px sun — a 57%
+   mismatch between two icons sitting side by side. It was inheriting the button's LABEL
+   size: NotificationBell already asks for `.cmp-icon` (--fs-title-3, 20px), but that rule
+   is (0,1,0) and was outranked inside `.ui-btn`. This does not invent a size, it lets the
+   declared intent land. 20px against a 22px sun whose rays are hairlines reads level.
+   Measured 2026-08-31. */
+.ats-v2 .ml-topbar .nb-icon .anticon { font-size: var(--fs-title-3); }
+
+.ml-crumbs.ant-breadcrumb { font-size: var(--fs-callout); white-space: nowrap; }
+/* The last crumb IS the page, so it carries the weight; ancestors recede. */
+.ml-crumbs.ant-breadcrumb li:last-child { color: var(--text); font-weight: 600; }
+.ml-crumbs .ant-breadcrumb-link a { color: var(--text-3); }
+.ml-crumbs .ant-breadcrumb-link a:hover { color: var(--brand-primary); }
+.ml-crumbs .ant-breadcrumb-separator { color: var(--text-3); }
+
+/* The omnibar is a real <Button> from src/ui — composition.mjs fails any route
+   carrying a button that is not one — restyled to read as the recessed search field
+   it stands in for: left-aligned, muted label, shortcut parked on the trailing edge.
+   It sits ON tier-1 chrome, so it is a recessed control rather than a second surface
+   floating above it. */
+.ats-v2 .ml-topbar .ml-omnibar.ui-btn {
+  flex: 0 1 400px;
+  min-width: 180px;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  height: var(--control-h);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-ctl);
+  font-size: var(--fs-callout);
+  font-weight: 400;
+  color: var(--text-3);
+}
+.ml-omnibar .ml-kbd {
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-footnote);
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-3);
+  color: var(--text-3);
+}
+
+/* Below this the trail and the account cluster need the room more than the omnibar
+   does; ⌘K still works, it just loses its visible affordance. */
+@media (max-width: 1100px) {
+  .ats-v2 .ml-topbar .ml-omnibar.ui-btn { display: none; }
+}
+.ml-user-chip { cursor: pointer; padding: 2px var(--space-1); border-radius: var(--radius-ctl); }
+.ml-avatar.ant-avatar { background: var(--gradient-primary); cursor: pointer; }
+
+/* The composed "admin portal" glyph: a user with a small gear at its corner. */
+.ml-admin-icon { position: relative; display: inline-flex; align-items: center; line-height: 0; }
+.ml-admin-icon__gear {
+  position: absolute;
+  right: -0.32em;
+  bottom: -0.16em;
+  font-size: 0.62em;
+}
+
+/* THE .ats-v2 LEAK, FOURTH OCCURRENCE — and the first one that broke behaviour rather
+   than appearance.
+
+   `aurora-glass.css` sets `.ats-v2 > .ant-layout-sider { position: relative; z-index: 1 }`
+   to lift the shell above the fixed canvas. The sider's `position: sticky` used to be an
+   INLINE style, so it won. Moving it to a class made it lose: a bare `.ml-sider` is
+   (0,1,0) and even `.ant-layout-sider.ml-sider` only ties that rule at (0,2,0), losing on
+   source order. Measured: the sider computed `relative` and silently stopped sticking,
+   while `height` and `overflow` from the same class landed fine — a half-applied class
+   that a screenshot cannot show.
+
+   `.ats-v2 >` prefix takes it to (0,3,0). Only `position` is restated: `z-index: 1` and
+   the transparent background must keep coming from the V2 rule, because they are what
+   put the shell above the canvas. `sticky` honours z-index the same way `relative` does. */
+.ats-v2 > .ant-layout-sider.ml-sider {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  border-inline-end: 1px solid var(--border-light);
+}
+.ml-sider-brand {
+  cursor: pointer;
+  border-block-end: 1px solid var(--border-light);
+  overflow: hidden;
+}

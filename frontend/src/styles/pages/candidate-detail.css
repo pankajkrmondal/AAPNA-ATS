@@ -1,0 +1,111 @@
+/**
+ * /candidates/:id — the candidate record. Stage 5.5.
+ *
+ * The file's dominant shape is a field label + value pair, written 14 times across
+ * three sizes (10px, 11px twice with different weights) for what is one role. The
+ * other repeat is `borderRadius: 6` on eleven controls, which is the control radius
+ * the token already owns.
+ *
+ * Imported after '../ui'.
+ */
+
+/* One label role, previously three. The 10px and 11px variants were both under the
+   type scale's 12px floor. */
+.cd-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  color: var(--text-2);
+}
+.cd-section-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+}
+
+/* The hairline under a section label. Was `height: 1px; background: --border-light`
+   written three times. */
+.cd-rule {
+  height: 1px;
+  background: var(--hairline-color);
+  margin-block-start: 6px;
+}
+
+.cd-name.ant-typography { margin: 0; font-weight: 700; }
+.cd-modal-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-headline);
+  font-weight: 700;
+}
+.cd-body { margin: 0; font-size: var(--fs-body); line-height: 1.8; }
+.cd-sub { font-size: var(--fs-subhead); }
+.cd-caption { font-size: var(--fs-footnote); }
+.cd-caption--lg { font-size: var(--fs-body); }
+.cd-block { display: block; }
+.cd-faded { opacity: 0.5; }
+
+.cd-empty { text-align: center; padding: 60px 0; }
+.cd-tab-body { padding: var(--space-5) 0; }
+
+/* Controls: the radius comes from the token, so the density and preset axes reach
+   them. `borderRadius: 6` was written on eleven of them by hand. */
+.cd-form .ant-input,
+.cd-form .ant-input-affix-wrapper,
+.cd-form .ant-select-selector,
+.cd-form .ant-input-number,
+.cd-form .ant-picker { border-radius: var(--radius-ctl); }
+.cd-ctl { border-radius: var(--radius-ctl); }
+/* A field the user may not edit. The cursor and the flat fill say so together —
+   neither alone reads as "locked". */
+.cd-ctl--locked {
+  background: var(--ink-4);
+  cursor: not-allowed;
+  border-radius: var(--radius-ctl);
+}
+
+/* RETIRED 2026-08-31 — the back link moved into PageHeader's actions, so it no longer floats as the page's first element.
+   Kept per the no-delete rule; uncomment to restore.
+
+.cd-back.ant-btn {
+  margin-block-end: var(--space-4);
+  border-radius: var(--radius-btn);
+  font-weight: 500;
+}
+*/
+
+.cd-mt-1 { margin-block-start: var(--space-1); }
+.cd-mt-2 { margin-block-start: var(--space-2); }
+.cd-mt-4 { margin-block-start: var(--space-4); }
+.cd-mb-2 { margin-block-end: var(--space-2); }
+.cd-mb-4 { margin-block-end: var(--space-4); }
+.cd-mb-5 { margin-block-end: var(--space-5); }
+.cd-section-gap { margin-block-start: var(--space-4); margin-block-end: var(--space-2); }
+
+.cd-avatar.ant-avatar {
+  background: var(--gradient-primary);
+  font-size: 28px;
+}
+
+/* The match-score tag. The tint pair was four raw hexes chosen by a ternary — a
+   literal is invisible to the brand axis, and `#4a7c5920` is `--kpi-c` at 12.5%
+   spelled as an eight-digit hex. State is a modifier; the tint mixes from the token.
+   `'DM Mono', monospace` was also written out longhand: the score is a figure, so
+   the mono face is right, but it belongs to the font pack. */
+.cd-score.ant-tag {
+  border: none;
+  border-radius: var(--radius-ctl);
+  font-weight: 700;
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+}
+.cd-score--high.ant-tag {
+  background: color-mix(in srgb, var(--kpi-c) 13%, transparent);
+  color: var(--kpi-c);
+}
+.cd-score--mid.ant-tag {
+  background: color-mix(in srgb, var(--kpi-e) 13%, transparent);
+  color: var(--kpi-e);
+}

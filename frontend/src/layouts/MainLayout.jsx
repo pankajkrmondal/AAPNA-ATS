@@ -3,20 +3,22 @@
  * The sidebar holds the brand + nav menu (icon rail when collapsed); a slim top
  * bar carries the page title, Admin Portal access, and the user menu.
  */
-import { useState } from 'react';
-import { Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { Outlet, useNavigate, useLocation, useNavigationType, Navigate } from 'react-router-dom';
 import {
   Layout,
   Menu,
-  Button,
+  // Button now comes from src/ui — see the import below.
   Avatar,
   Dropdown,
   Input,
   Breadcrumb,
-  Typography,
+  // Typography/Text retired 2026-08-31 with .ml-page-title — see the topbar below.
   Space,
   Tooltip,
 } from 'antd';
+import { Button } from '../ui';
+import CommandPalette from '../components/dashboard/CommandPalette';
 import {
   DashboardOutlined,
   SolutionOutlined,
@@ -45,9 +47,15 @@ import ChangePasswordModal from '../components/common/ChangePasswordModal';
 import AmbientBackdrop from '../components/common/AmbientBackdrop';
 import AapnaLogo from '../components/common/AapnaLogo';
 import NotificationBell from '../components/common/NotificationBell';
+// The admin branch below is a separate shell and its rules live with the route it
+// serves. Imported here as well as in the page: the bundler dedupes it, and relying
+// on the page having been loaded first would leave the shell unstyled the moment
+// AdminDashboard becomes lazy.
+import '../styles/pages/admin-dashboard.css';
+import '../styles/shell.css';
 
 const { Header, Content, Sider } = Layout;
-const { Text } = Typography;
+/* RETIRED 2026-08-31 with the topbar page title: const { Text } = Typography; */
 
 const SIDEBAR_COLLAPSED_KEY = 'ats.sidebarCollapsed';
 
@@ -56,9 +64,9 @@ const SIDEBAR_COLLAPSED_KEY = 'ats.sidebarCollapsed';
  *  SettingOutlined. Inherits color/size (em-based) from the surrounding text. */
 function AdminPortalIcon() {
   return (
-    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}>
+    <span className="ml-admin-icon">
       <UserOutlined />
-      <SettingOutlined style={{ position: 'absolute', right: '-0.32em', bottom: '-0.16em', fontSize: '0.62em' }} />
+      <SettingOutlined className="ml-admin-icon__gear" />
     </span>
   );
 }
@@ -124,12 +132,17 @@ const VENDOR_ALLOWED_PATHS = ['/vendor-dashboard', '/vendor'];
  *            branch below, which now applies `.ats-v2` itself.
  *
  *  With Phase 8 in, every route the sidebar can reach is converted. */
+/* RETIRED 2026-08-29 (Stage 5.8) — the rollout gate, now describing nothing: every
+   route on this list is converted, and so is every route not on it. Kept per the
+   no-delete rule; see the note on `isV2` below for how to stage a rollout again.
 const V2_ROUTES = [
   '/dashboard', '/filtering', '/candidates', '/pipeline',
   '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
   '/analytics', '/settings', '/email',
-  '/candidate-pipeline-prototype',
+  // Retired 2026-08-29 with the route in App.jsx — uncomment both to restore.
+  // '/candidate-pipeline-prototype',
 ];
+*/
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
 const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
@@ -154,9 +167,78 @@ const BREADCRUMB_MAP = {
   settings: 'Settings',
 };
 
+/**
+ * Titles for nested routes, keyed by the FIRST segment.
+ *
+ * The map above is keyed on `pathSegments[0]` alone, so `/candidates/:id` inherited
+ * `/candidates`' label and the topbar read "Search Candidate" while showing one
+ * person's record — the chrome contradicting the page. Found 2026-08-31 during the
+ * design-lab parity audit.
+ *
+ * A second map rather than a route-pattern matcher: there is exactly one nested route
+ * in the app today, and a matcher would be more machinery than the problem has.
+ */
+const NESTED_TITLE_MAP = {
+  candidates: 'Candidate Details',
+};
+
 export default function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
+
+  /* Scroll to the top of a new route.
+
+     Nothing did this before — no ScrollRestoration, no scrollTo anywhere — so every
+     navigation kept the previous offset and dropped you into the middle of the new
+     screen. Measured: leaving a route at scrollY 1200 arrived at 1015, and it only
+     moved that far because the shorter page clamped the maximum.
+
+     Three deliberate choices:
+
+     useLayoutEffect, not useEffect — it runs before paint, so the new route is never
+     shown at the old offset and then yanked.
+
+     pathname ONLY, never location.search — filters, tabs and pagination on several
+     screens are query params. Keying on the whole location would scroll the user to
+     the top every time they touched a filter, which is worse than the bug.
+
+     Skipped on POP (Back/Forward) — sending someone back to the top of a list they
+     just backed out of is the wrong answer. The browser's own history.scrollRestoration
+     already returns them to where they were.
+
+     window, not .ant-layout-content: the window is the scroll owner here, measured
+     (window.scrollY 1200 while every inner container read 0). */
+  useLayoutEffect(() => {
+    if (navigationType === 'POP') return;
+    window.scrollTo(0, 0);
+  }, [location.pathname, navigationType]);
+
+  /* ⌘K command palette — LIFTED OUT OF Dashboard, 2026-08-31.
+
+     CommandPalette was mounted by pages/Dashboard.jsx alone, so a shortcut that reads
+     as global worked on exactly one route. It lives in the shell now, with its key
+     listener, so every screen can reach it. */
+  const [cmdOpen, setCmdOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* The palette filters its commands by module permission. Same three lines as
+     Dashboard.jsx:126 and App.jsx:186/296 — a fourth copy, and a shared helper would
+     be the right cleanup, but that is a separate change and is called out rather than
+     smuggled in here. */
+  const isModuleEnabled = (moduleKey) => {
+    if ((user?.role || '').toLowerCase() === 'admin') return true;
+    return (user?.permissions || []).includes(moduleKey);
+  };
   const { user, logout } = useAuth();
   const { isDark } = useTheme();
   const { brand } = useBrand();
@@ -207,16 +289,45 @@ export default function MainLayout() {
    *  LoadingSkeleton, which have no ambient canvas behind them — styling those
    *  classes globally would wash out screens later phases have not reached yet.
    *
-   *  Advance the rollout by adding to V2_ROUTES; revert it by emptying that list. */
-  const isV2 = V2_ROUTES.some(
-    (p) => location.pathname === p || location.pathname.startsWith(p + '/')
-  );
+   *  RETIRED 2026-08-29 (Stage 5.8). Every route is converted, so this boolean was
+   *  true everywhere and the gate described nothing. `.ats-v2` is now unconditional on
+   *  the outer <Layout> and the canvas mounts on every screen.
+   *
+   *  Kept per the no-delete rule. To stage a rollout again, uncomment this and put the
+   *  conditionals back on the Layout backgrounds and <AmbientBackdrop />.
+   *  const isV2 = V2_ROUTES.some(
+   *    (p) => location.pathname === p || location.pathname.startsWith(p + '/')
+   *  );
+   */
 
   /** Title for the current page, shown in the top bar. Vendors get their own
    *  labels (Upload Candidate / Dashboard) for their restricted surfaces. */
   const pageTitle = (user?.role || '').toLowerCase() === 'vendor'
     ? (selectedKey === '/vendor' ? 'Upload Candidate' : 'Dashboard')
-    : (BREADCRUMB_MAP[pathSegments[0]] || 'Dashboard');
+    : ((pathSegments[1] && NESTED_TITLE_MAP[pathSegments[0]])
+      || BREADCRUMB_MAP[pathSegments[0]]
+      || 'Dashboard');
+
+  /* The trail that replaces the topbar title. On a flat route it is one crumb; on a
+     nested one it is parent + child, which is the thing a single title could never
+     say — /candidates/:id used to read just "Search Candidate". Real href so it is a
+     proper link, intercepted so it stays an SPA navigation. */
+  const parentCrumb = BREADCRUMB_MAP[pathSegments[0]];
+  const crumbItems = (pathSegments[1] && NESTED_TITLE_MAP[pathSegments[0]] && parentCrumb)
+    ? [
+      {
+        title: (
+          <a
+            href={'/' + pathSegments[0]}
+            onClick={(e) => { e.preventDefault(); navigate('/' + pathSegments[0]); }}
+          >
+            {parentCrumb}
+          </a>
+        ),
+      },
+      { title: pageTitle },
+    ]
+    : [{ title: pageTitle }];
 
   const role = (user?.role || '').toLowerCase();
   const isVendor = role === 'vendor';
@@ -269,50 +380,37 @@ export default function MainLayout() {
     // topbar. `background: transparent` lets the canvas show through — the
     // `--admin-bg` fill would otherwise sit on top of it.
     return (
-      <Layout className="ats-v2" style={{ minHeight: '100vh', background: 'transparent' }}>
+      <Layout className="ats-v2 ad-shell">
         <AmbientBackdrop />
         <Header className="admin-topbar">
           {/* Left: Logo + Sep + Title cluster */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="ad-topbar-left">
             {/* Same two fixes as the sidebar brand: `cover` at width 85 sliced the GPTW
                 badge off, and inverting a coloured badge in dark mode turned its red
-                to cyan. `contain` plus a light chip instead. */}
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                ...(isDark && {
-                  background: 'rgba(255,255,255,0.94)',
-                  borderRadius: 7,
-                  padding: '3px 6px',
-                }),
-              }}
-            >
+                to cyan. `contain` plus a light chip instead — the chip is now a
+                `[data-theme='dark']` rule rather than a spread `isDark &&` object, so
+                the mode is read from the cascade instead of from a React state that a
+                stylesheet cannot see. */}
+            <span className="ad-logo-chip">
               <img
                 src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
                 alt={brand.name}
-                style={{
-                  height: 30,
-                  width: 112,
-                  objectFit: 'contain',
-                  objectPosition: 'left center',
-                  display: 'block',
-                }}
+                className="ad-logo-img"
               />
             </span>
-            <div style={{ width: 1, height: 30, background: 'var(--border)' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+            <div className="ad-topbar-sep" />
+            <div className="ad-topbar-brand">
               <div className="admin-brand-icon"><AdminPortalIcon /></div>
-              <div style={{ lineHeight: 1.2 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+              <div className="ad-topbar-titles">
+                <div className="ad-topbar-title-row">
+                  <span className="ad-topbar-title">
                     HR Admin
                   </span>
                   <span className={`role-badge role-badge--${isSuperadmin ? 'superadmin' : 'admin'}`}>
                     {adminRoleLabel}
                   </span>
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>
+                <span className="ad-topbar-sub">
                   Users · Access · Companies
                 </span>
               </div>
@@ -320,11 +418,16 @@ export default function MainLayout() {
           </div>
 
           {/* Right: Theme toggle + Portal switch + user chip + Logout */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="ad-topbar-right">
             <ThemeToggle />
+            {/* `.admin-top-btn` retired here — 2026-08-31. It was a legacy treatment
+                written entirely in `!important`: a white fill, a `--gold` label and a
+                12px font, none of which the token layer owns any more. Beside a shell
+                that is now on the design system it read as the one control nobody had
+                converted. `soft` is the system's answer for a labelled secondary
+                action, which is what these two portal switches are. */}
             <Button
-              className="admin-top-btn"
-              type="text"
+              emphasis="soft"
               onClick={() => navigate('/dashboard')}
               icon={<DashboardOutlined />}
             >
@@ -338,16 +441,19 @@ export default function MainLayout() {
               trigger={['click']}
               placement="bottomRight"
             >
-              <div className="admin-user-chip" style={{ cursor: 'pointer' }}>
-                <Avatar size={26} style={{ background: 'var(--gradient-primary)', fontSize: 11, fontWeight: 700 }}>
+              <div className="admin-user-chip ad-pointer">
+                <Avatar size={26} className="ad-user-avatar">
                   {userInitials}
                 </Avatar>
                 <span>{user?.username || 'Admin'}</span>
               </div>
             </Dropdown>
+            {/* Logout keeps its danger meaning but stays quiet at rest: the old
+                `--logout` modifier only turned red on hover, and `tone="danger"` with
+                `emphasis="text"` is the same statement in the system's vocabulary. */}
             <Button
-              className="admin-top-btn admin-top-btn--logout"
-              type="text"
+              emphasis="text"
+              tone="danger"
               onClick={async () => {
                 await logout();
                 navigate('/admin/login');
@@ -360,7 +466,7 @@ export default function MainLayout() {
         </Header>
         {/* Transparent for the same reason as the Layout above, and z-indexed
             over the fixed canvas so content is not painted underneath it. */}
-        <Content style={{ minHeight: 'calc(100vh - 64px)', background: 'transparent', position: 'relative', zIndex: 1 }}>
+        <Content className="ad-shell-content">
           {/* Keyed by path so the entrance animation replays on every navigation
               (a persistent wrapper would only animate on first mount). */}
           <div className="page-enter" key={location.pathname}>
@@ -373,17 +479,14 @@ export default function MainLayout() {
   }
 
   return (
-    <Layout
-      className={isV2 ? 'ats-v2' : undefined}
-      style={{ minHeight: '100vh', background: isV2 ? 'transparent' : 'var(--ink)' }}
-    >
+    <Layout className="ats-v2 ml-shell">
       {/* The ambient canvas glass refracts. Without something living behind them,
           backdrop-filtered surfaces just return the flat page colour. */}
-      {isV2 && <AmbientBackdrop />}
+      <AmbientBackdrop />
 
       {/* ---- Left Sidebar Navigation ---- */}
       <Sider
-        className="glass-sidebar"
+        className="glass-sidebar ml-sider"
         theme={isDark ? 'dark' : 'light'}
         width={248}
         collapsedWidth={72}
@@ -393,28 +496,11 @@ export default function MainLayout() {
         trigger={null}
         breakpoint="lg"
         onBreakpoint={(broken) => handleCollapse(broken)}
-        style={{
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-          overflow: 'auto',
-          borderRight: '1px solid var(--border-light)',
-        }}
       >
         {/* Brand */}
         <div
           onClick={() => navigate('/dashboard')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            height: 64,
-            padding: collapsed ? '0' : '0 12px',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            cursor: 'pointer',
-            borderBottom: '1px solid var(--border-light)',
-            overflow: 'hidden',
-          }}
+          className={'ml-sider-brand ' + (collapsed ? 'ml-sider-brand--collapsed' : 'ml-sider-brand--open')}
         >
           {/* Collapsed rail: the vector rotor. A 72px rail cannot show a wide lockup —
               the previous `objectFit: cover` crop left an unreadable "aa" fragment.
@@ -423,7 +509,7 @@ export default function MainLayout() {
           {collapsed ? (
             <AapnaLogo
               title={`${brand.name} — ${brand.productLabel}`}
-              style={{ width: 30, height: 30, color: 'var(--text)', flexShrink: 0 }}
+              className="ml-logo"
             />
           ) : (
             <>
@@ -441,49 +527,22 @@ export default function MainLayout() {
                   way the mark grows to fill whatever the label leaves, at any sidebar
                   width. `contain` + left alignment means it scales without cropping. */}
               <span
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flex: '1 1 auto',
-                  minWidth: 0,
-                  height: 38,
-                  ...(isDark && {
-                    background: 'rgba(255,255,255,0.94)',
-                    borderRadius: 7,
-                    padding: '3px 5px',
-                  }),
-                }}
+                className="ml-logo-wrap"
               >
                 <img
                   src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
                   alt={brand.name}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    objectPosition: 'left center',
-                    display: 'block',
-                  }}
+                  className="ml-logo-img"
                 />
               </span>
               {/* Product label only. The logo bitmap already reads "aapna", so the
                   old "AAPNA" line above this said the brand name a second time.
                   nowrap keeps it on one line — it previously wrapped to "ATS /
                   PLATFORM", which read as broken. */}
-              <span
-                style={{
-                  flexShrink: 0,
-                  fontSize: 9.5,
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                  color: 'var(--text-2)',
-                  textTransform: 'uppercase',
-                  lineHeight: 1.15,
-                  whiteSpace: 'nowrap',
-                  borderLeft: '1px solid var(--border)',
-                  paddingLeft: 8,
-                }}
-              >
+              {/* The divider rule and its inset moved to .ml-product-label in
+                  styles/shell.css, 2026-08-31 — as inline styles no stylesheet could
+                  reach them, so a preset or tenant brand never could either. */}
+              <span className="ml-product-label">
                 {brand.productLabel}
               </span>
             </>
@@ -496,48 +555,54 @@ export default function MainLayout() {
           selectedKeys={[selectedKey]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            padding: '12px 8px',
-          }}
+          className="ml-menu"
+          /* AntD writes this as an INLINE `padding-left` on every item, so no stylesheet
+             can reach it — the inline-style law, arriving from the library rather than
+             from us. Left at its default 24 the items read 24px/16px asymmetric against
+             AntD's own 16px right padding. Set here, at the cause, rather than fought
+             with !important from shell.css. Collapsed mode drops the inline padding
+             entirely and is unaffected. 16 = --space-4. */
+          inlineIndent={16}
         />
       </Sider>
 
       {/* ---- Right Side: Top Bar + Content ---- */}
-      <Layout style={{ background: isV2 ? 'transparent' : 'var(--ink)' }}>
+      <Layout className="ml-main">
         {/* ---- Top Bar ---- */}
         <Header
-          className="glass"
-          style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 100,
-            height: 64,
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid var(--border-light)',
-            /* This inline background is why the topbar has never actually looked
-               like glass: it overrode its own `.glass` class. Under V2 it yields
-               to the stylesheet so the tier-1 blur can take effect. */
-            background: isV2 ? undefined : 'var(--colorBgContainer)',
-          }}
+          className="glass ml-topbar"
         >
           {/* Left: collapse toggle + page title */}
-          <Space size={14} align="center" style={{ minWidth: 0 }}>
+          <Space size={14} align="center" className="ml-topbar-left">
+            {/* `text`, like the bell: the sidebar toggle is chrome, and a tinted pill
+                here would compete with the page title beside it. */}
             <Button
-              type="text"
+              emphasis="text"
+              iconOnly
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
               onClick={() => handleCollapse(!collapsed)}
-              style={{ width: 36, height: 36, borderRadius: 8, fontSize: 16 }}
+              className="ml-collapse-btn"
             />
-            <Text style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }} className="text-truncate">
-              {pageTitle}
-            </Text>
+            {/* RETIRED 2026-08-31: <Text className="ml-page-title"> printed the page
+                title a second time. Every route renders a PageHeader since the
+                composition rollout, and this was character-identical to it on
+                /candidates and /settings — the chrome repeating the page back to
+                itself 12px above. The trail says where you ARE instead. */}
+            <Breadcrumb items={crumbItems} separator="›" className="ml-crumbs" />
             {/* Company badge intentionally hidden for now (not required in the UI). */}
           </Space>
+
+          {/* Centre: the global entry point. The bar is justify-content: space-between,
+              so this third child takes the middle — which was ~700px of nothing. */}
+          <Button
+            emphasis="soft"
+            icon={<SearchOutlined />}
+            onClick={() => setCmdOpen(true)}
+            className="ml-omnibar"
+          >
+            Search or jump to…
+            <kbd className="ml-kbd">⌘K</kbd>
+          </Button>
 
           {/* Right: Notifications + Theme toggle + Admin Portal + Avatar */}
           <Space size={12} align="center" style={{ flexShrink: 0 }}>
@@ -545,8 +610,7 @@ export default function MainLayout() {
             <ThemeToggle />
             {hasAdminAccess && (
               <Button
-                className="admin-top-btn"
-                type="text"
+                emphasis="soft"
                 icon={<AdminPortalIcon />}
                 onClick={() => navigate('/admin/dashboard')}
               >
@@ -559,14 +623,11 @@ export default function MainLayout() {
               trigger={['click']}
               placement="bottomRight"
             >
-              <Space style={{ cursor: 'pointer', padding: '2px 4px', borderRadius: 8 }}>
+              <Space className="ml-user-chip">
                 <Avatar
                   size={32}
                   icon={<UserOutlined />}
-                  style={{
-                    background: 'var(--gradient-primary)',
-                    cursor: 'pointer',
-                  }}
+                  className="ml-avatar"
                 />
               </Space>
             </Dropdown>
@@ -588,6 +649,14 @@ export default function MainLayout() {
         </Content>
       </Layout>
       <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
+      {/* Mounted on the shell, not on Dashboard, so ⌘K reaches every route. The admin
+          portal is a separate shell and deliberately does not get it. */}
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        onNavigate={navigate}
+        isModuleEnabled={isModuleEnabled}
+      />
     </Layout>
   );
 }

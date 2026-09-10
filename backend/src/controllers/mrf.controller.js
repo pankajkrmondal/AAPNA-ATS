@@ -13,6 +13,7 @@ import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
 import { isMrfFilled, isMrfClosed, MRF_CLOSURE_REASONS } from '../config/pipelineStages.js';
 import { closeMrfManually, reopenMrfManually } from '../services/mrfClosure.service.js';
+import { pauseMrf as pauseMrfManually, resumeMrf as resumeMrfManually } from '../services/mrfPause.service.js';
 import { assertSignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
@@ -131,7 +132,7 @@ export const listMrfRequests = catchAsync(async (req, res) => {
 
   // Shared with GET /api/mrf/export so the CSV can never disagree with the
   // screen about what a filter means.
-  const where = buildMrfWhere({ search, status });
+  const where = await buildMrfWhere({ search, status });
 
   // Query records and count in parallel
   const [records, total] = await Promise.all([
@@ -1007,4 +1008,24 @@ export const reopenMrf = catchAsync(async (req, res) => {
 
   const result = await reopenMrfManually(id, { actedBy: req.user?.id });
   return success(res, result, 'Requisition re-opened');
+});
+
+/** POST /api/mrf/:id/pause — pause a still-open requisition, with a reason. */
+export const pauseMrf = catchAsync(async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const { reason } = req.body;
+  if (!reason) throw new AppError('reason is required.', 400);
+
+  const result = await pauseMrfManually(id, { reason, actedBy: req.user?.id });
+  return success(res, result, 'Requisition paused');
+});
+
+/** POST /api/mrf/:id/resume — resume a paused requisition. */
+export const resumeMrf = catchAsync(async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+
+  const result = await resumeMrfManually(id, { actedBy: req.user?.id });
+  return success(res, result, 'Requisition resumed');
 });

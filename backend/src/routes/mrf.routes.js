@@ -90,6 +90,10 @@ router.patch('/main/:id', mrfController.updateMainMrf);
 router.get('/closure-reasons', mrfController.listClosureReasons);
 router.post('/:id/close', restrictTo(...MRF_CLOSURE_ROLES), mrfController.closeMrf);
 router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reopenMrf);
+// Pause/resume — same role set as closure, so temporarily standing a
+// requisition down is no more restricted than closing it outright.
+router.post('/:id/pause', restrictTo(...MRF_CLOSURE_ROLES), mrfController.pauseMrf);
+router.post('/:id/resume', restrictTo(...MRF_CLOSURE_ROLES), mrfController.resumeMrf);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

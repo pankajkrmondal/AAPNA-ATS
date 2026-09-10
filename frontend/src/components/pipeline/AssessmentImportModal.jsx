@@ -12,8 +12,10 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
-  App as AntApp, Alert, Button, Card, Col, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tag, Typography, Upload,
+  // Button now comes from src/ui — see the import below.
+  App as AntApp, Alert, Card, Col, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tag, Typography, Upload,
 } from 'antd';
+import { Button } from '../../ui';
 import { InboxOutlined, ImportOutlined, RobotOutlined } from '@ant-design/icons';
 import assessmentImportService from '../../services/assessmentImportService';
 import UploadCelebration from '../common/UploadCelebration';
@@ -133,7 +135,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
         return (
           <Select
             size="small"
-            style={{ width: '100%' }}
+            className="cmp-full"
             value={rowOverrides[row.rowNumber]?.pipelineId || row.matchedPipelineId}
             options={options}
             onChange={(pipelineId) => setRowOverrides((prev) => ({ ...prev, [row.rowNumber]: { pipelineId } }))}
@@ -154,7 +156,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
           <Button key="cancel" onClick={handleClose}>Cancel</Button>,
           <Button
             key="commit"
-            type="primary"
+            emphasis="solid"
             icon={<ImportOutlined />}
             loading={commitMutation.isPending}
             onClick={() => commitMutation.mutate()}
@@ -165,7 +167,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
           <Button key="cancel" onClick={handleClose}>Cancel</Button>,
           <Button
             key="preview"
-            type="primary"
+            emphasis="solid"
             icon={<RobotOutlined />}
             loading={previewMutation.isPending}
             disabled={fileList.length === 0}
@@ -179,11 +181,11 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
       }
     >
       <UploadCelebration show={celebrate} />
-      <Paragraph type="secondary" style={{ fontSize: 12.5 }}>
+      <Paragraph type="secondary" className="cmp-sub">
         Matched by candidate email. Nothing is written until you confirm the import at the end.
         A row already on file is skipped unless the score changed — a changed score only overwrites the score, nothing else.
       </Paragraph>
-      <Steps size="small" current={step} items={stepItems} style={{ marginBottom: 16 }} />
+      <Steps size="small" current={step} items={stepItems} className="cmp-mb-4" />
 
       {!previewData && (
         <Dragger
@@ -209,11 +211,11 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
             showIcon
             icon={<RobotOutlined />}
             message={`${previewData.fileName} — ${previewData.totalRows} rows read. AI-suggested section-to-skill mapping below — review once, applies to every row in this file.`}
-            style={{ marginBottom: 12 }}
+            className="cmp-mb-3"
           />
           {previewData.clusters.map((cluster) => (
-            <Card key={cluster.testName} size="small" title={`${cluster.testName} (${cluster.rowCount} rows)`} style={{ marginBottom: 12 }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
+            <Card key={cluster.testName} size="small" title={`${cluster.testName} (${cluster.rowCount} rows)`} className="cmp-mb-3">
+              <Space direction="vertical" className="cmp-full">
                 {['section_1', 'section_2', 'section_3'].map((sectionKey, idx) => {
                   const mapping = clusterEdits[cluster.testName]?.[sectionKey] || {};
                   return (
@@ -230,7 +232,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
                       <Col span={10}>
                         <Select
                           size="small"
-                          style={{ width: '100%' }}
+                          className="cmp-full"
                           value={mapping.legacy_field ?? null}
                           options={LEGACY_FIELD_OPTIONS}
                           onChange={(value) => updateClusterMapping(cluster.testName, sectionKey, 'legacy_field', value)}
@@ -242,7 +244,7 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
               </Space>
             </Card>
           ))}
-          <Button type="primary" onClick={() => setMappingConfirmed(true)}>
+          <Button emphasis="solid" onClick={() => setMappingConfirmed(true)}>
             Confirm mapping for this batch
           </Button>
         </>
@@ -255,14 +257,14 @@ export default function AssessmentImportModal({ open, onClose, onImported }) {
             showIcon
             icon={<RobotOutlined />}
             message={`${previewData.fileName} — ${previewData.totalRows} rows read, no column mapping needed.`}
-            style={{ marginBottom: 12 }}
+            className="cmp-mb-3"
           />
-          <Row gutter={12} style={{ marginBottom: 12 }}>
-            <Col span={5}><Card size="small"><Statistic title="Matched" value={previewData.matched} valueStyle={{ color: '#3f8600' }} /></Card></Col>
-            <Col span={5}><Card size="small"><Statistic title="Retakes (score update)" value={previewData.scoreWillOverwrite} valueStyle={{ color: '#1677ff' }} /></Card></Col>
+          <Row gutter={12} className="cmp-mb-3">
+            <Col span={5}><Card size="small"><Statistic title="Matched" value={previewData.matched} className="aim-stat--ok" /></Card></Col>
+            <Col span={5}><Card size="small"><Statistic title="Retakes (score update)" value={previewData.scoreWillOverwrite} className="aim-stat--info" /></Card></Col>
             <Col span={5}><Card size="small"><Statistic title="Unchanged (skipped)" value={previewData.duplicateSkipped} /></Card></Col>
-            <Col span={5}><Card size="small"><Statistic title="Unmatched" value={previewData.unmatched} valueStyle={{ color: '#d4a017' }} /></Card></Col>
-            <Col span={4}><Card size="small"><Statistic title="Malformed" value={previewData.malformed} valueStyle={{ color: '#cf1322' }} /></Card></Col>
+            <Col span={5}><Card size="small"><Statistic title="Unmatched" value={previewData.unmatched} className="aim-stat--warn" /></Card></Col>
+            <Col span={4}><Card size="small"><Statistic title="Malformed" value={previewData.malformed} className="aim-stat--bad" /></Card></Col>
           </Row>
           <Table
             size="small"

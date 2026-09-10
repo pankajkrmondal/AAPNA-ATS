@@ -245,6 +245,24 @@ Effort figures are engineering estimates for build + test on a familiar codebase
 > `paused_at`). See
 > [CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md](changelog/CHANGES-2026-08-26-closure-followon-mrf-lifecycle.md).
 > The design below is kept for its reasoning, not as a description of what shipped.
+>
+> ⚠️ **Correction, 2026-08-28.** The status line above is wrong and was never
+> re-verified against the code after being written — a user report ("I can pause
+> candidates but not the MRF itself") led to re-checking, and `rpa_mrf` carried
+> no `paused_at`/`paused_reason`/`paused_by` columns, no `mrfPause.service.js`,
+> no `/api/mrf/:id/pause` route, and no Pause button anywhere in the UI as of
+> 2026-08-28. What actually shipped 2026-08-26 was candidate-level pause
+> (`rpa_candidate_pipeline.is_paused`, item 7 below) plus MRF **manual closure**
+> (`closed_at`/`closure_reason`, including a reason literally named
+> `on_hold_indefinitely`) — a different, one-way mechanism that fully closes the
+> requisition rather than pausing it reversibly. The design below (items 1–6,
+> 9–11) is now actually built — see
+> [CHANGES-2026-08-28-mrf-pause.md](changelog/CHANGES-2026-08-28-mrf-pause.md) —
+> except `resume_on` (out of scope by request) and item 6's sweep-suppression
+> (no sweep was found that acts on the MRF directly; candidate-level pause
+> already covers per-journey sweep suppression). Item 8 (bulk-pause in-flight
+> candidates from the MRF pause action) was not built — out of scope, matching
+> how candidate-level enforcement already stays separate.
 
 **Problem.** "Abhijit wants to pause this role for a few months" has no representation in the system. The only levers are misusing `approval_status` (lossy) or holding each candidate individually (per-candidate, and it emails them).
 

@@ -3,7 +3,8 @@
  * Placeholder tabs: Profile, Resume, AI Insights, Emails, Timeline.
  */
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Card, Tabs, Typography, Button, Avatar, Space, Tag, Row, Col, Descriptions, Empty, Timeline, Form, Input, Modal, message } from 'antd';
+// Button now comes from src/ui — see the import below.
+import { Card, Tabs, Typography, Avatar, Space, Tag, Row, Col, Descriptions, Empty, Timeline, Form, Input, Modal, message } from 'antd';
 import {
   ArrowLeftOutlined,
   UserOutlined,
@@ -24,6 +25,9 @@ import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
+import { DesignScope, PageShell, PageHeader, Surface, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/candidate-detail.css';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -202,7 +206,7 @@ export default function CandidateDetail() {
             bordered
             column={{ xs: 1, sm: 2 }}
             size="middle"
-            style={{ marginBottom: 24 }}
+            className="cd-mb-5"
           >
             <Descriptions.Item label="Email">{data.email}</Descriptions.Item>
             <Descriptions.Item label="Phone">{data.phone}</Descriptions.Item>
@@ -211,9 +215,9 @@ export default function CandidateDetail() {
             <Descriptions.Item label="Current Company">
               {typeof data.currentCompany === 'object' && data.currentCompany !== null ? (
                 <div>
-                  <Text style={{ display: 'block' }}>{data.currentCompany.Name || data.currentCompany.name || '—'}</Text>
+                  <Text className="cd-block">{data.currentCompany.Name || data.currentCompany.name || '—'}</Text>
                   {data.currentCompany.Website && (
-                    <Text type="secondary" style={{ fontSize: 11 }}>
+                    <Text type="secondary" className="cd-caption">
                       <a href={data.currentCompany.Website.startsWith('http') ? data.currentCompany.Website : `https://${data.currentCompany.Website}`} target="_blank" rel="noopener noreferrer">
                         {data.currentCompany.Website}
                       </a>
@@ -233,7 +237,7 @@ export default function CandidateDetail() {
               this callout is restyled onto the glass tier, and an inline style
               cannot be overridden by a stylesheet. */}
           <Card title="Professional Summary" size="small" bordered={false} className="cd-summary">
-            <Paragraph style={{ margin: 0, fontSize: 14, lineHeight: 1.8 }}>
+            <Paragraph className="cd-body">
               {data.summary || 'No professional summary available.'}
             </Paragraph>
           </Card>
@@ -246,12 +250,12 @@ export default function CandidateDetail() {
         <Space><FileTextOutlined />Resume</Space>
       ),
       children: (
-        <div className="animate-fade-in" style={{ textAlign: 'center', padding: '60px 0' }}>
+        <div className="animate-fade-in cd-empty">
           <Empty
             description="Resume viewer will be integrated here"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           >
-            <Button type="primary" icon={<FileTextOutlined />} style={{ borderRadius: 8 }}>
+            <Button emphasis="solid" icon={<FileTextOutlined />}>
               Download Resume
             </Button>
           </Empty>
@@ -264,7 +268,7 @@ export default function CandidateDetail() {
         <Space><ThunderboltOutlined />AI Insights</Space>
       ),
       children: (
-        <div className="animate-fade-in" style={{ textAlign: 'center', padding: '60px 0' }}>
+        <div className="animate-fade-in cd-empty">
           <Empty
             description="AI-powered candidate analysis and scoring will appear here"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -278,7 +282,7 @@ export default function CandidateDetail() {
         <Space><MailOutlined />Emails</Space>
       ),
       children: (
-        <div className="animate-fade-in" style={{ textAlign: 'center', padding: '60px 0' }}>
+        <div className="animate-fade-in cd-empty">
           <Empty
             description="Email communication history will be shown here"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -292,12 +296,12 @@ export default function CandidateDetail() {
         <Space><ClockCircleOutlined />Timeline</Space>
       ),
       children: (
-        <div className="animate-fade-in" style={{ padding: '24px 0' }}>
+        <div className="animate-fade-in cd-tab-body">
           <Timeline
             items={[
-              { color: '#7a922e', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
-              { color: '#92a63c', children: <><Text strong>AI screening completed</Text> — Score: {data.score || 92}%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
-              { color: '#2980b9', children: <><Text strong>Shortlisted</Text> by HR Admin<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 3:15 PM</Text></> },
+              { color: 'var(--brand-primary)', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" className="cd-caption">Jun 4, 2026 · 2:30 PM</Text></> },
+              { color: 'var(--brand-primary-hover)', children: <><Text strong>AI screening completed</Text> — Score: {data.score || 92}%<br /><Text type="secondary" className="cd-caption">Jun 4, 2026 · 2:31 PM</Text></> },
+              { color: 'var(--kpi-b)', children: <><Text strong>Shortlisted</Text> by HR Admin<br /><Text type="secondary" className="cd-caption">Jun 4, 2026 · 3:15 PM</Text></> },
               { color: 'gray', children: <><Text type="secondary">Awaiting interview scheduling</Text></> },
             ]}
           />
@@ -316,93 +320,84 @@ export default function CandidateDetail() {
   }
 
   return (
-    <div className="stagger-children" ref={rootRef}>
-      {/* Back button */}
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        onClick={() => {
-          if (fromPage === 'analytics') {
-            navigate('/analytics');
-          } else {
-            navigate('/candidates');
-          }
-        }}
-        style={{ marginBottom: 16, borderRadius: 8, fontWeight: 500 }}
-      >
-        {fromPage === 'analytics' ? 'Back to Analytics' : 'Back to Candidates'}
-      </Button>
+    <DesignScope>
+      <PageShell ref={rootRef} width="standard" className="stagger-children">
+      {/* Page header — 2026-08-31, and this route needed it most. Measured against the
+          lab's Detail archetype, which opens `eyebrow = role / title = name /
+          subtitle = where they are`, then plain panels:
 
-      {/* Header card — this page's hero-analog, so it carries the cursor
-          spotlight the dashboard puts on its one feature surface. */}
-      <Card
-        bordered={false}
-        className="glass-card spotlight"
-        style={{ marginBottom: 24 }}
-        styles={{ body: { padding: 28 } }}
-      >
+            - the page's FIRST element was a bare text button ("← Back to Candidates")
+              floating on the canvas with nothing around it;
+            - the person's name — the subject of the whole screen — was a
+              `Title level={3}` at 20px, buried inside a card, against the lab's 32px.
+
+          The two panels below already matched the lab and are untouched. Identity and
+          the page's actions move up here; the card keeps the DETAIL (avatar, contact
+          lines, skills), so nothing is stated twice. */}
+      <PageHeader
+        eyebrow={data.position}
+        title={data.name}
+        subtitle={(
+          <>
+            <StatusBadge status={data.status} />
+            {' '}
+            <Tag className={`cd-score ${data.score >= 90 ? 'cd-score--high' : 'cd-score--mid'}`}>
+              {data.score}% Match
+            </Tag>
+          </>
+        )}
+        actions={(
+          <>
+            <Button
+              emphasis="text"
+              icon={<ArrowLeftOutlined />}
+              onClick={() => {
+                if (fromPage === 'analytics') {
+                  navigate('/analytics');
+                } else {
+                  navigate('/candidates');
+                }
+              }}
+            >
+              {fromPage === 'analytics' ? 'Back to Analytics' : 'Back to Candidates'}
+            </Button>
+            <Button emphasis="solid" icon={<EditOutlined />} onClick={handleOpenEdit}>
+              Edit
+            </Button>
+          </>
+        )}
+      />
+
+      {/* The record card — avatar, contact lines and skills. Keeps the cursor spotlight
+          the dashboard puts on its one feature surface. */}
+      <Surface tier={2} padding="relaxed" bloom className="spotlight cd-mb-5">
         <Row gutter={[24, 16]} align="middle">
           <Col>
-            <Avatar
-              size={72}
-              icon={<UserOutlined />}
-              style={{
-                background: 'var(--gradient-primary)',
-                fontSize: 28,
-              }}
-            />
+            <Avatar size={72} icon={<UserOutlined />} className="cd-avatar" />
           </Col>
           <Col flex="auto">
             <Space direction="vertical" size={4}>
-              <Space size={12} align="center">
-                <Title level={3} style={{ margin: 0, fontWeight: 700 }}>{data.name}</Title>
-                <StatusBadge status={data.status} />
-                <Tag
-                  style={{
-                    borderRadius: 6,
-                    fontWeight: 700,
-                    fontFamily: "'DM Mono', monospace",
-                    fontSize: 14,
-                    border: 'none',
-                    background: data.score >= 90 ? '#4a7c5920' : '#d4a01720',
-                    color: data.score >= 90 ? '#4a7c59' : '#d4a017',
-                  }}
-                >
-                  {data.score}% Match
-                </Tag>
+              <Space size={16}>
+                <Space size={4}><MailOutlined className="cd-faded" /><Text type="secondary" className="cd-sub">{data.email}</Text></Space>
+                <Space size={4}><PhoneOutlined className="cd-faded" /><Text type="secondary" className="cd-sub">{data.phone}</Text></Space>
+                <Space size={4}><EnvironmentOutlined className="cd-faded" /><Text type="secondary" className="cd-sub">{data.location}</Text></Space>
               </Space>
-              <Text type="secondary" style={{ fontSize: 15 }}>{data.position}</Text>
-              <Space size={16} style={{ marginTop: 4 }}>
-                <Space size={4}><MailOutlined style={{ opacity: 0.5 }} /><Text type="secondary" style={{ fontSize: 13 }}>{data.email}</Text></Space>
-                <Space size={4}><PhoneOutlined style={{ opacity: 0.5 }} /><Text type="secondary" style={{ fontSize: 13 }}>{data.phone}</Text></Space>
-                <Space size={4}><EnvironmentOutlined style={{ opacity: 0.5 }} /><Text type="secondary" style={{ fontSize: 13 }}>{data.location}</Text></Space>
-              </Space>
-              <div style={{ marginTop: 8 }}>
+              <div className="cd-mt-2">
                 <SkillTags skills={data.skills} max={6} />
               </div>
             </Space>
           </Col>
-          <Col>
-            <Button 
-              type="primary" 
-              icon={<EditOutlined />} 
-              style={{ borderRadius: 8 }}
-              onClick={handleOpenEdit}
-            >
-              Edit
-            </Button>
-          </Col>
         </Row>
-      </Card>
+      </Surface>
 
       {/* Tabbed content */}
-      <Card bordered={false} className="glass-card" styles={{ body: { padding: '4px 24px 24px' } }}>
+      <Surface tier={2} padding="relaxed" className="cd-tabs-card">
         <Tabs items={tabItems} defaultActiveKey="profile" />
-      </Card>
+      </Surface>
 
       {/* Edit Candidate details modal */}
       <Modal
-        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>Edit Candidate Details</span>}
+        title={<span className="cd-modal-title">Edit Candidate Details</span>}
         open={editOpen}
         onOk={handleSaveEdit}
         onCancel={() => setEditOpen(false)}
@@ -411,22 +406,22 @@ export default function CandidateDetail() {
         width={700}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
-        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={editForm} layout="vertical" className="cd-mt-4">
           {/* Section 1: Personal Information */}
-          <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+          <div className="cd-mb-2">
+            <span className="cd-section-label">Personal Information</span>
+            <div className="cd-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE NAME</span>} name="name">
-                <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span className="cd-label">CANDIDATE NAME</span>} name="name">
+                <Input readOnly className="cd-ctl--locked" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
-                <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span className="cd-label">CANDIDATE EMAIL</span>} name="email">
+                <Input readOnly className="cd-ctl--locked" />
               </Form.Item>
             </Col>
           </Row>
@@ -434,66 +429,66 @@ export default function CandidateDetail() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
+                label={<span className="cd-label">CANDIDATE CONTACT NUMBER</span>} 
                 name="phone"
                 rules={[{ validator: contactNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} 
+                label={<span className="cd-label">CURRENT LOCATION</span>} 
                 name="location"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
           {/* Section 2: Education & Experience */}
-          <div style={{ marginBottom: 8, marginTop: 16 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education & Experience</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+          <div className="cd-section-gap">
+            <span className="cd-section-label">Education & Experience</span>
+            <div className="cd-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HIGHEST QUALIFICATION</span>} 
+                label={<span className="cd-label">HIGHEST QUALIFICATION</span>} 
                 name="education"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOTAL EXPERIENCE (YEARS)</span>} 
+                label={<span className="cd-label">TOTAL EXPERIENCE (YEARS)</span>} 
                 name="experience"
                 rules={[{ validator: experienceValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
           {/* Section 3: Company & CTC */}
-          <div style={{ marginBottom: 8, marginTop: 16 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Company & Salary Details</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+          <div className="cd-section-gap">
+            <span className="cd-section-label">Company & Salary Details</span>
+            <div className="cd-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT COMPANY NAME</span>} name={['currentCompany', 'Name']}>
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cd-label">CURRENT COMPANY NAME</span>} name={['currentCompany', 'Name']}>
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT COMPANY WEBSITE</span>} name={['currentCompany', 'Website']}>
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cd-label">CURRENT COMPANY WEBSITE</span>} name={['currentCompany', 'Website']}>
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -501,34 +496,35 @@ export default function CandidateDetail() {
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>EXPECTED CTC (LPA)</span>} 
+                label={<span className="cd-label">EXPECTED CTC (LPA)</span>} 
                 name="expectedCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT CTC (LPA)</span>} 
+                label={<span className="cd-label">CURRENT CTC (LPA)</span>} 
                 name="currentCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>NOTICE PERIOD (DAYS)</span>} 
+                label={<span className="cd-label">NOTICE PERIOD (DAYS)</span>} 
                 name="noticePeriod"
                 rules={[{ validator: noticePeriodValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
         </Form>
       </Modal>
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

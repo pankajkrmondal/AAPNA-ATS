@@ -1,0 +1,1956 @@
+/* ============================================================
+   src/ui — the component layer
+   ------------------------------------------------------------
+   Every rule here reads tokens and nothing else. No hex, no px literal for a
+   radius or a duration, no font stack. That is not style guidance — it is the
+   mechanism the swap contract rests on: a value written literally here is a value
+   theme/presets/*.js and theme/fonts.js can never reach, and the promise that the
+   theme, font and type scale stay changeable dies one literal at a time.
+
+   The one category of literal that IS allowed: geometry internal to a component
+   that no preset should move — an icon tile's 46px, a grabber's 36px width. Those
+   are the component's anatomy, not the design system's scale. Each is commented.
+
+   WHY CLASSES AND NOT INLINE STYLES
+   An inline style cannot be overridden by any stylesheet without !important, so a
+   component that inlines its surface can never be restyled by a preset, a tenant
+   brand, or a page. The app reached 1,915 inline style objects and six button
+   heights that way. See "the inline-style law" in
+   docs/design/AURORA-GLASS-ROLLOUT-PLAN.md §I.3.
+   ============================================================ */
+
+/* ============================================================
+   BUTTON
+   One geometry, three sizes, four tones, three emphases. Replaces the twelve
+   distinct treatments and six heights that existed across 224 call sites.
+   ============================================================ */
+
+.ui-btn.ant-btn {
+  height: var(--ui-btn-h, var(--ctl-h));
+  padding-inline: var(--ui-btn-px, var(--space-5));
+  /* Radius capped at a fraction of the height, so the corner CHARACTER is constant
+     across the family instead of the corner value.
+
+     A flat 18px looks different at every size: on a 30px `sm` it is 18 of a possible
+     15, i.e. a full pill, while on a 46px `lg` it is 18 of 23 — only 78% of one. Same
+     number, three different shapes. Capping against the height keeps all three at the
+     same proportion, and it self-corrects when density moves the control heights,
+     which a hardcoded per-size value would not. */
+  border-radius: min(var(--radius-btn), calc(var(--ui-btn-h, var(--ctl-h)) * 0.47));
+  font-family: var(--font);
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  letter-spacing: var(--tracking-callout);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  /* transform and box-shadow only — both compositor properties. Animating a
+     background or a border here would repaint on every frame of every hover. */
+  transition:
+    transform var(--dur-fast) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+/* Press. The scale comes from the preset, so `flat-slate` sets it to 1 and the
+   whole gesture disappears without this rule needing to know. prefers-reduced-motion
+   sets it to 1 too (theme/tokens.css), which is why there is no separate guard. */
+.ui-btn.ant-btn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-instant);
+}
+
+/* Focus. Replaces the flat `outline: 2px solid` — a hairline outline gets lost in
+   the rim gradient of a glass surface, where a ring plus a bloom stays readable. */
+.ui-btn.ant-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus);
+}
+
+/* ---- sizes ---- */
+.ui-btn--sm.ant-btn {
+  --ui-btn-h: var(--control-h-compact);
+  --ui-btn-px: var(--space-3);
+  font-size: var(--fs-subhead);
+}
+
+.ui-btn--md.ant-btn {
+  --ui-btn-h: var(--ctl-h);
+  --ui-btn-px: var(--space-5);
+}
+
+/* `lg` grows mostly in HEIGHT, not in every dimension at once. The first cut paired
+   a 46px height with 32px side padding and 17px text, which compounded into a slab
+   that looked unrelated to `md` rather than one step up from it. Presence comes from
+   the taller tap target; the label does not need to shout as well. */
+.ui-btn--lg.ant-btn {
+  --ui-btn-h: var(--control-h-relaxed);
+  --ui-btn-px: var(--space-5);
+  font-size: var(--fs-body);
+}
+
+/* ---- icon-only ----
+   Square by construction: an icon button whose width tracked its label would jump
+   as the icon changed. */
+.ui-btn--icon.ant-btn {
+  width: var(--ui-btn-h, var(--ctl-h));
+  padding-inline: 0;
+}
+
+/* ---- tones x emphasis ----
+   `tone` picks the hue, `emphasis` picks how much of it is used. Splitting them is
+   what avoids a twelve-entry table of one-off treatments: a danger button and a
+   brand button differ only in which token feeds them. */
+
+/* Three colour slots per tone, because a solid fill and a text label have different
+   contrast requirements and cannot share one value:
+     --ui-tone       the identity colour (borders, tints, glow)
+     --ui-solid      the FILL for the solid variant
+     --ui-on-solid   the LABEL on that fill
+     --ui-ink        the identity colour at a value safe as TEXT on a light tint
+
+   The brand owns its own pair (see theme/brands.js). Hardcoding `#fff` here put white
+   on #7a922e at 3.51:1 and on dark mode's #a8c24a at 2.00:1 — both failing AA on the
+   product's primary action, and a raw hex in the layer that forbids one. */
+.ui-btn {
+  --ui-tone: var(--brand-primary);
+  --ui-solid: var(--brand-solid);
+  --ui-on-solid: var(--brand-on-solid);
+  --ui-ink: var(--brand-ink);
+  --ui-glow: var(--glow-brand);
+}
+
+.ui-btn--neutral { --ui-tone: var(--text-2); --ui-solid: var(--text); --ui-on-solid: var(--ink-2); --ui-ink: var(--text); --ui-glow: none; }
+.ui-btn--danger { --ui-tone: var(--red); --ui-solid: var(--red); --ui-on-solid: #fff; --ui-ink: var(--red); --ui-glow: var(--glow-danger); }
+.ui-btn--success { --ui-tone: var(--green); --ui-solid: var(--green); --ui-on-solid: #fff; --ui-ink: var(--green); --ui-glow: var(--glow-success); }
+
+/* Solid — the primary action. Glow at REST, not only on hover: a button that only
+   glows when pointed at reads as a hover effect; one that glows at rest reads as
+   the lit element on the page, which is the whole point of the direction. */
+.ui-btn--solid.ant-btn {
+  background: var(--ui-solid, var(--ui-tone));
+  border-color: transparent;
+  color: var(--ui-on-solid, #fff);
+  box-shadow: var(--ui-glow);
+}
+
+.ui-btn--solid.ant-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-solid, var(--ui-tone)) 88%, white);
+  border-color: transparent;
+  color: var(--ui-on-solid, #fff);
+  transform: translateY(-1px);
+  box-shadow: var(--glow-brand-strong);
+}
+
+.ui-btn--danger.ui-btn--solid.ant-btn:hover:not(:disabled),
+.ui-btn--success.ui-btn--solid.ant-btn:hover:not(:disabled) {
+  box-shadow: var(--ui-glow);
+}
+
+/* Soft — the secondary action. A tinted fill rather than an outline, because an
+   outlined button next to a glowing solid one reads as disabled. */
+.ui-btn--soft.ant-btn {
+  background: color-mix(in srgb, var(--ui-tone) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ui-tone) 22%, transparent);
+  /* --ui-ink, not --ui-tone: the identity colour sitting on its own 12% tint measured
+     3.25:1. A tinted-fill button still has to be readable. */
+  color: var(--ui-ink, var(--ui-tone));
+}
+
+.ui-btn--soft.ant-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-tone) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ui-tone) 38%, transparent);
+  color: var(--ui-ink, var(--ui-tone));
+  transform: translateY(-1px);
+}
+
+/* Text — tertiary. No fill until hover. */
+.ui-btn--text.ant-btn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ui-ink, var(--ui-tone));
+  box-shadow: none;
+}
+
+.ui-btn--text.ant-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-tone) 10%, transparent);
+  border-color: transparent;
+  color: var(--ui-ink, var(--ui-tone));
+}
+
+.ui-btn.ant-btn:disabled,
+.ui-btn.ant-btn:disabled:hover {
+  box-shadow: none;
+  transform: none;
+  opacity: 0.5;
+}
+
+/* ============================================================
+   SURFACE
+   The material primitive. Tier is information density, not importance — a hero and
+   a 100-row table want opposite things from glass. See §I.1 of the rollout plan.
+   ============================================================ */
+
+.ui-surface {
+  position: relative;
+  border-radius: var(--radius-surface);
+  /* Two layers, not one: a brand tint over the material fill. The tint is what stops
+     a translucent white panel reading as tracing paper — the same chroma trick the
+     light-mode pass found for the depth ramp, where a brand-hued shadow reads as
+     glow and a grey one reads as dirt. Under flat-slate --material-tint is
+     transparent, so this collapses to the plain fill with no conditional. */
+  background:
+    linear-gradient(var(--material-tint), var(--material-tint)),
+    var(--ui-material, var(--material-regular));
+  border: 1px solid transparent;
+  box-shadow: var(--depth-2), var(--material-hilite);
+  /* corner-shape is the actual iOS superellipse. Unsupported browsers ignore the
+     declaration entirely and keep border-radius, which is the current rendering —
+     so this is a progressive enhancement with no fallback branch needed. */
+  corner-shape: var(--ui-corner, squircle);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-standard);
+}
+
+/* FLAG-DRIVEN, NOT NAME-DRIVEN.
+   This read `[data-preset='flat-slate']`, which meant a THIRD preset would silently
+   inherit Liquid Glass's squircle no matter what its own `flags.squircle` said. The
+   flags block exists in every preset precisely to avoid coupling behaviour to one
+   preset's name; it was declared, emitted, and then not used.
+
+   `--flag-squircle` is 1 or 0, so the corner shape is picked arithmetically and any
+   preset — including ones not written yet — gets the shape it asked for. */
+.ui-surface { --ui-corner: var(--corner-shape-value, squircle); }
+
+[data-flag-squircle='0'] .ui-surface,
+[data-flag-squircle='0'].ui-surface { --ui-corner: round; }
+
+/* The gradient rim — bright where light lands, brand-tinted where it falls away.
+   A masked ::before rather than a border because a border cannot hold a gradient,
+   and this is the detail that separates "a pane of glass" from "a translucent
+   rectangle".
+
+   Its opacity is --material-rim-opacity, NOT --flag-specular. v1 tied the two
+   together, so softening the sheen also softened the rim — and the rim is what
+   defines the pane's EDGE, which is precisely what a translucent surface loses
+   against a light ground. They are separate cues and now separate tokens. */
+.ui-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  padding: 1px;
+  background: var(--material-rim);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: var(--material-rim-opacity, 1);
+  z-index: 2;
+}
+
+/* The diagonal specular sheen — the strongest single cue that a surface is glass
+   rather than paper. Its own layer so it sits above the fill but below content, and
+   so a preset can remove it (--material-specular: none) without touching the rim. */
+.ui-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  corner-shape: inherit;
+  background: var(--material-specular);
+  opacity: var(--flag-specular, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Bloom is layered into the SAME ::after rather than claiming its own pseudo-element.
+   The v1 version resized ::after to a 320px circle, which — now that ::after also
+   carries the specular — would have silently deleted the sheen from exactly the
+   cards that get a bloom (the hero and the lead KPI). Two backgrounds on one layer
+   avoids the collision and costs one fewer composited element. */
+.ui-surface--bloom::after {
+  background: var(--material-specular), var(--bloom);
+  background-repeat: no-repeat, no-repeat;
+  background-size: auto, 340px 340px;
+  background-position: 0 0, top -90px right -70px;
+}
+
+/* ---- material weights ----
+   A surface nested inside another is THINNER glass, not a different colour. This is
+   the fix for the "slab": a nested panel that painted its own opaque fill used to
+   sit on the card like a sticker. */
+.ui-surface--thin { --ui-material: var(--material-thin); }
+.ui-surface--regular { --ui-material: var(--material-regular); }
+.ui-surface--thick { --ui-material: var(--material-thick); }
+
+/* ---- tiers ---- */
+
+/* Tier 2 — feature surfaces: hero, KPI cards, widget panels. No blur: it scrolls. */
+.ui-surface--t2 {
+  --ui-material: var(--material-regular);
+  box-shadow: var(--depth-2), var(--material-hilite);
+}
+
+/* Tier 3 — data surfaces: tables, dense lists, anything nested in a tier 2. More
+   opaque, because text density needs a steadier ground than a hero does. */
+.ui-surface--t3 {
+  --ui-material: var(--material-thick);
+  box-shadow: var(--depth-1), var(--material-hilite);
+}
+
+/* Tier 4 — overlays: sheets, dropdowns, popovers. The ONE content-side surface
+   that blurs, because it is transient and sits above everything, so the blur both
+   reads and costs nothing on scroll. */
+.ui-surface--t4 {
+  --ui-material: var(--material-thick);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--depth-3), var(--material-hilite);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+}
+
+/* Same fix: a preset with blurOverlay off removes the cost entirely rather than
+   blurring by zero, which still allocates a backdrop layer. Keyed off the flag so it
+   holds for any preset, not just the one that happened to be written first. */
+[data-flag-blur-overlay='0'] .ui-surface--t4 {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ---- padding ---- */
+.ui-surface--pad-none { padding: 0; }
+.ui-surface--pad-compact { padding: var(--card-pad-compact); }
+.ui-surface--pad-default { padding: var(--pad-card, var(--card-pad)); }
+.ui-surface--pad-relaxed { padding: var(--card-pad-relaxed); }
+
+/* ---- interactive ----
+   Opt-in, because a whole column or a 100-row table lifting as the pointer crosses
+   it is wrong. The base AntD card lift is what made that happen by default. */
+.ui-surface--interactive {
+  cursor: pointer;
+}
+
+.ui-surface--interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--depth-3), var(--material-hilite);
+}
+
+.ui-surface--interactive:active {
+  transform: translateY(-1px) scale(var(--press-scale));
+  transition-duration: var(--dur-instant);
+}
+
+.ui-surface--interactive:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus), var(--depth-2);
+}
+
+/* Content sits above the fill, the sheen and the bloom, but below the rim — the rim
+   traces the physical edge of the pane, so nothing should paint over it. */
+.ui-surface > * { position: relative; z-index: 1; }
+
+/* ---- hairline divider ---- */
+.ui-divider {
+  border: 0;
+  border-block-start: var(--hairline);
+  margin-block: var(--space-4);
+}
+
+/* ============================================================
+   PAGE SHELL + HEADER
+   One page inset for the whole app. Four pages previously added their own 24px
+   padding on top of the layout's, sitting 48-52px in while the dashboard sat at 24.
+   ============================================================ */
+
+.ui-page {
+  width: 100%;
+  max-width: var(--ui-page-w, 1320px);
+  margin-inline: auto;
+  padding-block-end: var(--space-7);
+}
+
+/* Measures, promoted to tokens. As bare literals they were unreachable by the
+   config layer — a denser or wider product variant could change every radius,
+   duration and type size and still be stuck with a 1320px content column. */
+.ui-page--narrow { --ui-page-w: var(--page-w-narrow, 1000px); }
+.ui-page--standard { --ui-page-w: var(--page-w-standard, 1320px); }
+.ui-page--wide { --ui-page-w: var(--page-w-wide, 1560px); }
+
+/* TWO COLUMNS, and they have to actually stay side by side.
+   The first cut left both children at `flex: 0 1 auto`, so each took its content
+   width — 698px of title plus 571px of controls against ~1230px available. It
+   wrapped, and the hero ended up as a narrow left column with the entire right half
+   empty. Giving the text column `flex: 1 1 <basis>` makes it absorb the leftover
+   space instead of demanding its content width, and `min-width: 0` lets it shrink
+   below the title's intrinsic width rather than forcing the wrap. */
+.ui-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin-block-end: var(--space-6);
+}
+
+/* The basis has to be large enough that the CONTROLS wrap to their own line before
+   the title is squeezed narrow enough to wrap itself. At 22rem they did not: between
+   1160px and 1340px viewport the row stayed intact and crushed the text column to
+   371-551px, under the ~474px the greeting needs — so the title broke and left the
+   wave emoji orphaned on a line of its own. That band covers most common laptop
+   widths, so it was the normal case rather than an edge case.
+
+   36rem makes the flex container break first, which is the better degradation: a
+   full-width title with the controls beneath it, rather than a cramped title beside
+   them. Verified across 980-1440px — the title now holds one line at every step. */
+/* SUPERSEDED 2026-08-31 — the 36rem basis is kept in the note above because the
+   reasoning still holds; the number was the problem. A FIXED basis decides the wrap
+   from a guess about how wide a title might be, not from how wide this title is.
+
+   Measured on /dashboard at a 1132px content box: the text column's own max-content is
+   499px and the controls' is 566px, so 499 + 566 + 24 = 1089 fits with 43px to spare.
+   The 36rem basis claimed 576px instead, making the browser compute 1166 — an overflow
+   of 34px — so the controls wrapped to their own line and left a 566x112px hole in the
+   hero's lower left. The row was breakable all along; the basis over-reserved by 77px.
+
+   `flex-basis: auto` makes the base size the content's actual width, so the line breaks
+   when it genuinely does not fit and not before. `flex-grow: 1` still hands the text
+   column every leftover pixel, which is what stopped the title being crushed — that
+   part was never the basis's job. The degradation the note above wanted is preserved:
+   when the content really is too wide, the container still breaks and the controls
+   still drop to a full-width row of their own. */
+.ui-page-header__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ui-page-header__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--brand-primary);
+  margin-block-end: var(--space-2);
+}
+
+.ui-page-header__title {
+  /* Belt and braces for the case the basis above cannot solve — a genuinely long
+     name will still wrap, and `pretty` keeps the last line from collapsing to a
+     single orphaned word or emoji. Ignored by browsers that do not support it, which
+     leaves today's behaviour rather than breaking anything. */
+  text-wrap: pretty;
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-1);
+  font-weight: var(--fw-title-1);
+  letter-spacing: var(--tracking-title-1);
+  line-height: var(--lh-title-1);
+  color: var(--text);
+  margin: 0;
+}
+
+.ui-page-header--lg .ui-page-header__title { font-size: var(--fs-display); letter-spacing: var(--tracking-display); }
+.ui-page-header--sm .ui-page-header__title { font-size: var(--fs-title-2); letter-spacing: var(--tracking-title-2); }
+
+.ui-page-header__subtitle {
+  font-size: var(--fs-callout);
+  line-height: var(--lh-callout);
+  color: var(--text-2);
+  margin-block-start: var(--space-1);
+  max-width: 68ch; /* measure, not scale — prose stops being readable past this */
+}
+
+/* Actions and filters stack right-aligned: what the page DOES on top, what it SHOWS
+   beneath. Two rows rather than one long one, because a hero that wraps its controls
+   mid-row is the shape the hand-rolled headers all drifted into. */
+.ui-page-header__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-3);
+  /* Never shrink: these are real controls with real hit targets, and squeezing a
+     button row is worse than wrapping it to its own line. Below the breakpoint the
+     whole block goes full-width and left-aligns instead. */
+  flex: 0 0 auto;
+  /* THE WRAPPED STATE. Added 2026-08-31.
+
+     The parent is `justify-content: space-between`, so when these controls no longer
+     fit beside the title and wrap to their own line they are the ONLY item on that
+     line — and space-between puts a lone item at the START. The result is a header
+     whose entire right half is empty behind the watermark, which is what /dashboard
+     was reported for. `.ui-hero`'s docblock records an earlier attempt at that dead
+     space solved by adding padding; the padding was never the cause.
+
+     It is not a lab-vs-app divergence. Measured, the lab wraps identically at the same
+     width — lab hero 275px at a 1194px column against the app's 280px at 1196px. The
+     lab simply never renders that narrow, because it has no sidebar: the app loses
+     248px of sider plus 56px of Content padding and so crosses the break point.
+
+     `margin-inline-start: auto` right-aligns the block once it is alone on a line, and
+     is inert when both items share a row — with only two flex items, absorbing the
+     free space is exactly what space-between was already doing. Below 900px the media
+     query sets `width: 100%`, leaving no free space for the margin to take, so the
+     left-aligned small-screen layout is unaffected. */
+  margin-inline-start: auto;
+}
+
+.ui-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ui-page-header__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ui-page-header__filter-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 900px) {
+  .ui-page-header__controls { align-items: flex-start; width: 100%; }
+  .ui-page-header__filters { justify-content: flex-start; }
+}
+
+/* ---- hero variant ----
+   Generalises the dashboard hero so it is available to every route rather than
+   being one screen's bespoke markup. */
+.ui-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-surface);
+  corner-shape: var(--ui-corner, squircle);
+  /* Generous block padding. Collapsing the header to one row cut the hero from 279px
+     to 151px, which fixed the dead space but overshot into reading as a toolbar strip
+     rather than a hero. The air has to come back as padding around a single row, not
+     as a third empty column. */
+  /* Vertical stays --space-6; horizontal drops to --space-5 — 2026-08-31.
+     Purely to buy inner width. Measured: the title's max-content is 499px and the
+     control block's 566px, so the row needs 499 + 566 + gap. At a 1440px viewport the
+     hero's inner box was 1072px against 1089px needed — it missed a single row by
+     17px and dropped the controls, costing 112px of height to save 17px of width.
+     16px back from the side padding plus 8px from the gap below turns that into a fit,
+     so every laptop width from 1440 up gets the compact one-row band rather than only
+     1500+. Vertical padding is untouched: that is the hero's air, and the note on
+     .ui-hero above records what happens when it goes. */
+  padding: var(--space-6) var(--space-5);
+  margin-block-end: var(--space-6);
+  background: var(--material-regular);
+  box-shadow: var(--depth-2), var(--material-hilite);
+}
+
+.ui-hero__mesh {
+  position: absolute;
+  inset: -20%;
+  background: var(--bloom);
+  opacity: var(--glow-opacity);
+  pointer-events: none;
+  /* transform only. The old meshDrift animated background-position, which repaints
+     the whole layer every frame — the pattern the design doc bans. */
+  animation: uiMeshDrift var(--dur-ambient, 26s) ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes uiMeshDrift {
+  from { transform: translate3d(-3%, -2%, 0) scale(1.05); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.15); }
+}
+
+/* The conic light sweep — one wedge of brand light turning once every 22s.
+   Rotation only, so it is pure compositor work: no paint, no layout. Sized well
+   past the hero's bounds so the wedge never shows its own corners as it turns.
+   Mirrors `atsHeroSweep` in aurora-glass.css, which is the shipped dashboard's. */
+.ui-hero__sweep {
+  position: absolute;
+  /* A square wider than the hero's diagonal, centred, so rotation stays seamless. */
+  inset: -60%;
+  pointer-events: none;
+  opacity: var(--glow-opacity);
+  /* Multi-stop ramp, not a two-stop wedge. A conic gradient going straight from
+     transparent to full and back draws its own boundary as a hard diagonal line
+     across the hero — which reads as a rendering artefact rather than as light.
+     Five stops give the wedge soft shoulders on both sides. */
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--brand-primary) 2%, transparent) 16deg,
+    color-mix(in srgb, var(--brand-primary) 9%, transparent) 40deg,
+    color-mix(in srgb, var(--brand-primary) 2%, transparent) 68deg,
+    transparent 96deg,
+    transparent 360deg
+  );
+  /* Fade the whole layer out toward the edges, so the wedge never terminates against
+     the hero's border — the second half of killing the hard edge. */
+  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  animation: uiHeroSweep 22s linear infinite;
+  will-change: transform;
+}
+
+[data-theme='dark'] .ui-hero__sweep {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--brand-primary) 4%, transparent) 16deg,
+    color-mix(in srgb, var(--brand-primary) 17%, transparent) 40deg,
+    color-mix(in srgb, var(--brand-primary) 4%, transparent) 68deg,
+    transparent 96deg,
+    transparent 360deg
+  );
+}
+
+@keyframes uiHeroSweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* The AAPNA mark, oversized and cropped by the hero's corner — brand presence as
+   architecture rather than as a logo slot. Deliberately STATIC: the page-scale rotor
+   on the ambient canvas already carries the rotation, and two marks turning at once
+   reads as decoration rather than as depth. (Same reasoning as `.dash-hero__mark` in
+   aurora-glass.css, which this mirrors.) */
+/* THE MARK IS SHOWN WHOLE, not cropped.
+   Two earlier attempts cropped it — first the whole rotor sat inside the band and
+   read as a stray arc, then it was pushed out so far that only disconnected blade
+   tips showed. Both read as a broken graphic rather than as a watermark, because the
+   rotor is a radially symmetric pinwheel: a partial one has no silhouette to
+   recognise, unlike a wordmark where a cropped letter still reads.
+
+   Sized from the hero's own height via the block insets plus `aspect-ratio`, so it
+   stays square and rescales automatically when density or content changes the band's
+   height — no magic pixel value to re-tune. */
+.ui-hero__mark {
+  position: absolute;
+  inset-block: var(--space-2);
+  inset-inline-end: var(--space-5);
+  aspect-ratio: 1 / 1;
+  width: auto;
+  z-index: 0;
+  color: var(--brand-primary);
+  /* Faint, but not so faint it reads as a rendering smudge. On a light ground an
+     olive mark needs more alpha than instinct suggests to register at all — the same
+     finding the light-mode aurora pass recorded. */
+  opacity: 0.13;
+  pointer-events: none;
+}
+
+[data-theme='dark'] .ui-hero__mark { opacity: 0.16; }
+
+.ui-hero__mark svg { display: block; width: 100%; height: 100%; }
+
+/* The title/controls gap, hero only. --space-4 rather than --space-5: the two columns
+   are already separated by a hard change of alignment (prose left, controls right), so
+   24px of gutter is buying separation that is not needed — and those 8px are part of
+   what keeps the row intact at 1440. */
+.ui-hero .ui-page-header { gap: var(--space-4); }
+
+/* The eyebrow becomes a CHIP inside a hero, and only inside a hero. Added 2026-08-31.
+
+   Everywhere else the eyebrow is a line of brand-coloured caps sitting on the page
+   ground, which is legible because that ground is flat. A hero is the one surface with
+   a mesh, a rotating sweep and a watermark moving underneath it, and small caps at 12px
+   lose their edge against all three. Giving it a chip restores the contrast the other
+   routes get for free.
+
+   Scoped to `.ui-hero` deliberately: /email, /candidates and /mrf keep the plain
+   eyebrow, so this changes exactly one surface rather than every header in the app. */
+.ui-hero .ui-page-header__eyebrow {
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent);
+}
+
+.ui-hero__content { position: relative; z-index: 1; }
+
+/* Inside a hero the header IS the content, so its trailing margin would just pad the
+   hero's floor and reintroduce the empty band this layout exists to remove. */
+.ui-hero__content > .ui-page-header { margin-block-end: 0; }
+
+/* ============================================================
+   STAT TILE
+   Merges the three parallel stat-card families — .premium-stat-card (38px/800),
+   .kpi-card (34px/800) and .admin-stat (32px/700) — which differed in value size,
+   weight, shadow, icon radius and hover lift for no reason anyone could name.
+   ============================================================ */
+
+/* The card itself: the accent rail lives on the surface, and the sparkline band has
+   to bleed to the rounded bottom edge, so the padding moves inside. */
+.ui-stat-card {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* THE COLOURED TOP RAIL.
+   4px of the metric's accent across the top edge. This is DATA, not decoration — it
+   is what lets a reader identify a KPI by colour at a glance across the row, and it
+   is why the dashboard's four cards are legible peripherally. It therefore survives
+   every preset, including flat-slate, which strips the glow and the sheen but must
+   not strip a carrier of meaning.
+
+   A REAL ELEMENT, not a pseudo. `.ui-surface` already spends ::before on the rim and
+   ::after on the sheen, and a `.ui-stat-card::before` here silently inherited the
+   rim's `padding: 1px` and `mask-composite: exclude` — so the rail rendered as a
+   hairline ring floating above the card instead of a solid bar. Pseudo-element
+   budgets are a real constraint on a composable surface; an element is honest about
+   what it is and cannot collide.
+
+   Not a border-top either: a border sits outside the overflow clip and squares off
+   the surface's rounded top corners. */
+.ui-stat__rail {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  height: 4px;
+  background: var(--ui-accent);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ui-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--pad-card, var(--card-pad)) var(--pad-card, var(--card-pad)) 0;
+  flex: 1;
+}
+
+/* No bottom padding when a sparkline band follows — the band bleeds to the card's
+   edge and supplies its own visual floor. But when there is NO band, `.ui-stat` is
+   the last child and the footnote would sit flush against the card edge. Keying off
+   :last-child means the card is correct in both shapes without the caller having to
+   pass a flag saying which one it is. */
+.ui-stat:last-child { padding-block-end: var(--pad-card, var(--card-pad)); }
+
+/* THE FULL-BLEED SPARKLINE BAND.
+   Bleeds edge to edge at the bottom of the card. `margin-top: auto` pins it to the
+   floor so cards of differing content height still align their bands across the row.
+   The gradient wash underneath is what keeps the silhouette identical on a flat
+   series — a quiet metric looks finished rather than broken. */
+.ui-stat-band {
+  margin-top: auto;
+  height: 56px;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--ui-accent) 22%, transparent) 100%);
+}
+
+.ui-stat-band > div { position: absolute; inset: 0; }
+
+.ui-stat__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-stat__icon {
+  /* Anatomy: the tile is sized to the icon it holds, not to a spacing step. */
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-ctl);
+  corner-shape: var(--ui-corner, squircle);
+  font-size: var(--fs-title-3);
+  color: var(--brand-on-solid, #fff);
+  /* --ui-accent is set by the component from a TOKEN NAME, never a hex — that is
+     what lets a stat colour follow a tenant brand and a preset at once. */
+  background: linear-gradient(135deg, var(--ui-accent) 0%, color-mix(in srgb, var(--ui-accent) 78%, black) 100%);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--ui-accent) 34%, transparent);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+
+.ui-surface--interactive:hover .ui-stat__icon { transform: scale(1.08) rotate(-4deg); }
+
+.ui-stat__label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ui-stat__info { display: inline-flex; align-items: center; }
+
+.ui-stat__value {
+  font-family: var(--mono);
+  font-size: var(--fs-metric-md);
+  font-weight: var(--fw-metric-md);
+  letter-spacing: var(--tracking-metric-md);
+  line-height: var(--lh-metric-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.ui-stat--lg .ui-stat__value { font-size: var(--fs-metric-lg); letter-spacing: var(--tracking-metric-lg); }
+.ui-stat--sm .ui-stat__value { font-size: var(--fs-metric-sm); letter-spacing: var(--tracking-metric-sm); }
+
+.ui-stat__footnote {
+  font-size: var(--fs-footnote);
+  color: var(--text-3);
+  line-height: var(--lh-footnote);
+}
+
+.ui-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-delta--up { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.ui-delta--down { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.ui-delta--flat { background: color-mix(in srgb, var(--text-3) 14%, transparent); color: var(--text-2); }
+
+/* ============================================================
+   FIELD
+   One input rhythm. Replaces `style={{ height: 42, borderRadius: 8 }}` repeated by
+   hand on every input in the app.
+   ============================================================ */
+
+.ui-field { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.ui-field__label {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.ui-field__required { color: var(--red); margin-inline-start: 2px; }
+.ui-field__hint { font-size: var(--fs-footnote); color: var(--text-3); line-height: var(--lh-footnote); }
+.ui-field__error { font-size: var(--fs-footnote); color: var(--red); line-height: var(--lh-footnote); }
+
+.ui-field .ant-input,
+.ui-field .ant-input-affix-wrapper,
+.ui-field .ant-select-selector,
+.ui-field .ant-picker {
+  border-radius: var(--radius-ctl);
+  min-height: var(--ctl-h);
+  font-size: var(--fs-callout);
+}
+
+.ui-field .ant-input:focus,
+.ui-field .ant-input-affix-wrapper-focused,
+.ui-field .ant-select-focused .ant-select-selector,
+.ui-field .ant-picker-focused {
+  box-shadow: var(--glow-focus);
+}
+
+.ui-field--invalid .ant-input,
+.ui-field--invalid .ant-input-affix-wrapper,
+.ui-field--invalid .ant-select-selector {
+  border-color: var(--red);
+}
+
+/* ------------------------------------------------------------------
+   FieldValue — the read side of a field.
+   min-height is --ctl-h, matching the input it replaces, so a modal does not jump
+   when it switches between view and edit. Colour is --text, NOT a dimmed token:
+   this is the content, and the disabled state it replaces measured 1.84:1 light /
+   1.91:1 dark while its own label sat at 5.35.
+   ------------------------------------------------------------------ */
+.ui-value {
+  display: flex;
+  align-items: center;
+  min-height: var(--ctl-h);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-body);
+  line-height: var(--lh-body);
+  color: var(--text);
+  /* Long unbroken strings — a JD URL, an email — must wrap rather than push the
+     dialog sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* Long-form answers keep the author's line breaks. Block, not flex, or every
+   paragraph collapses onto one centred line. */
+.ui-value--multi {
+  display: block;
+  min-height: 0;
+  padding-block: var(--space-2);
+  white-space: pre-wrap;
+}
+
+/* An unanswered field must LOOK unanswered rather than read as a missing row. This
+   is the one place the tertiary token is correct: it is not content. */
+.ui-value__empty { color: var(--text-3); }
+
+.ui-value--link {
+  color: var(--info-strong);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ui-value--link:hover { text-decoration: underline; }
+.ui-value--link:focus-visible { outline: none; box-shadow: var(--glow-focus); border-radius: var(--radius-ctl); }
+
+/* ============================================================
+   SEGMENTED
+   A sliding glass pill. Replaces the ad-hoc tab bars (.admin-tab at 38px/999,
+   .screening-tabs) that each invented their own geometry.
+   ============================================================ */
+
+.ui-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-3) 12%, transparent);
+  border: var(--hairline);
+}
+
+.ui-segmented__item {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 var(--space-4);
+  height: calc(var(--ctl-h) - 8px);
+  border-radius: var(--radius-pill);
+  font-family: var(--font);
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  color: var(--text-2);
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-spring);
+}
+
+.ui-segmented__item:hover { color: var(--text); }
+.ui-segmented__item:active { transform: scale(var(--press-scale)); }
+
+.ui-segmented__item--active {
+  background: var(--material-thick);
+  /* --brand-ink, not --brand-primary. The identity colour on an opaque light pane
+     measured 3.25:1 under the olive brand — it passed under `midnight` only because
+     that blue happens to be darker, which is exactly the kind of accident a second
+     brand exists to expose. Same fix as the soft button. */
+  color: var(--brand-ink, var(--brand-primary));
+  box-shadow: var(--depth-1);
+}
+
+.ui-segmented__item:focus-visible { outline: none; box-shadow: var(--glow-focus); }
+
+/* An option label carrying a leading icon. A NEW class rather than a change to
+   `.ui-segmented__item`, deliberately: the three existing callers (/mrf,
+   /admin/dashboard, the dashboard hero) pass text-only labels, and widening the item
+   rule to lay them out would restyle all three to fix a need only two screens have.
+   Replaces `.screening-tabs .ant-tabs-tab .tab-ico { margin-right: 8px }`. */
+.ui-segmented__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The strip when it drives panes below it. Replaces `.screening-tabs .ant-tabs-nav`'s
+   18px on /filtering and an inline `tabBarStyle={{ marginBottom: 20 }}` on /analytics —
+   two hand-picked gaps for one relationship, neither on the spacing scale. */
+.ui-segmented-tabs { margin-block-end: var(--space-5); }
+
+/* Belt and braces. `[hidden]` already resolves to `display: none` in every browser's
+   UA sheet, but that is a low-specificity default and any rule setting `display` on
+   this class would silently beat it, showing every pane at once. */
+.ui-segmented-tabs__pane[hidden] { display: none; }
+
+/* ============================================================
+   STATE BLOCK
+   One empty / loading / error surface. ~40 raw <Spin> and <Empty> instances each
+   made their own decision about what "nothing here" looks like.
+   ============================================================ */
+
+.ui-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
+}
+
+.ui-state__icon {
+  /* Anatomy: sized to read as an illustration, not as body text. */
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-surface);
+  corner-shape: var(--ui-corner, squircle);
+  font-size: var(--fs-title-2);
+  background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  color: var(--brand-primary);
+}
+
+.ui-state--error .ui-state__icon {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+}
+
+.ui-state__title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-3);
+  font-weight: var(--fw-title-3);
+  letter-spacing: var(--tracking-title-3);
+  color: var(--text);
+}
+
+/* The measure matters here: an empty state must explain WHY it is empty and offer
+   the next action, and that is a sentence, not a label. A bare "No data" is not
+   acceptable on an enterprise screen (rollout plan §I.6). */
+.ui-state__body {
+  font-size: var(--fs-callout);
+  line-height: var(--lh-callout);
+  color: var(--text-2);
+  max-width: 46ch;
+}
+
+/* ============================================================
+   SHEET
+   Presentation only. The tier-4 MATERIAL arrives separately, stamped onto the same
+   element by OVERLAY_CONFIG in App.jsx — that mechanism reaches all 50 dialogs
+   wherever they portal to, and this does not duplicate it.
+   ============================================================ */
+
+.ui-sheet .ant-modal-content {
+  border-radius: var(--radius-sheet);
+  corner-shape: var(--ui-corner, squircle);
+  padding-block-start: var(--space-3);
+}
+
+/* Rise and settle. Scale from just under 1 rather than from 0 — a sheet that grows
+   from nothing reads as a notification, not as a panel being brought forward. */
+.ui-sheet .ant-modal-content {
+  animation: uiSheetIn var(--dur-sheet) var(--ease-spring) both;
+}
+
+@keyframes uiSheetIn {
+  from { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The iOS drag affordance. Decorative here — the sheet is not actually draggable —
+   but it is the cue that reads "this is a presented panel, dismissible" rather than
+   "this is a box". */
+.ui-sheet__grabber {
+  width: 36px;   /* anatomy: the standard iOS grabber */
+  height: 5px;
+  margin: 0 auto var(--space-4);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.ui-sheet .ant-modal-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-3);
+  font-weight: var(--fw-title-3);
+  letter-spacing: var(--tracking-title-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-sheet .ant-modal-content { animation: none; }
+}
+
+/* ============================================================
+   TABLE
+   Tier 3. Deliberately does NOT lift on hover — a 100-row table bouncing as the
+   pointer crosses it is wrong, and the base `.ant-card:not(.no-lift):hover` rule
+   used to do exactly that.
+   ============================================================ */
+
+.ui-table-surface { overflow: hidden; }
+
+.ui-table .ant-table { background: transparent; }
+
+.ui-table .ant-table-thead > tr > th {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+  border-block-end: var(--hairline);
+}
+
+.ui-table .ant-table-tbody > tr > td {
+  font-size: var(--fs-subhead);
+  padding-block: var(--py-row, var(--row-py));
+  border-block-end: var(--hairline);
+}
+
+/* Numbers in a table row are NOT display metrics. The first cut used `.t-metric-sm`
+   here, which is 25px — a KPI-card size — so the score column towered over the 13px
+   text beside it and the row stopped reading as one line of information. A figure in
+   a table needs to align and be scannable, which is tabular numerals and a little
+   extra weight, not extra size. */
+.ui-table__num {
+  font-family: var(--mono);
+  font-size: var(--fs-subhead);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.ui-table .ant-table-tbody > tr {
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+/* ---- loading skeleton ----
+   Shaped like the content, not a centred spinner: a spinner collapses the layout and
+   everything jumps when it resolves, which reads as the page breaking and then
+   recovering. The shimmer animates transform on a pseudo-element rather than
+   background-position on the row — the latter repaints the row every frame. */
+.ui-state-skeleton { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.ui-skeleton-row {
+  position: relative;
+  overflow: hidden;
+  height: 44px; /* anatomy: one list row */
+  border-radius: var(--radius-ctl);
+  corner-shape: var(--ui-corner, squircle);
+  background: color-mix(in srgb, var(--text-3) 10%, transparent);
+}
+
+.ui-skeleton-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text-3) 12%, transparent), transparent);
+  animation: uiShimmer 1.4s var(--ease-standard) infinite;
+  animation-delay: var(--ui-delay, 0ms);
+}
+
+@keyframes uiShimmer { to { transform: translateX(100%); } }
+
+/* Screen-reader-only text. The skeleton IS the loading message visually; assistive
+   tech needs it said. */
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   MOTION
+   Entrance primitives. transform/opacity only — both composited, neither repaints.
+   ============================================================ */
+
+.ui-reveal {
+  animation: uiReveal var(--dur-cinematic) var(--ease-emphasized) both;
+  animation-delay: var(--ui-delay, 0ms);
+}
+
+@keyframes uiReveal {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Children stagger by index. The step is a token, so a preset that wants a snappier
+   app shortens every stagger in the product at once. */
+.ui-stagger > * {
+  animation: uiReveal var(--dur-cinematic) var(--ease-emphasized) both;
+}
+
+.ui-stagger > :nth-child(1) { animation-delay: calc(var(--stagger-step) * 0); }
+.ui-stagger > :nth-child(2) { animation-delay: calc(var(--stagger-step) * 1); }
+.ui-stagger > :nth-child(3) { animation-delay: calc(var(--stagger-step) * 2); }
+.ui-stagger > :nth-child(4) { animation-delay: calc(var(--stagger-step) * 3); }
+.ui-stagger > :nth-child(5) { animation-delay: calc(var(--stagger-step) * 4); }
+.ui-stagger > :nth-child(6) { animation-delay: calc(var(--stagger-step) * 5); }
+.ui-stagger > :nth-child(7) { animation-delay: calc(var(--stagger-step) * 6); }
+.ui-stagger > :nth-child(8) { animation-delay: calc(var(--stagger-step) * 7); }
+
+/* index.css already carries an app-wide prefers-reduced-motion guard; this makes the
+   ui layer's own entrances explicit rather than depending on that guard having a
+   rule for each new class. */
+/* ============================================================
+   STATE MOTION
+   What makes a screen read as LIVE rather than merely animated. Entrance motion
+   plays once and is gone within a second, which is why v1's design was reported as
+   having no animation at all — by the time anyone looked, nothing was moving.
+
+   These are continuous or event-driven, and each reuses a keyframe that already
+   exists in theme/index.css rather than inventing a new one.
+   ============================================================ */
+
+/* Live indicator — a dot with an expanding halo. Reuses liveHalo's shape. */
+.ui-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  animation: uiLiveHalo 2.6s var(--ease-standard) infinite;
+}
+
+@keyframes uiLiveHalo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-primary) 45%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--brand-primary) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand-primary) 0%, transparent); }
+}
+
+/* Attention pulse for action-required chips. Deliberately slow and low-amplitude:
+   a fast pulse on a work queue becomes something people learn to ignore. */
+.ui-attention { animation: uiAttention 2.2s ease-in-out infinite; }
+
+@keyframes uiAttention {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 0%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 18%, transparent); }
+}
+
+/* Sheen sweep — a highlight crossing a surface once on appear. `left` is animated
+   via transform on an absolutely-positioned band, not by animating `left` itself. */
+.ui-sheen { position: relative; overflow: hidden; }
+
+.ui-sheen::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -60%;
+  width: 55%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  transform: translateX(0);
+  animation: uiSheen 2.6s var(--ease-standard) infinite;
+  pointer-events: none;
+}
+
+@keyframes uiSheen {
+  0%, 55% { transform: translateX(0); }
+  100% { transform: translateX(360%); }
+}
+
+/* Row flash — a one-shot green wash when a row updates over the socket. Applied by
+   adding the class; remove and re-add to replay. */
+.ui-flash { animation: uiFlash 1.6s var(--ease-standard); }
+
+@keyframes uiFlash {
+  0% { background-color: color-mix(in srgb, var(--green) 26%, transparent); }
+  100% { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-reveal,
+  .ui-stagger > *,
+  .ui-hero__mesh,
+  .ui-hero__sweep,
+  .ui-live-dot,
+  .ui-attention,
+  .ui-sheen::before,
+  .ui-flash {
+    animation: none !important;
+  }
+}
+
+/* The ambient and decorative layers go entirely under a reduced-transparency
+   request — that setting asks for less visual noise, not merely less movement. */
+@media (prefers-reduced-transparency: reduce) {
+  .ui-hero__mesh,
+  .ui-hero__sweep { display: none; }
+  .ui-surface::after { background: none; }
+}
+
+/* ============================================================
+   PUBLIC PAGE SHELL
+   The frame for the token-linked pages an external candidate or interviewer reaches
+   from an email. Deliberately NOT a glass surface: it mirrors the branded email that
+   sent the person there, and a translucent aurora card would break that continuity —
+   the one place in the product where matching a MAIL template beats matching the app.
+
+   What it gains from V3 is tokens. It previously set Arial, its own frozen palette,
+   and a raw black shadow, none of which a theme or a tenant brand could reach.
+   ============================================================ */
+
+.pps {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  background: var(--brand-canvas);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+.pps__card {
+  width: 100%;
+  max-width: var(--pps-max, 680px);
+  background: var(--brand-surface);
+  border-radius: var(--radius-surface);
+  corner-shape: var(--ui-corner, squircle);
+  overflow: hidden;
+  /* The brand-hued depth ramp, not a raw black shadow. */
+  box-shadow: var(--depth-2);
+}
+
+[data-flag-squircle='0'] .pps__card { --ui-corner: round; }
+
+.pps__band {
+  background: var(--brand-solid);
+  padding: var(--space-6) var(--space-6);
+  text-align: center;
+}
+
+.pps__logo {
+  display: block;
+  margin: 0 auto var(--space-3) auto;
+  max-width: 70%;
+}
+
+.pps__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-2);
+  font-weight: var(--fw-title-2);
+  letter-spacing: var(--tracking-title-2);
+  line-height: var(--lh-title-2);
+  /* The band's own label colour, so a tenant whose primary needs dark text gets it
+     here too — the same pair that fixed the button's 2:1 contrast. */
+  color: var(--brand-on-solid);
+}
+
+.pps__subtitle {
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--fs-callout);
+  line-height: var(--lh-callout);
+  /* Mixed from the band's own label colour rather than a fixed pale green, so it
+     stays legible whichever way --brand-on-solid resolves. */
+  color: color-mix(in srgb, var(--brand-on-solid) 82%, transparent);
+}
+
+.pps__body { padding: var(--space-5) var(--space-6) var(--space-6); }
+
+.pps__footer {
+  background: var(--ink-3);
+  padding: var(--space-3) var(--space-4);
+  text-align: center;
+}
+
+.pps__footer-text.ant-typography {
+  font-family: var(--font-small);
+  font-size: var(--fs-footnote);
+  color: var(--text-3);
+}
+
+/* ============================================================
+   AUTH SHELL
+   The split-screen sign-in: brand panel left, form right. Converted in Stage 5.2 —
+   every value here was previously an inline style on AuthLayout.jsx, which meant no
+   preset, brand or density could reach any of it.
+
+   NOT a glass surface: the auth pages sit outside MainLayout with no ambient canvas
+   behind them, and translucency over a flat ground is just a grey rectangle. This is
+   an opaque, confident brand panel, which is also what the shipped design does.
+   ============================================================ */
+
+.auth-brand-panel__top,
+.auth-brand-panel__body,
+.auth-brand-panel__foot { position: relative; z-index: 1; }
+
+.auth-brand-panel__body { max-width: 460px; }
+
+/* The logo chip. Keeps the full-colour AAPNA mark legible on the olive panel. */
+.auth-logo-chip {
+  display: inline-flex;
+  align-items: center;
+  /* --brand-on-solid, NOT --brand-surface. The chip exists to give the full-colour
+     AAPNA mark a light ground on the olive panel, and that panel is the brand gradient
+     in BOTH modes — so following the theme surface turned the chip near-black in dark
+     mode and made the logo almost unreadable. `--brand-on-solid` is by definition the
+     colour that reads against the brand fill, which is exactly this job. */
+  background: var(--brand-on-solid);
+  border-radius: var(--radius-ctl);
+  corner-shape: var(--ui-corner, squircle);
+  padding: 10px 16px;
+  /* The brand-hued depth ramp, not the raw black shadow this carried. */
+  box-shadow: var(--depth-2);
+}
+
+.auth-logo-chip img { height: 32px; width: auto; object-fit: contain; display: block; }
+
+.auth-headline {
+  font-family: var(--font-heading);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tracking-display);
+  margin: 0 0 var(--space-4);
+  color: var(--brand-on-solid);
+}
+
+.auth-lede {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  /* FULL opacity, not a faded mix. Measured: `color-mix(... 88%, transparent)` over
+     the panel gives 4.17:1 at 15px — under AA. Fading body text to create hierarchy is
+     the single most common way contrast gets lost, and it is unnecessary here: the
+     headline already outranks this by size and weight. */
+  color: var(--brand-on-solid);
+  margin: 0 0 var(--space-6);
+}
+
+.auth-highlights { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.auth-highlight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  color: var(--brand-on-solid);
+}
+
+.auth-highlight .anticon {
+  color: var(--brand-on-solid);
+  font-size: 18px;   /* anatomy: sized to the text it sits beside */
+  opacity: 0.95;
+}
+
+.auth-foot-text.ant-typography {
+  font-family: var(--font-small);
+  font-size: var(--fs-footnote);
+  /* Was 72% alpha — 3.36:1, well under AA for 12px. It is a copyright line, but
+     "unimportant" is not the same as "may be illegible". Recessed by size, not by
+     fading it out. */
+  color: var(--brand-on-solid);
+  opacity: 0.92;
+}
+
+/* ---- form side ---- */
+.auth-logo-mobile { height: 38px; width: auto; object-fit: contain; margin: 0 auto var(--space-5); }
+
+.auth-form-heading { margin-block-end: var(--space-5); }
+
+.auth-admin-badge {
+  display: inline-block;
+  background: var(--gold-bg);
+  color: var(--brand-ink);
+  border: 1px solid var(--border);
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+  margin-block-end: var(--space-3);
+}
+
+.auth-form-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-2);
+  font-weight: var(--fw-title-2);
+  letter-spacing: var(--tracking-title-2);
+  line-height: var(--lh-title-2);
+  color: var(--text);
+  margin: 0 0 var(--space-2);
+}
+
+.auth-form-subtitle.ant-typography { font-size: var(--fs-body); }
+
+/* ---- auth form fields ----
+   The four auth pages repeated the same six inline styles on every field: an alert
+   margin+radius, a bold 13px label span, a Form.Item margin, a tinted icon prefix, and
+   `borderRadius: 10, height: 46` on each input. Scoping them here means a density or
+   preset change reaches the sign-in screen like anywhere else, and the pages stop
+   restating the same numbers. */
+
+.auth-form-inner .ant-alert {
+  margin-block-end: var(--space-5);
+  border-radius: var(--radius-ctl);
+}
+
+.auth-field-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-callout);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* AdminLogin set its labels uppercase with extra tracking; keeping that as a modifier
+   rather than a second inline style, since it distinguishes the admin portal. */
+.auth-field-label--caps {
+  font-size: var(--fs-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+}
+
+/* --space-5 -> --space-4, and the label gap 8px -> 4px, 2026-08-31. The sign-in form
+   is the only content on its panel, and at 24px between every field plus 8px under
+   every label it read as a tall, loose stack on a half-empty pane. 4px follows the
+   precedent `.screening-filter` set at index.css:1705 for a dense vertical form.
+   Both land on all four auth pages via `.auth-form-inner` — see AuthLayout.jsx:81. */
+.auth-form-inner .ant-form-item { margin-block-end: var(--space-4); }
+.auth-form-inner .ant-form-item:last-child { margin-block-end: 0; }
+.auth-form-inner .ant-form-item-label { padding-block-end: 4px; }
+
+/* Inputs take the RELAXED control height: a sign-in field is the one control on the
+   screen and deserves the larger target, which is what the old inline `height: 46`
+   was reaching for without being able to say so. */
+.auth-form-inner .ant-input,
+.auth-form-inner .ant-input-affix-wrapper,
+.auth-form-inner .ant-input-password {
+  border-radius: var(--radius-ctl);
+  min-height: var(--control-h-relaxed);
+  font-size: var(--fs-body);
+}
+
+.auth-form-inner .ant-input-affix-wrapper .ant-input { min-height: auto; }
+
+/* The tinted field icons — was `rgba(122, 146, 46, 0.55)`, a raw brand colour that a
+   tenant swap could never reach. */
+.auth-form-inner .ant-input-affix-wrapper > .ant-input-prefix {
+  color: color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  margin-inline-end: 4px;
+}
+
+.auth-form-inner .ant-btn-block { height: var(--control-h-relaxed); }
+
+.auth-link { font-size: var(--fs-callout); font-weight: 600; }
+.auth-link--nowrap { font-size: var(--fs-footnote); font-weight: 600; white-space: nowrap; }
+.auth-form-actions { text-align: center; margin-block-start: var(--space-4); }
+
+.auth-back-icon { font-size: var(--fs-footnote); margin-inline-end: 6px; }
+
+/* ---- public token-page content ----
+   Shared by the five pages an external candidate or approver reaches from an email.
+   They repeated the same handful of inline styles, all built on a `BRAND` constant
+   that a tenant palette could never reach. */
+
+/* A nested panel inside the white card. Was `rgba(255,255,255,0.4)` with a literal
+   `#e8ede0` border — a translucent white on a white card, which reads as nothing. */
+.pps-panel {
+  background: var(--gold-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-ctl);
+  corner-shape: var(--ui-corner, squircle);
+  padding: var(--space-4);
+  margin-block-end: var(--space-5);
+}
+
+/* Section headings inside the card. --brand-ink, NOT the raw brand accent: the accent
+   as 16px text on white measures 3.51:1, under AA. --brand-ink is the same colour at a
+   value that reads. */
+.pps-section-title {
+  color: var(--brand-ink);
+  font-size: var(--fs-headline);
+  font-weight: var(--fw-headline);
+}
+
+.pps-accent { color: var(--brand-ink); }
+
+.pps-actions { text-align: center; padding-block: var(--space-6); }
+.pps-note { text-align: center; font-size: var(--fs-footnote); color: var(--text-3); }
+.pps-hint { color: var(--text-2); font-size: var(--fs-callout); }
+.pps-row { display: flex; align-items: center; gap: var(--space-2); }
+.pps-mt { margin-block-start: var(--space-3); }
+.pps-mt-lg { margin-block-start: var(--space-6); }
+.pps-link.ant-btn { padding-inline-start: 0; font-weight: 600; color: var(--brand-ink); }
+.pps-badge.ant-badge .ant-badge-count { background: var(--brand-solid); }
+.pps-result-title { font-weight: 700; }
+.pps-emphasis.ant-typography { font-size: var(--fs-body); }
+.pps-alert.ant-alert { border-radius: var(--radius-ctl); margin-block-end: var(--space-5); }
+.pps-textarea.ant-input { border-radius: var(--radius-ctl); margin-block-start: var(--space-2); padding: var(--space-3); }
+
+/* Type utilities for the public pages. These map the long tail of one-off inline
+   sizes (11 / 12 / 12.5 / 13 / 13.5 / 15) onto the two roles that actually exist at
+   that end of the scale. The half-pixel sizes are exactly the drift the 12px floor and
+   the type ramp were introduced to end. */
+.pps-sm { font-size: var(--fs-subhead); }
+.pps-xs { font-size: var(--fs-footnote); }
+.pps-xs-block { font-size: var(--fs-footnote); display: block; }
+.pps-strong { font-weight: 700; }
+.pps-label { font-weight: 600; color: var(--text); font-size: var(--fs-subhead); }
+.pps-round { border-radius: var(--radius-ctl); }
+.pps-control { width: 100%; border-radius: var(--radius-ctl); height: var(--ctl-h); }
+
+/* ---- MrfSubmit's own shell ----
+   This page predates PublicPageShell and keeps its own frame (a wide, multi-section
+   form rather than the narrow card the other four use). Its values are tokens now, but
+   the layout is deliberately left alone — it is a genuinely different shape. */
+.mrfs-page { min-height: 100vh; padding: var(--space-7) var(--space-4); background: var(--brand-canvas); }
+.mrfs-page--center { display: flex; align-items: center; justify-content: center; padding: var(--space-5) var(--space-4); }
+.mrfs-inner { max-width: 920px; margin: 0 auto; }
+.mrfs-card {
+  width: 100%;
+  max-width: 650px;
+  border-radius: var(--radius-surface);
+  corner-shape: var(--ui-corner, squircle);
+  padding: var(--space-5);
+  box-shadow: var(--depth-2);
+}
+/* The `.ant-typography` qualifier is load-bearing, not decorative. This class sits on
+   a Typography <Title level={3}>, which AntD styles as `h3.ant-typography` (0,1,1) —
+   outranking a bare class (0,1,0). Unqualified, the rule silently lost `color`,
+   `font-weight` and `margin` to AntD's near-black `colorTextHeading`, painting the
+   title dark-on-olive over the brand band; only `letter-spacing` (which AntD does not
+   set) ever landed. Fixed 2026-09-01. */
+.mrfs-band-title.ant-typography { margin: 0; color: var(--brand-on-solid); font-weight: 800; letter-spacing: 0.5px; }
+/* Was a private `REQUIRED = '#bc2f32'` — a fourth red in the app. */
+.mrfs-required { color: var(--red); margin-inline-start: 4px; }
+/* Was `HELP = 'rgb(12, 136, 42)'` — a third green. */
+.mrfs-help { font-size: var(--fs-footnote); color: var(--green); margin-block-start: 2px; font-style: italic; }
+
+/* MrfSubmit's banded card: a brand header strip above a white body, matching the
+   emailed MRF request the approver came from. */
+.mrfs-band {
+  background: var(--brand-solid);
+  border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+  corner-shape: var(--ui-corner, squircle);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-shadow: var(--depth-2);
+}
+.mrfs-band-logo { height: 40px; object-fit: contain; background: var(--brand-on-solid); border-radius: var(--radius-xs); padding: 4px; }
+/* The padding belongs on the card BODY, not the card. `.mrfs-body` lands on the
+   `.ant-card` element, and AntD's `.ant-card-body` carries its own 24px — so these
+   values were stacking on top of it and insetting the form 56px per side. Measured
+   2026-09-01. The numbers below are the ones that were always intended; they just
+   apply now, and the fields got 48px wider for it. */
+.mrfs-body {
+  border-radius: 0 0 var(--radius-surface) var(--radius-surface);
+  box-shadow: var(--depth-2);
+}
+.mrfs-body .ant-card-body { padding: var(--space-2) var(--space-6) var(--space-6); }
+.mrfs-submit.ant-btn { height: var(--control-h-relaxed); border-radius: var(--radius-btn); font-weight: 700; padding-inline: var(--space-6); }
+.mrfs-back.ant-btn { height: var(--control-h-relaxed); border-radius: var(--radius-btn); padding-inline: var(--space-5); }
+/* Retired 2026-09-01 (never applied). `.mrfs-input` only ever lands on the Upload
+   <Button> (MrfSubmit.jsx:414), which is neither `.ant-input` nor `.ant-select-selector`
+   — so this rule matched nothing, and the control radius it was reaching for never
+   happened. That is why the inputs kept AntD's 24px `borderRadiusLG`. Its intent now
+   lives in the `.mrfs-form` control block below. Kept per the no-delete rule.
+   .mrfs-input.ant-input, .mrfs-input.ant-select-selector { height: var(--control-h-relaxed); border-radius: var(--radius-ctl); } */
+.mrfs-legend { font-weight: 600; color: var(--text); }
+.mrfs-fineprint { font-size: var(--fs-footnote); color: var(--text); margin-block-start: 4px; }
+.mrfs-muted { font-size: var(--fs-footnote); opacity: 0.6; }
+/* Was `margin-block-start: -12px; margin-block-end: 12px` — a negative margin clawing
+   back part of the Form.Item's 24px. It was calibrated against that 24px, so it broke
+   the moment the rhythm moved. The gap now has a single owner (`.mrfs-field`) and the
+   hint just sits under its input. */
+.mrfs-hint-tight { font-size: var(--fs-footnote); color: var(--text-3); margin-block-start: var(--space-1); margin-block-end: 0; }
+.mrfs-icon { color: var(--brand-ink); margin-inline-end: 6px; }
+
+/* ---- MrfSubmit's form ------------------------------------------------------
+   Scoped to `.mrfs-form`, NOT `.mrfs-body`: the previous-submission dropdown is a
+   sibling of the <Form> inside the same Card, and must keep its shorter 38px
+   secondary-control geometry rather than being promoted to a question.
+
+   The form is `size="large"`, which is right for the 46px touch target on a public
+   page and wrong for everything else it drags in. Following `.auth-form-inner`, the
+   app's other relaxed form, and `.screening-filter`, which fixed this same pair.
+
+   RADIUS IS THE PADDING BUG. Reported as "no left padding when typing". The gutter was
+   never the problem — input, select and picker all carry AntD's 11px. The radius was:
+   `borderRadiusLG` resolves to `--radius-surface` (24px, a CARD radius) and at 24px on
+   a 46px-tall box the corner arc spans half the height, so a glyph 11px in still sits
+   inside the curve and reads as flush against the border. The picker beside it looked
+   correct because it already rendered at 15px. `--radius-ctl` + a 16px gutter puts the
+   text clear of the arc (radius - padding = -1px). Measured 2026-09-01. */
+.mrfs-form .ant-input,
+.mrfs-form .ant-input-affix-wrapper,
+.mrfs-form .ant-input-number,
+.mrfs-form .ant-picker,
+.mrfs-form .ant-select-selector {
+  border-radius: var(--radius-ctl);
+  padding-inline: var(--space-4);
+  /* MEASURED, and not optional: an input is sized by its content, so dropping 17px to
+     15px below takes it from 46.1px to ~43.3px while the Selects and InputNumbers —
+     which take controlHeightLG directly — stay at 46. Without this pin the type fix
+     introduces a 2.8px stagger down the whole form. Same reason index.css:1802 pins it
+     for `.screening-filter`. */
+  min-height: var(--control-h-relaxed);
+}
+
+/* The gutter lives on the wrapper for these two, or the inner <input> adds a second one. */
+.mrfs-form .ant-input-number-input,
+.mrfs-form .ant-picker-input > input { padding-inline: 0; }
+
+/* 17px (`--fs-headline`) made every field larger than its own 15px label. `--fs-body`,
+   following `.auth-form-inner`. */
+.mrfs-form .ant-input,
+.mrfs-form .ant-input-affix-wrapper,
+.mrfs-form .ant-input-number-input,
+.mrfs-form .ant-select-selection-item,
+.mrfs-form .ant-select-selection-placeholder,
+.mrfs-form .ant-picker-input > input { font-size: var(--fs-body); }
+
+/* Part of the height pin, not decoration: without it the inner <input> claims 46px of
+   its own inside an already-46px wrapper. */
+.mrfs-form .ant-input-affix-wrapper .ant-input { min-height: auto; }
+
+/* Select and InputNumber need AntD's own selector shape to be reached at all. MEASURED
+   after the two-class scope above silently lost on both:
+     .ant-select-single.ant-select-lg:not(.ant-select-customize-input) .ant-select-selector  (0,4,0)
+     .ant-input-number-lg input.ant-input-number-input                                       (0,2,1)
+   against `.mrfs-form .ant-select-selector` (0,2,0). The select kept its 24px card radius,
+   its 11px gutter and its 17px text while every other control had moved — the exact
+   left-edge stagger this block exists to prevent. Matching the shape wins it without
+   reaching for !important.
+
+   Height is pinned to the token on BOTH so the form cannot stagger: `.ats-v3` sets
+   --control-h-relaxed to 44px (index.css:193) while AntD's JS controlHeightLG still
+   resolves to 46, so a large Select sits 2px proud of every input beside it. The CSS
+   token is the one that tracks a density change, so it wins here. */
+.mrfs-form .ant-select-single.ant-select-lg { height: var(--control-h-relaxed); }
+.mrfs-form .ant-select-single.ant-select-lg:not(.ant-select-customize-input) .ant-select-selector {
+  border-radius: var(--radius-ctl);
+  padding-inline: var(--space-4);
+  font-size: var(--fs-body);
+}
+.mrfs-form .ant-input-number { font-size: var(--fs-body); }
+.mrfs-form .ant-input-number-lg input.ant-input-number-input {
+  padding-inline: 0;
+  font-size: var(--fs-body);
+  /* Minus the wrapper's two 1px borders, which is the same arithmetic AntD does for
+     this control. `height: auto` left the inner input 0.8px taller than the pin and
+     pushed the wrapper to 44.8 against 44 everywhere else. */
+  height: calc(var(--control-h-relaxed) - 2px);
+}
+
+/* One owner for the vertical gap. Was spread across an inline `marginBottom: 4` on the
+   wrapper, the Form.Item's 24px, and the hint's -12px. 16px + a 4px label gap follows
+   `.auth-form-inner` (ui.css:1524), which answered this same "tall, loose stack" on a
+   form far shorter than this one. */
+.mrfs-field { margin-block-end: var(--space-4); }
+.mrfs-form .ant-form-item { margin-block-end: 0; }
+.mrfs-form .ant-form-item-label { padding-block-end: var(--space-1); }
+.pps-icon-lead { margin-inline-end: 5px; color: var(--brand-ink); }
+.pps-aside { font-weight: 400; font-size: var(--fs-footnote); color: var(--text-2); margin-inline-start: var(--space-2); }
+.pps-caption-block { font-size: var(--fs-footnote); display: block; letter-spacing: 0.3px; }
+.pps-ok { color: var(--kpi-c); }
+/* Was `#fffbe6` / `#ffe58f` — AntD's default warning palette hardcoded, invisible to
+   both themes. The warning tokens already exist. */
+.pps-warn.ant-alert { background: var(--warn-bg); border-color: var(--warn-border); }
+.pps-summary {
+  background: var(--brand-canvas);
+  border-radius: var(--radius-ctl);
+  padding: var(--space-3) var(--space-4);
+  margin-block-end: var(--space-4);
+  display: flex;
+}
+/* Dropzone. The selected state was a raw `rgba(122,146,46,0.04)` and the accent border
+   a literal hex — the state is now expressed as a modifier so both follow the brand. */
+.pps-drop {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-ctl);
+  padding: var(--space-3) var(--space-4);
+  background: var(--brand-surface);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background-color var(--dur-fast) var(--ease-standard);
+}
+.pps-drop--staged {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 5%, transparent);
+}
+/* MrfSubmit section rules: a brand-underlined uppercase legend between form sections. */
+.mrfs-section {
+  margin: var(--space-5) 0 var(--space-3);
+  padding-block-end: 6px;
+  border-block-end: 2px solid var(--brand-primary);
+  color: var(--brand-ink);
+  font-weight: 700;
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+}
+
+/* ============================================================
+   CANDIDATES — list/table route (Stage 5.3)
+   Establishes the pattern the other list pages follow. The file repeated three
+   styles 92 times between them: a form label, a control radius and a control height.
+   ============================================================ */
+
+/* The form label, repeated 43 times at `fontSize: 11, fontWeight: 600`. 11px is below
+   the type scale's 12px floor — the floor exists precisely because the app was set at
+   9-13px, and this file was one of the reasons. It reads as a caption: uppercase in
+   the markup already, so it takes the caption role rather than a bare size. */
+.cand-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-2);
+}
+
+/* Controls inside the modals: 41 instances of `borderRadius: 6`, a value that was not
+   even in the old token scale, plus `height: 38/42`. */
+.cand-form .ant-input,
+.cand-form .ant-input-affix-wrapper,
+.cand-form .ant-select-selector,
+.cand-form .ant-picker,
+.cand-form .ant-input-number {
+  border-radius: var(--radius-ctl);
+}
+
+.cand-form .ant-input,
+.cand-form .ant-select-selector,
+.cand-form .ant-picker { min-height: var(--ctl-h); }
+
+/* A 1px rule drawn as a div — kept as a class so it takes the hairline treatment. */
+.cand-rule { height: 1px; background: var(--hairline-color); margin-block-start: 6px; }
+
+.cand-detail-title.ant-typography { margin: 0; font-size: var(--fs-headline); }
+.cand-caption {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+}
+.cand-micro { font-size: var(--fs-footnote); font-weight: 600; }
+/* Was `fontFamily: "'Sora', sans-serif"` written out by hand — one of the 36 hardcoded
+   stacks that defeated the font-pack axis. */
+.cand-modal-title { font-family: var(--font-heading); font-size: var(--fs-headline); font-weight: 700; }
+.cand-sub { font-size: var(--fs-subhead); }
+.cand-meta { font-size: var(--fs-footnote); color: var(--text-2); }
+/* Was a bare `fontFamily: 'monospace'`, which resolves to the browser default rather
+   than the pack's mono. */
+.cand-mono { font-family: var(--mono); font-size: var(--fs-footnote); color: var(--text); }
+.cand-disabled { background: var(--ink-4); cursor: not-allowed; border-radius: var(--radius-ctl); }
+.cand-empty-icon { font-size: var(--fs-metric-sm); opacity: 0.3; margin-block-end: var(--space-3); }
+.cand-note { margin-block-start: var(--space-3); color: var(--text-3); }
+.cand-body { font-size: var(--fs-subhead); color: var(--text); }
+.cand-pre { font-size: var(--fs-footnote); margin: 0; white-space: pre-line; color: var(--text); }
+/* RETIRED 2026-08-31 — /candidates' title moved into `PageHeader`, which owns the
+   heading font, weight and rhythm. Nothing renders this. Kept per the no-delete rule;
+   to restore, uncomment and put the `Title level={3}` back inside the search Surface —
+   but read the note at the foot of pages/Candidates.jsx first, which records why it
+   came out (20px against the lab's 32px, and a page title nested in its own card).
+
+.cand-page-title { font-family: var(--font-heading); font-weight: 700; margin: 0 0 var(--space-1) 0; }
+*/
+.cand-hint { font-size: var(--fs-footnote); color: var(--text-3); margin-block-end: 6px; }
+.cand-hint-caps { font-size: var(--fs-footnote); color: var(--text-3); text-transform: uppercase; }
+.cand-tiny { font-size: var(--fs-footnote); }
+.cand-tiny-muted { font-size: var(--fs-footnote); color: var(--text-3); }
+.cand-group-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+  display: block;
+  margin-block-end: var(--space-2);
+}
+.cand-strip {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+  padding: var(--space-3);
+  background: var(--ink-4);
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--border-light);
+}
+.cand-panel {
+  background: var(--ink-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--border-light);
+  margin-block-end: var(--space-5);
+}
+.cand-muted-strong { color: var(--text-3); font-weight: 600; }
+/* RETIRED 2026-08-31 — /candidates' row actions became Button emphasis levels:
+   `--off` -> emphasis="text", `--on` -> emphasis="soft". Deliberately NOT `solid`:
+   `--on` painted a brand fill on the Edit button of every one of 25 rows, which is the
+   case this file's own Button section calls out as wrong.
+
+.cand-chip.ant-btn { border-radius: var(--radius-ctl); font-weight: 600; }
+.cand-chip--off.ant-btn { background: var(--colorBgContainer); border-color: var(--border); color: var(--text-2); font-weight: 500; }
+.cand-chip--on.ant-btn { background: var(--brand-solid); border-color: var(--brand-solid); color: var(--brand-on-solid); font-weight: 500; }
+*/
+.cand-pill { border-radius: var(--radius-pill); font-weight: 700; font-size: var(--fs-footnote); padding: 2px 10px; }
+/* Row action buttons. The "has a CV" state was a brand fill with a literal `#fff`
+   label — the file's own comment called that "the foreground ON the brand fill", which
+   is precisely what --brand-on-solid means, and using the token also fixes the 3.51:1
+   contrast the literal white produced. */
+/* RETIRED 2026-08-31 — became `emphasis={hasCv ? 'soft' : 'text'}` and iconOnly.
+   `--conv`'s violet ink went with it: the icon already distinguishes the action, and a
+   per-page button colour is the thing the Button primitive exists to end.
+
+.cand-action.ant-btn { border-radius: var(--radius-ctl); background: var(--ink-4); border-color: var(--border); color: var(--text-3); }
+.cand-action--active.ant-btn { background: var(--brand-solid); border-color: var(--brand-solid); color: var(--brand-on-solid); }
+.cand-action--conv.ant-btn { color: var(--violet); }
+*/
+.cand-msg { border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--colorBgContainer); }
+.cand-msg--out { background: var(--ink-4); }
+.cand-msg-empty { background: var(--ink-4); border: 1px dashed var(--border); border-radius: var(--radius-ctl); color: var(--text-3); }
+.cand-search-card { margin-block-end: var(--space-6); }
+
+/* ============================================================
+   SURFACE AS AN ANTD CARD
+   `<Surface as={Card}>` — for panels that genuinely need AntD's widget contract:
+   a `title`, an `extra` slot and the `loading` skeleton. /analytics has twelve of
+   them, /admin and /screening more.
+
+   Hand-building those heads twelve times would trade one duplication for another and
+   would drop the loading skeleton, which is a real behaviour — a confident "0"
+   mid-fetch is a wrong answer, not a slow one.
+
+   What AntD brings that has to go: `.ant-card` paints its own opaque
+   `colorBgContainer` and draws its own border and radius. On a Surface that is
+   Failure A — an opaque fill over glass. It ties with `.ui-surface` on specificity
+   (one class each) and AntD injects its styles at runtime, so source order decides
+   and cannot be relied on. Stated explicitly here instead.
+   ============================================================ */
+.ui-surface.ant-card {
+  /* Let the Surface's own two-layer material through. */
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-surface);
+}
+/* Padding belongs to the body, not the root — `padding="none"` on the Surface and
+   AntD's own body padding applies, so the head/body split keeps working. */
+.ui-surface.ant-card > .ant-card-body { padding: var(--card-pad); }
+.ui-surface.ant-card > .ant-card-head {
+  padding-inline: var(--card-pad);
+  border-block-end: var(--hairline);
+  min-height: 0;
+}
+.ui-surface.ant-card > .ant-card-head .ant-card-head-title { padding-block: var(--space-3); }
+.ui-surface.ant-card > .ant-card-head .ant-card-extra { padding-block: var(--space-3); }
+/* The skeleton sits inside the body; it must not paint its own card ground. */
+.ui-surface.ant-card > .ant-card-body > .ant-skeleton { background: none; }

@@ -7,7 +7,7 @@ import {
   Typography,
   Select,
   Input,
-  Button,
+  /* Button now comes from src/ui — see the import below. */
   Checkbox,
   Row,
   Col,
@@ -64,6 +64,9 @@ import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 import { cleanMsgBody } from '../utils/emailText';
+import { DesignScope, PageShell, PageHeader, Surface, Button, SegmentedTabs } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/candidate-screening.css';
 
 const { Title, Text, Paragraph } = Typography;
 const { Panel } = Collapse;
@@ -182,7 +185,7 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
     };
 
     return (
-      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="cs-col">
         {mandatory.length > 0 && (
           <div className="match-meter">
             <span className="match-meter__head">{head}</span>
@@ -191,7 +194,7 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
           </div>
         )}
         {(shown.length > 0 || goodToHave.length > 0) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <div className="cs-mid--wrap">
             {shown.map(renderChip)}
             {extra > 0 && <span className="skill-chip skill-chip--more">+{extra}</span>}
             {goodToHave.length > 0 && (
@@ -216,25 +219,16 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
     return (
       <Tooltip key={`${s.skill}-${idx}`} title={style.explain(s)}>
         <Tag
-          style={{
-            margin: 0,
-            fontSize: '11px',
-            padding: '1px 6px',
-            borderRadius: '4px',
-            background: style.bg,
-            border: `1px solid ${style.border}`,
-            color: style.color,
-            fontWeight: 500,
-            opacity: secondary ? 0.85 : 1,
-          }}
+          className={'cs-vtag' + (secondary ? ' cs-vtag--secondary' : '')}
+          style={{ '--cs-tag-bg': style.bg, '--cs-tag-border': style.border, '--cs-tag-ink': style.color }}
         >
           {s.skill}
           {isPresent(s) ? (
-            <span style={{ opacity: 0.7, marginLeft: '3px', fontSize: '9.5px', fontWeight: 700 }}>×{s.count}</span>
+            <span className="cs-suffix">×{s.count}</span>
           ) : s.status === 'listed_only' ? (
-            <span style={{ opacity: 0.7, marginLeft: '3px', fontSize: '9px', fontWeight: 600 }}>listed</span>
+            <span className="cs-suffix">listed</span>
           ) : (
-            <span style={{ opacity: 0.6, marginLeft: '3px', fontSize: '9px', fontWeight: 600 }}>missing</span>
+            <span className="cs-suffix">missing</span>
           )}
         </Tag>
       </Tooltip>
@@ -242,25 +236,25 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
   };
 
   return (
-    <div style={{ marginTop: 6 }}>
+    <div className="cs-mt-1-5">
       {mandatory.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>{label}:</span>
+        <div className="cs-mid--gap">
+          <span className="cs-caption--muted">{label}:</span>
           <Space size={[4, 6]} wrap>
             {mandatory.map((s, idx) => renderTag(s, idx, false))}
           </Space>
         </div>
       )}
       {goodToHave.length > 0 && (
-        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>Good-to-have:</span>
+        <div className="cs-row--tight">
+          <span className="cs-caption--muted">Good-to-have:</span>
           <Space size={[4, 6]} wrap>
             {goodToHave.map((s, idx) => renderTag(s, idx, true))}
           </Space>
         </div>
       )}
       {signalsOnly.length > 0 && (
-        <div style={{ marginTop: 5, fontSize: '11px', color: 'var(--info-strong)', lineHeight: 1.4 }}>
+        <div className="cs-note--info">
           ⓘ Found in resume but not in declared skills:{' '}
           <strong>{signalsOnly.map((s) => `${s.skill} (×${s.count})`).join(', ')}</strong>
         </div>
@@ -277,7 +271,7 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
  */
 function CandidateListSkeleton({ rows = 4 }) {
   const Bar = ({ w, h = 12, mb = 0 }) => (
-    <div className="shimmer" style={{ width: w, height: h, borderRadius: 6, marginBottom: mb }} />
+    <div className="shimmer cs-bar" style={{ '--cs-bar-w': w, '--cs-bar-h': typeof h === 'number' ? h + 'px' : h, '--cs-bar-mb': typeof mb === 'number' ? mb + 'px' : mb }} />
   );
   return (
     <div aria-busy="true" aria-label="Loading candidates">
@@ -288,12 +282,12 @@ function CandidateListSkeleton({ rows = 4 }) {
           style={{ marginBottom: 10, animation: `fadeIn .3s ease ${i * 0.06}s both` }}
           styles={{ body: { padding: 20 } }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-            <div className="shimmer" style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="cs-mid--wide">
+            <div className="shimmer cs-avatar" />
+            <div className="cs-grow">
               <Bar w="38%" h={14} mb={9} />
               <Bar w="62%" h={11} mb={9} />
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="cs-inline">
                 <Bar w={64} h={18} />
                 <Bar w={80} h={18} />
                 <Bar w={52} h={18} />
@@ -672,9 +666,9 @@ export default function CandidateScreening() {
           description: (
             <div>
               {reasons.map((r, i) => (
-                <div key={i} style={{ marginBottom: 4 }}>• {r}</div>
+                <div key={i} className="cs-mb-1">• {r}</div>
               ))}
-              <div style={{ marginTop: 6, color: 'var(--text-3)' }}>
+              <div className="cs-mt-1-5 cs-muted">
                 Affected: {failures.map((f) => f.name).join(', ')}
               </div>
             </div>
@@ -693,7 +687,7 @@ export default function CandidateScreening() {
             message: `Shortlisted — ${selectedList[0].Name}`,
             description: `Now at HR Screening (Zeko) on the Pipeline board.${emailNote}`,
             btn: (
-              <Button type="primary" size="small" onClick={() => navigate(`/pipeline?candidate=${pipelineId}`)}>
+              <Button emphasis="solid" size="sm" onClick={() => navigate(`/pipeline?candidate=${pipelineId}`)}>
                 View in Pipeline
               </Button>
             ),
@@ -704,7 +698,7 @@ export default function CandidateScreening() {
             message: `Shortlisted ${processedCount} candidate(s) for ${roleName}`,
             description: `Now on the Pipeline board.${emailNote}${skippedNote}`,
             btn: (
-              <Button type="primary" size="small" onClick={() => navigate(`/pipeline?position=${encodeURIComponent(roleName)}`)}>
+              <Button emphasis="solid" size="sm" onClick={() => navigate(`/pipeline?position=${encodeURIComponent(roleName)}`)}>
                 View in Pipeline
               </Button>
             ),
@@ -954,11 +948,8 @@ export default function CandidateScreening() {
     return Array.from({ length: 5 }).map((_, i) => (
       <StarFilled
         key={i}
-        style={{
-          color: i < starCount ? 'var(--star)' : 'var(--border-secondary)',
-          fontSize: size,
-          marginRight: 2,
-        }}
+        className={'cs-star' + (i < starCount ? ' cs-star--on' : '')}
+        style={{ '--cs-star-size': typeof size === 'number' ? size + 'px' : size }}
       />
     ));
   };
@@ -976,29 +967,35 @@ export default function CandidateScreening() {
   };
 
   return (
-    <div className="stagger-children" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 8px 40px' }}>
+    <DesignScope>
+      <PageShell width="standard" className="stagger-children">
       
-      {/* Title */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <Title level={2} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.02em' }}>
-            Candidate Screening
-          </Title>
-          <Text type="secondary" style={{ fontSize: 14 }}>
-            Rank and screen resumes using semantic search, custom parameters, and AI profiles
-          </Text>
-        </div>
-      </div>
+      {/* Page header — 2026-08-31. Was a hand-rolled `.cs-page-head` div with a
+          `Title level={2}`, which resolves to the pack's title2 role: 24px, the largest
+          of the app's hand-rolled titles and still 8px under the lab's 32px. */}
+      <PageHeader
+        eyebrow="Screening"
+        title="Candidate Screening"
+        subtitle="Rank and screen resumes using semantic search, custom parameters, and AI profiles."
+      />
 
       {/* Main card */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ minHeight: 'calc(100vh - 200px)' }}
-        styles={{ body: { padding: '4px 20px 20px' } }}
-      >
-        <Tabs
-          className="screening-tabs"
+      <Surface tier={2} padding="relaxed" className="cs-main">
+        {/* 2026-09-01 — was an AntD `<Tabs className="screening-tabs">`, which hand-built
+            a segmented capsule out of tab chrome: a 10px nav-list, 8px tabs, and the
+            ink-bar suppressed with `!important`. `Segmented` is the design system's
+            control for this and names `.screening-tabs` in its own header as one of the
+            bars it exists to retire. Measured, and the reason this is not just tidying:
+            the active tab's label was `--brand-primary` on an opaque pane at **3.51:1**
+            in light mode — under the 4.5 AA floor for 15px text. `.ui-segmented__item--active`
+            uses `--brand-ink` and measures 5.81:1. Same defect, same fix, as the soft
+            button.
+
+            The label `<Space>` wrappers became `.ui-segmented__label`: Space emits its
+            own gap markup, and inside a fixed-height pill that is a nested flex row
+            fighting the one the pill already provides. */}
+        <SegmentedTabs
+          aria-label="Screening mode"
           activeKey={activeTab}
           onChange={(k) => {
             setActiveTab(k);
@@ -1013,25 +1010,25 @@ export default function CandidateScreening() {
             {
               key: 'jd',
               label: (
-                <Space>
+                <span className="ui-segmented__label">
                   <SolutionOutlined />
                   JD Filtering
-                </Space>
+                </span>
               ),
               children: (
-                <div style={{ padding: '8px 0' }}>
+                <div className="cs-pad-y">
                   <Row gutter={[16, 16]}>
                     <Col xs={24}>
-                      <Space direction="vertical" style={{ width: '100%' }} size={4}>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <Space direction="vertical" className="cs-full" size={4}>
+                        <Text strong className="cs-legend cs-legend--ink">
                           Select an open role to instantly match and rank qualified candidates
                         </Text>
-                        <Space.Compact style={{ width: '100%' }}>
+                        <Space.Compact className="cs-full">
                           <Select
                             showSearch
                             placeholder={loadingRoles ? "Loading open roles..." : "— Select an Open Role —"}
                             disabled={loadingRoles}
-                            style={{ width: '100%', height: 44 }}
+                            className="cs-full--tall"
                             loading={loadingRoles}
                             value={selectedRoleId}
                             onChange={handleRoleSelect}
@@ -1042,9 +1039,14 @@ export default function CandidateScreening() {
                             }))}
                           />
                           <Tooltip title="Refresh roles & candidates">
+                            {/* `size="lg"` gives --control-h-relaxed, the same 46px
+                                `.cs-ctl` hardcoded — it has to match the Select it
+                                shares a Space.Compact with. */}
                             <Button
+                              emphasis="soft"
+                              size="lg"
+                              iconOnly
                               icon={<ReloadOutlined />}
-                              style={{ height: 44 }}
                               loading={refreshing || rolesQuery.isFetching}
                               onClick={handleRefresh}
                             />
@@ -1062,31 +1064,30 @@ export default function CandidateScreening() {
                         <Card size="small" className="screening-role-card">
                           <Row gutter={[16, 8]}>
                             <Col xs={24} sm={12} md={6}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Open Role</Text>
-                              <div style={{ fontWeight: 700, fontSize: 15 }}>{roleDetails.role_title}</div>
+                              <Text type="secondary" className="cs-caption">Open Role</Text>
+                              <div className="cs-strong--lg">{roleDetails.role_title}</div>
                             </Col>
                             <Col xs={12} sm={6} md={3}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Openings</Text>
-                              <div style={{ fontWeight: 600 }}>{roleDetails.role_openings} openings</div>
+                              <Text type="secondary" className="cs-caption">Openings</Text>
+                              <div className="cs-strong">{roleDetails.role_openings} openings</div>
                             </Col>
                             <Col xs={12} sm={6} md={5}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Experience Required</Text>
-                              <div style={{ fontWeight: 600 }}>{roleDetails.total_experience} yrs (rel {roleDetails.relevant_experience} yrs)</div>
+                              <Text type="secondary" className="cs-caption">Experience Required</Text>
+                              <div className="cs-strong">{roleDetails.total_experience} yrs (rel {roleDetails.relevant_experience} yrs)</div>
                             </Col>
                             <Col xs={24} sm={12} md={5}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Target Budget</Text>
-                              <div style={{ fontWeight: 600 }}>
+                              <Text type="secondary" className="cs-caption">Target Budget</Text>
+                              <div className="cs-strong">
                                 {roleDetails.budget_min && roleDetails.budget_max 
                                   ? `₹${roleDetails.budget_min} - ₹${roleDetails.budget_max} LPA`
                                   : 'N/A'}
                               </div>
                             </Col>
-                            <Col xs={24} sm={12} md={5} style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <Col xs={24} sm={12} md={5} className="cs-end--center">
                               <Button
-                                type="text"
-                                danger
+                                emphasis="text"
+                                tone="danger"
                                 onClick={() => handleRoleSelect(null)}
-                                style={{ fontWeight: 600 }}
                               >
                                 Clear
                               </Button>
@@ -1100,40 +1101,40 @@ export default function CandidateScreening() {
                                 const responsibilities = roleDetails.role_responsibilities || roleDetails.roles_and_responsibilities;
                                 return (
                                   <>
-                                    <Divider style={{ margin: '8px 0' }} />
+                                    <Divider className="cs-my-2" />
                                     {/* Meta row: team + qualification */}
                                     {(team || (qualLabel && qualLabel !== 'ANY')) && (
-                                      <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', marginBottom: 10 }}>
+                                      <div className="cs-wrap--wide">
                                         {team && (
                                           <div>
-                                            <Text type="secondary" style={{ fontSize: 12 }}>Requirement For Team</Text>
-                                            <div style={{ fontWeight: 600, fontSize: 13 }}>{team}</div>
+                                            <Text type="secondary" className="cs-caption">Requirement For Team</Text>
+                                            <div className="cs-body--strong">{team}</div>
                                           </div>
                                         )}
                                         {qualLabel && (
                                           <div>
-                                            <Text type="secondary" style={{ fontSize: 12 }}>Qualification</Text>
-                                            <div style={{ fontWeight: 600, fontSize: 13 }}>{qualLabel}{stream ? ` — ${stream}` : ''}</div>
+                                            <Text type="secondary" className="cs-caption">Qualification</Text>
+                                            <div className="cs-body--strong">{qualLabel}{stream ? ` — ${stream}` : ''}</div>
                                           </div>
                                         )}
                                       </div>
                                     )}
                                     {/* Skills */}
-                                    <Space size={6} direction="vertical" style={{ width: '100%' }}>
+                                    <Space size={6} direction="vertical" className="cs-full">
                                       <div>
-                                        <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
-                                        <Text style={{ fontSize: 13 }}>{roleDetails.role_mandatory_skills || 'N/A'}</Text>
+                                        <Tag color="blue" className="cs-tag">MANDATORY SKILLS</Tag>
+                                        <Text className="cs-body">{roleDetails.role_mandatory_skills || 'N/A'}</Text>
                                       </div>
                                       {roleDetails.role_good_to_have_skills && (
                                         <div>
-                                          <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 600 }}>GOOD TO HAVE</Tag>
-                                          <Text style={{ fontSize: 13 }}>{roleDetails.role_good_to_have_skills}</Text>
+                                          <Tag color="cyan" className="cs-tag">GOOD TO HAVE</Tag>
+                                          <Text className="cs-body">{roleDetails.role_good_to_have_skills}</Text>
                                         </div>
                                       )}
                                       {responsibilities && (
                                         <div>
-                                          <Tag color="green" style={{ borderRadius: 4, fontWeight: 600 }}>RESPONSIBILITIES</Tag>
-                                          <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginTop: 6, maxHeight: 110, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                                          <Tag color="green" className="cs-tag">RESPONSIBILITIES</Tag>
+                                          <div className="cs-summary">
                                             {responsibilities}
                                           </div>
                                         </div>
@@ -1154,18 +1155,26 @@ export default function CandidateScreening() {
             {
               key: 'keyword',
               label: (
-                <Space>
+                <span className="ui-segmented__label">
                   <SearchOutlined />
                   Keyword Filtering
-                </Space>
+                </span>
               ),
+              /* Merged 2026-08-31. This Form declared the class attribute twice, so
+                 `screening-filter` had been dead for as long as it was written that way
+                 — React keeps only the last one. Both classes are wanted: one is the
+                 filter form's own styling, the other its top margin.
+
+                 The note lives HERE, outside the parentheses, and not as a {} comment
+                 inside them: `children:` holds a single parenthesised expression, so a
+                 JSX comment placed before the element becomes a second adjacent
+                 expression and the file stops parsing. */
               children: (
                 <Form
                   form={form}
                   layout="vertical"
                   onFinish={handleKeywordSearch}
-                  className="screening-filter"
-                  style={{ marginTop: 8 }}
+                  className="screening-filter cs-mt-2"
                 >
                   <Row gutter={[16, 8]}>
                     <Col xs={24} sm={8}>
@@ -1178,17 +1187,17 @@ export default function CandidateScreening() {
                           </span>
                         }
                       >
-                        <Input size="large" allowClear placeholder="e.g. Python, Django, AWS" prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />} />
+                        <Input size="large" allowClear placeholder="e.g. Python, Django, AWS" prefix={<SearchOutlined className="cs-muted" />} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={8}>
                       <Form.Item label="Designation" name="designation" extra={<span className="field-hint">Target role or title</span>}>
-                        <Input size="large" allowClear placeholder="e.g. Senior Developer" prefix={<SolutionOutlined style={{ color: 'var(--text-3)' }} />} />
+                        <Input size="large" allowClear placeholder="e.g. Senior Developer" prefix={<SolutionOutlined className="cs-muted" />} />
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={8}>
                       <Form.Item label="Location" name="location" extra={<span className="field-hint">City or region</span>}>
-                        <Input size="large" allowClear placeholder="e.g. Noida, Pune" prefix={<EnvironmentOutlined style={{ color: 'var(--text-3)' }} />} />
+                        <Input size="large" allowClear placeholder="e.g. Noida, Pune" prefix={<EnvironmentOutlined className="cs-muted" />} />
                       </Form.Item>
                     </Col>
                     <Col xs={12} sm={4}>
@@ -1206,24 +1215,24 @@ export default function CandidateScreening() {
                     </Col>
                     <Col xs={12} sm={5}>
                       <Form.Item label="Experience (Years)" extra={<span className="field-hint">Range in years</span>}>
-                        <Input.Group compact style={{ display: 'flex' }}>
+                        <Input.Group compact className="cs-flex">
                           <Form.Item name="expMin" noStyle>
-                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" className="cs-half" min={0} />
                           </Form.Item>
                           <Form.Item name="expMax" noStyle>
-                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" className="cs-half" min={0} />
                           </Form.Item>
                         </Input.Group>
                       </Form.Item>
                     </Col>
                     <Col xs={24} sm={5}>
                       <Form.Item label="Annual CTC (LPA)" extra={<span className="field-hint">Range in LPA</span>}>
-                        <Input.Group compact style={{ display: 'flex' }}>
+                        <Input.Group compact className="cs-flex">
                           <Form.Item name="ctcMin" noStyle>
-                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" className="cs-half" min={0} />
                           </Form.Item>
                           <Form.Item name="ctcMax" noStyle>
-                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" className="cs-half" min={0} />
                           </Form.Item>
                         </Input.Group>
                       </Form.Item>
@@ -1247,27 +1256,27 @@ export default function CandidateScreening() {
 
                     {/* Collapsible Education Groups */}
                     <Col xs={24}>
-                      <Text strong style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <Text strong className="cs-legend cs-legend--ink">
                         Education / Qualification (Click categories below to expand)
                       </Text>
                       <Collapse
                         bordered={false}
                         expandIconPosition="end"
-                        style={{ background: 'transparent', marginTop: 6 }}
+                        className="cs-collapse"
                         activeKey={activeEduKeys}
                         onChange={setActiveEduKeys}
                       >
                         <Panel
                           header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
+                            <div className="cs-spread">
+                              <Text strong className="cs-body">
                                 Technical Roles{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
+                                <span className="cs-caption--muted cs-ml-2">
                                   {activeEduKeys.includes('tech') ? '(click to collapse)' : '(click to expand)'}
                                 </span>
                               </Text>
                               {selectedEduCategories.filter(x => x.startsWith('tech_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('tech_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
+                                <Badge count={selectedEduCategories.filter(x => x.startsWith('tech_')).length} className="cs-progress" />
                               )}
                             </div>
                           }
@@ -1294,15 +1303,15 @@ export default function CandidateScreening() {
                         
                         <Panel
                           header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
+                            <div className="cs-spread">
+                              <Text strong className="cs-body">
                                 Accounts & Finance{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
+                                <span className="cs-caption--muted cs-ml-2">
                                   {activeEduKeys.includes('fin') ? '(click to collapse)' : '(click to expand)'}
                                 </span>
                               </Text>
                               {selectedEduCategories.filter(x => x.startsWith('fin_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('fin_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
+                                <Badge count={selectedEduCategories.filter(x => x.startsWith('fin_')).length} className="cs-progress" />
                               )}
                             </div>
                           }
@@ -1329,15 +1338,15 @@ export default function CandidateScreening() {
 
                         <Panel
                           header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
+                            <div className="cs-spread">
+                              <Text strong className="cs-body">
                                 Sales & HR Roles{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
+                                <span className="cs-caption--muted cs-ml-2">
                                   {activeEduKeys.includes('sales') ? '(click to collapse)' : '(click to expand)'}
                                 </span>
                               </Text>
                               {selectedEduCategories.filter(x => x.startsWith('sales_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('sales_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
+                                <Badge count={selectedEduCategories.filter(x => x.startsWith('sales_')).length} className="cs-progress" />
                               )}
                             </div>
                           }
@@ -1361,23 +1370,32 @@ export default function CandidateScreening() {
                       </Collapse>
                     </Col>
 
-                    <Col xs={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
+                    <Col xs={24} className="cs-end--gap-2">
                       <Tooltip title="Re-run the current search">
                         <Button
+                          emphasis="soft"
+                          size="lg"
                           icon={<ReloadOutlined />}
                           onClick={handleRefresh}
                           loading={refreshing}
                           disabled={candidates.length === 0}
-                          size="large"
-                          style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 18 }}
                         >
                           Refresh
                         </Button>
                       </Tooltip>
-                      <Button onClick={handleClearFilters} className="cta-secondary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 22 }}>
+                      {/* BOTH of these previously declared the class attribute TWICE on
+                          the same element — once naming the legacy cta-secondary /
+                          cta-primary treatments, then again naming cs-btn plus a width
+                          modifier. In JSX the later one wins silently, so the two cta-*
+                          classes were dead on the page's two most prominent buttons and
+                          had been for as long as they were written that way.
+                          `dup-classname.mjs` guards exactly this and is a source scan,
+                          which is why this note describes the shape rather than quoting
+                          it — spelling it out literally trips the check. */}
+                      <Button emphasis="soft" tone="neutral" size="lg" onClick={handleClearFilters}>
                         Clear Filters
                       </Button>
-                      <Button type="primary" htmlType="submit" icon={<SearchOutlined />} className="cta-primary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 26 }}>
+                      <Button emphasis="solid" size="lg" htmlType="submit" icon={<SearchOutlined />}>
                         Search Candidates
                       </Button>
                     </Col>
@@ -1388,7 +1406,7 @@ export default function CandidateScreening() {
           ]}
         />
 
-        <Divider style={{ margin: '12px 0' }} />
+        <Divider className="cs-my-3" />
 
         {/* Search summary metrics bar. Layout stays inline; the surface
             (fill/border/radius) moved to .screening-summary-bar so Design V2 can
@@ -1413,9 +1431,9 @@ export default function CandidateScreening() {
               const [head, ...rest] = primary.split('(');
               const detail = rest.length ? `(${rest.join('(')}` : '';
               return (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  <Text strong style={{ color: 'var(--text)', fontSize: 15, letterSpacing: '-0.01em' }}>{head.trim()}</Text>
-                  {detail && <Text style={{ color: 'var(--text-3)', fontSize: 12 }}>{detail.trim()}</Text>}
+                <div className="cs-base">
+                  <Text strong className="cs-title-ink--lg">{head.trim()}</Text>
+                  {detail && <Text className="cs-muted--sm">{detail.trim()}</Text>}
                   {/* Carries the match score and the per-dimension breakdown the
                       cards have no room for. The server re-runs the search. */}
                   <ExportButton
@@ -1429,12 +1447,12 @@ export default function CandidateScreening() {
                     disabled={activeTab === 'jd' ? !selectedRoleId : !lastKeywordPayload}
                     label="Export"
                     size="small"
-                    style={{ marginLeft: 4 }}
+                    className="cs-ml-1"
                   />
                 </div>
               );
             })()}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="cs-wrap">
               {(activeTab === 'jd'
                 ? [
                     { label: '5★', value: summary.fiveStar || 0, color: 'var(--kpi-c)' },
@@ -1448,9 +1466,9 @@ export default function CandidateScreening() {
                   ]
               ).map((s) => (
                 <span key={s.label} className="screening-stat-chip">
-                  <span className="dot" style={{ background: s.color }} />
+                  <span className="dot cs-dot-stage" style={{ '--cs-dot': s.color }} />
                   {s.label}
-                  <span style={{ color: 'var(--text)', fontWeight: 800 }}>{s.value}</span>
+                  <span className="cs-title-ink">{s.value}</span>
                 </span>
               ))}
             </div>
@@ -1469,7 +1487,7 @@ export default function CandidateScreening() {
                 selecting hundreds of unseen candidates from a control that sits
                 above ten rows is how a bulk reject goes wrong. Selecting every
                 match is still available, but as a deliberate second click. */}
-            <div className="screening-selectall-bar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '6px 12px', marginBottom: 10 }}>
+            <div className="screening-selectall-bar cs-mid--bar">
               <Checkbox
                 checked={pageCandidateIds.length > 0 && pageCandidateIds.every((id) => selectedCandidateKeys.includes(id))}
                 indeterminate={
@@ -1484,20 +1502,20 @@ export default function CandidateScreening() {
                   }
                 }}
               >
-                <Text strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Text strong className="cs-caption--caps">
                   Select this page ({pageCandidateIds.length})
                 </Text>
               </Checkbox>
 
               {candidates.length > pageCandidateIds.length && (
                 selectedCandidateKeys.length === candidates.length ? (
-                  <Button size="small" type="link" onClick={() => setSelectedCandidateKeys([])}>
+                  <Button size="sm" emphasis="text" onClick={() => setSelectedCandidateKeys([])}>
                     Clear selection
                   </Button>
                 ) : (
                   <Button
-                    size="small"
-                    type="link"
+                    size="sm"
+                    emphasis="text"
                     onClick={() => setSelectedCandidateKeys(candidates.map((c) => c.id))}
                   >
                     Select all {candidates.length} matches
@@ -1506,14 +1524,14 @@ export default function CandidateScreening() {
               )}
 
               {selectedCandidateKeys.length > 0 && (
-                <Text type="secondary" style={{ fontSize: 12, marginInlineStart: 'auto' }}>
+                <Text type="secondary" className="cs-caption--auto">
                   {selectedCandidateKeys.length} selected
                 </Text>
               )}
             </div>
 
             {/* Candidates card list */}
-            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+            <Space direction="vertical" className="cs-full" size={10}>
               {pageCandidates
                 .map((c) => {
                 const isSelected = selectedCandidateKeys.includes(c.id);
@@ -1549,14 +1567,7 @@ export default function CandidateScreening() {
                               <Avatar
                                 shape="circle"
                                 size={46}
-                                style={{
-                                  background: isSelected
-                                    ? 'linear-gradient(135deg, var(--gold) 0%, var(--green) 100%)'
-                                    : 'var(--ink-2)',
-                                  color: isSelected ? '#fff' : 'var(--text-2)',
-                                  fontWeight: 700,
-                                  fontSize: '15px',
-                                }}
+                                className={'cs-avatar-chip' + (isSelected ? ' cs-avatar-chip--on' : '')}
                               >
                                 {initials}
                               </Avatar>
@@ -1565,7 +1576,7 @@ export default function CandidateScreening() {
                         })()}
                       </Col>
                       <Col xs={24} sm={12} md={14}>
-                        <Space direction="vertical" size={5} style={{ width: '100%' }}>
+                        <Space direction="vertical" size={5} className="cs-full">
                           <Space align="center" size={8} wrap>
                             <span className="cand-name">{c.Name}</span>
                             <StatusBadge status={
@@ -1575,23 +1586,9 @@ export default function CandidateScreening() {
                             } />
                             {rating && rating.stars >= 4 && (
                               <Tag
-                                style={{
-                                  borderRadius: '20px',
-                                  fontWeight: 800,
-                                  fontSize: '9px',
-                                  padding: '1px 6px',
-                                  border: '1px solid rgba(122, 146, 46, 0.25)',
-                                  background: 'rgba(122, 146, 46, 0.06)',
-                                  color: 'var(--gold)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '3px',
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.05em',
-                                  margin: 0
-                                }}
+                                className="cs-top-tag"
                               >
-                                <ThunderboltOutlined style={{ fontSize: '9px' }} />
+                                <ThunderboltOutlined className="cs-legend" />
                                 Top Match
                               </Tag>
                             )}
@@ -1599,13 +1596,13 @@ export default function CandidateScreening() {
 
                           {/* Shortlisted/Rejected by/on — plainly visible, no hover required */}
                           {c.shortlisted_by && (
-                            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                              Shortlisted by <strong style={{ color: 'var(--text-2)' }}>{c.shortlisted_by}</strong> on {dayjs(c.shortlisted_at).format('DD MMM YYYY')}
+                            <div className="cs-caption--muted">
+                              Shortlisted by <strong className="cs-ink">{c.shortlisted_by}</strong> on {dayjs(c.shortlisted_at).format('DD MMM YYYY')}
                             </div>
                           )}
                           {c.rejected_by && (
-                            <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                              Rejected by <strong style={{ color: 'var(--text-2)' }}>{c.rejected_by}</strong> on {dayjs(c.rejected_at).format('DD MMM YYYY')}
+                            <div className="cs-caption--muted">
+                              Rejected by <strong className="cs-ink">{c.rejected_by}</strong> on {dayjs(c.rejected_at).format('DD MMM YYYY')}
                             </div>
                           )}
 
@@ -1616,13 +1613,13 @@ export default function CandidateScreening() {
                               One chip per journey, so a candidate already live
                               on two other MRFs shows as such. */}
                           {c.pipelineHistory?.length > 0 && (
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                            <div className="cs-wrap--sm">
                               {c.pipelineHistory.map((j) => (
                                 <Tooltip
                                   key={j.pipeline_id}
                                   title={
-                                    <div style={{ fontSize: 11.5 }}>
-                                      <div style={{ fontWeight: 700, marginBottom: 4 }}>{j.position || 'Role not recorded'}</div>
+                                    <div className="cs-caption">
+                                      <div className="cs-strong--gap">{j.position || 'Role not recorded'}</div>
                                       {j.events.length > 0 ? j.events.map((e, i) => (
                                         <div key={i}>
                                           {dayjs(e.at).format('DD MMM YY')} · {e.status_label || `${e.stage_label} ${e.event_type}`}
@@ -1633,7 +1630,7 @@ export default function CandidateScreening() {
                                 >
                                   <Tag
                                     color={j.is_closed ? 'purple' : (j.current_stage_status === 'rejected' ? 'red' : j.current_stage_status === 'hold' ? 'orange' : 'blue')}
-                                    style={{ fontSize: 10, margin: 0, cursor: 'help' }}
+                                    className="cs-help"
                                   >
                                     {j.is_closed ? `Closed — ${j.final_outcome.replace(/_/g, ' ')}` : j.current_stage_label}
                                     {j.position ? ` · ${j.position}` : ''}
@@ -1647,27 +1644,27 @@ export default function CandidateScreening() {
                           {(() => {
                             const companyName = formatCurrentCompany(c.CurrentCompany);
                             return companyName ? (
-                              <div className="cand-company" style={{ marginTop: '-1px' }}>{companyName}</div>
+                              <div className="cand-company cs-mt-neg">{companyName}</div>
                             ) : null;
                           })()}
 
                           {/* Detail Indicators (Pills) */}
-                          <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+                          <div className="cs-wrap--gap">
                             <span className="screening-pill">
-                              <EnvironmentOutlined style={{ color: 'var(--gold)' }} />
+                              <EnvironmentOutlined className="cs-brand" />
                               <span>{c.CurrentLocation || 'N/A'}</span>
                             </span>
                             <span className="screening-pill">
-                              <ClockCircleOutlined style={{ color: 'var(--green)' }} />
+                              <ClockCircleOutlined className="cs-ok" />
                               <span>{c.TotalExperienceYears || '0'} yrs exp ({c.LastCompanyExperienceYears ? `${c.LastCompanyExperienceYears} yrs last co.` : '0 yrs last co.'})</span>
                             </span>
                             <span className="screening-pill">
-                              <span style={{ fontWeight: 700, color: 'var(--gold)' }}>₹</span>
+                              <span className="cs-brand--strong">₹</span>
                               <span>{c.ExpectedCTC_LPA || c.CTC_LPA || '0'} LPA</span>
                             </span>
                             {c.HighestQualification && (
                               <span className="screening-pill">
-                                <SolutionOutlined style={{ color: 'var(--gold)' }} />
+                                <SolutionOutlined className="cs-brand" />
                                 <span>{c.HighestQualification}{c.graduationdegree ? ` (${c.graduationdegree})` : ''}</span>
                               </span>
                             )}
@@ -1680,7 +1677,7 @@ export default function CandidateScreening() {
                             const skills = parsePostgresArray(c.Top5KeySkills);
                             if (!skills || skills.length === 0) return null;
                             return (
-                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <div className="cs-row">
                                 <span className="cand-section-label">Skills</span>
                                 <SkillTags skills={skills} max={6} />
                               </div>
@@ -1695,7 +1692,7 @@ export default function CandidateScreening() {
                             const technicalTerms = parseTechnicalTerms(c.resume_technical_terms);
                             if (technicalTerms.length === 0) return null;
                             return (
-                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <div className="cs-row">
                                 <span className="cand-section-label">Resume Signals</span>
                                 {technicalTerms.slice(0, 6).map((t, idx) => (
                                   <span key={idx} className="skill-chip">
@@ -1709,8 +1706,8 @@ export default function CandidateScreening() {
                       </Col>
 
                       {/* Right-aligned Rating and Action Buttons */}
-                      <Col xs={24} sm={8} md={6} style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginLeft: 'auto' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                      <Col xs={24} sm={8} md={6} className="cs-end--meta">
+                        <div className="cs-stack--end">
                           {rating && (
                             <div className="cand-score">
                               <div className="cand-score__value">
@@ -1719,46 +1716,56 @@ export default function CandidateScreening() {
                               <div className="cand-score__stars">{renderStars(rating.stars, 11)}</div>
                               <Tag
                                 color={getFitVerdictColor(rating.label)}
-                                className="cand-score__verdict"
-                                style={{ margin: 0, border: '1px solid transparent' }}
+                                className="cand-score__verdict cs-flush--edge"
                               >
                                 {rating.label}
                               </Tag>
                             </div>
                           )}
                           {c.NoticePeriod && (
-                            <span className="screening-pill" style={{ fontSize: 10.5 }}>
-                              <ClockCircleOutlined style={{ color: 'var(--green)' }} />
+                            <span className="screening-pill cs-caption">
+                              <ClockCircleOutlined className="cs-ok" />
                               <span>{c.NoticePeriod} days notice</span>
                             </span>
                           )}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className="cs-mid">
                           <Tooltip title="Conversations">
+                            {/* `.screening-action-btn` retired here — it set width,
+                                height, radius, display, border and background with
+                                `!important` on every declaration, which would have
+                                overridden `.ui-btn` rather than losing to it. Its
+                                `.primary` variant painted `--gold`, a colour the token
+                                layer no longer owns. Emphasis carries the same
+                                distinction: `soft` for the two secondary actions,
+                                `solid` for the one that opens the record. */}
                             <Button
-                              icon={<MessageOutlined style={{ fontSize: '15px' }} />}
+                              emphasis="soft"
+                              iconOnly
+                              icon={<MessageOutlined />}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openConversationsModal(c);
                               }}
-                              className="screening-action-btn"
                             />
                           </Tooltip>
                           <Tooltip title="Download Resume">
                             <Button
-                              icon={<FileTextOutlined style={{ fontSize: '15px' }} />}
+                              emphasis="soft"
+                              iconOnly
+                              icon={<FileTextOutlined />}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 downloadResume(c);
                               }}
-                              className="screening-action-btn"
                             />
                           </Tooltip>
                           <Tooltip title="View details">
                             <Button
-                              icon={<RightOutlined style={{ fontSize: '13px' }} />}
+                              emphasis="solid"
+                              iconOnly
+                              icon={<RightOutlined />}
                               onClick={(e) => { e.stopPropagation(); openCandidateDrawer(c); }}
-                              className="screening-action-btn primary"
                             />
                           </Tooltip>
                         </div>
@@ -1771,7 +1778,7 @@ export default function CandidateScreening() {
 
             {/* Pagination (client-side; result set is bounded server-side) */}
             {candidates.length > pageSize && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <div className="cs-end--gap">
                 <Pagination
                   current={currentPage}
                   pageSize={pageSize}
@@ -1786,23 +1793,16 @@ export default function CandidateScreening() {
             )}
           </div>
         ) : (
-          <div style={{ padding: '64px 24px', textAlign: 'center' }}>
-            <div
-              style={{
-                width: 64, height: 64, borderRadius: '50%',
-                background: 'var(--gold-subtle)',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: 18,
-              }}
-            >
-              <SearchOutlined style={{ fontSize: 26, color: 'var(--gold)' }} />
+          <div className="cs-empty">
+            <div className="cs-empty-icon">
+              <SearchOutlined className="cs-brand--lg" />
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+            <div className="cs-section-title">
               {selectedRoleId || form.getFieldValue('keyword')
                 ? 'No matching candidates'
                 : 'Start screening candidates'}
             </div>
-            <Text type="secondary" style={{ fontSize: 13.5 }}>
+            <Text type="secondary" className="cs-lede--sm">
               {selectedRoleId || form.getFieldValue('keyword')
                 ? 'No candidates matched the screening requirements. Try widening your filters.'
                 : (activeTab === 'jd'
@@ -1811,54 +1811,41 @@ export default function CandidateScreening() {
             </Text>
           </div>
         )}
-      </Card>
+      </Surface>
 
       {/* Floating shortlist dock — hidden while the decision modal is open so its own
           Cancel/Confirm footer isn't fought by this fixed-position, higher-z-index bar. */}
       {selectedCandidateKeys.length > 0 && !decisionModalOpen && createPortal(
         <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'var(--color-primary-bg)',
-            border: '2.5px solid var(--color-primary)',
-            boxShadow: 'var(--box-shadow-secondary)',
-            borderRadius: 16,
-            padding: '12px 24px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 20,
-            zIndex: 10000,
-            backdropFilter: 'blur(8px)',
-          }}
+          className="cs-floatbar cs-floatbar--fixed"
+          style={{ backdropFilter: 'blur(8px)' }}
         >
-          <Text strong style={{ fontSize: 14 }}>
+          <Text strong className="cs-lede">
             {selectedCandidateKeys.length} candidate{selectedCandidateKeys.length === 1 ? '' : 's'} selected
           </Text>
+          {/* `.cs-pill` was dead on both of these: it is defined as `.cs-pill.ant-tag`,
+              so it only ever styled Tags and never matched a button. */}
           <Button
-            type="primary"
+            emphasis="solid"
             icon={<CheckCircleOutlined />}
             onClick={() => openDecisionModal('shortlist')}
-            style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Shortlist Selected
           </Button>
           <Button
-            danger
+            emphasis="soft"
+            tone="danger"
             icon={<CloseCircleOutlined />}
             onClick={() => openDecisionModal('reject')}
-            style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Reject Selected
           </Button>
           <Tooltip title="Clear selection">
             <Button
-              type="text"
+              emphasis="text"
+              iconOnly
               icon={<CloseCircleOutlined />}
               onClick={() => setSelectedCandidateKeys([])}
-              style={{ fontWeight: 600 }}
             />
           </Tooltip>
         </div>,
@@ -1892,8 +1879,8 @@ export default function CandidateScreening() {
         title={
           selectedCandidate ? (
             <div>
-              <Title level={4} style={{ margin: 0 }}>{selectedCandidate.Name}</Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Title level={4} className="cs-flush">{selectedCandidate.Name}</Title>
+              <Text type="secondary" className="cs-caption">
                 {selectedCandidate.HighestQualification || 'Candidate Details'}
               </Text>
             </div>
@@ -1908,10 +1895,11 @@ export default function CandidateScreening() {
         styles={{ body: { padding: '12px 20px 24px' } }}
         footer={
           selectedCandidate ? (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '10px 16px', background: 'var(--ink-2)', borderTop: '1px solid var(--border-secondary)' }}>
-              <Button 
-                onClick={() => setDrawerOpen(false)} 
-                style={{ borderRadius: '6px' }}
+            <div className="cs-drawer-foot">
+              <Button
+                emphasis="soft"
+                tone="neutral"
+                onClick={() => setDrawerOpen(false)}
               >
                 Close
               </Button>
@@ -1919,7 +1907,7 @@ export default function CandidateScreening() {
                 const isSel = selectedCandidateKeys.includes(selectedCandidate.id);
                 return (
                   <Button
-                    type="primary"
+                    emphasis="solid"
                     icon={isSel ? <CheckCircleOutlined /> : <UnorderedListOutlined />}
                     onClick={() => {
                       if (isSel) {
@@ -1930,12 +1918,7 @@ export default function CandidateScreening() {
                         message.success('Candidate selected.');
                       }
                     }}
-                    style={{
-                      borderRadius: '6px',
-                      backgroundColor: '#6d7e3d',
-                      borderColor: '#6d7e3d',
-                      opacity: isSel ? 0.75 : 1
-                    }}
+                    className={'cs-primary-btn' + (isSel ? ' cs-primary-btn--dim' : '')}
                   >
                     {isSel ? 'Selected' : 'Select Candidate'}
                   </Button>
@@ -1963,36 +1946,22 @@ export default function CandidateScreening() {
                     const rec = selectedCandidate.profile?.shortlistRecommendation || '';
                     const label = rec.split('—')[0].trim();
                     
-                    let borderColor = 'rgba(230,126,34,0.35)';
-                    let bgColor = 'rgba(230,126,34,0.08)';
-                    let textColor = '#e67e22';
-                    if (label.startsWith('Yes')) {
-                      borderColor = 'rgba(74,124,89,0.35)';
-                      bgColor = 'rgba(74,124,89,0.08)';
-                      textColor = '#4a7c59';
-                    } else if (label.startsWith('No')) {
-                      borderColor = 'rgba(192,57,43,0.3)';
-                      bgColor = 'rgba(192,57,43,0.06)';
-                      textColor = '#c0392b';
-                    }
+                    // The tone is picked here; the COLOURS live in
+                    // styles/pages/candidate-screening.css as `.cs-tone--*`. Spelled as
+                    // rgba() literals they could follow neither a tenant brand nor dark
+                    // mode, and each tone was written out three times.
+                    let tone = 'cs-tone--warn';
+                    if (label.startsWith('Yes')) tone = 'cs-tone--good';
+                    else if (label.startsWith('No')) tone = 'cs-tone--bad';
                     
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 10 }}>
+                      <div className="cs-stack--lg">
                         
                         {/* Recruiter Summary */}
                         {selectedCandidate.profile?.summary && (
                           <div>
-                            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>AI Profile</div>
-                            <div style={{
-                              fontSize: '12.5px',
-                              color: 'var(--text-1)',
-                              lineHeight: '1.7',
-                              marginBottom: '14px',
-                              padding: '14px 16px',
-                              background: 'linear-gradient(135deg, rgba(109,126,61,0.08), transparent)',
-                              borderLeft: '3px solid #6d7e3d',
-                              borderRadius: '0 8px 8px 0'
-                            }}>
+                            <div className="cs-legend--strong cs-legend--gap">AI Profile</div>
+                            <div className="cs-ai-summary">
                               {selectedCandidate.profile.summary}
                             </div>
                           </div>
@@ -2000,21 +1969,21 @@ export default function CandidateScreening() {
 
                         {/* Side-by-Side Fit Verdict & Shortlist Recommendation */}
                         {selectedCandidate.profile && (selectedCandidate.profile.fitVerdict || selectedCandidate.profile.shortlistRecommendation) && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                          <div className="cs-grid-2">
                             {selectedCandidate.profile.fitVerdict && (
-                              <div style={{ padding: '10px 12px', background: bgColor, borderRadius: '8px', border: `1px solid ${borderColor}` }}>
-                                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '5px' }}>Fit Verdict</div>
-                                <div style={{ fontSize: '11.5px', color: 'var(--text-1)', lineHeight: '1.5', fontWeight: 500 }}>{selectedCandidate.profile.fitVerdict}</div>
+                              <div className={`cs-panel cs-tone ${tone}`}>
+                                <div className="cs-legend--strong cs-legend--gap-sm">Fit Verdict</div>
+                                <div className="cs-panel__body cs-panel__body--strong">{selectedCandidate.profile.fitVerdict}</div>
                               </div>
                             )}
                             {selectedCandidate.profile.shortlistRecommendation && (
                               (() => {
                                 const reason = rec.includes('—') ? rec.split('—').slice(1).join('—').trim() : '';
                                 return (
-                                  <div style={{ padding: '10px 12px', borderRadius: '8px', border: `1px solid ${borderColor}`, backgroundColor: bgColor }}>
-                                    <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '5px' }}>Shortlist</div>
-                                    <div style={{ fontSize: '13px', fontWeight: 700, color: textColor, marginBottom: '3px' }}>{label}</div>
-                                    {reason && <div style={{ fontSize: '10px', color: 'var(--text-3)', lineHeight: '1.4' }}>{reason}</div>}
+                                  <div className={`cs-panel cs-tone ${tone}`}>
+                                    <div className="cs-legend--strong cs-legend--gap-sm">Shortlist</div>
+                                    <div className="cs-panel__verdict">{label}</div>
+                                    {reason && <div className="cs-panel__reason">{reason}</div>}
                                   </div>
                                 );
                               })()
@@ -2024,15 +1993,15 @@ export default function CandidateScreening() {
 
                       {/* Red Flags Alert Card */}
                       {selectedCandidate.profile?.redFlags && selectedCandidate.profile.redFlags.length > 0 && (
-                        <div style={{ marginBottom: '14px', padding: '12px 14px', background: 'rgba(192,57,43,0.05)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '8px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                            <WarningOutlined style={{ color: '#c0392b', fontSize: '12px' }} />
-                            <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#c0392b' }}>Red Flags</span>
+                        <div className="cs-alert">
+                          <div className="cs-mid--label">
+                            <WarningOutlined className="cs-danger-text" />
+                            <span className="cs-danger-label">Red Flags</span>
                           </div>
                           {selectedCandidate.profile.redFlags.map((flag, idx) => (
-                            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: '5px' }}>
-                              <span style={{ color: '#c0392b', fontSize: '11px', flexShrink: 0, marginTop: '1px' }}>•</span>
-                              <span style={{ fontSize: '11.5px', color: '#b03020', lineHeight: 1.5 }}>{flag}</span>
+                            <div key={idx} className="cs-top">
+                              <span className="cs-danger-icon">•</span>
+                              <span className="cs-danger-body">{flag}</span>
                             </div>
                           ))}
                         </div>
@@ -2040,48 +2009,48 @@ export default function CandidateScreening() {
 
                       {/* Skill Coverage Section */}
                       {selectedCandidate.profile?.skillGap && (
-                        <div style={{ marginBottom: '14px' }}>
-                          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>Skill Coverage</div>
+                        <div className="cs-mb-3">
+                          <div className="cs-legend--strong cs-legend--gap">Skill Coverage</div>
                           
                           {selectedCandidate.profile.skillGap.mandatory?.present?.length > 0 && (
-                            <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#4a7c59', fontWeight: 600, marginBottom: '4px' }}>✓ Mandatory — Present</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            <div className="cs-mb-2">
+                              <div className="cs-skill-label cs-skill--present">✓ Mandatory — Present</div>
+                              <div className="cs-chips">
                                 {selectedCandidate.profile.skillGap.mandatory.present.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(74,124,89,0.12)', color: '#4a7c59', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(74,124,89,0.25)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} className="cs-skill cs-skill--present">{s}</span>
                                 ))}
                               </div>
                             </div>
                           )}
                           
                           {selectedCandidate.profile.skillGap.mandatory?.missing?.length > 0 && (
-                            <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#c0392b', fontWeight: 600, marginBottom: '4px' }}>✗ Mandatory — Missing</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            <div className="cs-mb-2">
+                              <div className="cs-skill-label cs-skill--missing">✗ Mandatory — Missing</div>
+                              <div className="cs-chips">
                                 {selectedCandidate.profile.skillGap.mandatory.missing.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(192,57,43,0.08)', color: '#c0392b', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(192,57,43,0.2)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} className="cs-skill cs-skill--missing">{s}</span>
                                 ))}
                               </div>
                             </div>
                           )}
                           
                           {selectedCandidate.profile.skillGap.goodToHave?.present?.length > 0 && (
-                            <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: '#6d7e3d', fontWeight: 600, marginBottom: '4px' }}>✓ Good to Have — Present</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            <div className="cs-mb-2">
+                              <div className="cs-skill-label cs-skill--partial">✓ Good to Have — Present</div>
+                              <div className="cs-chips">
                                 {selectedCandidate.profile.skillGap.goodToHave.present.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'rgba(109,126,61,0.12)', color: '#6d7e3d', padding: '3px 9px', borderRadius: '20px', border: '1px solid rgba(109,126,61,0.25)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} className="cs-skill cs-skill--partial">{s}</span>
                                 ))}
                               </div>
                             </div>
                           )}
                           
                           {selectedCandidate.profile.skillGap.goodToHave?.missing?.length > 0 && (
-                            <div style={{ marginBottom: '8px' }}>
-                              <div style={{ fontSize: '9px', color: 'var(--text-3)', fontWeight: 600, marginBottom: '4px' }}>✗ Good to Have — Missing</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            <div className="cs-mb-2">
+                              <div className="cs-skill-label">✗ Good to Have — Missing</div>
+                              <div className="cs-chips">
                                 {selectedCandidate.profile.skillGap.goodToHave.missing.map((s) => (
-                                  <span key={s} style={{ fontSize: '10.5px', background: 'var(--ink-4)', color: 'var(--text-3)', padding: '3px 9px', borderRadius: '20px', border: '1px solid var(--border-secondary)', fontWeight: 500 }}>{s}</span>
+                                  <span key={s} className="cs-skill cs-skill--none">{s}</span>
                                 ))}
                               </div>
                             </div>
@@ -2091,8 +2060,8 @@ export default function CandidateScreening() {
 
                       {/* JD Skill Match Section (cross-references JD skills vs resume signals + declared skills) */}
                       {selectedCandidate.jdSkillSignals && (
-                        <div style={{ marginBottom: '14px' }}>
-                          <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>{activeTab === 'keyword' ? 'Searched Skill Match' : 'JD Skill Match'}</div>
+                        <div className="cs-mb-3">
+                          <div className="cs-legend--strong cs-legend--gap">{activeTab === 'keyword' ? 'Searched Skill Match' : 'JD Skill Match'}</div>
                           <JdSkillMatch signals={selectedCandidate.jdSkillSignals} label={activeTab === 'keyword' ? 'Searched Skills' : 'Mandatory JD Skills'} />
                         </div>
                       )}
@@ -2102,23 +2071,15 @@ export default function CandidateScreening() {
                         const technicalTerms = parseTechnicalTerms(selectedCandidate.resume_technical_terms);
                         if (technicalTerms.length === 0) return null;
                         return (
-                          <div style={{ marginBottom: '14px' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '8px' }}>Resume Signals</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          <div className="cs-mb-3">
+                            <div className="cs-legend--strong cs-legend--gap">Resume Signals</div>
+                            <div className="cs-wrap--chips">
                               {technicalTerms.slice(0, 15).map((t, idx) => (
                                 <span 
                                   key={idx} 
-                                  style={{ 
-                                    fontSize: '11px', 
-                                    background: 'var(--ink-4)', 
-                                    color: 'var(--text-2)', 
-                                    padding: '3px 9px', 
-                                    borderRadius: '6px', 
-                                    border: '1px solid var(--border-light)', 
-                                    fontWeight: 500 
-                                  }}
+                                  className="cs-term"
                                 >
-                                  {t.term || t} <span style={{ opacity: 0.6, marginLeft: '2px', fontSize: '9.5px', fontWeight: 600 }}>x{t.count || 1}</span>
+                                  {t.term || t} <span className="cs-suffix">x{t.count || 1}</span>
                                 </span>
                               ))}
                             </div>
@@ -2128,11 +2089,11 @@ export default function CandidateScreening() {
 
                       {/* Career Trajectory Card */}
                       {selectedCandidate.profile?.careerProgression && (
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', background: bgColor, borderRadius: '8px', border: `1px solid ${borderColor}`, marginBottom: '14px' }}>
-                          <RiseOutlined style={{ color: textColor, fontSize: '14px', flexShrink: 0, marginTop: '2px' }} />
+                        <div className={`cs-panel cs-panel--row cs-tone ${tone}`}>
+                          <RiseOutlined className="cs-panel__icon" />
                           <div>
-                            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '3px' }}>Career Trajectory</div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-1)', lineHeight: '1.5' }}>{selectedCandidate.profile.careerProgression}</div>
+                            <div className="cs-legend--strong cs-legend--gap-sm">Career Trajectory</div>
+                            <div className="cs-panel__body">{selectedCandidate.profile.careerProgression}</div>
                           </div>
                         </div>
                       )}
@@ -2141,52 +2102,31 @@ export default function CandidateScreening() {
                       {selectedCandidate.starRating?.breakdown && (
                         <div>
                           {/* Section Header */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Candidate Score</div>
-                            <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'monospace' }}>
+                          <div className="cs-split-center">
+                            <div className="cs-legend--strong">Candidate Score</div>
+                            <span className="cs-mode">
                               {selectedCandidate.starRating.mode || (selectedRoleId ? 'JD Mode' : 'Keyword Mode')}
                             </span>
                           </div>
                           
                           {/* Score visual breakdown row */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', marginBottom: '14px' }}>
+                          <div className="cs-mid--head">
                             <div>{renderStars(selectedCandidate.starRating.stars)}</div>
-                            <span style={{ fontSize: '22px', fontWeight: 700, color: '#6d7e3d', fontFamily: 'monospace', lineHeight: 1 }}>
+                            <span className="cs-score">
                               {Math.round(selectedCandidate.starRating.finalScore)}
                             </span>
                             {(() => {
                               const label = selectedCandidate.starRating.label;
                               const val = selectedCandidate.starRating.finalScore;
-                              let borderColor = 'rgba(230,126,34,0.35)';
-                              let bgColor = 'rgba(230,126,34,0.08)';
-                              let textColor = '#e67e22';
-                              if (val >= 8) {
-                                borderColor = 'rgba(74,124,89,0.35)';
-                                bgColor = 'rgba(74,124,89,0.08)';
-                                textColor = '#4a7c59';
-                              } else if (val >= 6) {
-                                borderColor = 'rgba(109,126,61,0.35)';
-                                bgColor = 'rgba(109,126,61,0.08)';
-                                textColor = '#6d7e3d';
-                              } else if (val >= 4) {
-                                borderColor = 'rgba(61,107,138,0.35)';
-                                bgColor = 'rgba(61,107,138,0.08)';
-                                textColor = '#3d6b8a';
-                              } else {
-                                borderColor = 'rgba(192,57,43,0.3)';
-                                bgColor = 'rgba(192,57,43,0.06)';
-                                textColor = '#c0392b';
-                              }
+                              // Same five tones as the verdict badge above, keyed off
+                              // the score band instead of the label.
+                              let tone = 'cs-tone--warn';
+                              if (val >= 8) tone = 'cs-tone--good';
+                              else if (val >= 6) tone = 'cs-tone--fair';
+                              else if (val >= 4) tone = 'cs-tone--mid';
+                              else tone = 'cs-tone--bad';
                               return (
-                                <span style={{
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  padding: '3px 8px',
-                                  borderRadius: '4px',
-                                  border: `1px solid ${borderColor}`,
-                                  backgroundColor: bgColor,
-                                  color: textColor
-                                }}>
+                                <span className={`cs-score-badge cs-tone ${tone}`}>
                                   {label}
                                 </span>
                               );
@@ -2194,77 +2134,55 @@ export default function CandidateScreening() {
                           </div>
 
                           {/* Individual Parameter Cards */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div className="cs-stack--sm">
                             {Object.entries(selectedCandidate.starRating.breakdown).map(([key, item]) => {
                               const scoreVal = item.score ?? item.pts ?? 0;
                               const reason = selectedCandidate.profile?.scoreReasons?.[key] || item.reason || 'Criteria metrics verified';
                               
-                              // Map color based on score value
-                              let color = '#c0392b'; // Red
-                              let bgColor = 'rgba(192,57,43,0.05)';
-                              let borderColor = 'rgba(192,57,43,0.15)';
-                              if (scoreVal >= 8) {
-                                color = '#4a7c59'; // Green
-                                bgColor = 'rgba(74,124,89,0.07)';
-                                borderColor = 'rgba(74,124,89,0.15)';
-                              } else if (scoreVal >= 6) {
-                                color = '#6d7e3d'; // Olive
-                                bgColor = 'rgba(109,126,61,0.07)';
-                                borderColor = 'rgba(109,126,61,0.15)';
-                              } else if (scoreVal >= 4) {
-                                color = '#3d6b8a'; // Blue
-                                bgColor = 'rgba(61,107,138,0.07)';
-                                borderColor = 'rgba(61,107,138,0.15)';
-                              }
+                              // Same five-tone ladder as the verdict and score badges
+                              // — this was its fourth hand-written copy. The tint lives
+                              // in `.cs-tone--*`; `color` stays a value because the
+                              // meter fill and the score cell take it as data.
+                              let tone = 'cs-tone--bad';
+                              let color = 'var(--red)';
+                              if (scoreVal >= 8) { tone = 'cs-tone--good'; color = 'var(--kpi-c)'; }
+                              else if (scoreVal >= 6) { tone = 'cs-tone--fair'; color = 'var(--brand-ink)'; }
+                              else if (scoreVal >= 4) { tone = 'cs-tone--mid'; color = 'var(--kpi-b)'; }
                               
                               const criteria = getCriteria(key);
 
                               return (
                                 <div
                                   key={key}
-                                  style={{
-                                    background: bgColor,
-                                    border: `1px solid ${borderColor}`,
-                                    padding: '10px 12px',
-                                    borderRadius: '8px',
-                                    display: 'flex',
-                                    flexDirection: 'column'
-                                  }}
+                                  className={`cs-param-row cs-tone cs-tone--soft ${tone}`}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: (reason || criteria) ? '7px' : '0' }}>
-                                    <div style={{ fontSize: '11.5px', color: 'var(--text-2)', fontWeight: 500, flex: 1 }}>
+                                  <div className={(reason || criteria) ? 'cs-mid--row' : 'cs-mid--row-flush'}>
+                                    <div className="cs-param">
                                       {item.label}
                                     </div>
                                     
                                     {/* Custom Progress Bar */}
-                                    <div style={{ width: '80px', height: '4px', background: 'var(--ink-4)', borderRadius: '4px', overflow: 'hidden', flexShrink: 0 }}>
-                                      <div style={{ height: '100%', width: `${scoreVal * 10}%`, background: color, borderRadius: '4px' }} />
+                                    <div className="cs-meter">
+                                      <div className="cs-meter__bar" style={{ '--cs-meter': `${scoreVal * 10}%`, '--cs-meter-ink': color }} />
                                     </div>
                                     
-                                    <div style={{ fontSize: '13px', fontWeight: 700, color: color, fontFamily: 'monospace', width: '18px', textAlign: 'right', flexShrink: 0 }}>
+                                    <div className="cs-score-cell" style={{ '--cs-cell-ink': color }}>
                                       {scoreVal}
                                     </div>
                                   </div>
                                   
                                   {reason && (
-                                    <div style={{ fontSize: '11px', color: 'var(--text-3)', lineHeight: '1.5', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '6px' }}>
+                                    <div className="cs-foot-note">
                                       {reason}
                                     </div>
                                   )}
                                   
                                   {criteria && (
-                                    <div style={{
-                                      fontSize: '10px',
-                                      color: 'var(--text-3)',
-                                      fontFamily: 'monospace',
-                                      marginTop: reason ? '4px' : '0',
-                                      paddingTop: reason ? '4px' : '0',
-                                      borderTop: reason ? '1px solid rgba(0,0,0,0.04)' : 'none',
-                                      display: 'flex',
+                                    <div className={'cs-criteria' + (reason ? ' cs-criteria--after' : '')} style={{
                                       gap: '6px',
                                       alignItems: 'center'
                                     }}>
-                                      <span style={{ color: 'var(--text-3)', opacity: 0.6 }}>▸</span>
+                                      <span className="cs-faded">▸</span>
                                       {criteria}
                                     </div>
                                   )}
@@ -2287,24 +2205,24 @@ export default function CandidateScreening() {
                     </Space>
                   ),
                   children: (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 10 }}>
+                    <div className="cs-stack--md">
                       
                       {/* Section: CONTACT */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>CONTACT</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">CONTACT</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 8]}>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Email</Text>
-                              <Text strong style={{ fontSize: 13, wordBreak: 'break-all' }}>{selectedCandidate.EmailID || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Email</Text>
+                              <Text strong className="cs-body--break">{selectedCandidate.EmailID || '—'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Phone</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.ContactNumber || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Phone</Text>
+                              <Text strong className="cs-body">{selectedCandidate.ContactNumber || '—'}</Text>
                             </Col>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>LinkedIn</Text>
-                              <Text strong style={{ fontSize: 13 }}>
+                              <Text type="secondary" className="cs-label">LinkedIn</Text>
+                              <Text strong className="cs-body">
                                 {selectedCandidate.LinkedInProfile && selectedCandidate.LinkedInProfile !== 'na' ? (
                                   <a href={selectedCandidate.LinkedInProfile} target="_blank" rel="noopener noreferrer">{selectedCandidate.LinkedInProfile}</a>
                                 ) : '—'}
@@ -2316,36 +2234,36 @@ export default function CandidateScreening() {
 
                       {/* Section: EXPERIENCE & COMPENSATION */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>EXPERIENCE & COMPENSATION</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">EXPERIENCE & COMPENSATION</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 12]}>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Total Exp</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.TotalExperienceYears ? `${selectedCandidate.TotalExperienceYears} yrs` : '0 yrs'}</Text>
+                              <Text type="secondary" className="cs-label">Total Exp</Text>
+                              <Text strong className="cs-body">{selectedCandidate.TotalExperienceYears ? `${selectedCandidate.TotalExperienceYears} yrs` : '0 yrs'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Last Co. Exp</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.LastCompanyExperienceYears ? `${selectedCandidate.LastCompanyExperienceYears} yrs` : '0 yrs'}</Text>
+                              <Text type="secondary" className="cs-label">Last Co. Exp</Text>
+                              <Text strong className="cs-body">{selectedCandidate.LastCompanyExperienceYears ? `${selectedCandidate.LastCompanyExperienceYears} yrs` : '0 yrs'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Current CTC</Text>
-                              <Text strong style={{ fontSize: 13 }}>₹{selectedCandidate.CTC_LPA || '0'} LPA</Text>
+                              <Text type="secondary" className="cs-label">Current CTC</Text>
+                              <Text strong className="cs-body">₹{selectedCandidate.CTC_LPA || '0'} LPA</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Expected CTC</Text>
-                              <Text strong style={{ fontSize: 13 }}>₹{selectedCandidate.ExpectedCTC_LPA || '0'} LPA</Text>
+                              <Text type="secondary" className="cs-label">Expected CTC</Text>
+                              <Text strong className="cs-body">₹{selectedCandidate.ExpectedCTC_LPA || '0'} LPA</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Notice Period</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.NoticePeriod ? `${selectedCandidate.NoticePeriod} days` : '0 days'}</Text>
+                              <Text type="secondary" className="cs-label">Notice Period</Text>
+                              <Text strong className="cs-body">{selectedCandidate.NoticePeriod ? `${selectedCandidate.NoticePeriod} days` : '0 days'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Gender</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.Gender || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Gender</Text>
+                              <Text strong className="cs-body">{selectedCandidate.Gender || '—'}</Text>
                             </Col>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Current Company</Text>
-                              <Text strong style={{ fontSize: 13 }}>
+                              <Text type="secondary" className="cs-label">Current Company</Text>
+                              <Text strong className="cs-body">
                                 {formatCurrentCompany(selectedCandidate.CurrentCompany) || '—'}
                               </Text>
                             </Col>
@@ -2355,11 +2273,11 @@ export default function CandidateScreening() {
 
                       {/* Section: SKILLS */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>SKILLS</Text>
-                        <div style={{ marginTop: 6 }}>
+                        <Text strong className="cs-legend">SKILLS</Text>
+                        <div className="cs-mt-1-5">
                           <Space size={[4, 6]} wrap>
                             {parsePostgresArray(selectedCandidate.Top5KeySkills).map((s) => (
-                              <Tag key={s} style={{ margin: 0, fontSize: 12, padding: '4px 10px', borderRadius: 6, background: '#f1f3f5', border: '1px solid #ced4da', color: '#495057', fontWeight: 500 }}>
+                              <Tag key={s} className="cs-chip">
                                 {s}
                               </Tag>
                             ))}
@@ -2369,32 +2287,32 @@ export default function CandidateScreening() {
 
                       {/* Section: EDUCATION */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>EDUCATION</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">EDUCATION</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 12]}>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Highest Qualification</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.HighestQualification || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Highest Qualification</Text>
+                              <Text strong className="cs-body">{selectedCandidate.HighestQualification || '—'}</Text>
                             </Col>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Graduation Stream</Text>
-                              <Text strong style={{ fontSize: 13 }}>
+                              <Text type="secondary" className="cs-label">Graduation Stream</Text>
+                              <Text strong className="cs-body">
                                 {selectedCandidate.graduationdegree 
                                   ? `${selectedCandidate.graduationdegree}${selectedCandidate.graduationspecialization ? ` - ${selectedCandidate.graduationspecialization}` : ''}`
                                   : '—'}
                               </Text>
                             </Col>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>PG Stream</Text>
-                              <Text strong style={{ fontSize: 13 }}>
+                              <Text type="secondary" className="cs-label">PG Stream</Text>
+                              <Text strong className="cs-body">
                                 {selectedCandidate.postgraduationdegree
                                   ? `${selectedCandidate.postgraduationdegree}${selectedCandidate.postgraduationspecialization ? ` - ${selectedCandidate.postgraduationspecialization}` : ''}`
                                   : '—'}
                               </Text>
                             </Col>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Scores</Text>
-                              <Text strong style={{ fontSize: 13 }}>
+                              <Text type="secondary" className="cs-label">Scores</Text>
+                              <Text strong className="cs-body">
                                 {[
                                   selectedCandidate.a10th ? `10th: ${selectedCandidate.a10th}%` : null,
                                   selectedCandidate.a12th ? `12th: ${selectedCandidate.a12th}%` : null,
@@ -2409,23 +2327,23 @@ export default function CandidateScreening() {
 
                       {/* Section: PREFERENCES & READINESS */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>PREFERENCES & READINESS</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">PREFERENCES & READINESS</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 12]}>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Preferred Shift</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.PreferredShift || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Preferred Shift</Text>
+                              <Text strong className="cs-body">{selectedCandidate.PreferredShift || '—'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Job Source</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.JobSource || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Job Source</Text>
+                              <Text strong className="cs-body">{selectedCandidate.JobSource || '—'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Reason for Change</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.ReasonForJobChange || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Reason for Change</Text>
+                              <Text strong className="cs-body">{selectedCandidate.ReasonForJobChange || '—'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>English Rating</Text>
+                              <Text type="secondary" className="cs-label">English Rating</Text>
                               <div>
                                 {selectedCandidate.EnglishCommunicationRating 
                                   ? renderStars(parseInt(selectedCandidate.EnglishCommunicationRating, 10)) 
@@ -2433,14 +2351,14 @@ export default function CandidateScreening() {
                               </div>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Willing for Test</Text>
-                              <Tag color={selectedCandidate.WillingToTakeOnlineTest === 'Yes' ? 'success' : 'default'} style={{ borderRadius: 4, marginTop: 2 }}>
+                              <Text type="secondary" className="cs-label">Willing for Test</Text>
+                              <Tag color={selectedCandidate.WillingToTakeOnlineTest === 'Yes' ? 'success' : 'default'} className="cs-tag--stack">
                                 {selectedCandidate.WillingToTakeOnlineTest || '—'}
                               </Tag>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Has Laptop</Text>
-                              <Tag color={selectedCandidate.HasLaptopForInitialDays === 'Yes' ? 'success' : 'default'} style={{ borderRadius: 4, marginTop: 2 }}>
+                              <Text type="secondary" className="cs-label">Has Laptop</Text>
+                              <Tag color={selectedCandidate.HasLaptopForInitialDays === 'Yes' ? 'success' : 'default'} className="cs-tag--stack">
                                 {selectedCandidate.HasLaptopForInitialDays || '—'}
                               </Tag>
                             </Col>
@@ -2450,16 +2368,16 @@ export default function CandidateScreening() {
 
                       {/* Section: VENDOR INFO */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>VENDOR INFO</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">VENDOR INFO</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 8]}>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Vendor Name</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.vendorName || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Vendor Name</Text>
+                              <Text strong className="cs-body">{selectedCandidate.vendorName || '—'}</Text>
                             </Col>
                             <Col span={12}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Vendor Email</Text>
-                              <Text strong style={{ fontSize: 13, wordBreak: 'break-all' }}>{selectedCandidate.VendorEmail || '—'}</Text>
+                              <Text type="secondary" className="cs-label">Vendor Email</Text>
+                              <Text strong className="cs-body--break">{selectedCandidate.VendorEmail || '—'}</Text>
                             </Col>
                           </Row>
                         </Card>
@@ -2467,34 +2385,34 @@ export default function CandidateScreening() {
 
                       {/* Section: SYSTEM STATUS */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>SYSTEM STATUS</Text>
-                        <Card size="small" style={{ borderRadius: 8, background: 'var(--ink-3)', marginTop: 4 }}>
+                        <Text strong className="cs-legend">SYSTEM STATUS</Text>
+                        <Card size="small" className="cs-well">
                           <Row gutter={[16, 8]}>
                             <Col span={24}>
-                              <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>RPA Final Status</Text>
-                              <Text strong style={{ fontSize: 13 }}>{selectedCandidate.FinalStatus || 'No Status'}</Text>
+                              <Text type="secondary" className="cs-label">RPA Final Status</Text>
+                              <Text strong className="cs-body">{selectedCandidate.FinalStatus || 'No Status'}</Text>
                             </Col>
                             {selectedCandidate.shortlisted_by && (
                               <>
                                 <Col span={12}>
-                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Shortlisted By</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{selectedCandidate.shortlisted_by}</Text>
+                                  <Text type="secondary" className="cs-label">Shortlisted By</Text>
+                                  <Text strong className="cs-body">{selectedCandidate.shortlisted_by}</Text>
                                 </Col>
                                 <Col span={12}>
-                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Shortlisted On</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.shortlisted_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                  <Text type="secondary" className="cs-label">Shortlisted On</Text>
+                                  <Text strong className="cs-body">{dayjs(selectedCandidate.shortlisted_at).format('DD MMM YYYY, hh:mm a')}</Text>
                                 </Col>
                               </>
                             )}
                             {selectedCandidate.rejected_by && (
                               <>
                                 <Col span={12}>
-                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Rejected By</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{selectedCandidate.rejected_by}</Text>
+                                  <Text type="secondary" className="cs-label">Rejected By</Text>
+                                  <Text strong className="cs-body">{selectedCandidate.rejected_by}</Text>
                                 </Col>
                                 <Col span={12}>
-                                  <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Rejected On</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.rejected_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                  <Text type="secondary" className="cs-label">Rejected On</Text>
+                                  <Text strong className="cs-body">{dayjs(selectedCandidate.rejected_at).format('DD MMM YYYY, hh:mm a')}</Text>
                                 </Col>
                               </>
                             )}
@@ -2504,19 +2422,19 @@ export default function CandidateScreening() {
 
                       {/* Section: EMPLOYMENT TIMELINE */}
                       <div>
-                        <Text strong style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>EMPLOYMENT TIMELINE</Text>
-                        <div style={{ marginTop: 8 }}>
+                        <Text strong className="cs-legend">EMPLOYMENT TIMELINE</Text>
+                        <div className="cs-mt-2">
                           {selectedCandidate.employment_history?.companies && selectedCandidate.employment_history.companies.length > 0 ? (
                             <Timeline
                               mode="left"
-                              style={{ marginTop: 12 }}
+                              className="cs-mt-3"
                               items={selectedCandidate.employment_history.companies.map((company, idx) => ({
                                 color: 'var(--color-primary)',
                                 children: (
-                                  <div style={{ fontSize: 13 }}>
+                                  <div className="cs-body">
                                     <Text strong>{company.CompanyName || '[Company Name]'}</Text>
                                     <div>
-                                      <Text type="secondary" style={{ fontSize: 11 }}>
+                                      <Text type="secondary" className="cs-caption">
                                         {company.StartDate || '[Start Date]'} — {company.EndDate || '[End Date]'}
                                         {company.YearsWorked ? ` · (${company.YearsWorked} yrs)` : ''}
                                       </Text>
@@ -2554,7 +2472,7 @@ export default function CandidateScreening() {
         centered
       >
         <div className="conv-modal-head">
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="cs-grow">
             <div className="conv-modal-title">
               {convCandidate ? convCandidate.Name : '—'}
             </div>
@@ -2567,7 +2485,7 @@ export default function CandidateScreening() {
               {convMessages.length} message{convMessages.length !== 1 ? 's' : ''}
             </span>
           )}
-          <button className="conv-close" onClick={() => setConvModalVisible(false)} style={{ marginLeft: 12 }}>
+          <button className="conv-close cs-ml-3" onClick={() => setConvModalVisible(false)}>
             &#x2715;
           </button>
         </div>
@@ -2575,7 +2493,7 @@ export default function CandidateScreening() {
         <div className="conv-body" ref={convBodyRef}>
           {convLoading ? (
             <div className="conv-loading">
-              <Spin size="small" /> <span style={{ marginLeft: 8 }}>Loading conversations...</span>
+              <Spin size="small" /> <span className="cs-ml-2">Loading conversations...</span>
             </div>
           ) : convMessages.length > 0 ? (
             convMessages.map((msg, index) => {
@@ -2587,12 +2505,11 @@ export default function CandidateScreening() {
               const cleanBodyText = cleanMsgBody(msg.body_preview || msg.body_html);
 
               return (
-                <div key={index} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div key={index} className="cs-stack">
                   <div className={`conv-msg ${isOut ? 'out' : 'in'}`}>
                     {msg.subject && (
                       <div
-                        className="conv-msg-subject"
-                        style={{ color: isOut ? 'rgba(255,255,255,0.95)' : 'var(--olive)' }}
+                        className={'conv-msg-subject cs-msg-subject' + (isOut ? ' cs-msg-subject--out' : '')}
                       >
                         {msg.subject}
                       </div>
@@ -2620,6 +2537,7 @@ export default function CandidateScreening() {
         </div>
       </Modal>
 
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

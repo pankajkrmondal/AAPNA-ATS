@@ -41,7 +41,7 @@ export default function ImageUrlModal({ open, onCancel, onInsert }) {
         onChange={(e) => setAlt(e.target.value)}
         style={{ marginBottom: 8 }}
       />
-      <Text type="secondary" style={{ fontSize: 12 }}>
+      <Text type="secondary" className="cmp-caption">
         Use a hosted <b>https</b> image URL. Local/pasted images aren’t supported because they
         don’t render reliably in delivered email.
       </Text>

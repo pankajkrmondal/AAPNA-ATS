@@ -4,10 +4,12 @@
  * Keeps the gradient-bar look the dashboard already used.
  */
 import { useMemo } from 'react';
-import { Card, Typography, Tooltip } from 'antd';
+import '../../styles/components.css';
+import { Typography, Tooltip } from 'antd';
 import { ArrowDownOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { conversionStages, medianTimeToHire } from '../../utils/dashboardAggregations';
 import MetricInfo from '../common/MetricInfo';
+import { Surface } from '../../ui';
 
 const { Title, Text } = Typography;
 
@@ -32,16 +34,16 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
   const maxVal = Math.max(1, ...stages.map((s) => s.value));
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
           {/* The one widget on the page with a definition in the registry that it never
               rendered — so the only card whose title you could not hover for an
               explanation was the one describing the whole hiring process. */}
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="cfc-flush">
             Conversion Funnel <MetricInfo metric="conversionFunnel" size={12} />
           </Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>Sourced → hired conversion</Text>
+          <Text type="secondary" className="cfc-note">Sourced → hired conversion</Text>
         </div>
         <div className="dash-funnel-metrics">
           <Tooltip title={`${overall}% of everyone sourced has gone all the way through to hired.`}>
@@ -61,7 +63,7 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
         </div>
       </div>
 
-      <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="cfc-steps">
         {stages.map((stage, idx) => {
           const pct = Math.round((stage.value / maxVal) * 100);
           return (
@@ -78,39 +80,22 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
                 placement="top"
               >
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 13, fontWeight: 500 }}>{stage.label}</Text>
-                    <Text style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                  <div className="cfc-row">
+                    <Text className="cfc-stage-name">{stage.label}</Text>
+                    <Text className="cfc-stage-value">
                       {stage.value.toLocaleString()}
                     </Text>
                   </div>
                   <div
-                    className={loading ? 'shimmer' : ''}
-                    style={{
-                      height: 14,
-                      borderRadius: 999,
-                      background: 'var(--gold-subtle)',
-                      overflow: 'hidden',
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)',
-                    }}
+                    className={'cfc-track' + (loading ? ' shimmer' : '')}
                   >
                     {!loading && (
                       <div
-                        style={{
-                          width: `${pct}%`,
-                          minWidth: stage.value > 0 ? 28 : 0,
-                          height: '100%',
-                          borderRadius: 999,
-                          background: STAGE_GRADIENTS[stage.key],
-                          transition: 'width 0.9s var(--ease-out-quint)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          paddingRight: 8,
-                        }}
+                        className={'cfc-fill' + (stage.value > 0 ? ' cfc-fill--min' : '')}
+                        style={{ '--cfc-fill': `${pct}%`, '--cfc-grad': STAGE_GRADIENTS[stage.key] }}
                       >
                         {stage.value > 0 && (
-                          <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', letterSpacing: '0.04em' }}>
+                          <span className="cfc-bar-label">
                             {stage.ofTop}%
                           </span>
                         )}
@@ -136,6 +121,6 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
           );
         })}
       </div>
-    </Card>
+    </Surface>
   );
 }

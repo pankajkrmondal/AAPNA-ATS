@@ -52,6 +52,21 @@ const aapna = {
     '--brand-primary-active': '#5f7424',
     '--brand-accent': '#92a339',
     '--brand-primary-bg': '#eef3da',
+    /* ----- Contrast-bearing pair, owned by the BRAND -----
+       A brand knows whether its own primary needs a light or a dark label; the
+       component layer cannot guess. Hardcoding `#fff` in ui.css put white on
+       #7a922e (3.51:1) and, worse, on dark mode's #a8c24a (2.00:1) — both under the
+       4.5:1 AA needs for 14px text, on the product's primary action.
+
+       `--brand-solid` is the FILL for solid buttons, deliberately a shade below
+       --brand-primary in light mode so white clears 4.5:1. --brand-primary itself is
+       unchanged: it is the brand's identity colour and still drives accents, glow,
+       links and the rail, where it sits on backgrounds it already passes against. */
+    '--brand-solid': '#66792a',
+    '--brand-on-solid': '#ffffff',
+    /* The brand colour at a value safe for TEXT on a light tint — the soft button,
+       which measured 3.25:1 using --brand-primary directly. */
+    '--brand-ink': '#55671e',
     '--brand-canvas': '#f7f6f3',
     '--brand-surface': '#ffffff',
     // Deeper canvas used ONLY behind the glass dashboard. Light mode's problem was
@@ -80,6 +95,24 @@ const aapna = {
     '--brand-primary-active': '#94ad3f',
     '--brand-accent': '#a8c24a',
     '--brand-primary-bg': 'rgba(168, 194, 74, 0.12)',
+    /* Dark mode DEEPENS THE FILL rather than darkening the label.
+       White on the bright #a8c24a was 2.00:1 — the worst measurement in the set. The
+       first fix flipped the label to near-black, which passes at ~12:1 and looks
+       like a highlighter: a chartreuse slab with black text is compliant and not
+       shippable. Accessible and ugly is only half a fix.
+
+       Deepening the fill instead keeps a white label in both modes, so the button
+       reads as one component across the theme switch. It does mean the fill is
+       closer in value to the dark ground — which is what --glow-brand is for. On a
+       dark surface the bloom, not the fill's brightness, is what makes the primary
+       action prominent, and that is the whole premise of the direction.
+
+       --brand-primary stays #a8c24a: as TEXT and as an accent on a dark ground it is
+       correct, and that is a different job from being a button's fill. Splitting the
+       two is exactly why these are separate tokens. */
+    '--brand-solid': '#657c26',
+    '--brand-on-solid': '#ffffff',
+    '--brand-ink': '#bcd566',
     '--brand-canvas': '#0a0e0c',
     '--brand-canvas-deep': '#0a0e0c', // dark mode already has the contrast it needs
     '--brand-surface': '#121816',
@@ -109,6 +142,12 @@ const midnight = {
     '--brand-primary-active': '#2f4bb8',
     '--brand-accent': '#7048e8',
     '--brand-primary-bg': '#e7ecfd',
+    /* A blue this deep already clears 4.5:1 against white, so unlike aapna the fill
+       needs no darkening — which is the point of the token being per-brand rather
+       than a single global rule. */
+    '--brand-solid': '#3b5bdb',
+    '--brand-on-solid': '#ffffff',
+    '--brand-ink': '#2f4bb8',
     '--brand-canvas': '#f5f6fa',
     '--brand-surface': '#ffffff',
     '--aurora-1': 'rgba(59, 91, 219, 0.38)',
@@ -124,6 +163,11 @@ const midnight = {
     '--brand-primary-active': '#7387f0',
     '--brand-accent': '#a78bfa',
     '--brand-primary-bg': 'rgba(141, 162, 251, 0.14)',
+    /* Same treatment as aapna's dark half: deepen the fill, keep the white label.
+       A pale periwinkle slab with black text has the identical highlighter problem. */
+    '--brand-solid': '#4a5fd4',
+    '--brand-on-solid': '#ffffff',
+    '--brand-ink': '#a5b4fc',
     '--brand-canvas': '#080a12',
     '--brand-surface': '#111420',
     '--aurora-1': 'rgba(141, 162, 251, 0.32)',

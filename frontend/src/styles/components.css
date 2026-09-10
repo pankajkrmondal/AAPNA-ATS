@@ -1,0 +1,440 @@
+/**
+ * Shared component rules — the last surfaces the design system had not reached.
+ *
+ * These render INSIDE converted routes, so their inline styles were the remaining
+ * places a preset, a tenant brand or the density axis could not reach. Route
+ * stylesheets live in styles/pages/; this is for components consumed by several
+ * routes at once.
+ */
+
+/* ConversionFunnelCard — the dashboard's widest type-scale breach: a 9.5px label on a
+   coloured bar, plus a bare `#fff` that no brand could follow. `--brand-on-solid` is
+   the token for a label sitting ON a filled surface. */
+.cfc-bar-label {
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--brand-on-solid);
+  letter-spacing: var(--tracking-caption);
+}
+.cfc-stage-name { font-size: var(--fs-subhead); font-weight: 500; }
+.cfc-stage-value { font-size: var(--fs-body); font-weight: 700; font-family: var(--mono); }
+.cfc-note { font-size: var(--fs-footnote); }
+.cfc-row {
+  display: flex;
+  justify-content: space-between;
+  margin-block-end: 6px;
+}
+.cfc-steps {
+  margin-block-start: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cfc-flush { margin: 0; }
+
+/* The funnel bar. Only WIDTH and the stage gradient are data — the rest was written
+   inline on every stage. `--cfc-fill` carries the percentage, `--cfc-grad` the hue. */
+.cfc-track {
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--gold-subtle);
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.cfc-fill {
+  width: var(--cfc-fill, 0%);
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--cfc-grad, var(--brand-primary));
+  transition: width var(--dur-cinematic) var(--ease-emphasized);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-inline-end: var(--space-2);
+}
+.cfc-fill--min { min-width: 28px; }
+
+/* ------------------------------------------------------------------
+   SkillTags
+   The hue is DATA — one per position in a cycling palette — so it arrives as a custom
+   property. The old code built its surfaces by concatenating alpha onto a hex
+   (`${c}30`, `${c}10`), which is structurally incapable of accepting a variable: that
+   is *why* the palette had to be literal. color-mix() does the same job on a token.
+   ------------------------------------------------------------------ */
+.st-tag.ant-tag {
+  border-radius: var(--radius-ctl);
+  font-size: var(--fs-footnote);
+  font-weight: 500;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--st-hue) 19%, transparent);
+  color: var(--st-hue);
+  background: color-mix(in srgb, var(--st-hue) 6%, transparent);
+}
+.st-more.ant-tag {
+  border-radius: var(--radius-ctl);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+  margin: 0;
+  cursor: pointer;
+  background: var(--gold-subtle);
+  border: 1px solid var(--border);
+}
+.st-row { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.st-empty { color: var(--text-2); font-size: var(--fs-subhead); }
+
+/* StatusBadge — the label sits ON the status fill, so it takes the on-solid token
+   rather than a hardcoded white. */
+.sb-tag.ant-tag {
+  border-radius: var(--radius-ctl);
+  font-weight: 600;
+  font-size: var(--fs-footnote);
+  letter-spacing: 0.02em;
+  border: none;
+  padding: 2px 10px;
+  background: var(--sb-hue);
+  color: var(--brand-on-solid);
+}
+
+/* ------------------------------------------------------------------
+   Shared widget vocabulary
+   `fontSize: 12.5` alone appeared in ten different files as the same thing: the one-line
+   subtitle under a widget's title. These are the roles those repeats were reaching for.
+   ------------------------------------------------------------------ */
+.cmp-sub { font-size: var(--fs-footnote); }
+.cmp-sub--nowrap { font-size: var(--fs-footnote); white-space: nowrap; }
+.cmp-body { font-size: var(--fs-subhead); }
+.cmp-body--flush { font-size: var(--fs-subhead); margin: 0; white-space: pre-line; }
+.cmp-caption { font-size: var(--fs-footnote); }
+.cmp-caption--muted { font-size: var(--fs-footnote); color: var(--text-3); }
+.cmp-caption--block { font-size: var(--fs-footnote); display: block; margin-block-start: var(--space-1); }
+.cmp-caption--label { display: block; font-size: var(--fs-footnote); margin-block-end: var(--space-1); }
+/* Were bare `15px` / `20px` — the two literals the earlier inline-style sweep carried
+   into CSS rather than resolving. They are the body and title-3 roles by value, so they
+   now name them: a font-pack swap retunes the whole ramp, and a literal here would have
+   sat still while everything around it moved. */
+.cmp-lede { font-size: var(--fs-body); }
+.cmp-icon { font-size: var(--fs-title-3); }
+
+/* Uppercase micro-label inside CandidateDetailCard. Pairs with `.t-caption`, which
+   carries the size, weight, tracking and casing; this adds only what that role does
+   not: block layout, the muted ink, and the gap to the value beneath. Replaces a
+   `labelStyle` object that hand-rolled the same thing at 10px — under the 12px floor. */
+.cdc-label { display: block; color: var(--text-2); margin-block-end: var(--space-1); }
+.cdc-label--gap { margin-block-end: 6px; }
+
+/* Descriptions inside the two upload review modals. AntD takes label/content styling as
+   inline `labelStyle` / `contentStyle` objects, which no stylesheet can override — and
+   those objects set a 10px uppercase label, two under the floor. Styling the rendered
+   elements instead puts both back on the ramp and removes the inline styles. */
+.cmp-desc .ant-descriptions-item-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.cmp-desc .ant-descriptions-item-content { font-size: var(--fs-subhead); }
+
+/* Placeholder chips in the email editor toolbar. Was an inline style at 11px — under
+   the floor, and on a control people click all day. */
+.cmp-token-tag.ant-tag {
+  cursor: pointer;
+  margin: 0 2px;
+  font-size: var(--fs-footnote);
+  font-weight: 500;
+}
+
+/* StatCard's trend label sits beside the value and needs the gap the inline style
+   carried; `.cmp-ml-2` is a larger step than it wants. */
+.cmp-ml-1 { margin-inline-start: var(--space-1); }
+.cmp-ink { color: var(--text-2); }
+.cmp-ink--sm { color: var(--text-2); font-size: var(--fs-footnote); }
+.cmp-strong { font-weight: 700; margin-block-end: var(--space-1); }
+.cmp-flush { margin: 0; }
+.cmp-flush--strong { margin: 0; font-weight: 700; }
+.cmp-grow { flex: 1; min-width: 0; }
+.cmp-full { width: 100%; }
+
+/* Micro-labels that were 9px — below the floor, and the smallest type in the app after
+   CandidateScreening's. One caption role. */
+.cmp-micro {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caption);
+}
+.cmp-micro--plain { display: block; font-size: var(--fs-caption); }
+
+/* Chart wells and empty states — every widget wrote its own height + top margin. */
+.cmp-chart { margin-block-start: var(--space-3); }
+.cmp-chart--sm { height: 240px; margin-block-start: var(--space-2); }
+.cmp-chart--md { height: 250px; margin-block-start: var(--space-3); }
+.cmp-empty-pad { padding-block-start: var(--space-5); }
+.cmp-empty-pad--md { padding-block-start: 60px; }
+.cmp-empty-pad--lg { padding-block-start: 64px; }
+
+.cmp-scroll { max-height: 400px; overflow-y: auto; }
+.cmp-panel { width: 380px; }
+.cmp-pad-y { padding: var(--space-5) 0; }
+.cmp-pad-y--lg { padding: 32px 0; text-align: center; }
+.cmp-stack { display: flex; flex-direction: column; gap: 10px; }
+.cmp-stack--gap { margin-block-start: 14px; display: flex; flex-direction: column; gap: var(--space-2); }
+
+.cmp-mt-1 { margin-block-start: 2px; }
+.cmp-mt-2 { margin-block-start: var(--space-2); }
+.cmp-mt-4 { margin-block-start: var(--space-4); }
+.cmp-mb-2 { margin-block-end: var(--space-2); }
+.cmp-mb-3 { margin-block-end: var(--space-3); }
+.cmp-mb-4 { margin-block-end: var(--space-4); }
+.cmp-ml-2 { margin-inline-start: var(--space-2); }
+.cmp-me-1 { margin-inline-end: var(--space-1); }
+.cmp-rule { border-block-start: var(--hairline); padding-block-start: 10px; }
+
+/* ------------------------------------------------------------------
+   ONE loading treatment
+   "This pane is loading" was written FIVE different ways: `.em-loading` (40px pad),
+   `.vd-loading` (80px), an inline `60px 0` on /candidates, an inline `100vh` flex in
+   App.jsx (×4), and `.pps-actions` — an actions-row class reused for a spinner on the
+   four public token pages. Same moment, five looks.
+
+   A spinner is right here and a skeleton is not: these fire before any layout exists
+   to skeleton. `StateBlock variant="loading"` renders skeleton ROWS, so it is the
+   correct primitive for a pane whose shape is already known, not for a boot state.
+   ------------------------------------------------------------------ */
+.cmp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) 0;
+  min-height: 180px;
+}
+/* Full-viewport boot: before auth resolves there is no shell to sit inside. */
+.cmp-loading--page {
+  min-height: 100vh;
+  background: var(--ink);
+}
+
+/* ------------------------------------------------------------------
+   LoadingSkeleton
+   Every shape it draws — bar, row, column, card, chart — repeated the same frame
+   inline: a hairline border, a radius and a stagger. Width/height/delay are data and
+   arrive as properties; the frame is a class. `--radius-lg` here was one of the six
+   live consumers of the legacy alias, so it moves to the V3 scale with the rest.
+   ------------------------------------------------------------------ */
+.ls-bar {
+  width: var(--ls-w, 100%);
+  height: var(--ls-h, 12px);
+  border-radius: var(--ls-r, var(--radius-ctl));
+}
+.ls-frame {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-ctl);
+  animation: fadeIn 0.3s ease var(--ls-delay, 0s) both;
+}
+.ls-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--row-py) var(--row-px);
+}
+.ls-col {
+  flex: 0 0 280px;
+  padding: var(--card-pad-compact);
+}
+.ls-card { padding: var(--space-3); display: flex; }
+.ls-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  height: var(--ls-h, 200px);
+  padding: 0 var(--space-1);
+  border-block-end: 1px solid var(--border-light);
+}
+
+/* ------------------------------------------------------------------
+   LoadingOverlay — a full-viewport scrim with a floating card.
+   Tier 4 is the one content-side tier permitted to blur, and this is exactly that
+   case: transient, above everything, no scroll cost. The card hand-wrote a two-part
+   shadow in rgba that `--depth-3` already expresses and that, unlike a literal,
+   changes with the mode.
+   ------------------------------------------------------------------ */
+.lo-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-scrim);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 11000;
+}
+.lo-card.ant-card {
+  background: var(--colorBgElevated);
+  padding: var(--space-4) 32px;
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--depth-3);
+  border: 1px solid var(--brand-primary-bg);
+}
+.lo-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+.lo-label { color: var(--brand-ink); font-size: var(--fs-body); }
+.lo-note { font-size: var(--fs-footnote); }
+
+/* NotFound — the only unconverted screen a user could actually reach. */
+.nf-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 160px);
+  text-align: center;
+  padding: var(--space-5);
+}
+/* The 404 numeral: a gradient clipped to the text. `'DM Mono', monospace` was written
+   out longhand — the figure wants the mono face, but from the font pack. */
+.nf-code {
+  font-size: 140px;
+  font-weight: 800;
+  line-height: 1;
+  font-family: var(--mono);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-block-end: var(--space-2);
+  opacity: 0.9;
+  animation: float 4s ease-in-out infinite;
+}
+.nf-cta.ant-btn {
+  margin-block-start: 32px;
+  border-radius: var(--radius-btn);
+  height: 48px;
+  padding-inline: 32px;
+  font-weight: 600;
+}
+.nf-title.ant-typography { margin: 0; font-weight: 700; }
+.nf-body { font-size: var(--fs-body); max-width: 400px; }
+
+/* NotificationBell */
+.nb-item {
+  cursor: pointer;
+  padding: 10px var(--space-2);
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  transition: background var(--dur-base) var(--ease-standard);
+  margin-block-end: 2px;
+}
+.nb-item--unread { background: var(--gold-subtle); }
+.nb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  display: inline-block;
+  flex-shrink: 0;
+}
+.nb-time { font-size: var(--fs-caption); opacity: 0.6; }
+.nb-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-ctl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* MetricInfo — the ⓘ tooltip body. Three stacked notes at 0.8/0.85/0.9 opacity was
+   three ways to say "secondary"; one muted role says it once. */
+.mi-glyph { font-size: var(--mi-size, var(--fs-caption)); }
+.mi-note { margin-block-start: 6px; color: var(--text-2); }
+.mi-note--em { margin-block-start: 6px; color: var(--text-2); font-style: italic; }
+
+/* Inside a tooltip these sit on a SOLID BRAND FILL, not on the page, so --text-2
+   (#5f6664 in light) was dark grey on green — the notes were the least legible text in
+   the product. Page text tokens never apply to an inverted surface. Unscoped because
+   AntD portals tooltips to document.body, outside .ats-v2 — same reason as the tier-4
+   overlay block in aurora-glass.css. Full opacity, not a fade: hierarchy here comes
+   from the bold label inside each note, and fading body text is how contrast gets lost
+   (the same call .auth-lede documents). 2026-08-31. */
+.ant-tooltip-inner .mi-note,
+.ant-tooltip-inner .mi-note--em { color: var(--brand-on-solid); }
+
+/* ExportButton wrapper — cursor is state, not decoration. */
+.eb-wrap { display: inline-block; cursor: pointer; }
+.eb-wrap--off { cursor: not-allowed; }
+
+/* UpcomingInterviews avatar — the label sits ON the brand gradient. */
+.ui-when {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--green) 100%);
+  color: var(--brand-on-solid);
+  font-weight: 700;
+  font-size: var(--fs-subhead);
+  flex-shrink: 0;
+}
+
+/* ActionCenterCard rows. The hue is per-row data and already arrives as `--row-color`;
+   the icon chip and the count were still restating it inline, and the chip built its
+   tint by concatenating alpha onto a hex. */
+.dash-action-row__icon {
+  background: color-mix(in srgb, var(--row-color) 10%, transparent);
+  color: var(--row-color);
+}
+.dash-action-row__count { color: var(--text-3); }
+.dash-action-row__count--on { color: var(--row-color); }
+
+/* ExportButton */
+/* RETIRED 2026-08-31 — ExportButton took `emphasis="soft"`; this was a hand-rolled outlined-brand treatment. NOTE: `.eb-btn--off` below STAYS — its pointer-events:none is what lets the disabled tooltip fire.
+   Kept per the no-delete rule; uncomment to restore.
+
+.eb-btn.ant-btn {
+  border-radius: var(--radius-ctl);
+  font-weight: 600;
+  color: var(--brand-ink);
+  border-color: var(--brand-primary);
+}
+*/
+.eb-btn--off.ant-btn { pointer-events: none; }
+
+/* RecruiterBreakdown tooltip values — two chart series, two tokens. */
+.rb-added { color: var(--brand-primary); }
+.rb-shortlisted { color: var(--skill-3); }
+.rb-chart { margin-block-start: var(--space-3); }
+
+.rb-chart { margin-block-start: var(--space-3); height: var(--rb-h, 240px); }
+.sk-wrap { width: 100%; height: var(--sk-h, 34px); }
+.qa-label { flex: 1; font-size: var(--fs-subhead); font-weight: 500; }
+.qa-arrow-ink { color: var(--qa-color); font-size: var(--fs-footnote); }
+.mi-trigger {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  cursor: help;
+  color: var(--text-3);
+  display: inline-flex;
+  vertical-align: middle;
+}
+.tw-alert.ant-alert { border-radius: var(--radius-ctl); }
+.dh-bolt { color: var(--brand-primary); }
+.dem-note {
+  font-size: var(--fs-footnote);
+  border-block-start: var(--hairline);
+  padding-block-start: 10px;
+  display: block;
+}
+.ac-emoji { font-size: 56px; margin-block-end: var(--space-4); animation: float 3s ease-in-out infinite; }
+.ac-title { font-weight: 700; margin-block-end: var(--space-2); }
+/* AssessmentImportModal preview counts — five outcome tones. */
+.aim-stat--ok .ant-statistic-content { color: var(--kpi-c); }
+.aim-stat--info .ant-statistic-content { color: var(--skill-3); }
+.aim-stat--warn .ant-statistic-content { color: var(--status-hold); }
+.aim-stat--bad .ant-statistic-content { color: var(--red); }

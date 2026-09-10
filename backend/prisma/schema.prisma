@@ -216,6 +216,10 @@ model rpa_mrf {
   closed_at                     DateTime?                    @db.Timestamptz(6)
   closure_reason                String?                      @db.VarChar(50)
   closure_note                  String?
+  paused_at                     DateTime?                    @db.Timestamptz(6)
+  paused_reason                 String?
+  paused_by                     Int?
+  resume_on                     DateTime?                    @db.Date
   emails                        rpa_email_messages[]
   shortlisted                   rpa_shortlisted_candidates[]
 

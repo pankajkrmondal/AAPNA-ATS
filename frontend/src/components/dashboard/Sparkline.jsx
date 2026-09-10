@@ -47,7 +47,7 @@ const prefersReducedMotion = () => typeof window !== 'undefined'
  */
 export default function Sparkline({
   data = [],
-  color = '#7a922e',
+  color = 'var(--brand-primary)',
   height = 34,
   unit = '',
   summary = '',
@@ -90,7 +90,7 @@ export default function Sparkline({
 
   const point = hovered !== null ? series[hovered] : null;
   const tip = point && (
-    <span style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+    <span className="cmp-sub--nowrap">
       {point.label && <strong>{point.label}</strong>}
       {point.label ? ' · ' : ''}
       {point.v.toLocaleString()}{unit ? ` ${unit}` : ''}
@@ -107,7 +107,8 @@ export default function Sparkline({
     >
       <div
         ref={wrapRef}
-        style={{ width: '100%', height }}
+        className="sk-wrap"
+        style={{ '--sk-h': typeof height === 'number' ? height + 'px' : height }}
         role="img"
         aria-label={summary || `Trend chart, ${series.length} points`}
         onMouseLeave={() => setHovered(null)}

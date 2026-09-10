@@ -252,6 +252,28 @@ export function isMrfClosed(mrf) {
   return isMrfFilled(mrf);
 }
 
+/**
+ * Whether a requisition is PAUSED — a third, independent signal from Filled
+ * and Closed. A paused requisition is still open/hiring in every other sense;
+ * it is only excluded from new candidate sourcing (getApprovedRoles) while
+ * paused. Kept separate from isMrfClosed() rather than folded in, the same
+ * way isMrfFilled() stays separate: "on hold" and "done" are different facts,
+ * and conflating them is exactly the mistake the 2026-08-26 closure reason
+ * "on_hold_indefinitely" made by fully closing instead of pausing.
+ *
+ * ⚠️ Reads `paused_at` off the row it is given — any `select:` that omits the
+ * column makes this return false and a paused requisition silently reappears
+ * in sourcing, the same trap `filled_at`/`closed_at` already carry a warning
+ * about. Select the column wherever this is called.
+ *
+ * @param {{ paused_at?: Date|string|null }|null} mrf
+ * @returns {boolean}
+ */
+export function isMrfPaused(mrf) {
+  if (!mrf) return false;
+  return mrf.paused_at != null;
+}
+
 const STAGE_LABELS = Object.freeze({
   [STAGE_KEYS.SHORTLIST]: 'Shortlisted',
   [STAGE_KEYS.ZEKO_HR]: 'Zeko HR Screening',

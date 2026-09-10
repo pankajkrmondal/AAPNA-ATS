@@ -44,6 +44,7 @@ export const NOTIFICATION_TYPES = Object.freeze({
   // OFFER_APPROVAL_REQUESTED: 'offer.approval_requested',
   OFFER_DECISION: 'offer.decision',
   MRF_CLOSED: 'mrf.closed',
+  MRF_PAUSED: 'mrf.paused',
   ASSESSMENT_IMPORT_DONE: 'assessment.import_done',
   ASSESSMENT_DEADLINE_EXPIRED: 'assessment.deadline_expired',
   REVIEW_NEW: 'review.new',

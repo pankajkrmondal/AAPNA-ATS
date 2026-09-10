@@ -3,14 +3,19 @@
  * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
  */
 import { useMemo, useState } from 'react';
-import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
+import { Typography, Segmented, Empty, Tooltip } from 'antd';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import { topByField, topSkills } from '../../utils/dashboardAggregations';
 import MetricInfo from '../common/MetricInfo';
+import { Surface } from '../../ui';
+import { CHART_TICK_SIZE } from '../../constants/chartType';
 
 const { Title, Text } = Typography;
 
-const ROLE_COLORS = ['#7a922e', '#2563eb', '#d97706', '#16a34a', '#e11d48', '#4f46e5', '#0891b2', '#b45309'];
+// Reuses the shared eight-hue category palette (--skill-1..8, light/dark pairs in
+// theme/index.css) rather than a second set of eight literals for the same job.
+// SVG paint attributes resolve CSS variables, so Recharts follows the theme.
+const ROLE_COLORS = Array.from({ length: 8 }, (_, i) => `var(--skill-${i + 1})`);
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -41,13 +46,13 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
   const data = mode === 'roles' ? roles : skills;
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="cmp-flush">
             Talent Insights <MetricInfo metric="talentInsights" size={12} />
           </Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="cmp-sub">
             {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'}
           </Text>
         </div>
@@ -71,9 +76,9 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           (`talentInsights.caveat`) rather than printed under the title — same as
           HiringTrendsCard. Still stated, no longer clutter. */}
 
-      <div style={{ height: 250, marginTop: 12 }}>
+      <div className="cmp-chart--md">
         {data.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`No ${mode} data`} style={{ paddingTop: 64 }} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`No ${mode} data`} className="cmp-empty-pad--lg" />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 4 }}>
@@ -86,7 +91,7 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
                 type="category"
                 dataKey="name"
                 width={150}
-                tick={{ fontSize: 11.5, fill: 'var(--text)' }}
+                tick={{ fontSize: CHART_TICK_SIZE, fill: 'var(--text)' }}
                 tickFormatter={(v) => (String(v).length > 22 ? `${String(v).slice(0, 21)}…` : v)}
                 tickLine={false}
                 axisLine={false}
@@ -101,6 +106,6 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
           </ResponsiveContainer>
         )}
       </div>
-    </Card>
+    </Surface>
   );
 }

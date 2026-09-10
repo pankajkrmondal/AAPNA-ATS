@@ -3,13 +3,14 @@ import MetricInfo from '../common/MetricInfo';
  * LiveActivityFeed — presentational real-time feed. Receives events from useLiveActivity
  * (socket). Shows a live pulse and a graceful "listening" state before anything arrives.
  */
-import { Card, Typography, Tooltip } from 'antd';
+import { Typography, Tooltip } from 'antd';
 import {
   CloudUploadOutlined,
   BranchesOutlined,
   CheckCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { Surface } from '../../ui';
 
 const { Title, Text } = Typography;
 
@@ -29,11 +30,11 @@ const ICON = {
 
 export default function LiveActivityFeed({ events = [] }) {
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Live Activity <MetricInfo metric="liveActivity" size={12} /></Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>Real-time pipeline events</Text>
+          <Title level={5} className="cmp-flush">Live Activity <MetricInfo metric="liveActivity" size={12} /></Title>
+          <Text type="secondary" className="cmp-sub">Real-time pipeline events</Text>
         </div>
         <Tooltip title="Connected. New events appear here the moment they happen, with no need to refresh.">
           <span className="live-badge"><span className="live-badge__dot" />LIVE</span>
@@ -45,7 +46,7 @@ export default function LiveActivityFeed({ events = [] }) {
           <Tooltip title="Nothing has happened since you opened this page. This is a live ticker rather than a history — as soon as someone uploads a CV or makes a screening decision, it will show up here.">
             <div className="dash-feed__idle">
               <span className="dash-feed__radar" />
-              <Text type="secondary" style={{ fontSize: 12.5 }}>Listening for new uploads & reviews…</Text>
+              <Text type="secondary" className="cmp-sub">Listening for new uploads & reviews…</Text>
             </div>
           </Tooltip>
         ) : (
@@ -80,6 +81,6 @@ export default function LiveActivityFeed({ events = [] }) {
           ))
         )}
       </div>
-    </Card>
+    </Surface>
   );
 }

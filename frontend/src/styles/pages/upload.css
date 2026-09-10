@@ -1,0 +1,196 @@
+/**
+ * /hr-upload and /vendor-portal — the two resume-intake screens. Stage 5.3.
+ *
+ * ONE STYLESHEET FOR TWO ROUTES, ON PURPOSE
+ * These pages already share `.upload-page` (see theme/index.css and the V2 block in
+ * aurora-glass.css), and their markup is near-identical by construction: the same
+ * header, the same dropzone card, the same status table, the same result panels.
+ * They were listed as a single unit in the rollout plan for that reason — converting
+ * one alone would land rules on a screen nobody had reviewed.
+ *
+ * The pairing immediately earned itself: the "same" note panel was written with
+ * `var(--border-light)` on HRUpload and a hardcoded `rgba(0,0,0,0.07)` on
+ * VendorPortal. The literal is a black tint, so in dark mode that border rendered as
+ * nothing at all — the panel lost its edge on one of the two screens and no one could
+ * see it by looking at either page in isolation.
+ *
+ * Imported after '../ui' in both files.
+ */
+
+/* The section eyebrow above each block — 8 identical inline copies across the pair. */
+.upl-eyebrow {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.upl-page-head { margin-block-end: var(--space-5); }
+.upl-page-head--split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.upl-title.ant-typography { margin: 0; font-weight: 700; }
+/* Was `fontFamily: 'monospace'` — a page subtitle set in Courier because a bare
+   monospace keyword resolves to the browser default. It reads as body text. */
+.upl-subtitle.ant-typography { font-size: var(--fs-subhead); color: var(--text-2); }
+
+.upl-card-body { padding: 20px 28px var(--space-5); position: relative; }
+.upl-dropzone-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 14px var(--space-2);
+}
+.upl-drop-icon { color: var(--brand-primary); font-size: 30px; }
+.upl-drop-copy { text-align: left; }
+.upl-drop-title { font-weight: 600; font-size: var(--fs-body); color: var(--text); }
+.upl-drop-hint { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-footnote); }
+
+.upl-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.upl-search { min-width: 220px; }
+.upl-vendor-picker { width: 280px; }
+.upl-full { width: 100%; }
+
+/* The result / error panels under the dropzone. A tinted well inside a tier-2 card:
+   `--ink-3`, not an opaque fill, so the glass beneath still reads. */
+.upl-note {
+  padding: 14px;
+  background: var(--ink-3);
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--border-light);
+}
+.upl-note--gap { margin-block-end: 10px; }
+.upl-note--stack { margin-block-start: var(--space-3); }
+
+.upl-mono { font-family: var(--mono); font-size: var(--fs-footnote); }
+.upl-cell { font-size: var(--fs-subhead); }
+.upl-cell--muted { font-size: var(--fs-subhead); color: var(--text-3); }
+.upl-cell--mono { font-size: var(--fs-subhead); color: var(--text-2); font-family: var(--mono); }
+.upl-caption { font-size: var(--fs-footnote); }
+/* The section subtitle under "Upload Status". It was written with
+   `fontFamily: 'monospace'`, which is a full English sentence set in a code font —
+   the same defect as the page subtitle above it, and just as unintentional. Data
+   cells below (timestamps, usernames, job ids) keep the mono face; prose does not. */
+.upl-section-sub { font-size: var(--fs-footnote); color: var(--text-2); display: block; }
+.upl-icon { font-size: var(--fs-headline); }
+.upl-inline { display: inline-flex; align-items: center; gap: 10px; }
+.upl-left { text-align: left; }
+
+/* The field label above the vendor picker. Same caption role as .upl-eyebrow but
+   weight 600 and its own tracking in the original — collapsed onto the one role. */
+.upl-field-label.ant-typography {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-block-end: 6px;
+}
+.upl-req { color: var(--red); }
+
+/* RETIRED 2026-08-31 — height/radius/weight are exactly `size="lg"` on both upload routes.
+   Kept per the no-delete rule; uncomment to restore.
+
+.upl-btn.ant-btn {
+  height: var(--control-h-relaxed);
+  font-weight: 600;
+  border-radius: var(--radius-btn);
+}
+*/
+.upl-dragger { margin-block-end: 14px; }
+.upl-mt-3 { margin-block-start: var(--space-3); }
+.upl-mt-4 { margin-block-start: var(--space-4); }
+.upl-mb-3 { margin-block-end: 14px; }
+.upl-mb-4 { margin-block-end: var(--space-4); }
+.upl-mb-4-5 { margin-block-end: 18px; }
+.upl-mb-5 { margin-block-end: var(--space-5); }
+
+/* Descriptions inside the detail drawer. `labelStyle` / `contentStyle` are object
+   props, so they cannot take a class — the rules target AntD's inner elements. */
+.upl-desc .ant-descriptions-item-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.upl-desc .ant-descriptions-item-content { font-size: var(--fs-subhead); }
+
+.upl-block-label.ant-typography {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-block-end: 10px;
+}
+
+/* The "uploading for <vendor>" indicator. Two states, one shape. */
+.upl-vendor-tag.ant-tag {
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: var(--fs-subhead);
+  background: var(--gold-bg);
+  border: 1px solid var(--brand-primary);
+  color: var(--gold-dark);
+}
+.upl-vendor-tag--empty.ant-tag {
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  color: var(--red);
+}
+
+/* ------------------------------------------------------------------
+   THE DROPZONE — and the .ats-v2 leak, hitting for real
+
+   A converted route still sits inside MainLayout's `.ats-v2`, with `.ats-v3` nested
+   within it. Both scopes apply at once. The rollout plan flagged this as a trap to
+   watch whenever a token is added; here it bit without any token being added at all.
+
+   `aurora-glass.css` carries `.ats-v2 .upload-page .ant-upload-drag { background:
+   var(--glass-3-bg) !important }`. Inside V3 that resolves to `rgba(255,255,255,0.9)`
+   — a 90% opaque white fill — and its border to `var(--glass-2-border)`, which is
+   white at 62%. So the dropzone rendered as a white slab with an invisible border on
+   a glass card: Failure A and Failure B on the same element. Measured, not guessed:
+   `getComputedStyle` reported bg rgba(255,255,255,0.9), border 1px dashed
+   rgba(255,255,255,0.62).
+
+   The V2 rules stay untouched — 21 unconverted routes still need them. These win by
+   specificity (4 classes vs 3) rather than by source order, so the outcome does not
+   depend on which stylesheet the bundler emits first.
+   ------------------------------------------------------------------ */
+.ats-v3 .upload-page .ant-upload.ant-upload-drag {
+  /* Tier 3: nested inside a tier-2 card, and the one surface the user aims at.
+     `!important` is required, not preferred: the V2 rule it overrides is itself
+     `!important`, and no amount of specificity beats that. Adding specificity alone
+     changed nothing — measured, then corrected. */
+  background: var(--material-thick) !important;
+  border: 1px dashed var(--hairline-color) !important;
+  border-radius: var(--radius-surface);
+  transition: background var(--dur-base) var(--ease-standard),
+              border-color var(--dur-base) var(--ease-standard);
+}
+.ats-v3 .upload-page .ant-upload.ant-upload-drag:hover,
+.ats-v3 .upload-page .ant-upload.ant-upload-drag.ant-upload-drag-hover {
+  background: color-mix(in srgb, var(--brand-primary) 6%, var(--material-thick)) !important;
+  border-color: var(--brand-primary) !important;
+}

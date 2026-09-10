@@ -1,4 +1,12 @@
 /**
+ * NO LONGER CONSUMED as of 2026-08-29 (Stage 5.4).
+ *
+ * EmailManagement was its last consumer and now uses `PageHeader` from src/ui, which
+ * carries the eyebrow / subtitle / actions / filters / hero slots this one lacks. The
+ * file is kept per the no-delete rule; nothing imports it. To bring it back, restore
+ * the commented import at the top of pages/EmailManagement.jsx.
+ */
+/**
  * PageHeader — title / subtitle / actions, with one rhythm for the whole app.
  *
  * Audited in Phase 2 of the Aurora Glass rollout. It existed but only one page

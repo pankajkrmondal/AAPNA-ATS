@@ -29,40 +29,19 @@ export default function LoadingOverlay({ open, message = 'Loading…', hint }) {
       // the scrim itself.
       role="status"
       aria-live="polite"
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'var(--overlay-scrim)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 11000,
-      }}
+      className="lo-scrim"
     >
       <Card
         bordered={false}
-        style={{
-          background: 'var(--colorBgElevated)',
-          padding: '16px 32px',
-          borderRadius: '16px',
-          boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.08)',
-          border: '1px solid var(--color-primary-border)',
-        }}
+        className="lo-card"
       >
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-        }}
-        >
+        <div className="lo-body">
           <Spin size="large" />
-          <Text strong style={{ color: 'var(--color-primary)', fontSize: 15 }}>
+          <Text strong className="lo-label">
             {message}
           </Text>
           {hint && (
-            <Text type="secondary" style={{ fontSize: 12 }}>{hint}</Text>
+            <Text type="secondary" className="cmp-caption">{hint}</Text>
           )}
         </div>
       </Card>

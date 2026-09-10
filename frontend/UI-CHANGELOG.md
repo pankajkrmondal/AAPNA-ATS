@@ -5,6 +5,1820 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-09-01 — /mrf-submit: the fields stop shouting, and get their left gutter back
+
+Two follow-ups on the same screenshot: *"the field fonts are also too big"* and *"when I am
+typing the field, there is no left padding."*
+
+### The left-padding complaint was a corner-radius bug
+
+The gutter was never wrong. Input, select and picker all carried AntD's 11px. Measured:
+
+| Control | padding-left | radius | radius − padding |
+|---|---|---|---|
+| text input | 11px | **24px** | **+13px** |
+| select | 11px | **24px** | **+13px** |
+| datepicker | 11px | 15px | +4px |
+
+`<Form size="large">` makes AntD reach for `borderRadiusLG`, and `resolveTokens` maps that to
+`--radius-surface` — a **card** radius on a **control**. At 24px on a 44px-tall box the corner arc
+spans half the height, so a glyph 11px in still sits inside the curve and reads as flush against
+the border. The datepicker beside it looked right because it already rendered at 15px, which is
+also why the fields looked mismatched. `--radius-ctl` (15px) plus a 16px gutter puts the text
+clear of the arc — radius − padding is now **−1px** on every control.
+
+The dead `.mrfs-input` rule (ui.css) had been reaching for exactly this radius since it was
+written. It never matched: `mrfs-input` only ever lands on the Upload `<Button>`, which is
+neither `.ant-input` nor `.ant-select-selector`. Commented out per the no-delete rule.
+
+### 17px fields above 15px labels
+
+`size="large"` also maps `fontSizeLG` to `--fs-headline`, so every field rendered **larger than
+its own label**. `--fs-body`, following `.auth-form-inner` — the app's other relaxed form — and
+`.screening-filter`, which fixed this identical pair and wrote down why.
+
+**The height pin is the part that matters.** An input is sized by its content, so 17px → 15px
+took it from 46.1px to 43.3px while Selects took `controlHeightLG` and stayed at 46 — the fix
+would have *introduced* a stagger. Pinning to `--control-h-relaxed` surfaced a second thing:
+`.ats-v3` sets that token to **44px** (index.css:193) while AntD's JS `controlHeightLG` still
+resolves to **46px**, so a large Select sits 2px proud of every input next to it. The CSS token
+wins here — it is the one that tracks a density change. All five control types now measure 44px.
+
+`.mrfs-form` also had to match AntD's own selector *shape* to reach Select and InputNumber at
+all: `.ant-select-single.ant-select-lg:not(.ant-select-customize-input) .ant-select-selector` is
+(0,4,0) and `.ant-input-number-lg input.ant-input-number-input` is (0,2,1), against a two-class
+scope at (0,2,0). Until that was fixed the select kept its 24px radius, 11px gutter and 17px text
+while everything around it had moved.
+
+### Rhythm, and one less hack
+
+24px between fields plus 8px under every label — the same "tall, loose stack" the auth pages
+answered — on a form many times longer. Now 16px/4px per `.auth-form-inner`.
+
+The gap used to have three owners: an inline `marginBottom: 4`, the Form.Item's 24px, and
+`.mrfs-hint-tight`'s `margin-block-start: -12px` clawing part of it back. That negative margin was
+calibrated against the 24px it cancelled, so it would have broken silently the moment the rhythm
+moved. One owner now: `.mrfs-field`.
+
+### Card padding was doubled
+
+`.mrfs-body` sits on the `.ant-card` element, so its `8px 32px 32px` stacked on
+`.ant-card-body`'s own 24px — a **56px** inset per side. Moved onto the body; the values are
+unchanged, they just apply now, and the fields gained 48px of width.
+
+### Scope
+
+Everything is under `.mrfs-form` / `.mrfs-field` / `.mrfs-body`; no token moved and no other route
+can. `.mrfs-form` rather than `.mrfs-body` is deliberate: the previous-submission dropdown is a
+sibling of the `<Form>` inside the same Card, and `.mrfs-body .ant-select-selector` would have
+swept it up. It keeps its 38px secondary geometry — verified as a regression guard, along with
+prefill (populates and toasts) and every control type. Live submit deliberately not exercised: it
+writes an MRF and emails Management. The success branch shares no selector with anything here.
+
+---
+
+## 2026-09-01 — /mrf-submit: the header title was never white
+
+Reported against a screenshot of the public MRF form: the band title read near-black on the
+olive brand fill, while every other public page carries white on the same green.
+
+`.mrfs-band-title` had `color: var(--brand-on-solid)` all along. It never applied. The class
+sits on a Typography `<Title level={3}>`, and AntD styles headings as `h3.ant-typography` —
+specificity (0,1,1), which outranks a bare class at (0,1,0). AntD's `colorTextHeading`
+(`rgba(0,0,0,0.88)`) won on `color`, and on `font-weight` (600, not the intended 800) and
+`margin-bottom` with it. Only `letter-spacing` — which AntD does not set — ever landed, which
+is why the rule looked live.
+
+The fix is the `.ant-typography` qualifier this codebase already uses on every other styled
+Typography node (`.cs-page-title`, `.vd-title`, `.upl-title`, ~20 more). One selector:
+
+```css
+.mrfs-band-title.ant-typography { ... }
+```
+
+Computed after the fix: `color: rgb(255,255,255)`, `font-weight: 800`, `margin-bottom: 0px`
+on `--brand-solid` `#66792a` — **4.85:1**, AA at any size. Dropping the inherited bottom
+margin also re-centres the title against the logo in the flex band.
+
+No token changed, and no other `.mrfs-` rule is affected: the rest sit on plain `div`/`span`,
+and `.mrfs-muted` (on a `<Text>`) sets only `font-size` and `opacity`, which AntD's base
+`.ant-typography` does not touch.
+
+---
+
+## 2026-09-01 — /pipeline: the toolbar folds, the blockage banner closes
+
+Reported against a screenshot with both regions bracketed in red: *"these 2 popups are
+occupying the space."* Neither is a popup — they are the filter toolbar and the
+unresolved-interview banner — but the complaint is exact.
+
+Measured at 1560x900, board top before the board's first pixel:
+
+| | Board starts at | Reclaimed |
+|---|---|---|
+| Before | 559px of 900 | — |
+| Filter pane collapsed | 459px | 100px |
+| ...and banner dismissed | 313px | **246px** |
+
+559 of 900 left 341px for the columns — less than one card row plus the column header, on
+a kanban board. Both folded, the board opens in 587px.
+
+### The filter pane collapses, and starts collapsed
+
+`.pipeline-toolbar` splits into a row that is always useful and a pane that is used
+occasionally.
+
+| | Always visible | Folded |
+|---|---|---|
+| Left | Updated · Refresh · Export CSV · **Filters** | — |
+| Right | *N* candidates · Clear filters | — |
+| Pane | — | Ask the board · Position · Source · 5 checkboxes |
+
+**The badge on the `Filters` button is the load-bearing piece.** Collapsed with a filter
+still applied, it is the only thing on screen saying the board is showing a subset — which
+is why the count and `Clear filters` moved *out* of the pane and into the header row. A
+collapsed pane must never be able to leave the board filtered with no cue and no undo.
+
+Collapsed is the default (`pipeline_filters_open` in localStorage, alongside the sidebar's
+own flag); expanding it is remembered per browser, so anyone who filters all day opens it
+once. The pane is conditionally rendered, not `display:none` — seven focusable controls
+have no business in the tab order of a screen deliberately showing less. It fades and
+lifts 4px on open, and not at all under `prefers-reduced-motion`.
+
+### The banner closes, but the blockage cannot be lost
+
+`closable` on the `Alert`, with the dismissal **keyed to the set of unresolved interview
+IDs** rather than to a boolean. That distinction is the whole fix:
+
+- Closing acknowledges *the rounds currently listed*.
+- The next round to end unconfirmed produces a different key, and the banner returns by
+  itself.
+- While dismissed, a `N awaiting confirmation` chip sits in the toolbar's status group and
+  puts it back.
+
+A plain hidden flag would have swallowed every future blockage, and this banner is the
+only place one is reported — nothing else on the board says a round is stuck because no
+one recorded whether it happened. Permanent is not the same as important: a banner that
+cannot be put away is one a recruiter learns to read past.
+
+The IDs are sorted into the key, so the same rounds returned in a different order by the
+60s poll do not silently un-dismiss it.
+
+**Files:** `src/pages/Pipeline.jsx`, `src/styles/pages/pipeline.css`. No backend, no
+schema change. Verified with `npx eslint src/pages/Pipeline.jsx` and a clean `npx vite
+build`; still wants a manual click-through of the fold, the badge with a filter on, and
+the dismiss/restore round trip.
+
+---
+
+## 2026-09-01 — /filtering: the tab strip stops failing AA, and the keyword fields join the ramp
+
+Screen 7 of the sweep. Reported by eye in two lines: *"tab switching is not following our
+theme"* and *"keyword filtering is not following our design-lab theme fields."* Both
+reproduced. `/analytics` was converted with it — `.screening-tabs` was on both, the
+coupling §I.4 says not to clean up one-sided.
+
+### The tab strip was a `<Tabs>` in a segmented costume
+
+| | Before | After | Ramp |
+|---|---|---|---|
+| Track radius | 10px | 999px | `--radius-pill` |
+| Item radius | 8px | 999px | `--radius-pill` |
+| Item height | 35.3px | 30px | `calc(--ctl-h - 8px)` |
+| Label type | 15px / 600 | 13px / 600 | `--fs-subhead` |
+| Gap below | 18px / 20px inline | 24px | `--space-5` |
+| **Active label, light** | **3.51:1** | **5.81:1** | floor 4.5 |
+| Active label, dark | 8.97:1 | 11.88:1 | floor 4.5 |
+| Tab stops | 2 + 4 | 1 + 1 | — |
+
+**The 3.51:1 is the finding, and it was invisible.** The active tab painted its label raw
+`--brand-primary` on an opaque white pane — under AA, in the product's own brand, on the
+control that tells you which mode you are in. `ui/Segmented.jsx` documents this exact
+failure in its source (*"the identity colour on an opaque light pane measured 3.25:1"*) and
+had already fixed it with `--brand-ink`. The screen never adopted the component.
+
+The retired `.ats-v2` block named its own failure too: *"translucent track, near-solid thumb
+— the selected tab has to stay the most solid thing in the control."* Measured, its track
+was `rgba(255,255,255,0.9)` and its thumb `rgb(255,255,255)` — **10% apart**, which is why
+the selected pill barely read.
+
+**New primitive: `src/ui/SegmentedTabs.jsx`** — `Segmented` plus pane wiring, one copy for
+both screens. **It reproduces AntD's mounting semantics deliberately** (mount on first
+activation, then stay mounted). Rendering only the active pane was simpler and would have
+silently reset `/analytics`' table pagination and remounted `/filtering`'s keyword `<Form>`.
+Verified both ways: a sentinel typed into the keyword form survives a round trip to JD and
+back, and a table left on page 2 is still on page 2 after visiting another tab.
+
+### The keyword fields predated the token contract
+
+| | Before | After |
+|---|---|---|
+| Label | 11px / 700 | 12px / 600 (`--fs-caption`) |
+| Hint | 11px, lh 15.4 | 12px, lh 16.8 (`--fs-footnote`) |
+| Control radius | 10px `!important` ×6 | 15px (`--radius-ctl`) |
+| Collapse item | 12px | 15px |
+| Input text | 17px | 15px (`--fs-body`) |
+| Hover / focus border | `--green` = `rgb(74,124,89)` | `--brand-primary` |
+| Focus ring | `rgba(122,146,46,0.14)` raw hex | `--glow-focus` |
+| **Sub-12px elements** | **14** | **0** |
+
+Three things only measurement gave up. The focus ring was a **raw brand hex** and therefore
+dead to both tenant theming and dark mode — proof: it measured *byte-identical in light and
+dark*. The hover/focus border was `--green`, which is `#4a7c59` — **a different green from
+the brand olive** — so a focused input wore two unrelated greens. And 17px input text
+(derived, via `fontSizeLG` → headline, but the largest body text on the screen) went to
+`--fs-body`, following `.auth-form-inner`.
+
+Height **stays 46px** to match the role Select on the JD tab, rather than dropping to the
+lab's 38px — the two tabs have to agree with each other first.
+
+### A regression this pass introduced, caught by measuring after
+
+Shrinking the input font 17 → 15px took the three text inputs from 46.1px to **43.3px**
+while the Selects and InputNumbers beside them stayed at 46 — an affix wrapper is sized by
+its content. A 2.7px stagger across one filter row, invisible in a screenshot, green in
+every check. Pinned with `min-height` exactly as `.auth-form-inner` already does. Now
+46.0 / 46.0 / 46.0 in both themes. Recorded rather than quietly fixed: it is the argument
+for measuring afterwards.
+
+### Why nothing caught any of it
+
+`type-floor.mjs` scans `/filtering` and would have flagged both 11px sizes instantly. **It
+never saw them:** AntD `<Tabs>` mounts only the active pane and the tab defaults to `'jd'`.
+Measured — **0** sub-12px elements on load, **14** the instant Keyword is clicked (7 labels
++ 7 hints). `contrast.mjs` missed the 3.51:1 for a sibling reason: it measures only what
+`/design-lab` renders, and the lab renders `Segmented`, which was already right.
+
+The swap does **not** fix this — `SegmentedTabs` is still lazy on purpose. Teaching the
+scans to walk every pane is carried as its own change, and will find more than this screen.
+
+### Couplings
+
+- **`functional.mjs:153` drove the `/analytics` tabs by `.ant-tabs-tab`** — dead after the
+  swap, and wrapped in `.catch(() => {})`, so it would have stayed on the default tab and
+  failed three panel assertions as if the `Surface` work had broken. Now `getByRole('radio')`
+  and asserted, not caught.
+- **The collapse radius had to move at both ends** — `aurora-glass.css` loads after
+  `index.css`, so its 12px `!important` silently beat the retokened 15px.
+- **The `prefers-reduced-transparency` rule is a selector list** — commenting out its last
+  entry would have left a trailing comma and dropped the rule for **eleven other surfaces**
+  with no error. Comma kept inside the comment; verified by parsing the built CSS, 14
+  selectors in and 14 out.
+
+**Verified:** `verify:design` 152 PASS / 2 FAIL (both the documented `/dashboard` button
+rows), lint 0 errors, `vite build` clean, 0 page errors, light and dark, both tabs,
+accordion open and closed.
+
+**Deliberately left:** the screen's 88 inline styles and ~39 raw hexes; the AI drawer's own
+`<Tabs>` (a genuinely different control); `Input.Group compact`'s antd 5.29 deprecation; and
+`.screening-summary-bar` / `.screening-selectall-bar`, whose off-ramp radii sit on the
+results list this sweep did not measure.
+
+---
+
+## 2026-09-01 — /mrf: view mode stops being the disabled state
+
+Screen 6 of the sweep. Reported by eye: "when I open a submitted MRF everything is
+disabled — it should be like view mode, not disabled mode." It reproduced, and measured
+worse than it looked.
+
+### The record was the least legible thing in the dialog
+
+The detail modal expressed "you are reading, not editing" with AntD's **disabled** state:
+`disabled={!isEditing}` on both forms plus nine fields hard-wired `readOnly disabled`.
+Measured on #181, tier-4 overlay, aapna brand:
+
+| | Before | After | Floor |
+|---|---|---|---|
+| Value text, light | `rgb(180,188,186)` — **1.84:1** | `--text` — **14.01:1** | 4.5:1 |
+| Value text, dark | `rgb(69,78,75)` — **1.91:1** | `--text` — **14.56:1** | 4.5:1 |
+| Its own label | 5.35 / 5.46:1 | unchanged | 4.5:1 |
+| Disabled inputs in view | 53 of 53 | **0** | — |
+| `cursor: not-allowed` | 53 | **0** | — |
+
+The label naming a value was **three times more legible than the value**, and the content
+only became readable once the user was allowed to type into it — the same field measured
+`#2b2b2b` the instant Edit was pressed. Disabled is a statement about permission; view
+mode is a statement about mode. The page had only the first word.
+
+**Fix:** a new `src/ui` primitive, `FieldValue` — the read side of a field, next to
+`Field`. It takes `value` and swallows the `onChange` that `Form.Item` clones onto its
+child, so it drops in as the control of a **named** Form.Item:
+
+```jsx
+<Form.Item name="role">{isEditing ? <Input /> : <FieldValue />}</Form.Item>
+```
+
+That shape is the point: the form store, `Form.useWatch`, `isFieldsTouched()` and
+validation all survive the mode switch untouched — no re-seeding, and no value dropped on
+the floor. Verified: entering edit shows **28 pre-filled inputs** and `sampleValue:
+"Harish"`. `min-height` is `--ctl-h`, so the dialog does not jump between modes.
+
+Both `<Form disabled={!isEditing}>` props were **kept**: a field missed by the swap
+degrades to the old behaviour rather than silently becoming editable.
+
+Seven fields that were `readOnly disabled` in *both* modes (Form Submission Date, Date of
+Request, and the five AI-parsed JD rows) are now `FieldValue` unconditionally — they are
+facts, not fields. The AI "Roles & Responsibilities" answer had been a 3-row disabled
+TextArea you scrolled inside; it now reads as a paragraph.
+
+Two follow-ons the change surfaced:
+
+- **Required asterisks in view mode** — an instruction with nothing to act on.
+  `requiredMark={isEditing}` on both modal forms. The rules stay, so saving still
+  validates, and `functional.mjs`'s "MRF required markers still render" check is untouched
+  (it counts markers on the page-level new-request form, which never gets the prop).
+- **`JD Document Link` wrapped to seven lines of SharePoint query string** — an input had
+  been hiding that behind a single-line scroll. It renders as a link in view mode, which
+  is what `MrfApprovalAction.jsx:189` already does with the same column.
+
+### The status filter was not the finalised control
+
+`Radio.Group buttonStyle="solid"`, never converted. Measured before → after:
+
+| | Before | After |
+|---|---|---|
+| Item radius | `15px 0px 0px 15px` (joined slab) | `999px` |
+| Item type | 15px / 400 | 13px / 600 |
+| Active fill | `rgb(122,146,46)` raw solid brand | `--material-thick` + `--brand-ink` |
+| **Tab stops** | **6** | **1** |
+| Group role | none | `radiogroup`, labelled |
+
+Swapped to `src/ui`'s `Segmented`. Values are unchanged, so `loadRecords` and the CSV
+export query are untouched; `handleStatusFilterChange` takes the value rather than an
+event. Verified the filter still fires (All → Closed: 10 rows → 0, active pill follows).
+
+### The modal scrolled sideways
+
+`styles={{ body: { padding: '20px 0 0 0' } }}` — an inline-style-law violation, and
+`Row gutter={16}` lays columns out with a −8px inline margin, so a body with **zero**
+inline padding is overflowed by exactly the half-gutter. Measured `scrollWidth 760` vs
+`clientWidth 752` in both themes. Now a class at `--space-5 --space-3 0`; overflow **0**.
+
+**The first version of that rule did not work**, and the symptom was identical to the
+inline style it replaced: antd 5.29 paints
+`:where(.css-<hash>).ant-modal .ant-modal-body { padding: 0 }` — `:where()` costs nothing
+but the two real classes still make it **(0,2,0)**, so a lone `.mrf-modal-body` at (0,1,0)
+lost and computed to 0px. Fixed with specificity, `.ant-modal .ant-modal-body.mrf-modal-body`,
+not `!important` — the modal has to stay restylable.
+
+### Why nothing caught any of it
+
+- **No check asserts that a non-editing detail view uses read-only presentation.** The
+  suite has no concept of "view mode", so a screen expressing it as `disabled` is, to every
+  check, a correctly-rendered form.
+- **`contrast.mjs` only measures `/design-lab`.** These values live in a modal on `/mrf`
+  behind a row click, so a 1.84:1 field was never in the sample. `.ui-value` and
+  `.ui-value__empty` were added to its `TARGETS` **and** to `SystemPane`, because that
+  check can only see what the lab renders. They now measure 13.1 / 4.75 (light) and
+  16.11 / 6.23 (dark), across both brands.
+- **Nothing counts tab stops outside `.ui-segmented`.** `a11y.mjs` checks one tab stop per
+  segmented group — a control that is *not* a Segmented is invisible to it, so six tab
+  stops in a filter bar raised nothing.
+- The 8px overflow was inside a modal that is 3400px tall and scrolls vertically anyway.
+
+**Verification:** `verify:design` 152 PASS / 2 FAIL — both the documented pre-existing
+`/dashboard` button parity rows (`radius` 17.86 vs 15, `height` 38 vs 36). `npm run lint`
+0 errors. `npx vite build` clean. Measured and screenshotted in light and dark, in view and
+edit state, and across all six filter tabs.
+
+**Files:** `src/ui/FieldValue.jsx` (new), `src/ui/ui.css`, `src/ui/index.js`,
+`src/pages/MRF.jsx`, `src/styles/pages/mrf.css`, `src/pages/design-lab/SystemPane.jsx`,
+`scripts/verify/contrast.mjs`.
+
+---
+
+## 2026-08-31 — Topbar becomes a command bar, and navigation finally scrolls to the top
+
+Screen 5 of the sweep. Two unrelated shell problems.
+
+### Navigation never reset scroll
+
+There was **no scroll reset anywhere in the app** — no `ScrollRestoration`, no
+`window.scrollTo` on route change; the only `scrollTop` in the codebase is a conversation
+pane in `CandidateScreening`. Measured: the **window** is the scroll owner
+(`window.scrollY` 1200 while `.ant-layout-content`, `.ml-main` and `body` all read 0), and
+leaving a route at 1200 arrived at **1015** — it moved only because the shorter page
+clamped the maximum, not because anything reset it.
+
+`useLayoutEffect` in `MainLayout`, with three deliberate choices:
+
+- **`useLayoutEffect`, not `useEffect`** — runs before paint, so the new route is never
+  shown at the old offset and then yanked.
+- **`location.pathname` only, never `location.search`** — filters, tabs and pagination are
+  query params on several screens. Keying on the whole location would scroll the user to
+  the top on every filter change, which is worse than the original bug.
+- **Skipped on `POP`** — sending someone back to the top of a list they just backed out of
+  is wrong; the browser’s own `history.scrollRestoration` returns them where they were.
+
+Verified: PUSH 1400 → **0**; Back parked-at-900 → **360, restored not zeroed**; a
+query-param change held at 1015.
+
+### The topbar was repeating the page back to itself
+
+The composition rollout put a `PageHeader` on all 12 routes, but the topbar still printed
+the page title 12px above it. Measured topbar vs page-header title: `/candidates` "Search
+Candidate" / "Search Candidate", `/settings` "Settings" / "Settings" — character-identical.
+`/mrf` differed ("MRF" vs "New MRF Request"), which is arguably worse. Meanwhile ~700px of
+the bar’s centre was empty at 1500px.
+
+Three things already in the tree made this cheap:
+
+| Already there | Was |
+|---|---|
+| `Breadcrumb` | imported in `MainLayout` and **never rendered** |
+| `BREADCRUMB_MAP` + `NESTED_TITLE_MAP` | held every label already |
+| `CommandPalette` | fully built, mounted by **`Dashboard` alone** |
+
+So the change is mostly relocation, not new code:
+
+- **Left** — the trail replaces the title. On `/candidates/:id` it now reads
+  `Search Candidate › Candidate Details`, with the parent a real link (proper `href`,
+  intercepted to stay an SPA navigation). A single title could never say that.
+- **Centre** — a search control that opens the palette. **`CommandPalette`, its `cmdOpen`
+  state and its ⌘K key listener all moved from `Dashboard.jsx` to `MainLayout.jsx`**, so a
+  shortcut that reads as global now works on every route instead of one. Verified opening
+  on `/settings`.
+- **Right** — unchanged.
+- The hero’s now-duplicate Search button (`DashboardHero.jsx`) is retired.
+
+The control is a real `src/ui` `<Button>`, restyled to read as a recessed field:
+`composition.mjs` asserts "no un-systemised button" on all 11 routes, so anything else
+would have turned every route red at once.
+
+`onOpenCommand` and the `SearchOutlined` import stay in `DashboardHero` on purpose — the
+commented-out block references them, and the no-delete rule only works if a restore is a
+pure uncomment.
+
+**Noted, not fixed:** the module-permission check is now in **four** places (`App.jsx:186`,
+`App.jsx:296`, `Dashboard.jsx:126`, and `MainLayout`). A shared helper is the right cleanup
+and is deliberately left as its own change rather than smuggled in here.
+
+### The two icons beside each other were not the same size
+
+Reported while the above was in flight, and measured: the notification glyph rendered
+**14px** against the theme toggle’s **22px** sun — a 57% mismatch between two icons sitting
+side by side.
+
+Not a missing size, an outranked one. `NotificationBell` already asks for `.cmp-icon`
+(`--fs-title-3`, 20px), but that selector is (0,1,0) and lost inside `.ui-btn`, so the
+glyph fell back to inheriting the button’s **label** size. One scoped rule lets the
+declared intent land rather than inventing a number:
+
+| | Before | After |
+|---|---|---|
+| Bell glyph | 14px | **20px** |
+| Sun / moon visual | 22px | 22px (light) / 23.9px (dark), unchanged |
+
+20px against a sun whose rays are hairlines reads level. The theme toggle was left alone —
+it is a deliberate custom control and 22px is its designed size.
+
+**Noted, not fixed:** the three controls in that cluster still have three different hit
+boxes — bell 38px, theme toggle 36px, avatar 32px. Invisible at a glance next to the icon
+mismatch, but it is the same class of inconsistency.
+
+### Verification
+
+Both themes, 0 page errors: no `.ml-page-title` anywhere; crumbs correct flat and nested;
+⌘K opens the palette on a non-dashboard route; hero button gone. `npm run verify:design`
+— **144 PASS, 2 FAIL**, and both failures are the known pre-existing `/dashboard` parity
+rows (`button radius`, `button height`). `npm run lint` **0 errors**. `npx vite build` clean.
+
+Incidentally this run had **zero composition timing failures**, on the same code that
+produced 4 and then 13 of them earlier today — further confirmation that those rows are
+load-dependent and that `composition.mjs`’s fixed 3000ms wait should become a poll.
+
+**Mid-edit slip worth recording:** commenting out the hero button first left the JSX
+comment unterminated, swallowing the closing tags and orphaning its `<Tooltip>`. Caught by
+reading the region back rather than by any check — the same shape of trap `docs/` warns
+about, where a comment wrapper ends in the wrong place.
+---
+
+## 2026-08-31 — Dashboard: three defects, two of them silent
+
+Screen 4 of the sweep. Reported: inconsistent container heights, a role filter that showed
+"No data", and unreadable tooltip hint text. All three were real; none of the three raised
+an error, a warning, or a failing check.
+
+### 1. Ragged card heights — a rule the V3 rollout silently killed
+
+`aurora-glass.css` carried this, with a comment promising exactly what was reported:
+
+```css
+/* Equal-height cards within a band, so a short widget cannot leave a ragged bottom
+   edge beside a tall one. */
+.ats-v2 .dash-band > .ant-col > .ant-card,
+.ats-v2 .dash-band > .ant-col > div > .ant-card { height: 100%; }
+```
+
+The rollout replaced every dashboard `<Card>` with `<Surface>`, which renders
+`.ui-surface`. Measured live: **0 `.ant-card` inside `.dash-band` against 13
+`.ui-surface`** — the rule had matched nothing since the rollout. The AntD columns do
+stretch (Row is flex); it was the card inside that never filled its column.
+
+| Band | Ragged gap before | After |
+|---|---|---|
+| 0 — four KPI tiles | 0 | 0 |
+| 1 — Hiring Trends / Action Center | 22px | **0** |
+| 2 — Funnel / Talent / Upcoming | 23px, 105px | **0** |
+| 3 — Recruiter / Live Activity | **315px** | **0** |
+| 4 — Latest Uploads / Quick Actions | 76px | **0** |
+
+`.ui-surface` selectors added; the `.ant-card` ones kept so the rule cannot break a
+second time if a Card returns.
+
+### 2. Role filter listed nothing — one missing object key
+
+`GET /screening/roles` returns rows shaped `{ id, role, number_of_positions, created_at }`.
+`DashboardHero.jsx` mapped a label with
+`r?.role_name || r?.PositionApplied || r?.name || r?.label` — **`role`, the actual key, was
+the one name missing.** Every row mapped to `''`, `.filter(Boolean)` dropped them all, and
+the Select was left holding only "All roles"; typing any real role showed AntD's "No data"
+even though the API had returned it. Options went **1 → 8**, "AI Engineer" among them.
+
+### 3. Tooltip text failed WCAG AA
+
+`themeConfig.js` set `colorBgSpotlight: primary` in light mode, so tooltips were `#7a922e`
+with a white label — **3.51:1, under the 4.5:1 floor for normal text**. `theme/index.css`
+documents the pair that exists to prevent this: `--brand-solid` is *"the solid-button FILL
+(a shade below --brand-primary in light so a white label clears 4.5:1)"* and
+`--brand-on-solid` is that label. The tooltip now takes both.
+
+Worse, `.mi-note` painted `var(--text-2)` (`#5f6664`) on that green — page text tokens on
+an inverted surface, computing to roughly **1.7:1**. Those are the hint lines
+("How it’s counted:", "The graph shows:", "Where it comes from:"), so the least readable
+text in the product was the text explaining the numbers. Now `--brand-on-solid`, scoped to
+`.ant-tooltip-inner` and deliberately unscoped from `.ats-v2` because AntD portals tooltips
+to `document.body`.
+
+| | Before | After (light) | After (dark) |
+|---|---|---|---|
+| Tooltip fill | `#7a922e` | `#66792a` | `#26302c` (unchanged) |
+| Label | 3.51:1 | **4.85:1** | **11.29:1** |
+| `.mi-note` ×3 + bold labels | ~1.7:1 | **4.85:1** | **13.62:1** |
+
+**Coverage hole, flagged not fixed:** `contrast.mjs` passed through all of this and never
+saw the 3.51:1 tooltip, because a tooltip only exists on hover.
+
+### composition.mjs is flaky under load — flagged, not fixed
+
+Three consecutive suite runs failed a **different set** of routes on "renders exactly one
+page header": first `/settings` + `/email`, then `/candidates`, `/mrf`, `/hr-upload`,
+`/vendor`, `/vendor-dashboard`, and earlier none at all. A moving failure set is the
+signature of timing, not regression. Probing all 11 routes directly, polling for the header
+instead of sleeping a fixed 3000ms, **every one renders exactly one page header**. The
+check uses `page.waitForTimeout(3000)` rather than waiting for a condition; under load that
+is not enough and it reports false failures. Worth converting to a poll.
+
+### Verification
+
+Both themes, 0 page errors: band gaps all 0; role options 8 including "AI Engineer";
+tooltip contrasts as tabled above. `npm run lint` **0 errors** (94 warnings, all in the two
+retired files). `npx vite build` clean. `npm run verify:design` — **140 PASS**, with the two
+known pre-existing `/dashboard` parity rows (`button radius`, `button height`) and the
+timing-only composition rows described above.
+
+**Known and deliberately left:** stretched cards align at the edges but top-align their
+content — Live Activity has ~338px of empty space below its idle state inside a 569px card.
+Distributing it means per-widget `flex: 1` plus relaxing `.dash-feed`'s `max-height: 320px`.
+---
+
+## 2026-08-31 — Inter + Sora is the shipped font
+
+**Verification standing:** font rendering, lint, build and the public-route type ramp are
+all green and measured. The **11 auth-gated routes are NOT yet re-verified** — the backend
+on :5000 was down and booting it starts cron jobs that can send real mail, so it was left
+to the operator. Re-run `npm run verify:design` once the backend is up; `composition`'s
+"type is on the ramp" is the row this change could legitimately break.
+
+### One line, because fonts.js was built for it
+
+`theme/fonts.js` had already consolidated the Google Fonts `<link>`, the `--font*` tokens,
+the AntD `fontFamily` literals and 36 hardcoded JSX stacks into a single pack axis.
+Confirmed before touching anything: **zero** hardcoded font stacks remain in any `.jsx`,
+and every `font-family:` in every stylesheet resolves through a token. So:
+
+```js
+DEFAULT_FONT_PACK_ID = 'system-native'  ->  'inter-sora'
+```
+
+`system-native` and `figtree` stay switchable, and an explicit `/design-lab` choice still
+wins via `resolveFontPackId()`.
+
+### The pack carries the SCALE, not just the families
+
+By design — a scale is not portable across families. Body/callout/subhead/footnote/caption
+sizes are identical between the two packs. What moved app-wide:
+
+| Role | system-native | inter-sora |
+|---|---|---|
+| display | w700, `-0.02em` | w800, `-0.035em` |
+| title1 | 32px w700 | 32px **w800** |
+| title2 | 24px w600 | 24px **w700** |
+| title3 | 20px w600 | 20px **w700** |
+| metricLg / Md / Sm | 46 / 33 / 25px w700 | **44 / 32 / 24px** w800 |
+
+Headings are heavier and tighter; every KPI number is ~2px smaller.
+
+### Two verify scripts were pinned to the old pack
+
+Both are pack-specific and had to move with the default, and they fail differently:
+
+- **`composition.mjs` RAMP** was `[12,13,14,15,17,20,24,32,25,33,46]` — system-native's
+  metrics. Inter-sora renders 44/32/24; 24 and 32 were already present, so the one new
+  value is **44**, and without it every route rendering a `metricLg` would have been
+  reported off-ramp. Now `[12,13,14,15,17,20,24,32,44]`. **A red row — loud.**
+- **`parity.mjs` AXES** pinned `font: 'system-native'` on BOTH sides, so it would have kept
+  passing while testing a font the app no longer ships. **Blindness — silent.** Now tracks
+  the default, with a comment saying it must.
+
+### The webfont was already being downloaded and thrown away
+
+`index.html`'s static `<link>` has always fetched Inter + Sora + DM Mono on every page
+load, while the shipped pack was `system-native` (`href: null`). This change costs **no new
+network request** — it starts using what the app already paid for. The comment at
+`index.html:12` claiming inter-sora was the default was wrong, and is now correct.
+
+### Expect one font flash for existing users, once
+
+`applyFontStylesheet()` writes `ats_font_href` on every mount, not only on an explicit
+choice, so every current user has `''` cached. On their first load after this the
+anti-FOUC script sees `''` (not `null`) and removes the link pre-paint; React then mounts,
+resolves the new default and recreates it. **One flash, self-healing, never repeats.** Not
+a bug — recorded so it is not chased as one.
+
+### Measured
+
+On `/login` and `/design-lab`, both themes: `document.fonts.check` **true for Inter, Sora
+and DM Mono** — they render, rather than degrading silently to the fallback stack, which
+is the failure mode that looks almost right. `--fs-metric-lg` 46px → **44px**. Auth title
+now **Sora 24px w700**; auth labels **Inter 14px**, inputs **15px** — the sizes set two
+entries ago are unchanged. Every size rendered on `/design-lab` is on the new RAMP.
+
+`npm run lint` **0 errors** (94 warnings, all in the two retired files). `npx vite build`
+clean.
+
+**One pre-existing off-ramp node found, not fixed:** `kbd.dl-kbd` (the ⌘K hint) renders
+11px, below the 12px floor. It is design-lab gallery chrome on a route neither
+`composition.mjs` nor `type-floor.mjs` scans, and no font pack has an 11px role, so it
+predates this change. `dash-kbd`, its app-side equivalent, is already in TYPE_EXEMPT.
+
+**Also still open:** the two `/dashboard` button parity rows (`button radius`,
+`button height`), unrelated and outstanding since 2026-08-31.
+---
+
+## 2026-08-31 — The left nav joins the design system (and the shell finally does too)
+
+Screen 2 of the screen-by-screen sweep. Reported: "check if the font is matching", plus
+"ensure it follows the glass morphism design".
+
+### The font DOES match — nothing else did
+
+The nav renders `Segoe UI Variable Text`, identical to `--font` and to page content. That
+one property is correct and was deliberately left alone. Everything else was AntD default
+leaking through, because **the shell was the last surface in the app still running on
+`LEGACY_GEOMETRY`**: `DesignScope` is what switches the preset geometry on, and it wraps
+*pages*, never `MainLayout`. The sidebar never entered the V3 rollout at all. No
+`font-family`, `font-size` or `font-weight` rule targeted `.ml-menu` anywhere.
+
+| | Before | After |
+|---|---|---|
+| Radius | 8px (`borderRadius: 8`) | `--radius-ctl` **15px** |
+| Row height | 48px (AntD default) | `--control-h-relaxed` **46px** |
+| Padding | 24px left / 16px right | **16/16** symmetric |
+| Label size | 14px (AntD `fontSize`) | `--fs-callout` 14px — same number, now derived |
+| Weight, resting | 400 | **500** |
+| Weight, selected | 400 — no signal | **600** |
+
+### Glass: two real gaps, and two things deliberately NOT touched
+
+Measured in both themes first. **Light-mode chrome is opaque white with
+`backdrop-filter: none`, and that is correct** — Part I says so explicitly; it was not
+"fixed" back to glass. **Dark mode is already true tier-1 glass** (`rgba(16,22,20,0.62)` +
+`blur(30px) saturate(1.5)`). The selected item already carried the full signature: brand
+gradient, `--glass-hilite` catch-light, gradient rail with a brand glow.
+
+**1. Hover had no material response at all** — measured `box-shadow: none` in both themes.
+A pointer got a flat tint and a 3px slide while every other surface in the system answers
+with material. It was the only stateless surface in the shell. Now a three-rung ladder:
+rest flat → hover lifts on `--depth-1` → selected settles on `--glass-hilite`. `--depth-1`
+and **not** the catch-light, because the catch-light is what says *selected*.
+
+**2. Two rules painted the selected rail, at identical specificity (0,2,0).**
+`aurora-glass.css:249` paints a gradient with a glow; `index.css:1497` painted a flat
+`--gold` with none. The glass one wins *only* because `main.jsx` imports `aurora-glass.css`
+after `index.css` — one import-order edit from silently downgrading the selected item
+app-wide. Provably dead as written (one `<Sider>` in the app, always inside `.ats-v2`), so
+the `index.css` block is commented out with a dated reason per the no-delete rule.
+
+The 8px radius was a *glass* defect too, not only a geometry one: `--glass-hilite`'s
+`inset 0 -14px 24px -16px` bottom shade is tuned for the system's 15–16px radii and bunched
+at 8px. The radius fix improved the material as well as the shape.
+
+### Two things I got wrong first, and how they showed up
+
+**`--control-h-comfy` does not exist.** The ladder is `--control-h-compact` /
+`--control-h` / `--control-h-relaxed`. My probe read it with a `||` fallback, which
+returned 46px from the *next* token and hid the fact. `height: var(--control-h-comfy)`
+with no fallback computes to `auto`, so the items rendered **18px tall** — and this is a
+silent failure: no error, no warning, just a collapsed nav. Now `--control-h-relaxed`.
+
+**AntD writes `style="padding-left: 24px"` inline on every menu item.** The inline-style
+law arriving from the library rather than from us, so `padding-inline` from a stylesheet
+could never win. Rather than reach for `!important`, the `<Menu>` now passes
+`inlineIndent={16}`, which sets that inline value at its source. Collapsed mode drops the
+inline padding entirely and is unaffected — measured 15/15 before and after.
+
+### Also
+
+`.ml-product-label` (the "ATS PLATFORM" divider in the brand block) carried an inline
+`borderLeft` + `paddingLeft`. eslint never flagged it because the rule matches `border`,
+not `borderLeft`. Moved into the existing class as logical properties.
+
+### Verification
+
+Measured in **four states — expanded + collapsed × light + dark**, all four identical on
+geometry and type: radius 15px, height 46px, 16/16 expanded, 14px, 500/600. Collapsed icons
+centred (1px offset). Rail gradient and glow confirmed still painting in both themes after
+the `index.css` block was retired; selected brand colour and catch-light both intact;
+hover resolves `--depth-1` in both themes. 0 page errors across all eight renders.
+
+`npm run lint` **0 errors** (94 warnings, all in the two retired files). `npx vite build`
+clean. `npm run verify:design` — **no new failures**; the same two pre-existing `parity.mjs`
+rows (`button radius`, `button height`, both on `/dashboard`) and nothing else.
+
+The **vendor role** shares this CSS by construction: `VENDOR_MENU_ITEMS` is two flat items
+of the same shape through the same `<Menu className="ml-menu">`, and there is no
+`children:` anywhere in the nav, so no `.ant-menu-submenu` exists to style separately.
+
+**Still open:** those two `/dashboard` button parity rows are now the oldest untouched
+finding in the sweep.
+---
+
+## 2026-08-31 — Auth screens: tighter form rhythm, one step up the type ramp
+
+First screen of the screen-by-screen design sweep. Reported from the login screen: the
+form read too airy and its text too small. Both were true, and both were already
+systemised in `.auth-form-inner` (Stage 5.2), so this is a token swap in one block of
+`src/ui/ui.css` — no inline style added, no `:root` token touched.
+
+### Measured before → after (1500px, both themes identical)
+
+| | Rule | Before | After |
+|---|---|---|---|
+| Field label | `.auth-field-label` | `--fs-subhead` 13px | `--fs-callout` **14px** |
+| Input + placeholder | `.auth-form-inner .ant-input…` | `--fs-callout` 14px | `--fs-body` **15px** |
+| Subtitle | `.auth-form-subtitle` | `--fs-callout` 14px | `--fs-body` **15px** |
+| "Forgot password?" | `.auth-link` | `--fs-subhead` 13px | `--fs-callout` **14px** |
+| Gap between fields | `.auth-form-inner .ant-form-item` | `--space-5` 24px | `--space-4` **16px** |
+| Label → input gap | AntD default | 8px | **4px** (new rule) |
+
+Every size is an existing step on the ramp in `theme/tokens.css` — no off-ramp value was
+invented, and nothing moved toward the 12px floor. The 4px label gap follows the
+precedent `.screening-filter` set at `theme/index.css:1705` for a dense vertical form.
+
+`.auth-field-label--caps` (the AdminLogin uppercase modifier) deliberately stays at
+`--fs-caption` 12px: it is a caps eyebrow, a different role, and already at the floor.
+
+### This lands on FOUR pages, not one
+
+`.auth-form-inner` is rendered once, by `layouts/AuthLayout.jsx:81`, and wraps every auth
+route — the same four this log recorded under Stage 5.2. The shared-class coupling law
+applies, so all four were measured and screenshotted in both modes rather than assumed:
+
+| Route | label | input | gap | note |
+|---|---|---|---|---|
+| `/login` | 14px | 15px | 16px | — |
+| `/admin/login` | 12px | 15px | 16px | `--caps` modifier intact, badge unaffected |
+| `/forgot-password` | 14px | 15px | 16px | — |
+| `/reset-password` | 14px | 15px | 16px | needs `?token=` to render its form at all |
+
+No horizontal overflow and no page errors on any of the eight renders.
+
+### The duplicate that was on all four
+
+The submit `<Button>` carried `emphasis="solid"` **twice** — once as the first attribute,
+again on the `size="lg"` line — on `Login`, `AdminLogin`, `ForgotPassword` and
+`ResetPassword`. Identical values, so nothing rendered wrong; JSX keeps the last. The
+leading one is removed on all four.
+
+### Verification
+
+`npm run lint` **0 errors** (94 warnings, all in the two retired files —
+`CandidatePipelinePrototype` and `StatCard`). `npm run verify:design` ran green except
+for two `parity.mjs` rows, **both pre-existing and unrelated**: `button radius` (lab
+17.86px vs app 15px) and `button height` (lab 38px vs app 36px), measured on `/dashboard`.
+Proved pre-existing by reverting this change and re-running parity alone — byte-identical
+failures. They are the next thing to fix, and are recorded here so the red rows are not
+mistaken for this work.
+
+**Still open on this screen:** Turnstile is running a *testing-only* site key ("For
+testing only. If seen, report to site owner"). That is configuration, not design, and it
+is why `verify:design` could not log in on 2026-08-31. Left alone deliberately.
+---
+
+## 2026-08-29 — Stage 6: the shared-component sweep, and two functional regressions
+
+Debt **302 → 95**, and all 95 that remain are in the two *retired* files
+(`CandidatePipelinePrototype` 85, `StatCard` 10). **Every live file is at zero.**
+
+### Two functional regressions I had shipped
+
+Both were invisible to every check that existed, and both came from the same habit —
+moving a value out of an inline style without checking what else depended on it.
+
+**The sidebar had stopped sticking.** `position: sticky` was an inline style, so it won.
+Moving it to a class made it lose to `aurora-glass.css`'s
+`.ats-v2 > .ant-layout-sider { position: relative }` — **the `.ats-v2` leak for the
+fourth time**, and the first that broke behaviour rather than appearance. What makes it
+nasty: `height` and `overflow` from the same class landed correctly. Only `position`
+lost. A half-applied class is invisible in a screenshot.
+
+**Six `/analytics` panels were bare opaque Cards.** I had converted 5 of 12 and stopped
+— the half-conversion trap, for the third time. They rendered opaque white with no
+shadow inside a glass container: Failure A.
+
+### Three guards, committed rather than thrown away
+
+- **`functional.mjs`** — 14 assertions: board scroll, drawer outcome tones, the Hold
+  dialog, email scrollers and iframe height, Surface-as-Card slots, MRF required
+  validation, sticky chrome, the bulk dock. **Stub-by-default**: reads pass through,
+  every write is captured and answered in the browser. Zero writes reach the backend.
+- **`type-floor.mjs`** — the 12px floor, across 11 routes. It found **223 nodes below
+  the floor on four routes** *after* the rollout was called complete.
+- Both wired into `verify:design`, now 9 checks.
+
+The functional probe's first run "failed" nine assertions because the write guard
+swallowed the **login POST** — no session, so every assertion measured the login screen.
+My test was wrong, not the app. Same for an `/analytics` assertion that checked the
+wrong tab. Both were checked before anything was "fixed".
+
+### Two colour palettes that could never have been tokens
+
+`SkillTags` (8 hues) and `StatusBadge` (9 statuses) were literal hexes **because the
+code made them impossible to tokenise**: it built its surfaces by concatenating alpha
+onto a hex (`${c}30`, `${c}10`), which a CSS variable structurally cannot satisfy.
+`color-mix()` does the same job on a token. Six of the nine statuses now alias tokens
+that already existed, so a change to `--red` or the brand reaches them.
+
+Measured adapting: skill hue `rgb(122,146,46)` light → `rgb(168,194,74)` dark.
+
+Also tokenised: `ROLE_COLORS` and the ActionCenter row hues (both reuse `--skill-1..8`
+rather than inventing a third and fourth set of eight), the Recharts brand fills, and
+`--meta name="theme-color"`, which now reads `--brand-primary` from computed style so a
+tenant brand reaches the mobile browser chrome.
+
+### One loading treatment, was five
+
+The same "this pane is loading" moment was written five ways: `.em-loading` at 40px,
+`.vd-loading` at 80px, an inline `60px 0`, an inline `100vh` flex ×4 in App.jsx, and —
+worst — the four public token pages used **`.pps-actions`, an actions-row class**, to
+centre a spinner. Now one treatment, measured identical at `48px 0` / `min-height 180px`.
+
+Deliberately **not** switched to `StateBlock`: its loading variant renders skeleton
+rows, which is right for a pane whose shape is known and wrong for a boot state that
+fires before any layout exists. The in-pane cases still want it.
+
+### Graduated to `error`
+
+Every live file is now eslint `error`-level (verified: severity 2 on live files, 1 on
+the two retired). **This is step 6 of the rollout recipe, which was written down and
+never performed for a single group** — the whole app sat at `warn` while twelve routes
+were converted, so any of them could have regressed silently.
+
+### Documented exemptions, not silenced warnings
+
+`PublicPageShell`'s frozen `BRAND` and `ThemeContext`'s two-hex fallback are exempted
+from the hex rule **with reasons**: both are consumed where a CSS variable cannot
+resolve — outside a React tree (the email layout keeps in step with it) and before
+first paint. The live path in both reads tokens.
+
+### Not done, deliberately
+
+`LEGACY_GEOMETRY`, the 13 per-route `DesignScope` wrappers, the six legacy radius rules
+and the motion aliases are all still live. None changes anything a user sees; the motion
+change touches 119 rules and is the single most likely thing to break something quietly.
+Recorded in the plan rather than rushed.
+
+**Verified:** 9/9 checks, build clean, no duplicate classNames across 4,011 tags.
+
+---
+
+## 2026-08-29 — Stage 5.8 + the shell: every route converted
+
+`CandidateScreening` 438 → 0, `PipelineDrawer` 120 → 0, `PipelineConfigPanel` 40 → 0,
+`MainLayout` 27 → 0. Debt **927 → 302**.
+
+**All 24 routes are converted.** What remains is shared components (217) and the
+retired prototype (85), which the plan excluded from the target from the start.
+
+### The worst type scale in the app
+
+`CandidateScreening` set **9px and 9.5px** labels, some of them at 0.6–0.7 opacity —
+below the scale's floor AND dimmed, which is the exact combination the contrast work
+exists to prevent. The floor is 12px and it exists because the app ran 9–13; this file
+is where the 9 came from. Three uppercase label variants for one role, all caption now.
+
+### Five tones, written four times
+
+The AI drawer computed verdict colours in JS as `rgba()` strings and bare hexes —
+`#4a7c59`, `#c0392b`, `#6d7e3d`, `#3d6b8a`, `#e67e22` — each spelled three times
+(border 30–35%, fill 6–8%, text) and the whole ladder repeated **four times** across
+verdict badges, score badges, parameter rows and skill chips. The JS picks a tone NAME
+now; `.cs-tone--*` owns the colour and mixes it from tokens. Verified in dark, which is
+where the literals would have failed and did not.
+
+### The shell flips, last
+
+Twelve routes converted underneath familiar chrome, so every intermediate state stayed
+coherent and a shell regression would have been one revert rather than a permanent
+backdrop. `V2_ROUTES` and `isV2` are **retired** — the gate was true everywhere and
+described nothing. `.ats-v2` is unconditional now and the ambient canvas mounts on
+every screen (measured: it did not, before, on any route outside the list).
+
+Its product label was **9.5px**, the smallest type in the app.
+
+### A comment I wrote, then measured false
+
+I wrote that removing the topbar's inline background "lets the tier-1 blur take
+effect". Measured: light chrome is `rgb(255,255,255)` with **no backdrop**; only dark
+is `rgba(16,22,20,0.62)` with `blur(30px)`. That is a deliberate, documented decision
+in `aurora-glass.css` — a translucent pane is only ever as neutral as what shows
+through it, so a neutral nav cannot be had by lowering alpha. **The code was right and
+my comment was wrong**; the comment is corrected in place rather than the behaviour
+changed. Third time in this rollout that a claim in a comment failed measurement.
+
+### The AdminDashboard mistake, once more
+
+`OUTCOME_BUTTONS` carried `style: { color: '#d4a017', ... }`. I renamed it to
+`className` — but the render reads `btn.style`, and `className` was only wired for the
+primary button. The Hold button silently lost its amber. **Same root cause as the three
+AdminDashboard defects: changing a property without checking how it is consumed.**
+Caught by looking at the screen, not by any check. Now measured: light
+`rgb(212,160,23)`, dark `rgb(240,180,41)` — a distinction the hardcoded hex never had.
+
+### Reuse instead of a fourth copy
+
+`PipelineConfigPanel`'s info/warn callouts are the same eight-property shape as
+Settings', and it renders inside /settings, so they take `.set-callout` rather than a
+fourth hand-written copy.
+
+**Verified:** /filtering driven end to end — role selected, ranked list rendered,
+AI-profile drawer opened — in both modes; /pipeline drawer opened in both modes; the
+shell smoke-tested on three routes. Suite passes, build clean.
+
+---
+
+## 2026-08-29 — Stage 5.7: the admin portal, and the last two families
+
+`AdminDashboard` 221 → 0, plus MainLayout's `isAdminPath` branch (17 of its 44).
+Debt **1,165 → 927**. Thirteen routes converted; **63% of the original debt cleared.**
+
+### Both remaining families retired
+
+`StatTile`'s docblock named three parallel stat families. `StatCard` went in Stage 5,
+`KpiCard` in 5.5, and **`.admin-stat` goes here** — 32px/700 with `--shadow-md`, a 13px
+icon radius and a -3 lift, doing the same job as the other two with a third set of
+numbers and no stated reason for any of them. Four cards, four `accent` names.
+
+`Segmented`'s docblock named `.admin-tab` as one of the two ad-hoc tab bars it exists
+to replace, and this is that. It was three `<Button type="text">` carrying a
+conditional class — **not a radiogroup**: no arrow keys, and every pill its own tab
+stop. It is a real roving-tabindex radiogroup now.
+
+### A palette the theme layer should have owned
+
+`MODULES_INFO` carried **nine raw hexes**, one identity hue per module. Two consequences:
+no tenant could re-theme them, and **they had no dark-mode pair** — the light values
+were carried straight onto a dark ground, where `#1890ff` and `#722ed1` both go muddy.
+They are `--module-*` tokens now, with lifted dark values, on the same reasoning as the
+avatar palette that already existed: they only have to stay distinguishable from each
+other, not carry meaning.
+
+While adding them a stray character corrupted one value to `#f濃`, which is not a
+colour. A validation pass over every `--module-*` value caught it before the build.
+
+### One state, written six times
+
+Each module-access row expressed enabled/disabled as **six conditionals across two
+elements** — background, border colour, icon fill, icon border, badge tint, badge
+colour — with the badge tints as raw `rgba()` pairs. One modifier class carries all of
+it now, and the tints mix from tokens.
+
+The panels also hand-wrote `0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)`
+four times. That is what `--depth-*` already expresses, and unlike a literal it changes
+with the mode.
+
+### The admin shell converts here, not last
+
+`MainLayout`'s admin branch is a **separate shell** — its own topbar, no Sider, its own
+background — reachable only from `/admin` and sharing nothing with the other 23 routes.
+Converting it now does not disturb them, so the main shell still goes last and every
+intermediate state stays coherent.
+
+Its dark-mode logo chip was a spread `...(isDark && { ... })` inline object. That reads
+the mode from React state, which no stylesheet can see; it is a `[data-theme='dark']`
+rule now, so the cascade decides — the same correction the `-light`/`-dark` pair
+convention exists to enforce.
+
+### Three defects shipped, found on review — all one mistake
+
+I could not render this route at first: `AdminRoute` gates on
+`user.role ∈ {admin, superadmin}` and the only dev credentials are a non-admin
+account. I recorded that as unverified and moved on. Review came back with two
+screenshots, and re-verification found a third.
+
+The route IS renderable — the role comes from `getCurrentUser`, so a Playwright
+`route()` interceptor can raise it in the browser without touching `src/`. That
+harness now exists (`scratchpad/adminshot.mjs`). **"I cannot verify this" was wrong;
+what was true is that I had not found a way to.** The automated checks all passed on
+the broken build, which is exactly why the recipe says look at the screen.
+
+What was broken, and why each one is the same error:
+
+1. **`.ad-user-row` lost its padding.** The inline object held
+   `padding: '12px 16px'` alongside the state conditionals. I replaced the whole
+   object with a class carrying only the state, and the avatars went flush against
+   the panel edge.
+2. **`.ad-topbar` was a bare flex row.** `.admin-tabbar` had been a tier-2 PANE —
+   gradient fill, border, 16px radius, shadow, `padding: 10px 16px`. The tabs floated
+   unanchored on the canvas. It is a `Surface` now, the same treatment /pipeline's
+   toolbar gets.
+3. **The admin shell had NO content padding at all.** Measured: `0px` padding and a
+   **0px gap under the header**, against `24px 28px 40px` and a 24px gap on every
+   other route. The old `.admin-portal` div supplied `28px 24px` itself; when the page
+   moved to `PageShell` — which owns the page COLUMN, not the shell's inset — nothing
+   was left holding it. This is the double-padding problem inverted: the rule is that
+   the shell owns the inset and the page owns the column, and admin was the one shell
+   that had never held up its end.
+
+**The single root cause: replacing a whole style object with a class means accounting
+for every property that object held, not just the ones that motivated the change.**
+Three times in one file, because this file had the most conditional-heavy objects and
+I was reading them for their conditionals. The lint rule cannot catch it — `padding`
+is not a banned property, so those declarations were never the target; they were
+collateral.
+
+Audited the other eight converted routes for the same class of error: every other
+whole-object replacement carried its layout properties across (`.vd-card-body` 24/28/28,
+`.em-list-body` 16/0, `.pl-column-card` 10, the Settings callouts 12/16 and 16/20).
+AdminDashboard was the outlier.
+
+---
+
+## 2026-08-29 — Stage 5.6: the board, and a regression test for Failure B
+
+`Pipeline` 27 → 0. Debt **1,192 → 1,165**. Twelve routes converted.
+
+The smallest group by count and the one the plan flagged as highest-risk, because
+**`.cp-candidate-card`'s leading border is the candidate's status** — data, and the
+only cue for that state on the board. Any rule writing the `border` or `border-color`
+shorthand sets all four sides and erases it. The page still renders. That already
+shipped once, when the hover rule used `border-color`.
+
+`--cp-accent` was already in place from an earlier phase, so the fix held. What this
+group added is the **guard**: `scripts/verify/status-border.mjs`, now in the suite. It
+asserts three things a screenshot cannot — the leading border is non-zero, different
+statuses render different colours, and hovering does not change the colour. Currently
+**4 distinct colours across 29 cards**, unchanged on hover.
+
+### The `.ats-v2` leak, third occurrence
+
+`aurora-glass.css` paints `.ats-v2 .cp-candidate-card { background: var(--glass-3-bg)
+!important }`, and a converted route still sits inside `.ats-v2`. Same failure as the
+upload dropzone. By now the fix is known rather than discovered: `!important` AND an
+extra class, because the rule being overridden is `!important` and ties on
+specificity. Both, or neither works.
+
+### I nearly shipped the exact bug this rollout started with
+
+I wrote `border-radius: var(--radius-sm)` in the new page stylesheet. `--radius-sm` is
+the **legacy** name — aliasing it is what restyled all 24 routes at the start of this
+work and is why the V3 scale deliberately uses names nothing else consumes. Caught
+before the build by checking the token actually resolved in `resolveTokens.js`, which
+is a habit that has now paid for itself twice.
+
+### The arrows are outside the scope
+
+The board's scroll arrows are portaled to `<body>` so their `position: fixed` anchors
+to the real viewport — an ancestor `transform` would otherwise become their containing
+block. That also puts them **outside `.ats-v3`**, so a scoped rule could never reach
+them. Their styling is deliberately global, and only the measured viewport offset stays
+inline, because it is computed from the board's bounds at runtime. Same for the
+stale-board scrim.
+
+That inline block also held `border: '2px solid #fff'`, a `#7a922e`/`#92a63c` gradient
+fallback and `rgba(122,146,46,0.30)` — none of which could follow a theme.
+
+### Three duplicate classNames, caught by the check
+
+Replacing `style={{...}}` with `className="..."` on elements that already had one —
+including the board scroller, whose `className` sat on the line above the style. The
+guard added in 5.3 found all three. It is now the third group in a row where that
+check has caught something I would not have seen.
+
+**Verified:** both modes, no page errors, status accents measured distinct and
+hover-stable, suite passes, build clean.
+
+---
+
+## 2026-08-29 — Stage 5.5 complete: the metric group, and the end of the third stat family
+
+`CandidateDetail` 98 → 0, `Analytics` 69 → 0, `DeliveryMonitoring` 17 → 0.
+Debt **1,376 → 1,192**. Eleven routes converted; **53% of the original debt cleared.**
+
+### KpiCard is gone, and the bridge rule with it
+
+The rollout had three stat families doing the same job with different numbers.
+`StatTile` replaced `StatCard` on /dashboard in Stage 5; this closes `KpiCard` across
+**all four consumers at once** — Analytics, VendorDashboard, HRUpload, VendorPortal —
+which is why it waited for this group rather than being done piecemeal in 5.3.
+
+The API change is the point: `color` + `tint` + `accent` (three values, one of them a
+gradient string) becomes **one `accent` naming a token**. The old triple was
+structurally incapable of following a tenant brand.
+
+`index={i}` is gone too. The stagger is `.ui-stagger` on the row, so the delay comes
+from `nth-child` instead of every call site passing its own position — and passing it
+would have landed an unknown `index` attribute on the DOM through StatTile's `...rest`.
+
+**The `legacy-bridge.css` KpiCard rule is removed** — which is what a bridge rule is
+supposed to do. It was added in 5.3, named 5.5 as the group that would delete it, and
+5.5 deleted it. The file stays; 5.7 and 5.8 will need it for the same reason.
+
+### A new accent, because the vocabulary was missing one
+
+/analytics' "Total" tile used `ACCENT.neutral`. Every entry in StatTile's accent list
+carries a verdict, so the only options were to invent one or paint a plain total
+brand-green — which makes it read as a positive result. `neutral` is now part of the
+vocabulary, and it is the one accent that deliberately recedes.
+
+### `<Surface as={Card}>`
+
+/analytics' twelve panels use `title`, `extra` and `loading`. Those are real
+behaviours, not decoration — the loading skeleton in particular, since a confident
+"0" mid-fetch is a wrong answer and not a slow one. Hand-building twelve heads would
+have traded one duplication for another and dropped the skeleton.
+
+`Surface` already had an `as` prop, so the combination just needed to be made honest:
+`.ant-card` paints its own opaque `colorBgContainer` and draws its own border and
+radius, which on a Surface is Failure A. It ties with `.ui-surface` on specificity and
+AntD injects its styles at runtime, so **source order would have decided and could not
+be relied on.** Stated explicitly in ui.css instead. /admin and /screening will want
+the same adapter.
+
+### Raw colour, found in quantity
+
+This group had the most literal colour of any so far, and all of it was tokens written
+longhand:
+
+- `#2f6f9f,#4f93c4` and `#c0392b,#e0654f` — the two DeliveryMonitoring accent
+  gradients, which are `--kpi-b`/`--kpi-b-2` and `--kpi-d`/`--kpi-d-2`.
+- Five `tone:` hexes on the delivery tiles — `--kpi-b`, `--kpi-c`, `--kpi-d`, brand.
+- `rgba(192,57,43,0.10)`, `rgba(122,146,46,0.12)`, `rgba(182,136,58,0.14)`,
+  `rgba(74,124,89,0.12)` — four conditional tag tints, all near-duplicates of the
+  `--kpi-*` tints that already existed.
+- `#4a7c5920` / `#d4a01720` on the match-score tag — a token at 12.5% opacity spelled
+  as an eight-digit hex.
+- Three Timeline dot colours, one of which (`#92a63c`) is exactly
+  `--brand-primary-hover`.
+
+None of these could follow a theme, and in dark mode the tokens move while the
+literals would not have. Every one is a `color-mix()` on a token now, so the tint is
+derived rather than guessed.
+
+I also caught myself writing `var(--brand-primary-2, ...)` with a fallback for a token
+that does not exist — the fallback would have hidden that permanently. Checked the
+brand file; the value wanted was `--brand-primary-hover`.
+
+### Two things I got wrong and measured
+
+**The stat rail.** I read the /analytics screenshot as showing square-cornered accent
+bars overhanging the 24px cards and started to fix it. Measured first:
+`.ui-stat-card` has `overflow: hidden`, so the rail is already clipped correctly. No
+change made. The screenshot was too low-resolution to judge a 4px bar by eye.
+
+**The real defect was next to it** — five tiles at 162px and one at 181px, because
+"Zeko Score Received" is the only label that wraps. AntD's Col stretches but the
+Surface inside does not fill. Fixed in the page stylesheet, not the component:
+reserving two label lines is a fact about THIS row's content, and /dashboard's four
+tiles would gain a band of empty space from the same rule.
+
+### JSX comments, twice
+
+Moving a comment out of a style object and into markup put it in the first-child
+position of a `&&` branch and a ternary branch, which is a parse error both times —
+once in 5.4 on EmailManagement, once here. Second occurrence, same cause: the comment
+has to go outside the expression, not inside the branch.
+
+**Verified:** all routes render logged-in in both modes with no page errors, suite
+passes, build clean.
+
+---
+
+## 2026-08-29 — Stage 5.4 complete: the panel/form group
+
+`Settings` 123 → 0, `VendorDashboard` 59 → 0, `EmailManagement` 23 → 0.
+Debt **1,581 → 1,376**. Nine routes converted; **46% of the original debt cleared.**
+
+### Settings: one callout, written six times
+
+The page is six panels of three shapes. The explanatory callout was hand-written
+**six times** as an identical eight-property object, differing only in whether it drew
+from the `--info-*` or `--warn-*` family. That is a class and a modifier now. The same
+uppercase label appeared at 10px, 11px and 12px — one role, three sizes, none of them
+a decision.
+
+Four labels carried a **second required marker** (`* DAILY TRIGGER TIME *`) on top of
+AntD's own. Same defect as MRF, found the same way: check the starred set against the
+`required: true` set before touching either. They matched exactly, and the one
+unstarred label was the one not required.
+
+### VendorDashboard: stage colour as data
+
+The pipeline tiles wrote `border: 1px solid ${st.color}33` inline — a border shorthand
+encoding stage identity where no stylesheet can reach it, which is **Failure B**
+exactly. The hue is data, so it arrives as `--vd-stage` and the rule owns the border,
+the background and the text colour. This is the prescribed exception in
+`src/ui/index.js`, and the same shape as `--stat-color`.
+
+`.section-card` did **not** carry over. `aurora-glass.css` states it declares an opaque
+`--colorBgContainer` fill; on a Surface that is Failure A.
+
+The gradient rail across the pipeline card's top edge needed its own top corners: a
+`padding="none"` Surface does not clip children, so the rail's square ends sat proud of
+the 24px radius and read as a bar laid over the card. Matching the radius rather than
+clipping the Surface — `overflow: hidden` there would also cut the rim and bloom.
+
+### EmailManagement: the last PageHeader consumer
+
+This page was the only remaining consumer of `components/common/PageHeader`, so the
+swap to `src/ui`'s retires it. The import is commented with a dated note and the
+component file carries a header saying nothing imports it — both kept, per the
+no-delete rule.
+
+Its three panes were AntD Cards using `title` and `styles.body`, neither of which
+Surface has. The head is real markup now and the body layout is a class. Two rules in
+`theme/index.css` targeted `.ant-card-head` / `.ant-card-body` and would have gone dead
+in the swap; they are reproduced against the new structure and the originals commented,
+rather than left as selectors matching nothing.
+
+`.email-pane-card` was on all three panes and **matched no rule anywhere** — a class
+name that had outlived its stylesheet. I had also written, in this group's own new
+stylesheet, that the class lived in `theme/index.css`. It did not. Corrected in place
+rather than quietly dropped, for the same reason the radius-leak comment was.
+
+I nearly stopped after converting only this page's container and header — the third
+time in this rollout — and the screenshot is what caught it: the two panes still had
+16px corners against a 24px shell.
+
+### Smaller things
+
+- The active/inactive dot on each template had a conditional inline background. That is
+  a **boolean**, so it is a modifier class; the `--ui-accent` custom-property pattern is
+  for continuous data like a stage hue, not an on/off state.
+- Four more prose subtitles were set in `fontFamily: 'monospace'`.
+- Settings and VendorDashboard both stacked their own page padding on MainLayout's.
+
+**Verified:** all three routes render logged-in in both modes with no page errors —
+including the editor pane with a template selected, which is where the new head markup
+actually shows. Suite passes, build clean.
+
+---
+
+## 2026-08-29 — Stage 5.3 complete: the list/table group
+
+`MRF` 232 → 0, `VendorPortal` 76 → 0, `HRUpload` 59 → 0. With `/candidates`, the
+group cleared **677 violations**. Debt **2,258 → 1,581** — 38% of the original gone.
+
+### Page rules moved out of the component stylesheet
+
+`ui/ui.css` had accumulated three page-specific blocks (`.pps-*`, `.mrfs-*`, `.cand-*`)
+during 5.2 and MRF would have made a fourth. Page rules now live in
+`src/styles/pages/`, imported by the page after `../ui` so they win on equal
+specificity. The three earlier blocks stay where they are on purpose: their section
+headers don't match their contents — the `.pps-*` rules sit under an "AUTH SHELL"
+header — so moving them means slicing a mislabelled region. That is endgame cleanup,
+not something to attempt mid-group.
+
+### One stylesheet for the two upload routes
+
+They already shared `.upload-page` and were listed as a single unit for that reason.
+The pairing earned itself immediately: the "same" note panel used
+`var(--border-light)` on HRUpload and a hardcoded `rgba(0,0,0,0.07)` on VendorPortal.
+The literal is a black tint, so in dark mode that border rendered as nothing — and
+looking at either page alone would never have shown it.
+
+### A bug from Stage 5.2, found by accident, now gated
+
+Two `<Button>`s on `MrfApprovalAction` carried **two `className` attributes each**.
+React keeps only the last, so `btn-reject-secondary` / `btn-approve-secondary` had been
+silently dropped and both "Instead" toggles rendered as the same solid brand button —
+the approve/reject colour distinction gone from a page external approvers act on. The
+page rendered fine, which is why nobody saw it.
+
+Then a scripted edit in this group reintroduced it four more times within the hour,
+because replacing `style={{...}}` with `className="..."` on an element that already has
+one produces exactly this.
+
+So it is a check now: **`scripts/verify/dup-classname.mjs`**, in the suite. The first
+version was a regex and it **silently skipped every element nesting braces three deep**
+— `styles={{ body: { padding: 0 } }}`, which is how every AntD Card here sets body
+padding. It reported two hits and missed two more on the same page. It walks matched
+delimiters now; 4,025 tags scanned, source-level, no server needed.
+
+The dropped classes encoded tone at soft emphasis, so they came back as
+`ui-btn--soft ui-btn--danger` / `--success` rather than as a second class. Their CSS is
+commented out with a dated note, per the no-delete rule.
+
+### The `.ats-v2` leak, hitting for real
+
+The plan flagged this as a trap to watch whenever a token is added. It bit with no token
+added at all: `aurora-glass.css` has
+`.ats-v2 .upload-page .ant-upload-drag { background: var(--glass-3-bg) !important }`,
+and a converted route still sits inside `.ats-v2`. Inside V3 that resolved to
+`rgba(255,255,255,0.9)` with a border at `rgba(255,255,255,0.62)` — **a 90% opaque
+white slab with an invisible border, on glass. Failure A and Failure B on one element.**
+
+Two corrections, both measured rather than reasoned:
+
+1. Higher specificity alone changed nothing — `!important` doesn't lose to specificity.
+2. `!important` alone tied, because the V2 selector has the same class count.
+
+The fix needs both. Same story for `KpiCard`'s 16px corners sitting beside 24px
+Surfaces on the same screen.
+
+### `styles/legacy-bridge.css`
+
+`KpiCard` has four consumers. Converting it here would restyle Analytics and
+VendorDashboard, which nobody has reviewed — the shared-class trap. Leaving it alone
+means two corner radii on one screen, which is the original complaint. So there is now
+a bridge file: `.ats-v3`-scoped rules doing the minimum to make a legacy shared
+component agree with its neighbours, each naming the group that deletes it.
+`StatTile` replaces `KpiCard` wholesale in 5.5, all consumers at once.
+
+**Still on these routes:** `KpiCard` itself, deferred to 5.5 as above. Flagged rather
+than quietly skipped.
+
+### Smaller things
+
+- MRF wrote the same uppercase label three ways — 25× at 10px, 9× at 12px, 2× at 11px.
+  One role, three sizes, none deliberate. All caption now; 10px and 11px were under the
+  scale's 12px floor.
+- Seven MRF fields showed **two required markers** (`* FIRST NAME *`) — AntD's own plus
+  a literal one in the label text. Verified the starred set matched the `required: true`
+  set exactly before removing the literals.
+- Three page subtitles were full English sentences set in `fontFamily: 'monospace'`.
+  Data cells keep the mono face; prose does not.
+- VendorPortal's upload button restated its own `disabled` prop as a conditional
+  background.
+
+**Verified:** all four routes render logged-in in both modes with no page errors, the
+full suite passes, `npm run build` clean.
+
+---
+
+## 2026-08-29 — Stage 5.3 (part 1): `/candidates`
+
+**310 → 0 violations.** Debt 2,258 → **1,948**. The file repeated three styles 92 times
+between them: a form label 45 times, `borderRadius: 6` 41 times, and `height: 38/42` on
+every control. Those are three classes now.
+
+**The labels were 11px** — below the type scale's 12px floor. That floor exists precisely
+because the app was set at 9-13px, and this file was one of the larger reasons; they take
+the caption role now, which is what they already were semantically (uppercase, 600 weight).
+
+Also retired here: two hand-written `"'Sora', sans-serif"` stacks and two bare
+`fontFamily: 'monospace'` — four of the 36 hardcoded stacks that defeat the font-pack axis.
+
+The row action button carried a literal `#fff` label with a comment explaining it was "the
+foreground ON the brand fill, not a brand colour itself". That reasoning was right, and
+`--brand-on-solid` is exactly the token for it — which also fixes the 3.51:1 contrast the
+literal white produced.
+
+### I made the /dashboard mistake again
+
+The first pass cleared all 310 lint violations and I nearly moved on — but the page was
+still built from `glass-card` and `glass-3`, not `Surface`. Lint debt and structural
+conversion are different jobs, and a clean lint count says nothing about the second. The
+search card is now a tier-2 `Surface` and the table a tier-3, inside `DesignScope` +
+`PageShell`.
+
+`PageShell` also removes this page's `padding: 24px`, which sat on top of the layout
+Content's own `24px 28px 40px` — one of the four pages that were ~48px inset while
+/dashboard sat at 24.
+
+**Verified:** renders logged-in with no page errors, 78 assertions pass, build clean.
+
+**Still open in 5.3:** `MRF` (232), `VendorPortal` (76), `HRUpload` (59) — the last two
+share `.upload-page` and convert as one unit.
+
+## 2026-08-29 — Stage 5.2 complete: the five public token pages
+
+`MrfSubmit`, `MrfApprovalAction`, `MissingJdUpload`, `InterviewScorecard`,
+`DocumentUpload` — **all five at zero violations** (from 167). With the auth group, Stage
+5.2 is done: **debt 2,539 → 2,258**.
+
+These are the only screens most external candidates and approvers ever see, and they had
+drifted furthest. What came out:
+
+**Two more private palettes.** `MrfSubmit` carried `HELP = 'rgb(12, 136, 42)'` and
+`REQUIRED = '#bc2f32'` — a third green and a fourth red, defined in one page file and
+invisible to the brand axis. Now `var(--green)` and `var(--red)`. Both constants are kept
+commented per the no-delete rule. A `#fffbe6` / `#ffe58f` alert was AntD's default warning
+palette hardcoded, when `--warn-bg` / `--warn-border` already existed.
+
+**`BRAND.accent` used as text.** Section headings set it at 16px on white — 3.51:1, under
+AA, the same failure already fixed on the buttons. They use `--brand-ink` now, which is the
+same colour at a value that reads.
+
+**Three more button geometries retired** — `height: 44/borderRadius: 8`,
+`height: 48/borderRadius: 10` and a `height: 44/borderRadius: 10` variant, several of them
+forcing `background: BRAND.accent` inline over an AntD primary. All are the system button
+now. `MrfApprovalAction`'s reject button also stops being `type="primary" danger` and
+becomes `tone="danger"`, so approve and reject are the same kind of thing with different
+tone rather than two different controls.
+
+**The half-pixel type finally dies here.** These pages set 11 / 12 / 12.5 / 13 / 13.5 / 15
+inline; they now map onto the two roles that exist at that end of the ramp.
+
+**A stateful dropzone** in `DocumentUpload` expressed its selected state as
+`background: stagedFile ? 'rgba(122,146,46,0.04)' : '#fff'` with a matching literal border.
+It is a `--staged` modifier now, so the state follows the brand.
+
+**Verified:** all five render with no page errors, 78 assertions pass, build clean.
+
+## 2026-08-29 — Stage 5.2: the auth shell and its four pages
+
+`AuthLayout` + `Login` / `AdminLogin` / `ForgotPassword` / `ResetPassword` — **all five now
+at zero lint violations** (from 35 + 23). Debt 2,539 → **2,425**.
+
+Every value in `AuthLayout` was an inline style, so no preset, brand or density could
+reach any of it. The four pages then repeated the same six inline styles per field — an
+alert margin+radius, a bold 13px label span, a Form.Item margin, a tinted icon prefix, and
+`borderRadius: 10, height: 46` on every input. Those are now a scoped block that reads
+tokens, and the inputs take `--control-h-relaxed`, which is what the hardcoded 46 was
+reaching for without being able to say so.
+
+The submit buttons were `cta-primary` plus an inline `height: 48, borderRadius: 10` — two
+more of the six button heights. They are the system button now. Login and AdminLogin also
+carried `opacity: captchaPending ? 0.55 : 1`, which existed **only** to signal disabled
+through `.cta-primary`'s `!important` gradient; `.ui-btn` has a real `:disabled` state, so
+the workaround went with the class it was working around.
+
+### Three contrast findings on the brand panel
+
+The panel's gradient was three literal hexes with `#7a922e` in the middle — white on that
+is 3.51:1, under AA for the 15.5px lede sitting on it. It now derives from `--brand-solid`,
+the contrast-checked fill, so it also follows a tenant brand.
+
+Then the faded text failed on its own: the lede at `color-mix(… 88%, transparent)` measured
+**4.17:1** and the footer at 72% measured **3.36:1**. Both are at full opacity now — fading
+body text to create hierarchy is the most common way contrast quietly gets lost, and the
+headline already outranks them by size and weight.
+
+**The logo chip was near-black in dark mode.** It used `--brand-surface`, which follows the
+theme — but the chip exists to give the full-colour AAPNA mark a light ground, and the
+panel behind it is the brand gradient in *both* modes. It now uses `--brand-on-solid`,
+which is by definition the colour that reads against the brand fill.
+
+### The contrast checker had a blind spot, and then I broke it
+
+`scripts/verify/contrast.mjs` only parsed `rgb()`. A `color-mix()` resolves to
+`color(srgb …)` in Chromium, so **every token built with color-mix silently reported as
+"not on page" instead of being checked** — which is most of the tinted text in the system.
+It now parses both, and composites semi-transparent text over its background before
+measuring: the auth lede reads 4.85 ignoring alpha and 4.17 with it, and only the second
+number is real.
+
+Fixing the parser immediately produced six failures at 1.15:1 for text that plainly reads.
+The opacity guard inside `solidBg` still used the old regex, so it began stopping at a
+*translucent* glass surface and treating it as the ground. The guard and the parser have to
+agree; a checker that cries wolf gets ignored. **48 contrast assertions now pass, up from
+42** — the extra six are the color-mix values that were never actually being checked.
+
+**Verified:** 78 assertions pass, build clean, no page errors on any of the four screens in
+either mode.
+
+## 2026-08-29 — Stage 5.2a: closing the design-lab / app gap
+
+A side-by-side review found the converted `/dashboard` did not match the design lab.
+Measured on identical viewports and axes, every `src/ui` component rendered **identically**
+in both — stat padding `22px 22px 0`, value 33px, label 12px, band 56px. The gap was two
+causes, both now fixed and both now checked.
+
+### 1. Every card was 16px in the app and 24px in the lab
+
+`aurora-glass.css` sets `--radius-card: 16px` on `.ats-v2`. `MainLayout` puts that class
+on the outer Layout and `DesignScope` nests `.ats-v3` **inside** it — a custom property
+set on a descendant wins for its subtree, so every V3 surface on a converted route
+silently rendered at the old radius.
+
+**A comment in `resolveTokens.js` had argued this exact case was safe** ("converted-to-V2
+routes keep their 16px"), and that reasoning was wrong in both directions: a *converted*
+route is precisely the one that should take the new value. The comment is corrected in
+place rather than quietly removed.
+
+The V3 token is now **`--radius-surface`** — a name nothing else consumes, which is the
+rule already followed everywhere else in the token layer (`--radius-ctl` is deliberately
+not `--radius-sm`). `--radius-card` belongs entirely to V2 again.
+
+### 2. `/dashboard` was still rendering the V2 hero
+
+`DashboardHero` was untouched by the conversion — 34px title against the lab's 42px, 22px
+radius, its own padding. It now composes `PageHeader hero`, keeping every feature it had
+(live clock, ⌘K trigger, PERIOD ⓘ, brand eyebrow, role filter) and taking the display type
+scale, radius, conic sweep and AAPNA mark from the system. Its `New MRF Request` button
+loses an inline `height: 44, borderRadius: 10, paddingInline: 20` — a one-off geometry
+that existed nowhere else and that no other page could have matched.
+
+The previous render is kept in full at the foot of the file, per the no-delete rule. It had
+to be preserved as line comments rather than a block comment: the JSX contains `{/* … */}`,
+whose `*/` closes a wrapping block comment early and broke the build.
+
+### 3. A parity check, so this cannot recur silently
+
+`scripts/verify/parity.mjs` loads the lab's dashboard and the real one and asserts the same
+computed values on both — radius, type sizes, control height, padding, band height, font.
+It asserts **design tokens, not layout**: a mock may show different content, never be styled
+differently. It reads the dev login from `.env.development` and skips cleanly when absent.
+
+It would have caught the 16px leak the moment it appeared. Nothing else did — build, lint
+and all 67 prior assertions passed, because the page rendered perfectly, just wrong.
+
+**Verified:** 78 assertions pass (up from 67), all 11 parity properties match, build clean,
+debt 2,546 → 2,539.
+
+## 2026-08-29 — Stage 5.2 (part 1): prototype retired, and the banned animation found
+
+**Nothing was deleted.** Per this repo's no-delete convention, retired code is commented
+in place with a dated note and restore instructions.
+
+**`/candidate-pipeline-prototype` retired.** The route in `App.jsx` and its `V2_ROUTES`
+entry are commented out; `pages/CandidatePipelinePrototype.jsx` is untouched on disk. It
+now falls through to 404. The reason is not tidiness: the demo shares `.cp-candidate-card`,
+`.cp-avatar` and `.cp-progress-seg` with the REAL board, so any V3 rule written for
+`Pipeline.jsx` in Stage 5.6 would have landed on a mock-data screen nobody reviews. Taking
+it out of service frees 5.6 to change those classes.
+
+### The banned animation — and a correction
+
+The plan said `AuthLayout` still animated `background-position` via `gradientShift`. **That
+was wrong, and the correction is recorded in the CSS rather than quietly fixed:**
+`.auth-background` is dead — no component references it. `AuthLayout` uses `.auth-split`
+and `.auth-brand-panel`, and two pages carry comments saying they were moved off that
+shell years ago. The rewrite there is precautionary.
+
+**The live offender was `meshDrift` on `.dash-hero__mesh`** — rendered by
+`DashboardHero.jsx:58`, on `/dashboard`, the route just converted. It animated
+`background-position` across a four-gradient, 8px-blurred, oversized layer: a full repaint
+every frame, 18s a cycle, forever, on the app's landing screen. The rollout plan names this
+exact element as an offender and it had survived every prior pass.
+
+It now drifts itself with a `transform` — compositor work, no paint — needing no extra
+layer, since the element was already `inset: -40%` and `pointer-events: none`. Look
+unchanged. `/dashboard` idle frames: median **16.7ms**, p95 17ms, **0.4%** over 20ms.
+
+Both `gradientShift` and `meshDrift` keyframes are kept, commented as unused with a note
+not to wire anything new to them.
+
+## 2026-08-29 — Stage 5 begins: /dashboard and the public shell converted
+
+First routes onto `src/ui`. Two mechanisms had to exist before any route could convert:
+
+**`DesignScope`** — the per-route seam. AntD's tokens are global, so a converted route
+could not take the preset's geometry without changing all 24 at once (the whole-app
+restyle that was already shipped and reverted). A converted route now wraps in its own
+nested provider; everything outside keeps `LEGACY_GEOMETRY`. Convert by adding the
+wrapper, revert by removing it. Both are deleted when the last route lands.
+
+**`ForceLight` is now `DesignScope mode="light"`** rather than a parallel hand-rolled
+wrapper. As separate code it did NOT pass preset geometry, so a converted public page
+would have had V3 surfaces around legacy-sized AntD controls.
+
+**`/dashboard`** — `StatCard` → `StatTile`, hand-rolled container → `PageShell`, and its
+11 raw hexes replaced with tokens (the quick-action colours already went through a
+`--qa-color` custom property; the values just weren't tokens). `PageShell` now forwards
+refs — `usePointerSpotlight` attaches to the page root, and without it the spotlight
+would have silently stopped tracking.
+
+**`PublicPageShell`** — the Arial one. Composition deliberately unchanged, because
+mirroring the branded email is the whole point of that component; what changed is that
+Arial, its private frozen palette and its raw black shadow became tokens.
+
+### A bug this surfaced in index.css
+
+`--font`, `--font-heading` and `--mono` were declared inside the
+`:root, [data-theme='light']` block. Harmless for app-wide light mode (same values), but
+`DesignScope mode="light"` re-declared them for its subtree and silently reset `--font`
+to the hardcoded Inter stack — so the public pages rendered in Inter while the rest of
+the app was in Segoe UI Variable. Typography is not mode-dependent and now sits in a
+plain `:root` rule that a mode-scoped subtree cannot override.
+
+### 5.1 completed, and a bug it shipped with
+
+The first pass converted the KPI row and the shell but left the eight widget cards on
+`.glass-card`, so one page carried two corner radii — the half-converted screen the
+rollout plan explicitly warns about. All nine now use `Surface tier={2}`.
+
+**Three of the four KPI tiles were rendering the wrong colour.** A scripted edit matched
+only the card followed by `delta:`; the other three kept `color:` from StatCard's API, so
+`accent` arrived undefined and silently fell back to brand — the whole row went green and
+nothing errored. Caught by review, not by any check.
+
+`StatTile` now warns in development when it receives a `color` prop or an unknown accent.
+Four more routes have `StatCard`s to migrate and the failure mode is invisible, so it is
+worth making loud rather than trusting the next scripted edit to be complete.
+
+Also fixed: `Sheet` used `destroyOnClose`, renamed in the installed antd 5.29 and warning
+on every mount.
+
+Verified against the running app with dev credentials: `/dashboard` renders in both modes,
+four distinct KPI accents, four sparklines, `Segoe UI Variable Text` resolving, no page
+errors. 67 assertions pass, build clean, debt 2,576 → **2,546**.
+
+## 2026-08-29 — Design System V3: accessibility fixes, flag wiring, and enforcement
+
+Write-up: [CHANGES-2026-08-29-design-v3-enterprise-hardening.md](../docs/changelog/CHANGES-2026-08-29-design-v3-enterprise-hardening.md).
+
+An enterprise-readiness audit before Stage 5. The architecture held up; the disciplines
+around it did not, and there were three real accessibility defects.
+
+**Contrast.** The primary action failed WCAG AA in both modes — 3.51:1 light and 2.00:1
+dark — caused by a hardcoded white label in `ui.css`. Three brand-owned tokens now carry
+it, so a tenant declares its own label colour rather than a button assuming one. A first
+attempt flipped the dark label to near-black; it passed at 12:1 and looked like a
+highlighter, and was rejected in review. The shipped fix deepens the fill and keeps a white
+label in both modes, letting the glow supply prominence.
+
+**`Segmented` was a broken radiogroup** — every option a tab stop, `role="radio"` with no
+arrow keys. Now a roving tabindex with arrows and Home/End.
+
+**Reduced motion was silently dead:** `--press-scale` is written inline on `<html>` and an
+inline declaration beats a media query. Motion tokens now use the same `-motion` pair
+convention as light/dark, so the cascade can win.
+
+**Preset behaviour was coupled to a preset's name.** Two `[data-preset='flat-slate']`
+selectors meant a third preset would inherit the wrong material; the `flags` block existed
+to prevent exactly that and had never been read, because a CSS variable cannot drive a
+selector. Flags are now `data-flag-*` attributes, proven with a synthetic preset whose name
+the CSS has never seen.
+
+**Enforcement, which had never existed.** `eslint` was a devDependency with no config and
+no script. Now `npm run lint` (design-contract rules — warn app-wide, error in `src/ui`),
+`npm run lint:count` (a burndown: **2,576** violations today), and `npm run verify:design`
+(non-regression, swap matrix, a11y, contrast; exits non-zero). The suite immediately caught
+a contrast failure I had missed by hand.
+
+## 2026-08-28 — Design System V3 prototype v2: native type, richer material, real motion
+
+Write-up: [CHANGES-2026-08-28-design-v3-prototype-v2.md](../docs/changelog/CHANGES-2026-08-28-design-v3-prototype-v2.md).
+
+**Still no shipped screen changes appearance.** Prototype iteration only.
+
+Six pieces of review feedback on v1. Three were elements v1 had dropped:
+
+- **The 4px coloured top rail** is back on `StatTile`, and renders under every preset
+  including `flat-slate` — it encodes which metric a card is, so it is data, not
+  decoration.
+- **The full-bleed sparkline** is back, reusing `Sparkline.jsx` unchanged.
+- **The hero's Period/roles filters and second CTA** are back. `PageHeader` gained a
+  `filters` slot; it had `actions` only, which is why they disappeared.
+
+### The watermark and "dull glass" were the same bug
+
+The lab hand-copied four aurora gradients and nothing else — no rotor, no grain. Glass
+is only as interesting as what shows through it, and nothing was. `AmbientBackdrop` now
+serves `src/ui` through a scope widening in `aurora-glass.css`, `.ats-v2` →
+`:is(.ats-v2, .ats-v3)`. `:is()` takes the specificity of its most specific argument and
+both are single classes, so the 12 shipped V2 routes cannot shift. Plus: deeper ground,
+a brand tint on the fill, a stronger bottom inner shadow, and the specular split from
+the rim (v1 tied them to one token, so softening the sheen also softened the edge).
+
+### Type is now the native OS face
+
+`system-native` is the default pack — SF Pro on Apple, **Segoe UI Variable on Windows**,
+Roboto on Android. This cannot be a webfont: neither face may be self-hosted or
+CDN-served. All three Segoe optical cuts are used (Display / Text / Small), which needed
+a new `small` role in the font-pack contract; verified resolving on this machine.
+**Consequence worth knowing: the product renders in a different typeface per platform**,
+so a pixel comparison has to be pinned to one OS.
+
+### Motion exists now, and can be reviewed
+
+v1's motion was entrance-only — it plays once and stops, which is why a still frame
+showed nothing. Added continuous ambient (rotor 140s, aurora 26s, hero sweep 22s), state
+motion (`.ui-live-dot`, `.ui-attention`, `.ui-sheen`, `.ui-flash`), and a **Motion
+section in the lab with a Replay control** — an entrance animation is invisible a second
+after it runs, so without replay it cannot be judged at all.
+
+Buttons 14 → **18px**, inputs 12 → 15px so they stay in family, cards 22 → 24px.
+
+Three bugs caught and fixed in the same pass: the rail was inheriting the rim's
+`mask-composite` and rendering as a floating hairline; the bloom would have deleted the
+specular from the cards that had one; and the hero sweep drew a hard diagonal that read
+as an artefact rather than as light.
+
+Second review pass fixed four more: the hero was missing the static AAPNA mark
+(present on the shipped hero, added at 10% opacity and deliberately not rotating —
+the canvas rotor already carries that); the table's score column was rendering at
+25px against 13px rows because it used a KPI-card metric class, now a tabular
+row-size treatment; `lg` buttons compounded height, padding and type all at once and
+read as a slab; and StatTile lost its bottom padding when no sparkline followed.
+
+Measuring the button fix exposed a related flaw — a flat 18px radius is a different
+*shape* at every size (a full pill at 30px, 78% of one at 46px). Radius is now capped
+against the height, so the corner character stays constant and self-corrects when
+density moves the control heights.
+
+Third pass fixed the hero's empty right half. Both flex children sat at
+`flex: 0 1 auto`, so each claimed its content width — 698px of title plus 571px of
+controls into ~1230px — and wrapped 63px short, leaving a one-column header with dead
+space beside it. The text column now absorbs the remainder (`flex: 1 1 min(100%, 22rem)`,
+`min-width: 0`) while controls never shrink. `--fs-display` was also oversized at 47.5px,
+tuned before the hero had controls beside it; retuned to `clamp(30px, 2.8vw, 44px)` across
+all three packs. Hero height went 279px → 151px, which overshot into toolbar territory, so
+block padding came back. Affects every `PageHeader`, not just heroes.
+
+Fourth pass: the wave emoji was orphaning onto its own line — the text column's
+flex-basis was small enough that the row squeezed the title instead of wrapping the
+controls, and a width sweep put the failure band at 1160-1340px, i.e. most laptops.
+Basis raised so the container breaks first; verified one line from 980px to 1920px.
+The AAPNA mark is now shown whole rather than cropped — a radially symmetric pinwheel
+has no silhouette left when partial — sized from the hero's height via `aspect-ratio`
+so it rescales with density instead of needing a fixed value.
+
+Noted while looking for the logo asset: `public/brand/` is empty, so `index.html`'s
+favicon and apple-touch-icon point at a file that does not exist. Pre-existing,
+untouched here.
+
+Perf: 60fps with the full ambient stack (median 16.7ms, 1.3% of frames >20ms), inside
+the ~3% baseline the design doc records.
+
+## 2026-08-28 — Design System V3: the configuration layer, `src/ui`, and `/design-lab`
+
+Write-up: [CHANGES-2026-08-28-design-v3-foundation.md](../docs/changelog/CHANGES-2026-08-28-design-v3-foundation.md).
+
+**No shipped screen changes appearance from this entry.** Stages 1-2 build the layer; the
+24 routes are converted in Stage 5, after the prototype is reviewed.
+
+### The swap contract — five orthogonal axes
+
+`mode` and `brand` already existed. Three are new, and each changes the look without
+touching a page: **`preset`** (`liquid-glass` | `flat-slate`), **`font`** (`inter-sora` |
+`figtree` | `system`, each owning its own type scale), **`density`** (`compact` | `default`
+| `relaxed`). `DesignContext` resolves `preset x fontPack x brand x mode x density` into
+CSS custom properties on `<html>` and feeds the same resolved object to AntD.
+
+### A type scale, which the app did not have
+
+13 roles from `display` to a **12px floor**, each carrying size + weight + tracking +
+line-height. It replaces 28 distinct inline font sizes (including seven half-pixel values)
+and the practice of hand-assembling a heading from a size and a guess at a weight. The
+scale belongs to the font pack, not the preset — a ramp tuned for Sora reads wrong on
+system-ui.
+
+### `theme/themeConfig.js` rewritten as `buildAntdTheme()`
+
+It held 91 frozen hex values, so `BrandProvider` — which only writes CSS variables — could
+never reach AntD's generated styles. Switching to the `midnight` brand repainted every CSS
+surface blue and left every AntD button, input ring, tag, tab ink bar, menu selection,
+switch, checkbox, slider and date picker olive green. Per-tenant theming was half true.
+Now verified by scanning AntD's own injected stylesheets: 23 occurrences of AAPNA olive and
+zero blue under `aapna`, exactly reversed under `midnight`.
+
+### `src/ui` — a component layer with real prop APIs
+
+`Button` (`size` x `tone` x `emphasis`), `Surface` (`tier` x `material` x `padding`),
+`PageShell`/`PageHeader`, `StatTile`, `DataTable`, `Field`, `Sheet`, `Segmented`,
+`StateBlock`, `CountUp`. Every value reads a token; the only inline style permitted is a
+data-derived CSS custom property, the escape hatch the design law already prescribes.
+`StatTile` merges the three stat-card families (38/34/32px values, three shadows, three
+icon radii, three hover lifts) and takes its accent as a **token name** rather than the hex
+`StatCard` used to default to.
+
+### `/design-lab` — dev-only
+
+A live control bar for all five axes over two panes: every component at every state, and
+the language applied to three rebuilt ATS screens (dashboard, list/table, detail + sheet).
+Gated as `import.meta.env.DEV ? lazy(...) : null` so Rollup drops it entirely — gating only
+the `<Route>` still emitted a ~27 kB chunk into `dist/`.
+
+### The V3 scale is deliberately namespaced away from the legacy one
+
+The first cut repointed `--radius-sm/md/lg`, `--border-radius*`, `--transition-*` and
+`--ease-out-quint` at the new values, so existing CSS would pick up the new look for free.
+It did — and measured on `/login`, that silently took `--radius-sm` from 8px to 12px,
+`--radius-lg` from 14px to 22px, and AntD's base font from 14px to 15px across all 24
+unconverted routes. Those names have 100+ consumers and the values are written inline on
+`<html>`, where they beat every selector.
+
+The V3 scale now uses names nothing else reads (`--radius-ctl`, not `--radius-sm`), and
+AntD geometry is opt-in via `buildAntdTheme({ presetGeometry })` — default `false`, with
+`/design-lab` nesting its own provider that sets it `true`. Confirmed by probe: `/login`
+reports the pre-V3 values for every legacy token. Colour derivation is *not* gated, since
+for the default brand it resolves to the values that were already hardcoded.
+
 ## 2026-08-27 — Conversation reply box: plain text → rich text
 
 Backend write-up: [CHANGES-2026-08-27-conversation-reply-rich-text.md](../docs/changelog/CHANGES-2026-08-27-conversation-reply-rich-text.md).

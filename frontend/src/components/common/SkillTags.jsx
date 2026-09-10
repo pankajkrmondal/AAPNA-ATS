@@ -1,36 +1,36 @@
 /**
  * SkillTags — Renders a list of skill tags with overflow handling.
  *
+ * The palette used to be eight literal hexes, and it had to be: the tag built its
+ * border and fill by concatenating alpha onto the hex (`${c}30`, `${c}10`), which a
+ * CSS variable cannot satisfy. So the colours could follow neither a tenant brand nor
+ * dark mode — the light values were painted straight onto a dark ground.
+ *
+ * The hues are `--skill-1..8` now (light/dark pairs in theme/index.css), and the tag
+ * mixes its own surfaces with color-mix() from whichever one it is handed. The index
+ * is data, so it arrives as a custom property; the stylesheet owns everything else.
+ *
  * @param {{ skills: string[], max?: number, style?: object }} props
  */
 import { Tag, Tooltip } from 'antd';
+import '../../styles/components.css';
 
-/** Palette of subtle colors for skill tags. */
-const TAG_COLORS = [
-  '#7a922e', '#4a7c59', '#2980b9', '#8e44ad',
-  '#d4a017', '#16a085', '#c0392b', '#2c3e50',
-];
+/** Eight hues, cycled. They only have to stay apart from each other. */
+const TAG_HUES = 8;
 
 export default function SkillTags({ skills = [], max = 3, style }) {
-  if (!skills.length) return <span style={{ color: 'var(--text-2)', fontSize: 13 }}>—</span>;
+  if (!skills.length) return <span className="st-empty">—</span>;
 
   const visible = skills.slice(0, max);
   const remaining = skills.slice(max);
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, ...style }}>
+    <div className="st-row" style={style}>
       {visible.map((skill, i) => (
         <Tag
           key={skill}
-          style={{
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 500,
-            margin: 0,
-            border: `1px solid ${TAG_COLORS[i % TAG_COLORS.length]}30`,
-            color: TAG_COLORS[i % TAG_COLORS.length],
-            background: `${TAG_COLORS[i % TAG_COLORS.length]}10`,
-          }}
+          className="st-tag"
+          style={{ '--st-hue': `var(--skill-${(i % TAG_HUES) + 1})` }}
         >
           {skill}
         </Tag>
@@ -38,17 +38,7 @@ export default function SkillTags({ skills = [], max = 3, style }) {
 
       {remaining.length > 0 && (
         <Tooltip title={remaining.join(', ')}>
-          <Tag
-            style={{
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              margin: 0,
-              cursor: 'pointer',
-              background: 'var(--gold-subtle)',
-              border: '1px solid var(--border)',
-            }}
-          >
+          <Tag className="st-more">
             +{remaining.length}
           </Tag>
         </Tooltip>

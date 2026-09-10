@@ -1,0 +1,404 @@
+/* ============================================================
+   /design-lab — layout for the prototype route itself.
+   ------------------------------------------------------------
+   This is the gallery's own chrome, not part of the design system. It still reads
+   tokens throughout, because a gallery that hardcoded its own type and spacing
+   would not survive a font or density swap — and being unable to demonstrate a swap
+   is the one thing this page must not do.
+   ============================================================ */
+
+.dl {
+  min-height: 100vh;
+  background: var(--brand-canvas);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+/* ----- control bar ----- */
+.dl-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-chrome);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-6);
+  background: var(--material-thick);
+  border-block-end: var(--hairline);
+  /* Tier-1 chrome: sticky, rasterized once, never scrolls — the blur is free here
+     in a way it is not on a scrolling surface. */
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+}
+
+.dl-bar__title { display: flex; align-items: center; gap: var(--space-3); }
+
+.dl-bar__mark {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-ctl);
+  corner-shape: var(--ui-corner, squircle);
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+  box-shadow: var(--glow-brand);
+}
+
+.dl-bar__kicker { color: var(--brand-primary); display: block; }
+
+.dl-bar__name {
+  font-family: var(--font-heading);
+  font-size: var(--fs-title-3);
+  font-weight: var(--fw-title-3);
+  letter-spacing: var(--tracking-title-3);
+}
+
+.dl-bar__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.dl-control { display: flex; flex-direction: column; gap: 6px; }
+
+.dl-control__label {
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.dl-panes { padding: var(--space-5) var(--space-6) 0; }
+.dl-body { padding: var(--space-5) var(--space-6) var(--space-8); }
+
+/* ----- sections ----- */
+.dl-stack { display: flex; flex-direction: column; gap: var(--space-7); }
+.dl-stack-sm { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.dl-section__head { margin-block-end: var(--space-4); }
+
+.dl-section__note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-callout);
+  color: var(--text-2);
+  max-width: 76ch;
+}
+
+.dl-note {
+  margin: var(--space-3) 0 0;
+  font-size: var(--fs-footnote);
+  line-height: var(--lh-footnote);
+  color: var(--text-3);
+}
+
+.dl-muted { color: var(--text-3); }
+.dl-mt { margin-block-start: var(--space-3); }
+.dl-mt-lg { margin-block-start: var(--space-5); }
+
+.dl-label-row { margin-block: var(--space-5) var(--space-3); }
+.dl-label-row:first-child { margin-block-start: 0; }
+
+/* ----- grids ----- */
+.dl-grid { display: grid; gap: var(--space-4); }
+.dl-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dl-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dl-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dl-grid--2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+
+@media (max-width: 1100px) {
+  .dl-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dl-grid--3, .dl-grid--2-1 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .dl-grid--2, .dl-grid--4 { grid-template-columns: minmax(0, 1fr); }
+  .dl-body, .dl-panes, .dl-bar { padding-inline: var(--space-4); }
+}
+
+.dl-row { display: flex; align-items: center; gap: var(--space-3); }
+.dl-row--wrap { flex-wrap: wrap; }
+.dl-row--tight { gap: 2px; }
+.dl-row--end { display: flex; justify-content: flex-end; gap: var(--space-3); }
+.dl-row--baseline { align-items: flex-end; }
+
+/* ----- type specimen rows ----- */
+.dl-type-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: baseline;
+  padding-block: var(--space-3);
+  border-block-end: var(--hairline);
+}
+
+.dl-type-row:last-child { border-block-end: 0; }
+.dl-type-row__meta { display: flex; flex-direction: column; gap: 2px; }
+.dl-type-row__use { font-size: var(--fs-footnote); }
+/* The specimen must not wrap mid-comparison — the point is the relative size. */
+.dl-type-row__specimen { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .dl-type-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ----- comparison swatches ----- */
+.dl-swatch {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+  background: var(--material-thick);
+  border: var(--hairline);
+  box-shadow: var(--depth-1);
+  font-size: var(--fs-footnote);
+  color: var(--text-2);
+}
+
+/* ----- applied-screen stage -----
+   Holds the REAL AmbientBackdrop (aurora + rotor watermark + grain), so the glass
+   above it has something to refract. A translucent surface over a flat ground is
+   just a grey rectangle, which is what made v1's material read as dull.
+
+   The ground is --brand-canvas-deep, not --brand-canvas: a white pane on a
+   near-white page has nothing to separate against. The light-mode pass already
+   found this and records it — the dullness was never a brightness problem, it was
+   a chroma one, so the deep canvas is near-white but strongly olive-saturated. */
+.dl-stage {
+  position: relative;
+  margin-block-start: var(--space-5);
+  padding: var(--space-6);
+  border-radius: var(--radius-sheet);
+  overflow: hidden;
+  background: var(--brand-canvas-deep, var(--brand-canvas));
+  border: var(--hairline);
+  isolation: isolate;
+}
+
+/* LAB-ONLY DEVIATION, and the one place this pane knowingly differs from the app.
+   AmbientBackdrop is `position: fixed` by design — that is its performance
+   contract, since a fixed plane is excluded from scroll repaint and therefore does
+   not re-composite the surfaces above it on every wheel tick. Here it has to be
+   contained inside the demo stage instead of covering the viewport, so it is pinned
+   absolute. The stage does not scroll internally, so nothing is being measured
+   wrongly; but a scroll-perf probe must be run against a REAL route, never against
+   this one. */
+.dl-stage .ats-backdrop {
+  position: absolute;
+  z-index: 0;
+}
+
+.dl-stage__content { position: relative; z-index: 1; }
+.dl-screen-switch { display: flex; justify-content: center; }
+
+/* ----- applied-screen details ----- */
+.dl-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-end: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.dl-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  height: 170px;
+}
+
+.dl-chart__bar {
+  flex: 1;
+  border-radius: var(--radius-xs) var(--radius-xs) 2px 2px;
+  background: linear-gradient(180deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 35%, transparent));
+  /* Grows from the baseline. transform-origin plus scaleY is a compositor-only
+     animation; animating height would lay out every frame. */
+  transform-origin: bottom;
+  animation: dlBarIn var(--dur-cinematic) var(--ease-emphasized) both;
+  animation-delay: var(--ui-delay, 0ms);
+}
+
+@keyframes dlBarIn { from { transform: scaleY(0); opacity: 0; } to { transform: scaleY(1); opacity: 1; } }
+
+.dl-feed { display: flex; flex-direction: column; gap: var(--space-2); }
+.dl-feed__row { display: flex; align-items: flex-start; gap: var(--space-3); }
+
+.dl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-block-start: 6px;
+  flex: none;
+  background: var(--brand-primary);
+}
+
+.dl-dot--brand { background: var(--brand-primary); box-shadow: var(--glow-brand); }
+.dl-dot--success { background: var(--green); }
+.dl-dot--info { background: var(--kpi-b); }
+.dl-dot--muted { background: var(--text-3); }
+
+/* The live dot moved to .ui-live-dot in the ui layer — it is a real state
+   indicator the app will use, not gallery chrome, so it belongs in the system. */
+
+/* Keyboard hint inside the search button. */
+.dl-kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  margin-inline-start: 6px;
+  border-radius: var(--radius-xs);
+  border: var(--hairline);
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.dl-search { display: flex; gap: var(--space-3); align-items: center; }
+.dl-search .ant-input-affix-wrapper { flex: 1; }
+
+@media (max-width: 720px) {
+  .dl-search { flex-wrap: wrap; }
+}
+
+.dl-cell-person { display: flex; align-items: center; gap: var(--space-3); }
+
+.dl-avatar {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+  font-size: var(--fs-footnote);
+  font-weight: 700;
+}
+
+
+.dl-kv { display: flex; flex-direction: column; gap: var(--space-3); margin-block-start: var(--space-4); }
+
+.dl-kv__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-block-end: var(--space-2);
+  border-block-end: var(--hairline);
+}
+
+.dl-step { display: flex; align-items: center; gap: var(--space-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-chart__bar { animation: none; }
+}
+
+/* ----- comparison-only classes -----
+   These exist purely so the "Decisions worth looking at" row can show alternatives
+   side by side. They are the one place in the app allowed to name a literal radius
+   or size, because the literal IS the subject: the point is to display today's 16px
+   and 8px corners and today's 13px and 11px type next to what replaces them. They
+   are scoped to /design-lab and never ship to production. */
+
+.dl-glow--strong.ant-btn { box-shadow: var(--glow-brand-strong); }
+.dl-glow--none.ant-btn { box-shadow: none; }
+
+.dl-swatch--preset { border-radius: var(--radius-surface); corner-shape: var(--ui-corner, squircle); }
+.dl-swatch--16 { border-radius: 16px; }
+.dl-swatch--8 { border-radius: 8px; }
+
+.dl-type-old { margin: var(--space-2) 0 0; line-height: 1.5; }
+.dl-type-old--13 { font-size: 13px; }
+.dl-type-old--11 { font-size: 11px; }
+
+/* ----- motion section ----- */
+.dl-motion-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.dl-motion-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dl-motion-list li,
+.dl-motion-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-subhead);
+  color: var(--text-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-ctl);
+  background: color-mix(in srgb, var(--text-3) 7%, transparent);
+}
+
+/* Miniature stand-ins so each ambient animation is visible in a list row rather than
+   only describable in prose. Each runs the real timing. */
+.dl-swatch-mini {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+  overflow: hidden;
+  position: relative;
+}
+
+.dl-swatch-mini--sweep {
+  background: conic-gradient(from 0deg, transparent 0deg,
+    color-mix(in srgb, var(--brand-primary) 60%, transparent) 40deg, transparent 90deg);
+  animation: uiHeroSweep 22s linear infinite;
+}
+
+.dl-swatch-mini--rotor {
+  background: conic-gradient(from 0deg,
+    var(--brand-primary) 0deg, transparent 60deg,
+    var(--brand-primary) 120deg, transparent 180deg,
+    var(--brand-primary) 240deg, transparent 300deg);
+  /* The real rotor is 140s; at 18px that is imperceptible, so this stand-in runs at
+     8s. It is signalling "this turns", not claiming to be the same duration — the
+     row's label carries the real number. */
+  animation: uiHeroSweep 8s linear infinite;
+}
+
+.dl-swatch-mini--aurora {
+  background: radial-gradient(circle at 30% 30%, var(--brand-primary), transparent 70%);
+  animation: dlBreathe 26s ease-in-out infinite alternate;
+}
+
+@keyframes dlBreathe {
+  from { transform: scale(0.85); opacity: 0.6; }
+  to { transform: scale(1.15); opacity: 1; }
+}
+
+.dl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-footnote);
+  font-weight: 600;
+}
+
+.dl-chip--danger {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+
+.dl-chip--brand {
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--brand-primary);
+}
+
+/* Radius comparison — literals are the subject here, same carve-out as the swatches. */
+.dl-r14.ant-btn { border-radius: 14px; }
+.dl-rpill.ant-btn { border-radius: 999px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-swatch-mini--sweep,
+  .dl-swatch-mini--rotor,
+  .dl-swatch-mini--aurora { animation: none; }
+}

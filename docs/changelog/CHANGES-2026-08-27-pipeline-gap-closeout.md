@@ -16,6 +16,15 @@ verified against the live code (routes, service functions, DDL, UI) before start
 from either document. Only the genuinely open remainder — **G2**'s filter/checkbox, **G4**, **G6**
 — is in this change set. **G5** (click reduction) is logged for a future session.
 
+> ⚠️ **Correction, 2026-08-28.** The claim above that **G1** "shipped and verified on staging" is
+> wrong for the MRF-pause half of G1. What was actually verified 2026-08-26 was candidate-level
+> pause (`is_paused`) — real. The 2026-08-26 changelog it points to for G1 also documents MRF
+> **closure** (`closed_at`/`closure_reason`), which this note's author, and the FAQ doc's own status
+> stamp, conflated with a dedicated MRF-level pause. No `paused_at` column, `mrfPause.service.js`, or
+> `/api/mrf/:id/pause` route existed until 2026-08-28 — see
+> [CHANGES-2026-08-28-mrf-pause.md](./CHANGES-2026-08-28-mrf-pause.md). The lesson repeats: re-verify
+> against the live code, not a prior doc's status stamp, however recent.
+
 ## Why
 
 Recruitment Team FAQ answers exposed three real gaps once the stale ones above were ruled out:

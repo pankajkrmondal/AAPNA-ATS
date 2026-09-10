@@ -1,4 +1,18 @@
 /**
+ * NO LONGER CONSUMED BY ANY ROUTE as of 2026-08-29 (Stage 6).
+ *
+ * The FIRST of the three parallel stat families — StatCard (`.premium-stat-card`,
+ * value 38px/800), KpiCard (34px/800) and `.admin-stat` (32px/700) all did the same
+ * job with different numbers. `StatTile` in src/ui replaced all three; KpiCard was
+ * retired in Stage 5.5 and `.admin-stat` in 5.7. This one's last call sites went with
+ * /dashboard in Stage 5.1 and the file was simply never swept.
+ *
+ * `grep -rn "from.*StatCard'" src --include=*.jsx` returns nothing.
+ *
+ * Kept per the no-delete rule. Its remaining lint violations are excluded from the
+ * burndown for the same reason CandidatePipelinePrototype's are: nothing renders it.
+ */
+/**
  * StatCard — Premium dashboard stat card with gradient surface, glowing icon tile,
  * animated count-up value, and hover lift. Uses glassmorphism styling.
  *
@@ -136,7 +150,7 @@ export default function StatCard({
           <span className="premium-stat-trend" style={{ color: trendColor }}>
             {isPositive ? <ArrowUpOutlined /> : isNegative ? <ArrowDownOutlined /> : <MinusOutlined />}
             {Math.abs(trend)}%
-            <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>{trendLabel}</Text>
+            <Text type="secondary" className="cmp-caption cmp-ml-1">{trendLabel}</Text>
           </span>
         )}
 

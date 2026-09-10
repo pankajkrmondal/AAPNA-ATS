@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 // `Card` went with the hand-rolled shell this page used to render — the page
 // body now sits inside PublicPageShell's own card.
-import { Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, message } from 'antd';
+import { Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, message } from 'antd';
+import { Button } from '../ui';
 import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, FileDoneOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 // The shared public-page frame, mirroring the branded email the approver clicks
@@ -85,7 +86,7 @@ export default function MrfApprovalAction() {
   if (loading) {
     return (
       <PublicPageShell title="Review Requisition Request" subtitle="Loading requisition details…">
-        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+        <div className="cmp-loading"><Spin size="large" /></div>
       </PublicPageShell>
     );
   }
@@ -99,18 +100,18 @@ export default function MrfApprovalAction() {
       >
         <Result
           status={isApproved ? 'success' : 'error'}
-          title={<span style={{ fontWeight: 700 }}>Requisition Request {isApproved ? 'Approved' : 'Declined'}!</span>}
+          title={<span className="pps-result-title">Requisition Request {isApproved ? 'Approved' : 'Declined'}!</span>}
           subTitle={
-            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+            <Paragraph className="pps-hint">
               Thank you for your decision. The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has been marked as <strong>{successStatus.toUpperCase()}</strong>. Notification emails have been dispatched to the HR team.
             </Paragraph>
           }
           extra={[
             <Button
               key="close"
-              type="primary"
+              emphasis="solid"
               onClick={() => window.close()}
-              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+              emphasis="solid"
             >
               Close Window
             </Button>
@@ -130,10 +131,9 @@ export default function MrfApprovalAction() {
           message="Requisition Process Error"
           description={error}
           type="error"
-          showIcon
-          style={{ borderRadius: 10, marginBottom: 20 }}
+          showIcon className="pps-alert"
         />
-        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+        <Paragraph type="secondary" className="pps-note">
           If you believe this is an error, please reach out to the recruitment coordinator or HR team.
         </Paragraph>
       </PublicPageShell>
@@ -149,9 +149,9 @@ export default function MrfApprovalAction() {
       subtitle={`Manpower Requisition Form submitted by ${mrfDetails?.hiring_manager_name || 'a hiring manager'}.`}
     >
         {/* Detailed Requisition Info */}
-        <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
+        <div className="pps-panel">
           <Descriptions
-            title={<span style={{ color: BRAND.accent, fontSize: 16, fontWeight: 700 }}>Requisition Summary</span>}
+            title={<span className="pps-section-title">Requisition Summary</span>}
             bordered
             column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
             size="small"
@@ -159,12 +159,12 @@ export default function MrfApprovalAction() {
             contentStyle={{ width: '32%', minWidth: '150px', wordBreak: 'break-word' }}
           >
             <Descriptions.Item label="Position Hiring For" span={2}>
-              <Text strong style={{ fontSize: 15 }}>{mrfDetails?.position_hiring_for}</Text>
+              <Text strong className="pps-emphasis">{mrfDetails?.position_hiring_for}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="Hiring Manager">{mrfDetails?.hiring_manager_name} ({mrfDetails?.hiring_manager_designation})</Descriptions.Item>
             <Descriptions.Item label="Submitter Email">{mrfDetails?.submitter_email}</Descriptions.Item>
             <Descriptions.Item label="Number of Positions">
-              <Badge count={mrfDetails?.number_of_positions} style={{ backgroundColor: BRAND.accent }} />
+              <Badge count={mrfDetails?.number_of_positions} className="pps-badge" />
             </Descriptions.Item>
             <Descriptions.Item label="Required Timeline">{mrfDetails?.required_in}</Descriptions.Item>
             <Descriptions.Item label="Reports To">{mrfDetails?.position_reports_to || 'Not Specified'}</Descriptions.Item>
@@ -186,7 +186,7 @@ export default function MrfApprovalAction() {
             )}
             <Descriptions.Item label="Job Description (JD)" span={2}>
               {mrfDetails?.jd_document_link ? (
-                <Button type="link" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" style={{ paddingLeft: 0, fontWeight: 600, color: BRAND.accent }}>
+                <Button emphasis="text" icon={<FileDoneOutlined />} href={mrfDetails.jd_document_link} target="_blank" className="pps-link">
                   View Uploaded Job Description File →
                 </Button>
               ) : (
@@ -197,9 +197,9 @@ export default function MrfApprovalAction() {
         </div>
 
         {mrfDetails?.parsed_jd_json && (
-          <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
+          <div className="pps-panel">
             <Descriptions
-              title={<span style={{ color: BRAND.accent, fontSize: 16, fontWeight: 700 }}>AI-Parsed JD Summary</span>}
+              title={<span className="pps-section-title">AI-Parsed JD Summary</span>}
               bordered
               column={{ xs: 1, sm: 2, md: 2, lg: 2, xl: 2, xxl: 2 }}
               size="small"
@@ -220,39 +220,31 @@ export default function MrfApprovalAction() {
         )}
 
         {/* Action Form */}
-        <Divider style={{ borderColor: '#e8ede0' }} />
+        <Divider  />
         
-        <div style={{ marginTop: 12 }}>
-          <Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageOutlined style={{ color: BRAND.accent }} /> Add Review Comments (Optional)
+        <div className="pps-mt">
+          <Title level={5} className="pps-row">
+            <MessageOutlined className="pps-accent" /> Add Review Comments (Optional)
           </Title>
           <TextArea
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             placeholder="Add any comments, special terms, priority preferences, or feedback..."
-            autoSize={{ minRows: 3, maxRows: 6 }}
-            style={{ borderRadius: 10, marginTop: 8, padding: 12 }}
+            autoSize={{ minRows: 3, maxRows: 6 }} className="pps-textarea"
           />
         </div>
 
-        <div style={{ marginTop: 32 }}>
+        <div className="pps-mt-lg">
           {isApproveFlow ? (
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <Button
-                  type="primary"
+                  emphasis="solid"
                   icon={<CheckCircleOutlined />}
                   onClick={() => handleAction('approve')}
                   loading={submitting}
                   block
-                  style={{
-                    height: 48,
-                    borderRadius: 10,
-                    fontWeight: 700,
-                    fontSize: 15,
-                    background: BRAND.accent,
-                    borderColor: BRAND.accent,
-                  }}
+                  emphasis="solid" size="lg"
                 >
                   Confirm Requisition Approval
                 </Button>
@@ -260,8 +252,7 @@ export default function MrfApprovalAction() {
               <Col xs={24} sm={8}>
                 <Button
                   onClick={() => setCurrentAction('reject')}
-                  className="btn-reject-secondary"
-                  style={{ height: 48, borderRadius: 10, fontWeight: 600, width: '100%' }}
+                  emphasis="soft" tone="danger" size="lg" block
                 >
                   Reject Instead
                 </Button>
@@ -271,18 +262,11 @@ export default function MrfApprovalAction() {
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <Button
-                  type="primary"
-                  danger
                   icon={<CloseCircleOutlined />}
                   onClick={() => handleAction('reject')}
                   loading={submitting}
                   block
-                  style={{
-                    height: 48,
-                    borderRadius: 10,
-                    fontWeight: 700,
-                    fontSize: 15,
-                  }}
+                  emphasis="solid" tone="danger" size="lg"
                 >
                   Confirm Requisition Rejection
                 </Button>
@@ -290,8 +274,7 @@ export default function MrfApprovalAction() {
               <Col xs={24} sm={8}>
                 <Button
                   onClick={() => setCurrentAction('approve')}
-                  className="btn-approve-secondary"
-                  style={{ height: 48, borderRadius: 10, fontWeight: 600, width: '100%' }}
+                  emphasis="soft" tone="success" size="lg" block
                 >
                   Approve Instead
                 </Button>

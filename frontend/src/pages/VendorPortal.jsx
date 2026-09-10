@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Upload,
-  Button,
+  // Button now comes from src/ui — see the import below.
   Typography,
   Table,
   Space,
@@ -46,9 +46,15 @@ import {
 import useAuth from '../hooks/useAuth';
 import vendorService from '../services/vendorService';
 import { getSocket } from '../services/socket';
-import KpiCard from '../components/common/KpiCard';
+// DISABLED 2026-08-29 (Stage 5.5) — replaced by StatTile from src/ui. To restore:
+// uncomment and swap the tags back.
+// import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
+import { DesignScope, PageShell, PageHeader, Surface, StatTile, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity. Shared with the other upload
+// route: these two screens are near-identical by construction.
+import '../styles/pages/upload.css';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -407,22 +413,22 @@ export default function VendorPortal() {
     {
       title: 'Candidate Name',
       key: 'candidate_name',
-      render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
+      render: (_, r) => <Text strong className="upl-cell">{r.candidate_name || '—'}</Text>,
     },
     {
       title: 'Uploaded By',
       key: 'uploaded_by',
-      render: (_, r) => <span style={{ fontSize: 12 }}>{r.uploaded_by || '—'}</span>,
+      render: (_, r) => <span className="upl-caption">{r.uploaded_by || '—'}</span>,
     },
     {
       title: 'Vendor',
       key: 'vendor_name',
-      render: (_, r) => <span style={{ fontSize: 12 }}>{r.vendor_name || r.vendor_email || '—'}</span>,
+      render: (_, r) => <span className="upl-caption">{r.vendor_name || r.vendor_email || '—'}</span>,
     },
     {
       title: 'Uploaded At',
       key: 'created_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.created_at)}</span>,
+      render: (_, r) => <span className="upl-mono">{formatDate(r.created_at)}</span>,
     },
     {
       title: 'Status',
@@ -461,7 +467,7 @@ export default function VendorPortal() {
     {
       title: 'Last Updated',
       key: 'updated_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.updated_at)}</span>,
+      render: (_, r) => <span className="upl-mono">{formatDate(r.updated_at)}</span>,
     },
     {
       title: 'Action',
@@ -472,18 +478,18 @@ export default function VendorPortal() {
         return (
           <Space size={6}>
             {canReview && (
-              <Button size="small" type="primary" onClick={() => setReviewJob(r)}>
+              <Button size="sm" emphasis="soft" onClick={() => setReviewJob(r)}>
                 Review
               </Button>
             )}
             {r.status === 'Failed' && (
               <Tooltip title="Reprocess">
-                <Button size="small" icon={<RedoOutlined />} onClick={() => doReprocess(r)} />
+                <Button size="sm" icon={<RedoOutlined />} onClick={() => doReprocess(r)} />
               </Tooltip>
             )}
             {r.file_url && (
               <Tooltip title="View Resume">
-                <Button size="small" icon={<FileTextOutlined />} onClick={() => openCV(r.file_url)} />
+                <Button size="sm" icon={<FileTextOutlined />} onClick={() => openCV(r.file_url)} />
               </Tooltip>
             )}
           </Space>
@@ -498,43 +504,26 @@ export default function VendorPortal() {
   const visibleColumns = columns.filter((c) => isStaff || !STAFF_ONLY_COLS.includes(c.key));
 
   return (
-    <div className="page-enter upload-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '0 0 40px' }}>
-      <div
-        style={{
-          marginBottom: 24,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 16,
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div>
-          <Title level={3} style={{ margin: 0, fontWeight: 700 }}>
-            {isStaff ? 'Vendor Manual Upload' : 'Upload Candidate'}
-          </Title>
-          <Text style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-            Upload vendor-sourced resumes and track processing status in real time
-          </Text>
-        </div>
+    <DesignScope>
+      <PageShell width="standard" className="page-enter upload-page">
+      {/* Page header — 2026-08-31. This replaced a hand-rolled flex row written as an
+          INLINE STYLE object: six declarations (margin, display, wrap, gap, align,
+          justify) that `.ui-page-header` already owns, and which no stylesheet could
+          have overridden — the inline-style law in the rollout doc. The title was a
+          `Title level={3}` at 20px against the lab's 32px, with no eyebrow.
 
-        {/* Staff pick the vendor here — same placement as the Vendor Dashboard.
-            A muted label with the standard required asterisk signals it's mandatory;
-            the disabled Upload button + on-submit message enforce it. */}
-        {isStaff && (
-          <div style={{ width: 280 }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--text-secondary)',
-                display: 'block',
-                marginBottom: 6,
-              }}
-            >
-              On behalf of vendor <span style={{ color: 'var(--red)' }}>*</span>
+          The vendor picker moves into the `actions` slot rather than staying a
+          hand-placed sibling: it is a control the header is for. */}
+      <PageHeader
+        eyebrow="Sourcing"
+        title={isStaff ? 'Vendor Manual Upload' : 'Upload Candidate'}
+        subtitle="Upload vendor-sourced resumes and track processing status in real time."
+        actions={isStaff ? (
+          /* A muted label with the standard required asterisk signals it is mandatory;
+             the disabled Upload button + on-submit message enforce it. */
+          <div className="upl-vendor-picker">
+            <Text className="upl-field-label">
+              On behalf of vendor <span className="upl-req">*</span>
             </Text>
             <Select
               showSearch
@@ -544,41 +533,33 @@ export default function VendorPortal() {
               placeholder="Select a vendor"
               suffixIcon={<ShopOutlined />}
               optionFilterProp="label"
-              style={{ width: '100%' }}
+              className="upl-full"
               options={vendors.map((v) => ({ label: v.name, value: v.email }))}
             />
           </div>
-        )}
-      </div>
+        ) : null}
+      />
 
       {/* ═══════ UPLOAD CARD ═══════ */}
       {/* Tier 2. Identical treatment to HRUpload — the two screens share
           `.upload-page` and are near-identical by construction. */}
-      <Card className="glass-card animate-fade-in-up" bordered={false} style={{ marginBottom: 24 }}
-        styles={{ body: { padding: 0 } }}>
-        <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
+      <Surface tier={2} padding="none" bloom className="animate-fade-in-up upl-mb-5">
+        <div className="upl-card-body">
           <UploadCelebration show={celebrate} />
           {/* Staff: prompt to pick a vendor, or confirm who they're uploading for. */}
           {isStaff && (
-            <div style={{ marginBottom: 14 }}>
+            <div className="upl-mb-3">
               {selectedVendor ? (
                 <Tag
                   icon={<ShopOutlined />}
-                  style={{
-                    borderRadius: 16,
-                    padding: '4px 12px',
-                    fontSize: 13,
-                    background: 'var(--gold-bg)',
-                    border: '1px solid var(--brand-primary)',
-                    color: 'var(--gold-dark)',
-                  }}
+                  className="upl-vendor-tag"
                 >
                   Uploading for: <strong>{vendors.find((v) => v.email === selectedVendor)?.name || selectedVendor}</strong>
                 </Tag>
               ) : (
                 <Tag
                   icon={<ShopOutlined />}
-                  style={{ borderRadius: 16, padding: '4px 12px', fontSize: 13, background: 'color-mix(in srgb, var(--red) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--red) 40%, transparent)', color: 'var(--red)' }}
+                  className="upl-vendor-tag upl-vendor-tag--empty"
                 >
                   Select a vendor (top right) to upload on their behalf
                 </Tag>
@@ -593,55 +574,53 @@ export default function VendorPortal() {
             beforeUpload={() => false}
             onChange={({ fileList: newList }) => setFileList(newList)}
             accept=".zip,.pdf,.docx"
-            style={{ marginBottom: 14 }}
+            className="upl-mb-3"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '14px 8px' }}>
-              <InboxOutlined className="upload-inbox-icon" style={{ color: 'var(--brand-primary)', fontSize: 30 }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)' }}>Click or drag files to upload</div>
-                <div style={{ color: 'var(--text-3)', fontFamily: 'monospace', fontSize: 12 }}>Supported: .pdf, .docx, .zip</div>
+            <div className="upl-dropzone-inner">
+              <InboxOutlined className="upload-inbox-icon upl-drop-icon" />
+              <div className="upl-drop-copy">
+                <div className="upl-drop-title">Click or drag files to upload</div>
+                <div className="upl-drop-hint">Supported: .pdf, .docx, .zip</div>
               </div>
             </div>
           </Dragger>
 
+          {/* `.upl-btn` set height/radius/weight, all now owned by `size="lg"`;
+              `.btn-sheen` is the legacy hover treatment emphasis replaces. */}
           <Button
-            className="btn-sheen"
-            type="primary" size="large" block icon={<UploadOutlined />}
+            emphasis="solid" size="lg" block icon={<UploadOutlined />}
             loading={uploading} onClick={handleUpload}
             disabled={fileList.length === 0 || (isStaff && !selectedVendor)}
-            style={{ height: 44, fontWeight: 600, borderRadius: 10,
-              background: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : 'var(--brand-primary)',
-              borderColor: (fileList.length === 0 || (isStaff && !selectedVendor)) ? 'var(--text-3)' : 'var(--brand-primary)' }}
           >
             Upload Resumes
           </Button>
 
           {uploading && uploadPct > 0 && (
             <Progress percent={uploadPct} size="small" status="active"
-              strokeColor={{ from: 'var(--brand-primary)', to: 'var(--brand-primary-hover)' }} style={{ marginTop: 12 }} />
+              strokeColor={{ from: 'var(--brand-primary)', to: 'var(--brand-primary-hover)' }} className="upl-mt-3" />
           )}
 
           {uploadMsg && (
             <Alert message={uploadMsg.text} type={uploadMsg.type} showIcon closable
-              onClose={() => setUploadMsg(null)} style={{ marginTop: 14, borderRadius: 10 }} />
+              onClose={() => setUploadMsg(null)} className="upl-mt-3" />
           )}
         </div>
-      </Card>
+      </Surface>
 
       {/* ═══════ PERSISTENT JOB DASHBOARD ═══════ */}
       {/* Tier 3 — the upload-status records table. */}
-      <Card className="glass-3 no-lift animate-fade-in-up stagger-2" bordered={false}>
+      <Surface tier={3} padding="compact" className="animate-fade-in-up stagger-2">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
           <div>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-              <Text strong style={{ fontSize: 16 }}>Upload Status</Text>
+            <span className="upl-inline">
+              <Text strong className="upl-icon">Upload Status</Text>
               <Tooltip title="This list updates automatically as resumes are processed.">
                 <span className="live-badge">
                   <span className="live-badge__dot" /> Real-time
                 </span>
               </Tooltip>
             </span>
-            <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace', display: 'block' }}>
+            <Text className="upl-section-sub">
               {isStaff ? 'Live processing status across all vendors — filter below.' : 'Live processing status for every uploaded resume.'}
             </Text>
           </div>
@@ -659,28 +638,40 @@ export default function VendorPortal() {
           </Space>
         </div>
 
-        {/* Premium count-up KPI cards */}
-        <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
+        {/* KPI tiles — footnote + interactive, 2026-08-31. Same change and same
+            reasoning as /hr-upload, which this screen is near-identical to by
+            construction. The counts here are scoped: vendors see their own, staff see
+            the selected vendor's, so the footnotes say "submitted here" rather than
+            claiming a database-wide figure. */}
+        <Row gutter={[16, 16]} className="ui-stagger upl-mb-4-5">
           <Col xs={12} md={6}>
-            <KpiCard index={0} icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll}
-              color="var(--kpi-a)" tint="var(--kpi-a-tint)" accent="linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))" />
+            <StatTile
+              icon={<CloudUploadOutlined />} label="Total Uploads" value={totalAll} accent="brand"
+              footnote="Every resume submitted here" interactive bloom
+            />
           </Col>
           <Col xs={12} md={6}>
-            <KpiCard index={1} icon={<SyncOutlined />} label="Processing" value={processingCount}
-              color="var(--kpi-b)" tint="var(--kpi-b-tint)" accent="linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))" />
+            <StatTile
+              icon={<SyncOutlined />} label="Processing" value={processingCount} accent="info"
+              footnote="Queued or being parsed right now" interactive
+            />
           </Col>
           <Col xs={12} md={6}>
-            <KpiCard index={2} icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount}
-              color="var(--kpi-c)" tint="var(--kpi-c-tint)" accent="linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))" />
+            <StatTile
+              icon={<CheckCircleOutlined />} label="Saved to Database" value={completedCount} accent="success"
+              footnote="Accepted into the candidate database" interactive
+            />
           </Col>
           <Col xs={12} md={6}>
-            <KpiCard index={3} icon={<WarningOutlined />} label="Pending Review" value={actionCount}
-              color="var(--kpi-d)" tint="var(--kpi-d-tint)" accent="linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))" />
+            <StatTile
+              icon={<WarningOutlined />} label="Pending Review" value={actionCount} accent="danger"
+              footnote="Duplicates waiting on a recruiter decision" interactive
+            />
           </Col>
         </Row>
 
         {/* Filters */}
-        <Space style={{ marginBottom: 16 }} wrap>
+        <Space className="upl-mb-4" wrap>
           {isStaff && (
             <Select
               showSearch
@@ -688,20 +679,25 @@ export default function VendorPortal() {
               placeholder="All Vendors"
               suffixIcon={<ShopOutlined />}
               optionFilterProp="label"
-              style={{ minWidth: 220 }}
+              className="upl-search"
               value={jobFilterVendor}
               onChange={(v) => setJobFilterVendor(v || null)}
               options={vendors.map((v) => ({ label: v.name, value: v.email }))}
             />
           )}
           <Select
-            allowClear placeholder="Filter by status" style={{ minWidth: 220 }}
+            allowClear placeholder="Filter by status" className="upl-search"
             value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={STATUS_FILTERS}
           />
+          {/* Filter toggle — emphasis carries the on/off state, tone stays danger in
+              both, matching /hr-upload's identical control. The note sits here rather
+              than inside the `&&` below: that holds a single expression, so a JSX
+              comment in front of the element becomes a second one and the file stops
+              parsing. */}
           {isStaff && (
             <Button
-              type={onlyActionRequired ? 'primary' : 'default'}
-              danger={onlyActionRequired}
+              emphasis={onlyActionRequired ? 'solid' : 'soft'}
+              tone="danger"
               onClick={() => setOnlyActionRequired((v) => !v)}
             >
               {onlyActionRequired ? 'Showing: Action Required' : 'Show Action Required'}
@@ -731,7 +727,7 @@ export default function VendorPortal() {
             showTotal: (t) => `Total ${t} uploads`,
           }}
         />
-      </Card>
+      </Surface>
 
       {/* ═══════ REVIEW MODAL ═══════ */}
       <Modal
@@ -740,15 +736,15 @@ export default function VendorPortal() {
         onCancel={() => setReviewJob(null)}
         width={620}
         footer={(
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div className="upl-toolbar">
             <Button icon={<EyeOutlined />} onClick={() => openFullDetailsFromJob(reviewJob)}>
               View full details
             </Button>
             <Space size={8}>
-              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
+              <Button tone="danger" icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
                 Cancel / Reject
               </Button>
-              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}>
+              <Button emphasis="solid" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', reviewJob)}>
                 Merge into Database
               </Button>
             </Space>
@@ -765,7 +761,7 @@ export default function VendorPortal() {
           </Descriptions>
         )}
         <Alert
-          style={{ marginTop: 16 }} type="info" showIcon
+          className="upl-mt-4" type="info" showIcon
           message="Merge updates the existing candidate with new values (blanks retained). Cancel deletes the staging record and keeps the existing candidate unchanged."
         />
       </Modal>
@@ -776,15 +772,15 @@ export default function VendorPortal() {
         open={viewModalOpen}
         onCancel={closeViewModal}
         footer={(
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div className="upl-toolbar">
             <Button onClick={() => { closeViewModal(); if (detailReviewJob) setReviewJob(detailReviewJob); }}>
               Back to Review
             </Button>
             <Space size={8}>
-              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
+              <Button tone="danger" icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
                 Cancel / Reject
               </Button>
-              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}>
+              <Button emphasis="solid" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}>
                 Merge into Database
               </Button>
             </Space>
@@ -801,10 +797,10 @@ export default function VendorPortal() {
 
           return (
             <>
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+              <Divider orientation="left" orientationMargin={0} className="upl-eyebrow">
                 Personal Information
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} className="cmp-desc">
                 <Descriptions.Item label="Candidate Name">{displayVal(c.Name)}</Descriptions.Item>
                 <Descriptions.Item label="Candidate Email">{displayVal(c.EmailID)}</Descriptions.Item>
                 <Descriptions.Item label="Contact Number">{displayVal(c.ContactNumber)}</Descriptions.Item>
@@ -827,20 +823,20 @@ export default function VendorPortal() {
                 <Descriptions.Item label="Has Laptop for Initial Days?">{displayVal(c.HasLaptopForInitialDays)}</Descriptions.Item>
               </Descriptions>
 
-              <div style={{ marginTop: 12, padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)' }}>
-                <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)', display: 'block', marginBottom: 10 }}>
+              <div className="upl-note upl-note--stack">
+                <Text className="upl-block-label">
                   Current Company
                 </Text>
-                <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
+                <Descriptions column={2} size="small" bordered={false} className="upl-desc">
                   <Descriptions.Item label="Company Name">{displayVal(cc.Name)}</Descriptions.Item>
                   <Descriptions.Item label="Website">{displayVal(cc.Website)}</Descriptions.Item>
                 </Descriptions>
               </div>
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+              <Divider orientation="left" orientationMargin={0} className="upl-eyebrow">
                 Education
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} className="upl-desc">
                 <Descriptions.Item label="10th %">{displayVal(edu['10th'] || c.a10th)}</Descriptions.Item>
                 <Descriptions.Item label="12th %">{displayVal(edu['12th'] || c.a12th)}</Descriptions.Item>
                 <Descriptions.Item label="Graduation %">{displayVal(edu.Graduation || c.graduation)}</Descriptions.Item>
@@ -852,15 +848,15 @@ export default function VendorPortal() {
                 <Descriptions.Item label="LinkedIn Profile" span={2}>{displayVal(c.LinkedInProfile)}</Descriptions.Item>
               </Descriptions>
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+              <Divider orientation="left" orientationMargin={0} className="upl-eyebrow">
                 Employment History
               </Divider>
               {companies.length === 0 ? (
-                <Text style={{ fontSize: 13, color: 'var(--text-3)' }}>No employment history recorded.</Text>
+                <Text className="upl-cell--muted">No employment history recorded.</Text>
               ) : (
                 companies.map((co, i) => (
-                  <div key={i} style={{ padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.07)', marginBottom: 10 }}>
-                    <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
+                  <div key={i} className="upl-note upl-note--gap">
+                    <Descriptions column={3} size="small" bordered={false} className="upl-desc">
                       <Descriptions.Item label="Company Name">{displayVal(co.CompanyName)}</Descriptions.Item>
                       <Descriptions.Item label="Start Date">{displayVal(co.StartDate)}</Descriptions.Item>
                       <Descriptions.Item label="End Date">{displayVal(co.EndDate)}</Descriptions.Item>
@@ -869,10 +865,10 @@ export default function VendorPortal() {
                 ))
               )}
 
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+              <Divider orientation="left" orientationMargin={0} className="upl-eyebrow">
                 Upload Details
               </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
+              <Descriptions column={2} size="small" bordered={false} className="upl-desc">
                 <Descriptions.Item label="Uploaded By">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
                 <Descriptions.Item label="Uploaded At">{formatDate(c.uploadedAt)}</Descriptions.Item>
                 <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>
@@ -882,6 +878,7 @@ export default function VendorPortal() {
           );
         })()}
       </Modal>
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

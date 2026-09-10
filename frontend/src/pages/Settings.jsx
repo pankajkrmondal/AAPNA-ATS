@@ -3,13 +3,19 @@
  * Settings (automated email reminder behaviour and an Email Coverage guide).
  */
 import { useState, useEffect, useRef } from 'react';
-import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
+// Button now comes from src/ui — see the import below. `Segmented` is still AntD's
+// here; src/ui has its own (a real radiogroup with arrow-key support), and swapping it
+// is a separate adoption item logged in the parity changelog.
+import { Form, InputNumber, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
 import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
 import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
+import { DesignScope, PageShell, PageHeader, Surface, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/settings.css';
 
 const { Title, Text } = Typography;
 
@@ -282,13 +288,13 @@ export default function Settings() {
       dataIndex: 'workflow',
       key: 'workflow',
       width: '40%',
-      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text}</Text>,
+      render: (text) => <Text strong className="set-cell">{text}</Text>,
     },
     {
       title: 'RESPONSE DETECTED BY',
       dataIndex: 'responseDetected',
       key: 'responseDetected',
-      render: (text) => <Text style={{ fontSize: 13, color: 'var(--text)', fontFamily: 'monospace' }}>{text}</Text>,
+      render: (text) => <Text className="set-mono">{text}</Text>,
     },
   ];
 
@@ -311,24 +317,31 @@ export default function Settings() {
   ];
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto' }} className="stagger-children">
+    <DesignScope>
+      <PageShell width="narrow" className="stagger-children">
+      {/* Page header — 2026-08-31, and written from nothing. This route had NO page
+          title at all: its first heading was the "Appearance" card's own `Title
+          level={4}` at 17px, so the screen opened on a card label and the only place
+          the word "Settings" appeared was the topbar chrome. */}
+      <PageHeader
+        eyebrow="Configuration"
+        title="Settings"
+        subtitle="How the app looks to you, and the automated emails it sends on your behalf."
+      />
+
       {/* Appearance. Every card on this page is a settings panel — tier 2, the
           page's content rather than dense data — so they all take `.glass-card`
           and drop their inline radius/shadow, which the class owns. */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ marginBottom: 24 }}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
+      <Surface tier={2} padding="relaxed" className="set-mb-5">
+        <div className="set-mb-4">
+          <Title level={4} className="set-card-title">
             Appearance
           </Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
+          <Text type="secondary" className="set-lede">
             Choose how AAPNA ATS looks to you. &ldquo;System&rdquo; follows your operating system setting.
           </Text>
         </div>
-        <div ref={appearanceRef} style={{ display: 'inline-block' }}>
+        <div ref={appearanceRef} className="set-inline-block">
           <Segmented
             size="large"
             value={mode}
@@ -336,26 +349,22 @@ export default function Settings() {
             options={APPEARANCE_OPTIONS}
           />
         </div>
-      </Card>
+      </Surface>
 
       {/* Interview reminder scheduler — on/off + how often the job checks */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ marginBottom: 24 }}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
-              <CalendarOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
-              <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
+      <Surface tier={2} padding="relaxed" className="set-mb-5">
+        <div className="set-split">
+          <div className="set-split__main">
+            <div className="set-title-row">
+              <CalendarOutlined className="set-title-icon" />
+              <Title level={4} className="set-card-title set-card-title--flush">
                 Interview Reminders
               </Title>
-              <Tag color={interviewCfg.enabled ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
+              <Tag color={interviewCfg.enabled ? 'green' : 'default'} className="set-title-tag">
                 {interviewCfg.enabled ? 'ON' : 'OFF'}
               </Tag>
             </div>
-            <Text type="secondary" style={{ fontSize: 13 }}>
+            <Text type="secondary" className="set-lede">
               Automatically emails the candidate and the interviewer a reminder before their scheduled
               Technical Round, so nobody misses it. Each person is emailed once per interview.
             </Text>
@@ -367,7 +376,7 @@ export default function Settings() {
               disabled={interviewLoading}
               checkedChildren="ON"
               unCheckedChildren="OFF"
-              style={{ marginTop: 4 }}
+              className="set-mt-1"
             />
           </Spin>
         </div>
@@ -381,8 +390,8 @@ export default function Settings() {
           }}
         >
           {/* The setting people actually care about comes first: when the email lands. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+          <div className="set-inline">
+            <span className="set-strong">
               Email them
             </span>
             <InputNumber
@@ -392,23 +401,23 @@ export default function Settings() {
               value={interviewCfg.lead_minutes}
               onChange={(val) => val && saveInterviewCfg({ lead_minutes: val })}
               addonAfter="minutes"
-              style={{ width: 160 }}
+              className="set-control--fixed"
             />
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+            <span className="set-strong">
               before the interview starts
             </span>
           </div>
 
-          <div style={{ marginTop: 22, marginBottom: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+          <div className="set-block">
+            <span className="set-strong">
               How often the system checks for interviews coming up
             </span>
-            <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginTop: 2 }}>
+            <Text type="secondary" className="set-hint">
               A background check that usually finds nothing — it only decides how precisely the timing above is hit.
               Shorter is more accurate.
             </Text>
           </div>
-          <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 2 }}>
+          <div className="set-scroll">
             <Segmented
               value={interviewCfg.interval_minutes}
               onChange={(val) => saveInterviewCfg({ interval_minutes: val })}
@@ -420,18 +429,7 @@ export default function Settings() {
           </div>
 
           {/* Worked example — the clearest way to show what the two numbers do together. */}
-          <div
-            style={{
-              marginTop: 18,
-              background: 'var(--info-bg)',
-              border: '1px solid var(--info-border)',
-              borderRadius: 8,
-              padding: '12px 16px',
-              color: 'var(--info-text)',
-              fontSize: 13,
-              lineHeight: 1.6,
-            }}
-          >
+          <div className="set-callout set-callout--stack-lg">
             <strong>What this means:</strong> for an interview at 3:00 PM, the candidate and interviewer
             are emailed at about <strong>{exampleTime}</strong>
             {` (within ${interviewCfg.interval_minutes} minute${interviewCfg.interval_minutes === 1 ? '' : 's'} of that).`}
@@ -439,18 +437,7 @@ export default function Settings() {
           </div>
 
           {leadTooShort && (
-            <div
-              style={{
-                marginTop: 12,
-                background: 'var(--warn-bg)',
-                border: '1px solid var(--warn-border)',
-                borderRadius: 8,
-                padding: '12px 16px',
-                color: 'var(--warn-text)',
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
+            <div className="set-callout set-callout--warn set-callout--stack">
               <strong>Reminders may be missed.</strong> The check runs every {interviewCfg.interval_minutes} minutes
               but reminders are set to go out only {interviewCfg.lead_minutes} minutes ahead, so the system can skip
               past that window entirely. Raise the lead time to at least {interviewCfg.interval_minutes} minutes,
@@ -458,27 +445,23 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </Card>
+      </Surface>
 
       {/* Interview completion sweep — decides whether a finished interview actually
           happened, which is what releases the interviewer's scorecard email. */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ marginBottom: 24 }}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
-              <CalendarOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
-              <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
+      <Surface tier={2} padding="relaxed" className="set-mb-5">
+        <div className="set-split">
+          <div className="set-split__main">
+            <div className="set-title-row">
+              <CalendarOutlined className="set-title-icon" />
+              <Title level={4} className="set-card-title set-card-title--flush">
                 Interview Completion Check
               </Title>
-              <Tag color={occurrenceCfg.enabled ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
+              <Tag color={occurrenceCfg.enabled ? 'green' : 'default'} className="set-title-tag">
                 {occurrenceCfg.enabled ? 'ON' : 'OFF'}
               </Tag>
             </div>
-            <Text type="secondary" style={{ fontSize: 13 }}>
+            <Text type="secondary" className="set-lede">
               After an interview ends, checks whether it actually took place and emails the interviewer
               their scorecard. Without this, someone has to mark every interview as held by hand in the
               Candidate Pipeline before any score can be collected.
@@ -491,7 +474,7 @@ export default function Settings() {
               disabled={occurrenceLoading}
               checkedChildren="ON"
               unCheckedChildren="OFF"
-              style={{ marginTop: 4 }}
+              className="set-mt-1"
             />
           </Spin>
         </div>
@@ -505,8 +488,8 @@ export default function Settings() {
           }}
         >
           {/* Grace first: it is the number that decides how soon the scorecard goes out. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+          <div className="set-inline">
+            <span className="set-strong">
               Wait
             </span>
             <InputNumber
@@ -516,23 +499,23 @@ export default function Settings() {
               value={occurrenceCfg.grace_minutes}
               onChange={(val) => val !== null && saveOccurrenceCfg({ grace_minutes: val })}
               addonAfter="minutes"
-              style={{ width: 160 }}
+              className="set-control--fixed"
             />
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+            <span className="set-strong">
               after the interview ends before checking
             </span>
           </div>
 
-          <div style={{ marginTop: 22, marginBottom: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+          <div className="set-block">
+            <span className="set-strong">
               How often the system checks for finished interviews
             </span>
-            <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginTop: 2 }}>
+            <Text type="secondary" className="set-hint">
               Only decides how quickly a finished interview is picked up. Shorter means the scorecard
               request reaches the interviewer sooner.
             </Text>
           </div>
-          <div style={{ overflowX: 'auto', maxWidth: '100%', paddingBottom: 2 }}>
+          <div className="set-scroll">
             <Segmented
               value={occurrenceCfg.interval_minutes}
               onChange={(val) => saveOccurrenceCfg({ interval_minutes: val })}
@@ -544,18 +527,7 @@ export default function Settings() {
           </div>
 
           {/* Worked example — the same device the reminder card uses above. */}
-          <div
-            style={{
-              marginTop: 18,
-              background: 'var(--info-bg)',
-              border: '1px solid var(--info-border)',
-              borderRadius: 8,
-              padding: '12px 16px',
-              color: 'var(--info-text)',
-              fontSize: 13,
-              lineHeight: 1.6,
-            }}
-          >
+          <div className="set-callout set-callout--stack-lg">
             <strong>What this means:</strong> for an interview ending at 8:00 PM, the system first looks
             at about <strong>{occurrenceExampleTime}</strong>
             {` and settles it within ${occurrenceCfg.interval_minutes} minute${occurrenceCfg.interval_minutes === 1 ? '' : 's'} of that.`}
@@ -565,18 +537,7 @@ export default function Settings() {
           {/* Which of the sweep's two modes will actually run. Teams attendance is an
               env-level switch, so the card states it rather than pretending to own it. */}
           {occurrenceCfg.attendance_enabled ? (
-            <div
-              style={{
-                marginTop: 12,
-                background: 'var(--info-bg)',
-                border: '1px solid var(--info-border)',
-                borderRadius: 8,
-                padding: '12px 16px',
-                color: 'var(--info-text)',
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
+            <div className="set-callout set-callout--stack">
               <strong>Confirmed automatically.</strong> The verdict is read from the Teams attendance report.
               {occurrenceCfg.attendance_guest_candidate
                 ? ' The interviewer must join signed in with the address on the booking; the candidate can join as a guest, with no Teams account and no sign-in. The round counts as held once the interviewer and at least one other person have attended.'
@@ -585,18 +546,7 @@ export default function Settings() {
               and the team is alerted to reschedule or reject.
             </div>
           ) : (
-            <div
-              style={{
-                marginTop: 12,
-                background: 'var(--warn-bg)',
-                border: '1px solid var(--warn-border)',
-                borderRadius: 8,
-                padding: '12px 16px',
-                color: 'var(--warn-text)',
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
+            <div className="set-callout set-callout--warn set-callout--stack">
               <strong>Teams attendance reading is turned off for this environment.</strong> The check
               cannot confirm an interview on its own, so instead it emails the recruitment mailbox
               asking someone to confirm it — up to three times, a day apart. The scorecard still only
@@ -604,37 +554,23 @@ export default function Settings() {
             </div>
           )}
         </div>
-      </Card>
+      </Surface>
 
       {/* The `borderTop: 4px solid var(--gold)` rail goes, as it did on
           /candidates, /mrf and the upload screens — a flat bar under a gradient
           rim is the pre-glass vocabulary showing through. */}
-      <Card
-        bordered={false}
-        className="glass-card"
-      >
-        <div style={{ marginBottom: 24 }}>
-          <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
+      <Surface tier={2} padding="relaxed">
+        <div className="set-mb-5">
+          <Title level={3} className="set-card-title">
             Reminder Settings
           </Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
+          <Text type="secondary" className="set-lede">
             Configure automated email reminder behaviour across all recruitment workflows. Changes take effect immediately for all future reminders.
           </Text>
         </div>
 
         {/* How it works info banner */}
-        <div
-          style={{
-            background: 'var(--info-bg)',
-            border: '1px solid var(--info-border)',
-            borderRadius: 8,
-            padding: '16px 20px',
-            color: 'var(--info-text)',
-            fontSize: 13.5,
-            lineHeight: 1.6,
-            marginBottom: 28,
-          }}
-        >
+        <div className="set-callout set-callout--banner set-callout--gap">
           <strong>How it works:</strong> When a recipient hasn't responded to an email (MRF form, Approval, or Missing JD), the system automatically sends reminder emails based on these settings. These two values control <strong>all three email flows</strong> – no per-workflow configuration needed.
         </div>
 
@@ -646,56 +582,53 @@ export default function Settings() {
           initialValues={{ reminder_interval_days: 1, reminder_max_count: 4 }}
           disabled={loading}
         >
-          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 28 }}>
+          <div className="set-form-row set-form-row--gap">
             <Form.Item
-              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Remind After X Days of No Response *</span>}
+              label={<span className="set-label">Remind After X Days of No Response</span>}
               name="reminder_interval_days"
               rules={[{ required: true, message: 'Required' }]}
-              style={{ margin: 0, flex: '1 1 250px' }}
+              className="set-item--wide"
             >
               <InputNumber
                 min={0}
                 max={90}
-                style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                className="set-control"
               />
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Maximum Number of Reminders to Send *</span>}
+              label={<span className="set-label">Maximum Number of Reminders to Send</span>}
               name="reminder_max_count"
               rules={[{ required: true, message: 'Required' }]}
-              style={{ margin: 0, flex: '1 1 250px' }}
+              className="set-item--wide"
             >
               <InputNumber
                 min={0}
                 max={20}
-                style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                className="set-control"
               />
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Daily Trigger Time *</span>}
+              label={<span className="set-label">Daily Trigger Time</span>}
               name="reminder_time"
               rules={[{ required: true, message: 'Required' }]}
-              style={{ margin: 0, flex: '1 1 200px' }}
+              className="set-item--narrow"
             >
               <TimePicker
                 format="HH:mm"
-                style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                className="set-control"
               />
             </Form.Item>
 
             <Button
-              type="primary"
+              emphasis="solid"
               htmlType="submit"
               icon={<SaveOutlined />}
               loading={saving}
-              style={{
-                height: 42,
-                borderRadius: 8,
-                fontWeight: 600,
-                padding: '0 24px',
-              }}
+              /* `.set-btn` retired — it set height (--control-h-relaxed), radius,
+                 weight and inline padding, which is exactly `size="lg"`. */
+              size="lg"
             >
               Save Settings
             </Button>
@@ -703,7 +636,7 @@ export default function Settings() {
         </Form>
 
         {/* Email Coverage static info block */}
-        <div style={{ marginTop: 36 }}>
+        <div className="set-mt-7">
           <div
             style={{
               display: 'flex',
@@ -712,10 +645,10 @@ export default function Settings() {
               marginBottom: 16,
             }}
           >
-            <span style={{ fontWeight: 700, fontSize: 11, letterSpacing: '0.1em', color: 'var(--text-3)', textTransform: 'uppercase' }}>
+            <span className="set-rule-label">
               Email Coverage
             </span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <div className="set-rule" />
           </div>
 
           <Table
@@ -725,42 +658,23 @@ export default function Settings() {
             bordered
             size="middle"
             rowClassName={() => 'coverage-table-row'}
-            style={{
-              borderRadius: 8,
-              overflow: 'hidden',
-              border: '1px solid var(--border)',
-            }}
+            className="set-table"
           />
         </div>
-      </Card>
+      </Surface>
 
       {/* Assessment Automation — Evalground invite deadline + auto-advance/reject toggle */}
-      <Card
-        bordered={false}
-        className="glass-card"
-        style={{ marginTop: 24 }}
-      >
-        <div style={{ marginBottom: 24 }}>
-          <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
+      <Surface tier={2} padding="relaxed" className="set-mt-5">
+        <div className="set-mb-5">
+          <Title level={3} className="set-card-title">
             Assessment Automation
           </Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
+          <Text type="secondary" className="set-lede">
             Controls for the Evalground assessment round on the Candidate Pipeline.
           </Text>
         </div>
 
-        <div
-          style={{
-            background: 'var(--info-bg)',
-            border: '1px solid var(--info-border)',
-            borderRadius: 8,
-            padding: '16px 20px',
-            color: 'var(--info-text)',
-            fontSize: 13.5,
-            lineHeight: 1.6,
-            marginBottom: 28,
-          }}
-        >
+        <div className="set-callout set-callout--banner set-callout--gap">
           <strong>How it works:</strong> The deadline days control how long a candidate has to complete
           the Evalground test after an invite is sent before recruiters get a reminder. When
           auto-advance/reject is ON, a CSV import with a Marks Scored above 50 automatically approves
@@ -776,51 +690,54 @@ export default function Settings() {
           initialValues={{ assessment_deadline_days: 2, assessment_auto_advance_enabled: false }}
           disabled={assessmentLoading}
         >
-          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="set-form-row">
             <Form.Item
-              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Invite Deadline (Days) *</span>}
+              label={<span className="set-label">Invite Deadline (Days)</span>}
               name="assessment_deadline_days"
               rules={[{ required: true, message: 'Required' }]}
-              style={{ margin: 0, flex: '1 1 220px' }}
+              className="set-item--mid"
             >
               <InputNumber
                 min={1}
                 max={30}
-                style={{ width: '100%', height: 42, borderRadius: 8, display: 'flex', alignItems: 'center' }}
+                className="set-control"
               />
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>Auto-Advance / Auto-Reject on Score</span>}
+              label={<span className="set-label">Auto-Advance / Auto-Reject on Score</span>}
               name="assessment_auto_advance_enabled"
               valuePropName="checked"
-              style={{ margin: 0 }}
+              className="set-item"
             >
               <Switch disabled={!isAdmin} />
             </Form.Item>
 
             <Button
-              type="primary"
+              emphasis="solid"
               htmlType="submit"
               icon={<SaveOutlined />}
               loading={assessmentSaving}
-              style={{ height: 42, borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
+              /* `.set-btn` retired — it set height (--control-h-relaxed), radius,
+                 weight and inline padding, which is exactly `size="lg"`. */
+              size="lg"
             >
               Save Settings
             </Button>
           </div>
           {!isAdmin && (
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 8 }}>
+            <Text type="secondary" className="set-hint set-hint--gap">
               Only an admin can change the auto-advance/auto-reject toggle.
             </Text>
           )}
         </Form>
-      </Card>
+      </Surface>
 
       {/* Pipeline stages / outcomes / reasons — admin only, matching the
           requireAdmin gate the API enforces. Hidden rather than disabled for
           non-admins: there is nothing here a recruiter can act on. */}
       {isAdmin && <PipelineConfigPanel />}
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

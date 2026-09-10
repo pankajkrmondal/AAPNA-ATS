@@ -5,7 +5,8 @@
  */
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Form, Input, Button, Alert, Result } from 'antd';
+import { Form, Input, Alert, Result } from 'antd';
+import { Button } from '../ui';
 import { UserOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import authService from '../services/authService';
 import TurnstileWidget from '../components/TurnstileWidget';
@@ -49,7 +50,7 @@ export default function ForgotPassword() {
           subTitle="If an account exists for that username or email, a password reset link has been sent. The link expires in 30 minutes."
           extra={
             <Link to="/login">
-              <Button type="primary" className="cta-primary" style={{ borderRadius: 10, fontWeight: 700 }}>
+              <Button emphasis="solid">
                 Back to Sign In
               </Button>
             </Link>
@@ -66,7 +67,6 @@ export default function ForgotPassword() {
           message={error}
           type="error"
           showIcon
-          style={{ marginBottom: 20, borderRadius: 8 }}
         />
       )}
 
@@ -79,21 +79,19 @@ export default function ForgotPassword() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Username or Email</span>}
+          label={<span className="auth-field-label">Username or Email</span>}
           name="login"
           rules={[{ required: true, message: 'Please enter your username or email' }]}
-          style={{ marginBottom: 28 }}
         >
           <Input
-            prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<UserOutlined />}
             placeholder="Enter your username or email"
             autoComplete="off"
-            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
         {TURNSTILE_SITE_KEY && (
-          <Form.Item style={{ marginBottom: 20 }}>
+          <Form.Item>
             <TurnstileWidget
               ref={captchaRef}
               siteKey={TURNSTILE_SITE_KEY}
@@ -103,31 +101,21 @@ export default function ForgotPassword() {
           </Form.Item>
         )}
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        <Form.Item>
           <Button
-            type="primary"
             htmlType="submit"
             loading={loading}
             disabled={captchaPending}
             block
-            className="cta-primary"
-            style={{
-              height: 48,
-              borderRadius: 10,
-              fontWeight: 700,
-              fontSize: 15,
-              // .cta-primary forces the gradient with !important, so signal the
-              // disabled (captcha pending) state explicitly
-              opacity: captchaPending ? 0.55 : 1,
-            }}
+            emphasis="solid" size="lg"
           >
             Send Reset Link
           </Button>
         </Form.Item>
 
-        <div style={{ textAlign: 'center', marginTop: 18 }}>
-          <Link to="/login" style={{ fontSize: 13.5, fontWeight: 600 }}>
-            <ArrowLeftOutlined style={{ fontSize: 12, marginRight: 6 }} />
+        <div className="auth-form-actions">
+          <Link to="/login" className="auth-link">
+            <ArrowLeftOutlined className="auth-back-icon" />
             Back to sign in
           </Link>
         </div>

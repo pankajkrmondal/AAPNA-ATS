@@ -1,0 +1,235 @@
+/**
+ * /mrf — the requisition route. Converted in Stage 5.3.
+ *
+ * WHY THIS FILE EXISTS RATHER THAN ANOTHER BLOCK IN ui/ui.css
+ * Three page-specific blocks (.pps-*, .mrfs-*, .cand-*) accumulated inside the
+ * component stylesheet during Stage 5.2, and MRF would have been the fourth. ui.css
+ * is the COMPONENT layer: rules there are supposed to describe src/ui primitives that
+ * any route may use. Page rules describe one screen and no other. Mixing them means
+ * a reader of ui.css cannot tell which rules they are allowed to change without
+ * auditing routes, which is precisely the coupling this rollout exists to remove.
+ *
+ * The three earlier blocks stay where they are for now, on purpose: their section
+ * headers do not match their contents (the `.pps-*` rules sit under an "AUTH SHELL"
+ * header), so moving them means slicing a mislabelled region — a mechanical cleanup
+ * that belongs with the endgame, not in the middle of converting a route.
+ *
+ * Imported by MRF.jsx AFTER '../ui', so on equal specificity these win.
+ */
+
+/* ------------------------------------------------------------------
+   Labels
+   The page wrote the SAME uppercase label three ways: 25 times at 10px/600, 9 times
+   at 12px/600 and twice at 11px/700 — one semantic role, three sizes, none of them
+   deliberate. They are all the caption role now (12px/600/0.05em). The 10px and 11px
+   variants were below the type scale's 12px floor.
+   ------------------------------------------------------------------ */
+.mrf-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* The section legend inside the form and the detail modal. Same role, coloured by
+   the brand or muted depending on whether it opens a section or annotates one. */
+.mrf-group-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.mrf-group-label--brand { color: var(--brand-ink); }
+.mrf-group-label--gap { margin-block-end: var(--space-3); }
+.mrf-group-label--gap-lg { margin-block-end: var(--space-4); }
+.mrf-group-label--stack { margin: var(--space-1) 0 10px; }
+
+/* ------------------------------------------------------------------
+   Header
+   ------------------------------------------------------------------ */
+.mrf-form-head { margin-block-end: var(--space-5); }
+.mrf-page-title.ant-typography {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  margin: 0 0 var(--space-1) 0;
+}
+.mrf-eyebrow.ant-typography {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--brand-ink);
+}
+
+/* ------------------------------------------------------------------
+   Controls
+   `borderRadius: 6` appeared 18 times and `height: 42` 8 times — a control geometry
+   hand-written per instance, which is exactly what the density and preset axes are
+   for. Dropping them lets --radius-ctl and --ctl-h decide, so Flat Slate's 4px square
+   controls and the compact density both reach this page.
+   ------------------------------------------------------------------ */
+.mrf-form .ant-input,
+.mrf-form .ant-input-affix-wrapper,
+.mrf-form .ant-select-selector,
+.mrf-form .ant-input-number,
+.mrf-form .ant-picker { border-radius: var(--radius-ctl); }
+.mrf-form .ant-input,
+.mrf-form .ant-select-selector,
+.mrf-form .ant-picker { min-height: var(--ctl-h); }
+
+.mrf-full { width: 100%; }
+.mrf-search { width: 220px; }
+.mrf-radio-cell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--ctl-h);
+}
+
+/* ------------------------------------------------------------------
+   Table cells
+   ------------------------------------------------------------------ */
+.mrf-cell { font-size: var(--fs-subhead); }
+.mrf-cell--strong { font-size: var(--fs-subhead); color: var(--text); }
+/* Was a bare `fontFamily: 'monospace'` four times, which resolves to whatever the
+   browser defaults to (Courier on Windows) and ignores the font-pack axis entirely. */
+.mrf-mono {
+  font-family: var(--mono);
+  font-size: var(--fs-subhead);
+}
+
+/* Status pills in the records table. */
+.mrf-tag.ant-tag {
+  border-radius: var(--radius-ctl);
+  font-weight: 700;
+  font-size: var(--fs-footnote);
+  padding: 2px 8px;
+}
+.mrf-tag--caps.ant-tag { text-transform: uppercase; }
+
+/* ------------------------------------------------------------------
+   Records toolbar
+   ------------------------------------------------------------------ */
+.mrf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: 18px var(--space-5);
+  border-block-end: var(--hairline);
+}
+.mrf-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------
+   Modals
+   ------------------------------------------------------------------ */
+.mrf-modal-head {
+  padding-block-end: 10px;
+  border-block-end: var(--hairline);
+}
+/* Was `styles={{ body: { padding: '20px 0 0 0' } }}` written inline on the Modal —
+   unreachable by any stylesheet (the inline-style law), and the reason the dialog
+   scrolled sideways: `Row gutter={16}` lays its columns out with a -8px inline margin
+   on each side, so a body with ZERO inline padding is overflowed by exactly the
+   half-gutter. Measured 2026-09-01: scrollWidth 760 vs clientWidth 752, in both
+   themes. --space-3 clears the 8px and puts the padding on the ramp.
+
+   THE SELECTOR IS THREE CLASSES ON PURPOSE. antd 5.29 paints this as
+   `:where(.css-<hash>).ant-modal .ant-modal-body { padding: 0 }` — `:where()` costs
+   nothing but the two real classes still make it (0,2,0), so a lone `.mrf-modal-body`
+   at (0,1,0) loses and computes to 0px. That is not a theoretical worry: it is what
+   the first version of this rule did, and the symptom was identical to the inline
+   style it replaced. Specificity, not `!important` — the modal must stay restylable. */
+.ant-modal .ant-modal-body.mrf-modal-body {
+  padding: var(--space-5) var(--space-3) 0;
+}
+
+.mrf-modal-foot {
+  margin-block-start: 14px;
+  padding-block-start: var(--space-3);
+  border-block-start: var(--hairline);
+  text-align: right;
+}
+.mrf-section-rule {
+  margin-block-start: 28px;
+  padding-block-start: var(--space-4);
+  border-block-start: var(--hairline);
+}
+.mrf-section-rule--dashed {
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px dashed var(--hairline-color);
+}
+
+/* The read-only summary panel above the edit form. A tinted well, not a card: it sits
+   INSIDE a tier-4 overlay, and a second opaque fill there is Failure A (the slab). */
+.mrf-note-box {
+  background: var(--ink-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-ctl);
+  border: 1px solid var(--border-light);
+  margin-block-end: var(--space-5);
+}
+
+.mrf-sub { font-size: var(--fs-subhead); }
+.mrf-sub--muted { font-size: var(--fs-subhead); color: var(--text-2); }
+.mrf-caption { font-size: var(--fs-footnote); }
+.mrf-caption--muted { font-size: var(--fs-footnote); color: var(--text-3); }
+.mrf-hint { font-size: var(--fs-footnote); font-weight: 500; color: var(--text-3); margin-block-start: 2px; }
+.mrf-right { text-align: right; }
+.mrf-mt-1 { margin-block-start: var(--space-1); }
+.mrf-mt-2 { margin-block-start: var(--space-2); }
+.mrf-mb-2 { margin-block-end: var(--space-2); }
+.mrf-mb-4 { margin-block-end: var(--space-4); }
+.mrf-mb-5 { margin-block-end: var(--space-5); }
+
+/* ------------------------------------------------------------------
+   Buttons
+   Kept as AntD Buttons rather than src/ui Button, matching /candidates: this page has
+   14 of them across three modal footers, and swapping the import would change every
+   footer's layout contract in the same commit as the style conversion. The geometry
+   comes from tokens either way — which was the actual defect.
+   ------------------------------------------------------------------ */
+/* RETIRED 2026-08-31 — /mrf's buttons became Button emphasis levels. `--brand` was an outlined-brand treatment, which is `emphasis="soft"`.
+   Kept per the no-delete rule; uncomment to restore.
+
+.mrf-btn.ant-btn { border-radius: var(--radius-ctl); font-weight: 600; }
+.mrf-btn--brand.ant-btn { color: var(--brand-ink); border-color: var(--brand-primary); }
+*/
+.mrf-btn--lg.ant-btn {
+  height: var(--control-h-relaxed);
+  border-radius: var(--radius-btn);
+  font-weight: 600;
+  padding-inline: var(--space-5);
+}
+
+/* The JD link in the detail modal. It is an <a> styled as a control, so it takes the
+   control height and radius rather than a second set of hand-written numbers. */
+.mrf-doc-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 32px;
+  padding-inline: var(--space-3);
+  background: var(--ink-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+  color: var(--info-strong);
+  font-weight: 600;
+  font-size: var(--fs-footnote);
+}
+.mrf-mb-6 { margin-block-end: var(--space-6); }
+.mrf-modal-title { font-family: var(--font-heading); font-size: var(--fs-headline); font-weight: 700; color: var(--text); }

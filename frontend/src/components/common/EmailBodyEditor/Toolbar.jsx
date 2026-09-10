@@ -1,4 +1,5 @@
-import { Button, Tag, Tooltip } from 'antd';
+import { Tag, Tooltip } from 'antd';
+import { Button } from '../../../ui';
 import {
   BoldOutlined,
   ItalicOutlined,
@@ -46,7 +47,7 @@ export default function Toolbar({ buttons, editor, onImageClick, placeholders = 
                 <Tooltip title={btn.title} key={key}>
                   <Button
                     type="text"
-                    size="small"
+                    size="sm"
                     icon={btn.icon}
                     className="email-editor-toolbar__btn"
                     onMouseDown={noBlur}
@@ -66,7 +67,7 @@ export default function Toolbar({ buttons, editor, onImageClick, placeholders = 
               <Tag
                 onMouseDown={noBlur}
                 onClick={() => onInsertPlaceholder(token)}
-                style={{ cursor: 'pointer', margin: '0 2px', fontSize: 11, fontWeight: 500 }}
+                className="cmp-token-tag"
               >
                 +{token.replace(/[{}]/g, '')}
               </Tag>

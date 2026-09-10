@@ -10,15 +10,26 @@ import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
 
 const { Text, Paragraph } = Typography;
 
-const labelStyle = {
-  fontSize: 10,
-  fontWeight: 700,
-  display: 'block',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-  color: 'var(--text-2)',
-  marginBottom: 2,
-};
+/**
+ * REPLACED 2026-08-31 by the `.t-caption` role plus `.cdc-label`.
+ *
+ * This object hand-rolled the caption role — uppercase, bold, tracked, muted — and got
+ * the size wrong doing it: 10px, two under the 12px floor `theme/fonts.js` promises.
+ * `type-floor.mjs` did not catch it because this card renders inside a modal the check
+ * never opens; the guard only ever sees default page states.
+ *
+ * Kept per the no-delete rule.
+ *
+ *   const labelStyle = {
+ *     fontSize: 10,
+ *     fontWeight: 700,
+ *     display: 'block',
+ *     textTransform: 'uppercase',
+ *     letterSpacing: '0.5px',
+ *     color: 'var(--text-2)',
+ *     marginBottom: 2,
+ *   };
+ */
 
 function SectionHeader({ title }) {
   return (
@@ -32,8 +43,8 @@ function SectionHeader({ title }) {
 function Field({ label, children, span = 12 }) {
   return (
     <Col span={span}>
-      <Text style={labelStyle}>{label}</Text>
-      <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>{children ?? '—'}</Text>
+      <Text className="t-caption cdc-label">{label}</Text>
+      <Text className="cmp-body">{children ?? '—'}</Text>
     </Col>
   );
 }
@@ -58,7 +69,7 @@ export default function CandidateDetailCard({ candidate }) {
       {/* Identity header */}
       <div className="cdc-head">
         <Avatar size={52} icon={<UserOutlined />} className="cdc-avatar" />
-        <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="cmp-grow">
           <div className="cdc-name">{c.name || 'Candidate'}</div>
           <div className="cdc-email">{c.email || '—'}</div>
           {(c.location || c.position) && (
@@ -93,15 +104,15 @@ export default function CandidateDetailCard({ candidate }) {
         <Field label="Preferred Shift">{c.preferredShift}</Field>
 
         <Col span={24}>
-          <Text style={labelStyle}>Top 5 Key Skills</Text>
+          <Text className="t-caption cdc-label">Top 5 Key Skills</Text>
           {skills.length > 0 ? (
-            <Space size={[8, 8]} wrap style={{ marginTop: 2 }}>
+            <Space size={[8, 8]} wrap className="cmp-mt-1">
               {skills.map((skill, i) => (
                 <Tag key={i} className="cdc-skill">{skill}</Tag>
               ))}
             </Space>
           ) : (
-            <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>—</Text>
+            <Text className="cmp-body">—</Text>
           )}
         </Col>
 
@@ -113,14 +124,14 @@ export default function CandidateDetailCard({ candidate }) {
 
         <Col span={24}>
           <div className="cdc-subcard">
-            <Text style={{ ...labelStyle, marginBottom: 6 }}>Current Company</Text>
+            <Text className="t-caption cdc-label cdc-label--gap">Current Company</Text>
             <Row gutter={16}>
               <Col span={12}>
-                <Text type="secondary" style={{ fontSize: 9, display: 'block' }}>Company Name</Text>
+                <Text type="secondary" className="cmp-micro--plain">Company Name</Text>
                 <Text strong>{c.currentCompany?.Name || '—'}</Text>
               </Col>
               <Col span={12}>
-                <Text type="secondary" style={{ fontSize: 9, display: 'block' }}>Website</Text>
+                <Text type="secondary" className="cmp-micro--plain">Website</Text>
                 <Text>{c.currentCompany?.Website || '—'}</Text>
               </Col>
             </Row>
@@ -140,38 +151,38 @@ export default function CandidateDetailCard({ candidate }) {
         <Field label="Post-Graduation Degree">{c.postgraduationdegree}</Field>
         <Field label="Post-Graduation Specialization">{c.postgraduationspecialization}</Field>
         <Col span={24}>
-          <Text style={labelStyle}>LinkedIn Profile Link</Text>
+          <Text className="t-caption cdc-label">LinkedIn Profile Link</Text>
           {c.LinkedInProfile ? (
-            <a href={c.LinkedInProfile} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
+            <a href={c.LinkedInProfile} target="_blank" rel="noreferrer" className="cmp-body">
               {c.LinkedInProfile}
             </a>
-          ) : <Text style={{ fontSize: 13.5 }}>—</Text>}
+          ) : <Text className="cmp-body">—</Text>}
         </Col>
       </Row>
 
       {/* Employment History */}
       <SectionHeader title="Employment History" />
       {companies.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="cmp-stack">
           {companies.map((co, i) => (
             <div key={i} className="cdc-emp">
               <div>
-                <Text type="secondary" style={{ fontSize: 9, fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>Company Name</Text>
+                <Text type="secondary" className="cmp-micro">Company Name</Text>
                 <Text strong>{co.CompanyName || '—'}</Text>
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 9, fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>Start Date</Text>
+                <Text type="secondary" className="cmp-micro">Start Date</Text>
                 <Text>{co.StartDate || '—'}</Text>
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 9, fontWeight: 600, display: 'block', textTransform: 'uppercase' }}>End Date</Text>
+                <Text type="secondary" className="cmp-micro">End Date</Text>
                 <Text>{co.EndDate || '—'}</Text>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <Text type="secondary" style={{ fontSize: 13 }}>No employment history recorded.</Text>
+        <Text type="secondary" className="cmp-body">No employment history recorded.</Text>
       )}
 
       {/* Assessment & Interview */}
@@ -186,24 +197,24 @@ export default function CandidateDetailCard({ candidate }) {
         <Field label="Zeko Coding Score" span={8}>{c.ZekoCodingScore}</Field>
         <Field label="Zeko Communication Score" span={16}>{c.ZekoCommunicationScore}</Field>
         <Col span={24}>
-          <Text style={labelStyle}>Tech Round One Feedback</Text>
-          <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.TechRoundOne || '—'}</Paragraph>
+          <Text className="t-caption cdc-label">Tech Round One Feedback</Text>
+          <Paragraph className="cmp-body--flush">{c.TechRoundOne || '—'}</Paragraph>
         </Col>
         <Col span={24}>
-          <Text style={labelStyle}>Tech Round Two Feedback</Text>
-          <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.TechRoundTwo || '—'}</Paragraph>
+          <Text className="t-caption cdc-label">Tech Round Two Feedback</Text>
+          <Paragraph className="cmp-body--flush">{c.TechRoundTwo || '—'}</Paragraph>
         </Col>
         <Col span={24}>
-          <Text style={labelStyle}>Tech Round Three Feedback</Text>
-          <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.TechRoundThree || '—'}</Paragraph>
+          <Text className="t-caption cdc-label">Tech Round Three Feedback</Text>
+          <Paragraph className="cmp-body--flush">{c.TechRoundThree || '—'}</Paragraph>
         </Col>
         <Col span={24}>
-          <Text style={labelStyle}>Managerial / CEO Feedback</Text>
-          <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.ManagerialOrCEOFeedback || '—'}</Paragraph>
+          <Text className="t-caption cdc-label">Managerial / CEO Feedback</Text>
+          <Paragraph className="cmp-body--flush">{c.ManagerialOrCEOFeedback || '—'}</Paragraph>
         </Col>
         <Col span={24}>
-          <Text style={labelStyle}>HR Interview</Text>
-          <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.HRInterview || '—'}</Paragraph>
+          <Text className="t-caption cdc-label">HR Interview</Text>
+          <Paragraph className="cmp-body--flush">{c.HRInterview || '—'}</Paragraph>
         </Col>
       </Row>
     </div>

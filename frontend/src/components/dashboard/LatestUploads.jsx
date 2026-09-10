@@ -13,10 +13,11 @@
  * Candidate.
  */
 import { useEffect, useState } from 'react';
-import { Card, Typography, Skeleton, Empty, Tooltip } from 'antd';
+import { Typography, Skeleton, Empty, Tooltip } from 'antd';
 import { ArrowRightOutlined } from '@ant-design/icons';
 import dashboardService from '../../services/dashboardService';
 import MetricInfo from '../common/MetricInfo';
+import { Surface } from '../../ui';
 
 const { Title, Text } = Typography;
 
@@ -45,13 +46,13 @@ export default function LatestUploads({ onNavigate }) {
   }, []);
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="cmp-flush">
             Latest uploads <MetricInfo metric="latestUploads" />
           </Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>The five most recent candidates</Text>
+          <Text type="secondary" className="cmp-sub">The five most recent candidates</Text>
         </div>
         <Tooltip title="Open Search Candidates — the full database, with search and filters.">
           <span
@@ -61,13 +62,13 @@ export default function LatestUploads({ onNavigate }) {
             onClick={() => onNavigate('/candidates')}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/candidates'); }}
           >
-            Search all candidates <ArrowRightOutlined style={{ fontSize: 11 }} />
+            Search all candidates <ArrowRightOutlined className="cmp-caption" />
           </span>
         </Tooltip>
       </div>
 
       {loading ? (
-        <Skeleton active paragraph={{ rows: 4 }} title={false} style={{ marginTop: 16 }} />
+        <Skeleton active paragraph={{ rows: 4 }} title={false} className="cmp-mt-4" />
       ) : rows.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No uploads yet" style={{ margin: '26px 0' }} />
       ) : (
@@ -108,6 +109,6 @@ export default function LatestUploads({ onNavigate }) {
           ))}
         </div>
       )}
-    </Card>
+    </Surface>
   );
 }

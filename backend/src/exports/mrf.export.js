@@ -14,16 +14,21 @@
  *     table renders — so the columns still SUM in Excel.
  */
 import prisma from '../config/database.js';
-import { isMrfFilled } from '../config/pipelineStages.js';
+import { isMrfFilled, LEGACY_MRF_CLOSED_STATUS } from '../config/pipelineStages.js';
 
 /**
  * Prisma `where` for the MRF list. Mirrors the status aliases the UI's filter
  * tabs send ("manager submitted" with a space, "pending" also matching
  * "pendingfromleader").
  *
+ * Async: the "filled" tab isn't a column on rpa_mrf_jd_send itself — that
+ * table has no Prisma relation to rpa_mrf (bare mrf_id, no @relation) — so it
+ * needs a small subquery for the matching rpa_mrf ids, mirroring
+ * isMrfFilled()'s own definition of "filled".
+ *
  * @param {{ search?: string, status?: string }} query
  */
-export function buildMrfWhere(query = {}) {
+export async function buildMrfWhere(query = {}) {
   const { search, status } = query;
   const andConditions = [];
 
@@ -33,6 +38,18 @@ export function buildMrfWhere(query = {}) {
       andConditions.push({ mrfstatus: { in: ['pending', 'pendingfromleader'] } });
     } else if (statusLower === 'manager submitted' || statusLower === 'managersubmitted') {
       andConditions.push({ mrfstatus: { in: ['managersubmitted', 'manager submitted'] } });
+    } else if (statusLower === 'filled') {
+      const filledMrfs = await prisma.rpa_mrf.findMany({
+        where: { OR: [{ filled_at: { not: null } }, { approval_status: LEGACY_MRF_CLOSED_STATUS }] },
+        select: { id: true },
+      });
+      andConditions.push({ mrf_id: { in: filledMrfs.map((m) => m.id) } });
+    } else if (statusLower === 'paused') {
+      const pausedMrfs = await prisma.rpa_mrf.findMany({
+        where: { paused_at: { not: null } },
+        select: { id: true },
+      });
+      andConditions.push({ mrf_id: { in: pausedMrfs.map((m) => m.id) } });
     } else {
       andConditions.push({ mrfstatus: status.trim() });
     }
@@ -86,7 +103,7 @@ export async function attachApprovalStatus(records) {
   const linked = mrfIds.length > 0
     ? await prisma.rpa_mrf.findMany({
       where: { id: { in: mrfIds } },
-      select: { id: true, approval_status: true, filled_at: true, closed_at: true, closure_reason: true },
+      select: { id: true, approval_status: true, filled_at: true, closed_at: true, closure_reason: true, paused_at: true, paused_reason: true },
     })
     : [];
 
@@ -103,6 +120,8 @@ export async function attachApprovalStatus(records) {
       mrf_filled_at: mrf?.filled_at || null,
       mrf_closed_at: mrf?.closed_at || null,
       mrf_closure_reason: mrf?.closure_reason || null,
+      mrf_paused_at: mrf?.paused_at || null,
+      mrf_paused_reason: mrf?.paused_reason || null,
     };
   });
 }
@@ -159,7 +178,7 @@ const EXPORT_SELECT = {
 /** @type {import('./runExport.js').ExportSpec['fetch']} */
 export async function fetch({ filters, max }) {
   const records = await prisma.rpa_mrf_jd_send.findMany({
-    where: buildMrfWhere(filters),
+    where: await buildMrfWhere(filters),
     select: EXPORT_SELECT,
     orderBy: { created_at: 'desc' },
     take: max,

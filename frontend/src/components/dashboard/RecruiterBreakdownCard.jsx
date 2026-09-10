@@ -7,14 +7,18 @@
  * display name — see dashboard.service.js's getRecruiterBreakdown().
  * Full-database counts via GET /api/dashboard/recruiter-breakdown.
  */
-import { Card, Typography, Empty } from 'antd';
+import { Typography, Empty } from 'antd';
 import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
 import MetricInfo from '../common/MetricInfo';
+import { Surface } from '../../ui';
+import { CHART_TICK_SIZE, CHART_LEGEND_SIZE } from '../../constants/chartType';
 
 const { Title, Text } = Typography;
 
-const ADDED_COLOR = '#7a922e';
-const SHORTLISTED_COLOR = '#2563eb';
+// The two series. Tokens rather than literals so the chart follows the brand and
+// dark mode; SVG paint attributes resolve CSS variables.
+const ADDED_COLOR = 'var(--brand-primary)';
+const SHORTLISTED_COLOR = 'var(--skill-3)';
 
 // Special-case labels that aren't real recruiter names — explained on hover
 // rather than hidden, so the chart stays honest about what the data covers.
@@ -39,10 +43,10 @@ function BarTip({ active, payload, label }) {
   return (
     <div className="dash-chart-tip">
       <div className="dash-chart-tip__label">{label}</div>
-      <div className="dash-chart-tip__value" style={{ color: ADDED_COLOR }}>
+      <div className="dash-chart-tip__value rb-added">
         {added} candidate{added === 1 ? '' : 's'} added
       </div>
-      <div className="dash-chart-tip__value" style={{ color: SHORTLISTED_COLOR }}>
+      <div className="dash-chart-tip__value rb-shortlisted">
         {shortlisted} shortlisted to a role
       </div>
       {rate !== null && (
@@ -58,24 +62,24 @@ export default function RecruiterBreakdownCard({ data = [] }) {
   const chartHeight = Math.max(220, data.length * 46);
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
           {/* This used to be its own <Tooltip> with its own wording, which is how the
               same widget ended up explaining itself twice, differently. It now reads
               from the shared registry like every other widget on the page. */}
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={5} className="cmp-flush">
             Recruiter Activity <MetricInfo metric="recruiterActivity" size={12} />
           </Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="cmp-sub">
             Candidates added vs. shortlisted per recruiter
           </Text>
         </div>
       </div>
 
-      <div style={{ height: chartHeight, marginTop: 12 }}>
+      <div className="rb-chart" style={{ '--rb-h': typeof chartHeight === 'number' ? chartHeight + 'px' : chartHeight }}>
         {data.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No recruiter activity yet" style={{ paddingTop: 64 }} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No recruiter activity yet" className="cmp-empty-pad--lg" />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 4 }} barCategoryGap="28%">
@@ -84,7 +88,7 @@ export default function RecruiterBreakdownCard({ data = [] }) {
                 type="category"
                 dataKey="recruiter"
                 width={140}
-                tick={{ fontSize: 11, fill: 'var(--text)' }}
+                tick={{ fontSize: CHART_TICK_SIZE, fill: 'var(--text)' }}
                 tickLine={false}
                 axisLine={false}
               />
@@ -95,7 +99,7 @@ export default function RecruiterBreakdownCard({ data = [] }) {
                 height={24}
                 iconType="circle"
                 iconSize={8}
-                wrapperStyle={{ fontSize: 11.5 }}
+                wrapperStyle={{ fontSize: CHART_LEGEND_SIZE }}
               />
               <Bar dataKey="added" name="Added" fill={ADDED_COLOR} radius={[0, 6, 6, 0]} barSize={12} isAnimationActive={!prefersReducedMotion()} animationDuration={800} />
               <Bar dataKey="shortlisted" name="Shortlisted" fill={SHORTLISTED_COLOR} radius={[0, 6, 6, 0]} barSize={12} isAnimationActive={!prefersReducedMotion()} animationDuration={800} />
@@ -103,6 +107,6 @@ export default function RecruiterBreakdownCard({ data = [] }) {
           </ResponsiveContainer>
         )}
       </div>
-    </Card>
+    </Surface>
   );
 }

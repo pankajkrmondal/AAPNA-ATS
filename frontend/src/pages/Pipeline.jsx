@@ -27,9 +27,10 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
+  // Button now comes from src/ui — see the import below.
+  Alert, Badge, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, DownOutlined, FilterOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UpOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
@@ -37,11 +38,38 @@ import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import ErrorState from '../components/common/ErrorState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
+import { DesignScope, PageShell, PageHeader, Surface, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/pipeline.css';
 
 const { Text, Title } = Typography;
 
 /** Aging badge thresholds — green -> amber -> red, per 02-BUSINESS-DESIGN.md §1.1. */
 const ageColor = (d) => (d <= 5 ? 'green' : d <= 10 ? 'gold' : 'red');
+
+/* Per-browser preferences for the board's two collapsible chrome pieces (2026-09-01).
+   Both are view state, not data: nothing here changes what the board contains, so it
+   belongs in localStorage next to the sidebar's collapse flag rather than on the
+   server or in the URL. */
+const FILTERS_OPEN_KEY = 'pipeline_filters_open';
+const UNRESOLVED_DISMISSED_KEY = 'pipeline_unresolved_dismissed';
+
+/** Same shape as DesignContext's `persist` — a preference is never worth a thrown
+ *  render, so private mode just loses the choice at reload. */
+const readPref = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null; /* storage unavailable (private mode) */
+  }
+};
+const writePref = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable (private mode) — the choice just won't survive reload */
+  }
+};
 
 const SOURCE_LABEL = {
   recruiter: 'Recruiter',
@@ -148,27 +176,27 @@ function CandidateCard({ card, onOpen }) {
       // touching this one. Same pattern as --stat-color / --kpi-color.
       style={{ marginBottom: 8, '--cp-accent': status.accent }}
     >
-      <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-        <div className="cp-avatar" style={{ background: avatarColor(card.candidate_name) }}>{initials(card.candidate_name)}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-            <Text strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div className="pl-card-row">
+        <div className="cp-avatar" style={{ '--pl-avatar': avatarColor(card.candidate_name) }}>{initials(card.candidate_name)}</div>
+        <div className="pl-card-main">
+          <div className="pl-card-head">
+            <Text strong className="pl-card-name pl-truncate">
               {card.candidate_name || 'Unnamed candidate'}
             </Text>
             <Tooltip title="Days in current stage">
               {card.days_in_stage > 10
-                ? <Tag color="red" className="tag-attention" style={{ marginInlineEnd: 0, fontSize: 10.5, lineHeight: '16px' }}>{card.days_in_stage}d</Tag>
-                : <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{card.days_in_stage}d</Text>}
+                ? <Tag color="red" className="tag-attention pl-tag--days">{card.days_in_stage}d</Tag>
+                : <Text type="secondary" className="pl-caption pl-truncate">{card.days_in_stage}d</Text>}
             </Tooltip>
           </div>
-          <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Text type="secondary" className="pl-card-sub pl-truncate">
             {card.position || 'No position on file'} · {sourceLabel(card)}{card.owner ? ` · ${card.owner}` : ''}
           </Text>
-          <Space size={4} wrap style={{ marginBottom: 7 }}>
-            <Tag color={status.color} style={{ fontSize: 11, marginInlineEnd: 0 }}>{status.label}</Tag>
+          <Space size={4} wrap className="pl-mb-1-5">
+            <Tag color={status.color} className="pl-tag">{status.label}</Tag>
             {card.concurrent_journeys > 1 && (
               <Tooltip title="Active on more than one MRF at once (Q13)">
-                <Tag color="purple" icon={<TeamOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.concurrent_journeys} MRFs</Tag>
+                <Tag color="purple" icon={<TeamOutlined />} className="pl-tag">{card.concurrent_journeys} MRFs</Tag>
               </Tooltip>
             )}
             {/* Still running against a requisition that has already been
@@ -176,7 +204,7 @@ function CandidateCard({ card, onOpen }) {
                 left. Only shown while the journey is genuinely open. */}
             {card.mrf_closed && !card.final_outcome && (
               <Tooltip title="All openings on this requisition are filled — this candidate is still in progress. Continue only if you intend to re-open the role or are holding them as a backup.">
-                <Tag color="orange" className="tag-attention" icon={<WarningOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Role filled</Tag>
+                <Tag color="orange" className="tag-attention pl-tag" icon={<WarningOutlined />}>Role filled</Tag>
               </Tooltip>
             )}
             {/* Held by a recruiter (Q33). Sits next to "Role filled" because
@@ -186,13 +214,13 @@ function CandidateCard({ card, onOpen }) {
                 it until 2026-08-26. */}
             {card.is_paused && !card.final_outcome && (
               <Tooltip title="This journey is paused — interview reminders, occurrence chase-ups and assessment deadline bells are all suspended until it is resumed.">
-                <Tag color="orange" icon={<PauseCircleOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>Paused</Tag>
+                <Tag color="orange" icon={<PauseCircleOutlined />} className="pl-tag">Paused</Tag>
               </Tooltip>
             )}
-            {card.source === 'vendor' && <ShopOutlined style={{ color: 'var(--text-3)', fontSize: 11 }} />}
+            {card.source === 'vendor' && <ShopOutlined className="pl-muted" />}
           </Space>
           <Tooltip title={segTooltip}>
-            <div style={{ display: 'flex', gap: 3 }} aria-label={segTooltip}>
+            <div className="pl-chips" aria-label={segTooltip}>
               {segs.map((s) => <div key={s.key} className={`cp-progress-seg cp-progress-seg--${s.state}`} />)}
             </div>
           </Tooltip>
@@ -255,7 +283,7 @@ function LastUpdated({ at, refreshing }) {
     return () => clearInterval(id);
   }, []);
 
-  if (refreshing) return <Text type="secondary" style={{ fontSize: 12 }}>Refreshing…</Text>;
+  if (refreshing) return <Text type="secondary" className="pl-caption">Refreshing…</Text>;
   if (!at) return null;
 
   const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
@@ -264,7 +292,7 @@ function LastUpdated({ at, refreshing }) {
     : secs < 3600
       ? `${Math.round(secs / 60)} min ago`
       : `${Math.round(secs / 3600)} hr ago`;
-  return <Text type="secondary" style={{ fontSize: 12 }}>Updated {label}</Text>;
+  return <Text type="secondary" className="pl-caption">Updated {label}</Text>;
 }
 
 function BoardScroller({ children }) {
@@ -312,28 +340,11 @@ function BoardScroller({ children }) {
     scrollRef.current?.scrollBy({ left: dir * COLUMN_STEP, behavior: 'smooth' });
   };
 
-  const arrowStyle = (side) => ({
-    position: 'fixed',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    [side]: `${Math.max(bounds[side] + 4, 8)}px`,
-    zIndex: 20,
-    width: 44,
-    height: 44,
-    borderRadius: '50%',
-    // Brand green gradient + glow (same treatment as the primary buttons), with
-    // a white icon so it reads as an action and stands out over the cards.
-    border: '2px solid #fff',
-    background: 'var(--gradient-primary, linear-gradient(135deg, #7a922e, #92a63c))',
-    boxShadow: 'var(--glow-accent, 0 4px 14px rgba(122,146,46,0.30)), 0 2px 8px rgba(0,0,0,0.18)',
-    color: '#fff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    fontSize: 18,
-    fontWeight: 700,
-  });
+  // Only the measured viewport offset stays inline — it is computed from the board's
+  // bounds at runtime, so no stylesheet could hold it. The brand gradient, the glow
+  // and the white icon all moved to `.board-scroll-arrow` in styles/pages/pipeline.css,
+  // which is deliberately NOT scoped to `.ats-v3`: these portal to <body>.
+  const arrowStyle = (side) => ({ [side]: `${Math.max(bounds[side] + 4, 8)}px` });
 
   // The arrows are portaled to <body> so their position:fixed is anchored to
   // the true viewport — an ancestor with a `transform` (page-enter animation,
@@ -372,12 +383,30 @@ function BoardScroller({ children }) {
       {arrows}
       <div
         ref={scrollRef}
-        className="stagger-children"
-        style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16, alignItems: 'flex-start' }}
+        className="stagger-children pl-board"
       >
         {children}
       </div>
     </>
+  );
+}
+
+/**
+ * The page header. Lifted out of the toolbar card on 2026-08-31 — it was a
+ * `Title level={3}`, which resolves to 20px against the lab's 32px, and a title nested
+ * inside a tier-2 Surface reads as that card's label rather than the page's.
+ *
+ * Extracted into its own component because this route returns from THREE places —
+ * loading, error, and the board — and the header has to be identical in all three.
+ * Inlining it three times is how they would drift.
+ */
+function PipelineHeader() {
+  return (
+    <PageHeader
+      eyebrow="Pipeline"
+      title="Candidate Pipeline"
+      subtitle="Candidates enter here when shortlisted from Candidate Screening."
+    />
   );
 }
 
@@ -402,6 +431,33 @@ export default function Pipeline() {
   // (defect D3). Lives here rather than in PipelineDrawer because the drawer
   // unmounts itself the moment the conflict is detected.
   const [staleConflict, setStaleConflict] = useState(false);
+
+  // The filter pane collapses, and starts collapsed (2026-09-01). Reported as
+  // "these 2 popups are occupying the space": measured at 1560x900, the toolbar's
+  // search + seven filter controls and the unresolved-interview banner put the
+  // board's first pixel at 559px, leaving 341px — less than one card row plus the
+  // column header — for the board itself. Folding the pane returns 100px and
+  // dismissing the banner another 146px.
+  //
+  // Collapsed, the toolbar keeps only what is useful on every visit (freshness,
+  // refresh, export, the count) and folds the controls used occasionally. The choice
+  // persists per browser, like the sidebar's, so someone who filters all day opens
+  // it once.
+  const [filtersOpen, setFiltersOpen] = useState(() => readPref(FILTERS_OPEN_KEY) === 'true');
+  const toggleFilters = () => {
+    setFiltersOpen((open) => {
+      writePref(FILTERS_OPEN_KEY, String(!open));
+      return !open;
+    });
+  };
+
+  // Dismissal of the unresolved-interview banner, keyed to WHICH rounds are
+  // unresolved rather than to a boolean. Closing it acknowledges the rounds that
+  // were on screen; the next round to end unconfirmed produces a different key and
+  // the banner comes back by itself. A plain `hidden: true` would have silently
+  // swallowed every future blockage, and this banner is the only place one is
+  // reported.
+  const [dismissedUnresolved, setDismissedUnresolved] = useState(() => readPref(UNRESOLVED_DISMISSED_KEY) || '');
 
   // Deep link: /pipeline?candidate=<pipelineId> opens straight into that
   // candidate's drawer. This is how the notification bell hands off — clicking
@@ -463,6 +519,23 @@ export default function Pipeline() {
     refetchOnWindowFocus: true,
   });
 
+  /* The identity of the CURRENT blockage set. Sorted so the key does not change
+     when the backend returns the same rounds in a different order — an unstable
+     key would un-dismiss the banner on every poll. */
+  const unresolvedKey = useMemo(
+    () => (unresolvedInterviews || []).map((iv) => iv.id).sort().join(','),
+    [unresolvedInterviews],
+  );
+  const unresolvedHidden = Boolean(unresolvedKey) && dismissedUnresolved === unresolvedKey;
+  const dismissUnresolved = () => {
+    writePref(UNRESOLVED_DISMISSED_KEY, unresolvedKey);
+    setDismissedUnresolved(unresolvedKey);
+  };
+  const restoreUnresolved = () => {
+    writePref(UNRESOLVED_DISMISSED_KEY, '');
+    setDismissedUnresolved('');
+  };
+
   const refreshBoard = () => {
     queryClient.invalidateQueries({ queryKey: ['pipeline-board'] });
     queryClient.invalidateQueries({ queryKey: ['unresolved-interviews'] });
@@ -491,7 +564,12 @@ export default function Pipeline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient]);
 
-  const anyFilterActive = Boolean(position || source || onHoldOnly || rejectedOnly || stuckOnly || showClosed || myCandidatesOnly || nlQuery.trim());
+  /* Counted, not just tested, because the badge on the collapsed Filters button is
+     the only thing on screen saying how much of the board is being hidden. */
+  const activeFilterCount = [
+    position, source, onHoldOnly, rejectedOnly, stuckOnly, showClosed, myCandidatesOnly, nlQuery.trim(),
+  ].filter(Boolean).length;
+  const anyFilterActive = activeFilterCount > 0;
   const clearFilters = () => {
     setPosition(undefined);
     setSource(undefined);
@@ -530,24 +608,37 @@ export default function Pipeline() {
     // rhythm is there before the data is, so the board does not snap into
     // existence and shift the page under the pointer.
     return (
-      <div style={{ padding: 24 }}>
-        <LoadingSkeleton type="board" columns={5} rows={3} />
-      </div>
+      <DesignScope>
+        <PageShell width="wide">
+          {/* The header renders in the loading and error branches too — 2026-08-31.
+              These returned early with only a skeleton, so for the seconds the board
+              takes to arrive the page had no title at all, and then one appeared: the
+              same "screen begins with no anchor" defect this whole pass is about, just
+              confined to a transient state. A header is page furniture, not content,
+              so it should be there before the content is. Caught by composition.mjs,
+              which happened to probe mid-load. */}
+          <PipelineHeader />
+          <LoadingSkeleton type="board" columns={5} rows={3} />
+        </PageShell>
+      </DesignScope>
     );
   }
 
   if (isError) {
     return (
-      <div style={{ padding: 24 }}>
-        <Card bordered={false} className="glass-card no-lift">
+      <DesignScope>
+        <PageShell width="wide">
+        <PipelineHeader />
+        <Surface tier={2} padding="relaxed">
           <ErrorState
             title="Failed to load the Candidate Pipeline"
             body="The board could not be fetched. Nothing has changed — retry, or check that the backend is reachable."
             error={error?.response?.data?.message || error?.message}
             onRetry={refreshBoard}
           />
-        </Card>
-      </div>
+        </Surface>
+        </PageShell>
+      </DesignScope>
     );
   }
 
@@ -557,7 +648,8 @@ export default function Pipeline() {
   const closedCount = data?.closedCount ?? 0;
 
   return (
-    <div style={{ padding: 24 }}>
+    <DesignScope>
+      <PageShell width="wide">
       {/* One tier-2 toolbar card holding the header, the freshness/refresh/export
           controls, the NL search and the filters.
 
@@ -566,16 +658,23 @@ export default function Pipeline() {
           of them floated unanchored over the gradient with nothing tying them
           together. Grouping them onto one pane also states what they are: the
           board's controls, distinct from the board. */}
-      <Card bordered={false} className="glass-card no-lift pipeline-toolbar" styles={{ body: { padding: 18 } }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>Candidate Pipeline</Title>
-          <Text type="secondary">Candidates enter here when shortlisted from Candidate Screening.</Text>
-        </div>
+      <PipelineHeader />
+
+      <Surface
+        tier={2}
+        padding="default"
+        className={`pipeline-toolbar${filtersOpen ? '' : ' pipeline-toolbar--collapsed'}`}
+      >
+      {/* `.pl-toolbar-head` is `space-between`. It briefly held only one group (the
+          title having been lifted into the PageHeader), and both sides are back as of
+          2026-09-01: the board's ACTIONS on the left, the board's STATUS on the right.
+          The split is what makes the row work collapsed — the count and the clear-filters
+          escape hatch stay on screen when the pane below them is folded away. */}
+      <div className="pl-toolbar-head">
         <Space size={10}>
           <LastUpdated at={dataUpdatedAt} refreshing={isFetching} />
           <Tooltip title="Refresh the board">
-            <Button icon={<ReloadOutlined spin={isFetching} />} onClick={refreshBoard} disabled={isFetching}>
+            <Button emphasis="soft" icon={<ReloadOutlined spin={isFetching} />} onClick={refreshBoard} disabled={isFetching}>
               Refresh
             </Button>
           </Tooltip>
@@ -586,23 +685,74 @@ export default function Pipeline() {
             fallbackName="AAPNA-ATS_Candidate-Pipeline.csv"
             rowCount={filteredTotal}
           />
+          {/* The badge, not the chevron, is the load-bearing part: collapsed with a
+              filter still on, it is the only cue that the board is showing a subset.
+              Badge OUTSIDE Tooltip — Tooltip clones its child to attach a ref, and
+              AntD's Badge is not a forwardRef, so the other nesting drops the ref. */}
+          <Badge count={activeFilterCount} size="small" offset={[-6, 2]}>
+            <Tooltip title={filtersOpen ? 'Hide the search and filters' : 'Search the board and filter it'}>
+              <Button
+                emphasis="soft"
+                icon={<FilterOutlined />}
+                onClick={toggleFilters}
+                aria-expanded={filtersOpen}
+                aria-controls="pl-filter-pane"
+              >
+                Filters
+                {filtersOpen ? <UpOutlined className="pl-chevron" /> : <DownOutlined className="pl-chevron" />}
+              </Button>
+            </Tooltip>
+          </Badge>
+        </Space>
+
+        {/* Board status. The count and Clear filters sat inside the filter row until
+            2026-09-01 — they cannot stay there now that the row folds, or a collapsed
+            pane could leave the board filtered with nothing on screen saying so and no
+            way to undo it. Same reason the dismissed-banner chip lands here: a
+            blockage that has been acknowledged still has to be reachable. */}
+        <Space size={10}>
+          {unresolvedHidden && (
+            <Tooltip title="Show the interviews awaiting confirmation again">
+              <Button
+                size="sm"
+                emphasis="text"
+                icon={<WarningOutlined />}
+                onClick={restoreUnresolved}
+              >
+                {unresolvedInterviews.length} awaiting confirmation
+              </Button>
+            </Tooltip>
+          )}
+          <Text type="secondary">
+            {anyFilterActive ? `${filteredTotal} of ${total} candidates` : `${total} candidates`}
+          </Text>
+          {anyFilterActive && (
+            <Button size="sm" emphasis="text" icon={<ClearOutlined />} onClick={clearFilters}>
+              Clear filters
+            </Button>
+          )}
         </Space>
       </div>
 
+      {/* The fold. Conditionally rendered rather than hidden with CSS: the pane holds
+          seven focusable controls, and a `display:none` pane keeps them in the tab
+          order of a screen that is deliberately showing less. */}
+      {filtersOpen && (
+      <div id="pl-filter-pane" className="pl-filter-pane">
       <Input.Search
         allowClear
         placeholder='Ask the board — e.g. "vendor candidates stuck on hold"'
-        prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
-        style={{ maxWidth: 520, marginBottom: 8 }}
+        prefix={<RobotOutlined className="pl-brand" />}
+        className="pl-search"
         value={nlQuery}
         onChange={(e) => { setNlQuery(e.target.value); if (!e.target.value.trim()) handleNlSearch(''); }}
         onSearch={handleNlSearch}
         enterButton={<SearchOutlined />}
       />
       {nlRead && (
-        <div style={{ marginBottom: 10 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            <RobotOutlined style={{ marginInlineEnd: 4 }} />Read as: {nlRead}
+        <div className="pl-mb-2-5">
+          <Text type="secondary" className="pl-caption">
+            <RobotOutlined className="pl-tag--gap" />Read as: {nlRead}
           </Text>
         </div>
       )}
@@ -611,7 +761,7 @@ export default function Pipeline() {
         <Select
           allowClear
           placeholder="Position"
-          style={{ minWidth: 200 }}
+          className="pl-select-wide"
           value={position}
           onChange={setPosition}
           options={positions.map((p) => ({ value: p, label: p }))}
@@ -619,7 +769,7 @@ export default function Pipeline() {
         <Select
           allowClear
           placeholder="Source"
-          style={{ minWidth: 170 }}
+          className="pl-select"
           value={source}
           onChange={setSource}
           options={Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }))}
@@ -651,48 +801,53 @@ export default function Pipeline() {
             Show closed{closedCount > 0 ? ` (${closedCount})` : ''}
           </Checkbox>
         </Tooltip>
-        {anyFilterActive && (
-          <Button size="small" type="text" icon={<ClearOutlined />} onClick={clearFilters}>
-            Clear filters
-          </Button>
-        )}
-        <Text type="secondary">
-          {anyFilterActive ? `${filteredTotal} of ${total} candidates` : `${total} candidates`}
-        </Text>
+        {/* `Clear filters` and the candidate count were the last two children here.
+            Not removed — moved up into `.pl-toolbar-head` on 2026-09-01 so they survive
+            this pane being collapsed. See the comment on that group. */}
       </Space>
-      </Card>
+      </div>
+      )}
+      </Surface>
 
       {/* Interviews that ended with no verdict. Deliberately a banner rather
           than a column on the board: these are not a pipeline stage, they are a
           blockage — every one is a round that cannot send its scorecard until a
           human says whether the interview happened. Clicking a row opens that
-          candidate's drawer, where Mark as Held / Mark No-show already live. */}
-      {unresolvedInterviews?.length > 0 && (
+          candidate's drawer, where Mark as Held / Mark No-show already live.
+
+          Closable as of 2026-09-01, because permanent is not the same as important:
+          a banner that cannot be put away is one a recruiter learns to read past.
+          Closing it is an acknowledgement of THESE rounds (see `unresolvedKey`), it
+          leaves a chip in the toolbar that reopens it, and a new unconfirmed round
+          raises it again on its own. */}
+      {unresolvedInterviews?.length > 0 && !unresolvedHidden && (
         <>
-          <div style={{ height: 18 }} />
+          <div className="pl-gap" />
           <Alert
             type="warning"
             showIcon
+            closable
+            onClose={dismissUnresolved}
             icon={<WarningOutlined />}
             message={`${unresolvedInterviews.length} interview${unresolvedInterviews.length === 1 ? '' : 's'} awaiting confirmation`}
             description={
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" className="pl-caption">
                   These rounds ended without anyone recording whether they happened. No scorecard
                   is requested until one is marked held.
                 </Text>
-                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="pl-card-meta">
                   {unresolvedInterviews.map((iv) => (
-                    <div key={iv.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div key={iv.id} className="pl-controls">
                       <Button
-                        size="small"
-                        type="link"
-                        style={{ padding: 0, height: 'auto' }}
+                        size="sm"
+                        emphasis="text"
+                        className="pl-flat"
                         onClick={() => setOpenPipelineId(iv.pipeline_id)}
                       >
                         {iv.candidate_name || `Journey ${iv.pipeline_id}`}
                       </Button>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" className="pl-caption">
                         {iv.stage_label}
                         {iv.interviewer_name ? ` · ${iv.interviewer_name}` : ''}
                         {' · ended '}
@@ -701,7 +856,7 @@ export default function Pipeline() {
                           : `${Math.floor(iv.hours_overdue / 24)}d ago`}
                       </Text>
                       {iv.occurrence_status === 'unconfirmed' && (
-                        <Tag color="default" style={{ marginInlineStart: 0 }}>never confirmed</Tag>
+                        <Tag color="default" className="pl-tag--flush">never confirmed</Tag>
                       )}
                     </div>
                   ))}
@@ -712,17 +867,20 @@ export default function Pipeline() {
         </>
       )}
 
-      <div style={{ height: 18 }} />
+      <div className="pl-gap" />
 
       <BoardScroller>
         {columns.map((col) => (
-          <div key={col.stage_key} style={{ flex: '0 0 260px' }}>
-            <Card
+          <div key={col.stage_key} className="pl-column">
+            <Surface
+              as={Card}
+              tier={2}
+              padding="none"
               size="small"
               title={(
                 <Space size={6}>
-                  <Text style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }} strong>{col.label}</Text>
-                  {col.is_optional && <Tag style={{ fontSize: 10 }}>optional</Tag>}
+                  <Text className="pl-col-label" strong>{col.label}</Text>
+                  {col.is_optional && <Tag className="pl-optional">optional</Tag>}
                 </Space>
               )}
               extra={(
@@ -730,8 +888,9 @@ export default function Pipeline() {
                   {col.stage_key === 'assessment' && (
                     <Tooltip title="Import Evalground results (CSV) — matches by candidate email to journeys currently in this round">
                       <Button
-                        size="small"
-                        type="text"
+                        size="sm"
+                        emphasis="text"
+                        iconOnly
                         icon={<ImportOutlined />}
                         onClick={(e) => { e.stopPropagation(); setImportModalOpen(true); }}
                       />
@@ -745,11 +904,9 @@ export default function Pipeline() {
               // board column bouncing as the pointer crosses it is wrong — the
               // cards inside it are the things you hover. Same reasoning as
               // `.dash-chart-card` on the dashboard.
-              className="glass-card no-lift pipeline-column"
-              styles={{ body: { padding: 10, background: 'transparent' } }}
-              style={{ borderTop: 0, overflow: 'hidden' }}
+              className="pipeline-column pl-column-card"
             >
-              <div style={{ height: 3, margin: '-1px -1px 10px', background: STAGE_ACCENT[col.stage_type] || 'var(--border)' }} />
+              <div className="pl-stage-rail" style={{ '--pl-stage': STAGE_ACCENT[col.stage_type] }} />
               {col.cards.length === 0 ? (
                 // Was a bare "No candidates". A column is empty for a reason the
                 // reader can act on — usually a filter, not an empty pipeline —
@@ -761,14 +918,14 @@ export default function Pipeline() {
                   body={anyFilterActive
                     ? 'No one in this stage matches the current filters.'
                     : 'Candidates appear in this stage as they progress.'}
-                  style={{ padding: '18px 8px' }}
+                  className="pl-empty-pad"
                 />
               ) : (
                 col.cards.map((card) => (
                   <CandidateCard key={card.id} card={card} onOpen={setOpenPipelineId} />
                 ))
               )}
-            </Card>
+            </Surface>
           </div>
         ))}
       </BoardScroller>
@@ -795,18 +952,7 @@ export default function Pipeline() {
           toast stays crisp and readable on top of the blur; pointer-events block
           clicks on a board the recruiter has just been told is out of date. */}
       {staleConflict && createPortal(
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'var(--overlay-scrim)',
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
-            zIndex: 1500,
-            transition: 'opacity 200ms ease',
-          }}
-        />,
+        <div aria-hidden="true" className="pl-scrim" />,
         document.body,
       )}
 
@@ -818,6 +964,7 @@ export default function Pipeline() {
           queryClient.invalidateQueries({ queryKey: ['assessment-result'] });
         }}
       />
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

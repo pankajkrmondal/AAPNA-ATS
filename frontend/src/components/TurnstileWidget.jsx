@@ -10,7 +10,8 @@
  * a ref after a failed login — tokens are single-use.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Alert, Button } from 'antd';
+import { Alert } from 'antd';
+import { Button } from '../ui';
 import useTheme from '../hooks/useTheme';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -107,11 +108,11 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
           message="Verification check failed"
           description="This is usually temporary. Click retry to request a new check."
           action={
-            <Button size="small" onClick={requestFreshChallenge}>
+            <Button size="sm" onClick={requestFreshChallenge}>
               Retry
             </Button>
           }
-          style={{ borderRadius: 8 }}
+          className="tw-alert"
         />
       )}
     </div>

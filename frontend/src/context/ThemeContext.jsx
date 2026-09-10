@@ -16,7 +16,23 @@ export const ThemeContext = createContext(null);
 
 const STORAGE_KEY = 'ats_theme';
 const MODES = ['light', 'dark', 'system'];
-const THEME_COLOR = { light: '#7a922e', dark: '#0a0e0c' };
+/* The mobile browser-chrome colour. Read from the TOKENS rather than frozen as two
+   hexes: `applyResolvedTheme` sets `data-theme` before reading, so the values resolve,
+   and a tenant brand now reaches the browser chrome as well as the app. The literals
+   are kept as the fallback for the moment before the stylesheet has loaded — the meta
+   tag is set on first paint, and an unstyled chrome flash is worse than a stale one. */
+const THEME_COLOR_FALLBACK = { light: '#7a922e', dark: '#0a0e0c' };
+
+/** @param {'light'|'dark'} resolved */
+function themeColor(resolved) {
+  try {
+    const token = resolved === 'dark' ? '--ink' : '--brand-primary';
+    const value = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+    return value || THEME_COLOR_FALLBACK[resolved];
+  } catch {
+    return THEME_COLOR_FALLBACK[resolved];
+  }
+}
 
 /**
  * Reads the initial mode: valid localStorage value → that mode, else 'light'.
@@ -45,7 +61,7 @@ function applyResolvedTheme(resolved) {
   el.style.colorScheme = resolved;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', THEME_COLOR[resolved]);
+    ?.setAttribute('content', themeColor(resolved));
 }
 
 /**

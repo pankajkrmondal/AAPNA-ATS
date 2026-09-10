@@ -1,0 +1,106 @@
+/**
+ * /email-templates — the template editor. Stage 5.4.
+ *
+ * The page already had a real stylesheet (`.email-page`, `.email-toolbar`,
+ * `.template-list-item`, `.email-editor-card` in theme/index.css) — it was the
+ * best-kept page in the app on that count, which is why it carried only 23
+ * violations. What is here is the remainder those rules never covered.
+ *
+ * `.email-pane-card` was on all three panes and matched NO rule anywhere — a class
+ * name that had outlived its stylesheet. It is dropped in the Surface conversion.
+ *
+ * Imported after '../ui'.
+ */
+
+.em-count { font-size: var(--fs-footnote); white-space: nowrap; }
+/* The dirty-state marker. `isDirty ? 'var(--gold)' : undefined` was a conditional
+   inline colour; a modifier class says the same thing where a stylesheet can see it. */
+.em-count--dirty { color: var(--gold); }
+.em-spacer { flex-grow: 1; }
+
+/* Was its own 40px centred block. Composes the shared loading treatment so every
+   "this pane is loading" moment looks identical. */
+.em-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) 0;
+  min-height: 180px;
+}
+.em-loading__label { display: block; margin-block-start: var(--space-3); color: var(--text-2); }
+
+.em-item-body { min-width: 0; flex-grow: 1; }
+.em-item-meta { min-width: 0; }
+.em-never { color: var(--red); }
+.em-caption { font-size: var(--fs-footnote); }
+
+.em-alert.ant-alert { margin-block-end: var(--space-3); border-radius: var(--radius-ctl); }
+.em-alert--sm.ant-alert { font-size: var(--fs-footnote); }
+
+.em-notes {
+  margin-block-start: 10px;
+  font-size: var(--fs-footnote);
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.em-token.ant-typography { font-size: var(--fs-footnote); }
+
+.em-placeholder__icon { font-size: 48px; color: var(--border); }
+.em-placeholder__title.ant-typography { margin: 0; color: var(--text-2); }
+.em-placeholder__copy { max-width: 320px; display: inline-block; }
+
+.em-modal-title { font-family: var(--font-heading); font-size: var(--fs-headline); font-weight: 700; }
+.em-editor-frame {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-ctl);
+  overflow: hidden;
+}
+.em-prefix-icon { color: var(--text-3); }
+
+/* The active/inactive dot in the template list. The colour was a conditional inline
+   background — binary state, so it is a modifier rather than a custom property; the
+   `--ui-accent` pattern is for CONTINUOUS data (a stage hue), not a boolean.
+   `.template-list-item__dot` in theme/index.css owns the shape and sets no fill. */
+.template-list-item__dot { background: var(--gold); }
+.template-list-item__dot--off { background: var(--border); }
+
+/* ------------------------------------------------------------------
+   The three panes — converted from <Card> to <Surface>
+
+   AntD's Card gave these a `title` head and a `styles.body` object. Surface has
+   neither, so the head is real markup now and the body layout is a class. Two rules
+   in theme/index.css targeted `.ant-card-head` / `.ant-card-body` and would have gone
+   dead in the swap; they are reproduced here against the new structure rather than
+   left to rot as selectors matching nothing.
+   ------------------------------------------------------------------ */
+.em-pane { display: flex; flex-direction: column; }
+
+.em-list-body {
+  padding: var(--space-4) 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Was `.email-editor-card .ant-card-head` — identity only, since Save moved to the
+   page toolbar, which is what lets it stay one compact line. */
+.em-pane__head {
+  padding: 10px var(--space-5);
+  border-block-end: var(--hairline);
+}
+.em-editor-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-5);
+}
+
+/* Was `.email-placeholder-card .ant-card-body`. The min-height moved onto the same
+   rule as the centring rather than sitting on the element as an inline style. */
+.em-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 400px;
+}

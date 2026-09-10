@@ -14,8 +14,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Button, Typography, Alert, Spin, Space, Result, Tag, Upload, message,
+  // Button now comes from src/ui — see the import below.
+  Typography, Alert, Spin, Space, Result, Tag, Upload, message,
 } from 'antd';
+import { Button } from '../ui';
 import {
   UploadOutlined, CheckCircleOutlined, FileTextOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
@@ -140,7 +142,7 @@ export default function DocumentUpload() {
   if (loading) {
     return (
       <PublicPageShell title="Upload your documents" subtitle="Loading your checklist…">
-        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+        <div className="cmp-loading"><Spin size="large" /></div>
       </PublicPageShell>
     );
   }
@@ -192,25 +194,21 @@ export default function DocumentUpload() {
     >
       {(view?.candidate_name || view?.position) && (
         <div
+          className="pps-summary"
           style={{
-            background: BRAND.page,
-            borderRadius: 10,
-            padding: '12px 16px',
-            marginBottom: 18,
-            display: 'flex',
             flexWrap: 'wrap',
             gap: '4px 28px',
           }}
         >
           {view?.candidate_name && (
             <div>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>CANDIDATE</Text>
+              <Text type="secondary" className="pps-xs-block">CANDIDATE</Text>
               <Text strong>{view.candidate_name}</Text>
             </div>
           )}
           {view?.position && (
             <div>
-              <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>POSITION</Text>
+              <Text type="secondary" className="pps-xs-block">POSITION</Text>
               <Text strong>{view.position}</Text>
             </div>
           )}
@@ -252,19 +250,19 @@ export default function DocumentUpload() {
             ))}
           </Space>
 
-          <Paragraph type="secondary" style={{ fontSize: 12.5, margin: '18px 0 14px 0' }}>
+          <Paragraph type="secondary" className="pps-xs pps-mt">
             Accepted formats: PDF, DOC/DOCX, JPG, PNG or ZIP — up to 10&nbsp;MB each.
             Sending several files for one item? Put them in a ZIP.
           </Paragraph>
 
           <Button
-            type="primary"
-            size="large"
+            emphasis="solid"
+            size="lg"
             block
             loading={submitting}
             disabled={stagedIds.length === 0}
             onClick={submitAll}
-            style={{ background: stagedIds.length ? BRAND.accent : undefined, borderColor: stagedIds.length ? BRAND.accent : undefined, fontWeight: 600 }}
+            className={stagedIds.length ? "ui-btn ui-btn--md ui-btn--solid" : undefined}
           >
             {stagedIds.length === 0
               ? (awaitingReview ? 'Nothing left to send' : 'Choose your files to continue')
@@ -308,24 +306,18 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
 
   return (
     <div
-      style={{
-        border: `1px solid ${stagedFile ? BRAND.accent : '#e8eaec'}`,
-        borderRadius: 10,
-        padding: '14px 16px',
-        background: stagedFile ? 'rgba(122,146,46,0.04)' : '#fff',
-        transition: 'border-color .2s, background .2s',
-      }}
+      className={`pps-drop${stagedFile ? ' pps-drop--staged' : ''}`}
     >
       <Space direction="vertical" size={7} style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-          <Text strong style={{ fontSize: 13.5 }}>{item.label}</Text>
+          <Text strong className="pps-xs">{item.label}</Text>
           <Tag color={stagedFile ? 'processing' : tag.color} style={{ marginInlineEnd: 0 }}>
             {stagedFile ? 'Ready to submit' : tag.label}
           </Tag>
         </Space>
 
         {item.description ? (
-          <Text type="secondary" style={{ fontSize: 12.5 }}>{item.description}</Text>
+          <Text type="secondary" className="pps-xs">{item.description}</Text>
         ) : null}
 
         {item.status === 'rejected' && item.remarks ? (
@@ -333,7 +325,7 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
         ) : null}
 
         {item.original_name && !stagedFile ? (
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" className="pps-xs">
             <FileTextOutlined style={{ marginInlineEnd: 5 }} />
             {item.original_name}
           </Text>
@@ -341,17 +333,17 @@ function DocumentRow({ item, stagedFile, onChoose, onClear }) {
 
         {stagedFile ? (
           <Space size={8} wrap>
-            <Text style={{ fontSize: 12.5 }}>
-              <FileTextOutlined style={{ marginInlineEnd: 5, color: BRAND.accent }} />
+            <Text className="pps-xs">
+              <FileTextOutlined className="pps-icon-lead" />
               {stagedFile.name}
             </Text>
-            <Button size="small" type="text" danger icon={<CloseCircleOutlined />} onClick={onClear}>
+            <Button size="sm" emphasis="text" tone="danger" icon={<CloseCircleOutlined />} onClick={onClear}>
               Remove
             </Button>
           </Space>
         ) : !locked && (
           <Upload beforeUpload={beforeUpload} showUploadList={false} maxCount={1} accept={ACCEPT_ATTR}>
-            <Button size="small" icon={<UploadOutlined />}>
+            <Button size="sm" icon={<UploadOutlined />}>
               {item.status === 'pending' ? 'Choose file' : 'Replace file'}
             </Button>
           </Upload>

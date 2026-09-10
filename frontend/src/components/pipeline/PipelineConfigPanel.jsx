@@ -18,9 +18,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Card, Table, Button, Modal, Form, Input, InputNumber, Switch, Select,
+  // Button now comes from src/ui — see the import below.
+  Card, Table, Modal, Form, Input, InputNumber, Switch, Select,
   Tabs, Tag, Space, Tooltip, Typography, message,
 } from 'antd';
+import { Button } from '../../ui';
 import {
   PlusOutlined, EditOutlined, ApartmentOutlined, ArrowUpOutlined, ArrowDownOutlined,
 } from '@ant-design/icons';
@@ -28,6 +30,11 @@ import pipelineService from '../../services/pipeline';
 import emailTemplateService from '../../services/emailTemplateService';
 import settingsService from '../../services/settingsService';
 import { MODAL_WIDTH } from './modalWidths';
+// Shared with PipelineDrawer. The info/warn callouts reuse `.set-callout` from
+// styles/pages/settings.css — this panel renders INSIDE /settings, so that stylesheet
+// is already loaded, and a fourth hand-written copy of the same eight-property callout
+// is exactly what that class exists to prevent.
+import '../../styles/pages/pipeline-drawer.css';
 
 const { Title, Text } = Typography;
 
@@ -230,16 +237,16 @@ export default function PipelineConfigPanel() {
       render: (_, row, index) => (
         <Space size={2}>
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            emphasis="text"
             icon={<ArrowUpOutlined />}
             disabled={index === 0}
             onClick={() => moveStage(index, 'up')}
             aria-label="Move stage up"
           />
           <Button
-            size="small"
-            type="text"
+            size="sm"
+            emphasis="text"
             icon={<ArrowDownOutlined />}
             disabled={index === stages.length - 1}
             onClick={() => moveStage(index, 'down')}
@@ -259,7 +266,7 @@ export default function PipelineConfigPanel() {
       render: (label, row) => (
         <Space direction="vertical" size={0}>
           <Text strong>{label}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{row.stage_key}</Text>
+          <Text type="secondary" className="pd-caption">{row.stage_key}</Text>
         </Space>
       ),
     },
@@ -280,7 +287,7 @@ export default function PipelineConfigPanel() {
       title: 'Outcomes',
       width: 110,
       render: (_, row) => (
-        <Button size="small" onClick={() => setOutcomeModal({ open: true, stageKey: row.stage_key, editing: null })}>
+        <Button size="sm" onClick={() => setOutcomeModal({ open: true, stageKey: row.stage_key, editing: null })}>
           {(row.rpa_stage_outcomes || []).length || 0} outcome(s)
         </Button>
       ),
@@ -289,7 +296,7 @@ export default function PipelineConfigPanel() {
       title: '',
       width: 90,
       render: (_, row) => (
-        <Button size="small" icon={<EditOutlined />} onClick={() => openStage(row)}>Edit</Button>
+        <Button size="sm" icon={<EditOutlined />} onClick={() => openStage(row)}>Edit</Button>
       ),
     },
   ];
@@ -401,11 +408,11 @@ export default function PipelineConfigPanel() {
     { title: 'Stage', dataIndex: 'stage_key', width: 150, render: (v) => v || <Text type="secondary">All stages</Text> },
     { title: 'Order', dataIndex: 'sort_order', width: 80 },
     { title: 'Status', dataIndex: 'is_active', width: 100, render: (v) => (v === false ? <Tag>Inactive</Tag> : <Tag color="green">Active</Tag>) },
-    { title: '', width: 90, render: (_, row) => <Button size="small" icon={<EditOutlined />} onClick={() => openReason(row)}>Edit</Button> },
+    { title: '', width: 90, render: (_, row) => <Button size="sm" icon={<EditOutlined />} onClick={() => openReason(row)}>Edit</Button> },
   ];
 
   const uppercaseLabel = (t) => (
-    <span style={{ fontWeight: 600, fontSize: 12, textTransform: 'uppercase', color: 'var(--text-2)', letterSpacing: '0.4px' }}>{t}</span>
+    <span className="pd-label">{t}</span>
   );
 
   // ── Stage → email template mappings ──────────────────────────────────
@@ -531,12 +538,12 @@ export default function PipelineConfigPanel() {
       title: 'Specific template',
       key: 'template_id',
       render: (_, row) => (
-        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+        <Space direction="vertical" size={2} className="pd-full">
           <Select
             allowClear
             showSearch
             optionFilterProp="label"
-            style={{ width: '100%', maxWidth: 380 }}
+            className="pd-full--cap"
             placeholder={row.fallback_name
               ? `Generic · ${row.fallback_name}`
               : 'Generic template for this outcome'}
@@ -551,7 +558,7 @@ export default function PipelineConfigPanel() {
               .map((t) => ({ value: t.id, label: t.name }))}
           />
           {row.key in recentSaves && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" className="pd-caption">
               Saved ✓ ·{' '}
               <a onClick={() => saveMapping(row, recentSaves[row.key])}>Undo</a>
             </Text>
@@ -584,10 +591,10 @@ export default function PipelineConfigPanel() {
         // A blank `to` on a dynamic flow is correct, not missing — the address
         // is worked out per send (the candidate, the vendor, the submitter).
         if (r.dynamic && !v) return <Text type="secondary">Resolved per send — the candidate, vendor or submitter</Text>;
-        return v ? <Text style={{ fontSize: 12.5 }}>{v}</Text> : <Text type="secondary">Not set</Text>;
+        return v ? <Text className="pd-body">{v}</Text> : <Text type="secondary">Not set</Text>;
       },
     },
-    { title: 'Cc', dataIndex: 'cc', width: 200, render: (v) => (v ? <Text style={{ fontSize: 12.5 }}>{v}</Text> : <Text type="secondary">—</Text>) },
+    { title: 'Cc', dataIndex: 'cc', width: 200, render: (v) => (v ? <Text className="pd-body">{v}</Text> : <Text type="secondary">—</Text>) },
     {
       title: 'On staging',
       key: 'redirectExempt',
@@ -596,30 +603,27 @@ export default function PipelineConfigPanel() {
         ? <Tag color="orange">Reaches real inbox</Tag>
         : <Tag color="green">Test inbox</Tag>),
     },
-    { title: '', width: 90, render: (_, row) => <Button size="small" icon={<EditOutlined />} onClick={() => openFlowKey(row)}>Edit</Button> },
+    { title: '', width: 90, render: (_, row) => <Button size="sm" icon={<EditOutlined />} onClick={() => openFlowKey(row)}>Edit</Button> },
   ];
 
   return (
     <Card
       bordered={false}
-      style={{ borderRadius: 12, boxShadow: 'var(--shadow-md)', borderTop: '4px solid var(--gold)', marginTop: 24 }}
+      className="pd-report-card"
     >
-      <div style={{ marginBottom: 24 }}>
-        <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>
-          <ApartmentOutlined style={{ marginRight: 10 }} />
+      <div className="pd-mb-5">
+        <Title level={3} className="pd-title">
+          <ApartmentOutlined className="pd-mr-2" />
           Pipeline Configuration
         </Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>
+        <Text type="secondary" className="pd-body">
           The stages candidates move through, the outcomes each stage offers, and the reasons
           recorded on a Reject or Hold. Changes apply immediately to the Candidate Pipeline board.
         </Text>
       </div>
 
       <div
-        style={{
-          background: 'var(--info-bg)', border: '1px solid var(--info-border)', borderRadius: 8,
-          padding: '16px 20px', color: 'var(--info-text)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 24,
-        }}
+        className="set-callout set-callout--banner pd-mb-5"
       >
         <strong>Before you change a stage:</strong> stage order defines the route candidates take, so
         re-ordering affects everyone currently mid-pipeline. A stage cannot be deactivated while open
@@ -634,8 +638,8 @@ export default function PipelineConfigPanel() {
             label: 'Stages & Outcomes',
             children: (
               <>
-                <Space style={{ marginBottom: 12 }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openStage(null)}>Add stage</Button>
+                <Space className="pd-mb-3">
+                  <Button emphasis="solid" icon={<PlusOutlined />} onClick={() => openStage(null)}>Add stage</Button>
                 </Space>
                 <Table
                   rowKey="stage_key"
@@ -644,7 +648,7 @@ export default function PipelineConfigPanel() {
                   dataSource={stages}
                   pagination={false}
                   size="middle"
-                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                  className="pd-table"
                 />
               </>
             ),
@@ -654,12 +658,12 @@ export default function PipelineConfigPanel() {
             label: 'Reject / Hold Reasons',
             children: (
               <>
-                <Space style={{ marginBottom: 12 }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openReason(null)}>Add reason</Button>
+                <Space className="pd-mb-3">
+                  <Button emphasis="solid" icon={<PlusOutlined />} onClick={() => openReason(null)}>Add reason</Button>
                   <Select
                     allowClear
                     placeholder="Filter by stage"
-                    style={{ width: 220 }}
+                    className="pd-w-220"
                     value={reasonStageFilter}
                     onChange={(val) => setReasonStageFilter(val ?? null)}
                     options={stages.map((s) => ({ value: s.stage_key, label: s.label }))}
@@ -674,7 +678,7 @@ export default function PipelineConfigPanel() {
                     : reasons}
                   pagination={{ pageSize: 12 }}
                   size="middle"
-                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                  className="pd-table"
                 />
               </>
             ),
@@ -684,13 +688,13 @@ export default function PipelineConfigPanel() {
             label: 'Outcome Emails',
             children: (
               <>
-                <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                <Text type="secondary" className="pd-label--block">
                   Which email a candidate receives for each stage outcome. <b>Currently sends</b> is
-                  what actually goes out today: <Tag color="green" style={{ marginInlineEnd: 4 }}>green</Tag>
-                  a template picked here, <Tag color="blue" style={{ marginInlineEnd: 4 }}>blue</Tag>
+                  what actually goes out today: <Tag color="green" className="pd-tag--gap-sm">green</Tag>
+                  a template picked here, <Tag color="blue" className="pd-tag--gap-sm">blue</Tag>
                   the generic Approved / Rejected / On&nbsp;Hold (or Closure) template used when nothing
-                  specific is set, <Tag style={{ marginInlineEnd: 4 }}>grey</Tag> an outcome that never
-                  emails by design, and <Tag color="red" style={{ marginInlineEnd: 4 }}>red</Tag> a pair
+                  specific is set, <Tag className="pd-tag--gap-sm">grey</Tag> an outcome that never
+                  emails by design, and <Tag color="red" className="pd-tag--gap-sm">red</Tag> a pair
                   that would send nothing at all. Leaving a row blank is safe — it falls back to the
                   generic rather than going silent. Create new templates on the Email Templates screen.
                 </Text>
@@ -701,7 +705,7 @@ export default function PipelineConfigPanel() {
                   dataSource={templateRows}
                   pagination={{ pageSize: 15 }}
                   size="middle"
-                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                  className="pd-table"
                 />
               </>
             ),
@@ -711,7 +715,7 @@ export default function PipelineConfigPanel() {
             label: 'Email Routing',
             children: (
               <>
-                <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                <Text type="secondary" className="pd-label--block">
                   Who receives each kind of mail this system sends. Changes apply to the next send —
                   no restart. Most candidate-facing flows resolve their recipient at send time and
                   have nothing to set here.
@@ -723,7 +727,7 @@ export default function PipelineConfigPanel() {
                   dataSource={flowKeys}
                   pagination={{ pageSize: 15 }}
                   size="middle"
-                  style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}
+                  className="pd-table"
                 />
               </>
             ),
@@ -744,10 +748,7 @@ export default function PipelineConfigPanel() {
       >
         {flowKeyModal.editing?.dynamic && (
           <div
-            style={{
-              background: 'var(--info-bg)', border: '1px solid var(--info-border)', borderRadius: 8,
-              padding: '12px 16px', color: 'var(--info-text)', fontSize: 13, lineHeight: 1.6, marginBottom: 16,
-            }}
+            className="set-callout pd-mt-4"
           >
             This flow works out its own recipient at send time — the candidate, the vendor or whoever
             submitted the form. Anything set here is only a fallback for when that address is missing.
@@ -755,10 +756,7 @@ export default function PipelineConfigPanel() {
         )}
         {flowKeyModal.editing?.redirectExempt && (
           <div
-            style={{
-              background: 'var(--warning-bg, #fff7e6)', border: '1px solid var(--warning-border, #ffd591)', borderRadius: 8,
-              padding: '12px 16px', fontSize: 13, lineHeight: 1.6, marginBottom: 16,
-            }}
+            className="set-callout set-callout--warn pd-mt-4"
           >
             <strong>This flow reaches real inboxes on staging.</strong> It is exempt from the test-inbox
             redirect — internal alerts, password mail, and addresses an operator typed in for that
@@ -786,7 +784,7 @@ export default function PipelineConfigPanel() {
         width={MODAL_WIDTH.CONFIRM}
         destroyOnClose
       >
-        <Form form={stageForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={stageForm} layout="vertical" className="pd-mt-4">
           {!stageModal.editing && (
             <Form.Item
               name="stage_key"
@@ -810,7 +808,7 @@ export default function PipelineConfigPanel() {
           </Form.Item>
           {!stageModal.editing && (
             <Form.Item name="sort_order" label={uppercaseLabel('Order')} extra="Lower numbers come first. Use the ▲▼ buttons on the table to reorder later." rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: '100%' }} />
+              <InputNumber min={0} className="pd-full" />
             </Form.Item>
           )}
           <Form.Item name="is_optional" label={uppercaseLabel('Optional stage')} valuePropName="checked" extra="Optional stages can be skipped without an outcome.">
@@ -833,8 +831,8 @@ export default function PipelineConfigPanel() {
         width={MODAL_WIDTH.EMAIL}
         destroyOnClose
       >
-        <Space style={{ marginBottom: 12, marginTop: 8 }}>
-          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => openOutcome(null)}>Add outcome</Button>
+        <Space className="pd-mb-3-top">
+          <Button emphasis="solid" size="sm" icon={<PlusOutlined />} onClick={() => openOutcome(null)}>Add outcome</Button>
         </Space>
         <Table
           rowKey="outcome_key"
@@ -848,16 +846,16 @@ export default function PipelineConfigPanel() {
               render: (_, row, index) => (
                 <Space size={2}>
                   <Button
-                    size="small"
-                    type="text"
+                    size="sm"
+                    emphasis="text"
                     icon={<ArrowUpOutlined />}
                     disabled={index === 0}
                     onClick={() => moveOutcome(index, 'up')}
                     aria-label="Move outcome up"
                   />
                   <Button
-                    size="small"
-                    type="text"
+                    size="sm"
+                    emphasis="text"
                     icon={<ArrowDownOutlined />}
                     disabled={index === outcomesForStage.length - 1}
                     onClick={() => moveOutcome(index, 'down')}
@@ -869,7 +867,7 @@ export default function PipelineConfigPanel() {
             { title: 'Outcome', dataIndex: 'label', render: (v, r) => (
               <Space direction="vertical" size={0}>
                 <Text strong>{v}</Text>
-                <Text type="secondary" style={{ fontSize: 11.5 }}>
+                <Text type="secondary" className="pd-caption">
                   {r.outcome_key}
                   {CORE_OUTCOME_KEYS.includes(r.outcome_key) && ' · built-in'}
                 </Text>
@@ -878,12 +876,12 @@ export default function PipelineConfigPanel() {
             { title: 'Advances', dataIndex: 'is_advance', width: 90, render: (v) => (v ? 'Yes' : '—') },
             { title: 'Final', dataIndex: 'is_final', width: 70, render: (v) => (v ? 'Yes' : '—') },
             { title: 'Status', dataIndex: 'is_active', width: 90, render: (v) => (v === false ? <Tag>Inactive</Tag> : <Tag color="green">Active</Tag>) },
-            { title: '', width: 70, render: (_, row) => <Button size="small" onClick={() => openOutcome(row)}>Edit</Button> },
+            { title: '', width: 70, render: (_, row) => <Button size="sm" onClick={() => openOutcome(row)}>Edit</Button> },
           ]}
         />
 
         {outcomeModal.formOpen && (
-          <Card size="small" style={{ marginTop: 16, background: 'var(--surface-2)' }}>
+          <Card size="small" className="pd-surface-2">
             <Form form={outcomeForm} layout="vertical">
               {!outcomeModal.editing && (
                 <Form.Item
@@ -912,7 +910,7 @@ export default function PipelineConfigPanel() {
                 )}
               </Space>
               <Space>
-                <Button type="primary" loading={saving} onClick={saveOutcome}>
+                <Button emphasis="solid" loading={saving} onClick={saveOutcome}>
                   {outcomeModal.editing ? 'Save outcome' : 'Add outcome'}
                 </Button>
                 <Button onClick={() => setOutcomeModal((m) => ({ ...m, editing: null, formOpen: false }))}>Cancel</Button>
@@ -933,7 +931,7 @@ export default function PipelineConfigPanel() {
         width={MODAL_WIDTH.CONFIRM}
         destroyOnClose
       >
-        <Form form={reasonForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={reasonForm} layout="vertical" className="pd-mt-4">
           <Form.Item name="reason_label" label={uppercaseLabel('Reason')} rules={[{ required: true, message: 'A reason label is required.' }]}>
             <Input placeholder="Salary expectation out of range" />
           </Form.Item>
@@ -973,14 +971,14 @@ export default function PipelineConfigPanel() {
               <Form.Item name="is_active" label={uppercaseLabel('Active')} valuePropName="checked">
                 <Switch />
               </Form.Item>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" className="pd-caption">
                 A reason&apos;s stage and outcome scope cannot be changed after creation — past decisions
                 cite it, and re-scoping would silently re-file them. Deactivate it and add a new one instead.
               </Text>
             </>
           )}
-          <Form.Item name="sort_order" label={uppercaseLabel('Order')} style={{ marginTop: 12 }}>
-            <InputNumber min={0} style={{ width: '100%' }} />
+          <Form.Item name="sort_order" label={uppercaseLabel('Order')} className="pd-mt-3">
+            <InputNumber min={0} className="pd-full" />
           </Form.Item>
         </Form>
       </Modal>

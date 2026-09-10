@@ -5,7 +5,8 @@
  */
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Form, Input, Button, Alert, Result } from 'antd';
+import { Form, Input, Alert, Result } from 'antd';
+import { Button } from '../ui';
 import { LockOutlined } from '@ant-design/icons';
 import authService from '../services/authService';
 
@@ -41,7 +42,7 @@ export default function ResetPassword() {
           subTitle="This link is missing its reset token. Please use the full link from your email, or request a new one."
           extra={
             <Link to="/forgot-password">
-              <Button type="primary" className="cta-primary" style={{ borderRadius: 10, fontWeight: 700 }}>
+              <Button emphasis="solid">
                 Request a New Link
               </Button>
             </Link>
@@ -60,7 +61,7 @@ export default function ResetPassword() {
           subTitle="Your password has been changed and all existing sessions were signed out. Sign in with your new password."
           extra={
             <Link to="/login">
-              <Button type="primary" className="cta-primary" style={{ borderRadius: 10, fontWeight: 700 }}>
+              <Button emphasis="solid">
                 Sign In
               </Button>
             </Link>
@@ -77,9 +78,8 @@ export default function ResetPassword() {
           message={error}
           type="error"
           showIcon
-          style={{ marginBottom: 20, borderRadius: 8 }}
           action={
-            <Link to="/forgot-password" style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            <Link to="/forgot-password" className="auth-link--nowrap">
               Request a new link
             </Link>
           }
@@ -95,24 +95,22 @@ export default function ResetPassword() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>New Password</span>}
+          label={<span className="auth-field-label">New Password</span>}
           name="newPassword"
           rules={[
             { required: true, message: 'Please enter a new password' },
             { min: 8, message: 'Password must be at least 8 characters' },
           ]}
-          style={{ marginBottom: 20 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined />}
             placeholder="Min 8 characters"
             autoComplete="new-password"
-            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13 }}>Confirm New Password</span>}
+          label={<span className="auth-field-label">Confirm New Password</span>}
           name="confirmPassword"
           dependencies={['newPassword']}
           rules={[
@@ -126,24 +124,20 @@ export default function ResetPassword() {
               },
             }),
           ]}
-          style={{ marginBottom: 28 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined />}
             placeholder="Re-enter new password"
             autoComplete="new-password"
-            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        <Form.Item>
           <Button
-            type="primary"
             htmlType="submit"
             loading={loading}
             block
-            className="cta-primary"
-            style={{ height: 48, borderRadius: 10, fontWeight: 700, fontSize: 15 }}
+            emphasis="solid" size="lg"
           >
             Reset Password
           </Button>

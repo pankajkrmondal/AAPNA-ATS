@@ -12,7 +12,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Badge, Popover, List, Typography, Button, Empty, Space, Spin } from 'antd';
+import { Badge, Popover, List, Typography, Empty, Space, Spin } from 'antd';
+import { Button } from '../../ui';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { getSocket } from '../../services/socket';
 import notificationService from '../../services/notificationService';
@@ -81,7 +82,7 @@ export default function NotificationBell({ style }) {
   };
 
   const content = (
-    <div style={{ width: 380 }}>
+    <div className="cmp-panel">
       {/* Header */}
       <div
         style={{
@@ -93,15 +94,15 @@ export default function NotificationBell({ style }) {
           marginBottom: 8,
         }}
       >
-        <Text strong style={{ fontSize: 15 }}>Notifications</Text>
+        <Text strong className="cmp-lede">Notifications</Text>
         {unreadCount > 0 && (
           <Button
-            type="link"
-            size="small"
+            emphasis="text"
+            size="sm"
             icon={<CheckOutlined />}
             onClick={() => markAllReadMutation.mutate()}
             loading={markAllReadMutation.isPending}
-            style={{ fontSize: 12 }}
+            className="cmp-caption"
           >
             Mark all read
           </Button>
@@ -110,53 +111,39 @@ export default function NotificationBell({ style }) {
 
       {/* List */}
       {isLoading ? (
-        <div style={{ padding: '32px 0', textAlign: 'center' }}><Spin /></div>
+        <div className="cmp-pad-y--lg"><Spin /></div>
       ) : notifications.length === 0 ? (
-        <Empty description="No notifications" style={{ padding: '24px 0' }} />
+        <Empty description="No notifications" className="cmp-pad-y" />
       ) : (
         <List
           dataSource={notifications}
-          style={{ maxHeight: 400, overflowY: 'auto' }}
+          className="cmp-scroll"
           renderItem={(item) => {
             const unread = !item.read_at;
             return (
               <List.Item
                 key={item.id}
                 onClick={() => handleClick(item)}
-                style={{
-                  cursor: 'pointer',
-                  padding: '10px 8px',
-                  borderRadius: 8,
-                  background: unread ? 'var(--gold-subtle)' : 'transparent',
-                  transition: 'background 0.2s',
-                  marginBottom: 2,
-                }}
+                className={'nb-item' + (unread ? ' nb-item--unread' : '')}
               >
                 <List.Item.Meta
                   title={
                     <Space size={6}>
                       {unread && (
                         <span
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: '50%',
-                            background: 'var(--gold)',
-                            display: 'inline-block',
-                            flexShrink: 0,
-                          }}
+                          className="nb-dot"
                         />
                       )}
-                      <Text strong={unread} style={{ fontSize: 13 }}>{item.title}</Text>
+                      <Text strong={unread} className="cmp-body">{item.title}</Text>
                     </Space>
                   }
                   description={
                     <div>
                       {item.description && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>
+                        <Text type="secondary" className="cmp-caption">{item.description}</Text>
                       )}
                       <br />
-                      <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
+                      <Text type="secondary" className="nb-time">
                         {timeAgo(item.created_at)}
                       </Text>
                     </div>
@@ -182,15 +169,16 @@ export default function NotificationBell({ style }) {
       overlayInnerStyle={{ borderRadius: 12, padding: '12px 16px' }}
     >
       <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+        {/* `emphasis="text"` explicitly — 2026-08-31. Button defaults to `soft`, so
+            converting this from a raw AntD `type="text"` silently turned the topbar
+            bell into a tinted pill sitting beside a bare theme toggle. Chrome icons
+            should be quiet; the tint is for actions on a page, not for the shell. */}
         <Button
-          type="text"
-          icon={<BellOutlined style={{ fontSize: 20 }} />}
+          emphasis="text"
+          iconOnly
+          icon={<BellOutlined className="cmp-icon" />}
+          className="nb-icon"
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
             ...style,
           }}

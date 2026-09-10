@@ -7,7 +7,7 @@ import MetricInfo from '../common/MetricInfo';
  *  - candidates awaiting screening (funnel.sourced − funnel.aiScreened)
  *  - interviews scheduled today (Zeko pipeline)
  */
-import { Card, Typography, Tooltip } from 'antd';
+import { Typography, Tooltip } from 'antd';
 import {
   FileTextOutlined,
   BranchesOutlined,
@@ -16,6 +16,7 @@ import {
   ArrowRightOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
+import { Surface } from '../../ui';
 
 const { Title, Text } = Typography;
 
@@ -33,24 +34,24 @@ export default function ActionCenterCard({
     // 50 — see dashboard.service.js getStats().
     // Each `desc` names both what the number counts and the screen the row opens —
     // "Click to open" alone never said where you were about to be taken.
-    { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined. Opens MRF Requests.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
-    { key: 'dup', label: 'Duplicates to review', desc: 'CVs flagged as possible duplicates of someone already on file. Opens Search Candidates.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
-    { key: 'screen', label: 'Awaiting screening', desc: 'Candidates on file that the AI has not scored yet. Opens Candidate Screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
-    { key: 'interview', label: 'Interviews today', desc: 'Interviews with a start time falling today. Opens Recruitment Analytics.', count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
+    { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined. Opens MRF Requests.', count: pendingMrfCount, icon: <FileTextOutlined />, color: 'var(--skill-3)', url: '/mrf' },
+    { key: 'dup', label: 'Duplicates to review', desc: 'CVs flagged as possible duplicates of someone already on file. Opens Search Candidates.', count: reviewCount, icon: <BranchesOutlined />, color: 'var(--skill-7)', url: '/candidates', live: true },
+    { key: 'screen', label: 'Awaiting screening', desc: 'Candidates on file that the AI has not scored yet. Opens Candidate Screening.', count: awaitingScreening, icon: <FilterOutlined />, color: 'var(--skill-5)', url: '/filtering' },
+    { key: 'interview', label: 'Interviews today', desc: 'Interviews with a start time falling today. Opens Recruitment Analytics.', count: interviewsToday, icon: <CalendarOutlined />, color: 'var(--skill-2)', url: '/analytics' },
   ];
 
   const allClear = items.every((i) => !i.count);
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Needs Your Attention <MetricInfo metric="actionCentre" size={12} /></Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>Your actionable queue</Text>
+          <Title level={5} className="cmp-flush">Needs Your Attention <MetricInfo metric="actionCentre" size={12} /></Title>
+          <Text type="secondary" className="cmp-sub">Your actionable queue</Text>
         </div>
       </div>
 
-      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="cmp-stack--gap">
         {allClear ? (
           <Tooltip title="No requisitions are waiting on approval, no duplicates need reviewing, every candidate on file has been screened, and there are no interviews scheduled for today.">
             <div className="dash-allclear">
@@ -72,14 +73,14 @@ export default function ActionCenterCard({
                 onClick={() => onNavigate?.(it.url)}
                 style={{ '--row-color': it.color }}
               >
-                <span className="dash-action-row__icon" style={{ background: `${it.color}1a`, color: it.color }}>
+                <span className="dash-action-row__icon">
                   {it.icon}
                 </span>
                 <span className="dash-action-row__label">
                   {it.label}
-                  {it.live && <span className="live-badge" style={{ marginLeft: 8 }}><span className="live-badge__dot" />LIVE</span>}
+                  {it.live && <span className="live-badge cmp-ml-2"><span className="live-badge__dot" />LIVE</span>}
                 </span>
-                <span className="dash-action-row__count" style={{ color: it.count ? it.color : 'var(--text-3)' }}>
+                <span className={'dash-action-row__count' + (it.count ? ' dash-action-row__count--on' : '')}>
                   {it.count}
                 </span>
                 <ArrowRightOutlined className="dash-action-row__arrow" />
@@ -88,6 +89,6 @@ export default function ActionCenterCard({
           ))
         )}
       </div>
-    </Card>
+    </Surface>
   );
 }

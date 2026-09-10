@@ -1,0 +1,165 @@
+/**
+ * /settings — the configuration route. Stage 5.4.
+ *
+ * The page is six panels of the same three shapes: a titled card, a labelled control
+ * row, and an explanatory callout. The callout alone was hand-written SIX times with
+ * an identical eight-property object, differing only in whether it drew from the
+ * `--info-*` or `--warn-*` token family. That is a class and a modifier.
+ *
+ * Imported after '../ui' so page rules win on equal specificity.
+ */
+
+/* ------------------------------------------------------------------
+   Panel headers
+   ------------------------------------------------------------------ */
+.set-card-title.ant-typography {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  margin: 0 0 6px 0;
+}
+.set-card-title--flush.ant-typography { margin: 0; }
+.set-card-head { margin-block-end: var(--space-4); }
+.set-card-head--lg { margin-block-end: var(--space-5); }
+.set-lede { font-size: var(--fs-subhead); }
+
+/* The icon + title + ON/OFF tag row at the top of the scheduler panels. */
+.set-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px 0;
+}
+.set-title-icon { color: var(--gold); font-size: 18px; }
+.set-title-tag.ant-tag { margin-inline-start: var(--space-1); }
+
+/* ------------------------------------------------------------------
+   Form labels and controls
+   ------------------------------------------------------------------ */
+.set-label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* InputNumber and TimePicker need the flex centring — AntD renders an inner input
+   that does not fill the wrapper's height on its own. The height and radius come
+   from tokens so the density and preset axes reach them. */
+.set-control {
+  width: 100%;
+  min-height: var(--ctl-h);
+  border-radius: var(--radius-ctl);
+  display: flex;
+  align-items: center;
+}
+.set-control--fixed { width: 160px; }
+
+.set-strong { font-weight: 600; font-size: var(--fs-subhead); color: var(--text); }
+.set-hint {
+  font-size: var(--fs-footnote);
+  display: block;
+  margin-block-start: 2px;
+}
+.set-hint--gap { margin-block-start: var(--space-2); }
+.set-mono { font-size: var(--fs-subhead); color: var(--text); font-family: var(--mono); }
+.set-cell { font-size: var(--fs-subhead); color: var(--text); }
+
+/* ------------------------------------------------------------------
+   Layout rows
+   ------------------------------------------------------------------ */
+.set-split {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.set-split__main { flex: 1 1 320px; }
+.set-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.set-form-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.set-form-row--gap { margin-block-end: 28px; }
+.set-item { margin: 0; }
+.set-item--wide { margin: 0; flex: 1 1 250px; }
+.set-item--mid { margin: 0; flex: 1 1 220px; }
+.set-item--narrow { margin: 0; flex: 1 1 200px; }
+.set-block { margin-block-start: 22px; margin-block-end: var(--space-2); }
+.set-scroll { overflow-x: auto; max-width: 100%; padding-block-end: 2px; }
+.set-inline-block { display: inline-block; }
+
+/* A label with a rule running to the end of the row. */
+.set-rule-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+.set-rule-label {
+  font-family: var(--font-small);
+  font-weight: 700;
+  font-size: var(--fs-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+.set-rule { flex: 1; height: 1px; background: var(--hairline-color); }
+
+/* ------------------------------------------------------------------
+   Callouts
+   Six copies of one eight-property object. The only real difference was the token
+   family, which is what the modifier now carries.
+   ------------------------------------------------------------------ */
+.set-callout {
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-ctl);
+  padding: 12px var(--space-4);
+  color: var(--info-text);
+  font-size: var(--fs-subhead);
+  line-height: 1.6;
+}
+.set-callout--warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+/* The two banners at the top of a panel are roomier than the inline examples. */
+.set-callout--banner { padding: var(--space-4) 20px; }
+.set-callout--stack { margin-block-start: var(--space-3); }
+.set-callout--stack-lg { margin-block-start: 18px; }
+.set-callout--gap { margin-block-end: 28px; }
+
+/* ------------------------------------------------------------------
+   Coverage table + buttons
+   ------------------------------------------------------------------ */
+.set-table.ant-table-wrapper {
+  border-radius: var(--radius-ctl);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+/* RETIRED 2026-08-31 — height/radius/weight/padding are exactly `size="lg"`.
+   Kept per the no-delete rule; uncomment to restore.
+
+.set-btn.ant-btn {
+  height: var(--control-h-relaxed);
+  border-radius: var(--radius-btn);
+  font-weight: 600;
+  padding-inline: var(--space-5);
+}
+*/
+
+.set-mt-5 { margin-block-start: var(--space-5); }
+.set-mt-7 { margin-block-start: 36px; }
+.set-mb-4 { margin-block-end: var(--space-4); }
+.set-mb-5 { margin-block-end: var(--space-5); }
+.set-mt-1 { margin-block-start: var(--space-1); }

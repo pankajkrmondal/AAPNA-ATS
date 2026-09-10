@@ -4,10 +4,11 @@ import MetricInfo from '../common/MetricInfo';
  * (rows with a future interview_start_at). "Today" rows are highlighted.
  */
 import { useMemo } from 'react';
-import { Card, Typography, Empty, Tooltip, Avatar } from 'antd';
+import { Typography, Empty, Tooltip, Avatar } from 'antd';
 import { CalendarOutlined, ClockCircleOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { upcomingInterviews } from '../../utils/dashboardAggregations';
+import { Surface } from '../../ui';
 
 const { Title, Text } = Typography;
 
@@ -20,11 +21,11 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
   const todayKey = dayjs().format('YYYY-MM-DD');
 
   return (
-    <Card bordered={false} className="glass-card dash-chart-card" styles={{ body: { padding: 22 } }}>
+    <Surface tier={2} className="dash-chart-card">
       <div className="dash-card-head">
         <div>
-          <Title level={5} style={{ margin: 0 }}>Upcoming Interviews <MetricInfo metric="upcomingInterviews" size={12} /></Title>
-          <Text type="secondary" style={{ fontSize: 12.5 }}>Next 7 days</Text>
+          <Title level={5} className="cmp-flush">Upcoming Interviews <MetricInfo metric="upcomingInterviews" size={12} /></Title>
+          <Text type="secondary" className="cmp-sub">Next 7 days</Text>
         </div>
         <Tooltip title="Open Recruitment Analytics to see the full interview schedule and pipeline.">
           <span className="dash-card-link" onClick={() => onNavigate?.('/analytics')}>
@@ -35,7 +36,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
 
       <div className="dash-agenda">
         {items.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No interviews scheduled" style={{ paddingTop: 40 }} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No interviews scheduled" className="cmp-empty-pad" />
         ) : (
           items.slice(0, 6).map((it) => {
             const when = dayjs(it._when);
@@ -71,7 +72,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
                     <span className="dash-agenda__day">{when.format('DD')}</span>
                     <span className="dash-agenda__mon">{when.format('MMM')}</span>
                   </div>
-                  <Avatar size={34} style={{ background: 'linear-gradient(135deg, var(--gold) 0%, var(--green) 100%)', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                  <Avatar size={34} className="ui-when">
                     {initials(it.candidate_name)}
                   </Avatar>
                   <div className="dash-agenda__body">
@@ -88,6 +89,6 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
           })
         )}
       </div>
-    </Card>
+    </Surface>
   );
 }

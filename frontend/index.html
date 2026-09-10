@@ -9,27 +9,66 @@
     <meta name="author" content="AAPNA" />
     <meta name="theme-color" content="#7a922e" />
 
-    <!-- Anti-FOUC: apply the saved theme before first paint. Default is LIGHT;
-         the OS preference is honored only when the user explicitly chose "system". -->
+    <!-- Default font pack (theme/fonts.js: 'inter-sora'). Declared here rather than
+         injected by JS so the fetch starts during HTML parse instead of after the
+         bundle boots. The `id` is what lets both the anti-FOUC script below and
+         applyFontStylesheet() retarget this same element on a pack swap — creating a
+         second link instead would leave two packs loaded at once.
+
+         It sits ABOVE the script deliberately: the script rewrites this href for a
+         non-default pack, and can only do that if the element already exists. Moving
+         the script earlier would silently skip the font half and reintroduce the
+         flash it exists to prevent. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      id="ats-font-pack"
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Sora:wght@100..800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Anti-FOUC: apply the saved theme, preset, density and font before first
+         paint. Default is LIGHT; the OS preference is honored only when the user
+         explicitly chose "system".
+
+         Preset and density are plain attribute strings, so this script needs no
+         knowledge of what they mean — theme/tokens.css does the selecting. The font
+         href is read from a cache that theme/fonts.js writes on every swap, rather
+         than restating the pack URLs here where they would drift. Without this,
+         choosing a non-default preset or font flashes the default one on every
+         load. -->
     <script>
       (function () {
-        var mode = null;
-        try {
-          mode = localStorage.getItem('ats_theme');
-        } catch (e) {
-          /* storage unavailable (private mode) — fall through to light */
-        }
+        var read = function (k) {
+          try { return localStorage.getItem(k); } catch (e) { return null; }
+        };
+        var el = document.documentElement;
+
+        var mode = read('ats_theme');
         var dark =
           mode === 'dark' ||
           (mode === 'system' &&
             window.matchMedia &&
             window.matchMedia('(prefers-color-scheme: dark)').matches);
         var theme = dark ? 'dark' : 'light';
-        var el = document.documentElement;
         el.setAttribute('data-theme', theme);
         el.style.colorScheme = theme;
         var meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute('content', dark ? '#0a0e0c' : '#7a922e');
+
+        var preset = read('ats_preset');
+        if (preset) el.setAttribute('data-preset', preset);
+        var density = read('ats_density');
+        if (density) el.setAttribute('data-density', density);
+
+        // '' is a real stored value — the system pack, which loads no webfont —
+        // so null (never chosen) and '' (chosen: none) must be distinguished.
+        var href = read('ats_font_href');
+        if (href !== null) {
+          var link = document.getElementById('ats-font-pack');
+          if (!href) { if (link) link.remove(); }
+          else if (link) { link.setAttribute('href', href); }
+        }
       })();
     </script>
 
@@ -44,14 +83,6 @@
          catch-all, received index.html as "the icon", and showed the default globe. -->
     <link rel="icon" type="image/jpeg" href="/brand/aapna-mark.jpg" />
     <link rel="apple-touch-icon" href="/brand/aapna-mark.jpg" />
-
-    <!-- Google Fonts: Inter + Sora + DM Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Sora:wght@100..800&display=swap"
-      rel="stylesheet"
-    />
 
     <title>AAPNA ATS - Recruitment Process Automation</title>
   </head>

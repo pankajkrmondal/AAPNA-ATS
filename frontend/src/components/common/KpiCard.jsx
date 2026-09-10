@@ -1,3 +1,14 @@
+/**
+ * NO LONGER CONSUMED BY ANY REACHABLE ROUTE as of 2026-08-29 (Stage 5.5).
+ *
+ * Analytics, VendorDashboard, HRUpload and VendorPortal all render `StatTile` from
+ * src/ui now, which merges this, StatCard and `.admin-stat` into one component with a
+ * token-named `accent` instead of a colour/tint/gradient triple. The only remaining
+ * import is pages/CandidatePipelinePrototype.jsx, whose route is itself disabled.
+ *
+ * Kept per the no-delete rule. Each converted file has a commented import showing the
+ * restore path.
+ */
 import useCountUp from '../../hooks/useCountUp';
 import MetricInfo from './MetricInfo';
 

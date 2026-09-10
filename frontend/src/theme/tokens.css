@@ -1,0 +1,302 @@
+/* ============================================================
+   Design V3 — the token contract
+   ------------------------------------------------------------
+   Imported FIRST, before index.css and aurora-glass.css. Everything in this file
+   is either (a) a mode/density selection rule, or (b) a fallback. It deliberately
+   contains no design decisions — those live in theme/presets/*.js and theme/fonts.js
+   so they can be swapped without touching CSS.
+
+   HOW A VALUE GETS HERE
+     theme/presets/<id>.js  +  theme/fonts.js
+              |
+       resolveTokens.js        flattens to a { '--name': value } map
+              |
+       DesignContext.jsx       writes it inline on <html> via style.setProperty
+              |
+       this file               selects the -light/-dark half and the density variant
+
+   WHY THE SELECTION HAPPENS IN CSS AND NOT IN JS
+   The inline write beats every selector, so a mode-specific value written inline
+   would also win inside <ForceLight> — the wrapper that pins the public token-link
+   pages to light during a dark session. Emitting mode-agnostic PAIRS and choosing
+   between them here keeps mode switching in the cascade, where that re-scoping
+   already works. theme/brands.js documents the same constraint; this file follows
+   it. Do not "simplify" by writing the active mode only — it is a solved bug.
+
+   THE FALLBACKS BELOW are the Liquid Glass values, hardcoded once. They exist so
+   the app renders correctly if DesignProvider never mounts (a thrown error in a
+   parent, storage blocked in a private window, a static render). Nothing reads them
+   in normal operation — the inline properties always win.
+   ============================================================ */
+
+/* ----- Fallbacks: structure -------------------------------------------------
+   Mode-independent, so they need no pairing. Kept in sync with
+   theme/presets/liquid-glass.js by nothing but review — they are a safety net, not
+   a source of truth, so a small drift here is harmless by construction. */
+:root {
+  /* V3 geometry. Deliberately NOT named --radius-sm/md/lg: those have 100+
+     consumers in index.css and aurora-glass.css, and repointing them restyles all
+     24 unconverted routes at once. See the long note in resolveTokens.js. */
+  --radius-xs: 10px;
+  --radius-ctl: 15px;
+  --radius-btn: 18px;
+  /* NOT --radius-card: that name is owned by the V2 layer, which sets it to 16px on
+     `.ats-v2`. A converted route sits inside `.ats-v2`, so sharing the name meant the
+     V2 value won for every V3 surface. See the note in resolveTokens.js. */
+  --radius-surface: 24px;
+  --radius-sheet: 32px;
+
+  /* The small optical cut. Falls back to the body stack for packs that have none. */
+  --font-small: var(--font, sans-serif);
+
+  /* Content measures. Owned here rather than by a preset: how wide a column of text
+     may run is a readability constraint, not a look — a different theme does not get
+     to make prose 1800px wide. Density-adjacent, so it lives with the layering scale. */
+  --page-w-narrow: 1000px;
+  --page-w-standard: 1320px;
+  --page-w-wide: 1560px;
+
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Byte-identical to index.css's value, which is why this one name IS safe to
+     emit from a preset — nothing shifts for the unconverted routes that read it. */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  --control-h-compact: 30px;
+  --control-h: 38px;
+  --control-h-relaxed: 46px;
+  --card-pad-compact: 16px;
+  --card-pad: 22px;
+  --card-pad-relaxed: 28px;
+  --row-py-compact: 8px;
+  --row-py: 12px;
+  --row-py-relaxed: 16px;
+  --row-px: 16px;
+
+  --flag-blur-chrome: 1;
+  --flag-blur-overlay: 1;
+  --flag-blur-content: 0;
+  --flag-specular: 1;
+  --flag-spotlight: 1;
+
+  /* ----- Layering scale -----
+     Previously every z-index in the app was hand-numbered, which is how a dropdown
+     ends up under a sticky header. These are the only values anything should use.
+     Owned by this file rather than a preset: stacking order is structural, and a
+     look that reordered it would be a different app, not a different theme. */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-chrome: 200;
+  --z-overlay: 1000;
+  --z-toast: 1100;
+}
+
+/* ----- Fallbacks: type ------------------------------------------------------
+   The Inter + Sora scale. See theme/fonts.js for why the scale belongs to the font
+   pack rather than the preset, and for the 12px floor. */
+:root {
+  --fs-display: clamp(30px, 2.8vw, 44px);  --fw-display: 800;  --tracking-display: -0.03em;   --lh-display: 1.1;
+  --fs-title-1: 32px;                      --fw-title-1: 800;  --tracking-title-1: -0.03em;   --lh-title-1: 1.15;
+  --fs-title-2: 24px;                      --fw-title-2: 700;  --tracking-title-2: -0.02em;   --lh-title-2: 1.2;
+  --fs-title-3: 20px;                      --fw-title-3: 700;  --tracking-title-3: -0.015em;  --lh-title-3: 1.3;
+  --fs-headline: 17px;                     --fw-headline: 600; --tracking-headline: -0.01em;  --lh-headline: 1.35;
+  --fs-body: 15px;                         --fw-body: 400;     --tracking-body: 0;            --lh-body: 1.55;
+  --fs-callout: 14px;                      --fw-callout: 400;  --tracking-callout: 0;         --lh-callout: 1.5;
+  --fs-subhead: 13px;                      --fw-subhead: 500;  --tracking-subhead: 0;         --lh-subhead: 1.45;
+  --fs-footnote: 12px;                     --fw-footnote: 400; --tracking-footnote: 0;        --lh-footnote: 1.4;
+  --fs-caption: 12px;                      --fw-caption: 600;  --tracking-caption: 0.05em;    --lh-caption: 1.35;
+  --fs-metric-lg: 44px;                    --fw-metric-lg: 800; --tracking-metric-lg: -0.035em; --lh-metric-lg: 1;
+  --fs-metric-md: 32px;                    --fw-metric-md: 800; --tracking-metric-md: -0.03em;  --lh-metric-md: 1.05;
+  --fs-metric-sm: 24px;                    --fw-metric-sm: 800; --tracking-metric-sm: -0.02em;  --lh-metric-sm: 1.1;
+}
+
+/* ----- Mode selection -------------------------------------------------------
+   The pair convention. `:root, [data-theme='light']` rather than `:root` alone so
+   <ForceLight> can re-scope a subtree back to light inside a dark session — the
+   same construction index.css uses for the brand tokens. */
+:root,
+[data-theme='light'] {
+  --material-thin: var(--material-thin-light, rgba(255, 255, 255, 0.48));
+  --material-regular: var(--material-regular-light, rgba(255, 255, 255, 0.62));
+  --material-thick: var(--material-thick-light, rgba(255, 255, 255, 0.86));
+  --material-hilite: var(--material-hilite-light, inset 0 1px 0 rgba(255, 255, 255, 1));
+  --material-specular: var(--material-specular-light, none);
+  --material-rim: var(--material-rim-light, none);
+  --material-rim-opacity: var(--material-rim-opacity-light, 1);
+  --material-tint: var(--material-tint-light, transparent);
+  --hairline-color: var(--hairline-color-light, rgba(0, 0, 0, 0.12));
+  --hairline: var(--hairline-light, 0.5px solid rgba(0, 0, 0, 0.12));
+  --glow-brand: var(--glow-brand-light, none);
+  --glow-brand-strong: var(--glow-brand-strong-light, none);
+  --glow-success: var(--glow-success-light, none);
+  --glow-danger: var(--glow-danger-light, none);
+  --glow-warning: var(--glow-warning-light, none);
+  --glow-focus: var(--glow-focus-light, 0 0 0 2px rgba(122, 146, 46, 0.45));
+  --bloom: var(--bloom-light, none);
+  --glow-opacity: var(--glow-opacity-light, 1);
+  --vibrancy-saturate: var(--vibrancy-saturate-light, 1.6);
+}
+
+[data-theme='dark'] {
+  --material-thin: var(--material-thin-dark, rgba(24, 32, 29, 0.52));
+  --material-regular: var(--material-regular-dark, rgba(24, 32, 29, 0.68));
+  --material-thick: var(--material-thick-dark, rgba(20, 27, 24, 0.88));
+  --material-hilite: var(--material-hilite-dark, inset 0 1px 0 rgba(255, 255, 255, 0.10));
+  --material-specular: var(--material-specular-dark, none);
+  --material-rim: var(--material-rim-dark, none);
+  --material-rim-opacity: var(--material-rim-opacity-dark, 1);
+  --material-tint: var(--material-tint-dark, transparent);
+  --hairline-color: var(--hairline-color-dark, rgba(255, 255, 255, 0.16));
+  --hairline: var(--hairline-dark, 0.5px solid rgba(255, 255, 255, 0.16));
+  --glow-brand: var(--glow-brand-dark, none);
+  --glow-brand-strong: var(--glow-brand-strong-dark, none);
+  --glow-success: var(--glow-success-dark, none);
+  --glow-danger: var(--glow-danger-dark, none);
+  --glow-warning: var(--glow-warning-dark, none);
+  --glow-focus: var(--glow-focus-dark, 0 0 0 2px rgba(168, 194, 74, 0.55));
+  --bloom: var(--bloom-dark, none);
+  --glow-opacity: var(--glow-opacity-dark, 1);
+  --vibrancy-saturate: var(--vibrancy-saturate-dark, 1.8);
+}
+
+/* ----- Density selection ----------------------------------------------------
+   All three variants are always emitted; this picks the active one into the three
+   names components actually read. Same reasoning as the mode pairs — the switch
+   stays in the cascade, so a subtree can override density locally (a compact table
+   inside a relaxed page) by setting the attribute on any ancestor. */
+:root,
+[data-density='default'] {
+  --ctl-h: var(--control-h);
+  --pad-card: var(--card-pad);
+  --py-row: var(--row-py);
+}
+
+[data-density='compact'] {
+  --ctl-h: var(--control-h-compact);
+  --pad-card: var(--card-pad-compact);
+  --py-row: var(--row-py-compact);
+}
+
+[data-density='relaxed'] {
+  --ctl-h: var(--control-h-relaxed);
+  --pad-card: var(--card-pad-relaxed);
+  --py-row: var(--row-py-relaxed);
+}
+
+/* ----- Typography roles as classes ------------------------------------------
+   The set every component and page uses instead of an inline fontSize. Each applies
+   the full trio, because a size without its weight, tracking and leading is how a
+   heading ends up hand-assembled — the practice that produced 28 distinct inline
+   sizes and seven half-pixel values.
+
+   `--fs-*` is still available directly for cases that genuinely need only the size
+   (a computed clamp, an icon sized to match text). */
+.t-display,
+.t-title-1,
+.t-title-2,
+.t-title-3 {
+  font-family: var(--font-heading);
+}
+
+.t-display   { font-size: var(--fs-display);   font-weight: var(--fw-display);   letter-spacing: var(--tracking-display);   line-height: var(--lh-display); }
+.t-title-1   { font-size: var(--fs-title-1);   font-weight: var(--fw-title-1);   letter-spacing: var(--tracking-title-1);   line-height: var(--lh-title-1); }
+.t-title-2   { font-size: var(--fs-title-2);   font-weight: var(--fw-title-2);   letter-spacing: var(--tracking-title-2);   line-height: var(--lh-title-2); }
+.t-title-3   { font-size: var(--fs-title-3);   font-weight: var(--fw-title-3);   letter-spacing: var(--tracking-title-3);   line-height: var(--lh-title-3); }
+.t-headline  { font-size: var(--fs-headline);  font-weight: var(--fw-headline);  letter-spacing: var(--tracking-headline);  line-height: var(--lh-headline); }
+.t-body      { font-size: var(--fs-body);      font-weight: var(--fw-body);      letter-spacing: var(--tracking-body);      line-height: var(--lh-body); }
+.t-callout   { font-size: var(--fs-callout);   font-weight: var(--fw-callout);   letter-spacing: var(--tracking-callout);   line-height: var(--lh-callout); }
+.t-subhead   { font-size: var(--fs-subhead);   font-weight: var(--fw-subhead);   letter-spacing: var(--tracking-subhead);   line-height: var(--lh-subhead); }
+/* The two smallest roles take the SMALL optical cut — Segoe UI Variable Small, or
+   SF's small optical size. Those faces are drawn with looser spacing and sturdier
+   strokes specifically so 12px stays legible; setting 12px in the Text cut instead
+   is the difference between a caption that reads and one that just looks small.
+   Packs without a distinct small cut resolve --font-small to their body stack. */
+.t-footnote {
+  font-family: var(--font-small);
+  font-size: var(--fs-footnote);
+  font-weight: var(--fw-footnote);
+  letter-spacing: var(--tracking-footnote);
+  line-height: var(--lh-footnote);
+}
+
+/* Uppercase is part of the role, not a decision made per call site — every micro
+   label in the app was independently choosing whether to uppercase. */
+.t-caption {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-caption);
+  letter-spacing: var(--tracking-caption);
+  line-height: var(--lh-caption);
+  text-transform: uppercase;
+}
+
+/* Metrics are always monospaced and tabular. A count that shifts width as it counts
+   up reads as broken, and the count-up animation is used on every metric. */
+.t-metric-lg,
+.t-metric-md,
+.t-metric-sm {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.t-metric-lg { font-size: var(--fs-metric-lg); font-weight: var(--fw-metric-lg); letter-spacing: var(--tracking-metric-lg); line-height: var(--lh-metric-lg); }
+.t-metric-md { font-size: var(--fs-metric-md); font-weight: var(--fw-metric-md); letter-spacing: var(--tracking-metric-md); line-height: var(--lh-metric-md); }
+.t-metric-sm { font-size: var(--fs-metric-sm); font-weight: var(--fw-metric-sm); letter-spacing: var(--tracking-metric-sm); line-height: var(--lh-metric-sm); }
+
+/* ----- Reduced transparency -------------------------------------------------
+   The materials go opaque. Registered here rather than in aurora-glass.css's block
+   because these are the V3 token names; the existing block still covers the V2
+   surfaces. Glow survives at reduced strength — where it carries state (a focused
+   field, a live indicator) removing it entirely would remove the only cue. */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  [data-theme='light'] {
+    --material-thin: #ffffff;
+    --material-regular: #ffffff;
+    --material-thick: #ffffff;
+  }
+
+  [data-theme='dark'] {
+    --material-thin: #161d1b;
+    --material-regular: #1a2220;
+    --material-thick: #1a2220;
+  }
+}
+
+/* ----- Motion selection -----------------------------------------------------
+   THE PAIR CONVENTION, APPLIED TO MOTION. resolveTokens emits the preset's values
+   inline under `-motion` names; these two blocks choose between them and the
+   neutralised set. The selection has to happen HERE and not in the inline write,
+   because an inline declaration on <html> beats a media query — which is exactly
+   why the previous version of this block was dead code: it set `--dur-base: 1ms`
+   and `--press-scale: 1`, and the inline values overrode both silently.
+
+   index.css:1981 already forces animation and transition durations to 0.001ms for
+   everything, so the durations here are belt-and-braces. `--press-scale` is not:
+   it drives a `transform` on `:active`, which that guard does not touch, so before
+   this fix the press still resized for a user who had asked for no motion. */
+:root {
+  --dur-instant: var(--dur-instant-motion, 90ms);
+  --dur-fast: var(--dur-fast-motion, 160ms);
+  --dur-base: var(--dur-base-motion, 240ms);
+  --dur-sheet: var(--dur-sheet-motion, 380ms);
+  --dur-cinematic: var(--dur-cinematic-motion, 520ms);
+  --dur-ambient: var(--dur-ambient-motion, 26s);
+  --stagger-step: var(--stagger-step-motion, 55ms);
+  --press-scale: var(--press-scale-motion, 0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 1ms;
+    --dur-fast: 1ms;
+    --dur-base: 1ms;
+    --dur-sheet: 1ms;
+    --dur-cinematic: 1ms;
+    --dur-ambient: 0s;
+    --stagger-step: 0ms;
+    /* The one that actually mattered. */
+    --press-scale: 1;
+  }
+}

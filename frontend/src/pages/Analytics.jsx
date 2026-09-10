@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Card,
-  Tabs,
   Typography,
   Row,
   Col,
@@ -32,7 +31,13 @@ import screeningService from '../services/screeningService';
 import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 import ExportButton from '../components/common/ExportButton';
-import KpiCard from '../components/common/KpiCard';
+import { DesignScope, PageShell, PageHeader, Surface, StatTile, SegmentedTabs } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/analytics.css';
+// DISABLED 2026-08-29 (Stage 5.5) — replaced by StatTile from src/ui, which merges
+// this, StatCard and .admin-stat into one component. To restore: uncomment and swap
+// the tags back, mapping TILE_ACCENT names to the ACCENT triples below.
+// import KpiCard from '../components/common/KpiCard';
 import MetricInfo from '../components/common/MetricInfo';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 
@@ -45,6 +50,20 @@ const { Title, Text } = Typography;
  * as one map so a tile, a tag and a table cell for the same concept cannot
  * drift to different colours.
  */
+/**
+ * The local semantic names mapped onto StatTile's accent vocabulary. Kept as a
+ * separate map rather than folded into ACCENT below, because ACCENT is also consumed
+ * by SectionTitle, which needs the colour value and not the token NAME.
+ */
+const TILE_ACCENT = {
+  positive: 'brand',
+  negative: 'danger',
+  progress: 'info',
+  waiting: 'warning',
+  neutral: 'neutral',
+  success: 'success',
+};
+
 const ACCENT = {
   positive: { color: 'var(--kpi-a)', tint: 'var(--kpi-a-tint)', accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))' },
   negative: { color: 'var(--kpi-d)', tint: 'var(--kpi-d-tint)', accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))' },
@@ -60,15 +79,12 @@ const ACCENT = {
  */
 function SectionTitle({ children, accent = ACCENT.positive, hint }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <span style={{
-        width: 4, height: 18, borderRadius: 3, background: accent.accent, flexShrink: 0,
-      }}
-      />
+    <span className="an-title-row">
+      <span className="an-accent-bar" style={{ '--an-accent': accent.accent }} />
       <span>
-        <Text strong style={{ fontSize: 15 }}>{children}</Text>
+        <Text strong className="an-cell--xl">{children}</Text>
         {hint && (
-          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 400 }}>{hint}</Text>
+          <Text type="secondary" className="an-note">{hint}</Text>
         )}
       </span>
     </span>
@@ -141,56 +157,50 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
 
   return (
     <>
-      <Row gutter={[16, 16]} style={{ marginBottom: 18 }}>
+      <Row gutter={[16, 16]} className="an-mb-4-5">
         <Col xs={12} lg={6}>
-          {loading ? <Card loading className="panel-shell" /> : (
-            <KpiCard
-              index={0}
+          {loading ? <Surface as={Card} tier={3} padding="none" loading /> : (
+            <StatTile
               icon={<ApartmentOutlined />}
               label="Active in pipeline"
-                metric="activeInPipeline"
+              metric="activeInPipeline"
               value={tiles.active_in_pipeline ?? 0}
-              {...ACCENT.progress}
+              accent={TILE_ACCENT.progress}
             />
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading className="panel-shell" /> : (
-            <div style={{ position: 'relative' }}>
-              <KpiCard
-                index={1}
-                icon={<SolutionOutlined />}
-                label="Awaiting feedback"
-                metric="awaitingFeedback"
-                value={tiles.awaiting_feedback ?? 0}
-                {...ACCENT.waiting}
-              />
-              <Text
-                type="secondary"
-                style={{ fontSize: 11, display: 'block', padding: '6px 24px 0', lineHeight: 1.4 }}
-              >
-                interviewer scorecard still outstanding
-                {/* A panel round issues one card per interviewer, so the card
-                    count can exceed the candidate count — said out loud so the
-                    tile does not look undercounted on the scorecard screen. */}
-                {tiles.awaiting_feedback_cards > (tiles.awaiting_feedback ?? 0)
-                  && ` · ${tiles.awaiting_feedback_cards} cards`}
-              </Text>
-            </div>
+          {loading ? <Surface as={Card} tier={3} padding="none" loading /> : (
+            <StatTile
+              icon={<SolutionOutlined />}
+              label="Awaiting feedback"
+              metric="awaitingFeedback"
+              value={tiles.awaiting_feedback ?? 0}
+              accent={TILE_ACCENT.waiting}
+              footnote={(
+                <>
+                  interviewer scorecard still outstanding
+                  {/* A panel round issues one card per interviewer, so the card
+                      count can exceed the candidate count — said out loud so the
+                      tile does not look undercounted on the scorecard screen. */}
+                  {tiles.awaiting_feedback_cards > (tiles.awaiting_feedback ?? 0)
+                    && ` · ${tiles.awaiting_feedback_cards} cards`}
+                </>
+              )}
+            />
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading className="panel-shell" /> : (
-            <div style={{ position: 'relative' }}>
-              <KpiCard
-                index={2}
+          {loading ? <Surface as={Card} tier={3} padding="none" loading /> : (
+            <div className="an-relative">
+              <StatTile
                 icon={<ClockCircleOutlined />}
                 label={`On hold > ${tiles.hold_threshold_days ?? 30} days`}
                 metric="onHoldOverThreshold"
                 value={tiles.on_hold_over_threshold ?? 0}
-                {...ACCENT.negative}
+                accent={TILE_ACCENT.negative}
               />
-              <div style={{ padding: '6px 24px 0' }}>
+              <div className="an-under-tile">
                 <Tooltip title="How old a hold has to be before it is counted above. At 30 days the tile shows only candidates parked on hold for more than 30 days — the ones likely to need chasing. Lower it to catch holds sooner; raise it to see only the worst cases. Affects this tile only.">
                   <Select
                     size="small"
@@ -198,7 +208,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                     value={params.hold_threshold_days}
                     onChange={(v) => onParamsChange({ hold_threshold_days: v })}
                     options={HOLD_THRESHOLD_OPTIONS}
-                    style={{ marginLeft: -11, cursor: 'help' }}
+                    className="an-threshold--inline"
                   />
                 </Tooltip>
               </div>
@@ -206,33 +216,35 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           )}
         </Col>
         <Col xs={12} lg={6}>
-          {loading ? <Card loading className="panel-shell" /> : (
-            <KpiCard
-              index={3}
+          {loading ? <Surface as={Card} tier={3} padding="none" loading /> : (
+            <StatTile
               icon={<FileDoneOutlined />}
               label="Offers pending"
-                metric="offersPending"
+              metric="offersPending"
               value={tiles.offers_pending ?? 0}
-              {...ACCENT.positive}
+              accent={TILE_ACCENT.positive}
             />
           )}
         </Col>
       </Row>
 
-      <Card
+      <Surface
+        as={Card}
+        tier={3}
+        padding="none"
         title={(
           <SectionTitle accent={ACCENT.positive}>
             {funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
           </SectionTitle>
         )}
         loading={loading}
-        className="panel-shell" style={{ marginBottom: 16 }}
+        className="an-panel"
         extra={availableMrfs.length > 0 && (
           <Space size={8}>
             {/* An auto-picked requisition presented silently reads as "the"
                 funnel rather than one of several — say which it is. */}
             {funnel.auto_selected && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" className="an-lede">
                 showing the requisition with the most candidates
               </Text>
             )}
@@ -241,7 +253,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 size="small"
                 showSearch
                 optionFilterProp="label"
-                style={{ minWidth: 260 }}
+                className="an-picker"
                 value={funnel.mrf_id ?? undefined}
                 onChange={(v) => onParamsChange({ mrf_id: v })}
                 options={availableMrfs.map((m) => ({
@@ -256,47 +268,32 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
         {funnel.stages.length === 0 ? (
           <Empty description="No candidates in the pipeline yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <Space direction="vertical" size={9} style={{ width: '100%' }}>
+          <Space direction="vertical" size={9} className="an-full">
             {funnel.stages.map((f, i) => {
               const conversion = i > 0 && funnel.stages[i - 1].count > 0
                 ? Math.round((f.count / funnel.stages[i - 1].count) * 100)
                 : null;
               return (
                 <Row key={f.stage_key} gutter={10} align="middle" wrap={false}>
-                  <Col flex="180px" style={{ textAlign: 'right' }}>
-                    <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
+                  <Col flex="180px" className="an-right">
+                    <Text type="secondary" className="an-cell--md">{f.label}</Text>
                   </Col>
                   <Col flex="auto">
                     {/* Track behind the bar gives the funnel a shape to read
                         against — a bare bar on white loses its scale. */}
-                    <div style={{
-                      height: 22, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
-                    }}
-                    >
-                      <div style={{
-                        height: '100%',
-                        width: `${Math.max((f.count / maxFunnel) * 100, 2)}%`,
-                        background: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
-                        borderRadius: 6,
-                        transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
-                      }}
+                    <div className="an-bar an-bar--lg">
+                      <div
+                        className="an-bar__fill"
+                        style={{ '--an-fill': `${Math.max((f.count / maxFunnel) * 100, 2)}%` }}
                       />
                     </div>
                   </Col>
                   <Col flex="120px">
-                    <Text strong style={{ fontSize: 14 }}>{f.count}</Text>
+                    <Text strong className="an-cell--lg">{f.count}</Text>
+                    {/* A steep drop between stages is the thing worth noticing,
+                        so it is tinted rather than left neutral. */}
                     {conversion !== null && (
-                      <Tag
-                        style={{
-                          marginLeft: 6,
-                          fontSize: 11,
-                          border: 'none',
-                          // A steep drop between stages is the thing worth
-                          // noticing, so it is tinted rather than left neutral.
-                          background: conversion < 50 ? 'rgba(192,57,43,0.10)' : 'rgba(122,146,46,0.12)',
-                          color: conversion < 50 ? 'var(--kpi-d)' : 'var(--gold-dark)',
-                        }}
-                      >
+                      <Tag className={`an-tag an-tag--conv ${conversion < 50 ? 'an-tag--drop' : 'an-tag--ok'}`}>
                         {conversion}%
                       </Tag>
                     )}
@@ -306,11 +303,14 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             })}
           </Space>
         )}
-      </Card>
+      </Surface>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             // The threshold was previously applied but never stated, so the
             // list looked like "all stuck candidates" rather than a cut-off.
             title={(
@@ -318,7 +318,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {`Stuck candidates — ${params.stuck_threshold_days}+ days`}
               </SectionTitle>
             )}
-            className="panel-shell"
+
             extra={(
               <Space size={8}>
                 <Tooltip title="How long a candidate must sit in the same stage before this list flags them. The clock measures time since they last MOVED a stage — notes, emails and reminders do not reset it. Lower it to catch delays earlier; raise it to see only the most stalled.">
@@ -327,7 +327,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                     value={params.stuck_threshold_days}
                     onChange={(v) => onParamsChange({ stuck_threshold_days: v })}
                     options={STUCK_THRESHOLD_OPTIONS}
-                    style={{ width: 100, cursor: 'help' }}
+                    className="an-threshold"
                   />
                 </Tooltip>
                 <ExportButton
@@ -348,12 +348,12 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {
                   title: 'Candidate',
                   dataIndex: 'candidate_name',
-                  render: (name) => <Text strong style={{ fontSize: 13 }}>{name}</Text>,
+                  render: (name) => <Text strong className="an-sub">{name}</Text>,
                 },
                 {
                   title: 'Stage',
                   dataIndex: 'stage',
-                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                  render: (s) => <Text type="secondary" className="an-cell--md">{s}</Text>,
                 },
                 {
                   title: 'Days',
@@ -363,7 +363,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   // The longer someone has been stuck, the harder the number
                   // should be to skim past.
                   render: (d) => (
-                    <Text strong style={{ color: d >= 20 ? 'var(--kpi-d)' : d >= 14 ? 'var(--kpi-e)' : 'var(--text-2)' }}>
+                    <Text strong className={`an-count${d >= 20 ? ' an-count--danger' : d >= 14 ? ' an-count--warning' : ''}`}>
                       {d}d
                     </Text>
                   ),
@@ -372,13 +372,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   title: 'Status',
                   dataIndex: 'blocked_on',
                   render: (b) => (
-                    <Tag
-                      style={{
-                        border: 'none',
-                        background: b?.includes('Hold') ? 'rgba(192,57,43,0.10)' : 'rgba(182,136,58,0.14)',
-                        color: b?.includes('Hold') ? 'var(--kpi-d)' : 'var(--kpi-e)',
-                      }}
-                    >
+                    <Tag className={`an-tag ${b?.includes('Hold') ? 'an-tag--hold' : 'an-tag--wait'}`}>
                       {b}
                     </Tag>
                   ),
@@ -386,16 +380,19 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
               ]}
               dataSource={data?.stuckCandidates || []}
               locale={{ emptyText: <Empty description="No stuck candidates" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
-          </Card>
+          </Surface>
         </Col>
         <Col xs={24} lg={12}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             title={(
               <SectionTitle accent={ACCENT.negative} hint="from the Candidate Pipeline">
                 {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
               </SectionTitle>
             )}
-            className="panel-shell"
+
             extra={(
               <Space size={8}>
                 <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
@@ -404,7 +401,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                     value={params.rejection_window_days}
                     onChange={(v) => onParamsChange({ rejection_window_days: v })}
                     options={REJECTION_WINDOW_OPTIONS}
-                    style={{ width: 100, cursor: 'help' }}
+                    className="an-threshold"
                   />
                 </Tooltip>
                 <ExportButton
@@ -425,7 +422,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {
                   title: 'Reason',
                   dataIndex: 'reason',
-                  render: (r) => <Text strong style={{ fontSize: 13 }}>{r}</Text>,
+                  render: (r) => <Text strong className="an-sub">{r}</Text>,
                 },
                 {
                   title: 'Count',
@@ -433,7 +430,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                   width: 72,
                   align: 'center',
                   render: (c) => (
-                    <Tag style={{ border: 'none', background: 'var(--kpi-d-tint)', color: 'var(--kpi-d)', fontWeight: 600 }}>
+                    <Tag className="an-tag-danger">
                       {c}
                     </Tag>
                   ),
@@ -441,12 +438,12 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
                 {
                   title: 'Most common stage',
                   dataIndex: 'most_common_stage',
-                  render: (s) => <Text type="secondary" style={{ fontSize: 12.5 }}>{s}</Text>,
+                  render: (s) => <Text type="secondary" className="an-cell--md">{s}</Text>,
                 },
               ]}
               dataSource={data?.rejectionReasons || []}
               locale={{ emptyText: <Empty description="No rejections in this window" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
-          </Card>
+          </Surface>
         </Col>
       </Row>
     </>
@@ -473,7 +470,10 @@ function RecruiterInsights({ data, loading, errored, params }) {
     <>
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             title={(
               <SectionTitle accent={ACCENT.progress}>
                 Time-to-hire <MetricInfo metric="timeToHire" />
@@ -482,14 +482,11 @@ function RecruiterInsights({ data, loading, errored, params }) {
             // The caption describes the BARS, not the headline above them: the
             // two are different statistics over different populations, and one
             // caption spanning both is how they get conflated.
-            extra={<Text type="secondary" style={{ fontSize: 12 }}>bars: avg days per stage, all closed journeys</Text>}
+            extra={<Text type="secondary" className="an-lede">bars: avg days per stage, all closed journeys</Text>}
             loading={loading}
-            className="panel-shell" style={{ marginBottom: 16 }}
+            className="an-panel"
           >
-            <div style={{
-              background: 'var(--ink-3)', borderRadius: 10, padding: '14px 18px', marginBottom: 16,
-            }}
-            >
+            <div className="an-well">
               {/* Was "Average days, shortlist to offer" showing the SUM of the
                   per-stage averages — each taken over a different population, so
                   the total described no real candidate. It is now the median
@@ -506,7 +503,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
               />
               {/* The sample size is not a footnote — a median of two hires and a
                   median of two hundred read identically without it. */}
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" className="an-lede">
                 {timeToHire.sample_size === 0
                   ? 'No hires closed yet'
                   : `Based on ${timeToHire.sample_size} hire${timeToHire.sample_size === 1 ? '' : 's'}`}
@@ -515,46 +512,42 @@ function RecruiterInsights({ data, loading, errored, params }) {
             {timeToHire.stages.length === 0 ? (
               <Empty description="No closed journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
-              <Space direction="vertical" size={7} style={{ width: '100%' }}>
+              <Space direction="vertical" size={7} className="an-full">
                 {timeToHire.stages.map(({ stage_key, label, avg_days, sample_size }) => (
                   <Row key={stage_key} gutter={10} align="middle" wrap={false}>
-                    <Col flex="170px" style={{ textAlign: 'right' }}>
-                      <Text type="secondary" style={{ fontSize: 12.5 }}>{label}</Text>
+                    <Col flex="170px" className="an-right">
+                      <Text type="secondary" className="an-cell--md">{label}</Text>
                       {/* How many closed journeys this stage's average rests on.
                           A stage averaged over one journey is an anecdote. */}
-                      <Text type="secondary" style={{ fontSize: 11, marginLeft: 6, opacity: 0.7 }}>
+                      <Text type="secondary" className="an-hint">
                         n={sample_size}
                       </Text>
                     </Col>
                     <Col flex="auto">
-                      <div style={{
-                        height: 20, width: '100%', background: 'var(--ink-3)', borderRadius: 6, overflow: 'hidden',
-                      }}
-                      >
-                        <div style={{
-                          height: '100%',
-                          width: `${Math.max((avg_days / maxStageDays) * 100, 4)}%`,
-                          background: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))',
-                          borderRadius: 6,
-                          transition: 'width 0.6s cubic-bezier(0.22,1,0.36,1)',
-                        }}
+                      <div className="an-bar an-bar--sm">
+                        <div
+                          className="an-bar__fill an-bar__fill--info"
+                          style={{ '--an-fill': `${Math.max((avg_days / maxStageDays) * 100, 4)}%` }}
                         />
                       </div>
                     </Col>
-                    <Col flex="60px"><Text strong style={{ fontSize: 13 }}>{avg_days}d</Text></Col>
+                    <Col flex="60px"><Text strong className="an-sub">{avg_days}d</Text></Col>
                   </Row>
                 ))}
               </Space>
             )}
-          </Card>
+          </Surface>
         </Col>
         <Col xs={24} lg={12}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             title={<SectionTitle accent={ACCENT.waiting}>Vendor performance</SectionTitle>}
-            className="panel-shell" style={{ marginBottom: 16 }}
+            className="an-panel"
             extra={(
               <Space size={8}>
-                <Text type="secondary" style={{ fontSize: 12 }}>leaderboard</Text>
+                <Text type="secondary" className="an-lede">leaderboard</Text>
                 <ExportButton
                   tooltip="Downloads each vendor's candidates — how many are in the pipeline, hired and rejected — for comparing vendor quality."
                   request={(cfg) => pipelineService.exportAnalytics('vendor_performance', { ...cfg, params })}
@@ -577,7 +570,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
                 {
                   title: 'Vendor',
                   dataIndex: 'vendor_email',
-                  render: (v) => <Text strong style={{ fontSize: 13 }}>{v}</Text>,
+                  render: (v) => <Text strong className="an-sub">{v}</Text>,
                 },
                 { title: 'In pipeline', dataIndex: 'in_pipeline', align: 'center', width: 110 },
                 {
@@ -585,27 +578,30 @@ function RecruiterInsights({ data, loading, errored, params }) {
                   dataIndex: 'hired',
                   align: 'center',
                   width: 90,
-                  render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
+                  render: (n) => <Text strong className={`an-count${n > 0 ? ' an-count--success' : ''}`}>{n}</Text>,
                 },
                 {
                   title: 'Rejected',
                   dataIndex: 'rejected',
                   align: 'center',
                   width: 100,
-                  render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
+                  render: (n) => <Text className={`an-count${n > 0 ? ' an-count--danger' : ''}`}>{n}</Text>,
                 },
               ]}
               dataSource={vendorPerformance}
               locale={{ emptyText: <Empty description="No vendor-sourced journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
-          </Card>
+          </Surface>
         </Col>
       </Row>
-      <Card
+      <Surface
+        as={Card}
+        tier={3}
+        padding="none"
         title={<SectionTitle accent={ACCENT.success}>Source of hire</SectionTitle>}
-        className="panel-shell"
+
         extra={(
           <Space size={8}>
-            <Text type="secondary" style={{ fontSize: 12 }}>conversion by source</Text>
+            <Text type="secondary" className="an-lede">conversion by source</Text>
             <ExportButton
               tooltip="Downloads how each intake route converts — candidates submitted, in progress, hired, rejected and on hold, per source."
               request={(cfg) => pipelineService.exportAnalytics('source_of_hire', { ...cfg, params })}
@@ -629,7 +625,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
               // Stored values are snake_case keys ('screening_shortlist'); the
               // table is read by humans, so present them as words.
               render: (s) => (
-                <Text strong style={{ fontSize: 13, textTransform: 'capitalize' }}>
+                <Text strong className="an-sub--caps">
                   {String(s || '').replace(/_/g, ' ')}
                 </Text>
               ),
@@ -644,39 +640,32 @@ function RecruiterInsights({ data, loading, errored, params }) {
               title: 'In progress',
               dataIndex: 'in_progress',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-b)' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text className={`an-count${n > 0 ? ' an-count--info' : ''}`}>{n}</Text>,
             },
             {
               title: 'Hired',
               dataIndex: 'hired',
               align: 'center',
-              render: (n) => <Text strong style={{ color: n > 0 ? 'var(--kpi-c)' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text strong className={`an-count${n > 0 ? ' an-count--success' : ''}`}>{n}</Text>,
             },
             {
               title: 'Rejected',
               dataIndex: 'rejected',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text className={`an-count${n > 0 ? ' an-count--danger' : ''}`}>{n}</Text>,
             },
             {
               title: 'On Hold',
               dataIndex: 'on_hold',
               align: 'center',
-              render: (n) => <Text style={{ color: n > 0 ? 'var(--kpi-e)' : 'var(--text-2)' }}>{n}</Text>,
+              render: (n) => <Text className={`an-count${n > 0 ? ' an-count--warning' : ''}`}>{n}</Text>,
             },
             {
               title: 'Hire rate',
               dataIndex: 'hire_rate',
               align: 'center',
               render: (rate) => (
-                <Tag
-                  style={{
-                    border: 'none',
-                    fontWeight: 600,
-                    background: rate > 0 ? 'rgba(74,124,89,0.12)' : 'var(--ink-3)',
-                    color: rate > 0 ? 'var(--kpi-c)' : 'var(--text-2)',
-                  }}
-                >
+                <Tag className={`an-tag ${rate > 0 ? 'an-tag--rate' : 'an-tag--rate-zero'}`}>
                   {rate}%
                 </Tag>
               ),
@@ -684,7 +673,7 @@ function RecruiterInsights({ data, loading, errored, params }) {
           ]}
           dataSource={sourceOfHire}
           locale={{ emptyText: <Empty description="No journeys yet" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
-      </Card>
+      </Surface>
     </>
   );
 }
@@ -823,17 +812,14 @@ export default function Analytics() {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (text) => <Text strong style={{ color: 'var(--text)' }}>{text}</Text>
+      render: (text) => <Text strong className="an-ink">{text}</Text>
     },
     {
       title: 'MRF ID',
       dataIndex: 'mrf_id',
       key: 'mrf_id',
       render: (text) => (
-        <Tag style={{
-          border: 'none', background: 'var(--ink-3)', color: 'var(--text-2)', fontFamily: 'monospace',
-        }}
-        >
+        <Tag className="an-tag an-tag--id">
           MRF #{text || 'N/A'}
         </Tag>
       )
@@ -884,72 +870,86 @@ export default function Analytics() {
       dataIndex: 'total',
       key: 'total',
       align: 'center',
-      render: (count) => <Text strong style={{ fontSize: 14 }}>{count}</Text>
+      render: (count) => <Text strong className="an-cell--lg">{count}</Text>
     }
   ];
 
   // Headline tiles — the shared KpiCard used by Dashboard / HR Upload / Vendor,
   // so this page speaks the same visual language as the rest of the app.
+  /* `footnote` added 2026-08-31 — see the StatTile call below. Each says what the
+     count is OF, which the one-word labels cannot: "Rejected" and "On Hold" are both
+     ambiguous about whether they mean candidates or requisitions. */
   const tilesData = [
-    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, metric: 'analyticsShortlisted', ...ACCENT.positive },
-    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, metric: 'analyticsRejected', ...ACCENT.negative },
-    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, metric: 'analyticsOnHold', ...ACCENT.waiting },
-    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, metric: 'analyticsTotal', ...ACCENT.neutral },
-    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, metric: 'analyticsZekoSent', ...ACCENT.progress },
+    { title: 'Shortlisted', value: data.tiles?.shortlisted || 0, icon: <TeamOutlined />, metric: 'analyticsShortlisted', accent: TILE_ACCENT.positive, footnote: 'Candidates moved into the pipeline' },
+    { title: 'Rejected', value: data.tiles?.rejected || 0, icon: <CloseCircleOutlined />, metric: 'analyticsRejected', accent: TILE_ACCENT.negative, footnote: 'Turned down at any stage' },
+    { title: 'On Hold', value: data.tiles?.on_hold || 0, icon: <ClockCircleOutlined />, metric: 'analyticsOnHold', accent: TILE_ACCENT.waiting, footnote: 'Paused, not yet decided' },
+    { title: 'Total', value: data.tiles?.total || 0, icon: <BarChartOutlined />, metric: 'analyticsTotal', accent: TILE_ACCENT.neutral, footnote: 'Every candidate on record' },
+    { title: 'Zeko Sent', value: data.tiles?.zeko_sent || 0, icon: <SendOutlined />, metric: 'analyticsZekoSent', accent: TILE_ACCENT.progress, footnote: 'AI screening invites issued' },
     // Was "Zeko Passed", reading tiles.zeko_passed — a count of pipeline rows
     // with status 'passed', which NOTHING in the app ever writes (a synced score
     // marks the row 'completed'; there is no pass threshold anywhere). The tile
     // was structurally 0 forever. It now shows what the system actually knows —
     // that a score came back — and a document icon rather than a check mark,
     // which claimed a verdict the ATS never reaches.
-    { title: 'Zeko Score Received', value: data.tiles?.zeko_completed || 0, icon: <FileDoneOutlined />, metric: 'analyticsZekoScoreReceived', ...ACCENT.success },
+    { title: 'Zeko Score Received', value: data.tiles?.zeko_completed || 0, icon: <FileDoneOutlined />, metric: 'analyticsZekoScoreReceived', accent: TILE_ACCENT.success, footnote: 'Scores synced back from Zeko' },
   ];
 
   return (
-    <div className="stagger-children" style={{ maxWidth: 1400, margin: '0 auto' }}>
+    <DesignScope>
+      <PageShell width="wide" className="stagger-children">
       {/* Blocking scrim while a control change re-queries. Matches the Candidate
           Screening page so a wait looks the same everywhere in the app. */}
       <LoadingOverlay open={refetching} message="Updating analytics…" />
 
-      {/* Page Header. No "Refresh Data" button: the page already refetches
-          whenever a control changes, and the Email Delivery tab carries its own
-          Refresh for the one surface with a poller behind it. */}
-      <div style={{ marginBottom: 24 }}>
-        <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
-          Recruitment Analytics
-        </Title>
-        <Text type="secondary">
-          Track recruitment performance and hiring trends across roles, sources, and vendors.
-        </Text>
-        <br />
-        {/* These six counts have no date window — saying so beats letting
-            them be read as "this month". */}
-        <Text type="secondary" style={{ fontSize: 12 }}>
+      {/* Page header — 2026-08-31. Was a bare `.an-mb-5` div with a `Title level={3}`
+          (20px, the same size as the topbar's own title, against the lab's 32px) and no
+          eyebrow, so the page opened with a line that read as a caption above the tiles
+          rather than as the screen's title.
+
+          No "Refresh Data" action: the page already refetches whenever a control
+          changes, and the Email Delivery tab carries its own Refresh for the one
+          surface with a poller behind it.
+
+          The "all time" qualifier stays as its own line under the subtitle via
+          `children` — PageHeader renders them inside the text column. It is a caveat
+          about the tiles directly below, not part of what the page is for, so folding
+          it into the subtitle would overstate it. */}
+      <PageHeader
+        eyebrow="Insights"
+        title="Recruitment Analytics"
+        subtitle="Track recruitment performance and hiring trends across roles, sources, and vendors."
+      >
+        <Text type="secondary" className="an-lede">
           Headline counts below are <strong>all time</strong>, across every requisition.
         </Text>
-      </div>
+      </PageHeader>
 
       {/* Headline tiles. Until the first payload lands there is nothing true to
           count up to, so the strip is skeletoned rather than animating from 0 —
           a confident "0" mid-fetch is a wrong answer, not a slow one. */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 28 }}>
+      <Row gutter={[16, 16]} className="an-mb-6 an-tile-row">
         {tilesData.map((tile, idx) => (
           <Col xs={12} sm={12} md={8} lg={4} key={tile.title}>
             {loading && !data.tiles ? (
-              <Card bordered={false} loading className="panel-shell" style={{ height: '100%' }} />
+              <Surface as={Card} tier={3} padding="none" bordered={false} loading className="an-panel--fill" />
             ) : (
-              <KpiCard
-                index={idx}
+              <StatTile
                 icon={tile.icon}
                 label={tile.title}
                 value={tile.value}
-                color={tile.color}
-                tint={tile.tint}
                 accent={tile.accent}
                 // These six tiles explained nothing before Phase 6 — they are the
                 // numbers most likely to be quoted in a review meeting and the
                 // ones with nothing behind them.
                 metric={tile.metric}
+                /* footnote + interactive, 2026-08-31. Without them these rendered
+                   short with an empty lower half against /dashboard's full-anatomy
+                   tiles — the inconsistency reported across the KPI rows. No `delta`:
+                   the headline counts here are explicitly all-time, so there is no
+                   previous period to compare them against. */
+                footnote={tile.footnote}
+                interactive
+                bloom={idx === 0}
               />
             )}
           </Col>
@@ -963,19 +963,25 @@ export default function Analytics() {
           this page that the gate alone could not make. It holds five tables, so
           tier 3 is also the right tier for it. Radius, border and shadow now
           come from the class. */}
-      <Card className="glass-3 no-lift">
-        <Tabs
-          className="screening-tabs"
+      <Surface tier={3} padding="relaxed">
+        {/* 2026-09-01 — swapped off `.screening-tabs` with /filtering, which shared this
+            class (rollout plan §I.4 lists the coupling and says not to clean one up
+            without the other). `tabBarStyle={{ marginBottom: 20 }}` went with it: an
+            inline style no stylesheet could reach, and 20px was not a step on the
+            spacing scale. The gap is now `--space-5` on `.ui-segmented-tabs`, shared
+            with /filtering, which had independently picked 18px for the same gap.
+
+            `size="large"` is gone because the segmented item owns its own height. */}
+        <SegmentedTabs
+          aria-label="Analytics view"
           activeKey={activeTab}
           onChange={setActiveTab}
-          size="large"
-          tabBarStyle={{ marginBottom: 20 }}
           items={[
             {
               key: 'analytics',
               label: (
-                <span>
-                  <BarChartOutlined className="tab-ico" />
+                <span className="ui-segmented__label">
+                  <BarChartOutlined />
                   Role Summary
                 </span>
               ),
@@ -1016,8 +1022,8 @@ export default function Analytics() {
               // Phase 3 Module 1 — real pipeline analytics (GET /api/pipeline/analytics).
               key: 'pipeline',
               label: (
-                <span>
-                  <ApartmentOutlined className="tab-ico" />
+                <span className="ui-segmented__label">
+                  <ApartmentOutlined />
                   Pipeline Insights
                 </span>
               ),
@@ -1034,8 +1040,8 @@ export default function Analytics() {
             {
               key: 'recruiterInsights',
               label: (
-                <span>
-                  <RiseOutlined className="tab-ico" />
+                <span className="ui-segmented__label">
+                  <RiseOutlined />
                   Recruiter Insights
                 </span>
               ),
@@ -1051,8 +1057,8 @@ export default function Analytics() {
             {
               key: 'emailDelivery',
               label: (
-                <span>
-                  <MailOutlined className="tab-ico" />
+                <span className="ui-segmented__label">
+                  <MailOutlined />
                   Email Delivery
                 </span>
               ),
@@ -1060,7 +1066,8 @@ export default function Analytics() {
             }
           ]}
         />
-      </Card>
-    </div>
+      </Surface>
+      </PageShell>
+    </DesignScope>
   );
 }

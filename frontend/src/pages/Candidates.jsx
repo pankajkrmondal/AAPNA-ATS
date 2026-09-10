@@ -17,12 +17,17 @@
  * same filter object as the table, so it exports exactly what is on screen.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin } from 'antd';
+/* Button comes from src/ui, not antd — see the import below. A raw AntD button on a
+   converted route renders flat: themeConfig.js zeroes `primaryShadow` whenever preset
+   geometry is on, on the stated assumption that `.ui-btn` repaints the glow, and
+   <DesignScope> turns preset geometry on for this whole subtree. */
+import { Form, Input, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin } from 'antd';
 import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
+import { DesignScope, PageShell, PageHeader, Surface, Button } from '../ui';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
 
@@ -416,7 +421,7 @@ export default function Candidates() {
       title: '#',
       key: 'index',
       width: 50,
-      render: (_, __, index) => <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>{(page - 1) * pageSize + index + 1}</span>,
+      render: (_, __, index) => <span className="cand-muted-strong">{(page - 1) * pageSize + index + 1}</span>,
     },
     // No column is sortable. The table is always id-descending (see
     // loadCandidates) — one fixed, predictable order, with search as the only way
@@ -428,37 +433,37 @@ export default function Candidates() {
       title: 'NAME',
       dataIndex: 'name',
       key: 'name',
-      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>,
+      render: (text) => <Text strong className="cand-body">{text || '—'}</Text>,
     },
     {
       title: 'EMAIL',
       dataIndex: 'email',
       key: 'email',
-      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
+      render: (text) => <span className="cand-mono">{text || '—'}</span>,
     },
     {
       title: 'CONTACT',
       dataIndex: 'phone',
       key: 'phone',
-      render: (text) => <span style={{ fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text)' }}>{text || '—'}</span>,
+      render: (text) => <span className="cand-mono">{text || '—'}</span>,
     },
     {
       title: 'POSITION APPLIED',
       dataIndex: 'position',
       key: 'position',
-      render: (text) => <Text style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{text || '—'}</Text>,
+      render: (text) => <Text className="cand-body">{text || '—'}</Text>,
     },
     {
       title: 'GENDER',
       dataIndex: 'gender',
       key: 'gender',
-      render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
+      render: (text) => <Text className="cand-meta">{text || '—'}</Text>,
     },
     {
       title: 'LOCATION',
       dataIndex: 'location',
       key: 'location',
-      render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
+      render: (text) => <Text className="cand-meta">{text || '—'}</Text>,
     },
     {
       title: 'ACTION',
@@ -470,47 +475,47 @@ export default function Candidates() {
         const hasCv = fileUrl && fileUrl !== 'null' && fileUrl !== 'undefined' && String(fileUrl).trim() !== '';
         return (
           <Space size={4}>
+            {/* Row actions, converted 2026-08-31. These were four private treatments
+                — `.cand-action`, `.cand-action--active`, `.cand-chip--off`,
+                `.cand-chip--on` — each painting its own fill and border. They are now
+                emphasis levels, which is the same information in the system's
+                vocabulary: `soft` where the action is live, `text` where it is not.
+
+                Deliberately NOT `solid`: a solid glowing button repeated down 25 rows
+                is the case ui.css calls out as wrong. The old `.cand-chip--on` did
+                exactly that on every Edit. */}
             <Button
-              size="small"
+              size="sm"
+              emphasis={hasCv ? 'soft' : 'text'}
+              iconOnly
               title="CV/Resume"
               icon={<FileTextOutlined />}
               onClick={() => handleDownloadResume(fileUrl)}
-              style={{
-                borderRadius: 6,
-                // --brand-primary, not a literal #7a922e: per-org theming works by
-                // swapping the brand layer, and a hardcoded hex is invisible to it.
-                background: hasCv ? 'var(--brand-primary)' : 'var(--ink-4)',
-                borderColor: hasCv ? 'var(--brand-primary)' : 'var(--border)',
-                // #fff stays literal: it is the foreground ON the brand fill, not a
-                // brand colour itself, and the app writes it that way throughout.
-                color: hasCv ? '#fff' : 'var(--text-3)',
-              }}
             />
             <Button
-              size="small"
+              size="sm"
+              emphasis="text"
               onClick={() => handleOpenView(record)}
-              style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)', fontWeight: 500 }}
             >
               View
             </Button>
             <Button
-              size="small"
+              size="sm"
+              emphasis="soft"
               onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff', fontWeight: 500 }}
             >
               Edit
             </Button>
+            {/* The violet `.cand-action--conv` ink goes with the class. The icon already
+                distinguishes this action, and a per-page button colour is the thing the
+                Button primitive exists to end. */}
             <Button
-              size="small"
+              size="sm"
+              emphasis="text"
+              iconOnly
               title="Conversations"
               icon={<MessageOutlined />}
               onClick={() => handleOpenEmails(record)}
-              style={{
-                borderRadius: 6,
-                background: 'var(--ink-4)',
-                borderColor: 'var(--border)',
-                color: 'var(--violet)',
-              }}
             />
           </Space>
         );
@@ -519,7 +524,12 @@ export default function Candidates() {
   ];
 
   return (
-    <div ref={rootRef} style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
+    /* DesignScope is the Stage 5 conversion switch — this subtree takes the preset's
+       AntD geometry while unconverted routes keep theirs. PageShell owns the page
+       inset: this file previously set `padding: 24px` on top of the layout Content's
+       own `24px 28px 40px`, so it sat ~48px in while /dashboard sat at 24. */
+    <DesignScope>
+      <PageShell ref={rootRef} width="standard">
       {/* 3-Field Candidate Search Card — tier 2, and this page's one feature
           surface, so it takes the spotlight (the same way /candidates/:id spends
           it on its header card and the dashboard on exactly one widget).
@@ -529,23 +539,32 @@ export default function Candidates() {
           under the glass treatment. The `borderTop: 4px solid #7a922e` rail is
           gone for a design reason rather than a token one — a flat green bar
           under a gradient rim is the pre-glass vocabulary showing through. */}
-      <Card
-        bordered={false}
-        className="glass-card spotlight"
-        style={{ marginBottom: 28 }}
-      >
-        <div style={{ marginBottom: 18 }}>
-          <Title level={3} style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, margin: '0 0 4px 0' }}>
-            Search Candidate
-          </Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            {total > 0
-              ? `Browsing all ${total.toLocaleString()} candidates. Search by name, email or phone number.`
-              : 'Search by name, email or phone number.'}
-          </Text>
-        </div>
+      {/* The page header, lifted OUT of the search card — 2026-08-31.
+          It sat inside the tier-2 Surface as a `Title level={3}`, which resolves to
+          the pack's title3 role: 20px, against the lab List archetype's 32px
+          `--fs-title-1`. A page title nested inside its own container also reads as
+          that container's label rather than as the page's, so the screen opened on a
+          form field with no anchor. The lab's List archetype puts the header above the
+          search surface, which is what this now does. Previous markup at the foot of
+          this file per the no-delete rule. */}
+      <PageHeader
+        eyebrow="Candidates"
+        title="Search Candidate"
+        /* One line, like the lab's. The "search by name, email or phone" half of the
+           old copy is redundant now that the header sits directly above three labelled
+           fields saying exactly that — it only pushed the subtitle onto a second line. */
+        subtitle={total > 0
+          ? `Every candidate across every open requisition — ${total.toLocaleString()} in the database.`
+          : 'Every candidate across every open requisition.'}
+      />
 
-        <Form form={form} layout="vertical" onFinish={handleSearch}>
+      <Surface
+        tier={2}
+        padding="relaxed"
+        bloom
+        className="cand-search-card"
+      >
+        <Form form={form} layout="vertical" onFinish={handleSearch} className="cand-form">
           <Row gutter={16}>
             {[
               { name: 'name', label: 'Candidate Name', ph: 'e.g. Rahul Sharma' },
@@ -554,10 +573,10 @@ export default function Candidates() {
             ].map((f) => (
               <Col xs={24} sm={12} lg={8} key={f.name}>
                 <Form.Item
-                  label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>{f.label}</span>}
+                  label={<span className="cand-caption">{f.label}</span>}
                   name={f.name}
                 >
-                  <Input placeholder={f.ph} allowClear style={{ height: 42, borderRadius: 8 }} />
+                  <Input placeholder={f.ph} allowClear />
                 </Form.Item>
               </Col>
             ))}
@@ -565,26 +584,32 @@ export default function Candidates() {
 
           <Form.Item style={{ marginBottom: 0 }}>
             <Space>
+              {/* Was a raw AntD button with the ui-btn classes pasted on as a string —
+                  the workaround `Button` exists to remove. Same rendering, one source. */}
               <Button
-                type="primary"
+                emphasis="solid"
                 htmlType="submit"
                 icon={<SearchOutlined />}
                 loading={loading}
-                style={{ height: 42, borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
               >
                 Search
               </Button>
+              {/* `soft`, not AntD's default outline. ui.css states the reason: "an
+                  outlined button next to a glowing solid one reads as disabled" — which
+                  is exactly what this pair did, grey-outlined Reset beside solid Search.
+                  `neutral` because clearing a form is not a brand action. */}
               <Button
+                emphasis="soft"
+                tone="neutral"
                 onClick={handleClearFilters}
                 disabled={!hasFilters}
-                style={{ height: 42, borderRadius: 8 }}
               >
                 Reset
               </Button>
             </Space>
           </Form.Item>
         </Form>
-      </Card>
+      </Surface>
 
       {/* Initial load only — subsequent page/filter changes use the table's own
           loading overlay so rows don't disappear and jump the scroll position.
@@ -593,9 +618,9 @@ export default function Candidates() {
           was here: the spinner occupied ~100px, then the table replaced it and
           shoved the page down several hundred. The skeleton holds the space. */}
       {loading && candidates.length === 0 && (
-        <Card bordered={false} className="glass-3 no-lift" styles={{ body: { padding: 12 } }}>
+        <Surface tier={3} padding="compact">
           <LoadingSkeleton type="table" rows={8} />
-        </Card>
+        </Surface>
       )}
 
       {/* The table renders unconditionally once anything has loaded — it owns its own
@@ -609,10 +634,9 @@ export default function Candidates() {
           `.ant-card:not(.no-lift):hover` rise: a whole records table bobbing as
           the pointer crosses it is wrong. Radius and shadow come from the class. */}
       {(!loading || candidates.length > 0) && (
-        <Card
-          bordered={false}
-          className="glass-3 no-lift"
-          styles={{ body: { padding: 12 } }}
+        <Surface
+          tier={3}
+          padding="compact"
         >
           <div style={{
             padding: '8px 12px 14px',
@@ -621,7 +645,7 @@ export default function Candidates() {
             justifyContent: 'space-between',
             gap: 12,
           }}>
-            <Text strong style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' }}>
+            <Text strong className="cand-hint-caps">
               {/* Real match count from the server, not the number of rows fetched. */}
               {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'}
               {hasFilters ? ' matching' : ' in total'}
@@ -676,18 +700,19 @@ export default function Candidates() {
               size="middle"
             />
           </div>
-        </Card>
+        </Surface>
       )}
 
       {/* 1) VIEW CANDIDATE DETAILS MODAL (High Fidelity) */}
       <Modal
-        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>View Candidate</span>}
+        title={<span className="cand-modal-title">View Candidate</span>}
         open={viewOpen}
         onCancel={() => setViewOpen(false)}
         footer={[
           <Button
             key="close"
-            style={{ borderRadius: 6, fontWeight: 600 }}
+            emphasis="soft"
+            tone="neutral"
             onClick={() => setViewOpen(false)}
           >
             Close
@@ -701,7 +726,7 @@ export default function Candidates() {
 
       {/* 2) EDIT CANDIDATE DETAILS MODAL (High Fidelity) */}
       <Modal
-        title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>Edit Candidate</span>}
+        title={<span className="cand-modal-title">Edit Candidate</span>}
         open={editOpen}
         onOk={handleSaveEdit}
         onCancel={() => setEditOpen(false)}
@@ -710,22 +735,22 @@ export default function Candidates() {
         width={750}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
-        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={editForm} layout="vertical" className="cand-form" style={{ marginTop: 16 }}>
           {/* Section 1: Personal Information */}
           <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Personal Information</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+            <span className="cand-caption">Personal Information</span>
+            <div className="cand-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE NAME</span>} name="name">
-                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">CANDIDATE NAME</span>} name="name">
+                <Input readonly className="cand-disabled" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
-                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">CANDIDATE EMAIL</span>} name="email">
+                <Input readonly className="cand-disabled" />
               </Form.Item>
             </Col>
           </Row>
@@ -733,21 +758,21 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
+                label={<span className="cand-label">CANDIDATE CONTACT NUMBER</span>} 
                 name="phone"
                 rules={[{ validator: contactNumberValidator }]}
-                extra={<span style={{ fontSize: 10, color: 'var(--text-3)' }}>Use commas to add multiple numbers (Supports international formats)</span>}
+                extra={<span className="cand-tiny-muted">Use commas to add multiple numbers (Supports international formats)</span>}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HIGHEST QUALIFICATION</span>} 
+                label={<span className="cand-label">HIGHEST QUALIFICATION</span>} 
                 name="education"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -755,38 +780,38 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOTAL EXPERIENCE (YEARS)</span>} 
+                label={<span className="cand-label">TOTAL EXPERIENCE (YEARS)</span>} 
                 name="experience"
                 rules={[{ validator: experienceValidator }]}
               >
-                <Input placeholder="e.g. 5 or 5.50" style={{ borderRadius: 6 }} />
+                <Input placeholder="e.g. 5 or 5.50" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LAST COMPANY EXPERIENCE (YEARS)</span>} 
+                label={<span className="cand-label">LAST COMPANY EXPERIENCE (YEARS)</span>} 
                 name="lastCompanyExperience"
                 dependencies={['experience']}
                 rules={[{ validator: lastCompanyExpValidator }]}
               >
-                <Input placeholder="e.g. 5 or 5.50" style={{ borderRadius: 6 }} />
+                <Input placeholder="e.g. 5 or 5.50" />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} name="location">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">CURRENT LOCATION</span>} name="location">
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CTC (LPA)</span>} 
+                label={<span className="cand-label">CTC (LPA)</span>} 
                 name="currentCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
-                <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
+                <Input placeholder="e.g. 10 or 10.5" />
               </Form.Item>
             </Col>
           </Row>
@@ -794,20 +819,20 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>EXPECTED CTC (LPA)</span>} 
+                label={<span className="cand-label">EXPECTED CTC (LPA)</span>} 
                 name="expectedCTC"
                 rules={[{ validator: decimalFieldValidator }]}
               >
-                <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
+                <Input placeholder="e.g. 10 or 10.5" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>NOTICE PERIOD (DAYS)</span>} 
+                label={<span className="cand-label">NOTICE PERIOD (DAYS)</span>} 
                 name="noticePeriod"
                 rules={[{ validator: noticePeriodValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -815,16 +840,16 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POSITION APPLIED</span>} 
+                label={<span className="cand-label">POSITION APPLIED</span>} 
                 name="position"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>JOB SOURCE</span>} name="jobSource">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">JOB SOURCE</span>} name="jobSource">
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -832,16 +857,16 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>RECRUITER INFO (AAPNA)</span>} 
+                label={<span className="cand-label">RECRUITER INFO (AAPNA)</span>} 
                 name="recruiterInfo"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ENGLISH COMMUNICATION RATING</span>} name="englishCommunicationRating">
-                <Select placeholder="Select" style={{ height: 38 }}>
+              <Form.Item label={<span className="cand-label">ENGLISH COMMUNICATION RATING</span>} name="englishCommunicationRating">
+                <Select placeholder="Select">
                   <Select.Option value="1">1</Select.Option>
                   <Select.Option value="2">2</Select.Option>
                   <Select.Option value="3">3</Select.Option>
@@ -852,14 +877,14 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOP 5 KEY SKILLS</span>} name="top5KeySkills">
-            <Input.TextArea placeholder="React, Node.js, Python, AWS, Docker" style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">TOP 5 KEY SKILLS</span>} name="top5KeySkills">
+            <Input.TextArea placeholder="React, Node.js, Python, AWS, Docker" />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GENDER</span>} name="gender">
-                <Select placeholder="Select" style={{ height: 38 }}>
+              <Form.Item label={<span className="cand-label">GENDER</span>} name="gender">
+                <Select placeholder="Select">
                   <Select.Option value="Male">Male</Select.Option>
                   <Select.Option value="Female">Female</Select.Option>
                   <Select.Option value="Other">Other</Select.Option>
@@ -867,8 +892,8 @@ export default function Candidates() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>PREFERRED SHIFT</span>} name="preferredShift">
-                <Select placeholder="Select" style={{ height: 38 }}>
+              <Form.Item label={<span className="cand-label">PREFERRED SHIFT</span>} name="preferredShift">
+                <Select placeholder="Select">
                   <Select.Option value="2pm - 11pm/3pm - 12am">2pm - 11pm/3pm - 12am</Select.Option>
                   <Select.Option value="4pm - 1am">4pm - 1am</Select.Option>
                   <Select.Option value="Others">Others</Select.Option>
@@ -877,22 +902,22 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>REASON FOR JOB CHANGE</span>} name="reasonForJobChange">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">REASON FOR JOB CHANGE</span>} name="reasonForJobChange">
+            <Input.TextArea />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>WILLING TO TAKE ONLINE TEST?</span>} name="willingToTakeOnlineTest">
-                <Select placeholder="Select" style={{ height: 38 }}>
+              <Form.Item label={<span className="cand-label">WILLING TO TAKE ONLINE TEST?</span>} name="willingToTakeOnlineTest">
+                <Select placeholder="Select">
                   <Select.Option value="Yes">Yes</Select.Option>
                   <Select.Option value="No">No</Select.Option>
                 </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HAS LAPTOP FOR INITIAL DAYS?</span>} name="hasLaptopForInitialDays">
-                <Select placeholder="Select" style={{ height: 38 }}>
+              <Form.Item label={<span className="cand-label">HAS LAPTOP FOR INITIAL DAYS?</span>} name="hasLaptopForInitialDays">
+                <Select placeholder="Select">
                   <Select.Option value="Yes">Yes</Select.Option>
                   <Select.Option value="No">No</Select.Option>
                 </Select>
@@ -900,17 +925,17 @@ export default function Candidates() {
             </Col>
           </Row>
 
-          <div style={{ background: 'var(--ink-4)', padding: '14px 18px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 24 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Current Company</span>
+          <div className="cand-panel">
+            <span className="cand-group-label">Current Company</span>
             <Row gutter={12}>
               <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>COMPANY NAME</span>} name={['currentCompany', 'Name']} style={{ marginBottom: 0 }}>
-                  <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
+                <Form.Item label={<span className="cand-label">COMPANY NAME</span>} name={['currentCompany', 'Name']} style={{ marginBottom: 0 }}>
+                  <Input placeholder="e.g. Google" />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
-                  <Input placeholder="https://example.com" style={{ borderRadius: 6 }} />
+                <Form.Item label={<span className="cand-label">WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
+                  <Input placeholder="https://example.com" />
                 </Form.Item>
               </Col>
             </Row>
@@ -918,32 +943,32 @@ export default function Candidates() {
 
           {/* Section 2: Education */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Education</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+            <span className="cand-caption">Education</span>
+            <div className="cand-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>10TH PERCENTAGE</span>} name="a10th">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">10TH PERCENTAGE</span>} name="a10th">
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>12TH PERCENTAGE</span>} name="a12th">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">12TH PERCENTAGE</span>} name="a12th">
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION PERCENTAGE</span>} name="graduation">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">GRADUATION PERCENTAGE</span>} name="graduation">
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION PERCENTAGE</span>} name="postGraduation">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">POST GRADUATION PERCENTAGE</span>} name="postGraduation">
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -951,20 +976,20 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION DEGREE</span>} 
+                label={<span className="cand-label">GRADUATION DEGREE</span>} 
                 name="graduationdegree"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION SPECIALIZATION</span>} 
+                label={<span className="cand-label">GRADUATION SPECIALIZATION</span>} 
                 name="graduationspecialization"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -972,78 +997,84 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION DEGREE</span>} 
+                label={<span className="cand-label">POST GRADUATION DEGREE</span>} 
                 name="postgraduationdegree"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION SPECIALIZATION</span>} 
+                label={<span className="cand-label">POST GRADUATION SPECIALIZATION</span>} 
                 name="postgraduationspecialization"
                 rules={[{ validator: nonNumericValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LINKEDIN PROFILE LINK</span>} name="LinkedInProfile">
-            <Input placeholder="https://linkedin.com/in/..." style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">LINKEDIN PROFILE LINK</span>} name="LinkedInProfile">
+            <Input placeholder="https://linkedin.com/in/..." />
           </Form.Item>
 
           {/* Section 3: Employment History */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Employment History</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+            <span className="cand-caption">Employment History</span>
+            <div className="cand-rule" />
           </div>
 
           <Form.List name="employment_history_companies">
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }) => (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
+                  <div key={key} className="cand-strip" style={{ gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr' }}>
                     <Form.Item
                       {...restField}
                       name={[name, 'CompanyName']}
-                      label={<span style={{ fontSize: 10, fontWeight: 600 }}>COMPANY NAME</span>}
+                      label={<span className="cand-micro">COMPANY NAME</span>}
                       rules={[{ required: true, message: 'Required' }]}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
+                      <Input placeholder="e.g. Google" />
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'StartDate']}
-                      label={<span style={{ fontSize: 10, fontWeight: 600 }}>START DATE</span>}
+                      label={<span className="cand-micro">START DATE</span>}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="e.g. Jan 2023" style={{ borderRadius: 6 }} />
+                      <Input placeholder="e.g. Jan 2023" />
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'EndDate']}
-                      label={<span style={{ fontSize: 10, fontWeight: 600 }}>END DATE</span>}
+                      label={<span className="cand-micro">END DATE</span>}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="e.g. Dec 2024" style={{ borderRadius: 6 }} />
+                      <Input placeholder="e.g. Dec 2024" />
                     </Form.Item>
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                      {/* `tone="danger"` rather than AntD's `danger` prop: the tone
+                          feeds --ui-tone/--ui-glow, so the destructive meaning survives
+                          a preset or tenant swap instead of being AntD's fixed red. */}
                       <Button
-                        type="text"
-                        danger
+                        emphasis="text"
+                        tone="danger"
+                        iconOnly
                         title="Remove"
                         icon={<DeleteOutlined />}
                         onClick={() => remove(name)}
-                        style={{ height: 38 }}
                       />
                     </div>
                   </div>
                 ))}
                 <Form.Item>
-                  <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />} style={{ height: 38 }}>
+                  {/* `dashed` is not in the system's vocabulary — the three emphases
+                      are solid/soft/text. A soft block button is the same "add another"
+                      affordance without a fourth border style. */}
+                  <Button emphasis="soft" onClick={() => add()} block icon={<PlusOutlined />}>
                     Add Company Experience
                   </Button>
                 </Form.Item>
@@ -1053,53 +1084,53 @@ export default function Candidates() {
 
           {/* Section 4: Assessment & Interview */}
           <div style={{ marginBottom: 8, marginTop: 24 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assessment & Interview</span>
-            <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
+            <span className="cand-caption">Assessment & Interview</span>
+            <div className="cand-rule" />
           </div>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HEAT</span>} name="Heat">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">HEAT</span>} name="Heat">
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>FINAL STATUS</span>} name="FinalStatus">
-                <Input style={{ borderRadius: 6 }} />
+              <Form.Item label={<span className="cand-label">FINAL STATUS</span>} name="FinalStatus">
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR QUICK COMMENTS</span>} name="HRQuickcomments">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">HR QUICK COMMENTS</span>} name="HRQuickcomments">
+            <Input.TextArea />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>IQ SCORE</span>} 
+                label={<span className="cand-label">IQ SCORE</span>} 
                 name="IQScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH SCORE</span>} 
+                label={<span className="cand-label">TECH SCORE</span>} 
                 name="TechScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={8}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO INTERVIEW SCORE</span>} 
+                label={<span className="cand-label">ZEKO INTERVIEW SCORE</span>} 
                 name="ZekoInterviewScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
@@ -1107,46 +1138,46 @@ export default function Candidates() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO CODING SCORE</span>} 
+                label={<span className="cand-label">ZEKO CODING SCORE</span>} 
                 name="ZekoCodingScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO COMMUNICATION SCORE</span>} 
+                label={<span className="cand-label">ZEKO COMMUNICATION SCORE</span>} 
                 name="ZekoCommunicationScore"
                 rules={[{ validator: wholeNumberValidator }]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <Input />
               </Form.Item>
             </Col>
           </Row>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND ONE FEEDBACK</span>} name="TechRoundOne">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">TECH ROUND ONE FEEDBACK</span>} name="TechRoundOne">
+            <Input.TextArea />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND TWO FEEDBACK</span>} name="TechRoundTwo">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">TECH ROUND TWO FEEDBACK</span>} name="TechRoundTwo">
+            <Input.TextArea />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND THREE FEEDBACK</span>} name="TechRoundThree">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">TECH ROUND THREE FEEDBACK</span>} name="TechRoundThree">
+            <Input.TextArea />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>MANAGERIAL / CEO FEEDBACK</span>} name="ManagerialOrCEOFeedback">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">MANAGERIAL / CEO FEEDBACK</span>} name="ManagerialOrCEOFeedback">
+            <Input.TextArea />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR INTERVIEW</span>} name="HRInterview">
-            <Input.TextArea style={{ borderRadius: 6 }} />
+          <Form.Item label={<span className="cand-label">HR INTERVIEW</span>} name="HRInterview">
+            <Input.TextArea />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>APPLICATION STATUS</span>} name="status">
-            <Select style={{ height: 38 }}>
+          <Form.Item label={<span className="cand-label">APPLICATION STATUS</span>} name="status">
+            <Select>
               <Select.Option value="new">New</Select.Option>
               <Select.Option value="screening">Screening</Select.Option>
               <Select.Option value="shortlisted">Shortlisted</Select.Option>
@@ -1165,10 +1196,10 @@ export default function Candidates() {
           selectedCandidate && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '90%' }}>
               <div>
-                <Title level={4} style={{ margin: 0, fontSize: 15 }}>{selectedCandidate.name}</Title>
-                <Text type="secondary" style={{ fontSize: 11.5, fontWeight: 400 }}>{selectedCandidate.email}</Text>
+                <Title level={4} className="cand-detail-title">{selectedCandidate.name}</Title>
+                <Text type="secondary" className="cand-micro">{selectedCandidate.email}</Text>
               </div>
-              <Tag color="processing" style={{ borderRadius: 12, fontWeight: 700, fontSize: 10, padding: '2px 10px' }}>
+              <Tag color="processing" className="cand-pill">
                 {emails.length} messages
               </Tag>
             </div>
@@ -1177,7 +1208,7 @@ export default function Candidates() {
         open={emailsOpen}
         onCancel={() => setEmailsOpen(false)}
         footer={[
-          <Button key="close" style={{ borderRadius: 6 }} onClick={() => setEmailsOpen(false)}>
+          <Button key="close" emphasis="soft" tone="neutral" onClick={() => setEmailsOpen(false)}>
             Close
           </Button>
         ]}
@@ -1185,9 +1216,9 @@ export default function Candidates() {
         styles={{ body: { padding: '12px 24px 24px' } }}
       >
         {emailsLoading ? (
-          <div style={{ padding: '60px 0', textAlign: 'center' }}>
+          <div className="cmp-loading">
             <Spin size="large" />
-            <div style={{ marginTop: 12, color: 'var(--text-3)' }}>Loading email thread…</div>
+            <div className="cand-note">Loading email thread…</div>
           </div>
         ) : emails.length > 0 ? (
           <div style={{ maxHeight: '55vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1197,22 +1228,19 @@ export default function Candidates() {
                 <div
                   key={email.id}
                   style={{
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    padding: 12,
-                    background: isOutbound ? 'var(--ink-4)' : 'var(--colorBgContainer)',
+                                        padding: 12,
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text strong style={{ fontSize: 13 }}>{email.subject || '(No Subject)'}</Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
+                    <Text strong className="cand-sub">{email.subject || '(No Subject)'}</Text>
+                    <Text type="secondary" className="cand-tiny">
                       {email.sent_at ? email.sent_at.split('T')[0] : ''}
                     </Text>
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>
+                  <div className="cand-hint">
                     <strong>From:</strong> {email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email}
                   </div>
-                  <Paragraph style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-line', color: 'var(--text)' }}>
+                  <Paragraph className="cand-pre">
                     {email.body_preview || '(Empty preview)'}
                   </Paragraph>
                 </div>
@@ -1221,20 +1249,64 @@ export default function Candidates() {
           </div>
         ) : (
           <div
-            style={{
-              background: 'var(--ink-4)',
-              border: '1px dashed var(--border)',
-              borderRadius: 8,
-              padding: '44px 20px',
-              textAlign: 'center',
-              color: 'var(--text-3)',
-            }}
+            className="cand-msg-empty"
+            style={{ padding: '44px 20px', textAlign: 'center' }}
           >
-            <HistoryOutlined style={{ fontSize: 32, opacity: 0.3, marginBottom: 12 }} />
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>No email conversations found for this candidate.</div>
+            <HistoryOutlined className="cand-empty-icon" />
+            <div className="cand-sub">No email conversations found for this candidate.</div>
           </div>
         )}
       </Modal>
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }
+
+// ============================================================================
+//    PREVIOUS PAGE HEADER — kept per the no-delete rule, 2026-08-31.
+//
+//    Replaced because the title sat INSIDE the search card. Two consequences, both
+//    measured against the lab's List / table archetype:
+//
+//      - `Title level={3}` resolves to the font pack's title3 role — 20px — where
+//        `.ui-page-header__title` is `--fs-title-1`, 32px. Every hand-rolled header in
+//        the app had the same 12px shortfall.
+//      - Nested inside a tier-2 Surface, a page title reads as that card's label. The
+//        screen therefore opened on a form field with nothing anchoring it, which is
+//        most of why /candidates read "dislocated" beside the lab.
+//
+//    The lab's ListScreen (src/pages/design-lab/AppPane.jsx) puts the header ABOVE the
+//    search surface with no wrapper, which is what the replacement does. The surface
+//    tiers did not change — measured, they already matched the lab exactly
+//    (2 surfaces, tier 2 + tier 3).
+//
+//    `.cand-page-title` and `.cand-sub` remain defined in ui.css; nothing renders them
+//    now, and they come out with the class sweep rather than with this edit.
+//
+//      <Surface tier={2} padding="relaxed" bloom className="cand-search-card">
+//        <div style={{ marginBottom: 18 }}>
+//          <Title level={3} className="cand-page-title">
+//            Search Candidate
+//          </Title>
+//          <Text type="secondary" className="cand-sub">
+//            {total > 0
+//              ? `Browsing all ${total.toLocaleString()} candidates. Search by name, email or phone number.`
+//              : 'Search by name, email or phone number.'}
+//          </Text>
+//        </div>
+//
+//        <Form form={form} layout="vertical" onFinish={handleSearch} className="cand-form">
+//
+//    PREVIOUS BUTTONS — same date, same rule. Ten raw AntD buttons carrying five
+//    private treatments. Each is recorded here as `selector → replacement`:
+//
+//      .cand-action                    → Button size="sm" emphasis="text"  iconOnly
+//      .cand-action--active            → Button size="sm" emphasis="soft"  iconOnly
+//      .cand-chip--off  ("View")       → Button size="sm" emphasis="text"
+//      .cand-chip--on   ("Edit")       → Button size="sm" emphasis="soft"
+//      .cand-action--conv (violet ink) → Button size="sm" emphasis="text"  iconOnly
+//      .cand-chip       ("Close")      → Button emphasis="soft" tone="neutral"
+//      className="ui-btn ui-btn--md ui-btn--solid"  → Button emphasis="solid"
+//      <Button> (bare default, Reset)  → Button emphasis="soft" tone="neutral"
+//      <Button type="text" danger>     → Button emphasis="text" tone="danger"
+//      <Button type="dashed" block>    → Button emphasis="soft" block

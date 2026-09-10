@@ -5,7 +5,7 @@ import {
   Col,
   List,
   Input,
-  Button,
+  // Button now comes from src/ui — see the import below.
   Alert,
   message,
   Modal,
@@ -27,7 +27,12 @@ import {
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import EmptyState from '../components/common/EmptyState';
-import PageHeader from '../components/common/PageHeader';
+// DISABLED 2026-08-29 (Stage 5.4) — replaced by src/ui's PageHeader below, which this
+// page was the last consumer of. To restore: uncomment and swap the two tags back.
+// import PageHeader from '../components/common/PageHeader';
+import { DesignScope, PageShell, PageHeader, Surface, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/email-management.css';
 import emailTemplateService from '../services/emailTemplateService';
 import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
@@ -445,20 +450,25 @@ export default function EmailManagement() {
   };
 
   return (
-    <div className="stagger-children email-page">
+    <DesignScope>
+      <PageShell width="wide" className="stagger-children email-page">
       {/* The app's standard page header — every other screen opens with one, and
           this was PageHeader's last consumer before a redesign dropped it. The
           gap below is tightened to --space-4 for this page only (see
           `.email-page .page-header`), since the editing surface is sized to a
           whole email and every band above it comes out of that budget. */}
-      <PageHeader title="Email Templates" />
+      <PageHeader
+        eyebrow="Communications"
+        title="Email Templates"
+        subtitle="Edit the subject, body and placeholders of every automated email the system sends."
+      />
 
       {/* One slim control row under it. Search and category live here rather
           than inside the list pane, which is what lets both panes share a
           single top edge. */}
       <div className="email-toolbar">
         <Input
-          prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />}
+          prefix={<SearchOutlined className="em-prefix-icon" />}
           placeholder="Search templates"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
@@ -475,16 +485,16 @@ export default function EmailManagement() {
           className="email-toolbar__category"
         />
 
-        <Text type="secondary" style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+        <Text type="secondary" className="em-count">
           {filteredTemplates.length} {filteredTemplates.length === 1 ? 'template' : 'templates'}
         </Text>
 
-        <div style={{ flexGrow: 1 }} />
+        <div className="em-spacer" />
 
         {selectedTemplate && (
           <Text
             type="secondary"
-            style={{ fontSize: 12.5, whiteSpace: 'nowrap', color: isDirty ? 'var(--gold)' : undefined }}
+            className={`em-count${isDirty ? ' em-count--dirty' : ''}`}
           >
             {isDirty
               ? 'Unsaved changes'
@@ -495,13 +505,13 @@ export default function EmailManagement() {
         )}
 
         {SHOW_NEW_TEMPLATE_BUTTON && isAdmin && (
-          <Button icon={<PlusOutlined />} onClick={openCreate}>
+          <Button emphasis="soft" icon={<PlusOutlined />} onClick={openCreate}>
             New Template
           </Button>
         )}
 
         <Button
-          type="primary"
+          emphasis="solid"
           icon={<SaveOutlined />}
           onClick={handleSave}
           loading={isSaving}
@@ -515,27 +525,15 @@ export default function EmailManagement() {
       <Row gutter={24} align="stretch" className="email-page-row">
         {/* Left Side: Templates List */}
         <Col xs={24} md={8}>
-          <Card
-            // `glass-3`, not the bare `glass` this carried. Same landmine as
-            // /analytics: `.glass` is styled by index.css and never touched by
-            // aurora-glass.css, so the route gate alone would have left all
-            // three panes flat. The `no-lift` already here signalled tier-3
-            // intent; this makes it true. Radius/border/shadow come from the class.
-            className="glass-3 no-lift email-pane-card email-list-card"
-            styles={{
-              body: {
-                padding: '16px 0',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-              },
-            }}
-          >
+          {/* Tier 3 — a records list. Was `.glass-3 no-lift`, which signalled the
+              same intent through a class the Surface primitive now owns outright. */}
+          <Surface tier={3} padding="none" className="email-list-card em-pane">
+            <div className="em-list-body">
             {/* List — search and category now live in the page toolbar. */}
             {isLoading ? (
-              <div style={{ padding: 40, textAlign: 'center' }}>
+              <div className="em-loading">
                 <Spin size="large" />
-                <Text style={{ display: 'block', marginTop: 12, color: 'var(--text-2)' }}>
+                <Text className="em-loading__label">
                   Loading templates...
                 </Text>
               </div>
@@ -584,16 +582,15 @@ export default function EmailManagement() {
                       <div style={{ display: 'flex', gap: 10, width: '100%', minWidth: 0 }}>
                         <Tooltip title={item.is_active ? 'Active' : 'Inactive'}>
                           <span
-                            className="template-list-item__dot"
-                            style={{ background: item.is_active ? 'var(--gold)' : 'var(--border)' }}
+                            className={`template-list-item__dot${item.is_active ? '' : ' template-list-item__dot--off'}`}
                           />
                         </Tooltip>
-                        <div style={{ minWidth: 0, flexGrow: 1 }}>
+                        <div className="em-item-body">
                           <div className="template-list-item__name">{item.name}</div>
                           <div className="template-list-item__sub">
                             {item.neverSends ? (
                               <Tooltip title="This template is mapped to a stage outcome that is deliberately never sent — edits here have no effect.">
-                                <span style={{ color: 'var(--red)' }}>Never sends</span>
+                                <span className="em-never">Never sends</span>
                               </Tooltip>
                             ) : (
                               item.subject
@@ -606,41 +603,33 @@ export default function EmailManagement() {
                 }}
               />
             )}
-          </Card>
+            </div>
+          </Surface>
         </Col>
 
         {/* Right Side: Editor Panel */}
         <Col xs={24} md={16}>
+          {/* No `overflow: hidden` on the editor body: the editor/preview frames
+              are sized to their own content, so clipping would cut the bottom off a
+              tall email — the exact symptom this page had. Save moved to the page
+              toolbar, so the head is just identity, which keeps it to one line. */}
           {selectedTemplate ? (
-            <Card
-              className="glass-3 no-lift email-pane-card email-editor-card"
-              // No `overflow: hidden` here: the editor/preview frames are sized
-              // to their own content now, so clipping the body would cut the
-              // bottom off a tall email — the exact symptom this page had.
-              styles={{
-                body: {
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minHeight: 0,
-                },
-              }}
-              // Save moved to the page toolbar, so the head is just identity —
-              // which is what lets it stay one compact line.
-              title={
-                <div style={{ minWidth: 0 }}>
+            <Surface tier={3} padding="none" className="email-editor-card em-pane">
+              <div className="em-pane__head">
+                <div className="em-item-meta">
                   <div className="email-editor-card__name">{selectedTemplate.name}</div>
-                  <Text type="secondary" style={{ fontSize: 11.5 }}>
+                  <Text type="secondary" className="em-caption">
                     {categoryLabel(selectedTemplate.category)}
                   </Text>
                 </div>
-              }
-            >
+              </div>
+              <div className="em-editor-body">
               {selectedTemplate.neverSends && (
                 <Alert
                   type="warning"
                   showIcon
                   message="This template is mapped to a stage outcome that is deliberately never sent — edits here have no effect on any email."
-                  style={{ marginBottom: 12, borderRadius: 8, fontSize: 12 }}
+                  className="em-alert em-alert--sm"
                 />
               )}
 
@@ -651,7 +640,7 @@ export default function EmailManagement() {
                   showIcon
                   closable
                   onClose={() => setValidationError('')}
-                  style={{ marginBottom: 12, borderRadius: 8 }}
+                  className="em-alert"
                 />
               )}
 
@@ -689,47 +678,37 @@ export default function EmailManagement() {
                 autoHeight
                 fillHeight
                 htmlExtra={
-                  <Button size="small" icon={<CopyOutlined />} onClick={handleCopyHtml}>
+                  <Button size="sm" emphasis="soft" icon={<CopyOutlined />} onClick={handleCopyHtml}>
                     Copy HTML
                   </Button>
                 }
               />
 
               {structuralNotes.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.6 }}>
+                <div className="em-notes">
                   {structuralNotes.map(({ token, note }) => (
                     <div key={token}>
-                      <Text code style={{ fontSize: 11 }}>{`{{${token}}}`}</Text>{' '}
-                      <Text type="secondary" style={{ fontSize: 11.5 }}>{note}</Text>
+                      <Text code className="em-token">{`{{${token}}}`}</Text>{' '}
+                      <Text type="secondary" className="em-caption">{note}</Text>
                     </div>
                   ))}
                 </div>
               )}
-            </Card>
+              </div>
+            </Surface>
           ) : (
-            <Card
-              className="glass-3 no-lift email-pane-card email-placeholder-card"
-              style={{ minHeight: '400px' }}
-              styles={{
-                body: {
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                },
-              }}
-            >
+            <Surface tier={3} padding="relaxed" className="email-placeholder-card em-placeholder">
               <Space direction="vertical" size={14}>
-                <MailOutlined style={{ fontSize: 48, color: 'var(--border)' }} />
-                <Title level={4} style={{ margin: 0, color: 'var(--text-2)' }}>
+                <MailOutlined className="em-placeholder__icon" />
+                <Title level={4} className="em-placeholder__title">
                   No Template Selected
                 </Title>
-                <Text type="secondary" style={{ maxWidth: 320, display: 'inline-block' }}>
+                <Text type="secondary" className="em-placeholder__copy">
                   Select an email template from the list on the left to edit its subject,
                   body, and placeholders — then preview it exactly as recipients will see it.
                 </Text>
               </Space>
-            </Card>
+            </Surface>
           )}
         </Col>
       </Row>
@@ -737,7 +716,7 @@ export default function EmailManagement() {
       {/* CREATE TEMPLATE — admin only. Closes the gap that sent every new
           template through a developer and a seed script run. */}
       <Modal
-        title={<span style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700 }}>New Email Template</span>}
+        title={<span className="em-modal-title">New Email Template</span>}
         open={createOpen}
         onOk={handleCreate}
         onCancel={() => setCreateOpen(false)}
@@ -797,7 +776,7 @@ export default function EmailManagement() {
           </Form.Item>
 
           <Form.Item name="body_html" label="Body" required>
-            <div style={{ border: '1px solid var(--border-light)', borderRadius: 8, overflow: 'hidden' }}>
+            <div className="em-editor-frame">
               <EmailBodyEditor
                 initialHtml=""
                 onChange={setCreateBody}
@@ -817,6 +796,7 @@ export default function EmailManagement() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

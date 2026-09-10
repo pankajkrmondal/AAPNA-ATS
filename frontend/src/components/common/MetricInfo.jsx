@@ -38,28 +38,28 @@ export default function MetricInfo({ metric, size = 11.5, placement = 'top', cha
   const chartLine = chart || def.chart;
 
   const body = (
-    <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>{def.label}</div>
+    <div className="cmp-sub">
+      <div className="cmp-strong">{def.label}</div>
       <div>{def.short}</div>
       {def.formula && (
-        <div style={{ marginTop: 6, opacity: 0.85 }}>
+        <div className="mi-note">
           <strong>How it&apos;s counted: </strong>{def.formula}
         </div>
       )}
       {/* What the graph plots. Stated separately because a card's line is often a RATE
           while the number above it is a running total — different quantities. */}
       {chartLine && (
-        <div style={{ marginTop: 6, opacity: 0.85 }}>
+        <div className="mi-note">
           <strong>The graph shows: </strong>{chartLine}
         </div>
       )}
       {def.source && (
-        <div style={{ marginTop: 6, opacity: 0.8 }}>
+        <div className="mi-note">
           <strong>Where it comes from: </strong>{def.source}
         </div>
       )}
       {def.caveat && (
-        <div style={{ marginTop: 6, opacity: 0.9, fontStyle: 'italic' }}>
+        <div className="mi-note--em">
           Good to know: {def.caveat}
         </div>
       )}
@@ -71,19 +71,11 @@ export default function MetricInfo({ metric, size = 11.5, placement = 'top', cha
       <button
         type="button"
         aria-label={`About ${def.label}`}
+        className="mi-trigger"
         style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          margin: 0,
-          lineHeight: 1,
-          cursor: 'help',
-          color: 'var(--text-3)',
-          display: 'inline-flex',
-          verticalAlign: 'middle',
         }}
       >
-        <InfoCircleOutlined style={{ fontSize: size }} />
+        <InfoCircleOutlined className="mi-glyph" style={{ '--mi-size': typeof size === 'number' ? size + 'px' : size }} />
       </button>
     </Tooltip>
   );

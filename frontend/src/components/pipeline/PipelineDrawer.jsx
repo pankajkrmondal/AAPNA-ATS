@@ -30,11 +30,14 @@
  * what gets displayed/stored everywhere — never the literal word "Other"
  * (RT, 2026-07-14). Actions only apply to the CURRENT stage.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment
+, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
+  // Button now comes from src/ui — see the import below.
+  Alert, App as AntApp, Avatar, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
+import { Button } from '../../ui';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, EditOutlined, ExclamationCircleOutlined,
   FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
@@ -52,6 +55,9 @@ import { EmailEditorTabs } from '../common/EmailBodyEditor';
 import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
 import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConfig';
+// Page rules for this component and PipelineConfigPanel. Imported after nothing else
+// styles these — they carry no ui/ dependency, so order is not load-bearing here.
+import '../../styles/pages/pipeline-drawer.css';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -72,7 +78,7 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
   // have arrived — otherwise it would render an empty, unbranded shell.
   if (!ready) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+      <div className="pd-center">
         <Spin />
       </div>
     );
@@ -83,14 +89,14 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
       items={[
         {
           key: 'candidate',
-          label: <span><MailOutlined style={{ marginInlineEnd: 6 }} />{candidateLabel}</span>,
+          label: <span><MailOutlined className="pd-tag--gap" />{candidateLabel}</span>,
           children: (
             <>
               <Input
                 value={state.candidateSubject}
                 onChange={(e) => field('candidateSubject', e.target.value)}
                 placeholder="Subject"
-                style={{ marginBottom: 8 }}
+                className="pd-mb-2"
               />
               <EmailEditorTabs
                 bodyHtml={state.candidateBody}
@@ -104,14 +110,14 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
         },
         {
           key: 'panel',
-          label: <span><MailOutlined style={{ marginInlineEnd: 6 }} />{panelLabel}</span>,
+          label: <span><MailOutlined className="pd-tag--gap" />{panelLabel}</span>,
           children: (
             <>
               <Input
                 value={state.panelSubject}
                 onChange={(e) => field('panelSubject', e.target.value)}
                 placeholder="Subject"
-                style={{ marginBottom: 8 }}
+                className="pd-mb-2"
               />
               <EmailEditorTabs
                 bodyHtml={state.panelBody}
@@ -128,11 +134,28 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
   );
 }
 
-/** Outlined colors matching CandidatePipelinePrototype.jsx's round-panel action bar. */
+/**
+ * The stage decision. Converted to the design system 2026-08-31.
+ *
+ * THREE DISTINCT TONES ARE A TESTED CONTRACT, not a preference: functional.mjs reads
+ * the computed `color` of the buttons labelled Approve / Hold / Reject and asserts
+ * `new Set(tones).size === 3`. Making all three `solid` would give all three
+ * `--ui-on-solid` and fail it — and, more to the point, would stop the three decisions
+ * looking like three different decisions.
+ *
+ * Approve is the primary action, so it is the only filled one. The other two are `soft`,
+ * which is what keeps them readable as secondary without the outlines they used to have.
+ *
+ * `.pd-outcome-hold` SURVIVES the conversion, alone among this file's private classes,
+ * because it carries meaning the token layer has no name for: Button's tones are
+ * brand / neutral / danger / success, and Hold is a warning. The class sets colour only
+ * — the geometry now comes from `.ui-btn` — and extending Button with a fifth tone to
+ * absorb it would be a design-system change made for one button.
+ */
 const OUTCOME_BUTTONS = [
-  { key: 'approved', label: 'Approve', icon: <CheckOutlined />, primary: true },
-  { key: 'hold', label: 'Hold', icon: <PauseCircleOutlined />, style: { color: '#d4a017', borderColor: '#d4a017' } },
-  { key: 'rejected', label: 'Reject', icon: <CloseOutlined />, danger: true },
+  { key: 'approved', label: 'Approve', icon: <CheckOutlined />, emphasis: 'solid', tone: 'success' },
+  { key: 'hold', label: 'Hold', icon: <PauseCircleOutlined />, emphasis: 'soft', tone: 'neutral', className: 'pd-outcome-hold' },
+  { key: 'rejected', label: 'Reject', icon: <CloseOutlined />, emphasis: 'soft', tone: 'danger' },
 ];
 
 const OUTCOME_TAG = {
@@ -1033,6 +1056,26 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     setEmailBody('');
     setCloseAsRejected(false);
     setSelectedStageKey(pipeline?.current_stage_key || null);
+    // The drawer can swap to a different candidate (pipelineId changes) while
+    // still mounted — a card click, the unresolved-interviews banner, or a
+    // notification-bell deep link can all do this without the drawer closing
+    // first. Every modal-open flag below must reset too, or a sub-modal left
+    // open (e.g. "Confirm Cancel Interview") stays open over the NEW
+    // candidate's data, and its footer buttons act against stale/missing
+    // interviewSchedule/pipeline state instead of the one the modal was
+    // opened for.
+    setScheduleOpen(false);
+    setCancelOpen(false);
+    setInterviewOpen(false);
+    setInterviewCancelOpen(false);
+    setNoShowOpen(false);
+    setReportOpen(false);
+    setInviteModalOpen(false);
+    setClientArrangedOpen(false);
+    setClientFeedbackOpen(false);
+    setOfferShareOpen(false);
+    setClosureOpen(false);
+    setReopenOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pipelineId, pipeline?.current_stage_key]);
 
@@ -1397,17 +1440,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       icon: <ExclamationCircleOutlined />,
       width: 480,
       content: (
-        <div style={{ fontSize: 13 }}>
-          <p style={{ marginTop: 0 }}>
+        <div className="pd-body">
+          <p className="pd-mt-0">
             You are confirming that <strong>{stageLabel || 'this round'}</strong> with{' '}
             <strong>{candidateName}</strong> actually happened.
           </p>
-          <p style={{ marginBottom: 4 }}><strong>Clicking “Yes, it was held” will:</strong></p>
-          <ul style={{ margin: '0 0 8px 18px', paddingLeft: 0 }}>
+          <p className="pd-mb-1"><strong>Clicking “Yes, it was held” will:</strong></p>
+          <ul className="pd-list-flush">
             <li>Email a secure scorecard link to <strong>{who}</strong></li>
             <li>Move this round to “Awaiting Results”</li>
           </ul>
-          <p style={{ margin: 0, color: 'var(--danger, #cf1322)' }}>
+          <p className="pd-danger">
             This cannot be undone. If the interview did not happen, choose “Mark No-show” instead.
           </p>
         </div>
@@ -1517,6 +1560,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   };
 
   const submitSchedule = () => {
+    if (!pipeline) {
+      message.error('This candidate is no longer loaded — close and reopen the drawer.');
+      return;
+    }
     if (!scheduleJobId) {
       message.error('Please select a Zeko job.');
       return;
@@ -1606,6 +1653,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   };
 
   const openInterviewCancelModal = () => {
+    if (!interviewSchedule) return;
     setCxlEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setCxlEmailForKey(null);
     setInterviewCancelOpen(true);
@@ -1780,13 +1828,13 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     const lastStageEvent = stageEvents[stageEvents.length - 1];
 
     const head = (
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="pd-split">
         <Space size={8}>
-          <Text strong style={{ fontSize: 16 }}>{stage.label}</Text>
-          {stage.is_optional && <Tag style={{ fontSize: 10.5 }}>optional</Tag>}
+          <Text strong className="pd-icon">{stage.label}</Text>
+          {stage.is_optional && <Tag className="pd-micro">optional</Tag>}
         </Space>
         {lastStageEvent && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" className="pd-caption">
             Updated {new Date(lastStageEvent.created_at).toLocaleString()}
           </Text>
         )}
@@ -1794,7 +1842,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     );
 
     return (
-      <Card size="small" title={head} className="cp-round-panel" style={{ marginTop: 4 }}>
+      <Card size="small" title={head} className="cp-round-panel pd-mt-1">
         <div className="cp-pipeline">
           {segs.map((s, i) => (
             <div key={s.key} className={`cp-pipeline-step cp-pipeline-step--${s.state}`}>
@@ -1823,7 +1871,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   </div>
                 )}
                 {s.link && (
-                  <a href={s.link} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                  <a href={s.link} target="_blank" rel="noreferrer" className="pd-body--inline">
                     <LinkOutlined /> View full report on Zeko
                   </a>
                 )}
@@ -1833,12 +1881,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                       <Alert
                         type="warning"
                         showIcon
-                        style={{ marginBottom: 8, fontSize: 12 }}
+                        className="pd-caption--stack-2"
                         message="Deadline passed with no result yet — re-invite or upload the CSV."
                       />
                     )}
                     <Space size={8} wrap>
-                      <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setInviteModalOpen(true)}>
+                      <Button size="sm" emphasis="solid" icon={<SendOutlined />} onClick={() => setInviteModalOpen(true)}>
                         {assessmentInviteData?.invite ? 'Re-invite' : 'Send Evalground Invite'}
                       </Button>
                       <Popconfirm
@@ -1847,7 +1895,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         onConfirm={() => inviteMutation.mutate({ method: 'manual' })}
                         okText="Yes, mark as sent"
                       >
-                        <Button size="small" type="link" loading={inviteMutation.isPending}>Mark as sent manually</Button>
+                        <Button size="sm" emphasis="text" loading={inviteMutation.isPending}>Mark as sent manually</Button>
                       </Popconfirm>
                     </Space>
                   </div>
@@ -1859,8 +1907,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 {i === 1 && showClientRoundActions && (
                   <div className="cp-pipeline-step__extra">
                     <Button
-                      size="small"
-                      type={stageSchedule ? 'default' : 'primary'}
+                      size="sm"
+                      /* Already scheduled -> this is a secondary "change it" action;
+                         not yet scheduled -> it is the round's primary action. */
+                      emphasis={stageSchedule ? 'soft' : 'solid'}
                       icon={<CalendarOutlined />}
                       loading={clientRoundMutation.isPending}
                       onClick={() => {
@@ -1876,8 +1926,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 {i === 2 && showClientRoundActions && stageSchedule && (
                   <div className="cp-pipeline-step__extra">
                     <Button
-                      size="small"
-                      type={stageSchedule.notes ? 'default' : 'primary'}
+                      size="sm"
+                      emphasis={stageSchedule.notes ? 'soft' : 'solid'}
                       icon={<EditOutlined />}
                       loading={clientRoundMutation.isPending}
                       onClick={() => {
@@ -1892,8 +1942,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 {i === 0 && showDocumentActions && !documentsData?.request && (
                   <div className="cp-pipeline-step__extra">
                     <Button
-                      size="small"
-                      type="primary"
+                      size="sm"
+                      emphasis="solid"
                       icon={<SendOutlined />}
                       loading={documentMutation.isPending}
                       onClick={() => documentMutation.mutate({
@@ -1924,11 +1974,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 {i === 1 && showScheduleButton && isZekoStageKey(stage.stage_key) && (
                   <div className="cp-pipeline-step__extra">
                     {zekoHrPipeline?.interview_start_at ? (
-                      <Button size="small" danger icon={<CloseOutlined />} onClick={openCancelModal}>
+                      <Button size="sm" emphasis="soft" tone="danger" icon={<CloseOutlined />} onClick={openCancelModal}>
                         Cancel Interview
                       </Button>
                     ) : (
-                      <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openScheduleModal}>
+                      <Button size="sm" emphasis="solid" icon={<CalendarOutlined />} onClick={openScheduleModal}>
                         Schedule Interview
                       </Button>
                     )}
@@ -1947,7 +1997,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   </div>
                 )}
                 {i === 1 && showScheduleButton && isSchedulableStageKey(stage.stage_key) && (
-                  <div className="cp-pipeline-step__extra" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="cp-pipeline-step__extra pd-wrap">
                     {interviewSchedule ? (
                       // Once the interview window has ended and its occurrence is
                       // still unresolved, the recruiter confirms held/no-show —
@@ -1967,19 +2017,19 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         // BEFORE the click rather than after.
                         <>
                           <Tooltip title="Confirms the interview took place. Emails the interviewer a secure scorecard link to rate this candidate, and moves the round to “Awaiting Results”. This cannot be undone.">
-                            <Button size="small" type="primary" icon={<CheckOutlined />}
+                            <Button size="sm" emphasis="solid" icon={<CheckOutlined />}
                               loading={occurrenceMutation.isPending && occurrenceMutation.variables?.outcome === 'held'}
                               onClick={() => confirmMarkHeld(stage.label)}>
                               Mark as Held
                             </Button>
                           </Tooltip>
                           <Tooltip title="Records that the interview did not happen. Asks which side was absent, then marks the round as a no-show. No scorecard is sent to the interviewer — reschedule or reject the candidate afterwards.">
-                            <Button size="small" danger icon={<CloseOutlined />} onClick={() => setNoShowOpen(true)}>
+                            <Button size="sm" emphasis="soft" tone="danger" icon={<CloseOutlined />} onClick={() => setNoShowOpen(true)}>
                               Mark No-show
                             </Button>
                           </Tooltip>
                           <Tooltip title="Books a new date & time for this round. Cancels the current Teams meeting, creates a new one, and emails the candidate and interviewer the updated time. No scorecard is sent.">
-                            <Button size="small" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                            <Button size="sm" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
                               Reschedule
                             </Button>
                           </Tooltip>
@@ -2008,10 +2058,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                           return (
                             <>
                               <Tooltip title={tip}>
-                                <Tag color={undelivered > 0 ? 'red' : 'green'} style={{ cursor: 'help' }}>{label}</Tag>
+                                <Tag color={undelivered > 0 ? 'red' : 'green'} className="pd-help">{label}</Tag>
                               </Tooltip>
                               {needsSend && (
-                                <Button size="small" type="primary"
+                                <Button size="sm" emphasis="solid"
                                   loading={sendScorecardMutation.isPending}
                                   onClick={() => sendScorecardMutation.mutate(interviewSchedule.id)}>
                                   {undelivered > 0 ? 'Retry scorecard link' : 'Send scorecard link'}
@@ -2023,25 +2073,25 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                       ) : interviewSchedule.occurrence_status === 'no_show' ? (
                         <>
                           <Tooltip title={`The interview did not take place${interviewSchedule.no_show_party ? ` (${interviewSchedule.no_show_party} did not attend)` : ''}${interviewSchedule.no_show_reason ? ` — ${interviewSchedule.no_show_reason}` : ''}. No scorecard is sent for a no-show; reschedule the round or reject the candidate.`}>
-                            <Tag color="red" style={{ cursor: 'help' }}>No-show{interviewSchedule.no_show_party ? ` · ${interviewSchedule.no_show_party}` : ''}</Tag>
+                            <Tag color="red" className="pd-help">No-show{interviewSchedule.no_show_party ? ` · ${interviewSchedule.no_show_party}` : ''}</Tag>
                           </Tooltip>
-                          <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                          <Button size="sm" emphasis="solid" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
                             Reschedule
                           </Button>
                         </>
                       ) : (
                         // Still upcoming (or within the window) — normal actions.
                         <>
-                          <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
+                          <Button size="sm" emphasis="solid" icon={<CalendarOutlined />} onClick={openRescheduleModal}>
                             Reschedule
                           </Button>
-                          <Button size="small" danger icon={<CloseOutlined />} onClick={openInterviewCancelModal}>
+                          <Button size="sm" emphasis="soft" tone="danger" icon={<CloseOutlined />} onClick={openInterviewCancelModal}>
                             Cancel Interview
                           </Button>
                         </>
                       )
                     ) : (
-                      <Button size="small" type="primary" icon={<CalendarOutlined />} onClick={openInterviewModal}>
+                      <Button size="sm" emphasis="solid" icon={<CalendarOutlined />} onClick={openInterviewModal}>
                         Schedule Interview
                       </Button>
                     )}
@@ -2056,9 +2106,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             <div className="cp-section-label">Emails in this round</div>
             <div className="cp-emails-surface">
               {emails.map((e) => (
-                <div key={e} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '4px 0' }}>
-                  <MailOutlined style={{ fontSize: 12, marginTop: 3, color: 'var(--text-3)' }} />
-                  <Text style={{ fontSize: 12.5 }}>{e}</Text>
+                <div key={e} className="pd-item">
+                  <MailOutlined className="pd-caption--muted-gap" />
+                  <Text className="pd-body">{e}</Text>
                 </div>
               ))}
             </div>
@@ -2073,8 +2123,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     <Drawer
       title={pipeline && (
         <Space direction="vertical" size={2}>
-          <Space><UserOutlined /><Text strong style={{ fontSize: 16 }}>{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text></Space>
-          <Text type="secondary" style={{ fontSize: 12.5, fontWeight: 400 }}>
+          <Space><UserOutlined /><Text strong className="pd-icon">{pipeline.rpa_shortlisted_candidates?.candidate_name || 'Candidate journey'}</Text></Space>
+          <Text type="secondary" className="pd-body--normal">
             {pipeline.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline.rpa_shortlisted_candidates?.position_applied || 'No position on file'}
             {' · '}
             {pipeline.rpa_shortlisted_candidates?.candidate_email || '—'}
@@ -2087,7 +2137,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       destroyOnClose
     >
       {isLoading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+        <div className="pd-center--lg">
           <Spin size="large" />
         </div>
       )}
@@ -2103,7 +2153,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
       {pipeline && (
         <>
-          <Space size={4} wrap style={{ marginBottom: 10 }}>
+          <Space size={4} wrap className="pd-mb-2-5">
             {pipeline.source === 'vendor'
               ? <Tag color="green">Vendor — {pipeline.vendor_email || '—'}</Tag>
               : <Tag>{pipeline.source}</Tag>}
@@ -2123,12 +2173,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 since, with nothing writing it. */}
             {!pipeline.final_outcome && (
               <Button
-                size="small"
-                type="link"
+                size="sm"
+                emphasis="text"
                 icon={<PauseCircleOutlined />}
                 loading={pauseMutation.isPending}
                 onClick={() => pauseMutation.mutate(!pipeline.is_paused)}
-                style={{ paddingLeft: 0 }}
+                className="pd-flush"
               >
                 {pipeline.is_paused ? 'Resume journey' : 'Pause journey'}
               </Button>
@@ -2140,11 +2190,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 you…" while no route or service could do so. */}
             {pipeline.final_outcome && (
               <Button
-                size="small"
-                type="link"
+                size="sm"
+                emphasis="text"
                 icon={<UndoOutlined />}
                 onClick={() => setReopenOpen(true)}
-                style={{ paddingLeft: 0 }}
+                className="pd-flush"
               >
                 Reopen record
               </Button>
@@ -2156,39 +2206,39 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               instead of a "Shortlisted" stage-1 column. */}
           {screening && (
             <div
-              style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-                background: 'var(--ink-3)', borderRadius: 10, padding: '9px 14px', marginBottom: 10,
-              }}
+              className="pd-meta-row"
             >
-              <Text style={{ fontSize: 12.5 }}>
+              <Text className="pd-body">
                 <Text type="secondary">Shortlisted from Candidate Screening</Text>
                 {screening.shortlistedAt && <> · {new Date(screening.shortlistedAt).toLocaleDateString()}</>}
                 {screening.shortlistedBy && <> · by {screening.shortlistedBy}</>}
               </Text>
               {cvFileUrl
-                ? <Button size="small" type="link" icon={<FileTextOutlined />} style={{ padding: 0 }} href={cvFileUrl} target="_blank" rel="noopener noreferrer">View resume</Button>
-                : <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>}
+                ? <Button size="sm" emphasis="text" icon={<FileTextOutlined />} className="pd-pad-0" href={cvFileUrl} target="_blank" rel="noopener noreferrer">View resume</Button>
+                : <Text type="secondary" className="pd-caption">No resume on file</Text>}
             </div>
           )}
           {hasScorecards && (
             <Button
-              size="small"
-              type="primary"
-              className="cta-primary btn-sheen"
+              size="sm"
+              emphasis="solid"
+              /* `.cta-primary btn-sheen` dropped — both are legacy button treatments
+                 that `emphasis="solid"` replaces, and `.cta-primary` paints its own
+                 background, which would have fought `.ui-btn--solid` for it. Only the
+                 margin utility stays. */
+              className="pd-mb-2-5"
               icon={<FileTextOutlined />}
-              style={{ marginBottom: 10 }}
               onClick={() => setReportOpen(true)}
             >
               Scorecard report
             </Button>
           )}
           {screening?.notes && (
-            <Alert type="info" showIcon message={screening.notes} style={{ marginBottom: 10, fontSize: 12.5 }} />
+            <Alert type="info" showIcon message={screening.notes} className="pd-caption--stack-3" />
           )}
 
           {allStages.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 4 }}>
+            <div className="pd-strip">
               {allStages.map((s, i) => {
                 const past = i < currentIdx;
                 const isCurrentStage = i === currentIdx;
@@ -2210,8 +2260,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             </div>
           )}
           {allStages[currentIdx] && (
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 8 }}>
-              Click a stage to see its details — stages after <Text strong style={{ fontSize: 11.5 }}>{allStages[currentIdx].label}</Text> are locked until the candidate gets there.
+            <Text type="secondary" className="pd-caption--block-gap">
+              Click a stage to see its details — stages after <Text strong className="pd-caption">{allStages[currentIdx].label}</Text> are locked until the candidate gets there.
             </Text>
           )}
 
@@ -2226,7 +2276,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               query per drawer open rather than per keystroke/click. */}
           <Collapse
             size="small"
-            style={{ marginTop: 12 }}
+            className="pd-mt-3"
             items={[
               {
                 key: 'conversation',
@@ -2234,31 +2284,31 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   <Space size={8}>
                     <MailOutlined />
                     <span>Conversation with candidate</span>
-                    {conversationMessages.length > 0 && <Tag style={{ marginInlineEnd: 0 }}>{conversationMessages.length}</Tag>}
+                    {conversationMessages.length > 0 && <Tag className="pd-tag--flush">{conversationMessages.length}</Tag>}
                     {lastConversationMessage?.direction === 'inbound' && (
-                      <Tag color="orange" style={{ marginInlineEnd: 0 }}>Awaiting reply</Tag>
+                      <Tag color="orange" className="pd-tag--flush">Awaiting reply</Tag>
                     )}
                   </Space>
                 ),
                 children: conversationsLoading ? (
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}><Spin size="small" /></div>
+                  <div className="pd-center--sm"><Spin size="small" /></div>
                 ) : conversationMessages.length === 0 ? (
-                  <Text type="secondary" style={{ fontSize: 12.5 }}>No email conversations found for this candidate.</Text>
+                  <Text type="secondary" className="pd-body">No email conversations found for this candidate.</Text>
                 ) : (
-                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                    <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  <Space direction="vertical" size={10} className="pd-full">
+                    <div className="pd-scroll">
                       {conversationMessages.map((m) => (
-                        <div key={m.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border-2, #eaebe8)' }}>
-                          <Space size={6} style={{ marginBottom: 2 }}>
-                            <Tag color={m.direction === 'outbound' ? 'blue' : 'green'} style={{ marginInlineEnd: 0 }}>
+                        <div key={m.id} className="pd-rule-row">
+                          <Space size={6} className="pd-mb-2px">
+                            <Tag color={m.direction === 'outbound' ? 'blue' : 'green'} className="pd-tag--flush">
                               {m.direction === 'outbound' ? 'Sent' : 'Received'}
                             </Tag>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
+                            <Text type="secondary" className="pd-caption">
                               {m.sent_at ? dayjs(m.sent_at).format('DD MMM, hh:mm a') : ''}
                             </Text>
                           </Space>
-                          {m.subject && <div style={{ fontSize: 12.5, fontWeight: 600 }}>{m.subject}</div>}
-                          <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{cleanMsgBody(m.body_html || m.body_preview)}</div>
+                          {m.subject && <div className="pd-body--strong">{m.subject}</div>}
+                          <div className="pd-body--pre">{cleanMsgBody(m.body_html || m.body_preview)}</div>
                         </div>
                       ))}
                     </div>
@@ -2273,9 +2323,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                         compact
                         height={140}
                       />
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                      <div className="pd-end">
                         <Button
-                          type="primary"
+                          emphasis="solid"
                           icon={<SendOutlined />}
                           loading={conversationReplyMutation.isPending}
                           disabled={cleanMsgBody(conversationReplyText) === '(No content)'}
@@ -2311,25 +2361,24 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           )}
 
           {isCurrentStageSelected && !pipeline.final_outcome && selectedStageKey !== 'offer' && (
-            <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
-              <Title level={5} style={{ fontSize: 14 }}>Record outcome — current stage</Title>
+            <div className="pd-rule-top">
+              <Title level={5} className="pd-lede">Record outcome — current stage</Title>
               {selectedStageKey === 'assessment' && assessmentResultData?.result?.overall_result && (
                 <Tag
                   color={assessmentResultData.suggestedOutcome === 'approved' ? 'green' : assessmentResultData.suggestedOutcome === 'rejected' ? 'red' : 'default'}
-                  style={{ marginBottom: 10 }}
+                  className="pd-mb-2-5"
                 >
                   Evalground suggests: {assessmentResultData.result.overall_result}
                 </Tag>
               )}
-              <Space wrap style={{ marginBottom: 12 }}>
+              <Space wrap className="pd-mb-3">
                 {OUTCOME_BUTTONS.map((btn) => (
                   <Button
                     key={btn.key}
                     icon={btn.icon}
-                    danger={btn.danger}
-                    className={btn.primary ? 'cta-primary btn-sheen' : undefined}
-                    style={btn.primary ? undefined : btn.style}
-                    type={btn.primary ? 'primary' : 'default'}
+                    emphasis={btn.emphasis}
+                    tone={btn.tone}
+                    className={btn.className}
                     onClick={() => openOutcomeModal(btn.key)}
                   >
                     {btn.label}
@@ -2337,14 +2386,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 ))}
               </Space>
               {allStages[currentIdx]?.is_optional && (
-                <div style={{ marginBottom: 12 }}>
+                <div className="pd-mb-3">
                   <Popconfirm
                     title="Skip this optional round?"
                     description={`Skip ${allStages[currentIdx].label} and move straight to ${allStages[currentIdx + 1]?.label || 'the next stage'}? This is logged and cannot be undone from here.`}
                     onConfirm={() => skipStageMutation.mutate()}
                     okText="Yes, skip it"
                   >
-                    <Button size="small" type="link" icon={<StepForwardOutlined />} loading={skipStageMutation.isPending} style={{ paddingLeft: 0 }}>
+                    <Button size="sm" emphasis="text" icon={<StepForwardOutlined />} loading={skipStageMutation.isPending} className="pd-flush">
                       Skip this optional round
                     </Button>
                   </Popconfirm>
@@ -2367,18 +2416,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   Kept visually quieter than the outcome buttons above: closure
                   is the rarer, heavier action, and the stage decision remains
                   the normal path. */}
-              <div style={{ marginBottom: 12 }}>
+              <div className="pd-mb-3">
                 <Button
-                  size="small"
-                  type="link"
-                  danger
+                  size="sm"
+                  emphasis="text"
+                  tone="danger"
                   icon={<StopOutlined />}
                   onClick={() => setClosureOpen(true)}
-                  style={{ paddingLeft: 0 }}
+                  className="pd-flush"
                 >
                   Close this candidate&apos;s record
                 </Button>
-                <Text type="secondary" style={{ fontSize: 11.5, display: 'block' }}>
+                <Text type="secondary" className="pd-body--block">
                   For an exit that is not a stage decision — withdrew, backed out, joined, or never joined.
                 </Text>
               </div>
@@ -2409,21 +2458,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="cancel" onClick={() => setOutcomeModalOpen(false)}>Cancel</Button>,
-        <Button key="confirm" type="primary" onClick={submitOutcome} loading={outcomeMutation.isPending}>
+        <Button key="confirm" emphasis="solid" onClick={submitOutcome} loading={outcomeMutation.isPending}>
           Save &amp; send email
         </Button>,
       ]}
     >
       {pipeline && decisionOutcome && (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space direction="vertical" size={12} className="pd-full">
           <Text type="secondary">
             {pipeline.rpa_shortlisted_candidates?.candidate_name} · {allStages[selectedIdx]?.label}
           </Text>
           {showOptionalNextChoice && (
             <div>
-              <Text strong style={{ fontSize: 12.5 }}>Next stage — {nextStageIfApproved.label} is optional</Text>
+              <Text strong className="pd-body">Next stage — {nextStageIfApproved.label} is optional</Text>
               <Radio.Group
-                style={{ display: 'block', marginTop: 6 }}
+                className="pd-block--gap"
                 value={skipOptionalNext}
                 onChange={(e) => setSkipOptionalNext(e.target.value)}
               >
@@ -2436,9 +2485,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           )}
           {isRejectOrHold && (
             <div>
-              <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text> (mandatory for Reject / Hold)</Text>
+              <Text strong className="pd-body">Reason <Text type="danger">*</Text> (mandatory for Reject / Hold)</Text>
               <Select
-                style={{ width: '100%', marginTop: 4 }}
+                className="pd-full--gap"
                 placeholder="Select a reason"
                 value={reasonId}
                 onChange={setReasonId}
@@ -2450,7 +2499,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                   placeholder="Type the actual reason — this text is what gets shown everywhere, never the word 'Other'"
                   value={otherText}
                   onChange={(e) => setOtherText(e.target.value)}
-                  style={{ marginTop: 8 }}
+                  className="pd-mt-2"
                 />
               )}
             </div>
@@ -2466,12 +2515,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-          <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
-            <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div className="pd-rule-over">
+            <Space className="pd-btn-block--gap">
               {/* "→ candidate" with no vendor appended, even when one is
                   notified: this header labels the box the recruiter is editing,
                   and that text goes to the candidate alone. */}
-              <Text strong style={{ fontSize: 12.5 }}><MailOutlined style={{ marginInlineEnd: 4 }} />Outcome email → candidate</Text>
+              <Text strong className="pd-body"><MailOutlined className="pd-tag--gap-sm" />Outcome email → candidate</Text>
               {previewData?.templateName
                 ? <Tag color="blue">Template — {previewData.templateName}{previewData.templateId ? ` (#${previewData.templateId})` : ''}</Tag>
                 : <Tag color="orange">Draft — no template yet</Tag>}
@@ -2480,17 +2529,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               <Alert
                 type="warning"
                 showIcon
-                style={{ marginBottom: 8 }}
+                className="pd-mb-2"
                 message="No email template resolved for this stage/outcome — this is an editable draft, not a saved template."
               />
             )}
             {previewLoading || !previewData || emailStateForKey !== previewData ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+              <div className="pd-center">
                 <Spin />
               </div>
             ) : (
               <>
-                <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject" style={{ marginBottom: 8 }} />
+                <Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Subject" className="pd-mb-2" />
                 <EmailEditorTabs
                   bodyHtml={emailBody}
                   onBodyChange={setEmailBody}
@@ -2500,7 +2549,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 />
               </>
             )}
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+            <Text type="secondary" className="pd-caption--block">
               Editable before send — the exact text above goes out once sent.
             </Text>
           </div>
@@ -2515,32 +2564,32 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       width={MODAL_WIDTH.FORM}
       footer={[
         <Button key="cancel" onClick={() => setScheduleOpen(false)}>Cancel</Button>,
-        <Button key="confirm" type="primary" onClick={submitSchedule} loading={scheduleMutation.isPending}>
+        <Button key="confirm" emphasis="solid" onClick={submitSchedule} loading={scheduleMutation.isPending}>
           Confirm &amp; Invite
         </Button>,
       ]}
     >
       {pipeline && (
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
+        <Space direction="vertical" size={14} className="pd-full">
+          <div className="pd-mid--well">
             <Avatar>{(pipeline.rpa_shortlisted_candidates?.candidate_name || '?').charAt(0).toUpperCase()}</Avatar>
             <div>
-              <Text strong style={{ display: 'block' }}>{pipeline.rpa_shortlisted_candidates?.candidate_name}</Text>
-              <Text type="secondary" style={{ fontSize: 12.5 }}>{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
+              <Text strong className="pd-block">{pipeline.rpa_shortlisted_candidates?.candidate_name}</Text>
+              <Text type="secondary" className="pd-body">{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
             </div>
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Zeko Job — {isHrRound ? 'HR Screening' : 'Functional Test'} round</Text>
+            <Text strong className="pd-body">Zeko Job — {isHrRound ? 'HR Screening' : 'Functional Test'} round</Text>
             {zekoJobFallback && (
               <Alert
                 type="warning"
                 showIcon
-                style={{ marginTop: 4, marginBottom: 4, fontSize: 12 }}
+                className="pd-caption--stack"
                 message={`No jobs tagged for the ${isHrRound ? 'HR' : 'Functional'} round — showing all published jobs.`}
               />
             )}
             <Select
-              style={{ width: '100%', marginTop: 4 }}
+              className="pd-full--gap"
               placeholder="Select a Zeko job"
               value={scheduleJobId}
               onChange={setScheduleJobId}
@@ -2553,26 +2602,26 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 type: j.interview_type,
               }))}
               optionRender={(option) => (
-                <div style={{ padding: '2px 0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontWeight: 600, whiteSpace: 'normal', lineHeight: 1.35 }}>{option.data.label}</span>
+                <div className="pd-pad-y-sm">
+                  <div className="pd-mid">
+                    <span className="pd-strong-wrap">{option.data.label}</span>
                     {ZEKO_TYPE_TAG[option.data.type] && (
-                      <Tag color={ZEKO_TYPE_TAG[option.data.type].color} style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '16px' }}>
+                      <Tag color={ZEKO_TYPE_TAG[option.data.type].color} className="pd-tag--line">
                         {ZEKO_TYPE_TAG[option.data.type].label}
                       </Tag>
                     )}
                   </div>
                   {option.data.role && (
-                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Role: {option.data.role}</div>
+                    <div className="pd-caption--muted">Role: {option.data.role}</div>
                   )}
                 </div>
               )}
             />
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interview window (IST)</Text>
-            <div style={{ marginTop: 2 }}>
-              <Text type="secondary" style={{ fontSize: 11.5 }}>Opens</Text>
+            <Text strong className="pd-body">Interview window (IST)</Text>
+            <div className="pd-mt-2px">
+              <Text type="secondary" className="pd-caption">Opens</Text>
               <DateTimeField
                 value={scheduleDates?.[0] || null}
                 onChange={(next) => setScheduleDates([next, scheduleDates?.[1] || null])}
@@ -2580,8 +2629,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 datePlaceholder="Window opens"
               />
             </div>
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 11.5 }}>Closes</Text>
+            <div className="pd-mt-2">
+              <Text type="secondary" className="pd-caption">Closes</Text>
               <DateTimeField
                 value={scheduleDates?.[1] || null}
                 onChange={(next) => setScheduleDates([scheduleDates?.[0] || null, next])}
@@ -2592,7 +2641,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
                 datePlaceholder="Window closes"
               />
             </div>
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+            <Text type="secondary" className="pd-caption--block">
               Candidate self-schedules within this window via the Zeko link; times round to 30-minute slots automatically.
             </Text>
           </div>
@@ -2607,32 +2656,32 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       width={MODAL_WIDTH.CONFIRM}
       footer={[
         <Button key="back" onClick={() => setCancelOpen(false)}>Back</Button>,
-        <Button key="confirm" danger type="primary" icon={<CloseOutlined />} onClick={submitCancel} loading={cancelMutation.isPending}>
+        <Button key="confirm" tone="danger" emphasis="solid" icon={<CloseOutlined />} onClick={submitCancel} loading={cancelMutation.isPending}>
           Yes, Cancel Interview
         </Button>,
       ]}
     >
       {pipeline && zekoHrPipeline && (
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
-            <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>CANDIDATE</Text>
+        <Space direction="vertical" size={14} className="pd-full">
+          <div className="pd-well">
+            <Text type="secondary" className="pd-body--block">CANDIDATE</Text>
             <Text strong>{pipeline.rpa_shortlisted_candidates?.candidate_name}</Text>
-            <Text type="secondary" style={{ fontSize: 12.5, display: 'block' }}>{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
+            <Text type="secondary" className="pd-body--block">{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
           </div>
           <div>
-            <Text type="secondary" style={{ fontSize: 11 }}>SCHEDULED TIME</Text>
-            <Text strong style={{ display: 'block' }}>
+            <Text type="secondary" className="pd-caption">SCHEDULED TIME</Text>
+            <Text strong className="pd-block">
               {fmtDateTime(zekoHrPipeline.interview_start_at)} → {fmtDateTime(zekoHrPipeline.interview_end_at)}
             </Text>
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Cancel reason (optional)</Text>
+            <Text strong className="pd-body">Cancel reason (optional)</Text>
             <TextArea
               rows={3}
               placeholder="e.g. Candidate unavailable, rescheduling required…"
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
-              style={{ marginTop: 4 }}
+              className="pd-mt-1"
             />
           </div>
           <Alert
@@ -2653,7 +2702,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="cancel" onClick={() => setInterviewOpen(false)}>Cancel</Button>,
-        <Button key="confirm" type="primary" icon={<CalendarOutlined />} onClick={submitInterview} loading={interviewMutation.isPending}>
+        <Button key="confirm" emphasis="solid" icon={<CalendarOutlined />} onClick={submitInterview} loading={interviewMutation.isPending}>
           {!stageSendsInvites(selectedStageKey)
             ? 'Record booking'
             : interviewMode === 'reschedule' ? 'Reschedule & notify' : 'Create invite'}
@@ -2661,7 +2710,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       ]}
     >
       {pipeline && (
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+        <Space direction="vertical" size={14} className="pd-full">
           <Text type="secondary">
             {pipeline.rpa_shortlisted_candidates?.candidate_name} · {allStages[currentIdx]?.label} · {interviewDuration}-minute interview
           </Text>
@@ -2692,21 +2741,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
           {/* Who interviews is defined on the MRF — shown read-only, since the
               column is free text and cannot be resolved to a mailbox. */}
-          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
-            <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.4 }}>FROM THE MRF</Text>
-            <div style={{ marginTop: 4 }}>
-              <Text style={{ fontSize: 12.5 }}>
+          <div className="pd-well">
+            <Text type="secondary" className="pd-caption--track-sm">FROM THE MRF</Text>
+            <div className="pd-mt-1">
+              <Text className="pd-body">
                 Interviewer: <Text strong>{mrfInterviewHints?.interviewerName || 'not specified'}</Text>
               </Text>
               <br />
-              <Text style={{ fontSize: 12.5 }}>
+              <Text className="pd-body">
                 Preferred slot: <Text strong>{mrfInterviewHints?.preferredSlot || 'not specified'}</Text>
               </Text>
             </div>
           </div>
 
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>{interviewMode === 'reschedule' ? 'New start' : 'Start'} time (IST) <Text type="danger">*</Text></Text>
+            <Text strong className="pd-body">{interviewMode === 'reschedule' ? 'New start' : 'Start'} time (IST) <Text type="danger">*</Text></Text>
             <DateTimeField
               value={interviewAt}
               onChange={setInterviewAt}
@@ -2716,10 +2765,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           </div>
 
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Duration</Text>
+            <Text strong className="pd-body">Duration</Text>
             <Select
               size="large"
-              style={{ width: '100%', marginTop: 4 }}
+              className="pd-full--gap"
               value={interviewDuration}
               onChange={setInterviewDuration}
               options={[15, 30, 45, 60, 90, 120].map((m) => ({
@@ -2728,7 +2777,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               }))}
             />
             {interviewAt && (
-              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              <Text type="secondary" className="pd-caption--block">
                 Ends at {interviewAt.add(interviewDuration, 'minute').format('h:mm A')} · {interviewAt.format('ddd, DD MMM YYYY')}
               </Text>
             )}
@@ -2737,15 +2786,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           {/* Optional, but it is what the panel invite greets them by — left
               blank the email opens "Hi there,". Prefilled from the MRF above. */}
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interviewer name</Text>
+            <Text strong className="pd-body">Interviewer name</Text>
             <Input
               placeholder="Who is taking this round?"
               value={interviewerName}
               onChange={(e) => setInterviewerName(e.target.value)}
-              style={{ marginTop: 4 }}
+              className="pd-mt-1"
               allowClear
             />
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+            <Text type="secondary" className="pd-caption--block">
               {parsedInterviewers.emails.length > 1
                 ? 'With more than one interviewer the invite opens “Hi all,”.'
                 : 'Used to address the interviewer’s invitation email.'}
@@ -2753,7 +2802,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           </div>
 
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interviewer email(s) <Text type="danger">*</Text></Text>
+            <Text strong className="pd-body">Interviewer email(s) <Text type="danger">*</Text></Text>
             <TextArea
               autoSize={{ minRows: 1, maxRows: 3 }}
               placeholder="name@aapnainfotech.com, second@aapnainfotech.com"
@@ -2761,16 +2810,16 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               onChange={(e) => setInterviewerEmail(e.target.value)}
               onBlur={() => setInterviewerEmailTouched(true)}
               status={interviewerEmailTouched && !interviewerEmailOk ? 'error' : undefined}
-              style={{ marginTop: 4 }}
+              className="pd-mt-1"
             />
             {interviewerEmailTouched && !interviewerEmailOk ? (
-              <Text type="danger" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              <Text type="danger" className="pd-caption--block">
                 {parsedInterviewers.invalid.length > 0
                   ? `Not a valid email address: ${parsedInterviewers.invalid.join(', ')}`
                   : "At least one interviewer's email is required so they receive the invite."}
               </Text>
             ) : (
-              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+              <Text type="secondary" className="pd-caption--block">
                 {parsedInterviewers.emails.length > 1
                   ? `${parsedInterviewers.emails.length} interviewers will be invited.`
                   : 'The MRF stores the interviewer’s name only, so enter their mailbox. Separate multiple interviewers with commas.'}
@@ -2784,8 +2833,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           {stageSendsInvites(selectedStageKey) && (
             <>
               <div>
-                <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
-                  Emails to send <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
+                <Text strong className="pd-body--gap">
+                  Emails to send <Text type="secondary" className="pd-normal">(edit before sending)</Text>
                 </Text>
                 <InterviewEmailEditors
                   state={schedEmail}
@@ -2822,8 +2871,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         <Button key="back" onClick={() => setInterviewCancelOpen(false)}>Back</Button>,
         <Button
           key="confirm"
-          danger
-          type="primary"
+          tone="danger"
+          emphasis="solid"
           icon={<CloseOutlined />}
           onClick={() => interviewCancelMutation.mutate()}
           loading={interviewCancelMutation.isPending}
@@ -2833,38 +2882,38 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       ]}
     >
       {pipeline && interviewSchedule && (
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
-          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
-            <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>CANDIDATE</Text>
+        <Space direction="vertical" size={14} className="pd-full">
+          <div className="pd-well">
+            <Text type="secondary" className="pd-body--block">CANDIDATE</Text>
             <Text strong>{pipeline.rpa_shortlisted_candidates?.candidate_name}</Text>
-            <Text type="secondary" style={{ fontSize: 12.5, display: 'block' }}>{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
+            <Text type="secondary" className="pd-body--block">{pipeline.rpa_shortlisted_candidates?.candidate_email}</Text>
           </div>
           <div>
-            <Text type="secondary" style={{ fontSize: 11 }}>SCHEDULED TIME</Text>
-            <Text strong style={{ display: 'block' }}>
+            <Text type="secondary" className="pd-caption">SCHEDULED TIME</Text>
+            <Text strong className="pd-block">
               {fmtDateTime(interviewSchedule.scheduled_start_at)} → {fmtDateTime(interviewSchedule.scheduled_end_at)}
             </Text>
             {interviewSchedule.interviewer_name && (
-              <Text type="secondary" style={{ fontSize: 12.5 }}>with {interviewSchedule.interviewer_name}</Text>
+              <Text type="secondary" className="pd-body">with {interviewSchedule.interviewer_name}</Text>
             )}
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Cancel reason (optional)</Text>
+            <Text strong className="pd-body">Cancel reason (optional)</Text>
             <TextArea
               rows={3}
               placeholder="e.g. Interviewer unavailable, candidate withdrew…"
               value={interviewCancelReason}
               onChange={(e) => setInterviewCancelReason(e.target.value)}
-              style={{ marginTop: 4 }}
+              className="pd-mt-1"
             />
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+            <Text type="secondary" className="pd-caption--block">
               Recorded on the candidate&apos;s timeline, and used in the Outlook cancellation notice.
               Type it before the emails are generated if you want it to appear in them.
             </Text>
           </div>
           <div>
-            <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 6 }}>
-              Cancellation emails <Text type="secondary" style={{ fontWeight: 400 }}>(edit before sending)</Text>
+            <Text strong className="pd-body--gap">
+              Cancellation emails <Text type="secondary" className="pd-normal">(edit before sending)</Text>
             </Text>
             <InterviewEmailEditors
               state={cxlEmail}
@@ -2895,21 +2944,21 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       width={MODAL_WIDTH.CONFIRM}
       footer={[
         <Button key="back" onClick={() => setNoShowOpen(false)}>Back</Button>,
-        <Button key="confirm" danger type="primary"
+        <Button key="confirm" tone="danger" emphasis="solid"
           loading={occurrenceMutation.isPending && occurrenceMutation.variables?.outcome === 'no_show'}
           onClick={() => occurrenceMutation.mutate({ scheduleId: interviewSchedule?.id, outcome: 'no_show', party: noShowParty, reason: noShowReason.trim() })}>
           Record no-show
         </Button>,
       ]}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="pd-full">
         <Alert type="warning" showIcon message="No scorecard link is sent for a no-show. You can reschedule or reject the round afterwards." />
         <div>
-          <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 4 }}>Who did not attend?</Text>
+          <Text strong className="pd-body--gap-sm">Who did not attend?</Text>
           <Select
             value={noShowParty}
             onChange={setNoShowParty}
-            style={{ width: '100%' }}
+            className="pd-full"
             options={[
               { value: 'candidate', label: 'Candidate did not join' },
               { value: 'panel', label: 'Interviewer / panel did not join' },
@@ -2952,14 +3001,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         successMessage: 'Client interview marked as held.',
       })}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="pd-full">
         <Alert
           type="info"
           showIcon
           message="This round is arranged with the client directly. Marking it here only records what happened — no invite, reminder or feedback request is sent to anyone."
         />
         <div>
-          <Text strong style={{ fontSize: 12.5 }}>When did it take place? <Text type="danger">*</Text></Text>
+          <Text strong className="pd-body">When did it take place? <Text type="danger">*</Text></Text>
           <DateTimeField
             value={clientHappenedAt}
             onChange={setClientHappenedAt}
@@ -2967,12 +3016,12 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           />
         </div>
         <div>
-          <Text strong style={{ fontSize: 12.5 }}>Who took it, on the client side?</Text>
+          <Text strong className="pd-body">Who took it, on the client side?</Text>
           <Input
             placeholder="Optional — e.g. R. Fernandes, Northwind Corp"
             value={clientContactName}
             onChange={(e) => setClientContactName(e.target.value)}
-            style={{ marginTop: 4 }}
+            className="pd-mt-1"
             allowClear
           />
         </div>
@@ -2994,8 +3043,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         successMessage: 'Client feedback recorded.',
       })}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <Text type="secondary" style={{ fontSize: 12.5 }}>
+      <Space direction="vertical" size={12} className="pd-full">
+        <Text type="secondary" className="pd-body">
           What did the client say? This is your transcription — the client never sees it, and it is not sent anywhere.
         </Text>
         <TextArea
@@ -3024,17 +3073,17 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         successMessage: 'Offer recorded as shared.',
       })}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="pd-full">
         <Alert
           type="info"
           showIcon
           message="HR shares the appointment letter from their own mailbox. This only records that it went out — no letter is stored or sent by the ATS."
         />
         <div>
-          <Text strong style={{ fontSize: 12.5 }}>Proposed joining date</Text>
+          <Text strong className="pd-body">Proposed joining date</Text>
           <DatePicker
             size="large"
-            style={{ width: '100%', marginTop: 4 }}
+            className="pd-full--gap"
             format={DATE_FORMAT}
             disabledDate={noPastDates}
             presets={JOINING_DATE_PRESETS}
@@ -3058,7 +3107,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       confirmLoading={closureMutation.isPending}
       onOk={() => closureMutation.mutate()}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="pd-full">
         {/* Corrected 2026-08-26 (audit §2.8). The old copy — "a closure email is
             sent only if a template is mapped to the status you pick" — was
             written before the closure templates were seeded, and was by then
@@ -3083,9 +3132,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           }
         />
         <div>
-          <Text strong style={{ fontSize: 12.5 }}>Final status <Text type="danger">*</Text></Text>
+          <Text strong className="pd-body">Final status <Text type="danger">*</Text></Text>
           <Select
-            style={{ width: '100%', marginTop: 4 }}
+            className="pd-full--gap"
             placeholder="Pick the final status"
             value={closureOutcome}
             onChange={setClosureOutcome}
@@ -3107,7 +3156,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       confirmLoading={reopenMutation.isPending}
       onOk={() => reopenMutation.mutate()}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="pd-full">
         <Alert
           type="info"
           showIcon
@@ -3115,10 +3164,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           description="No email is sent. The closure is kept in the history, and any requisition seat the closure filled or freed is recounted."
         />
         <div>
-          <Text strong style={{ fontSize: 12.5 }}>Why is this being reopened? <Text type="danger">*</Text></Text>
+          <Text strong className="pd-body">Why is this being reopened? <Text type="danger">*</Text></Text>
           <TextArea
             rows={2}
-            style={{ marginTop: 4 }}
+            className="pd-mt-1"
             placeholder="e.g. closed by mistake — wrong candidate"
             value={reopenReason}
             onChange={(e) => setReopenReason(e.target.value)}
@@ -3157,46 +3206,46 @@ function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemi
   };
 
   return (
-    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+    <Space direction="vertical" size={8} className="pd-full">
       {documents.map((doc) => {
         const tag = DOC_TAG[doc.status] || DOC_TAG.pending;
         return (
-          <div key={doc.id} style={{ borderBottom: '1px solid var(--ant-color-border)', paddingBottom: 6 }}>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
+          <div key={doc.id} className="pd-rule-under">
+            <Space className="pd-btn-block" wrap>
               <Space size={6} wrap>
-                <Text style={{ fontSize: 12.5 }}>{doc.rpa_document_checklist_items?.label || 'Document'}</Text>
-                <Tag color={tag.color} style={{ marginInlineEnd: 0 }}>{tag.label}</Tag>
+                <Text className="pd-body">{doc.rpa_document_checklist_items?.label || 'Document'}</Text>
+                <Tag color={tag.color} className="pd-tag--flush">{tag.label}</Tag>
               </Space>
               {doc.status === 'uploaded' && (
                 <Space size={4}>
                   {doc.file_url && (
-                    <Button size="small" type="link" href={doc.file_url} target="_blank" rel="noreferrer" style={{ paddingInline: 4 }}>
+                    <Button size="sm" emphasis="text" href={doc.file_url} target="_blank" rel="noreferrer" className="pd-pad-x">
                       Open
                     </Button>
                   )}
-                  <Button size="small" loading={pending} onClick={() => onVerify(doc.id)}>Verify</Button>
-                  <Button size="small" danger onClick={() => { setRejectingId(doc.id); setRejectReason(''); }}>Reject…</Button>
+                  <Button size="sm" loading={pending} onClick={() => onVerify(doc.id)}>Verify</Button>
+                  <Button size="sm" emphasis="soft" tone="danger" onClick={() => { setRejectingId(doc.id); setRejectReason(''); }}>Reject…</Button>
                 </Space>
               )}
             </Space>
             {doc.status === 'rejected' && doc.remarks ? (
-              <Text type="secondary" style={{ fontSize: 11.5 }}>Reason sent to candidate: {doc.remarks}</Text>
+              <Text type="secondary" className="pd-caption">Reason sent to candidate: {doc.remarks}</Text>
             ) : null}
           </div>
         );
       })}
 
-      <Button size="small" type="link" icon={<MailOutlined />} loading={pending} onClick={onRemind} style={{ paddingLeft: 0 }}>
+      <Button size="sm" emphasis="text" icon={<MailOutlined />} loading={pending} onClick={onRemind} className="pd-flush">
         Send a reminder now
       </Button>
-      <Text type="secondary" style={{ fontSize: 11.5 }}>
+      <Text type="secondary" className="pd-caption">
         {/* The daily sweep (jobs/documentReminder.js) has run since Phase 3 M4, but
             this panel never said so — showing only a "Send reminder" button read as
             "chasing is manual". The Offer panel already states its own schedule. */}
         Reminders are automatic: the candidate is chased two days after the request and then daily,
         up to three times, until everything is in. The button above sends one immediately.
       </Text>
-      <Text type="secondary" style={{ fontSize: 11.5 }}>
+      <Text type="secondary" className="pd-caption">
         The candidate uploads via a secure link — no login. Vendors never see documents or these emails.
         Completeness is automatic; authenticity stays with the recruitment team.
       </Text>
@@ -3210,7 +3259,7 @@ function DocumentChecklist({ documents = [], pending, onVerify, onReject, onRemi
         okButtonProps={{ danger: true, disabled: !rejectReason.trim() }}
         onOk={submitReject}
       >
-        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+        <Space direction="vertical" size={10} className="pd-full">
           <Alert type="info" showIcon message="The reason is emailed to the candidate so they know exactly what to re-upload." />
           <TextArea
             rows={3}
@@ -3276,29 +3325,29 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
   const decided = shared && offer?.candidate_decision !== 'pending';
 
   return (
-    <div style={{ borderTop: '1px solid var(--ant-color-border)', marginTop: 16, paddingTop: 16 }}>
-      <Title level={5} style={{ fontSize: 14 }}>Offer</Title>
+    <div className="pd-rule-top">
+      <Title level={5} className="pd-lede">Offer</Title>
 
-      <Space direction="vertical" size={10} style={{ width: '100%' }}>
+      <Space direction="vertical" size={10} className="pd-full">
         {!shared && (
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="pd-body">
             Record-only: HR prepares and shares the letter from its own mailbox. Record it here once it has gone out.
           </Text>
         )}
         {/* Disabled 2026-08-25 — internal approval status lines. Reverses Q3/Q26.
         {awaitingApproval && (
-          <Text type="warning" style={{ fontSize: 12.5 }}>
+          <Text type="warning" className="pd-body">
             Requested — awaiting recruiter sign-off. A daily reminder goes out until it is approved.
           </Text>
         )}
         {approved && !shared && (
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="pd-body">
             Approved internally{offer.approved_at ? ` · ${new Date(offer.approved_at).toLocaleDateString()}` : ''} — not yet shared with the candidate.
           </Text>
         )}
         */}
         {shared && (
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="pd-body">
             Shared {new Date(offer.shared_at).toLocaleDateString()}
             {offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}
             {decided ? ` · candidate ${offer.candidate_decision}` : ' · awaiting the candidate’s decision'}
@@ -3308,31 +3357,31 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
         <Space wrap>
           {/* Disabled 2026-08-25 — the two internal-approval buttons. Reverses Q3/Q26.
           {!offer || (!approved && !awaitingApproval) ? (
-            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onRequestApproval}>
+            <Button emphasis="solid" loading={pending} onClick={onRequestApproval}>
               Request internal approval
             </Button>
           ) : null}
           {awaitingApproval && (
-            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onApprove}>
+            <Button emphasis="solid" loading={pending} onClick={onApprove}>
               Mark approved
             </Button>
           )}
           */}
           {!shared && (
-            <Button type="primary" className="cta-primary btn-sheen" loading={pending} onClick={onOpenShare}>
+            <Button emphasis="solid" loading={pending} onClick={onOpenShare}>
               Record offer shared
             </Button>
           )}
           {shared && !decided && (
             <>
               <Button icon={<CheckOutlined />} loading={pending} onClick={() => onDecision('accepted')}>Mark accepted</Button>
-              <Button danger icon={<CloseOutlined />} loading={pending} onClick={() => onDecision('rejected')}>Mark rejected</Button>
+              <Button tone="danger" icon={<CloseOutlined />} loading={pending} onClick={() => onDecision('rejected')}>Mark rejected</Button>
             </>
           )}
         </Space>
 
         <div>
-          <Button danger size="small" onClick={onClose}>Close candidate record…</Button>
+          <Button tone="danger" size="sm" onClick={onClose}>Close candidate record…</Button>
         </div>
       </Space>
     </div>
@@ -3354,22 +3403,22 @@ function TeamsDetails({ schedule }) {
     );
   };
   return (
-    <div style={{ border: '1px solid var(--ink-3)', borderRadius: 8, padding: '8px 12px', marginTop: 4 }}>
-      <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 4 }}>Microsoft Teams meeting</Text>
+    <div className="pd-outline">
+      <Text strong className="pd-body--gap-sm">Microsoft Teams meeting</Text>
       <Space size={8} wrap>
-        <Button size="small" type="primary" icon={<LinkOutlined />} href={schedule.teams_join_url} target="_blank" rel="noopener noreferrer">
+        <Button size="sm" emphasis="solid" icon={<LinkOutlined />} href={schedule.teams_join_url} target="_blank" rel="noopener noreferrer">
           Join
         </Button>
         {schedule.teams_meeting_id && (
           <Tooltip title="Click to copy">
-            <Tag style={{ cursor: 'pointer' }} onClick={() => copy('Meeting ID', schedule.teams_meeting_id)}>
+            <Tag className="pd-pointer" onClick={() => copy('Meeting ID', schedule.teams_meeting_id)}>
               ID: {schedule.teams_meeting_id}
             </Tag>
           </Tooltip>
         )}
         {schedule.teams_passcode && (
           <Tooltip title="Click to copy">
-            <Tag style={{ cursor: 'pointer' }} onClick={() => copy('Passcode', schedule.teams_passcode)}>
+            <Tag className="pd-pointer" onClick={() => copy('Passcode', schedule.teams_passcode)}>
               Passcode: {schedule.teams_passcode}
             </Tag>
           </Tooltip>
@@ -3414,8 +3463,8 @@ function HrScorecardFields({ hr }) {
   const filled = HR_SCORECARD_LABELS.filter(([key]) => hr[key]);
   if (filled.length === 0) return null;
   return (
-    <div style={{ marginTop: 6, width: '100%' }}>
-      <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+    <div className="pd-mt-1-5--full">
+      <Text type="secondary" className="pd-caption--tracked">
         HR round details
       </Text>
       <div
@@ -3431,19 +3480,13 @@ function HrScorecardFields({ hr }) {
           <Fragment key={key}>
             <Text
               type="secondary"
-              style={{
-                fontSize: 12.5,
-                paddingTop: 5,
-                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
-              }}
+              className={'pd-score-row' + (i === 0 ? '' : ' pd-score-row--ruled')}
             >
               {label}
             </Text>
             <Text
+              className={'pd-score-row' + (i === 0 ? '' : ' pd-score-row--ruled')}
               style={{
-                fontSize: 12.5,
-                paddingTop: 5,
-                borderTop: i === 0 ? 'none' : '1px solid var(--border, rgba(0,0,0,0.06))',
                 wordBreak: 'break-word',
               }}
             >
@@ -3474,17 +3517,17 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
   return (
     <Modal open={open} onCancel={onClose} title="Candidate scorecard report" width={MODAL_WIDTH.EMAIL} footer={<Button onClick={onClose}>Close</Button>}>
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
+        <div className="pd-center--text"><Spin /></div>
       ) : !data || (rounds.length === 0 && pendingRounds.length === 0) ? (
         <Empty description="No scorecards for this candidate yet." />
       ) : (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <Tag color="green" style={{ fontSize: 13, padding: '4px 10px' }}>Average: {data.overall?.average ?? '—'}</Tag>
-            <Tag color="blue" style={{ fontSize: 13, padding: '4px 10px' }}>Sum: {data.overall?.sum ?? '—'}</Tag>
-            <Tag style={{ fontSize: 13, padding: '4px 10px' }}>Rounds scored: {data.overall?.count ?? 0}</Tag>
+        <Space direction="vertical" size={12} className="pd-full">
+          <div className="pd-wrap--wide">
+            <Tag color="green" className="pd-tag">Average: {data.overall?.average ?? '—'}</Tag>
+            <Tag color="blue" className="pd-tag">Sum: {data.overall?.sum ?? '—'}</Tag>
+            <Tag className="pd-tag">Rounds scored: {data.overall?.count ?? 0}</Tag>
             {pendingRounds.length > 0 && (
-              <Tag color="orange" style={{ fontSize: 13, padding: '4px 10px' }}>
+              <Tag color="orange" className="pd-tag">
                 Awaiting feedback: {pendingRounds.length}
               </Tag>
             )}
@@ -3499,25 +3542,25 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
             <Card
               size="small"
               title="Still awaiting feedback"
-              style={{ background: 'var(--warn-bg)', borderColor: 'var(--warn-border)' }}
+              className="pd-alert--warn"
             >
-              <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <Space direction="vertical" size={6} className="pd-full">
                 {pendingRounds.map((p) => (
                   <div key={p.scorecard_id}>
-                    <Text style={{ fontSize: 12.5 }}>
+                    <Text className="pd-body">
                       <strong>{p.stage_label}</strong> · {p.recipient_email}
                     </Text>
                     <div>
                       {!p.delivered ? (
-                        <Text type="danger" style={{ fontSize: 12 }}>
+                        <Text type="danger" className="pd-caption">
                           The scorecard link was never emailed — retry it from the round below.
                         </Text>
                       ) : p.expired ? (
-                        <Text type="danger" style={{ fontSize: 12 }}>
+                        <Text type="danger" className="pd-caption">
                           Link expired {p.expires_at ? fmtDateTime(p.expires_at) : ''} — this round can no longer be scored.
                         </Text>
                       ) : (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" className="pd-caption">
                           Link sent {p.sent_at ? fmtDateTime(p.sent_at) : ''}
                           {p.expires_at ? ` · expires ${fmtDateTime(p.expires_at)}` : ''}
                         </Text>
@@ -3539,23 +3582,23 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
             <Card
               size="small"
               title="Consolidated feedback"
-              style={{ background: 'var(--info-bg)', borderColor: 'var(--info-border)' }}
+              className="pd-alert--info"
             >
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Space direction="vertical" size={8} className="pd-full">
                 <Text strong>{data.consolidated_feedback.summary}</Text>
                 {(data.consolidated_feedback.lines || []).map((l, i) => (
                   <div key={i}>
-                    <Text style={{ fontSize: 12.5 }}>{l.headline}</Text>
+                    <Text className="pd-body">{l.headline}</Text>
                     {l.concerns?.length > 0 && (
                       <div>
-                        <Text type="danger" style={{ fontSize: 12 }}>
+                        <Text type="danger" className="pd-caption">
                           Concerns: {l.concerns.join(', ')}
                         </Text>
                       </div>
                     )}
                     {l.comments && (
                       <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>“{l.comments}”</Text>
+                        <Text type="secondary" className="pd-caption">“{l.comments}”</Text>
                       </div>
                     )}
                   </div>
@@ -3566,25 +3609,25 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
           {rounds.map((r) => (
             <Card size="small" key={r.scorecard_id} title={`${r.stage_label} · ${r.recipient_email}`}
               extra={<Tag color={r.recommendation === 'approve' ? 'green' : r.recommendation === 'reject' ? 'red' : 'orange'}>{r.recommendation || '—'}</Tag>}>
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Space direction="vertical" size={4} className="pd-full">
                 {/* The four headline numbers as chips rather than a dot-separated
                     run — they are what a reader scans for first, and four labels
                     inside one sentence make them hunt. */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div className="pd-wrap">
                   {[['Avg', r.avg_score], ['Comms', r.communication], ['Attitude', r.attitude], ['Final', r.final_rating]].map(([label, val]) => (
-                    <Tag key={label} style={{ margin: 0, fontSize: 12 }}>
+                    <Tag key={label} className="pd-caption--flush">
                       {label}: <strong>{val ?? '—'}</strong>
                     </Tag>
                   ))}
                 </div>
                 {(r.skills || []).filter((s) => s.label || s.rating !== null).length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>
+                  <div className="pd-mt-1">
+                    <Text type="secondary" className="pd-caption--tracked">
                       Skills
                     </Text>
-                    <div style={{ marginTop: 4 }}>
+                    <div className="pd-mt-1">
                       {(r.skills || []).map((s, i) => (
-                        <div key={i} style={{ fontSize: 12.5, paddingTop: 2 }}>
+                        <div key={i} className="pd-body--pad">
                           <Text>{s.label || 'Skill'}: <strong>{s.rating ?? '—'}</strong></Text>
                           {s.remark ? <Text type="secondary"> — {s.remark}</Text> : null}
                         </div>
@@ -3594,14 +3637,14 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                 )}
                 {r.hr ? <HrScorecardFields hr={r.hr} /> : null}
                 {r.comments ? (
-                  <div style={{ marginTop: 6, paddingLeft: 10, borderLeft: '3px solid var(--border, rgba(0,0,0,0.10))' }}>
-                    <Text type="secondary" style={{ fontSize: 12.5, fontStyle: 'italic' }}>“{r.comments}”</Text>
+                  <div className="pd-quote">
+                    <Text type="secondary" className="pd-body--italic">“{r.comments}”</Text>
                   </div>
                 ) : null}
                 {/* Dated for the same reason the pending block is: a reader
                     comparing rounds needs to know which verdict is the recent one. */}
                 {r.submitted_at ? (
-                  <Text type="secondary" style={{ fontSize: 11.5 }}>Submitted {fmtDateTime(r.submitted_at)}</Text>
+                  <Text type="secondary" className="pd-caption">Submitted {fmtDateTime(r.submitted_at)}</Text>
                 ) : null}
               </Space>
             </Card>

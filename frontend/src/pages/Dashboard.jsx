@@ -22,9 +22,9 @@
  * range control's own tooltip says the totals stay put. A filter that silently moves
  * some numbers and not others is worse than one that explains itself.
  */
-import { useMemo, useRef, useEffect, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Typography, Tooltip } from 'antd';
+import { Row, Col, Typography, Tooltip } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
@@ -53,7 +53,7 @@ import {
   periodOverPeriod,
 } from '../utils/dashboardAggregations';
 
-import StatCard from '../components/common/StatCard';
+import { DesignScope, PageShell, StatTile, Surface } from '../ui';
 import DashboardHero from '../components/dashboard/DashboardHero';
 import HiringTrendsCard from '../components/dashboard/HiringTrendsCard';
 import ConversionFunnelCard from '../components/dashboard/ConversionFunnelCard';
@@ -63,19 +63,20 @@ import ActionCenterCard from '../components/dashboard/ActionCenterCard';
 import LiveActivityFeed from '../components/dashboard/LiveActivityFeed';
 import UpcomingInterviews from '../components/dashboard/UpcomingInterviews';
 import LatestUploads from '../components/dashboard/LatestUploads';
-import CommandPalette from '../components/dashboard/CommandPalette';
+/* CommandPalette moved to layouts/MainLayout.jsx, 2026-08-31 — mounting it here made a
+   global-feeling shortcut work on one route only. */
 
 const { Title, Text } = Typography;
 
 /** Quick-action shortcuts — each gated by the same module permission keys as before. */
 const QUICK_ACTIONS = [
-  { label: 'Candidate Screening', url: '/filtering', moduleKey: 'candidate_screening', icon: <FilterOutlined />, color: '#d97706', desc: 'Find the best-fit candidates with AI skill matching, custom score criteria, and advanced filters.' },
-  { label: 'Recruitment Analytics', url: '/analytics', moduleKey: 'screening_analytics', icon: <BarChartOutlined />, color: '#e11d48', desc: 'Track recruitment performance — shortlisted, rejected, on-hold and total candidate insights.' },
-  { label: 'New MRF Request', url: '/mrf', moduleKey: 'new_mrf', icon: <PlusOutlined />, color: '#7a922e', desc: 'Raise a new Manpower Requisition Form to kick off hiring for a specific role.' },
-  { label: 'Search & Edit Candidates', url: '/candidates', moduleKey: 'search_candidates', icon: <SearchOutlined />, color: '#7a922e', desc: 'Search the candidate database, open profiles, and update candidate information.' },
-  { label: 'HR Manual Upload', url: '/hr-upload', moduleKey: 'hr_manual_upload', icon: <UploadOutlined />, color: '#2563eb', desc: 'Manually upload candidate resumes to parse and store them for future hiring.' },
-  { label: 'Vendor Upload', url: '/vendor', moduleKey: 'vendor_upload', icon: <CloudUploadOutlined />, color: '#4f46e5', desc: 'Upload and manage vendor-sourced resumes and documents for third-party hiring.' },
-  { label: 'System Configuration', url: '/settings', moduleKey: 'system_config', icon: <SettingOutlined />, color: '#b45309', desc: 'Configure system processes, automation rules, and recruitment settings.' },
+  { label: 'Candidate Screening', url: '/filtering', moduleKey: 'candidate_screening', icon: <FilterOutlined />, color: 'var(--kpi-e)', desc: 'Find the best-fit candidates with AI skill matching, custom score criteria, and advanced filters.' },
+  { label: 'Recruitment Analytics', url: '/analytics', moduleKey: 'screening_analytics', icon: <BarChartOutlined />, color: 'var(--kpi-d)', desc: 'Track recruitment performance — shortlisted, rejected, on-hold and total candidate insights.' },
+  { label: 'New MRF Request', url: '/mrf', moduleKey: 'new_mrf', icon: <PlusOutlined />, color: 'var(--brand-primary)', desc: 'Raise a new Manpower Requisition Form to kick off hiring for a specific role.' },
+  { label: 'Search & Edit Candidates', url: '/candidates', moduleKey: 'search_candidates', icon: <SearchOutlined />, color: 'var(--brand-primary)', desc: 'Search the candidate database, open profiles, and update candidate information.' },
+  { label: 'HR Manual Upload', url: '/hr-upload', moduleKey: 'hr_manual_upload', icon: <UploadOutlined />, color: 'var(--kpi-b)', desc: 'Manually upload candidate resumes to parse and store them for future hiring.' },
+  { label: 'Vendor Upload', url: '/vendor', moduleKey: 'vendor_upload', icon: <CloudUploadOutlined />, color: 'var(--violet)', desc: 'Upload and manage vendor-sourced resumes and documents for third-party hiring.' },
+  { label: 'System Configuration', url: '/settings', moduleKey: 'system_config', icon: <SettingOutlined />, color: 'var(--kpi-e)', desc: 'Configure system processes, automation rules, and recruitment settings.' },
 ];
 
 // KPI_TOOLTIPS used to live here as a local const keyed by display string. Those
@@ -104,18 +105,8 @@ export default function Dashboard() {
   const [rangeDays, setRangeDays] = useState(30);
   const [role, setRole] = useState('');
 
-  // ── ⌘K command palette ──
-  const [cmdOpen, setCmdOpen] = useState(false);
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        setCmdOpen((o) => !o);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  /* ⌘K state + key listener moved to layouts/MainLayout.jsx, 2026-08-31, so the
+     palette opens from any route rather than only this one. */
 
   // The dashboard's own paginated candidate fetch is gone: it duplicated
   // /candidates (worse — no search, no filters) and ran a second query on every
@@ -231,7 +222,7 @@ export default function Dashboard() {
       title: 'Total Candidates',
       value: stats.totalCandidates,
       icon: <TeamOutlined />,
-      color: '#7a922e',
+      accent: 'brand',
       delta: wow.deltaPct !== null
         ? {
           value: wow.deltaPct,
@@ -250,7 +241,7 @@ export default function Dashboard() {
       title: 'Active MRFs',
       value: stats.activeMRFs,
       icon: <FileTextOutlined />,
-      color: '#2563eb',
+      accent: 'info',
       footnote: `${stats.pendingApprovalMRFs} awaiting approval${allRolesSuffix}`,
       sparklineData: mrfPoints,
       sparklineUnit: 'raised',
@@ -261,7 +252,7 @@ export default function Dashboard() {
       title: "Today's Uploads",
       value: stats.todayUploads,
       icon: <CalendarOutlined />,
-      color: '#d97706',
+      accent: 'warning',
       footnote: `${addedInRange.toLocaleString()} in ${rangeLabel}${roleSuffix}`,
       sparklineData: addedPoints,
       sparklineUnit: 'uploaded',
@@ -272,7 +263,7 @@ export default function Dashboard() {
       title: 'Shortlisted',
       value: stats.shortlisted,
       icon: <CheckCircleOutlined />,
-      color: '#16a34a',
+      accent: 'success',
       footnote: shortlistRate !== null ? `${shortlistRate}% of sourced${allRolesSuffix}` : 'of all sourced candidates',
       sparklineData: shortlistPoints,
       sparklineUnit: 'entered the pipeline',
@@ -310,7 +301,13 @@ export default function Dashboard() {
   }, [user]);
 
   return (
-    <div ref={pageRef} className="animate-fade-in" style={{ maxWidth: 1320, margin: '0 auto' }}>
+    /* DesignScope is the Stage 5 conversion seam: it gives THIS subtree the preset's
+       AntD geometry while the 23 unconverted routes keep the metrics they shipped
+       with. Remove the wrapper to revert this route. See src/ui/DesignScope.jsx.
+       No `backdrop` — MainLayout already renders the ambient canvas for this route,
+       and a second fixed full-viewport plane would double the compositing cost. */
+    <DesignScope>
+      <PageShell ref={pageRef} width="standard">
       {/* ---- Hero ---- */}
       <DashboardHero
         firstName={greetingName}
@@ -323,29 +320,27 @@ export default function Dashboard() {
         role={role}
         onRoleChange={setRole}
         roles={roles}
-        onOpenCommand={() => setCmdOpen(true)}
       />
 
       {/* ---- SIGNAL BAND: four KPIs, identical anatomy ---- */}
       <Row gutter={[20, 20]} className="dash-band">
         {kpiCards.map((kpi, idx) => (
           <Col xs={24} sm={12} xl={6} key={kpi.title}>
-            <div className={`animate-fade-in-up stagger-${idx + 1}`} style={{ height: '100%' }}>
-              <StatCard
-                metric={kpi.metric}
-                title={kpi.title}
-                value={kpi.value}
-                icon={kpi.icon}
-                color={kpi.color}
-                loading={statsLoading}
-                delta={kpi.delta}
-                footnote={kpi.footnote}
-                sparklineData={kpi.sparklineData}
-                sparklineUnit={kpi.sparklineUnit}
-                sparklineSummary={kpi.chart}
-                chartNote={kpi.chart}
-              />
-            </div>
+            <StatTile
+              metric={kpi.metric}
+              label={kpi.title}
+              value={kpi.value}
+              icon={kpi.icon}
+              accent={kpi.accent}
+              delta={kpi.delta}
+              footnote={kpi.footnote}
+              sparkline={kpi.sparklineData}
+              sparklineUnit={kpi.sparklineUnit}
+              sparklineSummary={kpi.chart}
+              chartNote={kpi.chart}
+              interactive
+              bloom={idx === 0}
+            />
           </Col>
         ))}
       </Row>
@@ -402,11 +397,11 @@ export default function Dashboard() {
           {/* Quick actions as a single-column launcher. In a 2-column grid the seven
               items always left a permanent empty cell; one column has no hole at any
               count, and a vertical list is the better pattern for a launcher anyway. */}
-          <Card bordered={false} className="glass-card dash-chart-card spotlight" styles={{ body: { padding: 22 } }}>
+          <Surface tier={2} className="dash-chart-card spotlight">
             <div className="dash-card-head">
               <div>
-                <Title level={5} style={{ margin: 0 }}>Quick Actions</Title>
-                <Text type="secondary" style={{ fontSize: 12.5 }}>Jump into your modules</Text>
+                <Title level={5} className="cmp-flush">Quick Actions</Title>
+                <Text type="secondary" className="cmp-sub">Jump into your modules</Text>
               </div>
             </div>
             <div className="dash-qa">
@@ -425,26 +420,21 @@ export default function Dashboard() {
                       style={{ '--qa-color': action.color, opacity: enabled ? 1 : 0.5, cursor: enabled ? 'pointer' : 'not-allowed' }}
                     >
                       <span className="quick-action-row__icon">{action.icon}</span>
-                      <Text style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{action.label}</Text>
+                      <Text className="qa-label">{action.label}</Text>
                       {enabled
-                        ? <ArrowRightOutlined className="qa-arrow" style={{ color: action.color, fontSize: 12 }} />
-                        : <LockOutlined style={{ color: 'var(--text-2)', fontSize: 12 }} />}
+                        ? <ArrowRightOutlined className="qa-arrow qa-arrow-ink" />
+                        : <LockOutlined className="cmp-ink--sm" />}
                     </div>
                   </Tooltip>
                 );
               })}
             </div>
-          </Card>
+          </Surface>
         </Col>
       </Row>
 
-      {/* ---- ⌘K Command Palette ---- */}
-      <CommandPalette
-        open={cmdOpen}
-        onClose={() => setCmdOpen(false)}
-        onNavigate={navigate}
-        isModuleEnabled={isModuleEnabled}
-      />
-    </div>
+      {/* ⌘K Command Palette now mounts on the shell — layouts/MainLayout.jsx. */}
+      </PageShell>
+    </DesignScope>
   );
 }

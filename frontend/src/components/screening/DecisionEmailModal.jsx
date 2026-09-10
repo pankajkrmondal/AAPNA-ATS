@@ -191,25 +191,25 @@ export default function DecisionEmailModal({
       okButtonProps={{ danger: isReject, disabled: confirmDisabled }}
       title={isReject ? 'Reject candidates' : 'Shortlist candidates'}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space direction="vertical" size={12} className="cmp-full">
         <Text type="secondary">
           {candidateCount} candidate{candidateCount === 1 ? '' : 's'} selected
         </Text>
 
         {activeTab === 'jd' && (
-          <Text type="secondary" style={{ fontSize: 12.5 }}>
+          <Text type="secondary" className="cmp-sub">
             Role: <Text strong>{defaultRoleName || 'Unknown role'}</Text>
           </Text>
         )}
 
         {requireRoleTag && (
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Tag to Open JD <Text type="danger">*</Text></Text>
-            <Text type="secondary" style={{ display: 'block', fontSize: 11.5, marginBottom: 4 }}>
+            <Text strong className="cmp-sub">Tag to Open JD <Text type="danger">*</Text></Text>
+            <Text type="secondary" className="cmp-caption--label">
               Required — so the notification names the actual role instead of generic fallback wording.
             </Text>
             <Select
-              style={{ width: '100%' }}
+              className="cmp-full"
               placeholder="Select an open role"
               value={selectedRoleId}
               onChange={setSelectedRoleId}
@@ -225,7 +225,7 @@ export default function DecisionEmailModal({
 
         {isReject && (
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text></Text>
+            <Text strong className="cmp-sub">Reason <Text type="danger">*</Text></Text>
             <Select
               style={{ width: '100%', marginTop: 4 }}
               placeholder="Select a rejection reason"
@@ -235,7 +235,7 @@ export default function DecisionEmailModal({
             />
             {reason === 'Other' && (
               <Input
-                style={{ marginTop: 8 }}
+                className="cmp-mt-2"
                 placeholder="Specify the reason…"
                 value={customReason}
                 onChange={(e) => setCustomReason(e.target.value)}
@@ -245,7 +245,7 @@ export default function DecisionEmailModal({
         )}
 
         {!roleReady ? (
-          <Text type="secondary" style={{ fontSize: 12.5, borderTop: '1px solid var(--border-light, #eaebe8)', paddingTop: 10, display: 'block' }}>
+          <Text type="secondary" className="dem-note">
             Tag a role above to preview the notification email.
           </Text>
         ) : (
@@ -255,10 +255,10 @@ export default function DecisionEmailModal({
             </Checkbox>
 
             {sendEmail && (
-              <div style={{ borderTop: '1px solid var(--border-light, #eaebe8)', paddingTop: 10 }}>
+              <div className="cmp-rule">
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Text strong style={{ fontSize: 12.5 }}>
-                    <MailOutlined style={{ marginInlineEnd: 4 }} /> Email
+                  <Text strong className="cmp-sub">
+                    <MailOutlined className="cmp-me-1" /> Email
                   </Text>
                   {template
                     ? <Tag color="blue">Template — {template.name} (#{template.id})</Tag>
@@ -269,7 +269,7 @@ export default function DecisionEmailModal({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Subject"
-                  style={{ marginBottom: 8 }}
+                  className="cmp-mb-2"
                 />
                 <EmailEditorTabs
                   key={`${template?.id ?? 'loading'}-${roleParagraphRev}`}
@@ -282,7 +282,7 @@ export default function DecisionEmailModal({
                   compact
                   height={220}
                 />
-                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                <Text type="secondary" className="cmp-caption--block">
                   Editable before send — the exact text above goes out. Tokens like <code>{'{candidate_name}'}</code> (chips above the body) personalize per candidate when multiple are selected.
                   {candidateCount > 1 && ` Preview shown for ${firstCandidateName} (+${candidateCount - 1} more, personalized individually when sent).`}
                 </Text>

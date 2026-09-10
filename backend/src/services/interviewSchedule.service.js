@@ -430,6 +430,27 @@ export function buildTeamsBlock(joinUrl, meetingId, passcode) {
 }
 
 /**
+ * A branded HTML card for the raw Outlook/Teams calendar invite body itself —
+ * distinct from buildTeamsBlock(), which decorates the app's OWN "Interview
+ * Scheduled" notification email once a real Teams join link exists. The
+ * calendar invite is created before any join link is known (Graph only
+ * returns it in the same response that creates the event), so this is a
+ * details card, not a join block. Microsoft still auto-appends its own plain
+ * "Join Microsoft Teams Meeting" block below whatever this renders to — that
+ * part is generated server-side by Microsoft and cannot be styled or removed
+ * via the event body.
+ */
+function buildInviteBodyCard({ stageLabel, candidateName, position, notes }) {
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px 0;background:#f6f9eb;border-left:4px solid #7a922e;border-radius:8px;">
+         <tr><td style="padding:16px 18px;font-family:Segoe UI, Arial, sans-serif;">
+         <p style="margin:0 0 10px 0;font-weight:700;color:#5a6e1f;font-size:15px;">${stageLabel}</p>
+         <p style="margin:0;font-size:13px;color:#374151;"><strong>Candidate:</strong> ${candidateName}</p>
+         <p style="margin:4px 0 0 0;font-size:13px;color:#374151;"><strong>Role:</strong> ${position}</p>
+         ${notes ? `<p style="margin:10px 0 0 0;font-size:13px;color:#374151;">${notes}</p>` : ''}
+         </td></tr></table>`;
+}
+
+/**
  * Guarantees the Teams block is present in a final email body. The Schedule
  * modal's preview is compiled BEFORE the meeting exists, so the recruiter-edited
  * copy the UI sends back has no join link ({{teams_line}} rendered empty). At
@@ -710,7 +731,7 @@ export async function scheduleInterviewRound(pipelineId, {
   const calendar = sendsInvites
     ? await createInterviewEvent({
       subject: `${stageLabel} — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position}.</p>${notes ? `<p>${notes}</p>` : ''}`,
+      bodyHtml: buildInviteBodyCard({ stageLabel, candidateName: candidate?.candidate_name || 'the candidate', position, notes }),
       start,
       end,
       attendees,
@@ -1177,7 +1198,7 @@ export async function rescheduleInterviewRound(pipelineId, {
   } else if (sendsInvites) {
     calendar = await createInterviewEvent({
       subject: `${stageLabel} (rescheduled) — ${candidate?.candidate_name || 'Candidate'} (${position})`,
-      bodyHtml: `<p>${stageLabel} for <strong>${candidate?.candidate_name || 'the candidate'}</strong> — ${position} (rescheduled).</p>`,
+      bodyHtml: buildInviteBodyCard({ stageLabel: `${stageLabel} (rescheduled)`, candidateName: candidate?.candidate_name || 'the candidate', position, notes: null }),
       start,
       end,
       attendees,

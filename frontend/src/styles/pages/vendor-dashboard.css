@@ -1,0 +1,125 @@
+/**
+ * /vendor-dashboard — the vendor's overview. Stage 5.4.
+ *
+ * Ships as a pair with /vendor in spirit if not in file: those two routes are the
+ * ENTIRE reachable app for the `vendor` role (VENDOR_ALLOWED_PATHS in MainLayout), so
+ * the shared vocabulary between this and styles/pages/upload.css matters more than on
+ * a staff-only screen — a vendor sees only these two.
+ *
+ * Imported after '../ui'.
+ */
+
+.vd-page-head {
+  margin-block-end: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.vd-title.ant-typography { margin: 0; font-weight: 700; }
+/* Was `fontFamily: 'monospace'` on two prose subtitles — sentences in a code font. */
+.vd-subtitle.ant-typography { font-size: var(--fs-subhead); color: var(--text-2); }
+.vd-vendor-picker { min-width: 280px; }
+.vd-alert.ant-alert { margin-block-end: var(--space-5); border-radius: var(--radius-ctl); }
+
+/* Was 80px; now the shared loading treatment. */
+.vd-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-7) 0;
+  min-height: 180px;
+}
+
+/* The gradient hairline across the top of the pipeline card. It sits inside a
+   `padding="none"` Surface, which does NOT clip its children — so without the matching
+   top corners the rail's square ends stick out past the 24px radius and read as a bar
+   laid over the card rather than part of it. Matching the radius rather than adding
+   `overflow: hidden` to the Surface, because clipping the surface would also cut the
+   rim and bloom that give it its edge. */
+.vd-card-rail {
+  height: 3px;
+  background: linear-gradient(90deg, var(--stage-interview), var(--stage-offer));
+  border-start-start-radius: var(--radius-surface);
+  border-start-end-radius: var(--radius-surface);
+}
+.vd-card-body { padding: var(--space-5) 28px 28px; }
+
+.vd-section-label.ant-typography {
+  display: block;
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-block-end: 20px;
+}
+.vd-section-label--tight.ant-typography { margin-block-end: 10px; }
+
+/* Selection-rate gauge */
+.vd-gauge { text-align: center; }
+.vd-gauge__pct { font-size: var(--fs-metric-sm); font-weight: 700; color: var(--text); }
+.vd-gauge__label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-block-start: 6px;
+}
+.vd-gauge__note { font-size: var(--fs-footnote); color: var(--text-2); font-family: var(--mono); }
+
+/* ------------------------------------------------------------------
+   Stage tiles
+   The colour is DATA — one hue per pipeline stage — so it arrives as a custom
+   property and the stylesheet still owns every property that uses it. This is the
+   prescribed exception in src/ui/index.js, and the same shape as --stat-color.
+   Writing `border: 1px solid ${st.color}33` inline instead would be Failure B: the
+   shorthand encodes stage identity where no stylesheet can reach it.
+   ------------------------------------------------------------------ */
+.vd-tile {
+  border-radius: var(--radius-ctl);
+  border: 1px solid color-mix(in srgb, var(--vd-stage) 20%, transparent);
+  background: color-mix(in srgb, var(--vd-stage) 5%, transparent);
+  padding: var(--space-3) 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.vd-tile__icon { color: var(--vd-stage); font-size: 20px; line-height: 1; }
+/* 22px -> --fs-metric-sm, 2026-08-31. A stage count is a metric, and 22 was on neither
+   the text ramp nor the metric scale. */
+.vd-tile__value { font-size: var(--fs-metric-sm); font-weight: 700; color: var(--vd-stage); line-height: 1.1; }
+.vd-tile__label {
+  font-family: var(--font-small);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.vd-breakdown {
+  margin-block-start: 22px;
+  border-block-start: var(--hairline);
+  padding-block-start: var(--space-4);
+}
+.vd-info-mark { margin-inline-start: 6px; cursor: help; opacity: 0.6; }
+.vd-tag.ant-tag { padding: 4px 10px; font-size: var(--fs-subhead); border-radius: var(--radius-ctl); }
+
+.vd-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-block-end: 20px;
+}
+.vd-table-title.ant-typography { font-size: var(--fs-headline); display: block; }
+.vd-flush { margin-block-end: 0; }
+/* Timestamps in the submissions table — genuinely tabular, so the mono face stays;
+   it just comes from the font pack now instead of the browser default. */
+.vd-cell-mono { font-family: var(--mono); font-size: var(--fs-footnote); }
+.vd-kpi-row { margin-block-end: var(--space-5); }

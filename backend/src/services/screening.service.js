@@ -43,6 +43,10 @@ export async function getApprovedRoles() {
       -- this dropdown forever. THIS is the line that takes it out; the partial
       -- index idx_rpa_mrf_open was widened to match both predicates.
       AND closed_at IS NULL
+      -- …and paused ones (2026-08-28). Paused is a THIRD, independent signal
+      -- from filled/closed — the requisition is still open, just temporarily
+      -- not being sourced against. See mrfPause.service.js.
+      AND paused_at IS NULL
     ORDER BY position_hiring_for, created_at DESC;`
   );
 

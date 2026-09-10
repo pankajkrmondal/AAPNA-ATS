@@ -21,7 +21,6 @@ import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { parseInterviewerEmails, stageSendsInvites } from './interviewSchedule.service.js';
-import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 
@@ -303,43 +302,6 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     data: { scorecard_dispatched_at: new Date(), modified_at: new Date() },
   });
 
-  // Compile + send each link.
-  const tplName = role === 'interviewer' ? TEMPLATE_NAMES.inviteInterviewer : TEMPLATE_NAMES.inviteHrCeo;
-  const tpl = await getTemplate(tplName);
-  for (const card of created) {
-    const link = `${config.cors.frontendUrl}/scorecard/${card.token}`;
-    const tokens = {
-      candidate_name: candidate?.candidate_name || 'the candidate',
-      position,
-      stage_label: stageLabel,
-      interviewer_name: interviewerGreeting(card.recipient_name, emails.join(',')),
-      scorecard_link: link,
-    };
-    const compiled = tpl
-      ? compileTemplate(tpl.subject, tpl.body_html, tokens)
-      : {
-          subject: `Please score your ${stageLabel} — ${candidate?.candidate_name || 'candidate'}`,
-          html: `<p>Hi ${tokens.interviewer_name},</p>
-                 <p>Please submit your feedback for the <strong>${stageLabel}</strong> interview with
-                 <strong>${tokens.candidate_name}</strong> (${position}). No login is needed.</p>
-                 <p><a href="${link}" style="background:#7a922e;color:#fff;padding:11px 22px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block;">Open scorecard</a></p>
-                 <p>This link works once and expires on ${expiresAt.toDateString()}.</p>
-                 <p>Best regards,<br/>AAPNA Recruitment Team</p>`,
-        };
-
-    const { to } = resolveRecipients('scorecardInvite', card.recipient_email);
-    if (to) {
-      try {
-        // Header headline = the email's own subject (RT decision, 2026-07-25).
-        const brandedHtml = wrapBrandedEmail(compiled.html, { title: compiled.subject });
-        // OPERATOR_ADDRESSED: the scorecard goes to the panel mailbox the
-        // booking was made against, so it is reached in every environment.
-        await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject: compiled.subject, html: brandedHtml, allowRealRecipients: true });
-      } catch (err) {
-        logger.error(`Scorecard dispatch: email failed for schedule ${scheduleId} → ${card.recipient_email}: ${err.message}`);
-      }
-    }
-  }
   const { delivered, failed, failures } = await deliverScorecards(created, deliveryCtx);
 
   // Audit trail on the journey — records what was actually delivered, so a

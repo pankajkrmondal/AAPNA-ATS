@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, message } from 'antd';
+import { Card, Form, Input, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, message } from 'antd';
+import { Button } from '../ui';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import dayjs from 'dayjs';
@@ -24,8 +25,11 @@ const { TextArea } = Input;
 // the form, not a restyle, and the shell's narrow card is the wrong container
 // for it. Aligning the colour is the part that actually closes the visual gap.
 const BRAND = PUBLIC_BRAND.accent;
-const HELP = 'rgb(12, 136, 42)';
-const REQUIRED = '#bc2f32';
+// Retired 2026-08-29 (Stage 5.2): a third green and a fourth red, private to this one
+// page and invisible to the brand axis. Now `.mrfs-help` (var(--green)) and
+// `.mrfs-required` (var(--red)) in ui.css. Kept per the no-delete rule.
+// const HELP = 'rgb(12, 136, 42)';
+// const REQUIRED = '#bc2f32';
 
 /**
  * Single ordered list of every form question, mirroring the n8n MRF form
@@ -364,19 +368,19 @@ export default function MrfSubmit() {
 
   if (success) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: PUBLIC_BRAND.page }}>
-        <Card style={{ width: '100%', maxWidth: 650, borderRadius: 14, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
+      <div className="mrfs-page mrfs-page--center">
+        <Card className="mrfs-card">
           <Result
             status="success"
-            title={<span style={{ fontWeight: 700 }}>MRF Submitted Successfully!</span>}
+            title={<span className="pps-strong">MRF Submitted Successfully!</span>}
             subTitle={
-              <Paragraph style={{ fontSize: 14 }}>
+              <Paragraph className="pps-hint">
                 Your MRF has been submitted successfully and routed to Management (Abhijit Roy &amp; Sanghamitra Roy) for review. You may close this browser window now.
               </Paragraph>
             }
             extra={[
-              <Button key="close" type="primary" onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: BRAND, border: 'none', fontWeight: 600, paddingInline: 32 }}>
+              <Button key="close" emphasis="solid" onClick={() => window.close()}
+                emphasis="solid">
                 Close
               </Button>,
             ]}
@@ -407,7 +411,7 @@ export default function MrfSubmit() {
       case 'file':
         return (
           <Upload maxCount={1} beforeUpload={() => false} accept={f.accept}>
-            <Button icon={<UploadOutlined />} style={{ height: 42, borderRadius: 8 }}>
+            <Button icon={<UploadOutlined />} className="mrfs-input">
               Choose File ({f.accept})
             </Button>
           </Upload>
@@ -424,12 +428,12 @@ export default function MrfSubmit() {
     const num = numbering[f.name];
     const labelNode = (
       <div>
-        <div style={{ fontWeight: 600, color: '#222' }}>
-          {num ? <span style={{ color: BRAND, marginRight: 6 }}>{num}.</span> : null}
+        <div className="mrfs-legend">
+          {num ? <span className="mrfs-icon">{num}.</span> : null}
           {f.label}
-          {f.required ? <span style={{ color: REQUIRED, marginLeft: 4 }}>*</span> : null}
+          {f.required ? <span className="mrfs-required">*</span> : null}
         </div>
-        {f.desc ? <div style={{ fontSize: 12, color: HELP, marginTop: 2, fontStyle: 'italic' }}>{f.desc}</div> : null}
+        {f.desc ? <div className="mrfs-help">{f.desc}</div> : null}
       </div>
     );
 
@@ -452,31 +456,31 @@ export default function MrfSubmit() {
       : {};
 
     return (
-      <div key={f.name} style={{ marginBottom: 4 }}>
+      <div key={f.name} className="mrfs-field">
         <Form.Item name={f.name} label={labelNode} rules={rules} {...fileProps}>
           {renderInput(f)}
         </Form.Item>
-        {f.hint ? <div style={{ fontSize: 11, color: '#999', marginTop: -12, marginBottom: 12 }}>{f.hint}</div> : null}
+        {f.hint ? <div className="mrfs-hint-tight">{f.hint}</div> : null}
       </div>
     );
   };
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 14px', background: PUBLIC_BRAND.page }}>
-      <div style={{ maxWidth: 920, margin: '0 auto' }}>
+    <div className="mrfs-page">
+      <div className="mrfs-inner">
         {/* Header */}
-        <div style={{ background: BRAND, borderRadius: '14px 14px 0 0', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
+        <div className="mrfs-band">
           <img
             src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
             alt="AAPNA Logo"
-            style={{ height: 40, objectFit: 'contain', background: '#fff', borderRadius: 8, padding: 4 }}
+            className="mrfs-band-logo"
           />
-          <Title level={3} style={{ margin: 0, color: '#fff', fontWeight: 800, letterSpacing: '0.5px' }}>
+          <Title level={3} className="mrfs-band-title">
             MANPOWER REQUISITION FORM (MRF)
           </Title>
         </div>
 
-        <Card style={{ borderRadius: '0 0 14px 14px', padding: '8px 28px 28px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
+        <Card className="mrfs-body">
           {/* Prefill dropdown — only shown when prior submissions exist */}
           {prefillLoading ? (
             <div style={{ padding: '16px 0' }}><Spin size="small" /> <Text type="secondary">Loading previous requisitions…</Text></div>
@@ -494,15 +498,16 @@ export default function MrfSubmit() {
                   </Select.Option>
                 ))}
               </Select>
-              <div style={{ fontSize: 12, color: '#000', marginTop: 4 }}>Select a request to auto-fill the form</div>
+              <div className="mrfs-fineprint">Select a request to auto-fill the form</div>
             </div>
           ) : null}
 
-          {error && <Alert message="Submission Error" description={error} type="error" showIcon closable style={{ marginBottom: 20, borderRadius: 8 }} />}
+          {error && <Alert message="Submission Error" description={error} type="error" showIcon closable className="pps-alert" />}
 
           <Form
             form={form}
             name="mrf-submission"
+            className="mrfs-form"
             layout="vertical"
             onFinish={onFinish}
             size="large"
@@ -510,7 +515,7 @@ export default function MrfSubmit() {
           >
             {FIELDS.map((f, idx) =>
               f.section ? (
-                <div key={`sec-${idx}`} style={{ margin: '24px 0 12px', paddingBottom: 6, borderBottom: `2px solid ${BRAND}`, color: BRAND, fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <div key={`sec-${idx}`} className="mrfs-section">
                   {f.section}
                 </div>
               ) : (
@@ -530,16 +535,16 @@ export default function MrfSubmit() {
                       date_of_request: dayjs(),
                     });
                   }}
-                  style={{ height: 44, borderRadius: 10, paddingInline: 28 }}
+                  className="mrfs-back"
                 >
                   Reset
                 </Button>
                 <Button
-                  type="primary"
+                  emphasis="solid"
                   htmlType="submit"
                   loading={submitting}
                   icon={<SendOutlined />}
-                  style={{ height: 44, borderRadius: 10, fontWeight: 700, paddingInline: 32, background: BRAND, borderColor: BRAND }}
+                  className="mrfs-submit"
                 >
                   Submit
                 </Button>
@@ -548,7 +553,7 @@ export default function MrfSubmit() {
           </Form>
 
           <div style={{ textAlign: 'center', marginTop: 32 }}>
-            <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
+            <Text type="secondary" className="mrfs-muted">
               © {new Date().getFullYear()} AAPNA Infotech · Secure Manpower Planning Portal
             </Text>
           </div>

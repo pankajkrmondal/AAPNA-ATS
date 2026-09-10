@@ -1,4 +1,4 @@
-import { Button } from 'antd';
+import { Button } from '../../ui';
 import { InboxOutlined } from '@ant-design/icons';
 
 /**
@@ -45,7 +45,9 @@ export default function EmptyState({
   style,
 }) {
   const cta = action ?? (actionLabel ? (
-    <Button type="primary" size={size === 'sm' ? 'small' : 'middle'} onClick={onAction}>
+    /* `size` here is EmptyState's own 'sm' | 'md' scale, which now maps straight onto
+       Button's rather than being translated into AntD's small/middle. */
+    <Button emphasis="solid" size={size === 'sm' ? 'sm' : 'md'} onClick={onAction}>
       {actionLabel}
     </Button>
   ) : null);

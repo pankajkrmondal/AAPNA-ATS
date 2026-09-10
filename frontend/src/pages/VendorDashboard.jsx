@@ -10,7 +10,7 @@ import {
   Row,
   Col,
   Empty,
-  Button,
+  // Button now comes from src/ui — see the import below.
   Select,
   Progress,
   Tooltip,
@@ -33,7 +33,12 @@ import useTheme from '../hooks/useTheme';
 import vendorService from '../services/vendorService';
 import candidateService from '../services/candidateService';
 import ExportButton from '../components/common/ExportButton';
-import KpiCard from '../components/common/KpiCard';
+// DISABLED 2026-08-29 (Stage 5.5) — replaced by StatTile from src/ui, which merges
+// this and the two other stat families. To restore: uncomment and swap the tags back.
+// import KpiCard from '../components/common/KpiCard';
+import { DesignScope, PageShell, PageHeader, Surface, StatTile, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/vendor-dashboard.css';
 
 const { Title, Text } = Typography;
 
@@ -62,31 +67,38 @@ const STAGE_STATUS_COLOR = {
 // neither local copy respected prefers-reduced-motion. Importing the shared ones
 // removes the duplication and fixes that.
 
-/** KPI card definitions — keyed to fields on the dashboard `stats` object. */
+/**
+ * KPI card definitions — keyed to fields on the dashboard `stats` object.
+ *
+ * `footnote` added 2026-08-31. These tiles were passing only icon/label/value/accent,
+ * so they rendered short with an empty lower half next to /dashboard's, which carry the
+ * full anatomy. Each footnote states the thing the label leaves ambiguous — what the
+ * count is OF, and over what window — rather than restating the label.
+ *
+ * No `delta` on any of them: this page has no previous-period figure to compare
+ * against, and a fabricated one would be worse than the space it fills.
+ */
 const KPI_CARDS = [
   {
     key: 'total',
     label: 'Total Candidates',
     icon: <TeamOutlined />,
-    color: 'var(--kpi-a)',
-    tint: 'var(--kpi-a-tint)',
-    accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))',
+    accent: 'brand',
+    footnote: 'All time, across every submission',
   },
   {
     key: 'thisMonth',
     label: 'Added This Month',
     icon: <RiseOutlined />,
-    color: 'var(--kpi-c)',
-    tint: 'var(--kpi-c-tint)',
-    accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))',
+    accent: 'success',
+    footnote: 'Since the 1st of this month',
   },
   {
     key: 'withPosition',
     label: 'With Position Applied',
     icon: <AimOutlined />,
-    color: 'var(--kpi-e)',
-    tint: 'var(--kpi-e-tint)',
-    accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))',
+    accent: 'warning',
+    footnote: 'Matched to a specific open role',
   },
 ];
 
@@ -95,9 +107,8 @@ const PENDING_REVIEW_CARD = {
   key: 'pendingReview',
   label: 'Pending Review',
   icon: <WarningOutlined />,
-  color: 'var(--kpi-d)',
-  tint: 'var(--kpi-d-tint)',
-  accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))',
+  accent: 'danger',
+  footnote: 'Duplicates waiting on a decision',
 };
 
 /**
@@ -262,7 +273,7 @@ export default function VendorDashboard() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       render: (v) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        <span className="vd-cell-mono">
           {v ? new Date(v).toLocaleDateString() : '—'}
         </span>
       ),
@@ -288,30 +299,20 @@ export default function VendorDashboard() {
   const trackedTotal = (byStage.stages || []).reduce((sum, s) => sum + s.count, 0) + (byStage.closed || 0);
 
   return (
-    <div className="page-enter" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 0 40px' }}>
+    <DesignScope>
+      <PageShell width="narrow" className="page-enter">
       {/* Page Header */}
-      <div
-        style={{
-          marginBottom: 24,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 16,
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div>
-          <Title level={3} style={{ margin: 0, fontWeight: 700 }}>
-            {isStaff ? 'Vendor Dashboard' : `Welcome${user?.first_name ? `, ${user.first_name}` : ''}`}
-          </Title>
-          <Text style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'monospace' }}>
-            {isStaff
-              ? (selectedVendor ? 'Reviewing a single vendor — clear to see all vendors' : 'Overview across all vendors — filter to drill into one')
-              : "Status overview of the candidates you've submitted"}
-          </Text>
-        </div>
-
-        {isStaff && (
+      {/* Page header — 2026-08-31. Was `.vd-page-head` with a `Title level={3}` (20px
+          against the lab's 32px) and no eyebrow. The vendor picker moves into the
+          `filters` slot rather than `actions`: it changes what the page SHOWS, which is
+          exactly the distinction PageHeader draws between the two. */}
+      <PageHeader
+        eyebrow="Vendors"
+        title={isStaff ? 'Vendor Dashboard' : `Welcome${user?.first_name ? `, ${user.first_name}` : ''}`}
+        subtitle={isStaff
+          ? (selectedVendor ? 'Reviewing a single vendor — clear to see all vendors.' : 'Overview across all vendors — filter to drill into one.')
+          : "Status overview of the candidates you've submitted."}
+        filters={isStaff ? (
           <Select
             showSearch
             allowClear
@@ -320,11 +321,11 @@ export default function VendorDashboard() {
             placeholder="All Vendors"
             suffixIcon={<ShopOutlined />}
             optionFilterProp="label"
-            style={{ minWidth: 280 }}
+            className="vd-vendor-picker"
             options={vendors.map((v) => ({ label: v.name, value: v.email }))}
           />
-        )}
-      </div>
+        ) : null}
+      />
 
       {error && (
         <Alert
@@ -332,32 +333,34 @@ export default function VendorDashboard() {
           showIcon
           message={error}
           action={
-            <Button size="small" icon={<ReloadOutlined />} onClick={load}>
+            <Button size="sm" emphasis="soft" icon={<ReloadOutlined />} onClick={load}>
               Retry
             </Button>
           }
-          style={{ marginBottom: 24, borderRadius: 10 }}
+          className="vd-alert"
         />
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '80px 0' }}>
+        <div className="vd-loading">
           <Spin size="large" />
         </div>
       ) : (
         <>
           {/* ═══════ SECTION 1: SUMMARY STATS ═══════ */}
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Row gutter={[16, 16]} className="ui-stagger vd-kpi-row">
             {(isStaff ? [...KPI_CARDS, PENDING_REVIEW_CARD] : KPI_CARDS).map((kpi, i, arr) => (
               <Col xs={24} sm={arr.length >= 4 ? 6 : 8} key={kpi.key}>
-                <KpiCard
-                  index={i}
+                <StatTile
                   icon={kpi.icon}
                   label={kpi.label}
                   value={stats[kpi.key] || 0}
-                  color={kpi.color}
-                  tint={kpi.tint}
                   accent={kpi.accent}
+                  footnote={kpi.footnote}
+                  interactive
+                  /* `bloom` on the lead tile only, matching the lab — a whole row of
+                     them reads as decoration rather than as a focal point. */
+                  bloom={i === 0}
                 />
               </Col>
             ))}
@@ -367,27 +370,17 @@ export default function VendorDashboard() {
           {/* Tier 2 — the pipeline summary is a feature surface, not a records
               list. `.section-card` stays for the shape it carries outside
               `.ats-v2`; `.glass-card` supplies the material inside it. */}
-          <Card className="section-card glass-card no-lift animate-fade-in-up stagger-2" bordered={false} styles={{ body: { padding: 0 } }}>
-            <div style={{ height: 3, background: 'linear-gradient(90deg, var(--stage-interview), var(--stage-offer))' }} />
-            <div style={{ padding: '24px 28px 28px' }}>
-              <Text
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  color: 'var(--text-secondary)',
-                  display: 'block',
-                  marginBottom: 20,
-                }}
-              >
+          <Surface tier={2} padding="none" bloom className="animate-fade-in-up stagger-2">
+            <div className="vd-card-rail" />
+            <div className="vd-card-body">
+              <Text className="vd-section-label">
                 Hiring Pipeline
               </Text>
 
               {stats.total > 0 ? (
                 <Row gutter={[20, 20]} align="middle">
                   {/* Selection-rate gauge */}
-                  <Col xs={24} md={7} style={{ textAlign: 'center' }} className="animate-scale-in">
+                  <Col xs={24} md={7} className="vd-gauge animate-scale-in">
                     <Progress
                       type="dashboard"
                       percent={selectionRate}
@@ -395,14 +388,14 @@ export default function VendorDashboard() {
                       trailColor={isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.06)'}
                       size={130}
                       format={(p) => (
-                        <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{p}%</span>
+                        <span className="vd-gauge__pct">{p}%</span>
                       )}
                     />
-                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginTop: 6 }}>
+                    <div className="vd-gauge__label">
                       Selection Rate
                     </div>
                     <Tooltip title="Selected ÷ (Selected + Rejected)">
-                      <div style={{ fontSize: 11, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                      <div className="vd-gauge__note">
                         {pipeline.selected} selected / {decided} decided
                       </div>
                     </Tooltip>
@@ -414,24 +407,18 @@ export default function VendorDashboard() {
                       {PIPELINE_STAGES.map((st, idx) => (
                         <Col xs={12} sm={8} key={st.key}>
                           <div
-                            className="pipeline-tile"
+                            className="pipeline-tile vd-tile"
                             style={{
-                              borderRadius: 10,
-                              border: `1px solid ${st.color}33`,
-                              background: `${st.color}0d`,
-                              padding: '12px 14px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 12,
+                              '--vd-stage': st.color,
                               animationDelay: `${0.15 + idx * 0.06}s`,
                             }}
                           >
-                            <span style={{ color: st.color, fontSize: 20, lineHeight: 1 }}>{st.icon}</span>
+                            <span className="vd-tile__icon">{st.icon}</span>
                             <div>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: st.color, lineHeight: 1.1 }}>
+                              <div className="vd-tile__value">
                                 {pipeline[st.key]}
                               </div>
-                              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-2)' }}>
+                              <div className="vd-tile__label">
                                 {st.label}
                               </div>
                             </div>
@@ -450,29 +437,29 @@ export default function VendorDashboard() {
                   before that there is nothing true to say here, and an empty
                   row of zeroes would read as "stuck", not "not started". */}
               {trackedTotal > 0 && (
-                <div style={{ marginTop: 22, borderTop: '1px solid var(--border-light)', paddingTop: 16 }}>
-                  <Text style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 10 }}>
+                <div className="vd-breakdown">
+                  <Text className="vd-section-label vd-section-label--tight">
                     Current stage
                     <Tooltip title="Where candidates are right now, from the Candidate Pipeline. The tiles above summarise final outcomes instead, which is why the totals differ.">
-                      <span style={{ marginLeft: 6, cursor: 'help', opacity: 0.6 }}>ⓘ</span>
+                      <span className="vd-info-mark">ⓘ</span>
                     </Tooltip>
                   </Text>
                   <Space size={[8, 10]} wrap>
                     {(byStage.stages || []).map((s) => (
-                      <Tag key={s.stage_key} color="blue" style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                      <Tag key={s.stage_key} color="blue" className="vd-tag">
                         {s.stage_label}: <strong>{s.count}</strong>
                       </Tag>
                     ))}
                     {byStage.closed > 0 && (
                       <Tooltip title="Journeys that have reached a final outcome — joined, withdrawn, rejected outright.">
-                        <Tag color="purple" style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                        <Tag color="purple" className="vd-tag">
                           Closed: <strong>{byStage.closed}</strong>
                         </Tag>
                       </Tooltip>
                     )}
                     {byStage.untracked > 0 && (
                       <Tooltip title="Submitted but never entered the pipeline — not yet shortlisted, or uploaded before the stage engine existed. Their Status column is the only signal available.">
-                        <Tag style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}>
+                        <Tag className="vd-tag">
                           Not in pipeline: <strong>{byStage.untracked}</strong>
                         </Tag>
                       </Tooltip>
@@ -483,8 +470,8 @@ export default function VendorDashboard() {
 
               {/* Detailed raw status breakdown */}
               {stats.byFinalStatus && stats.byFinalStatus.length > 0 && (
-                <div style={{ marginTop: 22, borderTop: '1px solid var(--border-light)', paddingTop: 16 }}>
-                  <Text style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: 10 }}>
+                <div className="vd-breakdown">
+                  <Text className="vd-section-label vd-section-label--tight">
                     Detailed status
                   </Text>
                   <Space size={[8, 10]} wrap>
@@ -492,7 +479,7 @@ export default function VendorDashboard() {
                       <Tag
                         key={item.status}
                         color={statusColor(item.status)}
-                        style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}
+                        className="vd-tag"
                       >
                         {item.status}: <strong>{item.count}</strong>
                       </Tag>
@@ -501,23 +488,17 @@ export default function VendorDashboard() {
                 </div>
               )}
             </div>
-          </Card>
+          </Surface>
 
           {/* ═══════ SECTION 3: RECENT SUBMISSIONS ═══════ */}
           {/* Tier 3 — recent submissions is a records table. */}
-          <Card className="section-card glass-3 no-lift animate-fade-in-up stagger-4" bordered={false} style={{ marginBottom: 0 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: 12,
-              marginBottom: 20,
-            }}>
+          <Surface tier={3} padding="relaxed" className="animate-fade-in-up stagger-4 vd-flush">
+            <div className="vd-table-head">
               <div>
-                <Text strong style={{ fontSize: 16, display: 'block' }}>
+                <Text strong className="vd-table-title">
                   Recent Submissions
                 </Text>
-                <Text style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'monospace' }}>
+                <Text className="vd-subtitle">
                   {isStaff
                     ? (selectedVendor ? "This vendor's most recent candidates." : 'Most recent candidates across all vendors.')
                     : 'Your most recently uploaded candidates.'}
@@ -545,9 +526,10 @@ export default function VendorDashboard() {
               bordered
               locale={{ emptyText: 'No candidates submitted yet' }}
             />
-          </Card>
+          </Surface>
         </>
       )}
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

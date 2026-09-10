@@ -145,10 +145,41 @@ export function periodOverPeriod(items = [], days = 7) {
     if (age < span) current++;
     else if (age < 2 * span) previous++;
   }
-  const deltaPct = previous === 0
-    ? (current > 0 ? 100 : null)
-    : Math.round(((current - previous) / previous) * 100);
-  return { current, previous, deltaPct };
+  return { current, previous, deltaPct: percentChange(current, previous) };
+}
+
+/**
+ * The smallest previous-period count that can carry a percentage.
+ *
+ * Below this the ratio is arithmetic noise dressed as a statistic: /dashboard was
+ * observed showing "▲ 19400%" on Total Candidates, which is what 195 against a base
+ * of 1 genuinely computes to. The number was correct and told the reader nothing —
+ * worse, it read as a data bug and undermined the three honest figures beside it.
+ *
+ * 5 rather than a larger floor because the dashboard's shortest window is 7 days and a
+ * quiet week is a real state, not an error; the aim is to drop the absurd cases, not
+ * to suppress every modest one.
+ */
+const MIN_DELTA_BASE = 5;
+
+/**
+ * Period-over-period change as a percentage, or `null` when a percentage would
+ * misrepresent it.
+ *
+ * Returns null in two cases, both deliberate:
+ *   - previous === 0. Growth from nothing has no percentage; the old code returned a
+ *     flat `100`, which is a made-up number — going 0 → 1 and 0 → 900 both reported
+ *     "▲ 100%".
+ *   - previous below MIN_DELTA_BASE. See above.
+ *
+ * A null delta renders no chip at all. That is the intended outcome: the tile's
+ * footnote and the delta tooltip both already state the raw counts ("195 added in the
+ * last 30 days, against 1 in the 30 days before that"), which is the truthful version
+ * of what the percentage was reaching for.
+ */
+export function percentChange(current, previous) {
+  if (previous < MIN_DELTA_BASE) return null;
+  return Math.round(((current - previous) / previous) * 100);
 }
 
 /** Week-over-week delta — `periodOverPeriod` over 7 days, in its original shape. */

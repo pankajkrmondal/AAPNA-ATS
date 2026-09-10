@@ -39,54 +39,38 @@ export default function AuthLayout() {
       {/* ---- Left: brand panel ---- */}
       <div className="auth-brand-panel">
         {/* Logo chip (keeps the original colored logo legible on olive) */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: '#fff',
-              borderRadius: 12,
-              padding: '10px 16px',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
-            }}
-          >
-            <img src={LOGO} alt="AAPNA" style={{ height: 32, width: 'auto', objectFit: 'contain', display: 'block' }} />
+        <div className="auth-brand-panel__top">
+          <div className="auth-logo-chip">
+            <img src={LOGO} alt="AAPNA" />
           </div>
         </div>
 
         {/* Value proposition */}
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: 460 }}>
-          <h1
-            style={{
-              fontFamily: 'var(--font-heading)',
-              fontSize: 'clamp(28px, 3.4vw, 40px)',
-              fontWeight: 800,
-              lineHeight: 1.18,
-              letterSpacing: '-0.02em',
-              margin: '0 0 16px',
-              color: '#fff',
-            }}
-          >
+        <div className="auth-brand-panel__body">
+          {/* The headline took its own clamp() — the only one in the app — rather than
+              the display role. It now uses --fs-display, so a font-pack swap retunes it
+              with everything else. */}
+          <h1 className="auth-headline">
             Recruitment, reimagined for speed and precision.
           </h1>
-          <p style={{ fontSize: 15.5, lineHeight: 1.7, color: 'rgba(255,255,255,0.88)', margin: '0 0 28px' }}>
+          <p className="auth-lede">
             AAPNA's intelligent ATS streamlines every step — from sourcing and AI screening to
             requisitions, approvals, and analytics.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="auth-highlights">
             {BRAND_HIGHLIGHTS.map((text) => (
-              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <CheckCircleFilled style={{ color: '#fff', fontSize: 18, opacity: 0.95 }} />
-                <span style={{ fontSize: 14.5, fontWeight: 500, color: 'rgba(255,255,255,0.94)' }}>{text}</span>
+              <div key={text} className="auth-highlight">
+                <CheckCircleFilled />
+                <span>{text}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <Text style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>
+        <div className="auth-brand-panel__foot">
+          <Text className="auth-foot-text">
             © {new Date().getFullYear()} AAPNA Infotech · All rights reserved
           </Text>
         </div>
@@ -99,44 +83,16 @@ export default function AuthLayout() {
           <img
             src={LOGO}
             alt="AAPNA"
-            className="auth-brand-logo-mobile"
-            style={{ height: 38, width: 'auto', objectFit: 'contain', margin: '0 auto 24px' }}
+            className="auth-brand-logo-mobile auth-logo-mobile"
           />
 
           {/* Heading */}
-          <div style={{ marginBottom: 24 }}>
-            {isAdmin && (
-              <span
-                style={{
-                  display: 'inline-block',
-                  background: 'var(--gold-bg)',
-                  color: 'var(--gold)',
-                  border: '1px solid var(--border)',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  padding: '3px 12px',
-                  borderRadius: 999,
-                  marginBottom: 14,
-                }}
-              >
-                HR Admin Portal
-              </span>
-            )}
-            <h2
-              style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: 26,
-                fontWeight: 800,
-                color: 'var(--text)',
-                margin: '0 0 6px',
-                letterSpacing: '-0.02em',
-              }}
-            >
+          <div className="auth-form-heading">
+            {isAdmin && <span className="auth-admin-badge">HR Admin Portal</span>}
+            <h2 className="auth-form-title">
               {pageHeading?.title || (isAdmin ? 'Welcome back' : 'Sign in to your account')}
             </h2>
-            <Text type="secondary" style={{ fontSize: 14 }}>
+            <Text type="secondary" className="auth-form-subtitle">
               {pageHeading?.subtitle
                 || (isAdmin
                   ? 'Sign in to manage users and system access'

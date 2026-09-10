@@ -3,7 +3,7 @@
  * Sets up React Router, AntD ConfigProvider with theme, Auth context,
  * Theme context, and route definitions with protected/public guards.
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,9 +11,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { BrandProvider } from './context/BrandContext';
+import { DesignProvider } from './context/DesignContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
-import { lightTheme, darkTheme } from './theme/themeConfig';
+import useBrand from './hooks/useBrand';
+import useDesign from './hooks/useDesign';
+import { buildAntdTheme } from './theme/themeConfig';
+import { DesignScope } from './ui';
 import screeningService from './services/screeningService';
 import { screeningKeys } from './hooks/useScreeningData';
 
@@ -39,11 +43,26 @@ import CandidateScreening from './pages/CandidateScreening';
 import Analytics from './pages/Analytics';
 import EmailManagement from './pages/EmailManagement';
 import NotFound from './pages/NotFound';
+
+/* The design-system gallery.
+   The conditional wraps the `lazy()` call itself, not just the route. Vite replaces
+   `import.meta.env.DEV` with a literal `false` at build time, so in production this
+   whole expression folds to `null` and Rollup drops the dynamic import with it —
+   nothing for the gallery is emitted at all. Gating only the <Route> would still
+   have shipped the chunk (~27 kB JS + 21 kB CSS of prototype screens and fixtures);
+   it would never be fetched, but it would sit in dist. */
+const DesignLab = import.meta.env.DEV
+  ? lazy(() => import('./pages/design-lab/DesignLab'))
+  : null;
 import MissingJdUpload from './pages/MissingJdUpload';
 import MrfSubmit from './pages/MrfSubmit';
 import MrfApprovalAction from './pages/MrfApprovalAction';
+// Retired 2026-08-29 — see the commented route below. Import kept so the file stays
+// referenced and the restore is a single uncomment.
+// eslint-disable-next-line no-unused-vars
 import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
 import Pipeline from './pages/Pipeline';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import InterviewScorecard from './pages/InterviewScorecard';
 import DocumentUpload from './pages/DocumentUpload';
 
@@ -70,13 +89,7 @@ function ProtectedRoute({ children }) {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--ink)',
-      }}>
+      <div className="cmp-loading cmp-loading--page">
         <Spin size="large" />
       </div>
     );
@@ -102,13 +115,7 @@ function PublicRoute({ children }) {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--ink)',
-      }}>
+      <div className="cmp-loading cmp-loading--page">
         <Spin size="large" />
       </div>
     );
@@ -134,13 +141,7 @@ function AdminRoute({ children }) {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--ink)',
-      }}>
+      <div className="cmp-loading cmp-loading--page">
         <Spin size="large" />
       </div>
     );
@@ -170,13 +171,7 @@ function ModuleRoute({ moduleKey, children }) {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--ink)',
-      }}>
+      <div className="cmp-loading cmp-loading--page">
         <Spin size="large" />
       </div>
     );
@@ -203,17 +198,11 @@ function ModuleRoute({ moduleKey, children }) {
 function ComingSoon({ title }) {
   return (
     <div className="page-enter" style={{ textAlign: 'center', padding: '80px 20px' }}>
-      <div
-        style={{
-          fontSize: 56,
-          marginBottom: 16,
-          animation: 'float 3s ease-in-out infinite',
-        }}
-      >
+      <div className="ac-emoji">
         🚧
       </div>
-      <h2 style={{ fontWeight: 700, marginBottom: 8 }}>{title}</h2>
-      <p style={{ color: 'var(--text-2)' }}>This page is under construction. Check back soon!</p>
+      <h2 className="ac-title">{title}</h2>
+      <p className="cmp-ink">This page is under construction. Check back soon!</p>
     </div>
   );
 }
@@ -262,21 +251,40 @@ const OVERLAY_CONFIG = {
  * `:root, [data-theme='light']` selector in theme/index.css); the nested
  * ConfigProvider pins AntD tokens.
  */
+/* ForceLight is now DesignScope with the mode pinned.
+   It used to be a bespoke ConfigProvider + data-theme wrapper doing by hand what
+   DesignScope does — and, being separate, it did NOT give these routes the preset's
+   geometry, so a converted public page would have had V3 surfaces wrapped around
+   legacy-sized AntD controls. One wrapper, one behaviour.
+
+   Mode is pinned because these pages are opened from an email by someone who is not
+   the operator; inheriting a dark session would render an always-light page dark. */
 function ForceLight({ children }) {
   return (
-    <ConfigProvider theme={lightTheme}>
-      <div data-theme="light" style={{ colorScheme: 'light', minHeight: '100vh' }}>
-        {children}
-      </div>
-    </ConfigProvider>
+    <DesignScope mode="light" style={{ minHeight: '100vh' }}>
+      {children}
+    </DesignScope>
   );
 }
 
 function AppShell() {
   const { isDark } = useTheme();
+  const { brandId } = useBrand();
+  const { presetId, fontPackId, density } = useDesign();
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const currentTheme = isDark ? darkTheme : lightTheme;
+
+  // The AntD half of the design system. AntD generates real CSS from JS values and
+  // cannot read a custom property, so it is fed from the same brand/preset/font
+  // sources that produce the CSS variables — see theme/themeConfig.js. Before this,
+  // AntD's palette was 91 frozen hexes and a brand switch left every control on the
+  // old colour.
+  const currentTheme = useMemo(
+    () => buildAntdTheme({
+      brandId, presetId, fontPackId, mode: isDark ? 'dark' : 'light', density,
+    }),
+    [brandId, presetId, fontPackId, isDark, density],
+  );
 
   // Preload the Screening (JD Filtering) roles once at app load, so the dropdown is
   // warm before the user navigates to /filtering. Gated on the same access rule as the
@@ -373,7 +381,9 @@ function AppShell() {
                 path="/pipeline"
                 element={
                   <ModuleRoute moduleKey="recruitment_pipeline">
-                    <Pipeline />
+                    <ErrorBoundary>
+                      <Pipeline />
+                    </ErrorBoundary>
                   </ModuleRoute>
                 }
               />
@@ -386,6 +396,22 @@ function AppShell() {
                   bare route, so a user explicitly denied the recruitment_pipeline
                   module could still open a full pipeline UI and act on it. The
                   data was fake, but the access check was too. */}
+              {/* RETIRED 2026-08-29 (Design System V3, Stage 5) — commented, not
+                  deleted, per this repo's no-delete rule.
+
+                  WHY IT IS OFF: the demo shares its `.cp-candidate-card`, `.cp-avatar`
+                  and `.cp-progress-seg` classes with the REAL board (pages/Pipeline.jsx).
+                  Any V3 rule written for the live board during Stage 5.6 would land on
+                  this screen too, silently, on a page nobody reviews — the coupling is
+                  recorded in §I.4 of the rollout plan. Taking the route out of service
+                  frees 5.6 to change those classes.
+
+                  It is also mock data behind a real module permission, and it is off the
+                  sidebar, so nothing in normal use reaches it.
+
+                  TO RESTORE: uncomment this block and the `/candidate-pipeline-prototype`
+                  entry in V2_ROUTES (layouts/MainLayout.jsx). The page file is untouched
+                  at pages/CandidatePipelinePrototype.jsx.
               <Route
                 path="/candidate-pipeline-prototype"
                 element={
@@ -394,10 +420,25 @@ function AppShell() {
                   </ModuleRoute>
                 }
               />
+              */}
 
               <Route path="/email" element={<EmailManagement />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
+
+            {/* Design-system gallery — development only, and outside every layout
+                and guard on purpose: it must render with no backend and no session,
+                which is also what makes it usable for verification. */}
+            {import.meta.env.DEV && (
+              <Route
+                path="/design-lab"
+                element={(
+                  <Suspense fallback={<div style={{ padding: 40 }}><Spin /></div>}>
+                    <DesignLab />
+                  </Suspense>
+                )}
+              />
+            )}
 
             {/* Redirects & 404 */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -419,9 +460,15 @@ export default function App() {
           token pairs and index.css selects between them, so the two nest in either
           order. It sits inside so a future server-driven theme can read auth. */}
       <BrandProvider>
-        <AuthProvider>
-          <AppShell />
-        </AuthProvider>
+        {/* DesignProvider owns preset / font pack / density. It sits inside
+            BrandProvider because buildAntdTheme composes brand AND design, and
+            outside AuthProvider for the same reason BrandProvider is — a future
+            server-driven design config reads auth, so the seam stays open. */}
+        <DesignProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </DesignProvider>
       </BrandProvider>
     </ThemeProvider>
   );

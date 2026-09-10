@@ -9,7 +9,7 @@ import {
   Tag,
   Tooltip,
   Typography,
-  Button,
+  // Button now comes from src/ui — added to the existing import below.
   Space,
   Alert,
 } from 'antd';
@@ -26,10 +26,14 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import emailTemplateService from '../../services/emailTemplateService';
 import ExportButton from '../common/ExportButton';
+import { Surface, Button } from '../../ui';
 
 dayjs.extend(relativeTime);
 
 const { Text } = Typography;
+
+// Styles live in styles/pages/analytics.css — /analytics is this component's only
+// consumer and it renders inside that page's tab strip. Imported there, not here.
 
 /* Panel shell is the shared `.panel-shell` class in theme/index.css — the same
    values this file and pages/Analytics.jsx each declared separately. */
@@ -37,12 +41,9 @@ const { Text } = Typography;
 /** Coloured rule + title, mirroring SectionTitle on the Analytics page. */
 function PanelTitle({ children, accent }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-      <span style={{
-        width: 4, height: 16, borderRadius: 3, background: accent, flexShrink: 0,
-      }}
-      />
-      <Text strong style={{ fontSize: 14 }}>{children}</Text>
+    <span className={`dm-title dm-accent--${accent}`}>
+      <span className="dm-title__bar" />
+      <Text strong className="dm-title__text">{children}</Text>
     </span>
   );
 }
@@ -89,24 +90,24 @@ export default function DeliveryMonitoring() {
   // window reads calm rather than alarming.
   const tiles = [
     {
-      key: 'sent', title: 'Sent', value: summary.sent, icon: <CheckCircleOutlined />, tone: '#2f6f9f',
+      key: 'sent', title: 'Sent', value: summary.sent, icon: <CheckCircleOutlined />, tone: 'var(--kpi-b)',
     },
     {
-      key: 'failed', title: 'Failed', value: summary.failed, icon: <CloseCircleOutlined />, tone: summary.failed > 0 ? '#c0392b' : undefined,
+      key: 'failed', title: 'Failed', value: summary.failed, icon: <CloseCircleOutlined />, tone: summary.failed > 0 ? 'var(--kpi-d)' : undefined,
     },
     {
       key: 'opened',
       title: 'Opened',
       value: summary.opened,
       icon: <EyeOutlined />,
-      tone: '#4a7c59',
+      tone: 'var(--kpi-c)',
       hint: 'Opens are a positive signal, not an exact count — mail clients proxy or block tracking images.',
     },
     {
-      key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? '#7a922e' : undefined,
+      key: 'replied', title: 'Replied', value: summary.replied, icon: <MessageOutlined />, tone: summary.replied > 0 ? 'var(--brand-primary)' : undefined,
     },
     {
-      key: 'bounced', title: 'Bounced', value: summary.bounced, icon: <StopOutlined />, tone: summary.bounced > 0 ? '#c0392b' : undefined,
+      key: 'bounced', title: 'Bounced', value: summary.bounced, icon: <StopOutlined />, tone: summary.bounced > 0 ? 'var(--kpi-d)' : undefined,
     },
   ];
 
@@ -158,7 +159,7 @@ export default function DeliveryMonitoring() {
 
   return (
     <>
-      <Row justify="space-between" align="middle" style={{ marginBottom: 12 }} gutter={[8, 8]}>
+      <Row justify="space-between" align="middle" className="dm-mb-3" gutter={[8, 8]}>
         <Col>{pollerSummary}</Col>
         <Col>
           <Space>
@@ -172,11 +173,11 @@ export default function DeliveryMonitoring() {
                   { value: 30, label: 'Last 30 days' },
                   { value: 90, label: 'Last 90 days' },
                 ]}
-                style={{ cursor: 'help' }}
+                className="dm-help"
               />
             </Tooltip>
             <Tooltip title="Re-checks the mail records now. Email figures are not live — use this after a send to see whether it went out or failed.">
-              <Button size="small" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
+              <Button size="sm" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
                 Refresh
               </Button>
             </Tooltip>
@@ -188,55 +189,54 @@ export default function DeliveryMonitoring() {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: 12 }}
+          className="dm-mb-3"
           message="Failed to load email delivery data."
           description="The figures below are not current. Retry, or check that the backend is reachable."
-          action={<Button size="small" onClick={() => load(days)}>Retry</Button>}
+          action={<Button size="sm" onClick={() => load(days)}>Retry</Button>}
         />
       )}
 
       <Row gutter={[12, 12]}>
         {tiles.map((t) => (
           <Col xs={12} sm={8} md={4} key={t.key} flex="auto">
-            <Card
+            <Surface
+              as={Card}
+              tier={2}
+              padding="none"
               size="small"
               bordered={false}
-              style={{
-                borderRadius: 12,
-                border: '1px solid var(--border-light)',
-                boxShadow: 'var(--shadow-sm)',
-                background: 'var(--gradient-card, #fff)',
-                height: '100%',
-              }}
+              className="dm-tile"
+              style={{ '--dm-tone': t.tone }}
             >
               <Statistic
                 title={(
                   <Space size={6}>
-                    <span style={{ color: t.tone || 'var(--text-2)' }}>{t.icon}</span>
-                    <span style={{ fontSize: 12.5 }}>{t.title}</span>
+                    <span className="dm-tone" style={{ '--dm-tone': t.tone }}>{t.icon}</span>
+                    <span className="dm-cell">{t.title}</span>
                     {t.hint && (
                       <Tooltip title={t.hint}>
-                        <InfoCircleOutlined style={{ color: 'var(--text-2)' }} />
+                        <InfoCircleOutlined className="dm-muted" />
                       </Tooltip>
                     )}
                   </Space>
                 )}
                 value={errored ? '—' : (t.value ?? 0)}
-                valueStyle={{ color: t.tone || 'var(--text)', fontWeight: 800, fontSize: 26 }}
                 loading={loading}
               />
-            </Card>
+            </Surface>
           </Col>
         ))}
       </Row>
 
-      <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+      <Row gutter={[12, 12]} className="dm-mt-3">
         <Col xs={24} md={10}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             size="small"
-            title={<PanelTitle accent="linear-gradient(90deg,#2f6f9f,#4f93c4)">By email type</PanelTitle>}
+            title={<PanelTitle accent="info">By email type</PanelTitle>}
             bordered={false}
-            className="panel-shell"
             extra={(
               <ExportButton
                 tooltip="Downloads sent and failed counts for every kind of email in this period — useful for spotting one template failing while the rest are fine."
@@ -257,14 +257,16 @@ export default function DeliveryMonitoring() {
               pagination={false}
               scroll={{ y: 260 }}
             />
-          </Card>
+          </Surface>
         </Col>
         <Col xs={24} md={14}>
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             size="small"
-            title={<PanelTitle accent="linear-gradient(90deg,#c0392b,#e0654f)">Recent failures</PanelTitle>}
+            title={<PanelTitle accent="danger">Recent failures</PanelTitle>}
             bordered={false}
-            className="panel-shell"
             extra={(
               <ExportButton
                 tooltip="Downloads every failed send in this period with its recipient and the full error message — the file to attach when reporting an email problem."
@@ -289,14 +291,14 @@ export default function DeliveryMonitoring() {
               expandable={{
                 // Full error text for truncated rows.
                 expandedRowRender: (row) => (
-                  <Text type="secondary" style={{ whiteSpace: 'pre-wrap' }}>
+                  <Text type="secondary" className="dm-pre">
                     {row.subject ? `Subject: ${row.subject}\n` : ''}
                     {row.error_message || 'No detail recorded.'}
                   </Text>
                 ),
               }}
             />
-          </Card>
+          </Surface>
         </Col>
       </Row>
     </>

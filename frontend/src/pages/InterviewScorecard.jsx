@@ -9,8 +9,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Card, Button, Typography, Alert, Spin, Rate, Input, Radio, Space, Result, Divider, message,
+  Card, Typography, Alert, Spin, Rate, Input, Radio, Space, Result, Divider, message,
 } from 'antd';
+import { Button } from '../ui';
 import { WarningOutlined } from '@ant-design/icons';
 import scorecardService from '../services/scorecardService';
 import PublicPageShell, { BRAND } from '../components/common/PublicPageShell';
@@ -126,7 +127,7 @@ export default function InterviewScorecard() {
   if (loading) {
     return (
       <PublicPageShell title="Interviewer scorecard" subtitle="Loading this interview…">
-        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+        <div className="cmp-loading"><Spin size="large" /></div>
       </PublicPageShell>
     );
   }
@@ -179,9 +180,8 @@ export default function InterviewScorecard() {
     >
       {/* Pre-filled read-only context */}
       <div
-        style={{
-          background: BRAND.page,
-          borderRadius: 10,
+        className="pps-summary"
+          style={{
           padding: '12px 16px',
           marginBottom: 18,
           display: 'flex',
@@ -198,15 +198,15 @@ export default function InterviewScorecard() {
       {error ? <Alert type="error" showIcon message={error} style={{ marginBottom: 12 }} /> : null}
 
         {showGate && (
-          <Card size="small" style={{ background: '#fffbe6', borderColor: '#ffe58f' }}>
+          <Card size="small" className="pps-warn">
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               <Text strong><WarningOutlined /> Did this interview actually take place?</Text>
               <Paragraph type="secondary" style={{ marginBottom: 0 }}>
                 Please confirm before scoring. If the candidate did not join, we won’t ask you to fill a scorecard.
               </Paragraph>
               <Space>
-                <Button type="primary" loading={submitting} onClick={() => answerGate('held')}>Yes, we met — score now</Button>
-                <Button danger loading={submitting} onClick={() => answerGate('no_show')}>No — it didn’t happen</Button>
+                <Button emphasis="solid" loading={submitting} onClick={() => answerGate('held')}>Yes, we met — score now</Button>
+                <Button tone="danger" loading={submitting} onClick={() => answerGate('no_show')}>No — it didn’t happen</Button>
               </Space>
             </Space>
           </Card>
@@ -217,7 +217,7 @@ export default function InterviewScorecard() {
             {/* The technical card rates skills; the HR card doesn't have them. */}
             {!isHr && skills.map((s, i) => (
               <div key={i}>
-                <Text strong style={{ fontSize: 13 }}>Skill <Text type="danger">*</Text></Text>
+                <Text strong className="pps-sm">Skill <Text type="danger">*</Text></Text>
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginTop: 4 }} wrap>
                   <Input
                     size="small" placeholder="Skill (e.g. React, SQL)…" value={s.label}
@@ -272,7 +272,7 @@ export default function InterviewScorecard() {
             <RatingRow label="Final rating" required value={finalRating} onChange={setFinalRating} />
 
             <div>
-              <Text strong style={{ fontSize: 12.5 }}>Status <Text type="danger">*</Text></Text>
+              <Text strong className="pps-xs">Status <Text type="danger">*</Text></Text>
               <Radio.Group value={recommendation} onChange={(e) => setRecommendation(e.target.value)}
                 optionType="button" buttonStyle="solid" style={{ display: 'block', marginTop: 4 }}
                 options={[{ value: 'approve', label: '✓ Shortlisted' }, { value: 'hold', label: '◔ On Hold' }, { value: 'reject', label: '✕ Rejected' }]} />
@@ -282,16 +282,16 @@ export default function InterviewScorecard() {
             <Input size="small" placeholder="Interview recording link (optional)" value={recordingUrl} onChange={(e) => setRecordingUrl(e.target.value)} />
 
             <Button
-              type="primary"
-              size="large"
+              emphasis="solid"
+              size="lg"
               block
               loading={submitting}
               onClick={submit}
-              style={{ background: BRAND.accent, borderColor: BRAND.accent, fontWeight: 600 }}
+              emphasis="solid"
             >
               Submit feedback
             </Button>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" className="pps-xs">
               This link works once. After you submit, it closes and cannot be reopened.
             </Text>
           </Space>
@@ -304,8 +304,8 @@ export default function InterviewScorecard() {
 function ContextItem({ label, value }) {
   return (
     <div>
-      <Text type="secondary" style={{ fontSize: 11, display: 'block', letterSpacing: 0.3 }}>{label}</Text>
-      <Text strong style={{ fontSize: 13.5 }}>{value || '—'}</Text>
+      <Text type="secondary" className="pps-caption-block">{label}</Text>
+      <Text strong className="pps-xs">{value || '—'}</Text>
     </div>
   );
 }
@@ -313,7 +313,7 @@ function ContextItem({ label, value }) {
 function RatingRow({ label, value, onChange, required }) {
   return (
     <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-      <Text strong style={{ fontSize: 13 }}>{label} {required ? <Text type="danger">*</Text> : null}</Text>
+      <Text strong className="pps-sm">{label} {required ? <Text type="danger">*</Text> : null}</Text>
       <Rate allowHalf value={value} onChange={onChange} />
     </Space>
   );
@@ -327,7 +327,7 @@ function RatingRow({ label, value, onChange, required }) {
 function HrField({ label, value, onChange, rows, maxLength }) {
   return (
     <div>
-      <Text strong style={{ fontSize: 12.5 }}>{label}</Text>
+      <Text strong className="pps-xs">{label}</Text>
       {rows ? (
         <TextArea rows={rows} value={value || ''} onChange={(e) => onChange(e.target.value)} style={{ marginTop: 4 }} />
       ) : (

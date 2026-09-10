@@ -22,11 +22,22 @@
    index.css alongside the originals, so there is a single source of truth.
    ============================================================ */
 
+/* SCOPE NOTE (Design V3)
+   The ambient-canvas selectors below read `:is(.ats-v2, .ats-v3)` rather than plain
+   `.ats-v2`, so the same AmbientBackdrop serves both the shipped V2 routes and the
+   src/ui surfaces. `:is()` takes the specificity of its most specific argument and
+   both are single classes, so nothing about the V2 cascade changes.
+
+   This is deliberately a scope widening and NOT a copy: the canvas carries a
+   measured performance contract (one position:fixed plane so the stack is excluded
+   from scroll repaint; transform-only animation; no mix-blend-mode) and a second
+   copy would be a second place for that contract to rot. */
+
 /* ----- The ambient canvas -------------------------------------------------
    One fixed plane: aurora, watermark, grain. Fixed (not absolute) so it is
    excluded from scroll repaint — that is what keeps the backdrop-filtered
    surfaces above it from re-blurring on every wheel tick. */
-.ats-v2 .ats-backdrop {
+:is(.ats-v2, .ats-v3) .ats-backdrop {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -42,7 +53,7 @@
   background: var(--brand-canvas-deep, var(--ink));
 }
 
-.ats-v2 .ats-aurora {
+:is(.ats-v2, .ats-v3) .ats-aurora {
   position: absolute;
   inset: 0;
   opacity: var(--aurora-opacity);
@@ -64,7 +75,7 @@
    preceding pass pushed it to ~0.76 and turned the page green.
 
    One element, one transform: also four fewer composited layers than the blobs. */
-[data-theme='light'] .ats-v2 .ats-aurora {
+[data-theme='light'] :is(.ats-v2, .ats-v3) .ats-aurora {
   background:
     radial-gradient(58% 52% at 20% 4%, var(--aurora-1), transparent 66%),
     radial-gradient(48% 44% at 72% 0%, var(--aurora-2), transparent 70%),
@@ -73,7 +84,7 @@
   animation: atsBreathe 26s ease-in-out infinite;
   will-change: transform;
 }
-[data-theme='light'] .ats-v2 .ats-aurora__blob { display: none; }
+[data-theme='light'] :is(.ats-v2, .ats-v3) .ats-aurora__blob { display: none; }
 
 @keyframes atsBreathe {
   0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.92; }
@@ -84,7 +95,7 @@
    feathered, so they need no `filter: blur()`. Skipping the filter matters: a
    blur on a viewport-sized element is a per-frame raster cost, while a gradient
    is rasterized once and only re-composited as it transforms. */
-.ats-v2 .ats-aurora__blob {
+:is(.ats-v2, .ats-v3) .ats-aurora__blob {
   position: absolute;
   display: block;
   border-radius: 50%;
@@ -95,22 +106,22 @@
    leaves only their faint outer falloff on screen and the glass above has nothing
    to refract — the surfaces just read as flat white cards. Each centre sits
    inside, or barely outside, the viewport. */
-.ats-v2 .ats-aurora__blob--1 {
+:is(.ats-v2, .ats-v3) .ats-aurora__blob--1 {
   width: 68vw; height: 68vw; top: -18vw; left: -10vw;
   background: radial-gradient(circle closest-side, var(--aurora-1) 0%, transparent 72%);
   animation: atsAurora1 34s var(--ease-out-quint) infinite;
 }
-.ats-v2 .ats-aurora__blob--2 {
+:is(.ats-v2, .ats-v3) .ats-aurora__blob--2 {
   width: 56vw; height: 56vw; top: -6vw; right: -6vw;
   background: radial-gradient(circle closest-side, var(--aurora-2) 0%, transparent 70%);
   animation: atsAurora2 42s var(--ease-out-quint) infinite;
 }
-.ats-v2 .ats-aurora__blob--3 {
+:is(.ats-v2, .ats-v3) .ats-aurora__blob--3 {
   width: 62vw; height: 62vw; bottom: -20vw; left: 10vw;
   background: radial-gradient(circle closest-side, var(--aurora-4) 0%, transparent 72%);
   animation: atsAurora3 38s var(--ease-out-quint) infinite;
 }
-.ats-v2 .ats-aurora__blob--4 {
+:is(.ats-v2, .ats-v3) .ats-aurora__blob--4 {
   width: 44vw; height: 44vw; bottom: -8vw; right: 2vw;
   background: radial-gradient(circle closest-side, var(--aurora-3) 0%, transparent 68%);
   animation: atsAurora4 48s var(--ease-out-quint) infinite;
@@ -137,7 +148,7 @@
 /* The rotor as architecture: oversized, anchored so ~a third bleeds off the
    bottom-right corner, turning once every ~140s. Sized in vmin so it scales with
    the viewport's short edge and stays proportionate on any screen. */
-.ats-v2 .ats-watermark {
+:is(.ats-v2, .ats-v3) .ats-watermark {
   position: absolute;
   right: -14vmin;
   bottom: -16vmin;
@@ -146,7 +157,7 @@
   color: var(--watermark-color);
   opacity: var(--watermark-opacity);
 }
-.ats-v2 .ats-watermark svg {
+:is(.ats-v2, .ats-v3) .ats-watermark svg {
   display: block;
   width: 100%;
   height: 100%;
@@ -167,7 +178,7 @@
    with the blend ~23% of frames exceeded 20ms; without it ~3%. At 3-6% opacity plain
    alpha compositing is visually indistinguishable, so the blend cost a lot for
    nothing. --grain-blend is left defined in index.css but intentionally unused. */
-.ats-v2 .ats-grain {
+:is(.ats-v2, .ats-v3) .ats-grain {
   position: absolute;
   inset: 0;
   opacity: var(--grain-opacity);
@@ -230,7 +241,15 @@
   transition: background-color var(--transition-fast), color var(--transition-fast),
     transform 0.28s var(--ease-spring) !important;
 }
-.ats-v2 .ant-menu-item:not(.ant-menu-item-selected):hover { transform: translateX(3px); }
+/* Hover was the ONE stateless surface left in the shell: measured box-shadow `none` in
+   both themes, so a pointer got a flat tint and a slide while every other surface in the
+   system answers with material. --depth-1 (the lightest rung) and deliberately NOT
+   --glass-hilite: the catch-light below is what says *selected*, and hover must not
+   borrow it or the two states stop reading apart. Added 2026-08-31. */
+.ats-v2 .ant-menu-item:not(.ant-menu-item-selected):hover {
+  transform: translateX(3px);
+  box-shadow: var(--depth-1);
+}
 .ats-v2 .ant-menu-item-selected {
   background: linear-gradient(100deg, var(--gold-bg) 0%, rgba(122, 146, 46, 0.04) 100%) !important;
   box-shadow: var(--glass-hilite);
@@ -620,9 +639,22 @@
 .ats-v2 .dash-band { margin-bottom: 20px; }
 
 /* Equal-height cards within a band, so a short widget cannot leave a ragged bottom
-   edge beside a tall one. */
+   edge beside a tall one.
+
+   SILENTLY DEAD from the V3 rollout until 2026-08-31. These selectors named only
+   `.ant-card`, and the rollout replaced every dashboard <Card> with <Surface>, which
+   renders `.ui-surface`. Measured on the live dashboard: 0 `.ant-card` inside .dash-band
+   against 13 `.ui-surface` — so the rule matched NOTHING and the ragged edges this
+   comment promises to prevent had been back the whole time. The columns stretch (AntD
+   Row is flex); it was the card inside that never filled its column. Gaps measured at
+   1920px: band1 22px, band2 23/105px, band3 315px, band4 76px.
+
+   The `.ant-card` selectors are kept deliberately: nothing renders one here today, but
+   they cost nothing and this rule should not break a second time if one comes back. */
 .ats-v2 .dash-band > .ant-col > .ant-card,
-.ats-v2 .dash-band > .ant-col > div > .ant-card { height: 100%; }
+.ats-v2 .dash-band > .ant-col > div > .ant-card,
+.ats-v2 .dash-band > .ant-col > .ui-surface,
+.ats-v2 .dash-band > .ant-col > div > .ui-surface { height: 100%; }
 
 /* KPI footnote — one line of real context, above the sparkline band. */
 .premium-stat-footnote {
@@ -717,10 +749,10 @@
 .dash-uploads__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .dash-uploads__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
 .dash-uploads__role {
-  font-size: 11.5px; color: var(--text-2);
+  font-size: var(--fs-caption); color: var(--text-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.dash-uploads__time { font-size: 11px; color: var(--text-3); flex-shrink: 0; }
+.dash-uploads__time { font-size: var(--fs-caption); color: var(--text-3); flex-shrink: 0; }
 
 /* ----- Tier 3: data surfaces -------------------------------------------
    Near-opaque and NOT backdrop-filtered. A table that re-blurs its backdrop on
@@ -859,8 +891,16 @@
   background: var(--glass-3-bg) !important;
   border: 1px solid var(--glass-2-border) !important;
 }
-.ats-v2 .screening-summary-bar,
-.ats-v2 .screening-edu-panel { border-radius: 12px !important; }
+/* The education accordion moved to --radius-ctl with the filter form it sits inside
+   (2026-09-01 screen sweep). It had to be split out of the shared rule below: this
+   file loads AFTER index.css, so at equal specificity and both `!important` the 12px
+   here silently beat the retokened value there — the panel would have kept 12px
+   corners inside 15px fields and the fix would have looked like it did nothing.
+
+   The summary and select-all bars are NOT part of this change; they belong to the
+   results list, which this sweep did not measure. Carried in "Still open". */
+.ats-v2 .screening-edu-panel { border-radius: var(--radius-ctl) !important; }
+.ats-v2 .screening-summary-bar { border-radius: 12px !important; }
 .ats-v2 .screening-selectall-bar { border-radius: 10px !important; }
 
 /* The role JD panel keeps its brand tint — it is a semantic callout ("this is the
@@ -876,10 +916,19 @@
 }
 
 /* ----- Candidate Screening: the segmented tab strip --------------------
-   `.screening-tabs .ant-tabs-nav-list` is an opaque --ink-3 capsule and the active
-   tab an opaque --colorBgContainer pill. Translucent track, near-solid thumb: the
-   selected tab has to stay the most solid thing in the control or the segmented
-   metaphor stops reading. */
+   RETIRED 2026-09-01 (screen sweep) — no consumers; /filtering and /analytics both
+   moved to <SegmentedTabs>. See the retirement note in index.css for the measurements.
+
+   Worth recording what this block was reaching for, because `.ui-segmented` gets it
+   right and this did not: "translucent track, near-solid thumb — the selected tab has
+   to stay the most solid thing in the control or the segmented metaphor stops
+   reading." Measured, the track here resolved to rgba(255,255,255,0.9) in light with
+   the thumb at rgb(255,255,255) — a 10% difference between track and thumb, which is
+   why the selected pill barely read. `.ui-segmented` puts the track at 12% of --text-3
+   and the thumb on --material-thick, which is the contrast the note asked for.
+
+   Kept per the no-delete rule; uncomment to restore.
+
 .ats-v2 .screening-tabs .ant-tabs-nav-list {
   background: var(--glass-3-bg);
   border: 1px solid var(--glass-2-border);
@@ -889,6 +938,7 @@
   background: var(--colorBgContainer);
   box-shadow: var(--depth-1);
 }
+*/
 
 /* ----- Candidate Detail: Professional Summary callout ------------------ */
 .ats-v2 .cd-summary {
@@ -1004,6 +1054,30 @@
 .ats-overlay .ant-drawer-header { border-bottom-color: var(--glass-2-border); }
 .ats-overlay .ant-modal-footer,
 .ats-overlay .ant-drawer-footer { border-top-color: var(--glass-2-border); }
+
+/* THE DOUBLED DRAWER SHADOW. Fixed 2026-08-31.
+
+   `.ats-overlay` above paints `--depth-3` on the drawer's CONTENT. AntD paints its own
+   default shadow on the WRAPPER, one level up — measured on /pipeline:
+
+     wrapper  rgba(0,0,0,0.08) -6px 0 16px, rgba(0,0,0,0.12) -3px 0 6px -4px   (AntD)
+     content  rgba(86,104,52,0.13) 0 2px 6px, rgba(86,104,52,0.42) 0 30px 60px (ours)
+
+   Two shadows on one panel, and the wrapper's is the problem one: it is NEUTRAL GREY
+   and it is cast from OUTSIDE the content's rounded corner, so on the drawer's leading
+   edge it renders as a dull vertical band with rounded ends sitting just left of the
+   panel — reported as an artifact, and correctly so. It is the same finding the
+   light-mode pass recorded for the depth ramp: a brand-hued shadow reads as glow, a
+   grey one reads as dirt.
+
+   `:has()` rather than a stamped wrapper class: OVERLAY_CONFIG in App.jsx only
+   stamps the slots its docblock verified against antd 5.29.3 (`content`, `mask`), and
+   adding a `wrapper` slot would be asserting an API this file cannot check. The
+   structural selector needs no such promise and degrades to "no rule" if it ever fails
+   to match, which is the current rendering rather than a broken one. */
+.ant-drawer-content-wrapper:has(> .ats-overlay) {
+  box-shadow: none;
+}
 
 /* Drawer: keep the edge it is anchored to square. */
 .ant-drawer-right .ats-overlay { border-radius: var(--radius-overlay) 0 0 var(--radius-overlay); }
@@ -1330,9 +1404,9 @@
 /* Users who ask the OS to reduce transparency get flat, opaque surfaces and no
    decorative canvas at all. */
 @media (prefers-reduced-transparency: reduce) {
-  .ats-v2 .ats-aurora,
-  .ats-v2 .ats-grain,
-  .ats-v2 .ats-watermark,
+  :is(.ats-v2, .ats-v3) .ats-aurora,
+  :is(.ats-v2, .ats-v3) .ats-grain,
+  :is(.ats-v2, .ats-v3) .ats-watermark,
   .ats-v2 .dash-hero__sweep,
   .ats-v2 .dash-hero__mark { display: none; }
   .ats-v2 .glass-card,
@@ -1352,8 +1426,20 @@
   .ats-v2 .screening-selectall-bar,
   .ats-v2 .screening-edu-panel,
   .ats-v2 .screening-role-card,
-  .ats-v2 .cd-summary,
-  .ats-v2 .screening-tabs .ant-tabs-nav-list {
+  .ats-v2 .cd-summary
+  /* RETIRED 2026-09-01 — no consumers; /filtering and /analytics moved to
+     <SegmentedTabs>. `.ui-segmented` is covered by the V3 reduced-transparency block
+     in tokens.css, which turns --material-thick opaque, so the retired selector is
+     not replaced by one here.
+
+     THE COMMA LIVES INSIDE THE COMMENT ON PURPOSE. This is a selector LIST: commenting
+     out the last entry while leaving `.cd-summary,` trailing would invalidate the whole
+     list and silently drop this rule for the eleven other surfaces above — a
+     reduced-transparency regression with no error anywhere. To restore, uncomment the
+     line below; it carries its own leading comma.
+  , .ats-v2 .screening-tabs .ant-tabs-nav-list
+  */
+  {
     background: var(--colorBgContainer) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
@@ -1473,7 +1559,7 @@
    chrome also drops to a cheaper blur — mobile GPUs pay disproportionately for
    large backdrop-filter regions. */
 @media (max-width: 768px) {
-  .ats-v2 .ats-watermark,
+  :is(.ats-v2, .ats-v3) .ats-watermark,
   .ats-v2 .dash-hero__mark { display: none; }
   .ats-v2 .dash-hero { padding: 24px 20px; border-radius: 18px; }
   .ats-v2 .glass-sidebar,

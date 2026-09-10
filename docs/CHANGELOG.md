@@ -5,6 +5,169 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-09-01 — Design sweep, screen 7: `/filtering` tab strip and keyword fields
+**Why:** reported by eye — "tab switching is not following our theme" and "keyword filtering is not
+following our design-lab theme fields". Both reproduced; the first was carrying an AA contrast
+failure. Full write-up:
+[CHANGES-2026-09-01-screen-design-sweep-filtering.md](./changelog/CHANGES-2026-09-01-screen-design-sweep-filtering.md).
+
+- **The active tab failed AA.** `.screening-tabs` was an AntD `<Tabs>` dressed as a capsule (10px
+  track, 8px items, ink bar killed with `!important`), and its active label painted raw
+  `--brand-primary` on an opaque pane at **3.51:1** against a 4.5 floor — on the control that tells
+  you which mode you are in. `ui/Segmented.jsx` documents and had already fixed this exact failure;
+  the screen had never adopted it. Now **5.81:1**, and one tab stop instead of two.
+- **Fixed with a new `src/ui` primitive, `SegmentedTabs`** — `Segmented` plus pane wiring, so the
+  two screens that shared this class cannot drift. It **reproduces AntD's mounting semantics on
+  purpose** (mount on first activation, then stay mounted): rendering only the active pane would
+  have reset `/analytics`' table pagination and remounted `/filtering`'s keyword form. Both verified
+  by round trip.
+- **`/analytics` was converted with it** — `.screening-tabs` covered both, the coupling
+  `AURORA-GLASS-ROLLOUT-PLAN.md` §I.4 warns not to clean up one-sided. Its inline
+  `tabBarStyle={{ marginBottom: 20 }}` went with it.
+- **The keyword form predated the token contract.** 11px labels and 11px hints (**14** elements
+  under the 12px floor), 10px radius against `--radius-ctl`'s 15, a hover/focus border on `--green`
+  — which is `#4a7c59`, *not* the brand olive — and a focus ring hardcoded as
+  `rgba(122,146,46,0.14)`. Proof that ring was dead: it measured **byte-identical in light and
+  dark**. Now `--glow-focus`, and **0** elements under the floor.
+- **Why nothing caught it:** `type-floor.mjs` scans `/filtering`, but AntD mounts only the active
+  pane and the default tab is `jd` — the form had never been in the DOM when anything looked.
+  Measured: 0 sub-12px on load, 14 the instant the Keyword tab is clicked. The swap does not fix
+  that; teaching the scans to walk each pane is carried as its own change.
+- **A regression this pass introduced and caught by measuring after:** shrinking the input font
+  took the three text inputs to 43.3px while the Selects beside them stayed 46. Height pinned;
+  46.0 across the row in both themes.
+- `npm run verify:design` **152 PASS / 2 FAIL** (both the pre-existing `/dashboard` button rows),
+  `npm run lint` 0 errors, `npx vite build` clean.
+
+## 2026-09-01 — Design sweep, screen 6: `/mrf` view mode stops being the disabled state
+**Why:** reported by eye — "when I open a submitted MRF everything is disabled; it should be like
+view mode, not disabled mode", and "this tab switch is not following our finalized design". Both
+reproduced; the first measured worse than it looked. Full write-up:
+[CHANGES-2026-09-01-screen-design-sweep-mrf.md](./changelog/CHANGES-2026-09-01-screen-design-sweep-mrf.md).
+
+- **The record was the least legible thing in its own dialog.** The detail modal expressed "you
+  are reading" with AntD's `disabled` state, which measured **1.84:1 light / 1.91:1 dark** against
+  a 4.5:1 floor — while the LABEL naming each value sat at 5.35. The content became readable only
+  once the user was allowed to type into it. `cursor: not-allowed` on all **53** fields.
+- **Fixed with a new `src/ui` primitive, `FieldValue`** — the read side of a field. It takes
+  `value` and swallows the `onChange` that `Form.Item` clones on, so it drops in as the control of
+  a *named* Form.Item; the form store, `useWatch`, `isFieldsTouched()` and validation all survive
+  the mode switch untouched. Now **14.01:1 / 14.56:1**, 0 disabled inputs, 0 `not-allowed`. Edit
+  mode is unchanged (47 inputs, 28 pre-filled, `mrfstatus` still protected).
+- **The status filter was never converted** — `Radio.Group buttonStyle="solid"`: a joined slab at
+  `15px 0 0 15px`, 15px/400, a raw solid brand fill, and **six tab stops**. Swapped to the
+  system's `Segmented`: one tab stop, a labelled `radiogroup`, `--material-thick` indicator.
+  Values unchanged, so the list query and CSV export are untouched.
+- **The modal scrolled sideways by exactly 8px** — `Row gutter={16}`'s −8px inline margin against
+  an inline `padding: '20px 0 0 0'` on the body. Moved to a class; overflow 0. Recorded because
+  the first version of that rule silently did nothing: antd paints
+  `:where(.css-hash).ant-modal .ant-modal-body`, which `:where()` leaves at **(0,2,0)**, so a lone
+  `.mrf-modal-body` at (0,1,0) lost and computed to `0px` — a symptom identical to the inline
+  style it replaced.
+- **Why nothing caught it:** no check has a concept of "view mode", and `contrast.mjs` only
+  measures `/design-lab`, so a 1.84:1 field inside a modal on `/mrf` was never in the sample.
+  **That gap is now closed at the source** — `.ui-value` and `.ui-value__empty` were added both to
+  the lab's `SystemPane` and to `contrast.mjs`'s `TARGETS`, and pass in both modes and both brands.
+- Verified: `verify:design` **152 PASS / 2 FAIL** (both the documented pre-existing `/dashboard`
+  button parity rows), lint 0 errors, `vite build` clean, screenshotted light and dark in view and
+  edit state. No backend or schema change.
+
+## 2026-09-01 — Screening "loads forever": the Cohere rerank call had no timeout
+**Why:** reported as the Candidate Screening screen hanging on "Matching and scoring
+candidates…". It is not the design sweep below — the page renders and both tabs work. The backend
+log names it: two searches on 2026-09-01 took **183,191 ms** (`POST /screening/roles/115/search`)
+and **185,089 ms** (`POST /screening/keyword-search`), each ending 800 ms after a
+`Cohere Rerank API error (Status 504)`. The time was spent inside one `fetch`, waiting.
+
+- **`backend/src/services/vectorStore.service.js`** — `rerankBatch()` called `fetch` with no
+  `signal`. Node's fetch has no default timeout, so a stalled Cohere connection held the request
+  for as long as their edge did. Now bounded by `COHERE_TIMEOUT_MS = 30_000`, matching the
+  existing convention in `onedrive.service.js` and `utils/geminiHelper.js`.
+- **The degraded fallback existed and could never run.** `rerankCandidates()` already catches a
+  rerank failure and returns a bounded, base-relevance list with a `degradedReason` the UI shows
+  as "Showing a limited candidate list" — but only once the call *returns*. Against a hang it was
+  unreachable, which is why a bad Cohere day read as an infinite spinner instead of the graceful
+  degradation it was written for.
+- **Why "forever" and not "slow".** The axios client gives up at 120 s
+  (`frontend/src/services/api.js`) and react-query retries once (`retry: 1`, `main.jsx`), so a
+  183 s upstream is two full client timeouts back to back — ~4 minutes of blocking overlay ending
+  in an error, with the server still working on a result nobody is waiting for.
+- A `TimeoutError` is restated as `Cohere Rerank API timed out after 30000 ms.` so the existing
+  error log names the upstream rather than "The operation was aborted due to timeout".
+- Verified against a local server that never responds: fallback fires at **30.0 s** with
+  `degraded: true` and the full candidate list intact. A healthy search re-run in-browser after
+  the change: 200, results under 3 s, no console errors. No frontend change.
+
+## 2026-08-31 — Screen-by-screen design sweep: auth, nav, font, dashboard, shell
+**Why:** the parity work below closed the *composition* gap, but could not catch what no check
+asserts. This was run one screen at a time — reported by eye, then measured before anything was
+changed. **Of the eleven defects found, the suite was green for every one**, and several had been
+live since the V3 rollout. Full write-up:
+[CHANGES-2026-08-31-screen-design-sweep.md](./changelog/CHANGES-2026-08-31-screen-design-sweep.md).
+
+- **Two defects were dead code that raises nothing.** The dashboard equal-height rule read
+  `.ant-card` while the rollout had replaced every dashboard card with `<Surface>` — measured **0
+  `.ant-card` against 13 `.ui-surface`**, so a rule whose own comment promised to prevent ragged
+  edges had been matching nothing (gaps up to 315px). And the dashboard role filter listed only
+  "All roles" because `GET /screening/roles` returns `{ id, role, … }` and **`role` was the one
+  key missing** from the label chain — every row mapped to `''` and was filtered out.
+- **The shell was never in the V3 rollout.** `DesignScope` turns the preset geometry on and wraps
+  *pages*, never `MainLayout`, so the left nav still ran on AntD `LEGACY_GEOMETRY` — 8px radius
+  against the system’s 15px, and hover with **no material response at all**. Also found: two rules
+  painting the selected rail at identical (0,2,0) specificity, the glass one winning only on
+  import order.
+- **Tooltip text failed WCAG AA.** The light fill was `--brand-primary` with a white label at
+  **3.51:1**, and `.mi-note` painted `--text-2` on that green at ≈**1.7:1** — the least readable
+  text in the product was the text explaining the numbers. `--brand-solid`/`--brand-on-solid`
+  exist for exactly this. `contrast.mjs` never saw it **because a tooltip only exists on hover**.
+- **Navigation never reset scroll** — nothing anywhere did. Fixed on `pathname` only (not
+  `search`, or filters jump) and skipped on POP so Back restores rather than zeroes.
+- **Inter + Sora shipped** — one line in `theme/fonts.js`. `index.html` had been fetching the
+  webfont on every load all along while `system-native` rendered. Two verify scripts were pinned
+  to the old pack and moved with it: `composition.mjs` would have gone red, `parity.mjs` would
+  have stayed **green while testing a font no longer shipped**.
+- **Topbar became a command bar** — its title duplicated the page header character-for-character;
+  `Breadcrumb` was imported and never rendered and `CommandPalette` was built but mounted by
+  `Dashboard` alone, so ⌘K worked on one route. Bell glyph 14px → 20px beside a 22px sun.
+- **Two infrastructure traps worth knowing.** A pruned playwright makes `verify:design` **exit 0
+  with zero checks run** — it reads as a green suite and produced one false "verified" report;
+  count PASS lines, not the exit code. And `composition.mjs` is **flaky under load**, failing a
+  different set of routes each run; probed directly with a poll, all 11 pass.
+- `lint` 0 errors · `build` clean · `verify:design` **144 PASS / 2 FAIL**, both the pre-existing
+  `/dashboard` button parity rows. Everything measured in both themes, 0 page errors.
+
+## 2026-08-31 — Design-lab parity: the primitives get rolled out (in progress)
+**Why:** the app read ~60% like `/design-lab` while every token measured equal and all 9 checks
+passed. The audit found that the primitives were **built and never rolled out** — `PageHeader` in
+2 files of 12 routes, `Button` in **one** file despite its docblock claiming 224 call sites,
+`Sheet`/`DataTable`/`StateBlock`/`CountUp` in none. Full write-up, including the remaining work:
+[CHANGES-2026-08-31-design-lab-parity.md](./changelog/CHANGES-2026-08-31-design-lab-parity.md).
+
+- **Two claims in `docs/design/DESIGN-LAB-PARITY-PLAN.md` are wrong and that doc is uncorrected.**
+  Its "Gap 2" (every lab archetype wraps the screen in a tier-2 pane) misreads `.dl-stage`, which
+  is gallery chrome; the lab's List archetype and `/candidates` already had identical surface
+  structure. Its "hero 157px vs 106px" is a width artefact — at matched content width the gap is
+  1.8%, not 48%. Acting on either would have moved the app away from the lab.
+- **Button glow bridge** (`styles/legacy-bridge.css`) — `themeConfig.js` zeroes `primaryShadow`
+  when preset geometry is on, assuming `.ui-btn` repaints the glow; on converted routes it does
+  not, so every primary was flat. Restored tone-preserved (brand vs danger), plus the 15px→14px
+  label size. Temporary; names the call-site conversion as the group that deletes it.
+- **`PageHeader` wrapped state** (`ui/ui.css`, one declaration) — wrapped controls were stranded at
+  the start of their line by `space-between`, leaving the hero's right half empty. The one
+  deliberate edit to `src/ui`.
+- **`/candidates` converted** (pilot, approved): `PageHeader` added, all 10 buttons moved to
+  `ui/Button`, four private treatments retired to emphasis levels. Surface tiers unchanged — they
+  already matched. **`ExportButton` converted once, fixing 17 call sites.**
+- **Two bugs found and fixed along the way.** `/candidates/:id` showed "Search Candidate" in the
+  topbar — `pageTitle` keyed the breadcrumb map on the first path segment only, so the detail route
+  inherited the list's label. And `/dashboard` showed "▲ 19400%" on Total Candidates: correct
+  arithmetic (195 against a base of 1) but meaningless, so `periodOverPeriod` now returns no
+  percentage below a base of 5, or when the base is zero — which previously returned an invented
+  flat `100`.
+- `lint` 0 errors · `build` clean · `verify:design` **9/9** · both modes screenshotted against the
+  lab. **9 route passes, the public/auth pages, KPI tile props, the type ramp and
+  `composition.mjs` remain** — itemised in the write-up.
+
 ## 2026-08-27 — Pipeline drawer: the conversation reply box gets a real rich-text editor
 **Why:** direct feedback on the Conversation panel shipped earlier the same day — the reply box was
 plain single-line text, unlike every other email-composing surface in the app. Full write-up:

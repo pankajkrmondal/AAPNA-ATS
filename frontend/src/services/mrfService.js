@@ -109,6 +109,20 @@ const mrfService = {
     return api.post(`/mrf/${id}/reopen`, {});
   },
 
+  /**
+   * Pauses a still-open requisition, with a reason — distinct from close.
+   * @param {number|string} id
+   * @param {Object} payload - { reason }
+   */
+  pause(id, payload) {
+    return api.post(`/mrf/${id}/pause`, payload);
+  },
+
+  /** Resumes a paused requisition. */
+  resume(id) {
+    return api.post(`/mrf/${id}/resume`, {});
+  },
+
   getPrefillOptions(email, role) {
     const params = role ? { email, role } : { email };
     return axios.get('/api/mrf/prefill-options', { params }).then((res) => res.data);

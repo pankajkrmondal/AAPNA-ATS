@@ -9,7 +9,10 @@
     "build": "vite build",
     "build:staging": "vite build --mode staging",
     "build:prod": "vite build --mode production",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "lint:count": "eslint src -f json | node scripts/verify/lint-count.mjs",
+    "verify:design": "node scripts/verify/index.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.7",

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Form, Input, Button, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Upload } from 'antd';
+import { Form, Input, Typography, Alert, Spin, Select, InputNumber, Rate, Result, Upload } from 'antd';
+import { Button } from '../ui';
 import { UploadOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 // The shared public-page frame — the same one DocumentUpload and
@@ -110,7 +111,7 @@ export default function MissingJdUpload() {
           accept=".pdf,.docx"
           listType="text"
         >
-          <Button icon={<UploadOutlined />} style={{ width: '100%', borderRadius: 8, height: 40 }}>
+          <Button icon={<UploadOutlined />} className="pps-control">
             Select Resume File (.pdf, .docx)
           </Button>
         </Upload>
@@ -182,7 +183,7 @@ export default function MissingJdUpload() {
     }
 
     if (key === 'EnglishCommunicationRating') {
-      return <Rate count={5} style={{ color: 'var(--kpi-c)' }} />;
+      return <Rate count={5} className="pps-ok" />;
     }
 
     // Number Inputs
@@ -219,7 +220,7 @@ export default function MissingJdUpload() {
     if (key === 'HighestQualification') placeholder = 'e.g. B.Tech in Computer Science, MCA';
     if (key === 'CurrentLocation') placeholder = 'Enter your current city';
 
-    return <Input placeholder={placeholder} style={{ borderRadius: 8 }} />;
+    return <Input placeholder={placeholder} className="pps-round" />;
   };
 
   const formatFieldLabel = (key) => {
@@ -254,7 +255,7 @@ export default function MissingJdUpload() {
   if (loading) {
     return (
       <PublicPageShell title="Complete your profile" subtitle="Loading your profile session…">
-        <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+        <div className="cmp-loading"><Spin size="large" /></div>
       </PublicPageShell>
     );
   }
@@ -268,18 +269,18 @@ export default function MissingJdUpload() {
       >
         <Result
           status="success"
-          title={<span style={{ fontWeight: 700 }}>Profile Updated Successfully!</span>}
+          title={<span className="pps-strong">Profile Updated Successfully!</span>}
           subTitle={
-            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+            <Paragraph className="pps-hint">
               Thank you, <strong>{candidateInfo?.Name || 'Candidate'}</strong>. Your missing profile details have been received and logged. Your application is now marked active.
             </Paragraph>
           }
           extra={[
             <Button
               key="close"
-              type="primary"
+              emphasis="solid"
               onClick={() => window.close()}
-              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+              emphasis="solid"
             >
               Close Window
             </Button>
@@ -300,10 +301,9 @@ export default function MissingJdUpload() {
           message="Error Accessing Page"
           description={error}
           type="error"
-          showIcon
-          style={{ borderRadius: 10, marginBottom: 20 }}
+          showIcon className="pps-alert"
         />
-        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+        <Paragraph type="secondary" className="pps-note">
           If you need assistance, please contact the AAPNA HR Team at support@aapnainfotech.com.
         </Paragraph>
       </PublicPageShell>
@@ -322,18 +322,18 @@ export default function MissingJdUpload() {
       >
         <Result
           status="info"
-          title={<span style={{ fontWeight: 700 }}>Profile Already Complete</span>}
+          title={<span className="pps-strong">Profile Already Complete</span>}
           subTitle={
-            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+            <Paragraph className="pps-hint">
               Hi <strong>{candidateInfo?.Name || 'Candidate'}</strong>, your profile information is fully complete. No further action is required from you.
             </Paragraph>
           }
           extra={[
             <Button
               key="close"
-              type="primary"
+              emphasis="solid"
               onClick={() => window.close()}
-              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+              emphasis="solid"
             >
               Close
             </Button>
@@ -365,7 +365,7 @@ export default function MissingJdUpload() {
                   <Form.Item
                     name="PositionApplied"
                     label={
-                      <span style={{ fontWeight: 600, color: '#374151', fontSize: 13 }}>
+                      <span className="pps-label">
                         {formatFieldLabel(key)}
                       </span>
                     }
@@ -393,7 +393,7 @@ export default function MissingJdUpload() {
                       rules={[{ required: true, message: 'Please specify the position.' }]}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="Specify custom position" style={{ borderRadius: 8 }} />
+                      <Input placeholder="Specify custom position" className="pps-round" />
                     </Form.Item>
                   )}
                 </div>
@@ -405,10 +405,10 @@ export default function MissingJdUpload() {
                 key={key}
                 name={key}
                 label={
-                  <span style={{ fontWeight: 600, color: '#374151', fontSize: 13 }}>
+                  <span className="pps-label">
                     {formatFieldLabel(key)}
                     {key === 'EnglishCommunicationRating' && (
-                      <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>
+                      <span className="pps-aside">
                         (1: Poor, 5: Fluent)
                       </span>
                     )}
@@ -429,18 +429,11 @@ export default function MissingJdUpload() {
 
           <Form.Item style={{ marginTop: 28, marginBottom: 0 }}>
             <Button
-              type="primary"
+              emphasis="solid"
               htmlType="submit"
               loading={submitting}
               block
-              style={{
-                height: 48,
-                borderRadius: 10,
-                fontWeight: 600,
-                fontSize: 15,
-                background: BRAND.accent,
-                borderColor: BRAND.accent
-              }}
+              emphasis="solid" size="lg"
             >
               Submit Profile Details
             </Button>

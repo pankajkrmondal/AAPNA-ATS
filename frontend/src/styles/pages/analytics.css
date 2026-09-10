@@ -1,0 +1,200 @@
+/**
+ * /analytics — the reporting route. Stage 5.5.
+ *
+ * The page's panels stay AntD Cards, wrapped as `<Surface as={Card}>`: they use
+ * `title`, `extra` and `loading`, which are real behaviours and not decoration. The
+ * material and geometry come from the Surface; the widget contract from the Card. See
+ * the "SURFACE AS AN ANTD CARD" block in ui/ui.css for why that combination needs an
+ * explicit rule rather than luck with source order.
+ *
+ * Imported after '../ui'.
+ */
+
+.an-panel { margin-block-end: var(--space-4); }
+.an-panel--fill { height: 100%; }
+
+.an-title { font-weight: 800; margin: 0; }
+.an-title-row { display: inline-flex; align-items: center; gap: 10px; }
+.an-lede { font-size: var(--fs-footnote); }
+.an-sub { font-size: var(--fs-subhead); }
+.an-sub--caps { font-size: var(--fs-subhead); text-transform: capitalize; }
+.an-cell { font-size: var(--fs-footnote); }
+.an-cell--md { font-size: var(--fs-subhead); }
+.an-cell--lg { font-size: var(--fs-body); }
+.an-cell--xl { font-size: var(--fs-body); }
+.an-note { font-size: var(--fs-footnote); margin-inline-start: var(--space-2); font-weight: 400; }
+.an-hint { font-size: var(--fs-footnote); margin-inline-start: 6px; opacity: 0.7; }
+.an-ink { color: var(--text); }
+.an-right { text-align: right; }
+.an-full { width: 100%; }
+.an-fill { height: 100%; }
+.an-threshold { width: 100px; cursor: help; }
+.an-threshold--inline { margin-inline-start: -11px; cursor: help; }
+.an-picker { min-width: 260px; }
+.an-relative { position: relative; }
+.an-under-tile { padding: 6px var(--space-5) 0; }
+.an-mb-4 { margin-block-end: var(--space-4); }
+.an-mb-4-5 { margin-block-end: 18px; }
+.an-mb-5 { margin-block-end: var(--space-5); }
+.an-mb-6 { margin-block-end: 28px; }
+
+/* ------------------------------------------------------------------
+   Threshold-crossing counts
+   Six cells wrote `color: n > 0 ? 'var(--kpi-d)' : 'var(--text-2)'` inline — the
+   colour IS the signal (is this number worth looking at?), so it becomes a modifier
+   the stylesheet owns rather than a ternary no rule can reach.
+   ------------------------------------------------------------------ */
+.an-count { color: var(--text-2); }
+.an-count--danger { color: var(--kpi-d); }
+.an-count--success { color: var(--kpi-c); }
+.an-count--warning { color: var(--kpi-e); }
+.an-count--info { color: var(--kpi-b); }
+
+.an-tag-danger.ant-tag {
+  border: none;
+  background: var(--kpi-d-tint);
+  color: var(--kpi-d);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------
+   The section-title accent bar
+   The gradient is picked per panel from the ACCENT map, so it is data: it arrives as
+   a custom property and this rule owns the geometry.
+   ------------------------------------------------------------------ */
+.an-accent-bar {
+  width: 4px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--an-accent);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------
+   Bar charts
+   Two of these, written twice each: a track and a fill. Only the WIDTH is data —
+   everything else was duplicated inline, including the easing curve.
+   ------------------------------------------------------------------ */
+.an-bar {
+  width: 100%;
+  background: var(--ink-3);
+  border-radius: var(--radius-ctl);
+  overflow: hidden;
+}
+.an-bar--lg { height: 22px; }
+.an-bar--sm { height: 20px; }
+.an-bar__fill {
+  height: 100%;
+  width: var(--an-fill, 0%);
+  border-radius: var(--radius-ctl);
+  background: linear-gradient(90deg, var(--kpi-a), var(--kpi-a-2));
+  transition: width var(--dur-cinematic) var(--ease-emphasized);
+}
+.an-bar__fill--info { background: linear-gradient(90deg, var(--kpi-b), var(--kpi-b-2)); }
+
+/* ------------------------------------------------------------------
+   Conditional tags
+   Every one of these was a pair of raw `rgba(...)` literals chosen by a ternary. A
+   literal is invisible to the brand axis — swapping a tenant palette could never
+   reach them — and the pairs were near-duplicates of the --kpi-* tints that already
+   exist. State is a modifier; the tint is mixed from the token.
+   ------------------------------------------------------------------ */
+.an-tag { border: none; }
+.an-tag--drop {
+  background: color-mix(in srgb, var(--kpi-d) 10%, transparent);
+  color: var(--kpi-d);
+}
+.an-tag--ok {
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  color: var(--gold-dark);
+}
+.an-tag--hold {
+  background: color-mix(in srgb, var(--kpi-d) 10%, transparent);
+  color: var(--kpi-d);
+}
+.an-tag--wait {
+  background: color-mix(in srgb, var(--kpi-e) 14%, transparent);
+  color: var(--kpi-e);
+}
+.an-tag--rate {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--kpi-c) 12%, transparent);
+  color: var(--kpi-c);
+}
+.an-tag--rate-zero {
+  font-weight: 600;
+  background: var(--ink-3);
+  color: var(--text-2);
+}
+.an-tag--conv { margin-inline-start: 6px; font-size: var(--fs-footnote); }
+/* Requisition ids are identifiers, so the mono face is right — it just comes from
+   the font pack now rather than the browser's default. */
+.an-tag--id {
+  background: var(--ink-3);
+  color: var(--text-2);
+  font-family: var(--mono);
+}
+
+/* A tinted well inside a panel. */
+.an-well {
+  background: var(--ink-3);
+  border-radius: var(--radius-ctl);
+  padding: 14px 18px;
+  margin-block-end: var(--space-4);
+}
+
+/* ------------------------------------------------------------------
+   Email delivery panel (components/email/DeliveryMonitoring)
+   Its rules live here rather than in a file of their own: /analytics is its only
+   consumer, it renders inside that page's tab strip, and it duplicates this page's
+   SectionTitle by hand. One route, one stylesheet.
+
+   Its two accent gradients were raw hex pairs — `#2f6f9f,#4f93c4` and
+   `#c0392b,#e0654f`, which are `--kpi-b`/`--kpi-b-2` and `--kpi-d`/`--kpi-d-2`
+   written out longhand. Spelled as literals they could not follow a theme, and in
+   dark mode those tokens change while the literals would not have.
+   ------------------------------------------------------------------ */
+.dm-title { display: inline-flex; align-items: center; gap: 9px; }
+.dm-title__bar {
+  width: 4px;
+  height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--dm-accent);
+}
+.dm-title__text.ant-typography { font-size: var(--fs-body); }
+.dm-accent--info { --dm-accent: linear-gradient(90deg, var(--kpi-b), var(--kpi-b-2)); }
+.dm-accent--danger { --dm-accent: linear-gradient(90deg, var(--kpi-d), var(--kpi-d-2)); }
+
+.dm-panel { margin-block-end: var(--space-3); }
+.dm-mt-3 { margin-block-start: var(--space-3); }
+.dm-mb-3 { margin-block-end: var(--space-3); }
+.dm-muted { color: var(--text-2); }
+.dm-cell { font-size: var(--fs-footnote); }
+.dm-help { cursor: help; }
+.dm-pre { white-space: pre-wrap; }
+/* The per-row tone is data (one hue per email type), so it arrives as a property. */
+.dm-tone { color: var(--dm-tone, var(--text-2)); }
+.dm-tile { height: 100%; }
+/* The Statistic's value took its colour, weight and size from an inline `valueStyle`.
+   The tone is data (per tile) and comes through --dm-tone; the rest is type scale. */
+.dm-tile .ant-statistic-content-value,
+.dm-tile .ant-statistic-content {
+  color: var(--dm-tone, var(--text));
+  font-weight: var(--fw-metric-sm);
+  font-size: var(--fs-title-2);
+}
+
+/* ------------------------------------------------------------------
+   The six-tile headline row
+   Five labels fit one line and "Zeko Score Received" does not, so that tile measured
+   181px against 162px for the rest and hung below the row. AntD's Col stretches, but
+   the Surface inside it does not fill by default.
+
+   Reserving two lines for every label in THIS row (not in StatTile itself) also puts
+   all six values on one baseline. It is scoped here because it is a fact about this
+   row's content, not about the component: /dashboard's four tiles all fit one line
+   and would gain a band of empty space from the same rule.
+   ------------------------------------------------------------------ */
+.an-tile-row .ui-stat-card { height: 100%; }
+.an-tile-row .ui-stat__label { min-height: calc(var(--lh-caption, 1.35) * 2em); }

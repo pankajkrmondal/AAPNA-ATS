@@ -4,7 +4,8 @@
  */
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Alert } from 'antd';
+import { Form, Input, Alert } from 'antd';
+import { Button } from '../ui';
 import { LoginOutlined, UserOutlined, LockOutlined } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import adminService from '../services/adminService';
@@ -51,7 +52,6 @@ export default function AdminLogin() {
           message={error}
           type="error"
           showIcon
-          style={{ marginBottom: 20, borderRadius: 8 }}
         />
       )}
 
@@ -64,35 +64,31 @@ export default function AdminLogin() {
         requiredMark={false}
       >
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Username or Email</span>}
+          label={<span className="auth-field-label auth-field-label--caps">Username or Email</span>}
           name="username"
           rules={[{ required: true, message: 'Please enter your username or email' }]}
-          style={{ marginBottom: 20 }}
         >
           <Input
-            prefix={<UserOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<UserOutlined />}
             placeholder="Enter your username or email"
             autoComplete="off"
-            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
         <Form.Item
-          label={<span style={{ fontWeight: 600, color: 'var(--text)', opacity: 0.9, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Password</span>}
+          label={<span className="auth-field-label auth-field-label--caps">Password</span>}
           name="password"
           rules={[{ required: true, message: 'Please enter your password' }]}
-          style={{ marginBottom: 28 }}
         >
           <Input.Password
-            prefix={<LockOutlined style={{ color: 'rgba(122, 146, 46, 0.55)', marginRight: 4 }} />}
+            prefix={<LockOutlined />}
             placeholder="Enter your password"
             autoComplete="new-password"
-            style={{ borderRadius: 10, height: 46 }}
           />
         </Form.Item>
 
         {TURNSTILE_SITE_KEY && (
-          <Form.Item style={{ marginBottom: 20 }}>
+          <Form.Item>
             <TurnstileWidget
               ref={captchaRef}
               siteKey={TURNSTILE_SITE_KEY}
@@ -101,35 +97,21 @@ export default function AdminLogin() {
           </Form.Item>
         )}
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        <Form.Item>
           <Button
-            type="primary"
             htmlType="submit"
             loading={loading}
             disabled={captchaPending}
             icon={<LoginOutlined />}
             block
-            className="cta-primary"
-            style={{
-              height: 48,
-              borderRadius: 10,
-              fontWeight: 700,
-              fontSize: 14,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              // .cta-primary forces the gradient with !important, so signal the
-              // disabled (captcha pending) state explicitly
-              opacity: captchaPending ? 0.55 : 1,
-            }}
+            emphasis="solid" size="lg"
           >
             Sign In
           </Button>
         </Form.Item>
 
-        <div style={{ textAlign: 'center', marginTop: 18 }}>
-          <Link to="/forgot-password" style={{ fontSize: 13.5, fontWeight: 600 }}>
+        <div className="auth-form-actions">
+          <Link to="/forgot-password" className="auth-link">
             Forgot password?
           </Link>
         </div>

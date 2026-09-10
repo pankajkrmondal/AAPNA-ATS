@@ -10,7 +10,7 @@ import {
   Col,
   Card,
   Table,
-  Button,
+  // Button now comes from src/ui — see the import below.
   Input,
   Select,
   Modal,
@@ -42,6 +42,9 @@ import {
 import adminService from '../services/adminService';
 import ExportButton from '../components/common/ExportButton';
 import useAuth from '../hooks/useAuth';
+import { DesignScope, PageShell, Surface, StatTile, Segmented, Button } from '../ui';
+// After '../ui' so page rules win on equal specificity.
+import '../styles/pages/admin-dashboard.css';
 
 const { Title, Text } = Typography;
 
@@ -59,15 +62,15 @@ const { Title, Text } = Typography;
  * they want their own `--module-*` scale, not the semantic palette.
  */
 const MODULES_INFO = [
-  { key: 'new_mrf',             label: '+ New MRF Request',                 desc: 'Create and submit Manpower Requisition Forms',      icon: '📋', color: '#1890ff' },
-  { key: 'search_candidates',   label: 'Search & Edit Candidates',         desc: 'Search, update and manage candidate profiles',      icon: '🔍', color: '#52c41a' },
-  { key: 'hr_manual_upload',    label: 'HR Manual Upload',                 desc: 'Upload candidate resumes for future hiring',        icon: '📤', color: '#faad14' },
-  { key: 'system_config',       label: 'System Configuration',             desc: 'Manage configuration and automation settings',      icon: '⚙️', color: '#722ed1' },
+  { key: 'new_mrf',             label: '+ New MRF Request',                 desc: 'Create and submit Manpower Requisition Forms',      icon: '📋', color: 'var(--module-mrf)' },
+  { key: 'search_candidates',   label: 'Search & Edit Candidates',         desc: 'Search, update and manage candidate profiles',      icon: '🔍', color: 'var(--module-search)' },
+  { key: 'hr_manual_upload',    label: 'HR Manual Upload',                 desc: 'Upload candidate resumes for future hiring',        icon: '📤', color: 'var(--module-hr-upload)' },
+  { key: 'system_config',       label: 'System Configuration',             desc: 'Manage configuration and automation settings',      icon: '⚙️', color: 'var(--module-config)' },
   { key: 'vendor_upload',       label: 'Vendor Manual Upload',             desc: 'Upload vendor-sourced candidate resumes',           icon: '🏢', color: 'var(--warning)' },
-  { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: '#2f54eb' },
-  { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: '#13c2c2' },
-  { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: '#eb2f96' },
-  { key: 'recruitment_pipeline', label: 'Candidate Pipeline',              desc: 'Track candidates through the interview pipeline (Phase 3)', icon: '🧭', color: '#08979c' },
+  { key: 'vendor_dashboard',    label: 'Vendor Dashboard',                 desc: 'View status of vendor-submitted candidates',        icon: '📈', color: 'var(--module-vendor-dash)' },
+  { key: 'candidate_screening', label: 'Candidate Screening',              desc: 'Filter and screen candidates for open positions',   icon: '🎯', color: 'var(--module-screening)' },
+  { key: 'screening_analytics', label: 'Recruitment Analytics',            desc: 'Track recruitment performance and hiring metrics', icon: '📊', color: 'var(--module-analytics)' },
+  { key: 'recruitment_pipeline', label: 'Candidate Pipeline',              desc: 'Track candidates through the interview pipeline (Phase 3)', icon: '🧭', color: 'var(--module-pipeline)' },
 ];
 
 // Per-role badge metadata — distinct, on-brand colors so the hierarchy reads at a glance.
@@ -475,14 +478,14 @@ export default function AdminDashboard() {
         const initials = `${(record.first_name || '')[0] || ''}${(record.last_name || '')[0] || ''}`.toUpperCase();
         return (
           <Space>
-            <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)', fontWeight: 700 }}>
+            <Avatar className="ad-brand-chip">
               {initials || '?'}
             </Avatar>
             <div>
-              <Text strong style={{ fontSize: 13, display: 'block' }}>
+              <Text strong className="ad-body--block">
                 {record.first_name} {record.last_name}
               </Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
+              <Text type="secondary" className="ad-caption">
                 {record.email}
               </Text>
             </div>
@@ -494,7 +497,7 @@ export default function AdminDashboard() {
       title: 'Username',
       dataIndex: 'username',
       key: 'username',
-      render: (text) => <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{text}</Text>,
+      render: (text) => <Text className="ad-mono--sm">{text}</Text>,
     },
     {
       title: 'Role',
@@ -508,8 +511,8 @@ export default function AdminDashboard() {
       render: (_, record) => {
         const name = record.company_name || companyNameById[record.company_id];
         return name
-          ? <Text style={{ fontSize: 12 }}>{name}</Text>
-          : <Text type="secondary" style={{ fontSize: 12 }}>— Global —</Text>;
+          ? <Text className="ad-caption">{name}</Text>
+          : <Text type="secondary" className="ad-caption">— Global —</Text>;
       },
     }] : []),
     {
@@ -518,24 +521,9 @@ export default function AdminDashboard() {
       render: (_, record) => (
         <Tag
           color={record.is_active ? 'success' : 'error'}
-          style={{
-            borderRadius: 999,
-            fontWeight: 600,
-            fontSize: 11,
-            padding: '1px 10px',
-          }}
+          className="ad-pill"
         >
-          <span
-            style={{
-              display: 'inline-block',
-              width: 5,
-              height: 5,
-              borderRadius: '50%',
-              background: record.is_active ? 'var(--status-approved)' : 'var(--red)',
-              marginRight: 6,
-              verticalAlign: 'middle',
-            }}
-          />
+          <span className={'ad-dot' + (record.is_active ? ' ad-dot--on' : '')} />
           {record.is_active ? 'Active' : 'Inactive'}
         </Tag>
       ),
@@ -544,7 +532,7 @@ export default function AdminDashboard() {
       title: 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date) => <Text type="secondary" style={{ fontSize: 12 }}>{date ? date.split('T')[0] : '—'}</Text>,
+      render: (date) => <Text type="secondary" className="ad-caption">{date ? date.split('T')[0] : '—'}</Text>,
     },
     {
       title: 'Actions',
@@ -555,7 +543,7 @@ export default function AdminDashboard() {
         // Only a superadmin may see/manage superadmin accounts.
         const targetIsSuper = (record.role || '').toLowerCase() === 'superadmin';
         if (targetIsSuper && !isSuper) {
-          return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
+          return <Text type="secondary" className="ad-caption">—</Text>;
         }
         // Edit: own account, a strictly lower role, or (superadmin only) a peer
         // superadmin's details — the password section is hidden for peers.
@@ -569,36 +557,36 @@ export default function AdminDashboard() {
             <Tooltip title={canEdit ? "Edit" : (!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : "You can only edit your own account and lower-role accounts")}>
               <span>
                 <Button
-                  type="text"
-                  size="small"
+                  emphasis="text"
+                  size="sm"
                   disabled={!canEdit}
                   icon={<EditOutlined />}
                   onClick={() => openUserModal(record)}
-                  style={{ color: !canEdit ? 'var(--border)' : 'var(--gold)' }}
+                  className={`ad-brand${canEdit ? '' : ' ad-action--off'}`}
                 />
               </span>
             </Tooltip>
             <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : (isSelf ? "Cannot deactivate/activate your own account" : (!canToggle ? "You can only change the status of lower-role accounts" : (record.is_active ? 'Deactivate' : 'Activate')))}>
               <span>
                 <Button
-                  type="text"
-                  size="small"
+                  emphasis="text"
+                  size="sm"
                   disabled={!canToggle}
                   icon={<PoweroffOutlined />}
                   onClick={() => openToggleModal(record)}
-                  style={{ color: !canToggle ? 'var(--border)' : 'var(--warning)' }}
+                  className={`ad-warn${canToggle ? '' : ' ad-action--off'}`}
                 />
               </span>
             </Tooltip>
             <Tooltip title={!isSuper ? "Only a SuperAdmin can delete users" : (isSelf ? "Cannot delete your own account" : "Delete")}>
               <span>
                 <Button
-                  type="text"
-                  size="small"
+                  emphasis="text"
+                  size="sm"
                   disabled={!canDelete}
                   icon={<DeleteOutlined />}
                   onClick={() => openDeleteModal(record)}
-                  style={{ color: !canDelete ? 'var(--border)' : 'var(--red)' }}
+                  className={`ad-danger${canDelete ? '' : ' ad-action--off'}`}
                 />
               </span>
             </Tooltip>
@@ -609,150 +597,111 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="admin-portal" style={{ padding: '28px 24px', maxWidth: 1200, margin: '0 auto' }}>
+    <DesignScope>
+      <PageShell width="standard" className="admin-portal">
       {/* Capsule / segmented tab bar */}
-      <div className="admin-tabbar">
-        <div className="admin-tabs">
-          <Button
-            type="text"
-            className={`admin-tab ${activeTab === 'users' ? 'admin-tab--active' : ''}`}
-            onClick={() => setActiveTab('users')}
-            icon={<UserOutlined />}
-          >
-            User Management
-          </Button>
-          <Button
-            type="text"
-            className={`admin-tab ${activeTab === 'modules' ? 'admin-tab--active' : ''}`}
-            onClick={() => {
-              setActiveTab('modules');
-              if (nonAdminUsers.length > 0 && !selectedModUser) {
-                handleSelectModUser(nonAdminUsers[0]);
-              }
-            }}
-            icon={<SettingOutlined />}
-          >
-            Module Access
-          </Button>
-          {isSuper && (
-            <Button
-              type="text"
-              className={`admin-tab ${activeTab === 'companies' ? 'admin-tab--active' : ''}`}
-              onClick={() => setActiveTab('companies')}
-              icon={<BankOutlined />}
-            >
-              Companies
-            </Button>
-          )}
-        </div>
+      <Surface tier={2} padding="compact" className="ad-topbar">
+        <Segmented
+          aria-label="Admin sections"
+          value={activeTab}
+          onChange={(key) => {
+            setActiveTab(key);
+            // Selecting Module Access with nothing chosen used to leave an empty
+            // right pane; the tab handler seeds the first non-admin user. Kept here
+            // so the behaviour survives the swap.
+            if (key === 'modules' && nonAdminUsers.length > 0 && !selectedModUser) {
+              handleSelectModUser(nonAdminUsers[0]);
+            }
+          }}
+          options={[
+            { value: 'users', label: <><UserOutlined /> User Management</> },
+            { value: 'modules', label: <><SettingOutlined /> Module Access</> },
+            ...(isSuper ? [{ value: 'companies', label: <><BankOutlined /> Companies</> }] : []),
+          ]}
+        />
         <ReloadOutlined
-          style={{ color: 'var(--gold)', cursor: 'pointer', fontSize: 16 }}
+          className="ad-refresh"
           onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
           spin={loading || companiesLoading}
         />
-      </div>
+      </Surface>
 
       {/* Tab Content 1: User Management */}
       {activeTab === 'users' && (
         <div className="animate-fade-in">
           {/* Stats Metrics Cards */}
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Row gutter={[16, 16]} className="ui-stagger ad-mb-5">
             <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
-              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-1">
-                <div className="admin-stat-body">
-                  <div>
-                    <Text type="secondary" className="admin-stat-label">Total Users</Text>
-                    <Title level={2} className="admin-stat-num">{stats.total}</Title>
-                    <Text type="secondary" style={{ fontSize: 11 }}>All registered accounts</Text>
-                  </div>
-                  <div className="admin-stat-icon" style={{ color: 'var(--gold)', background: 'rgba(122,146,46,0.10)' }}>
-                    <TeamOutlined />
-                  </div>
-                </div>
-              </Card>
+              <StatTile
+                icon={<TeamOutlined />}
+                label="Total Users"
+                value={stats.total}
+                accent="brand"
+                footnote="All registered accounts"
+                /* `interactive` added 2026-08-31 — these four already carried footnotes,
+                   so they only lacked the hover the lab's baseline tile has. `bloom` on
+                   the lead tile only, matching the other KPI rows. */
+                interactive
+                bloom
+              />
             </Col>
             <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
-              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-2">
-                <div className="admin-stat-body">
-                  <div>
-                    <Text type="secondary" className="admin-stat-label">Active</Text>
-                    <Title level={2} className="admin-stat-num" style={{ color: 'var(--success-text)' }}>{stats.active}</Title>
-                    <Text type="secondary" style={{ fontSize: 11 }}>Can log in</Text>
-                  </div>
-                  <div className="admin-stat-icon" style={{ color: 'var(--success-text)', background: 'rgba(22,101,52,0.10)' }}>
-                    <CheckCircleOutlined />
-                  </div>
-                </div>
-              </Card>
+              <StatTile
+                icon={<CheckCircleOutlined />}
+                label="Active"
+                value={stats.active}
+                accent="success"
+                footnote="Can log in"
+                interactive
+              />
             </Col>
             <Col xs={24} sm={12} md={isSuper ? 6 : 8}>
-              <Card bordered={false} className="admin-stat animate-fade-in-up stagger-3">
-                <div className="admin-stat-body">
-                  <div>
-                    <Text type="secondary" className="admin-stat-label">Inactive</Text>
-                    <Title level={2} className="admin-stat-num" style={{ color: 'var(--red)' }}>{stats.inactive}</Title>
-                    <Text type="secondary" style={{ fontSize: 11 }}>Access revoked</Text>
-                  </div>
-                  <div className="admin-stat-icon" style={{ color: 'var(--red)', background: 'rgba(192,57,43,0.10)' }}>
-                    <CloseCircleOutlined />
-                  </div>
-                </div>
-              </Card>
+              <StatTile
+                icon={<CloseCircleOutlined />}
+                label="Inactive"
+                value={stats.inactive}
+                accent="danger"
+                footnote="Access revoked"
+                interactive
+              />
             </Col>
             {isSuper && (
               <Col xs={24} sm={12} md={6}>
-                <Card bordered={false} className="admin-stat animate-fade-in-up stagger-4">
-                  <div className="admin-stat-body">
-                    <div>
-                      <Text type="secondary" className="admin-stat-label">Companies</Text>
-                      <Title level={2} className="admin-stat-num" style={{ color: 'var(--kpi-b)' }}>{companies.length}</Title>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {companies.filter((c) => c.is_active).length} active tenants
-                      </Text>
-                    </div>
-                    <div className="admin-stat-icon" style={{ color: 'var(--kpi-b)', background: 'var(--kpi-b-tint)' }}>
-                      <BankOutlined />
-                    </div>
-                  </div>
-                </Card>
+                <StatTile
+                  icon={<BankOutlined />}
+                  label="Companies"
+                  value={companies.length}
+                  accent="info"
+                  footnote={String(companies.filter((c) => c.is_active).length) + ' active tenants'}
+                  interactive
+                />
               </Col>
             )}
           </Row>
 
           {/* User Management Toolbar Card */}
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             bordered={false}
-            style={{
-              borderRadius: 12,
-              boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)',
-            }}
             styles={{ body: { padding: 0 } }}
           >
             {/* Toolbar */}
-            <div
-              style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 12,
-              }}
-            >
+            <div className="ad-table-toolbar">
               <Space wrap size={12}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>User Management</span>
+                <span className="ad-title">User Management</span>
                 <Input
-                  prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />}
+                  prefix={<SearchOutlined className="ad-muted" />}
                   placeholder="Search name / email…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ width: 220, borderRadius: 6 }}
+                  className="ad-search"
                 />
                 <Select
                   value={roleFilter}
                   onChange={setRoleFilter}
-                  style={{ width: 140 }}
+                  className="ad-w-140"
                   options={[
                     { value: '', label: 'All Roles' },
                     ...(isSuper ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
@@ -764,7 +713,7 @@ export default function AdminDashboard() {
                 <Select
                   value={statusFilter}
                   onChange={setStatusFilter}
-                  style={{ width: 130 }}
+                  className="ad-w-130"
                   options={[
                     { value: '', label: 'All Status' },
                     { value: 'active', label: 'Active' },
@@ -775,7 +724,7 @@ export default function AdminDashboard() {
                   <Select
                     value={companyFilter}
                     onChange={setCompanyFilter}
-                    style={{ width: 180 }}
+                    className="ad-w-180"
                     showSearch
                     optionFilterProp="label"
                     options={[
@@ -796,13 +745,11 @@ export default function AdminDashboard() {
                 <Tooltip title={!isAuthorized ? "Only Superadmin and Admin role can perform this operation" : ""}>
                   <span>
                     <Button
-                      type="primary"
+                      emphasis="solid"
                       icon={<PlusOutlined />}
                       disabled={!isAuthorized}
                       onClick={() => openUserModal()}
-                      style={!isAuthorized
-                        ? { borderRadius: 6, fontWeight: 600 }
-                        : { background: 'var(--gold)', borderColor: 'var(--gold)', borderRadius: 6, fontWeight: 600 }}
+                      className={isAuthorized ? 'ad-btn--brand' : 'ad-ctl-btn'}
                     >
                       Add User
                     </Button>
@@ -823,7 +770,7 @@ export default function AdminDashboard() {
                 style: { paddingRight: 20 },
               }}
             />
-          </Card>
+          </Surface>
         </div>
       )}
 
@@ -833,17 +780,16 @@ export default function AdminDashboard() {
           <Row gutter={[20, 20]}>
             {/* Left User Sider List */}
             <Col xs={24} md={8}>
-              <Card
-                title={<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Select User</span>}
+              <Surface
+                as={Card}
+                tier={3}
+                padding="none"
+                title={<span className="ad-sub-legend">Select User</span>}
                 bordered={false}
-                style={{
-                  borderRadius: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-                  height: '100%',
-                }}
+                className="ad-panel"
                 styles={{ body: { padding: 0 } }}
               >
-                <div style={{ maxHeight: 600, overflowY: 'auto' }}>
+                <div className="ad-scroll">
                   {nonAdminUsers.map((u) => {
                     const selected = selectedModUser?.id === u.id;
                     const initials = `${(u.first_name || '')[0] || ''}${(u.last_name || '')[0] || ''}`.toUpperCase();
@@ -851,115 +797,74 @@ export default function AdminDashboard() {
                       <div
                         key={u.id}
                         onClick={() => handleSelectModUser(u)}
-                        style={{
-                          padding: '12px 16px',
-                          cursor: 'pointer',
-                          borderBottom: '1px solid var(--border-light)',
-                          background: selected ? 'var(--gold-bg)' : 'transparent',
-                          borderLeft: selected ? '3px solid var(--gold)' : '3px solid transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12,
-                          transition: 'all 0.1s',
-                        }}
+                        className={'ad-user-row' + (selected ? ' ad-user-row--selected' : '')}
                       >
-                        <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)', fontWeight: 700, width: 30, height: 30 }}>
+                        <Avatar className="ad-brand-chip ad-brand-chip--sm">
                           {initials || '?'}
                         </Avatar>
                         <div>
-                          <Text strong style={{ fontSize: 13, color: selected ? 'var(--gold-dark)' : 'var(--text)', display: 'block' }}>
+                          <Text strong className={'ad-mod-name' + (selected ? ' ad-mod-name--selected' : '')}>
                             {u.first_name} {u.last_name}
                           </Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{u.role}</Text>
+                          <Text type="secondary" className="ad-caption">{u.role}</Text>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </Card>
+              </Surface>
             </Col>
 
             {/* Right Modules Permission Panel */}
             <Col xs={24} md={16}>
-              <Card
+              <Surface
+                as={Card}
+                tier={3}
+                padding="none"
                 title={
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <div className="ad-split--center">
                     <div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+                      <div className="ad-title">
                         {selectedModUser ? `${selectedModUser.first_name} ${selectedModUser.last_name}` : 'Select a user'}
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-3)', marginTop: 3 }}>
+                      <div className="ad-note">
                         {selectedModUser ? `Configure module access for ${selectedModUser.email}` : 'Choose a user from the left to manage their module access'}
                       </div>
                     </div>
                     {autoSaved && (
-                      <div style={{ fontSize: 12, color: 'var(--success-text)', fontWeight: 600 }}>✓ Auto-saved</div>
+                      <div className="ad-caption ad-ok">✓ Auto-saved</div>
                     )}
                   </div>
                 }
                 bordered={false}
-                style={{
-                  borderRadius: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,.06)',
-                }}
               >
                 {!selectedModUser ? (
-                  <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--text-3)' }}>
-                    <SolutionOutlined style={{ fontSize: 48, opacity: 0.3, marginBottom: 14 }} />
-                    <Title level={4} style={{ fontSize: 14, margin: '0 0 5px 0' }}>No user selected</Title>
+                  <div className="ad-empty">
+                    <SolutionOutlined className="ad-empty__icon" />
+                    <Title level={4} className="ad-heading">No user selected</Title>
                     <Text type="secondary">Pick a user from the left panel to configure their module access.</Text>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div className="ad-stack">
                     {/* Module Permission Switch Row Grid */}
                     {MODULES_INFO.map((mod) => {
                       const enabled = !!userPermissions[mod.key];
                       return (
                         <div
                           key={mod.key}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '16px 18px',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            background: enabled ? 'var(--gold-bg)' : 'var(--ink-4)',
-                            borderColor: enabled ? 'var(--gold-light)' : 'var(--border)',
-                            transition: 'all 0.2s',
-                          }}
+                          className={'ad-mod' + (enabled ? ' ad-mod--on' : '')}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                          <div className="ad-row--wide">
                             <div
-                              style={{
-                                width: 38,
-                                height: 38,
-                                borderRadius: 8,
-                                background: enabled ? 'var(--colorBgContainer)' : 'var(--ink-3)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 16,
-                                flexShrink: 0,
-                                border: enabled ? '1px solid var(--gold-light)' : 'none',
-                              }}
+                              className="ad-mod-icon"
                             >
                               {mod.icon}
                             </div>
                             <div>
-                              <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{mod.label}</Text>
-                              <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{mod.desc}</div>
+                              <Text strong className="ad-body">{mod.label}</Text>
+                              <div className="ad-micro--gap">{mod.desc}</div>
                               <span
-                                style={{
-                                  display: 'inline-block',
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  padding: '2px 7px',
-                                  borderRadius: 999,
-                                  marginTop: 4,
-                                  background: enabled ? 'rgba(82, 196, 26, 0.14)' : 'rgba(192, 57, 43, 0.12)',
-                                  color: enabled ? 'var(--success-text)' : 'var(--red)',
-                                }}
+                                className={'ad-perm ' + (enabled ? 'ad-perm--on' : 'ad-perm--off')}
                               >
                                 {enabled ? '● Enabled' : '● Restricted'}
                               </span>
@@ -969,7 +874,7 @@ export default function AdminDashboard() {
                             checked={enabled}
                             loading={permsLoading}
                             onChange={(checked) => handlePermissionToggle(mod.key, checked)}
-                            style={enabled ? { background: 'var(--gold)' } : undefined}
+                            className={enabled ? 'ad-switch--on' : undefined}
                           />
                         </div>
                       );
@@ -977,25 +882,16 @@ export default function AdminDashboard() {
 
                     {/* HR Admin permission switch explicitly */}
                     <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '16px 18px',
-                        border: '1px dashed var(--border)',
-                        borderRadius: 8,
-                        background: userPermissions['hr_admin'] ? 'var(--gold-bg)' : 'var(--colorBgContainer)',
-                        borderColor: userPermissions['hr_admin'] ? 'var(--gold-light)' : 'var(--border)',
-                      }}
+                      className={'ad-mod ad-mod--dashed' + (userPermissions['hr_admin'] ? ' ad-mod--on' : '')}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                        <div style={{ width: 38, height: 38, borderRadius: 8, background: 'var(--colorBgContainer)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                      <div className="ad-row--wide">
+                        <div className="ad-key">
                           🛡️
                         </div>
                         <div>
-                          <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>HR Admin Portal Access</Text>
-                          <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>Grants permission to access this user and permission dashboard</div>
-                          <span style={{ display: 'inline-block', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, marginTop: 4, background: userPermissions['hr_admin'] ? 'rgba(82, 196, 26, 0.14)' : 'rgba(192, 57, 43, 0.12)', color: userPermissions['hr_admin'] ? 'var(--success-text)' : 'var(--red)' }}>
+                          <Text strong className="ad-body">HR Admin Portal Access</Text>
+                          <div className="ad-micro--gap">Grants permission to access this user and permission dashboard</div>
+                          <span className={'ad-perm ' + (userPermissions['hr_admin'] ? 'ad-perm--on' : 'ad-perm--off')}>
                             {userPermissions['hr_admin'] ? '● Enabled' : '● Restricted'}
                           </span>
                         </div>
@@ -1004,12 +900,12 @@ export default function AdminDashboard() {
                         checked={!!userPermissions['hr_admin']}
                         loading={permsLoading}
                         onChange={(checked) => handlePermissionToggle('hr_admin', checked)}
-                        style={userPermissions['hr_admin'] ? { background: 'var(--gold)' } : undefined}
+                        className={userPermissions['hr_admin'] ? 'ad-switch--on' : undefined}
                       />
                     </div>
                   </div>
                 )}
-              </Card>
+              </Surface>
             </Col>
           </Row>
         </div>
@@ -1018,21 +914,15 @@ export default function AdminDashboard() {
       {/* Tab Content 3: Companies (superadmin only) */}
       {activeTab === 'companies' && isSuper && (
         <div className="animate-fade-in">
-          <Card
+          <Surface
+            as={Card}
+            tier={3}
+            padding="none"
             bordered={false}
-            style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)' }}
             styles={{ body: { padding: 0 } }}
           >
-            <div
-              style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Companies</span>
+            <div className="ad-table-toolbar">
+              <span className="ad-title">Companies</span>
               <Space size={8}>
                 <ExportButton
                   request={(cfg) => adminService.exportCompanies(cfg)}
@@ -1040,10 +930,10 @@ export default function AdminDashboard() {
                   rowCount={companies.length}
                 />
                 <Button
-                  type="primary"
+                  emphasis="solid"
                   icon={<PlusOutlined />}
                   onClick={() => openCompanyModal()}
-                  style={{ borderRadius: 6, fontWeight: 600 }}
+                  className="ad-ctl-btn"
                 >
                   Add Company
                 </Button>
@@ -1060,10 +950,10 @@ export default function AdminDashboard() {
                   key: 'name',
                   render: (_, r) => (
                     <Space>
-                      <Avatar style={{ background: 'var(--gold-bg)', color: 'var(--gold-dark)', border: '1px solid var(--gold-light)' }} icon={<BankOutlined />} />
+                      <Avatar className="ad-brand-chip" icon={<BankOutlined />} />
                       <div>
-                        <Text strong style={{ fontSize: 13, display: 'block' }}>{r.name}</Text>
-                        <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{r.slug}</Text>
+                        <Text strong className="ad-body--block">{r.name}</Text>
+                        <Text type="secondary" className="ad-mono--sm">{r.slug}</Text>
                       </div>
                     </Space>
                   ),
@@ -1072,19 +962,19 @@ export default function AdminDashboard() {
                   title: 'Domain',
                   dataIndex: 'domain',
                   key: 'domain',
-                  render: (d) => <Text style={{ fontSize: 12 }}>{d || '—'}</Text>,
+                  render: (d) => <Text className="ad-caption">{d || '—'}</Text>,
                 },
                 {
                   title: 'Users',
                   dataIndex: 'user_count',
                   key: 'user_count',
-                  render: (n) => <Text style={{ fontSize: 12 }}>{n ?? 0}</Text>,
+                  render: (n) => <Text className="ad-caption">{n ?? 0}</Text>,
                 },
                 {
                   title: 'Status',
                   key: 'status',
                   render: (_, r) => (
-                    <Tag color={r.is_active ? 'success' : 'error'} style={{ borderRadius: 999, fontWeight: 600, fontSize: 11, padding: '1px 10px' }}>
+                    <Tag color={r.is_active ? 'success' : 'error'} className="ad-pill">
                       {r.is_active ? 'Active' : 'Inactive'}
                     </Tag>
                   ),
@@ -1096,24 +986,24 @@ export default function AdminDashboard() {
                   render: (_, r) => (
                     <Space>
                       <Tooltip title="Edit">
-                        <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} style={{ color: 'var(--gold)' }} />
+                        <Button emphasis="text" size="sm" icon={<EditOutlined />} onClick={() => openCompanyModal(r)} className="ad-brand" />
                       </Tooltip>
                       <Tooltip title={r.is_active ? 'Deactivate' : 'Activate'}>
-                        <Button type="text" size="small" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} style={{ color: 'var(--warning)' }} />
+                        <Button emphasis="text" size="sm" icon={<PoweroffOutlined />} onClick={() => handleToggleCompany(r)} className="ad-warn" />
                       </Tooltip>
                     </Space>
                   ),
                 },
               ]}
             />
-          </Card>
+          </Surface>
         </div>
       )}
 
       {/* CREATE / EDIT USER MODAL */}
       <Modal
         title={
-          <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
+          <div className="ad-modal-title">
             {editingUser ? 'Edit User Details' : 'Add New User'}
           </div>
         }
@@ -1123,8 +1013,8 @@ export default function AdminDashboard() {
         okText={editingUser ? 'Save Changes' : 'Create User & Send Email'}
         width={540}
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+        <Form form={form} layout="vertical" className="ad-mt-4">
+          <Text className="ad-legend ad-legend--gap">
             Personal Information
           </Text>
           <Row gutter={14}>
@@ -1158,9 +1048,9 @@ export default function AdminDashboard() {
             <Input placeholder="Leave blank to use the email address" />
           </Form.Item>
 
-          <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
+          <hr className="ad-rule" />
 
-          <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+          <Text className="ad-legend ad-legend--gap">
             Account Settings
           </Text>
           <Form.Item
@@ -1199,8 +1089,8 @@ export default function AdminDashboard() {
 
           {!editingUser ? (
             <div>
-              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
-              <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+              <hr className="ad-rule" />
+              <Text className="ad-legend ad-legend--gap">
                 Set Password
               </Text>
               <Row gutter={14}>
@@ -1215,25 +1105,25 @@ export default function AdminDashboard() {
                   </Form.Item>
                 </Col>
               </Row>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div className="ad-row ad-row--gap">
                 <Button
                   icon={<SafetyOutlined />}
                   onClick={generatePassword}
-                  style={{ borderRadius: 6 }}
+                 
                 >
                   Auto-Generate Password
                 </Button>
-                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Generates a secure random password</span>
+                <span className="ad-micro">Generates a secure random password</span>
               </div>
 
               {autoGenCreds && (
-                <div style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold-light)', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase' }}>Password</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{autoGenCreds.password}</span>
-                    <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
+                <div className="ad-callout">
+                  <div className="ad-split">
+                    <span className="ad-legend">Password</span>
+                    <span className="ad-mono">{autoGenCreds.password}</span>
+                    <Button emphasis="text" size="sm" className="ad-flat" onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 8 }}>✉️ These credentials will be emailed to the user upon account creation.</div>
+                  <div className="ad-micro--gap-lg">✉️ These credentials will be emailed to the user upon account creation.</div>
                 </div>
               )}
             </div>
@@ -1252,15 +1142,15 @@ export default function AdminDashboard() {
               {/* Password reset: self or lower roles only — never a peer superadmin. */}
               {(editingUser?.role || '').toLowerCase() === 'superadmin' && editingUser?.id !== currentUser?.id ? (
                 <>
-                  <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
-                  <Text type="secondary" style={{ fontSize: 12.5, display: 'block', marginBottom: 12 }}>
+                  <hr className="ad-rule" />
+                  <Text type="secondary" className="ad-caption--block">
                     🔒 A Super Admin&apos;s password can only be changed by the account owner.
                   </Text>
                 </>
               ) : (
               <>
-              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '16px 0' }} />
-              <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: 12 }}>
+              <hr className="ad-rule" />
+              <Text className="ad-legend ad-legend--gap">
                 Change Password (Optional)
               </Text>
               <Row gutter={14}>
@@ -1275,23 +1165,23 @@ export default function AdminDashboard() {
                   </Form.Item>
                 </Col>
               </Row>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, marginTop: 8 }}>
+              <div className="ad-row ad-row--gap ad-row--gap-top">
                 <Button
                   icon={<SafetyOutlined />}
                   onClick={generatePassword}
-                  style={{ borderRadius: 6 }}
+                 
                 >
                   Auto-Generate Password
                 </Button>
-                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Generates a secure random password</span>
+                <span className="ad-micro">Generates a secure random password</span>
               </div>
 
               {autoGenCreds && (
-                <div style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold-light)', borderRadius: 6, padding: '14px 16px', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase' }}>Generated Password</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>{autoGenCreds.password}</span>
-                    <Button type="link" size="small" style={{ padding: 0, height: 'auto' }} onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
+                <div className="ad-callout">
+                  <div className="ad-split">
+                    <span className="ad-legend">Generated Password</span>
+                    <span className="ad-mono">{autoGenCreds.password}</span>
+                    <Button emphasis="text" size="sm" className="ad-flat" onClick={() => handleCopyText(autoGenCreds.password)}>Copy</Button>
                   </div>
                 </div>
               )}
@@ -1305,9 +1195,9 @@ export default function AdminDashboard() {
       {/* STATUS TOGGLE MODAL — deactivation is styled as a warning, activation stays positive */}
       <Modal
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18 }}>{userToToggle?.is_active ? '⚠️' : '✅'}</span>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{userToToggle?.is_active ? 'Deactivate User?' : 'Activate User?'}</span>
+          <div className="ad-row--tight">
+            <span className="ad-icon">{userToToggle?.is_active ? '⚠️' : '✅'}</span>
+            <span className="ad-title--plain">{userToToggle?.is_active ? 'Deactivate User?' : 'Activate User?'}</span>
           </div>
         }
         open={toggleModalOpen}
@@ -1321,19 +1211,19 @@ export default function AdminDashboard() {
         }
         width={420}
       >
-        <div style={{ padding: '10px 0' }}>
+        <div className="ad-pad-y">
           {userToToggle?.is_active ? (
-            <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', borderRadius: 6, padding: '12px 14px' }}>
-              <Text style={{ fontSize: 13.5, color: 'var(--warn-text)', display: 'block', fontWeight: 600, marginBottom: 4 }}>
+            <div className="ad-callout ad-callout--warn">
+              <Text className="ad-callout__title">
                 {userToToggle?.first_name} {userToToggle?.last_name} ({userToToggle?.email})
               </Text>
-              <Text style={{ fontSize: 13, color: 'var(--text)' }}>
+              <Text className="ad-body">
                 This user will immediately lose access — any signed-in session is blocked on their
                 next action. They can be reactivated at any time.
               </Text>
             </div>
           ) : (
-            <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>
+            <Text className="ad-lede">
               &quot;{userToToggle?.first_name} {userToToggle?.last_name}&quot; will be able to log in again.
             </Text>
           )}
@@ -1343,9 +1233,9 @@ export default function AdminDashboard() {
       {/* DELETE USER CONFIRMATION MODAL */}
       <Modal
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18 }}>🗑️</span>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>Delete User?</span>
+          <div className="ad-row--tight">
+            <span className="ad-icon">🗑️</span>
+            <span className="ad-title--plain">Delete User?</span>
           </div>
         }
         open={deleteModalOpen}
@@ -1355,8 +1245,8 @@ export default function AdminDashboard() {
         okButtonProps={{ danger: true, type: 'primary' }}
         width={400}
       >
-        <div style={{ padding: '10px 0' }}>
-          <Text style={{ fontSize: 13.5, color: 'var(--text)' }}>
+        <div className="ad-pad-y">
+          <Text className="ad-lede">
             Delete &quot;{userToDelete?.first_name} {userToDelete?.last_name}&quot; ({userToDelete?.email})? This is permanent.
           </Text>
         </div>
@@ -1365,7 +1255,7 @@ export default function AdminDashboard() {
       {/* CREATE / EDIT COMPANY MODAL (superadmin only) */}
       <Modal
         title={
-          <div style={{ fontSize: 16, fontFamily: 'var(--font-heading)', fontWeight: 700 }}>
+          <div className="ad-modal-title">
             {editingCompany ? 'Edit Company' : 'Add New Company'}
           </div>
         }
@@ -1375,7 +1265,7 @@ export default function AdminDashboard() {
         okText={editingCompany ? 'Save Changes' : 'Create Company'}
         width={460}
       >
-        <Form form={companyForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={companyForm} layout="vertical" className="ad-mt-4">
           <Form.Item label="Company Name" name="name" rules={[{ required: true, message: 'Company name is required' }]}>
             <Input placeholder="e.g. AAPNA Infotech" />
           </Form.Item>
@@ -1391,6 +1281,7 @@ export default function AdminDashboard() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+      </PageShell>
+    </DesignScope>
   );
 }

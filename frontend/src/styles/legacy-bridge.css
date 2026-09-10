@@ -1,0 +1,110 @@
+/**
+ * Legacy bridge — reconciling not-yet-converted SHARED components with V3 scope.
+ *
+ * WHAT BELONGS HERE, AND WHAT DOES NOT
+ * A component used by several routes cannot be converted when the first of those
+ * routes converts: doing so restyles screens nobody has reviewed, which is the
+ * shared-class trap the rollout plan lists. But leaving it alone is not free either —
+ * inside a converted route it renders with the OLD geometry beside the new, and two
+ * corner radii on one screen is precisely the "design sync" complaint this whole
+ * rollout exists to answer.
+ *
+ * So: rules here are scoped to `.ats-v3` and do the minimum to make a legacy shared
+ * component agree with the surfaces around it. They are a bridge, not a design — each
+ * one names the group that removes it.
+ *
+ * NOT for page-specific rules (those live in styles/pages/) and NOT for anything a
+ * converted component needs (that lives in ui/ui.css). If a rule here outlives its
+ * named group, that group did not finish.
+ */
+
+/* KpiCard — REMOVED 2026-08-29 (Stage 5.5), which is what a bridge rule is supposed
+   to do. It was added in 5.3 so the component's 16px corners would stop clashing with
+   the 24px Surfaces on the two upload routes, and it named 5.5 as the group that would
+   delete it. Every consumer (Analytics, VendorDashboard, HRUpload, VendorPortal) now
+   renders `StatTile`, so there is nothing left to bridge.
+
+   The file stays: 5.7 and 5.8 will need it for the same reason, and the rule it held
+   is recorded in UI-CHANGELOG.md if the shape is ever wanted again.
+
+   `CandidatePipelinePrototype` still imports KpiCard, but that route is disabled
+   (commented out of App.jsx in Stage 5.2), so nothing reachable renders one. */
+
+/* ============================================================
+   Button — bridge, added 2026-08-31.
+   ------------------------------------------------------------
+   STATUS, end of 2026-08-31: this is now believed INERT and is kept deliberately.
+
+   The rollout it was written for is done — `composition.mjs` asserts "no .ant-btn
+   inside .ats-v3 lacks .ui-btn" and passes on all eleven in-shell routes, so every
+   rule below is `:not(.ui-btn)`-guarded against nothing.
+
+   IT STAYS ANYWAY, for two surfaces the assertion cannot see:
+     - /admin/dashboard, which the audit account cannot reach (it redirects to
+       /dashboard), so its eleven converted buttons have never been rendered;
+     - buttons inside modals and drawers that are not open when the check probes.
+
+   Deleting it would cost nothing if those are clean and would silently un-glow every
+   primary on them if they are not — an invisible regression, which is the exact class
+   of defect this whole pass exists to remove. Remove it once /admin/dashboard has been
+   seen and the modal surfaces have been walked.
+   ------------------------------------------------------------
+   THE BUG THIS PATCHES, and it is self-inflicted.
+
+   theme/themeConfig.js zeroes AntD's button shadow whenever preset geometry is on:
+
+       presetGeometry ? { primaryShadow: 'none', ... } : { primaryShadow: '0 4px 14px …' }
+
+   with the comment "Zeroed only when src/ui owns the button, where .ui-btn paints the
+   glow from --glow-brand". On the twelve converted routes src/ui does NOT own the
+   button: <DesignScope> sets presetGeometry: true, so the shadow is removed, and
+   because those buttons are raw AntD nothing paints the glow back. Measured on
+   /hr-upload: every primary button computes `box-shadow: none`, against the lab's
+   `color(srgb … / 0.22)`. They are flat where the lab's are lit.
+
+   The honest fix is call-site conversion, and that is Phase A2. This bridge exists so
+   the app stops reading wrong in the meantime, and it is written to be INVISIBLE at
+   the moment a route converts — every value here is what .ui-btn--solid already
+   computes, so a converted button does not shift.
+
+   TONE IS PRESERVED, deliberately. Painting every primary with --glow-brand would
+   light a destructive action green, which is the "button lost the meaning of its
+   colour" defect this project has already shipped once. Dangerous primaries get
+   --glow-danger instead.
+
+   `:not(.ui-btn)` throughout: a converted button must take its treatment from the
+   component, never from here, so the two can never disagree. */
+
+.ats-v3 .ant-btn-primary:not(.ui-btn):not(.ant-btn-dangerous) {
+  box-shadow: var(--glow-brand);
+}
+
+.ats-v3 .ant-btn-primary:not(.ui-btn).ant-btn-dangerous {
+  box-shadow: var(--glow-danger);
+}
+
+/* Hover and press mirror .ui-btn--solid exactly (ui.css:139 and :60), so the gesture
+   is the same before and after conversion. transform and box-shadow only — both
+   compositor properties, no repaint. */
+.ats-v3 .ant-btn-primary:not(.ui-btn):hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--glow-brand-strong);
+}
+
+.ats-v3 .ant-btn-primary:not(.ui-btn).ant-btn-dangerous:hover:not(:disabled) {
+  box-shadow: var(--glow-danger);
+}
+
+.ats-v3 .ant-btn:not(.ui-btn):active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+/* Type. AntD sizes its button label from `fontSize`, which the preset sets to the BODY
+   role (15px); .ui-btn uses --fs-callout (14px). Measured side by side on /candidates:
+   "Search" (converted) 14px next to "Reset" (not) 15px, in the same row. A one-pixel
+   difference reads as a rendering accident rather than as a hierarchy, and it is the
+   most widespread of the button mismatches because it lands on every button in the
+   app, not only the primaries. */
+.ats-v3 .ant-btn:not(.ui-btn) {
+  font-size: var(--fs-callout);
+}
