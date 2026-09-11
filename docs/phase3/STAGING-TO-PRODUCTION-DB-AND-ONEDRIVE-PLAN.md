@@ -733,25 +733,31 @@ Feature flags are `false` in production across the board (`MS_CALENDAR_ENABLED`,
 `MS_RECORDING_ARCHIVE_ENABLED`). That is the correct starting state — turn them on one at a
 time, after §B.4.
 
-## B.4 ⚠ The production app registration almost certainly lacks the Graph grants
+## B.4 The production app's Graph grants — ✅ complete; one Teams policy outstanding
 
-Production uses app `13970867-284c-4a4b-8908-04ce0c595f65`. Everything proven working on
-staging was proven on app `6dc40383-…`. Before any recording, calendar or attendance feature is
-switched on in production, the tenant admin must grant **on the production app**:
+> **CORRECTED 2026-09-11.** This section previously claimed the production app registration
+> "almost certainly lacks the Graph grants" and listed all of them as work to request from IT.
+> **That was wrong** — it was written before the `HR_RPA_PROD` API-permissions blade had been
+> seen. All 10 Application permissions are granted on production, identical to staging.
+> Full detail, and the exact PowerShell for the one remaining item:
+> **[MS-GRAPH-PRODUCTION-SETUP.md](../deployment/MS-GRAPH-PRODUCTION-SETUP.md)**.
 
-| Permission | Needed for |
+Production uses app `13970867-284c-4a4b-8908-04ce0c595f65` (`HR_RPA_PROD`) in the **same tenant**
+as staging. Verified state:
+
+| Item | Status |
 |---|---|
-| `Files.ReadWrite.All` | all OneDrive upload/read (already working in prod — resumes upload today) |
-| `Mail.Send`, `Mail.ReadWrite` | outbound + inbound email (already working) |
-| `Calendars.ReadWrite` | interview calendar events (`MS_CALENDAR_ENABLED`) |
-| `OnlineMeetings.ReadWrite.All` | Teams meeting creation + `recordAutomatically` PATCH |
-| `OnlineMeetingArtifact.Read.All` | attendance reports (`MS_ATTENDANCE_ENABLED`) |
-| **`OnlineMeetingRecording.Read.All`** | reading recordings — **not granted on staging either**, still outstanding |
-| `Grant-CsApplicationAccessPolicy` | scoped to production's `MS_CALENDAR_MAILBOX` |
+| `Calendars.ReadWrite`, `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`, `OnlineMeetings.ReadWrite.All`, `OnlineMeetingArtifact.Read.All`, `OnlineMeetingRecording.Read.All`, `OnlineMeetingTranscript.Read.All`, `Sites.Selected`, `User.Read.All` (all Application) | ✅ **Granted** |
+| `Files.ReadWrite.All` / `Files.Read.All` (Application) | ❌ **Not granted, and must not be requested** — declined by IT 2026-09-02 as tenant-wide. OneDrive access runs on `Sites.Selected` instead |
+| Tenant-wide Teams meeting settings (recording on, auto-expiry off, licence) | ✅ same tenant as staging — already done |
+| **Teams application access policy for `13970867-…` on `recruitment@aapnainfotech.in`** | ⚠ **OUTSTANDING — the one required IT action** |
+| `Sites.Selected` per-site grant on the `.in` OneDrive | claimed done by IT 2026-09-02; **re-confirm** (§B.5) |
+| Transcript API tenant switch | ⚠ outstanding, tenant-wide; recordings work without it |
 
-Also confirm the tenant licence: recordings need cloud recording (M365 Business Basic covers it;
-Teams Premium is not required). [MS-GRAPH-SETUP-FOR-IT.md](MS-GRAPH-SETUP-FOR-IT.md) is the
-document to hand IT — it needs the production client id added to it.
+The access policy is what gates every `onlineMeetings` call — attendance reports, recordings,
+the `recordAutomatically` PATCH, and the Meeting ID/Passcode lookup. Without it those return
+`403 No application access policy found for this app …`, so flags 2–5 in the setup doc stay
+broken until it propagates (~30 min).
 
 ## B.5 OneDrive checklist
 
@@ -776,7 +782,10 @@ document to hand IT — it needs the production client id added to it.
    prevent.
 5. **Set the eight env keys** from §B.3 in `backend/.env.production`, `MS_CALENDAR_MAILBOX`
    first.
-6. **Confirm the Graph grants** on app `13970867-…` (§B.4) before flipping any flag.
+6. **Create the Teams application access policy** for app `13970867-…` on
+   `recruitment@aapnainfotech.in` (§B.4) before flipping any Teams-dependent flag. The Graph
+   API permissions themselves are already granted — see
+   [MS-GRAPH-PRODUCTION-SETUP.md](../deployment/MS-GRAPH-PRODUCTION-SETUP.md).
 7. **Decide retention.** `MS_RECORDING_RETAIN_MONTHS=12` in staging; interview recordings of
    real candidates are personal data with a real retention obligation. Confirm 12 months is the
    agreed production policy before recordings start accumulating.
@@ -795,7 +804,7 @@ document to hand IT — it needs the production client id added to it.
 |---|---|---|
 | 1 | §D decisions signed off (below) | **yes** |
 | 2 | §B.5 items 1–2 — prove the production drive and parent id resolve | **yes** — a broken parent id makes half the modules fail silently after go-live |
-| 3 | §B.4 — IT grants requested on the production app | yes, for calendar/attendance/recording only |
+| 3 | §B.4 — Teams application access policy created for the production app (API permissions are already granted) | yes, for calendar/attendance/recording only |
 | 4 | Write and review `2026-09-09-prod-parity-backfill.sql` (§A.6 Step 3) | **yes** |
 | 5 | Maintenance window: Steps 0 → 8 | — |
 | 6 | §B.5 items 3–5 — create folders, set env keys | — |
