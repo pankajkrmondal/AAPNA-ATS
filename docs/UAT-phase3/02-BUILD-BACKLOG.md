@@ -42,8 +42,11 @@ Dashboard · MRF · Search Candidate · HR Manual Upload · Vendor Upload
 - Vendor Dashboard is **not** in that array; it is injected for
   `VENDOR_DASHBOARD_ROLES` at
   [MainLayout.jsx:134-136](../../frontend/src/layouts/MainLayout.jsx#L134-L136).
-  It must land **after Vendor Upload**, so the splice index changes — do not just
-  reorder the array and leave the injection appending at the end.
+  **It needs no handling — it self-positions.** The injection at
+  [MainLayout.jsx:253-254](../../frontend/src/layouts/MainLayout.jsx#L253-L254)
+  locates the anchor with `findIndex((m) => m.key === '/vendor')` and splices at
+  `idx + 1`, so it follows Vendor Upload wherever the reorder puts it. (An earlier
+  draft of this note said the splice index had to change; it does not.)
 - Mirror the order on the two dashboard tile grids so the app doesn't contradict
   itself: [Dashboard.jsx:72-76](../../frontend/src/pages/Dashboard.jsx#L72-L76)
   and [AdminDashboard.jsx:66-71](../../frontend/src/pages/AdminDashboard.jsx#L66-L71).
