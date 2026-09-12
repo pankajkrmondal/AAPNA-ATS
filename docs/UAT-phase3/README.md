@@ -7,13 +7,35 @@ Source material in this folder:
 | `Platform Feedback & Required Changes.docx` | Written UAT feedback sheet from Chhaya Verma (6 sections) |
 | `MS Access _ Export.docx` | Transcript of the UAT review call — 10 Sep 2026, 12:05 PM, 1h 10m 40s. Attendees: Chhaya Verma, Naveen Satywali, Harish Mopuri, Pankaj Kumar Mondal |
 
-Analysis produced from them:
+## Send these two to HR
+
+These are the phase split — written to be read by Chhaya and Naveen, not by the
+engineering team. Every one of the 16 feedback points is in one of them.
+
+| File | What it covers |
+|---|---|
+| **[PHASE-3-CURRENT-SCOPE.md](PHASE-3-CURRENT-SCOPE.md)** | What we are building now — nine display-only, low-risk items, plus the five points that need no work at all. Includes the demo freeze plan. |
+| **[PHASE-4-DEFERRED-SCOPE.md](PHASE-4-DEFERRED-SCOPE.md)** | The eight items moving to Phase 4, why each cannot be done safely now, and what HR must decide before each can start. |
+
+**The split rule:** anything that only changes what is *displayed* is Phase 3.
+Anything that changes the database structure, the scoring calculation, the pipeline
+state machine, or automated email is Phase 4. The CEO demo is on **Tuesday 15
+September** on staging, and staging is stable today — so only one change (the
+sidebar reorder Chhaya asked for by name) goes in before it.
+
+## Internal working documents
 
 | File | What it covers |
 |---|---|
 | [01-UAT-FEEDBACK-ANALYSIS.md](01-UAT-FEEDBACK-ANALYSIS.md) | Every feedback point, what Harish clarified on the call, current system behaviour in code, and the verdict (build / no build / workaround) |
 | [02-BUILD-BACKLOG.md](02-BUILD-BACKLOG.md) | The items that need development — scope, acceptance criteria, code touch points, sizing, phase |
 | [03-OPEN-DECISIONS-AND-ACTIONS.md](03-OPEN-DECISIONS-AND-ACTIONS.md) | Decisions still owed by HR, non-build actions, and demo/sign-off logistics |
+
+> Note: `02-BUILD-BACKLOG.md` sequences by **effort**. The two phase documents above
+> sequence by **risk to the Tuesday demo**, which is the split that governs — where
+> they disagree, the phase documents win. The main difference: the scoring fix
+> (B-03) and the MRF Hold (B-01) sit in Phase 4, not Phase 3, because they change
+> calculated results and the approval status vocabulary respectively.
 
 ## The one-paragraph summary
 
