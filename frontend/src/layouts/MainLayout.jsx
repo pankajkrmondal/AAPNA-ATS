@@ -63,12 +63,22 @@ function AdminPortalIcon() {
   );
 }
 
-/** Navigation menu items */
+/** Navigation menu items.
+ *
+ *  THIS ORDER IS SPECIFIED BY HR, not by us — do not "tidy" it. It follows the
+ *  recruitment workflow as the TA team actually works it: raise the requisition
+ *  first (MRF), then source into it (Search / HR upload / Vendor upload), then
+ *  screen, then run the pipeline, then report. Chhaya Verma dictated the exact
+ *  sequence in the Phase 3 UAT review on 2026-09-10; see
+ *  docs/UAT-phase3/PHASE-3-CURRENT-SCOPE.md §3.2.
+ *
+ *  Vendor Dashboard is deliberately absent here — it is role-gated and spliced in
+ *  after '/vendor' further down, so it tracks this order automatically. */
 const MENU_ITEMS = [
   { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Dashboard' },
+  { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
   { key: '/candidates', icon: <SolutionOutlined />,  label: 'Search Candidate' },
   { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Manual Upload' },
-  { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
   { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
   { key: '/filtering',  icon: <FilterOutlined />,    label: 'Candidate Screening' },
   // The REAL Pipeline Tracker (Module 1) — persists to /api/pipeline and sends
