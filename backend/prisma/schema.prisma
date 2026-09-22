@@ -439,6 +439,7 @@ model rpa_cv_tmp {
   source                       String?
   last_action_by               String?
   last_action_context          String?
+  cv_file_item_id              String?                  @db.VarChar(512)
 
   @@index([resume_tsvector], map: "idx_rpa_cv_tmp_resume_tsvector", type: Gin)
   @@index([reviewStatus], map: "idx_rpa_cv_tmp_review_status")
