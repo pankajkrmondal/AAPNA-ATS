@@ -89,7 +89,7 @@ const CV_SHARED_FIELDS = [
   'ZekoInterviewScore', 'ZekoCodingScore', 'ZekoCommunicationScore',
   'graduationdegree', 'graduationspecialization',
   'postgraduationdegree', 'postgraduationspecialization',
-  'employment_history', 'cvVectorLock', 'cvFileUrl',
+  'employment_history', 'cvVectorLock', 'cvFileUrl', 'cv_file_item_id',
   'resume_full_text', 'resume_text_quality', 'resume_technical_terms', 'resume_term_updated_at'
 ];
 
