@@ -19,6 +19,24 @@ const settingsService = {
   },
 
   /**
+   * Get the recruiters added as optional attendees to every booked interview's
+   * Teams meeting, plus whether calendar events are created at all here.
+   * @returns {Promise}
+   */
+  getInterviewOptionalAttendees() {
+    return api.get('/settings/interview-optional-attendees');
+  },
+
+  /**
+   * Replace the optional-attendee list. An empty list adds nobody.
+   * @param {object} payload — { emails: string[] }
+   * @returns {Promise}
+   */
+  saveInterviewOptionalAttendees(payload) {
+    return api.post('/settings/interview-optional-attendees', payload);
+  },
+
+  /**
    * Get the interview reminder scheduler config (on/off, poll interval, lead time).
    * @returns {Promise}
    */

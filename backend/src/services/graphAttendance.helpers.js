@@ -82,6 +82,9 @@ export function pickAttendanceReport(reports, { windowStart, windowEnd } = {}) {
  * @param {string[]} [opts.interviewerEmails] - panel addresses on the booking
  * @param {string} [opts.candidateEmail] - address the invite went to
  * @param {string} [opts.organizerEmail] - calendar mailbox, never counted as the guest
+ * @param {string[]} [opts.observerEmails] - optional-attendee recruiters; like the
+ *   organizer, their presence proves nothing about either side, so a recruiter
+ *   who joins a round the candidate skipped cannot turn it into "held"
  * @param {number} [opts.minSeconds] - presence below this does not count
  * @param {boolean} [opts.guestMode]
  * @returns {{occurred: boolean, absentParty: 'candidate'|'panel'|'both'|null,
@@ -92,12 +95,16 @@ export function decideOccurrence(records, {
   interviewerEmails = [],
   candidateEmail = '',
   organizerEmail = '',
+  observerEmails = [],
   minSeconds = 60,
   guestMode = true,
 } = {}) {
   const panel = new Set(interviewerEmails.map(norm).filter(Boolean));
   const organizer = norm(organizerEmail);
   const candidate = norm(candidateEmail);
+  // A recruiter who is ALSO on this booking's panel stays panel — they are
+  // interviewing, so their attendance is the interviewer's.
+  const observers = new Set(observerEmails.map(norm).filter((e) => e && !panel.has(e)));
 
   const attendees = (records || [])
     .map((r) => ({ email: norm(r?.email), seconds: Number(r?.seconds || 0) }))
@@ -106,11 +113,13 @@ export function decideOccurrence(records, {
   const interviewerPresent = attendees.some((a) => panel.has(a.email));
   const candidateMatched = candidate ? attendees.some((a) => a.email === candidate) : false;
 
-  // Anyone present who is neither panel nor the organizer mailbox counts as the
-  // candidate side. Evaluated over the RECORDS, not a Set of their emails: every
-  // anonymous guest carries the same blank address, so a Set would collapse a
-  // room full of them into one entry.
-  const guestPresent = attendees.some((a) => !panel.has(a.email) && (!organizer || a.email !== organizer));
+  // Anyone present who is not panel, the organizer mailbox or an observing
+  // recruiter counts as the candidate side. Evaluated over the RECORDS, not a
+  // Set of their emails: every anonymous guest carries the same blank address,
+  // so a Set would collapse a room full of them into one entry.
+  const guestPresent = attendees.some((a) => !panel.has(a.email)
+    && (!organizer || a.email !== organizer)
+    && !observers.has(a.email));
 
   const occurred = guestMode
     ? interviewerPresent && guestPresent

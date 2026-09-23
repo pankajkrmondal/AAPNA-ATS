@@ -68,18 +68,21 @@ export async function resolveUserId(upnOrId) {
  * site, mirroring the global gate inside sendGraphEmail(). Idempotent, so
  * doing it in both places is harmless.
  *
- * `role: 'panel'` is the ONE exemption: interviewer addresses are typed in
- * per booking by whoever is scheduling and are meant to be reached (same
- * reasoning as OPERATOR_ADDRESSED in config/emailRecipients.js).
+ * `role: 'panel'` and `role: 'recruiter'` are the exemptions: interviewer
+ * addresses are typed in per booking by whoever is scheduling, and recruiter
+ * addresses are typed into Settings by HR — both are internal staff meant to be
+ * reached (same reasoning as OPERATOR_ADDRESSED in config/emailRecipients.js).
  *
- * Anything NOT explicitly marked 'panel' — including an unmarked attendee —
- * is substituted. A future call site that forgets to label its attendees
- * therefore fails safe (nobody real is invited) rather than failing open.
+ * Anything else — including an unmarked attendee — is substituted. A future
+ * call site that forgets to label its attendees therefore fails safe (nobody
+ * real is invited) rather than failing open.
  */
+const UNREDIRECTED_ROLES = new Set(['panel', 'recruiter']);
+
 export function nonProdSafeAttendees(attendees) {
   const seen = new Set();
   return attendees.reduce((acc, a) => {
-    const email = a.role === 'panel'
+    const email = UNREDIRECTED_ROLES.has(a.role)
       ? a.email
       : nonProdSafeCandidateEmail(a.email, 'calendar:invite');
     // Substitution can collapse the candidate onto a panel member who already
@@ -96,11 +99,16 @@ export function nonProdSafeAttendees(attendees) {
  * Our attendee shape -> Graph's, with the non-prod substitution applied. Used by
  * BOTH the create and the patch path so an event can never be written with a
  * guarded list on one and an unguarded one on the other.
+ *
+ * `optional: true` marks an attendee Outlook shows as optional (the recruiters
+ * from Settings). Dedup keeps the FIRST entry per address, so callers list the
+ * candidate and panel before optional attendees — an interviewer who is also
+ * on the recruiter list stays required.
  */
 function toGraphAttendees(attendees) {
   return nonProdSafeAttendees(attendees.filter((a) => a?.email)).map((a) => ({
     emailAddress: { address: a.email, name: a.name || a.email },
-    type: 'required',
+    type: a.optional ? 'optional' : 'required',
   }));
 }
 
@@ -113,9 +121,10 @@ function toGraphAttendees(attendees) {
  * @param {string} params.bodyHtml
  * @param {Date}   params.start
  * @param {Date}   params.end
- * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'}>} params.attendees
- *   Mark interviewers `role: 'panel'` so they are not redirected outside
- *   production; everything else is (see nonProdSafeAttendees above).
+ * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'|'recruiter', optional?: boolean}>} params.attendees
+ *   Mark interviewers `role: 'panel'` and Settings recruiters `role: 'recruiter'`
+ *   so they are not redirected outside production; everything else is (see
+ *   nonProdSafeAttendees above).
  * @returns {Promise<{eventId: string|null, joinUrl: string|null, onlineMeetingId: string|null, skipped: boolean, error: string|null}>}
  *   `onlineMeetingId` is the Teams onlineMeeting id (distinct from the Outlook
  *   `eventId`) — the path segment the Graph attendanceReports endpoint needs to
@@ -351,7 +360,7 @@ export async function applyMeetingOptions(onlineMeetingId) {
  * @param {Date} params.start
  * @param {Date} params.end
  * @param {string} [params.subject] - omitted leaves the existing subject alone
- * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'}>} [params.attendees]
+ * @param {Array<{email: string, name?: string, role?: 'candidate'|'panel'|'recruiter', optional?: boolean}>} [params.attendees]
  *   Re-states the guest list on the event. Omitted leaves the existing one
  *   alone; passing it is what lets a reschedule pick up a changed panel AND
  *   heal an event booked before the non-prod attendee guard existed, whose

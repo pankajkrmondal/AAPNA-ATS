@@ -10,6 +10,10 @@ router.use(authenticate);
 router.get('/reminder', settingsController.getReminderSettings);
 router.post('/reminder', settingsController.saveReminderSettings);
 
+// Recruiters added as optional attendees to every booked round's Teams meeting
+router.get('/interview-optional-attendees', settingsController.getInterviewOptionalAttendees);
+router.post('/interview-optional-attendees', settingsController.saveInterviewOptionalAttendees);
+
 // Interview reminder scheduler (on/off + poll interval) for booked technical rounds
 router.get('/interview-reminder', settingsController.getInterviewReminderConfig);
 router.post('/interview-reminder', settingsController.saveInterviewReminderConfig);

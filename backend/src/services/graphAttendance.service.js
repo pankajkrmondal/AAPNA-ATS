@@ -27,6 +27,7 @@ import { getAccessToken } from './onedrive.service.js';
 import { parseInterviewerEmails } from './interviewSchedule.service.js';
 import { resolveUserId } from './graphCalendar.service.js';
 import { decideOccurrence, pickAttendanceReport } from './graphAttendance.helpers.js';
+import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -180,6 +181,9 @@ export async function getAttendanceOutcome(scheduleRow, candidateEmail) {
     interviewerEmails,
     candidateEmail,
     organizerEmail: organizerMailbox(),
+    // The CURRENT Settings list, not a per-booking snapshot: a recruiter removed
+    // from Settings after this round was booked is no longer excluded.
+    observerEmails: await getOptionalAttendeeEmails(),
     minSeconds: config.microsoft.attendanceMinSeconds,
     guestMode,
   });
