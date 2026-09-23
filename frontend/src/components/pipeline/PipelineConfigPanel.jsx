@@ -27,6 +27,7 @@ import {
 import pipelineService from '../../services/pipeline';
 import emailTemplateService from '../../services/emailTemplateService';
 import settingsService from '../../services/settingsService';
+import useAuth from '../../hooks/useAuth';
 import { MODAL_WIDTH } from './modalWidths';
 
 const { Title, Text } = Typography;
@@ -53,9 +54,17 @@ const CORE_OUTCOME_KEYS = ['approved', 'rejected', 'hold', 'future_prospect'];
 const PANEL_TAB_KEYS = new Set(['stages', 'reasons', 'stage-templates', 'flow-keys']);
 
 export default function PipelineConfigPanel() {
+  // Email Routing edits who receives every system email, internal alerts
+  // included, so it is superadmin-only — narrower than the rest of this panel.
+  // The server enforces the same rule on /settings/flow-keys.
+  const { user } = useAuth();
+  const isSuperadmin = (user?.role || '').toLowerCase() === 'superadmin';
+
   const [searchParams] = useSearchParams();
   const requestedTab = searchParams.get('panelTab');
-  const initialPanelTab = PANEL_TAB_KEYS.has(requestedTab) ? requestedTab : undefined;
+  const initialPanelTab = PANEL_TAB_KEYS.has(requestedTab) && (requestedTab !== 'flow-keys' || isSuperadmin)
+    ? requestedTab
+    : undefined;
   const [stages, setStages] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -106,7 +115,8 @@ export default function PipelineConfigPanel() {
         pipelineService.listReasons(true),
         emailTemplateService.getEmailTemplates(),
         pipelineService.listStageTemplates(),
-        settingsService.getFlowKeys(),
+        // Not requested at all below superadmin — it would only 403.
+        isSuperadmin ? settingsService.getFlowKeys() : Promise.resolve({ data: { data: [] } }),
       ]);
       if (stageRes.status === 'fulfilled') setStages(stageRes.value.data?.data || []);
       if (reasonRes.status === 'fulfilled') setReasons(reasonRes.value.data?.data || []);
@@ -130,7 +140,7 @@ export default function PipelineConfigPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperadmin]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -706,7 +716,7 @@ export default function PipelineConfigPanel() {
               </>
             ),
           },
-          {
+          isSuperadmin && {
             key: 'flow-keys',
             label: 'Email Routing',
             children: (
@@ -728,7 +738,7 @@ export default function PipelineConfigPanel() {
               </>
             ),
           },
-        ]}
+        ].filter(Boolean)}
       />
 
       {/* ── Flow-key modal ── */}

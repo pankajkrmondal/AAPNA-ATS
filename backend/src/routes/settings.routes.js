@@ -31,7 +31,7 @@ router.post('/interview-recording', settingsController.saveInterviewRecordingCon
 router.get('/assessment-automation', settingsController.getAssessmentAutomation);
 router.post('/assessment-automation', settingsController.saveAssessmentAutomation);
 
-/** Email flow keys — who receives each kind of mail. Admin-gated in the
+/** Email flow keys — who receives each kind of mail. Superadmin-gated in the
  *  controller (same pattern as assessment-automation above). */
 router.get('/flow-keys', settingsController.getFlowKeys);
 router.post('/flow-keys', settingsController.saveFlowKey);

@@ -30,7 +30,7 @@ import {
   getOptionalAttendeeEmails,
   saveOptionalAttendeeEmails,
 } from '../services/interviewOptionalAttendees.service.js';
-import { isAdminTier } from '../config/roles.js';
+import { isAdminTier, isSuperadmin } from '../config/roles.js';
 import { describeFlowKeys, isKnownFlowKey, reloadEmailRecipients } from '../config/emailRecipients.js';
 import {
   getAssessmentAutomationSettings,
@@ -474,12 +474,13 @@ export const saveAssessmentAutomation = catchAsync(async (req, res) => {
 /**
  * @desc    List every email flow key and where its mail currently goes
  * @route   GET /api/settings/flow-keys
- * @access  Private — admin-tier only. Recipient lists carry internal staff
- *          addresses, so this is not a read a recruiter needs.
+ * @access  Private — superadmin only. Recipient lists carry internal staff
+ *          addresses, and editing them reroutes every system email including
+ *          the failure alerts, so it is narrower than the other admin settings.
  */
 export const getFlowKeys = catchAsync(async (req, res) => {
-  if (!isAdminTier(req.user?.role)) {
-    throw new AppError('Admin access required to view email routing.', 403);
+  if (!isSuperadmin(req.user?.role)) {
+    throw new AppError('Super admin access required to view email routing.', 403);
   }
   return success(res, describeFlowKeys(), 'Email flow keys retrieved successfully');
 });
@@ -487,7 +488,7 @@ export const getFlowKeys = catchAsync(async (req, res) => {
 /**
  * @desc    Update the to/cc for one email flow key
  * @route   POST /api/settings/flow-keys
- * @access  Private — admin-tier only.
+ * @access  Private — superadmin only (see getFlowKeys).
  *
  * Writes the same `email_recipients.<flowKey>.to` / `.cc` rows
  * loadEmailRecipients() reads at boot, then reloads the in-memory map so the
@@ -498,8 +499,8 @@ export const getFlowKeys = catchAsync(async (req, res) => {
  * does nothing, which is worse than an error because it looks like it worked.
  */
 export const saveFlowKey = catchAsync(async (req, res) => {
-  if (!isAdminTier(req.user?.role)) {
-    throw new AppError('Admin access required to change email routing.', 403);
+  if (!isSuperadmin(req.user?.role)) {
+    throw new AppError('Super admin access required to change email routing.', 403);
   }
 
   const { flowKey, to = '', cc = '' } = req.body;

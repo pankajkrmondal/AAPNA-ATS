@@ -487,7 +487,7 @@ export default function Settings() {
             tokenSeparators={[',', ';', ' ']}
             open={false}
             suffixIcon={null}
-            placeholder="Type an email address and press Enter, e.g. name@aapnainfotech.com"
+            placeholder="Type email addresses separated by commas, or press Enter after each, e.g. name@aapnainfotech.com, second@aapnainfotech.com"
             disabled={attendeeLoading}
             style={{ width: '100%' }}
             size="large"
