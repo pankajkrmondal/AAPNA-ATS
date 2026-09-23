@@ -184,6 +184,26 @@ test('nonProdSafeAttendees leaves the interview panel alone', () => {
   assert.equal(attendee.email, panel);
 });
 
+test('nonProdSafeAttendees leaves Settings recruiters alone and keeps them optional', () => {
+  // Recruiter addresses are typed into Settings by HR — internal staff, meant
+  // to be reached, like the panel.
+  const recruiter = 'recruiter@aapnainfotech.com';
+  const [attendee] = nonProdSafeAttendees([{ email: recruiter, role: 'recruiter', optional: true }]);
+  assert.equal(attendee.email, recruiter);
+  assert.equal(attendee.optional, true);
+});
+
+test('an interviewer also listed as a recruiter stays the required panel entry', () => {
+  // Dedup keeps the first entry, and call sites list the panel first.
+  const result = nonProdSafeAttendees([
+    { email: 'naveen@aapnainfotech.com', role: 'panel' },
+    { email: 'Naveen@aapnainfotech.com', role: 'recruiter', optional: true },
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].role, 'panel');
+  assert.ok(!result[0].optional);
+});
+
 test('nonProdSafeAttendees redirects an UNMARKED attendee (fails safe)', () => {
   // The whole point of the net: a future call site that forgets to label its
   // attendees must fail closed, not quietly invite a real person.

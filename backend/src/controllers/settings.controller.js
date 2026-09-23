@@ -24,6 +24,12 @@ import {
 } from '../jobs/interviewRecordings.js';
 import { isAttendanceEnabled, isGuestCandidateMode } from '../services/graphAttendance.service.js';
 import { isRecordingFetchEnabled } from '../services/graphRecording.service.js';
+import { isCalendarEnabled } from '../services/graphCalendar.service.js';
+import {
+  parseOptionalAttendees,
+  getOptionalAttendeeEmails,
+  saveOptionalAttendeeEmails,
+} from '../services/interviewOptionalAttendees.service.js';
 import { isAdminTier } from '../config/roles.js';
 import { describeFlowKeys, isKnownFlowKey, reloadEmailRecipients } from '../config/emailRecipients.js';
 import {
@@ -218,6 +224,47 @@ export const saveInterviewReminderConfig = catchAsync(async (req, res) => {
     lead_minutes: saved.leadMin,
     lead_adjusted: leadAdjusted,
   }, message);
+});
+
+/**
+ * @desc    Get the recruiters added as optional attendees to interview meetings
+ * @route   GET /api/settings/interview-optional-attendees
+ * @access  Private
+ */
+export const getInterviewOptionalAttendees = catchAsync(async (req, res) => {
+  return success(res, {
+    emails: await getOptionalAttendeeEmails(),
+    // Read-only, from MS_CALENDAR_ENABLED. With it off no Outlook/Teams meeting
+    // is created at all, so there is nothing to add anyone to — the card says so
+    // rather than letting the list look like it does something.
+    calendar_enabled: isCalendarEnabled(),
+  }, 'Interview optional attendees retrieved successfully');
+});
+
+/**
+ * @desc    Replace the optional-attendee list. An empty list is valid: nobody
+ *          extra is added to future bookings.
+ * @route   POST /api/settings/interview-optional-attendees
+ * @access  Private
+ */
+export const saveInterviewOptionalAttendees = catchAsync(async (req, res) => {
+  const { emails } = req.body;
+  if (emails === undefined) {
+    throw new AppError('emails must be provided (an empty list clears it).', 400);
+  }
+
+  const { emails: parsed, invalid } = parseOptionalAttendees(emails);
+  if (invalid.length > 0) {
+    throw new AppError(`Not a valid email address: ${invalid.join(', ')}.`, 400);
+  }
+
+  const saved = await saveOptionalAttendeeEmails(parsed);
+  return success(res, {
+    emails: saved,
+    calendar_enabled: isCalendarEnabled(),
+  }, saved.length
+    ? `${saved.length} recruiter${saved.length === 1 ? '' : 's'} will be added to interview meetings.`
+    : 'No recruiters will be added to interview meetings.');
 });
 
 /**

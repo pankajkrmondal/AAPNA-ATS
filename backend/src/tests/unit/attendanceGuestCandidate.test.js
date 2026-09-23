@@ -91,6 +91,36 @@ describe('guest-candidate occurrence rule', () => {
     assert.equal(out.absentParty, 'candidate');
   });
 
+  test('an optional-attendee recruiter is not the candidate', () => {
+    // Recruiters from Settings are on every meeting. One joining a round the
+    // candidate skipped must not release a scorecard for it.
+    const out = decide([
+      { email: 'shreyan@aapnainfotech.com', seconds: 900 },
+      { email: 'chhaya@aapnainfotech.com', seconds: 900 },
+    ], { observerEmails: ['Chhaya@aapnainfotech.com'] });
+    assert.equal(out.occurred, false);
+    assert.equal(out.guestPresent, false);
+    assert.equal(out.absentParty, 'candidate');
+  });
+
+  test('recruiter present alongside a guest candidate → still held', () => {
+    const out = decide([
+      { email: 'shreyan@aapnainfotech.com', seconds: 900 },
+      { email: 'chhaya@aapnainfotech.com', seconds: 900 },
+      { email: '', seconds: 900 },
+    ], { observerEmails: ['chhaya@aapnainfotech.com'] });
+    assert.equal(out.occurred, true);
+  });
+
+  test('a recruiter who is also on the panel counts as the interviewer', () => {
+    const out = decide([
+      { email: 'naveen@aapnainfotech.com', seconds: 900 },
+      { email: '', seconds: 900 },
+    ], { interviewerEmails: ['naveen@aapnainfotech.com'], observerEmails: ['naveen@aapnainfotech.com'] });
+    assert.equal(out.interviewerPresent, true);
+    assert.equal(out.occurred, true);
+  });
+
   test('two anonymous guests are counted as two records, not collapsed', () => {
     // Both carry the same blank address, so a Set of emails would merge them.
     const out = decide([{ email: '', seconds: 900 }, { email: '', seconds: 900 }]);

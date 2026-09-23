@@ -27,6 +27,7 @@ import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js'
 import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled, applyMeetingOptions, isMeetingRecordAuto } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
+import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.js';
 // From pure config, not pipeline.service.js: that module imports THIS one, so
 // reaching back for its assertJourneyOpen would close an import cycle.
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
@@ -333,6 +334,37 @@ export function parseInterviewerEmails(raw) {
     }
   }
   return { emails, invalid };
+}
+
+/**
+ * The guest list for a round's Outlook/Teams event: the candidate, the panel,
+ * then the recruiters HR listed in Settings as OPTIONAL attendees.
+ *
+ * Shared by the book and reschedule paths so both write the same list. The
+ * reschedule PATCH replaces the event's whole attendee collection, so a
+ * recruiter added to or removed from Settings is picked up the next time the
+ * round moves.
+ *
+ * Order matters: the Graph layer de-duplicates keeping the first entry, so an
+ * interviewer who is also on the recruiter list stays a required attendee. The
+ * calendar mailbox is left off — it organizes the meeting and already has it.
+ *
+ * @param {object} candidate - shortlist row (see liveCandidateEmail)
+ * @param {string[]} interviewerEmails
+ * @returns {Promise<Array<{email: string, name?: string, role: string, optional?: boolean}>>}
+ */
+async function buildEventAttendees(candidate, interviewerEmails) {
+  const organizer = String(config.microsoft.calendarMailbox || '').toLowerCase();
+  const recruiters = (await getOptionalAttendeeEmails())
+    .filter((email) => email.toLowerCase() !== organizer);
+
+  return [
+    liveCandidateEmail(candidate)
+      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
+      : null,
+    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
+    ...recruiters.map((email) => ({ email, role: 'recruiter', optional: true })),
+  ].filter(Boolean);
 }
 
 /**
@@ -849,12 +881,7 @@ export async function scheduleInterviewRound(pipelineId, {
   // 2) Best-effort calendar event (no-op unless MS_CALENDAR_ENABLED=true, and
   //    skipped entirely for manually-coordinated rounds — see autoInvite).
   const sendsInvites = stageSendsInvites(stageKey);
-  const attendees = [
-    liveCandidateEmail(candidate)
-      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
-      : null,
-    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
-  ].filter(Boolean);
+  const attendees = await buildEventAttendees(candidate, interviewerEmails);
 
   // ── DANGER WINDOW ────────────────────────────────────────────────────────
   // The booking row now exists but carries none of its detail. Everything from
@@ -1326,12 +1353,9 @@ export async function rescheduleInterviewRound(pipelineId, {
   //    — meant an event booked before the non-prod attendee guard kept its REAL
   //    candidate address for life, so staging went on mailing that candidate an
   //    "Updated:"/"Canceled:" notice from Outlook every time the round moved.
-  const attendees = [
-    liveCandidateEmail(candidate)
-      ? { email: calendarCandidateEmail(liveCandidateEmail(candidate)), name: candidate.candidate_name, role: 'candidate' }
-      : null,
-    ...interviewerEmails.map((email) => ({ email, role: 'panel' })),
-  ].filter(Boolean);
+  //    It is also how recruiters added to or removed from Settings reach an
+  //    already-booked round.
+  const attendees = await buildEventAttendees(candidate, interviewerEmails);
 
   const sendsInvitesForStage = stageSendsInvites(stageKey);
   const patched = sendsInvitesForStage

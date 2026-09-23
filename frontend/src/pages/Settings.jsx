@@ -3,8 +3,8 @@
  * Settings (automated email reminder behaviour and an Email Coverage guide).
  */
 import { useState, useEffect, useRef } from 'react';
-import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin } from 'antd';
-import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined, VideoCameraOutlined } from '@ant-design/icons';
+import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin, Select } from 'antd';
+import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined, VideoCameraOutlined, UsergroupAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
@@ -25,6 +25,10 @@ const APPEARANCE_OPTIONS = [
 // backend/src/jobs/interviewOccurrence.js, which deliberately share one list.
 const INTERVIEW_CHECK_INTERVALS = [1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
+// Same shape check the backend applies; catching it here keeps a typo from
+// becoming a chip that the server then rejects.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function Settings() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -37,6 +41,12 @@ export default function Settings() {
   const [assessmentForm] = Form.useForm();
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentSaving, setAssessmentSaving] = useState(false);
+
+  // Recruiters added as optional attendees to interview meetings — saved on
+  // change like the scheduler cards below.
+  const [attendeeCfg, setAttendeeCfg] = useState({ emails: [], calendar_enabled: true });
+  const [attendeeLoading, setAttendeeLoading] = useState(true);
+  const [attendeeSaving, setAttendeeSaving] = useState(false);
 
   // Interview reminder scheduler — saved on change, applied without a restart.
   const [interviewCfg, setInterviewCfg] = useState({ enabled: false, interval_minutes: 30, lead_minutes: 30 });
@@ -99,6 +109,49 @@ export default function Settings() {
     };
     fetchSettings();
   }, [form]);
+
+  // Load the interview optional-attendee list
+  useEffect(() => {
+    const fetchAttendeeCfg = async () => {
+      try {
+        const res = await settingsService.getInterviewOptionalAttendees();
+        const data = res.data?.data;
+        if (data) setAttendeeCfg(data);
+      } catch {
+        message.error('Failed to load the interview recruiter list.');
+      } finally {
+        setAttendeeLoading(false);
+      }
+    };
+    fetchAttendeeCfg();
+  }, []);
+
+  /**
+   * Persists the recruiter list on every add/remove. Invalid addresses are
+   * refused before the round trip so they never appear as a chip.
+   */
+  const saveAttendees = async (values) => {
+    const cleaned = [...new Set(values.map((v) => v.trim()).filter(Boolean))];
+    const invalid = cleaned.filter((v) => !EMAIL_RE.test(v));
+    if (invalid.length > 0) {
+      message.error(`Not a valid email address: ${invalid.join(', ')}`);
+      return;
+    }
+    const previous = attendeeCfg;
+    setAttendeeCfg({ ...attendeeCfg, emails: cleaned });
+    setAttendeeSaving(true);
+    try {
+      const res = await settingsService.saveInterviewOptionalAttendees({ emails: cleaned });
+      const saved = res.data?.data;
+      if (saved) setAttendeeCfg(saved);
+      message.success(res.data?.message || 'Interview recruiter list updated.');
+    } catch (err) {
+      message.error(err?.response?.data?.message || err?.message || 'Failed to update the interview recruiter list.');
+      setAttendeeCfg(previous); // roll back the optimistic change
+    } finally {
+      setAttendeeSaving(false);
+    }
+  };
 
   // Load the interview reminder scheduler config
   useEffect(() => {
@@ -396,6 +449,91 @@ export default function Settings() {
             options={APPEARANCE_OPTIONS}
           />
         </div>
+      </Card>
+
+      {/* Recruiters added to every booked round's Teams meeting. First in the
+          interview chain (book → remind → confirm held → capture recording),
+          because it shapes the booking itself. */}
+      <Card
+        bordered={false}
+        className="glass-card"
+        style={{ marginBottom: 24 }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px 0' }}>
+            <UsergroupAddOutlined style={{ color: 'var(--gold)', fontSize: 18 }} />
+            <Title level={4} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: 0 }}>
+              Recruiters on Interview Meetings
+            </Title>
+            {!attendeeLoading && (
+              <Tag color={attendeeCfg.emails.length ? 'green' : 'default'} style={{ marginInlineStart: 4 }}>
+                {attendeeCfg.emails.length ? `${attendeeCfg.emails.length} ADDED` : 'NONE'}
+              </Tag>
+            )}
+          </div>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Interviews are booked from the recruitment mailbox, so they only appear in that mailbox’s
+            calendar. Anyone listed here is added to the Microsoft Teams meeting as an optional attendee
+            for Technical Rounds 1–3, the HR Round and the CEO / Final Round, so the interview shows up
+            in their own Outlook and Teams.
+          </Text>
+        </div>
+
+        <Spin spinning={attendeeLoading || attendeeSaving}>
+          <Select
+            mode="tags"
+            value={attendeeCfg.emails}
+            onChange={saveAttendees}
+            tokenSeparators={[',', ';', ' ']}
+            open={false}
+            suffixIcon={null}
+            placeholder="Type an email address and press Enter, e.g. name@aapnainfotech.com"
+            disabled={attendeeLoading}
+            style={{ width: '100%' }}
+            size="large"
+          />
+        </Spin>
+
+        {attendeeCfg.calendar_enabled ? (
+          <div
+            style={{
+              marginTop: 18,
+              background: 'var(--info-bg)',
+              border: '1px solid var(--info-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--info-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>What this means:</strong>{' '}
+            {attendeeCfg.emails.length
+              ? 'whenever one of those rounds is scheduled or rescheduled, these people get Outlook’s meeting invitation as optional attendees, and a cancellation when the round is cancelled.'
+              : 'nobody extra is added. Interview meetings go to the candidate and the interviewers only.'}
+            {' '}Changes apply to rounds booked from now on; an interview already booked picks them up
+            the next time it is rescheduled. Recruiters get the Outlook invitation only, not the
+            ATS’s candidate or interviewer emails, and a recruiter joining the call is never mistaken
+            for the candidate when the system checks whether the interview happened.
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 18,
+              background: 'var(--warn-bg)',
+              border: '1px solid var(--warn-border)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              color: 'var(--warn-text)',
+              fontSize: 13,
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Outlook/Teams meetings are turned off for this environment.</strong> Interviews
+            are still booked and emailed, but without a calendar meeting there is nothing to add these
+            recruiters to. The list is kept and takes effect once meetings are switched on.
+          </div>
+        )}
       </Card>
 
       {/* Interview reminder scheduler — on/off + how often the job checks */}
