@@ -13,6 +13,7 @@ import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
 import { isMrfFilled, isMrfClosed, MRF_CLOSURE_REASONS } from '../config/pipelineStages.js';
 import { closeMrfManually, reopenMrfManually } from '../services/mrfClosure.service.js';
+import { MRF_APPROVAL_EMAIL_TYPES } from '../jobs/reminderEligibility.js';
 import { assertSignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
@@ -896,6 +897,12 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
     throw new AppError('Token and action parameters are required.', 400);
   }
 
+  // Anything other than 'approve' used to fall through as a rejection.
+  const normalizedAction = String(action).trim().toLowerCase();
+  if (normalizedAction !== 'approve' && normalizedAction !== 'reject') {
+    throw new AppError('Action must be either "approve" or "reject".', 400);
+  }
+
   // Verify token
   let decoded;
   try {
@@ -918,18 +925,50 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
 
   const currentStatus = (mrf.approval_status || '').toLowerCase();
   if (currentStatus !== 'pending' && currentStatus !== 'waiting') {
-    throw new AppError('This requisition request has already been processed.', 400);
+    throw new AppError('This requisition request has already been processed.', 409);
   }
 
-  const isApproved = action.toLowerCase() === 'approve';
+  const isApproved = normalizedAction === 'approve';
 
-  // Update DB status
-  const updatedMrf = await prisma.rpa_mrf.update({
-    where: { id: BigInt(id) },
+  // Both approvers hold the same link. A plain read-then-update let an approve
+  // and a reject submitted together both pass the check above — last write
+  // won and two contradicting outcome emails went out. Conditioning the write
+  // on the status we just read makes exactly one of them succeed.
+  const { count } = await prisma.rpa_mrf.updateMany({
+    where: { id: BigInt(id), approval_status: mrf.approval_status },
     data: {
       approval_status: isApproved ? 'approved' : 'rejected'
     }
   });
+
+  if (count === 0) {
+    throw new AppError('This requisition request has already been processed.', 409);
+  }
+
+  const updatedMrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(id) }
+  });
+
+  // HTTP request logs (morgan, 'http' level) are dropped in production and
+  // rpa_mrf has no updated_at, so record when the decision was taken.
+  logger.info(`MRF ${id} ${updatedMrf.approval_status} via approval link at ${new Date().toISOString()}`);
+
+  // Close the approval-request log row(s) so the reminder cron stops sending
+  // "Reminder: MRF Approval Request" — with the now-dead Approve button — to
+  // the approvers after the decision. Non-fatal: the decision is already
+  // committed, and the cron re-checks approval_status before sending anyway.
+  try {
+    await prisma.rpa_email_log.updateMany({
+      where: {
+        email_type: { in: MRF_APPROVAL_EMAIL_TYPES },
+        reference_id: Number(id),
+        responded_at: null,
+      },
+      data: { responded_at: new Date() }
+    });
+  } catch (err) {
+    logger.warn(`Could not close approval-request email log for MRF ${id}: ${err.message}`);
+  }
 
   // Update parent rpa_mrf_jd_send status to approved/rejected
   const parentSend = await prisma.rpa_mrf_jd_send.findFirst({
@@ -952,7 +991,8 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
         mrfRecord: updatedMrf,
         approved: isApproved,
         comments: comments || '',
-        approverName: decoded.email,
+        // No approverName: the token carries the hiring manager's email (it is
+        // shared by both approvers), so it cannot say who decided.
         hmEmail: updatedMrf.submitter_email || (parentSend && parentSend.email) || ''
       }).catch((err) => {
         logger.error(`Error sending MRF outcome email: ${err.message}`);

@@ -5,6 +5,43 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-09-24 — MRF approval: no more reminders or "invalid link" after a requisition is decided
+**Why:** the CEO opened the approval link for MRF #9, which he had not approved, and got "Link
+inactive or invalid – already processed (APPROVED)". This happened twice. Both approvers
+(`aroy@`, `sroy@`) share one email and one token, so whoever acts first decides. Three bugs then
+made this confusing:
+- the reminder cron re-sent the approval request, live Approve/Reject buttons included, after the
+  decision;
+- the landing page labelled a successful approval as an invalid link;
+- the approver who didn't act is not on the outcome email.
+
+- **Reminder cron** (`jobs/reminderScheduler.js`, new pure `jobs/reminderEligibility.js`):
+  - reminds only the email types that ask for a response (`mrf_hm`, `mrf_approval_request`, and the
+    legacy `missing_jd`/`mrf_approval`);
+  - closes the row instead of reminding once the MRF is no longer pending/waiting, or once the HM
+    has submitted;
+  - joins `mrf_hm` to `rpa_mrf_jd_send`, which its `reference_id` actually points at. Before this,
+    any log row whose `reference_id` happened to equal an `rpa_mrf.id` could be "reminded" (outcome,
+    HR-notify, welcome and password mails);
+  - increments `reminder_count` straight after the send, so a later logging failure can't re-send
+    daily;
+  - writes `rpa_email_messages.mrf_id` only for approval reminders (it's an FK to `rpa_mrf`).
+- **`handleMrfApproval`** (`controllers/mrf.controller.js`):
+  - rejects any action other than approve/reject (anything else used to count as a reject);
+  - the status write is conditional on the status just read, so a simultaneous approve and reject
+    can't both win. The loser gets **409**;
+  - closes the MRF's approval-request log rows on decision;
+  - logs `MRF <id> <status> via approval link at <time>` at info level (`rpa_mrf` has no
+    `updated_at`, and HTTP logs are dropped in prod);
+  - no longer passes the HM's email as `approverName`, which was also unused.
+- **Approval page** (`MrfApprovalAction.jsx`): an already-decided requisition shows a neutral
+  "Requisition already approved – no further action is needed" view. The red "Link inactive or
+  invalid" view is kept for real token errors. It shows the server's actual error message (plain
+  axios put it on `err.response`), and on a 409 it reloads into the decided view.
+- **No schema change.** New `tests/reminderEligibility.test.js` (8 tests) passes. Not changed,
+  proposed to stakeholders: per-approver links with who/when recorded, and adding `aroy@` to the
+  `mrfOutcome` CC (a config change in Flow Keys).
+
 ## 2026-08-27 — Pipeline drawer: the conversation reply box gets a real rich-text editor
 **Why:** direct feedback on the Conversation panel shipped earlier the same day — the reply box was
 plain single-line text, unlike every other email-composing surface in the app. Full write-up:

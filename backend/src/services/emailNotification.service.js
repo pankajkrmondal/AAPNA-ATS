@@ -1223,7 +1223,7 @@ export async function sendMrfSubmissionHrEmail({ mrfRecord }) {
 /**
  * Sends a notification of the MRF approval or rejection outcome to the HR team.
  */
-export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, approverName, hmEmail }) {
+export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, hmEmail }) {
   try {
     const sender = config.microsoft.defaultSender;
 

@@ -20,6 +20,19 @@ const fmtOther = (sel, other) =>
     ? `Other - ${other}`
     : (sel || 'Not specified');
 
+// Statuses that still accept a decision — same set handleMrfApproval() checks.
+const OPEN_STATUSES = ['pending', 'waiting'];
+
+// How a decided approval_status reads to the approver. 'rejected' shows as
+// "declined" to match the outcome email and the success view below.
+const DECIDED_LABELS = { approved: 'approved', rejected: 'declined', completed: 'completed', closed: 'closed' };
+const decidedLabel = (status) => DECIDED_LABELS[String(status || '').toLowerCase()] || 'processed';
+
+// These public calls use plain axios (no `api` wrapper), so the server's
+// message lives on err.response — err.message is only axios's generic
+// "Request failed with status code …".
+const apiErrorMessage = (err, fallback) => err?.response?.data?.message || err?.message || fallback;
+
 export default function MrfApprovalAction() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -31,6 +44,10 @@ export default function MrfApprovalAction() {
   const [mrfDetails, setMrfDetails] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
+  // Set when the requisition was already approved/rejected before this visit —
+  // an expected state (the other approver holds the same link, or a reminder
+  // re-sent it), not a broken link.
+  const [decidedStatus, setDecidedStatus] = useState('');
   const [success, setSuccess] = useState(false);
   const [successStatus, setSuccessStatus] = useState('');
   const [currentAction, setCurrentAction] = useState(actionParam.toLowerCase() === 'reject' ? 'reject' : 'approve');
@@ -52,11 +69,11 @@ export default function MrfApprovalAction() {
       const data = res?.data || res;
       setMrfDetails(data);
       const status = (data.approval_status || '').toLowerCase();
-      if (status !== 'pending' && status !== 'waiting') {
-        setError(`This requisition has already been processed. Current status is: ${data.approval_status.toUpperCase()}.`);
+      if (!OPEN_STATUSES.includes(status)) {
+        setDecidedStatus(status);
       }
     } catch (err) {
-      setError(err?.message || 'Failed to retrieve requisition details. The link may have expired or is invalid.');
+      setError(apiErrorMessage(err, 'Failed to retrieve requisition details. The link may have expired or is invalid.'));
     } finally {
       setLoading(false);
     }
@@ -76,7 +93,13 @@ export default function MrfApprovalAction() {
       setSuccess(true);
       message.success(`Requisition request successfully ${actionType === 'approve' ? 'approved' : 'rejected'}!`);
     } catch (err) {
-      setError(err?.message || 'Failed to process requisition action. Please try again.');
+      if (err?.response?.status === 409) {
+        // Decided by someone else while this page was open — reload so the
+        // approver sees the "already decided" view, not an error.
+        await fetchMrfDetails();
+      } else {
+        setError(apiErrorMessage(err, 'Failed to process requisition action. Please try again.'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -116,6 +139,41 @@ export default function MrfApprovalAction() {
             </Button>
           ]}
         />
+      </PublicPageShell>
+    );
+  }
+
+  if (decidedStatus) {
+    const label = decidedLabel(decidedStatus);
+    return (
+      <PublicPageShell
+        title={`Requisition already ${label}`}
+        subtitle="No further action is needed from you."
+      >
+        <Result
+          status={decidedStatus === 'approved' ? 'success' : 'info'}
+          title={<span style={{ fontWeight: 700 }}>This requisition has already been {label}</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              The requisition for <strong>{mrfDetails?.position_hiring_for || 'this position'}</strong> has
+              already been <strong>{label}</strong>, so there is nothing left to approve or reject on this
+              link. You can close this window.
+            </Paragraph>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>
+          ]}
+        />
+        <Paragraph type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
+          If you were not expecting this, please reach out to the recruitment coordinator or HR team.
+        </Paragraph>
       </PublicPageShell>
     );
   }

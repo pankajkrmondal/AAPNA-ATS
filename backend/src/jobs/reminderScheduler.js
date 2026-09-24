@@ -4,6 +4,14 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendGraphEmail, injectTrackingPixel } from '../services/emailNotification.service.js';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  REMINDABLE_EMAIL_TYPES,
+  MRF_APPROVAL_EMAIL_TYPES,
+  CANDIDATE_DATA_EMAIL_TYPE,
+  MRF_HM_EMAIL_TYPE,
+  isMrfApprovalEmailType,
+  reminderSkipReason,
+} from './reminderEligibility.js';
 
 let job = null;
 let currentSchedule = null;
@@ -76,16 +84,25 @@ export async function sendPendingReminders() {
     const intervalDays = parseInt(settings.find(s => s.key === 'reminder_interval_days')?.value || '2', 10);
     const maxCount = parseInt(settings.find(s => s.key === 'reminder_max_count')?.value || '3', 10);
 
-    // 2. Fetch pending logs from DB, joining candidate and MRF to verify existence
+    // 2. Fetch pending logs from DB. Only email types that ask for a response
+    // are eligible, and each is joined to the record it is chasing so
+    // reminderSkipReason() can tell whether that record still needs action.
+    // mrf_hm's reference_id is an rpa_mrf_jd_send id, NOT an rpa_mrf id.
     const query = `
-      SELECT el.*, 
+      SELECT el.*,
              c."cvMissingToken",
              c.id AS candidate_exists_id,
-             m.id AS mrf_exists_id
+             m.id AS mrf_exists_id,
+             m.approval_status AS mrf_approval_status,
+             s.id AS mrf_request_exists_id,
+             s.mrfstatus AS mrf_request_status,
+             s.mrf_id AS mrf_request_mrf_id
       FROM rpa_email_log el
-      LEFT JOIN rpa_cv c ON el.reference_id = c.id AND el.email_type = 'missing_jd'
-      LEFT JOIN rpa_mrf m ON el.reference_id = m.id AND el.email_type != 'missing_jd'
-      WHERE el.responded_at IS NULL
+      LEFT JOIN rpa_cv c ON el.reference_id = c.id AND el.email_type = $3
+      LEFT JOIN rpa_mrf m ON el.reference_id = m.id AND el.email_type = ANY($4::text[])
+      LEFT JOIN rpa_mrf_jd_send s ON el.reference_id = s.id AND el.email_type = $5
+      WHERE el.email_type = ANY($6::text[])
+        AND el.responded_at IS NULL
         AND el.status = 'sent'
         AND el.reminder_count < $1
         AND (
@@ -94,8 +111,16 @@ export async function sendPendingReminders() {
           (el.last_reminder_at IS NOT NULL AND el.last_reminder_at <= NOW() - ($2 || ' days')::interval)
         );
     `;
-    
-    const pendingLogs = await prisma.$queryRawUnsafe(query, maxCount, intervalDays);
+
+    const pendingLogs = await prisma.$queryRawUnsafe(
+      query,
+      maxCount,
+      intervalDays,
+      CANDIDATE_DATA_EMAIL_TYPE,
+      MRF_APPROVAL_EMAIL_TYPES,
+      MRF_HM_EMAIL_TYPE,
+      REMINDABLE_EMAIL_TYPES
+    );
     logger.info(`[Reminder Scheduler] Found ${pendingLogs.length} pending reminder(s) to process.`);
 
     if (pendingLogs.length === 0) return;
@@ -104,18 +129,12 @@ export async function sendPendingReminders() {
 
     for (const log of pendingLogs) {
       try {
-        // Safe guard against orphaned/deleted candidate or MRF reference records
-        if (log.email_type === 'missing_jd' && !log.candidate_exists_id) {
-          logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - referenced candidate ID ${log.reference_id} does not exist.`);
-          await prisma.rpa_email_log.update({
-            where: { id: log.id },
-            data: { responded_at: new Date() }
-          });
-          continue;
-        }
-
-        if (log.email_type !== 'missing_jd' && !log.mrf_exists_id) {
-          logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - referenced MRF ID ${log.reference_id} does not exist.`);
+        // Orphaned reference, or the record no longer needs action (MRF already
+        // approved/rejected, HM already submitted). Close the row so it is never
+        // picked up again — a reminder here re-sends a dead link.
+        const skipReason = reminderSkipReason(log);
+        if (skipReason) {
+          logger.info(`[Reminder Scheduler] Closing log ID ${log.id} (${log.email_type}) without a reminder - ${skipReason}.`);
           await prisma.rpa_email_log.update({
             where: { id: log.id },
             data: { responded_at: new Date() }
@@ -127,18 +146,7 @@ export async function sendPendingReminders() {
         const subject = `Reminder (${reminderNumber}/${maxCount}): ${log.subject}`;
         let finalBody = '';
 
-        if (log.email_type === 'missing_jd') {
-          // Never build a portal link with an empty token — the portal rejects it
-          // ("Access token is missing"). Mark the row responded so it isn't retried.
-          if (!log.cvMissingToken) {
-            logger.warn(`[Reminder Scheduler] Skipping log ID ${log.id} - candidate ID ${log.reference_id} has no cvMissingToken; cannot build a valid portal link.`);
-            await prisma.rpa_email_log.update({
-              where: { id: log.id },
-              data: { responded_at: new Date() }
-            });
-            continue;
-          }
-
+        if (log.email_type === CANDIDATE_DATA_EMAIL_TYPE) {
           // Use frontend URL for the collection portal to remove external Aapna web dependency
           const frontendUrl = config.cors.frontendUrl || 'http://localhost:5173';
           const formLink = `${frontendUrl}/missing-jd-upload?token=${log.cvMissingToken}`;
@@ -228,6 +236,17 @@ export async function sendPendingReminders() {
           html: injectTrackingPixel(finalBody, trackingToken),
         });
 
+        // Count the reminder as soon as it is SENT. This used to run last, so a
+        // failure in the bookkeeping below left the count unchanged and the same
+        // reminder went out again on every run.
+        await prisma.rpa_email_log.update({
+          where: { id: log.id },
+          data: {
+            reminder_count: { increment: 1 },
+            last_reminder_at: new Date()
+          }
+        });
+
         // Log outbound reminder to rpa_email_messages
         const emailMsg = await prisma.rpa_email_messages.create({
           data: {
@@ -240,8 +259,10 @@ export async function sendPendingReminders() {
             subject,
             body_html: finalBody,
             direction: 'outbound',
-            candidate_id: log.email_type === 'missing_jd' ? BigInt(log.reference_id) : null,
-            mrf_id: log.email_type !== 'missing_jd' ? BigInt(log.reference_id) : null,
+            candidate_id: log.email_type === CANDIDATE_DATA_EMAIL_TYPE ? BigInt(log.reference_id) : null,
+            // mrf_id is an FK to rpa_mrf. Only approval reminders reference an
+            // rpa_mrf id; an mrf_hm reference_id is an rpa_mrf_jd_send id.
+            mrf_id: isMrfApprovalEmailType(log.email_type) ? BigInt(log.reference_id) : null,
             sent_at: new Date(),
           }
         });
@@ -253,15 +274,6 @@ export async function sendPendingReminders() {
             tracking_token: trackingToken,
             delivered: true,
             delivered_at: new Date(),
-          }
-        });
-
-        // Update log record (increment reminder count)
-        await prisma.rpa_email_log.update({
-          where: { id: log.id },
-          data: {
-            reminder_count: { increment: 1 },
-            last_reminder_at: new Date()
           }
         });
 
