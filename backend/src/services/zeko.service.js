@@ -6,6 +6,7 @@ import { fetchMessagesSince } from './outlookReader.service.js';
 import { emailCandidates, emailMatchesSql } from '../utils/emailMatch.js';
 import { parseZekoReportUrl, parseZekoResponseId, zekoSharedReportUrl } from '../utils/zekoShareLink.js';
 import { buildZekoReportSection } from '../utils/zekoReportModel.js';
+import { deriveZekoInterviewType } from '../utils/zekoJobType.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
 
@@ -147,11 +148,7 @@ function transformRole(r) {
     return s ? s.count || s.total || 0 : 0;
   };
 
-  const hn = (r.hiringName || r.title || '').toLowerCase();
-  let interviewType = 'other';
-  if (r.isHRScreeningInterviewPresent || hn.includes('hr')) interviewType = 'hr';
-  else if (r.isCodingInterviewPresent || hn.includes('coding')) interviewType = 'coding';
-  else if (hn.includes('functional')) interviewType = 'functional';
+  const interviewType = deriveZekoInterviewType(r);
 
   let status = 'draft';
   if (r.isArchived) status = 'archived';
