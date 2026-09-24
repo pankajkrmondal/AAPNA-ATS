@@ -1668,16 +1668,15 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // scorecard builds its payload from a separate named whitelist.
   const referral = data?.referral;
   const zekoJobs = zekoJobsData || [];
-  // Scoped to whichever Zeko round is being scheduled, so a job published
-  // for the wrong round (e.g. HR when scheduling Functional) isn't even
-  // offered — same job title is often published twice, once per round,
-  // distinguished only by interview_type. Falls back to the full list (with
-  // a visible warning) if nothing matches, so a data/tagging gap never
-  // blocks scheduling outright.
+  // Every published job is offered in both Zeko rounds; the type tag beside
+  // each name tells the recruiter which round it was built for. Filtering by
+  // type used to hide real jobs whenever the tag was wrong (e.g. "Junior HR
+  // Operations - Functional Interview" tagged HR vanished from Functional), so
+  // it only orders now: jobs matching this round first, otherwise the API's
+  // alphabetical order (the sort is stable).
   const isHrRound = pipeline?.current_stage_key === 'zeko_hr';
-  const matchingZekoJobs = zekoJobs.filter((j) => (isHrRound ? j.interview_type === 'hr' : j.interview_type !== 'hr'));
-  const zekoJobOptions = matchingZekoJobs.length > 0 ? matchingZekoJobs : zekoJobs;
-  const zekoJobFallback = matchingZekoJobs.length === 0 && zekoJobs.length > 0;
+  const matchesRound = (j) => (isHrRound ? j.interview_type === 'hr' : j.interview_type !== 'hr');
+  const zekoJobOptions = [...zekoJobs].sort((a, b) => matchesRound(b) - matchesRound(a));
   const ZEKO_TYPE_TAG = { hr: { label: 'HR', color: 'blue' }, functional: { label: 'Functional', color: 'green' }, coding: { label: 'Coding', color: 'purple' } };
   const allStages = (stagesData || []).filter((s) => s.is_active).sort((a, b) => a.sort_order - b.sort_order);
   const currentIdx = allStages.findIndex((s) => s.stage_key === pipeline?.current_stage_key);
@@ -2768,14 +2767,6 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           </div>
           <div>
             <Text strong style={{ fontSize: 12.5 }}>Zeko Job — {isHrRound ? 'HR Screening' : 'Functional Test'} round</Text>
-            {zekoJobFallback && (
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginTop: 4, marginBottom: 4, fontSize: 12 }}
-                message={`No jobs tagged for the ${isHrRound ? 'HR' : 'Functional'} round — showing all published jobs.`}
-              />
-            )}
             <Select
               style={{ width: '100%', marginTop: 4 }}
               placeholder="Select a Zeko job"
