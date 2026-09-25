@@ -1,0 +1,548 @@
+- generic [ref=f2e12]:
+  - complementary [ref=f2e13]:
+    - generic [ref=f2e14]:
+      - generic [ref=f2e15] [cursor=pointer]:
+        - img "AAPNA Infotech" [ref=f2e17]
+        - generic [ref=f2e18]: ATS Platform
+      - menu [ref=f2e19]:
+        - menuitem "dashboard Dashboard" [ref=f2e20] [cursor=pointer]:
+          - img "dashboard" [ref=f2e21]
+          - generic [ref=f2e24]: Dashboard
+        - menuitem "file-text MRF" [ref=f2e25] [cursor=pointer]:
+          - img "file-text" [ref=f2e26]
+          - generic [ref=f2e29]: MRF
+        - menuitem "solution Search Candidate" [ref=f2e30] [cursor=pointer]:
+          - img "solution" [ref=f2e31]
+          - generic [ref=f2e34]: Search Candidate
+        - menuitem "upload HR Manual Upload" [ref=f2e35] [cursor=pointer]:
+          - img "upload" [ref=f2e36]
+          - generic [ref=f2e39]: HR Manual Upload
+        - menuitem "shop Vendor Upload" [ref=f2e40] [cursor=pointer]:
+          - img "shop" [ref=f2e41]
+          - generic [ref=f2e44]: Vendor Upload
+        - menuitem "audit Vendor Dashboard" [ref=f2e45] [cursor=pointer]:
+          - img "audit" [ref=f2e46]
+          - generic [ref=f2e49]: Vendor Dashboard
+        - menuitem "filter Candidate Screening" [ref=f2e50] [cursor=pointer]:
+          - img "filter" [ref=f2e51]
+          - generic [ref=f2e54]: Candidate Screening
+        - menuitem "apartment Candidate Pipeline" [ref=f2e55] [cursor=pointer]:
+          - img "apartment" [ref=f2e56]
+          - generic [ref=f2e59]: Candidate Pipeline
+        - menuitem "bar-chart Recruitment Analytics" [ref=f2e60] [cursor=pointer]:
+          - img "bar-chart" [ref=f2e61]
+          - generic [ref=f2e64]: Recruitment Analytics
+        - menuitem "mail Email Templates" [ref=f2e65] [cursor=pointer]:
+          - img "mail" [ref=f2e66]
+          - generic [ref=f2e69]: Email Templates
+        - menuitem "setting Settings" [ref=f2e70] [cursor=pointer]:
+          - img "setting" [ref=f2e71]
+          - generic [ref=f2e74]: Settings
+  - generic [ref=f2e75]:
+    - banner [ref=f2e76]:
+      - generic [ref=f2e77]:
+        - button [ref=f2e79] [cursor=pointer]:
+          - img "menu-fold" [ref=f2e81]
+        - generic [ref=f2e84]: Search Candidate
+      - generic [ref=f2e85]:
+        - button [ref=f2e88] [cursor=pointer]:
+          - img "bell" [ref=f2e90]
+        - button "Toggle theme" [ref=f2e94] [cursor=pointer]
+        - button "user setting Admin Portal" [ref=f2e106] [cursor=pointer]:
+          - generic [ref=f2e108]:
+            - img "user" [ref=f2e109]
+            - img "setting" [ref=f2e112]
+          - generic [ref=f2e115]: Admin Portal
+        - img "user" [ref=f2e120] [cursor=pointer]
+    - main [ref=f2e123]:
+      - generic [ref=f2e125]:
+        - generic [ref=f2e127]:
+          - generic [ref=f2e128]:
+            - heading "Search Candidate" [level=3] [ref=f2e129]
+            - text: Browsing all 443 candidates. Search by name, email or phone number.
+          - generic [ref=f2e130]:
+            - generic [ref=f2e131]:
+              - generic [ref=f2e134]:
+                - generic [ref=f2e135]: Candidate Name
+                - textbox "Candidate Name" [ref=f2e142]:
+                  - /placeholder: e.g. Rahul Sharma
+              - generic [ref=f2e146]:
+                - generic [ref=f2e147]: Email ID
+                - textbox "Email ID" [ref=f2e154]:
+                  - /placeholder: candidate@example.com
+              - generic [ref=f2e158]:
+                - generic [ref=f2e159]: Phone / Contact Number
+                - textbox "Phone / Contact Number" [ref=f2e166]:
+                  - /placeholder: +91 98765 43210
+            - generic [ref=f2e173]:
+              - button "search Search" [ref=f2e175] [cursor=pointer]:
+                - img "search" [ref=f2e177]
+                - generic [ref=f2e180]: Search
+              - button "Reset" [disabled] [ref=f2e182]
+        - generic [ref=f2e184]:
+          - generic [ref=f2e185]:
+            - strong [ref=f2e187]: 443 candidates in total
+            - button "file-excel Export CSV" [ref=f2e189] [cursor=pointer]:
+              - img "file-excel" [ref=f2e191]
+              - generic [ref=f2e194]: Export CSV
+          - generic [ref=f2e198]:
+            - table [ref=f2e202]:
+              - rowgroup [ref=f2e212]:
+                - row [ref=f2e213]:
+                  - columnheader "#" [ref=f2e214]
+                  - columnheader "NAME" [ref=f2e215]
+                  - columnheader "EMAIL" [ref=f2e216]
+                  - columnheader "CONTACT" [ref=f2e217]
+                  - columnheader "POSITION APPLIED" [ref=f2e218]
+                  - columnheader "GENDER" [ref=f2e219]
+                  - columnheader "LOCATION" [ref=f2e220]
+                  - columnheader "ACTION" [ref=f2e221]
+              - rowgroup [ref=f2e222]:
+                - row [ref=f2e223]:
+                  - cell "1" [ref=f2e224]
+                  - cell [ref=f2e225]:
+                    - strong [ref=f2e227]: VIPIN GARG
+                  - cell "vipingarg17dec@gmail.com" [ref=f2e228]
+                  - cell "+91-9958048834" [ref=f2e229]
+                  - cell "—" [ref=f2e230]
+                  - cell "—" [ref=f2e231]
+                  - cell "New Delhi, India" [ref=f2e232]
+                  - cell [ref=f2e233]:
+                    - generic [ref=f2e234]:
+                      - button [ref=f2e236] [cursor=pointer]:
+                        - img "file-text" [ref=f2e238]
+                      - button "View" [ref=f2e242] [cursor=pointer]
+                      - button "Edit" [ref=f2e245] [cursor=pointer]
+                      - button [ref=f2e248] [cursor=pointer]:
+                        - img "message" [ref=f2e250]
+                - row [ref=f2e253]:
+                  - cell "2" [ref=f2e254]
+                  - cell [ref=f2e255]:
+                    - strong [ref=f2e257]: Sandeep Kumar
+                  - cell "sandeep103kr@gmail.com" [ref=f2e258]
+                  - cell "7982506215" [ref=f2e259]
+                  - cell "—" [ref=f2e260]
+                  - cell "—" [ref=f2e261]
+                  - cell "Delhi, India" [ref=f2e262]
+                  - cell [ref=f2e263]:
+                    - generic [ref=f2e264]:
+                      - button [ref=f2e266] [cursor=pointer]:
+                        - img "file-text" [ref=f2e268]
+                      - button "View" [ref=f2e272] [cursor=pointer]
+                      - button "Edit" [ref=f2e275] [cursor=pointer]
+                      - button [ref=f2e278] [cursor=pointer]:
+                        - img "message" [ref=f2e280]
+                - row [ref=f2e283]:
+                  - cell "3" [ref=f2e284]
+                  - cell [ref=f2e285]:
+                    - strong [ref=f2e287]: Rekha Mallick
+                  - cell "rekhamallick2011@gmail.com" [ref=f2e288]
+                  - cell "+91-9555221289" [ref=f2e289]
+                  - cell "—" [ref=f2e290]
+                  - cell "—" [ref=f2e291]
+                  - cell "Faridabad, Haryana" [ref=f2e292]
+                  - cell [ref=f2e293]:
+                    - generic [ref=f2e294]:
+                      - button [ref=f2e296] [cursor=pointer]:
+                        - img "file-text" [ref=f2e298]
+                      - button "View" [ref=f2e302] [cursor=pointer]
+                      - button "Edit" [ref=f2e305] [cursor=pointer]
+                      - button [ref=f2e308] [cursor=pointer]:
+                        - img "message" [ref=f2e310]
+                - row [ref=f2e313]:
+                  - cell "4" [ref=f2e314]
+                  - cell [ref=f2e315]:
+                    - strong [ref=f2e317]: DHEERAJ KUMAR
+                  - cell "aryandheeru100@gmail.com" [ref=f2e318]
+                  - cell "9326002973" [ref=f2e319]
+                  - cell "—" [ref=f2e320]
+                  - cell "—" [ref=f2e321]
+                  - cell "Naraina Vihar Delhi-110019" [ref=f2e322]
+                  - cell [ref=f2e323]:
+                    - generic [ref=f2e324]:
+                      - button [ref=f2e326] [cursor=pointer]:
+                        - img "file-text" [ref=f2e328]
+                      - button "View" [ref=f2e332] [cursor=pointer]
+                      - button "Edit" [ref=f2e335] [cursor=pointer]
+                      - button [ref=f2e338] [cursor=pointer]:
+                        - img "message" [ref=f2e340]
+                - row [ref=f2e343]:
+                  - cell "5" [ref=f2e344]
+                  - cell [ref=f2e345]:
+                    - strong [ref=f2e347]: UTTAM SINGH NEGI
+                  - cell "uttamnegi1593@gamil.com" [ref=f2e348]
+                  - cell "9540027079" [ref=f2e349]
+                  - cell "—" [ref=f2e350]
+                  - cell "Male" [ref=f2e351]
+                  - cell "Ghaziabad, U.P" [ref=f2e352]
+                  - cell [ref=f2e353]:
+                    - generic [ref=f2e354]:
+                      - button [ref=f2e356] [cursor=pointer]:
+                        - img "file-text" [ref=f2e358]
+                      - button "View" [ref=f2e362] [cursor=pointer]
+                      - button "Edit" [ref=f2e365] [cursor=pointer]
+                      - button [ref=f2e368] [cursor=pointer]:
+                        - img "message" [ref=f2e370]
+                - row [ref=f2e373]:
+                  - cell "6" [ref=f2e374]
+                  - cell [ref=f2e375]:
+                    - strong [ref=f2e377]: GOURAB PRAMANICK
+                  - cell "gourabpramanico@gmail.com" [ref=f2e378]
+                  - cell "+918697312802" [ref=f2e379]
+                  - cell "—" [ref=f2e380]
+                  - cell "—" [ref=f2e381]
+                  - cell "Kolkata, West Bengal" [ref=f2e382]
+                  - cell [ref=f2e383]:
+                    - generic [ref=f2e384]:
+                      - button [ref=f2e386] [cursor=pointer]:
+                        - img "file-text" [ref=f2e388]
+                      - button "View" [ref=f2e392] [cursor=pointer]
+                      - button "Edit" [ref=f2e395] [cursor=pointer]
+                      - button [ref=f2e398] [cursor=pointer]:
+                        - img "message" [ref=f2e400]
+                - row [ref=f2e403]:
+                  - cell "7" [ref=f2e404]
+                  - cell [ref=f2e405]:
+                    - strong [ref=f2e407]: Bharat Pratap Singh
+                  - cell "bharatprtp08@gmail.com" [ref=f2e408]
+                  - cell "+91 6388715449" [ref=f2e409]
+                  - cell "—" [ref=f2e410]
+                  - cell "—" [ref=f2e411]
+                  - cell "Kanpur Nagar" [ref=f2e412]
+                  - cell [ref=f2e413]:
+                    - generic [ref=f2e414]:
+                      - button [ref=f2e416] [cursor=pointer]:
+                        - img "file-text" [ref=f2e418]
+                      - button "View" [ref=f2e422] [cursor=pointer]
+                      - button "Edit" [ref=f2e425] [cursor=pointer]
+                      - button [ref=f2e428] [cursor=pointer]:
+                        - img "message" [ref=f2e430]
+                - row [ref=f2e433]:
+                  - cell "8" [ref=f2e434]
+                  - cell [ref=f2e435]:
+                    - strong [ref=f2e437]: Anoop Singh
+                  - cell "chaudharyanoopsingh5@gmail.com" [ref=f2e438]
+                  - cell "+917048908116" [ref=f2e439]
+                  - cell "—" [ref=f2e440]
+                  - cell "—" [ref=f2e441]
+                  - cell "Lucknow, U.P" [ref=f2e442]
+                  - cell [ref=f2e443]:
+                    - generic [ref=f2e444]:
+                      - button [ref=f2e446] [cursor=pointer]:
+                        - img "file-text" [ref=f2e448]
+                      - button "View" [ref=f2e452] [cursor=pointer]
+                      - button "Edit" [ref=f2e455] [cursor=pointer]
+                      - button [ref=f2e458] [cursor=pointer]:
+                        - img "message" [ref=f2e460]
+                - row [ref=f2e463]:
+                  - cell "9" [ref=f2e464]
+                  - cell [ref=f2e465]:
+                    - strong [ref=f2e467]: Candidate
+                  - cell "afsalkaroth@gmail.com" [ref=f2e468]
+                  - cell "+91 7025424224" [ref=f2e469]
+                  - cell "—" [ref=f2e470]
+                  - cell "—" [ref=f2e471]
+                  - cell "Kannur, Kerala" [ref=f2e472]
+                  - cell [ref=f2e473]:
+                    - generic [ref=f2e474]:
+                      - button [ref=f2e476] [cursor=pointer]:
+                        - img "file-text" [ref=f2e478]
+                      - button "View" [ref=f2e482] [cursor=pointer]
+                      - button "Edit" [ref=f2e485] [cursor=pointer]
+                      - button [ref=f2e488] [cursor=pointer]:
+                        - img "message" [ref=f2e490]
+                - row [ref=f2e493]:
+                  - cell "10" [ref=f2e494]
+                  - cell [ref=f2e495]:
+                    - strong [ref=f2e497]: Abhishek Choudhury
+                  - cell "abhishekchoudhury234@gmail.com" [ref=f2e498]
+                  - cell "8860043441" [ref=f2e499]
+                  - cell "—" [ref=f2e500]
+                  - cell "—" [ref=f2e501]
+                  - cell "Delhi" [ref=f2e502]
+                  - cell [ref=f2e503]:
+                    - generic [ref=f2e504]:
+                      - button [ref=f2e506] [cursor=pointer]:
+                        - img "file-text" [ref=f2e508]
+                      - button "View" [ref=f2e512] [cursor=pointer]
+                      - button "Edit" [ref=f2e515] [cursor=pointer]
+                      - button [ref=f2e518] [cursor=pointer]:
+                        - img "message" [ref=f2e520]
+                - row [ref=f2e523]:
+                  - cell "11" [ref=f2e524]
+                  - cell [ref=f2e525]:
+                    - strong [ref=f2e527]: Aditya Rajpal
+                  - cell "aadityarajpal.ar@outlook.com" [ref=f2e528]
+                  - cell "+91 7724883117" [ref=f2e529]
+                  - cell "Product Sales Head" [ref=f2e530]
+                  - cell "—" [ref=f2e531]
+                  - cell "Hyderabad, Telangana, 500038" [ref=f2e532]
+                  - cell [ref=f2e533]:
+                    - generic [ref=f2e534]:
+                      - button [ref=f2e536] [cursor=pointer]:
+                        - img "file-text" [ref=f2e538]
+                      - button "View" [ref=f2e542] [cursor=pointer]
+                      - button "Edit" [ref=f2e545] [cursor=pointer]
+                      - button [ref=f2e548] [cursor=pointer]:
+                        - img "message" [ref=f2e550]
+                - row [ref=f2e553]:
+                  - cell "12" [ref=f2e554]
+                  - cell [ref=f2e555]:
+                    - strong [ref=f2e557]: SCHED04a 1788503372257-66
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e558]
+                  - cell "—" [ref=f2e559]
+                  - cell "RPA Developer" [ref=f2e560]
+                  - cell "—" [ref=f2e561]
+                  - cell "—" [ref=f2e562]
+                  - cell [ref=f2e563]:
+                    - generic [ref=f2e564]:
+                      - button [ref=f2e566] [cursor=pointer]:
+                        - img "file-text" [ref=f2e568]
+                      - button "View" [ref=f2e572] [cursor=pointer]
+                      - button "Edit" [ref=f2e575] [cursor=pointer]
+                      - button [ref=f2e578] [cursor=pointer]:
+                        - img "message" [ref=f2e580]
+                - row [ref=f2e583]:
+                  - cell "13" [ref=f2e584]
+                  - cell [ref=f2e585]:
+                    - strong [ref=f2e587]: SCHED16 1788503335094-504
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e588]
+                  - cell "—" [ref=f2e589]
+                  - cell "RPA Developer" [ref=f2e590]
+                  - cell "—" [ref=f2e591]
+                  - cell "—" [ref=f2e592]
+                  - cell [ref=f2e593]:
+                    - generic [ref=f2e594]:
+                      - button [ref=f2e596] [cursor=pointer]:
+                        - img "file-text" [ref=f2e598]
+                      - button "View" [ref=f2e602] [cursor=pointer]
+                      - button "Edit" [ref=f2e605] [cursor=pointer]
+                      - button [ref=f2e608] [cursor=pointer]:
+                        - img "message" [ref=f2e610]
+                - row [ref=f2e613]:
+                  - cell "14" [ref=f2e614]
+                  - cell [ref=f2e615]:
+                    - strong [ref=f2e617]: SCHED15 1788503303733-965
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e618]
+                  - cell "—" [ref=f2e619]
+                  - cell "RPA Developer" [ref=f2e620]
+                  - cell "—" [ref=f2e621]
+                  - cell "—" [ref=f2e622]
+                  - cell [ref=f2e623]:
+                    - generic [ref=f2e624]:
+                      - button [ref=f2e626] [cursor=pointer]:
+                        - img "file-text" [ref=f2e628]
+                      - button "View" [ref=f2e632] [cursor=pointer]
+                      - button "Edit" [ref=f2e635] [cursor=pointer]
+                      - button [ref=f2e638] [cursor=pointer]:
+                        - img "message" [ref=f2e640]
+                - row [ref=f2e643]:
+                  - cell "15" [ref=f2e644]
+                  - cell [ref=f2e645]:
+                    - strong [ref=f2e647]: SCHED14 1788503268257-953
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e648]
+                  - cell "—" [ref=f2e649]
+                  - cell "RPA Developer" [ref=f2e650]
+                  - cell "—" [ref=f2e651]
+                  - cell "—" [ref=f2e652]
+                  - cell [ref=f2e653]:
+                    - generic [ref=f2e654]:
+                      - button [ref=f2e656] [cursor=pointer]:
+                        - img "file-text" [ref=f2e658]
+                      - button "View" [ref=f2e662] [cursor=pointer]
+                      - button "Edit" [ref=f2e665] [cursor=pointer]
+                      - button [ref=f2e668] [cursor=pointer]:
+                        - img "message" [ref=f2e670]
+                - row [ref=f2e673]:
+                  - cell "16" [ref=f2e674]
+                  - cell [ref=f2e675]:
+                    - strong [ref=f2e677]: SCHED13 1788503236046-559
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e678]
+                  - cell "—" [ref=f2e679]
+                  - cell "RPA Developer" [ref=f2e680]
+                  - cell "—" [ref=f2e681]
+                  - cell "—" [ref=f2e682]
+                  - cell [ref=f2e683]:
+                    - generic [ref=f2e684]:
+                      - button [ref=f2e686] [cursor=pointer]:
+                        - img "file-text" [ref=f2e688]
+                      - button "View" [ref=f2e692] [cursor=pointer]
+                      - button "Edit" [ref=f2e695] [cursor=pointer]
+                      - button [ref=f2e698] [cursor=pointer]:
+                        - img "message" [ref=f2e700]
+                - row [ref=f2e703]:
+                  - cell "17" [ref=f2e704]
+                  - cell [ref=f2e705]:
+                    - strong [ref=f2e707]: SCHED12 1788503203789-883
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e708]
+                  - cell "—" [ref=f2e709]
+                  - cell "RPA Developer" [ref=f2e710]
+                  - cell "—" [ref=f2e711]
+                  - cell "—" [ref=f2e712]
+                  - cell [ref=f2e713]:
+                    - generic [ref=f2e714]:
+                      - button [ref=f2e716] [cursor=pointer]:
+                        - img "file-text" [ref=f2e718]
+                      - button "View" [ref=f2e722] [cursor=pointer]
+                      - button "Edit" [ref=f2e725] [cursor=pointer]
+                      - button [ref=f2e728] [cursor=pointer]:
+                        - img "message" [ref=f2e730]
+                - row [ref=f2e733]:
+                  - cell "18" [ref=f2e734]
+                  - cell [ref=f2e735]:
+                    - strong [ref=f2e737]: SCHED10 1788503171348-381
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e738]
+                  - cell "—" [ref=f2e739]
+                  - cell "RPA Developer" [ref=f2e740]
+                  - cell "—" [ref=f2e741]
+                  - cell "—" [ref=f2e742]
+                  - cell [ref=f2e743]:
+                    - generic [ref=f2e744]:
+                      - button [ref=f2e746] [cursor=pointer]:
+                        - img "file-text" [ref=f2e748]
+                      - button "View" [ref=f2e752] [cursor=pointer]
+                      - button "Edit" [ref=f2e755] [cursor=pointer]
+                      - button [ref=f2e758] [cursor=pointer]:
+                        - img "message" [ref=f2e760]
+                - row [ref=f2e763]:
+                  - cell "19" [ref=f2e764]
+                  - cell [ref=f2e765]:
+                    - strong [ref=f2e767]: SCHED09 1788503139425-176
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e768]
+                  - cell "—" [ref=f2e769]
+                  - cell "RPA Developer" [ref=f2e770]
+                  - cell "—" [ref=f2e771]
+                  - cell "—" [ref=f2e772]
+                  - cell [ref=f2e773]:
+                    - generic [ref=f2e774]:
+                      - button [ref=f2e776] [cursor=pointer]:
+                        - img "file-text" [ref=f2e778]
+                      - button "View" [ref=f2e782] [cursor=pointer]
+                      - button "Edit" [ref=f2e785] [cursor=pointer]
+                      - button [ref=f2e788] [cursor=pointer]:
+                        - img "message" [ref=f2e790]
+                - row [ref=f2e793]:
+                  - cell "20" [ref=f2e794]
+                  - cell [ref=f2e795]:
+                    - strong [ref=f2e797]: SCHED08 1788503102228-374
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e798]
+                  - cell "—" [ref=f2e799]
+                  - cell "RPA Developer" [ref=f2e800]
+                  - cell "—" [ref=f2e801]
+                  - cell "—" [ref=f2e802]
+                  - cell [ref=f2e803]:
+                    - generic [ref=f2e804]:
+                      - button [ref=f2e806] [cursor=pointer]:
+                        - img "file-text" [ref=f2e808]
+                      - button "View" [ref=f2e812] [cursor=pointer]
+                      - button "Edit" [ref=f2e815] [cursor=pointer]
+                      - button [ref=f2e818] [cursor=pointer]:
+                        - img "message" [ref=f2e820]
+                - row [ref=f2e823]:
+                  - cell "21" [ref=f2e824]
+                  - cell [ref=f2e825]:
+                    - strong [ref=f2e827]: SCHED05 1788503070130-34
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e828]
+                  - cell "—" [ref=f2e829]
+                  - cell "RPA Developer" [ref=f2e830]
+                  - cell "—" [ref=f2e831]
+                  - cell "—" [ref=f2e832]
+                  - cell [ref=f2e833]:
+                    - generic [ref=f2e834]:
+                      - button [ref=f2e836] [cursor=pointer]:
+                        - img "file-text" [ref=f2e838]
+                      - button "View" [ref=f2e842] [cursor=pointer]
+                      - button "Edit" [ref=f2e845] [cursor=pointer]
+                      - button [ref=f2e848] [cursor=pointer]:
+                        - img "message" [ref=f2e850]
+                - row [ref=f2e853]:
+                  - cell "22" [ref=f2e854]
+                  - cell [ref=f2e855]:
+                    - strong [ref=f2e857]: SCHED02L 1788503043711-231
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e858]
+                  - cell "—" [ref=f2e859]
+                  - cell "RPA Developer" [ref=f2e860]
+                  - cell "—" [ref=f2e861]
+                  - cell "—" [ref=f2e862]
+                  - cell [ref=f2e863]:
+                    - generic [ref=f2e864]:
+                      - button [ref=f2e866] [cursor=pointer]:
+                        - img "file-text" [ref=f2e868]
+                      - button "View" [ref=f2e872] [cursor=pointer]
+                      - button "Edit" [ref=f2e875] [cursor=pointer]
+                      - button [ref=f2e878] [cursor=pointer]:
+                        - img "message" [ref=f2e880]
+                - row [ref=f2e883]:
+                  - cell "23" [ref=f2e884]
+                  - cell [ref=f2e885]:
+                    - strong [ref=f2e887]: SCHED02 1788503018863-170
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e888]
+                  - cell "—" [ref=f2e889]
+                  - cell "RPA Developer" [ref=f2e890]
+                  - cell "—" [ref=f2e891]
+                  - cell "—" [ref=f2e892]
+                  - cell [ref=f2e893]:
+                    - generic [ref=f2e894]:
+                      - button [ref=f2e896] [cursor=pointer]:
+                        - img "file-text" [ref=f2e898]
+                      - button "View" [ref=f2e902] [cursor=pointer]
+                      - button "Edit" [ref=f2e905] [cursor=pointer]
+                      - button [ref=f2e908] [cursor=pointer]:
+                        - img "message" [ref=f2e910]
+                - row [ref=f2e913]:
+                  - cell "24" [ref=f2e914]
+                  - cell [ref=f2e915]:
+                    - strong [ref=f2e917]: SCHED03 1788503007803-972
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e918]
+                  - cell "—" [ref=f2e919]
+                  - cell "RPA Developer" [ref=f2e920]
+                  - cell "—" [ref=f2e921]
+                  - cell "—" [ref=f2e922]
+                  - cell [ref=f2e923]:
+                    - generic [ref=f2e924]:
+                      - button [ref=f2e926] [cursor=pointer]:
+                        - img "file-text" [ref=f2e928]
+                      - button "View" [ref=f2e932] [cursor=pointer]
+                      - button "Edit" [ref=f2e935] [cursor=pointer]
+                      - button [ref=f2e938] [cursor=pointer]:
+                        - img "message" [ref=f2e940]
+                - row [ref=f2e943]:
+                  - cell "25" [ref=f2e944]
+                  - cell [ref=f2e945]:
+                    - strong [ref=f2e947]: SCHED04c 1788502997350-437
+                  - cell "claudepankajmondal@gmail.com" [ref=f2e948]
+                  - cell "—" [ref=f2e949]
+                  - cell "RPA Developer" [ref=f2e950]
+                  - cell "—" [ref=f2e951]
+                  - cell "—" [ref=f2e952]
+                  - cell [ref=f2e953]:
+                    - generic [ref=f2e954]:
+                      - button [ref=f2e956] [cursor=pointer]:
+                        - img "file-text" [ref=f2e958]
+                      - button "View" [ref=f2e962] [cursor=pointer]
+                      - button "Edit" [ref=f2e965] [cursor=pointer]
+                      - button [ref=f2e968] [cursor=pointer]:
+                        - img "message" [ref=f2e970]
+            - list [ref=f2e973]:
+              - listitem [ref=f2e974]: 1–25 of 443
+              - listitem "Previous Page" [ref=f2e975]:
+                - button [disabled] [ref=f2e976]:
+                  - img "left" [ref=f2e977]
+              - listitem "1" [ref=f2e980] [cursor=pointer]
+              - listitem "2" [ref=f2e982] [cursor=pointer]
+              - listitem "3" [ref=f2e984] [cursor=pointer]
+              - listitem "4" [ref=f2e986] [cursor=pointer]
+              - listitem "5" [ref=f2e988] [cursor=pointer]
+              - listitem "Next 5 Pages" [ref=f2e990] [cursor=pointer]:
+                - generic [ref=f2e992]:
+                  - img "double-right" [ref=f2e993]
+                  - generic [ref=f2e996]: •••
+              - listitem "18" [ref=f2e997] [cursor=pointer]
+              - listitem "Next Page" [ref=f2e999] [cursor=pointer]:
+                - button [ref=f2e1000]:
+                  - img "right" [ref=f2e1001]
+              - listitem [ref=f2e1004]:
+                - generic "Page Size" [ref=f2e1005] [cursor=pointer]:
+                  - generic [ref=f2e1007]:
+                    - combobox "Page Size" [ref=f2e1009]
+                    - generic "25 / page" [ref=f2e1010]

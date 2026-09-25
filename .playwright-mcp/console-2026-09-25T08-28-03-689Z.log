@@ -1,0 +1,22 @@
+[ 1792652ms] [WARNING] [socket] disconnected: ping timeout @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1801539ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1801540ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1806387ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1806388ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1816168ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 1816168ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3789547ms] [WARNING] [socket] disconnected: ping timeout @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3803061ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3803063ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3810533ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3810534ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3821438ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3821439ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3832242ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3832243ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3843357ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3843358ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3858835ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3858836ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3877036ms] [ERROR] WebSocket connection to 'wss://ats-staging.aapnainfotech.com/socket.io/?EIO=4&transport=websocket' failed: Error in connection establishment: net::ERR_NAME_NOT_RESOLVED @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514
+[ 3877037ms] [WARNING] [socket] connect_error: websocket error @ https://ats-staging.aapnainfotech.com/assets/index-BHyemBYc.js:514

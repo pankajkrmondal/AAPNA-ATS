@@ -1,0 +1,584 @@
+- generic [ref=f107e1]:
+  - generic [ref=f107e12]:
+    - complementary [ref=f107e13]:
+      - generic [ref=f107e14]:
+        - generic [ref=f107e15] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f107e17]
+          - generic [ref=f107e18]: ATS Platform
+        - menu [ref=f107e19]:
+          - menuitem "dashboard Dashboard" [ref=f107e20] [cursor=pointer]:
+            - img "dashboard" [ref=f107e21]
+            - generic [ref=f107e24]: Dashboard
+          - menuitem "file-text MRF" [ref=f107e25] [cursor=pointer]:
+            - img "file-text" [ref=f107e26]
+            - generic [ref=f107e29]: MRF
+          - menuitem "solution Search Candidate" [ref=f107e30] [cursor=pointer]:
+            - img "solution" [ref=f107e31]
+            - generic [ref=f107e34]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f107e35] [cursor=pointer]:
+            - img "upload" [ref=f107e36]
+            - generic [ref=f107e39]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f107e40] [cursor=pointer]:
+            - img "shop" [ref=f107e41]
+            - generic [ref=f107e44]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f107e45] [cursor=pointer]:
+            - img "audit" [ref=f107e46]
+            - generic [ref=f107e49]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f107e50] [cursor=pointer]:
+            - img "filter" [ref=f107e51]
+            - generic [ref=f107e54]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f107e55] [cursor=pointer]:
+            - img "apartment" [ref=f107e56]
+            - generic [ref=f107e59]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f107e60] [cursor=pointer]:
+            - img "bar-chart" [ref=f107e61]
+            - generic [ref=f107e64]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=f107e65] [cursor=pointer]:
+            - img "mail" [ref=f107e66]
+            - generic [ref=f107e69]: Email Templates
+          - menuitem "setting Settings" [ref=f107e70] [cursor=pointer]:
+            - img "setting" [ref=f107e71]
+            - generic [ref=f107e74]: Settings
+    - generic [ref=f107e75]:
+      - banner [ref=f107e76]:
+        - generic [ref=f107e77]:
+          - button [ref=f107e79] [cursor=pointer]:
+            - img "menu-fold" [ref=f107e81]
+          - generic [ref=f107e84]: MRF
+        - generic [ref=f107e85]:
+          - button [ref=f107e88] [cursor=pointer]:
+            - img "bell" [ref=f107e90]
+          - button "Toggle theme" [ref=f107e94] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f107e106] [cursor=pointer]:
+            - generic [ref=f107e108]:
+              - img "user" [ref=f107e109]
+              - img "setting" [ref=f107e112]
+            - generic [ref=f107e115]: Admin Portal
+          - img "user" [ref=f107e120] [cursor=pointer]
+      - main [ref=f107e123]:
+        - generic [ref=f107e125]:
+          - generic [ref=f107e127]:
+            - generic [ref=f107e128]:
+              - heading "New MRF Request" [level=3] [ref=f107e129]
+              - text: Hiring Manager Details
+            - generic [ref=f107e130]:
+              - generic [ref=f107e131]:
+                - generic [ref=f107e134]:
+                  - generic [ref=f107e136]:
+                    - text: "*"
+                    - generic [ref=f107e137]: First Name *
+                  - textbox "* First Name * * First Name" [ref=f107e455]:
+                    - /placeholder: e.g. Abhijit
+                - generic [ref=f107e144]:
+                  - generic [ref=f107e146]:
+                    - text: "*"
+                    - generic [ref=f107e147]: Last Name *
+                  - textbox "* Last Name * * Last Name" [ref=f107e456]:
+                    - /placeholder: e.g. Roy
+                - generic [ref=f107e154]:
+                  - generic [ref=f107e156]:
+                    - text: "*"
+                    - generic [ref=f107e157]: Email *
+                  - textbox "* Email * * Manager Email" [ref=f107e457]:
+                    - /placeholder: e.g. aroy@aapnainfotech.com
+              - generic [ref=f107e162]:
+                - generic [ref=f107e165]:
+                  - generic [ref=f107e166]: CC Email (Keep Comma Separated)
+                  - textbox "CC Email (Keep Comma Separated)" [ref=f107e172]:
+                    - /placeholder: e.g. example1@aapnainfotech.com, example2@aapnainfotech.com
+                - generic [ref=f107e175]:
+                  - generic [ref=f107e177]:
+                    - text: "*"
+                    - generic [ref=f107e178]: Role *
+                  - textbox "* Role * * Position Title" [ref=f107e458]:
+                    - /placeholder: e.g. Senior Software Engineer
+                - generic [ref=f107e185]:
+                  - generic [ref=f107e187]:
+                    - text: "*"
+                    - generic [ref=f107e188]: JD Link *
+                  - textbox "* JD Link * * JD Resource" [ref=f107e459]:
+                    - /placeholder: e.g. https://link-to-jd.com
+              - generic [ref=f107e193]:
+                - generic [ref=f107e196]:
+                  - generic [ref=f107e198]:
+                    - text: "*"
+                    - generic [ref=f107e199]: Budget Min (Annual CTC) *
+                  - generic [ref=f107e203]:
+                    - generic:
+                      - button "Increase Value" [ref=f107e204] [cursor=pointer]:
+                        - img "up" [ref=f107e205]
+                      - button "Decrease Value" [ref=f107e208] [cursor=pointer]:
+                        - img "down" [ref=f107e209]
+                    - spinbutton "* Budget Min (Annual CTC) * * Budget Min" [ref=f107e460]
+                - generic [ref=f107e216]:
+                  - generic [ref=f107e218]:
+                    - text: "*"
+                    - generic [ref=f107e219]: Budget Max (Annual CTC) *
+                  - generic [ref=f107e223]:
+                    - generic:
+                      - button "Increase Value" [ref=f107e224] [cursor=pointer]:
+                        - img "up" [ref=f107e225]
+                      - button "Decrease Value" [ref=f107e228] [cursor=pointer]:
+                        - img "down" [ref=f107e229]
+                    - spinbutton "* Budget Max (Annual CTC) * * Budget Max" [ref=f107e461]
+              - generic [ref=f107e235]:
+                - generic [ref=f107e236]: Email Body
+                - textbox "Email Body" [ref=f107e242]:
+                  - /placeholder: "As discussed, we would like to initiate the hiring process for this position.\n\nWe request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing."
+              - generic [ref=f107e243]:
+                - button "send Submit Request" [ref=f107e245] [cursor=pointer]:
+                  - img "send" [ref=f107e247]
+                  - generic [ref=f107e250]: Submit Request
+                - button "clear Clear" [ref=f107e252] [cursor=pointer]:
+                  - img "clear" [ref=f107e254]
+                  - generic [ref=f107e257]: Clear
+          - generic [ref=f107e259]:
+            - generic [ref=f107e260]:
+              - generic [ref=f107e261]:
+                - generic [ref=f107e262]: Records
+                - textbox "Search records..." [ref=f107e263]
+                - generic [ref=f107e264]:
+                  - generic [ref=f107e265] [cursor=pointer]:
+                    - generic [ref=f107e266]:
+                      - radio "All" [checked]
+                    - text: All
+                  - generic [ref=f107e267] [cursor=pointer]:
+                    - generic [ref=f107e268]:
+                      - radio "Pending"
+                    - text: Pending
+                  - generic [ref=f107e269] [cursor=pointer]:
+                    - generic [ref=f107e270]:
+                      - radio "Manager Submitted"
+                    - text: Manager Submitted
+                  - generic [ref=f107e271] [cursor=pointer]:
+                    - generic [ref=f107e272]:
+                      - radio "Closed"
+                    - text: Closed
+              - button "file-excel Export CSV" [ref=f107e274] [cursor=pointer]:
+                - img "file-excel" [ref=f107e276]
+                - generic [ref=f107e279]: Export CSV
+              - button "file-excel Approval audit" [ref=f107e281] [cursor=pointer]:
+                - img "file-excel" [ref=f107e283]
+                - generic [ref=f107e286]: Approval audit
+            - generic [ref=f107e289]:
+              - table [ref=f107e293]:
+                - rowgroup [ref=f107e294]:
+                  - row [ref=f107e295]:
+                    - columnheader "FIRST NAME" [ref=f107e296]
+                    - columnheader "LAST NAME" [ref=f107e297]
+                    - columnheader "EMAIL" [ref=f107e298]
+                    - columnheader "ROLE" [ref=f107e299]
+                    - columnheader "MIN BUDGET" [ref=f107e300]
+                    - columnheader "MAX BUDGET" [ref=f107e301]
+                    - columnheader "MRF STATUS" [ref=f107e302]
+                    - columnheader "CREATED DATE" [ref=f107e303]
+                - rowgroup [ref=f107e304]:
+                  - row [ref=f107e305] [cursor=pointer]:
+                    - cell "ZZTest" [ref=f107e306]
+                    - cell "HM" [ref=f107e307]
+                    - cell "qa.mrf-approval-test@example.com" [ref=f107e308]
+                    - cell [ref=f107e309]:
+                      - strong [ref=f107e311]: ZZ-TEST MRF Approval Fix B-UI
+                    - cell "₹5,00,000" [ref=f107e312]
+                    - cell "₹6,00,000" [ref=f107e313]
+                    - cell "REJECTED" [ref=f107e314]
+                    - cell "25 Sept 2026" [ref=f107e316]
+                  - row [ref=f107e317] [cursor=pointer]:
+                    - cell "Chhaya Verma" [ref=f107e318]
+                    - cell "Chhaya Verma" [ref=f107e319]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e320]
+                    - cell [ref=f107e321]:
+                      - strong [ref=f107e323]: Test Pilot3
+                    - cell "₹2,00,000" [ref=f107e324]
+                    - cell "₹5,00,000" [ref=f107e325]
+                    - cell "APPROVED" [ref=f107e326]
+                    - cell "9 Sept 2026" [ref=f107e328]
+                  - row [ref=f107e329] [cursor=pointer]:
+                    - cell "Chhaya Verma" [ref=f107e330]
+                    - cell "Chhaya Verma" [ref=f107e331]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e332]
+                    - cell [ref=f107e333]:
+                      - strong [ref=f107e335]: Test
+                    - cell "₹5,00,000" [ref=f107e336]
+                    - cell "₹7,00,000" [ref=f107e337]
+                    - cell "APPROVED" [ref=f107e338]
+                    - cell "7 Sept 2026" [ref=f107e340]
+                  - row [ref=f107e341] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e342]
+                    - cell "M" [ref=f107e343]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e344]
+                    - cell [ref=f107e345]:
+                      - strong [ref=f107e347]: Junior AI Engineer
+                    - cell "₹5,00,000" [ref=f107e348]
+                    - cell "₹7,00,000" [ref=f107e349]
+                    - cell "MANAGER SUBMITTED" [ref=f107e350]
+                    - cell "1 Sept 2026" [ref=f107e352]
+                  - row [ref=f107e353] [cursor=pointer]:
+                    - cell "Chhaya" [ref=f107e354]
+                    - cell "Verma" [ref=f107e355]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e356]
+                    - cell [ref=f107e357]:
+                      - strong [ref=f107e359]: SaaS Sales Lead
+                    - cell "₹10,00,000" [ref=f107e360]
+                    - cell "₹15,00,000" [ref=f107e361]
+                    - cell "PENDING" [ref=f107e362]
+                    - cell "1 Sept 2026" [ref=f107e364]
+                  - row [ref=f107e365] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e366]
+                    - cell "Mopuri" [ref=f107e367]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e368]
+                    - cell [ref=f107e369]:
+                      - strong [ref=f107e371]: QA Automation Engineer
+                    - cell "₹5,00,000" [ref=f107e372]
+                    - cell "₹7,00,000" [ref=f107e373]
+                    - cell "APPROVED" [ref=f107e374]
+                    - cell "21 Aug 2026" [ref=f107e376]
+                  - row [ref=f107e377] [cursor=pointer]:
+                    - cell "Naveen" [ref=f107e378]
+                    - cell "Satywali" [ref=f107e379]
+                    - cell "nsatywali@aapnainfotech.com" [ref=f107e380]
+                    - cell [ref=f107e381]:
+                      - strong [ref=f107e383]: HR
+                    - cell "₹10,00,000" [ref=f107e384]
+                    - cell "₹12,00,000" [ref=f107e385]
+                    - cell "APPROVED" [ref=f107e386]
+                    - cell "6 Jul 2026" [ref=f107e388]
+                  - row [ref=f107e389] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e390]
+                    - cell "Mopuri" [ref=f107e391]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e392]
+                    - cell [ref=f107e393]:
+                      - strong [ref=f107e395]: Python Developer
+                    - cell "₹5,00,000" [ref=f107e396]
+                    - cell "₹10,00,000" [ref=f107e397]
+                    - cell "MANAGER SUBMITTED" [ref=f107e398]
+                    - cell "18 Jun 2026" [ref=f107e400]
+                  - row [ref=f107e401] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e402]
+                    - cell "Mopuri" [ref=f107e403]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e404]
+                    - cell [ref=f107e405]:
+                      - strong [ref=f107e407]: Python Developer
+                    - cell "₹5,00,000" [ref=f107e408]
+                    - cell "₹10,00,000" [ref=f107e409]
+                    - cell "MANAGER SUBMITTED" [ref=f107e410]
+                    - cell "18 Jun 2026" [ref=f107e412]
+                  - row [ref=f107e413] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e414]
+                    - cell "Mopuri" [ref=f107e415]
+                    - cell "harishmopuri97@gmail.com" [ref=f107e416]
+                    - cell [ref=f107e417]:
+                      - strong [ref=f107e419]: QA Automation Engineer TEST
+                    - cell "₹50,00,000" [ref=f107e420]
+                    - cell "₹5,00,00,000" [ref=f107e421]
+                    - cell "PENDING" [ref=f107e422]
+                    - cell "17 Jun 2026" [ref=f107e424]
+              - list [ref=f107e425]:
+                - listitem "Previous Page" [ref=f107e426]:
+                  - button [disabled] [ref=f107e427]:
+                    - img "left" [ref=f107e428]
+                - listitem "1" [ref=f107e431] [cursor=pointer]
+                - listitem "2" [ref=f107e433] [cursor=pointer]
+                - listitem "3" [ref=f107e435] [cursor=pointer]
+                - listitem "4" [ref=f107e437] [cursor=pointer]
+                - listitem "5" [ref=f107e439] [cursor=pointer]
+                - listitem "Next 5 Pages" [ref=f107e441] [cursor=pointer]:
+                  - generic [ref=f107e443]:
+                    - img "double-right" [ref=f107e444]
+                    - generic [ref=f107e447]: •••
+                - listitem "13" [ref=f107e448] [cursor=pointer]
+                - listitem "Next Page" [ref=f107e450] [cursor=pointer]:
+                  - button [ref=f107e451]:
+                    - img "right" [ref=f107e452]
+  - generic [ref=f107e462]:
+    - 'dialog "ZZTest HM — ZZ-TEST MRF Approval Fix B-UI Submitted 25 Sep 2026, 11:48 am • ID #186"':
+      - generic [ref=f107e463]:
+        - button "Close" [ref=f107e464] [cursor=pointer]:
+          - generic "Close" [ref=f107e465]:
+            - img "close" [ref=f107e466]
+        - generic [ref=f107e471]:
+          - generic [ref=f107e472]: ZZTest HM — ZZ-TEST MRF Approval Fix B-UI
+          - generic [ref=f107e473]: "Submitted 25 Sep 2026, 11:48 am • ID #186"
+        - generic [ref=f107e475]:
+          - generic [ref=f107e476]:
+            - generic [ref=f107e477]: Workflow Summary
+            - generic [ref=f107e478]:
+              - generic [ref=f107e480]:
+                - generic [ref=f107e481]: "MRF Raise Status:"
+                - generic [ref=f107e482]: REJECTED
+              - generic [ref=f107e485]:
+                - generic [ref=f107e486]: "MRF Approval Status:"
+                - generic [ref=f107e487]: REJECTED
+            - button "Close requisition…" [ref=f107e490] [cursor=pointer]
+          - generic [ref=f107e492]:
+            - generic [ref=f107e493]:
+              - generic [ref=f107e494]: Approval Trail
+              - button "Refresh approval trail" [ref=f107e497] [cursor=pointer]:
+                - img "reload" [ref=f107e499]
+            - generic [ref=f107e502]:
+              - generic [ref=f107e503]: DECLINED
+              - text: by Staging Approver A
+              - generic [ref=f107e504]: (hmopuri@aapnainfotech.com)
+              - text: on 25 Sep 2026, 11:50 AM IST
+              - generic [ref=f107e505]: · IP ::1
+              - generic [ref=f107e506]: "Comment: Declined - budget not approved this quarter (B-UI test)"
+            - generic [ref=f107e507]:
+              - generic [ref=f107e508]:
+                - generic [ref=f107e509]: Staging Approver A hmopuri@aapnainfotech.com
+                - generic [ref=f107e510]: Replaced by a newer link
+              - generic [ref=f107e511]:
+                - generic [ref=f107e512]: Staging Approver B saukumar@aapnainfotech.com
+                - generic [ref=f107e513]: Replaced by a newer link
+              - generic [ref=f107e514]:
+                - generic [ref=f107e515]: Staging Approver A hmopuri@aapnainfotech.com
+                - generic [ref=f107e516]: Decided
+              - generic [ref=f107e517]:
+                - generic [ref=f107e518]: Staging Approver B saukumar@aapnainfotech.com
+                - generic [ref=f107e519]: Closed — decided by another approver
+            - list [ref=f107e520]:
+              - listitem [ref=f107e521]:
+                - generic [ref=f107e524]: 25 Sep 2026, 11:48 AM ISTApproval request emailed to Staging Approver A
+              - listitem [ref=f107e526]:
+                - generic [ref=f107e529]: 25 Sep 2026, 11:48 AM ISTApproval request emailed to Staging Approver B
+              - listitem [ref=f107e531]:
+                - generic [ref=f107e534]: 25 Sep 2026, 11:49 AM ISTPan mondal re-sent the approval links (2 old link(s) closed)
+              - listitem [ref=f107e536]:
+                - generic [ref=f107e539]: 25 Sep 2026, 11:49 AM ISTApproval request re-sent to Staging Approver A
+              - listitem [ref=f107e541]:
+                - generic [ref=f107e544]: 25 Sep 2026, 11:49 AM ISTApproval request re-sent to Staging Approver B
+              - listitem [ref=f107e546]:
+                - generic [ref=f107e550]:
+                  - text: 25 Sep 2026, 11:50 AM ISTStaging Approver A opened their approval link
+                  - generic [ref=f107e551]: IP ::1 · Chrome on Windows
+              - listitem [ref=f107e553]:
+                - generic [ref=f107e557]:
+                  - text: 25 Sep 2026, 11:50 AM ISTStaging Approver A used a replaced approval link — refused
+                  - generic [ref=f107e558]: IP ::1 · Safari on iOS
+              - listitem [ref=f107e560]:
+                - generic [ref=f107e564]:
+                  - text: 25 Sep 2026, 11:50 AM ISTStaging Approver A opened their approval link
+                  - generic [ref=f107e565]: IP ::1 · Chrome on Windows
+              - listitem [ref=f107e567]:
+                - generic [ref=f107e571]:
+                  - text: 25 Sep 2026, 11:50 AM ISTDECLINED by Staging Approver A
+                  - generic [ref=f107e572]: "Comment: Declined - budget not approved this quarter (B-UI test)"
+                  - generic [ref=f107e573]: IP ::1 · Chrome on Windows
+              - listitem [ref=f107e575]:
+                - generic [ref=f107e578]: 25 Sep 2026, 11:50 AM ISTConfirmation emailed to Staging Approver A
+              - listitem [ref=f107e580]:
+                - generic [ref=f107e582]: 25 Sep 2026, 11:50 AM ISTStaging Approver B was emailed that it is already decided
+          - generic [ref=f107e584]: New MRF Request Info
+          - generic [ref=f107e585]:
+            - generic [ref=f107e586]:
+              - generic [ref=f107e589]:
+                - generic [ref=f107e591]:
+                  - text: "*"
+                  - generic [ref=f107e592]: First Name
+                - textbox [disabled] [ref=f107e596]: ZZTest
+              - generic [ref=f107e599]:
+                - generic [ref=f107e601]:
+                  - text: "*"
+                  - generic [ref=f107e602]: Last Name
+                - textbox [disabled] [ref=f107e606]: HM
+              - generic [ref=f107e609]:
+                - generic [ref=f107e611]:
+                  - text: "*"
+                  - generic [ref=f107e612]: Manager Email
+                - textbox [disabled] [ref=f107e616]: qa.mrf-approval-test@example.com
+              - generic [ref=f107e619]:
+                - generic [ref=f107e621]:
+                  - text: "*"
+                  - generic [ref=f107e622]: Budget Min
+                - spinbutton [disabled] [ref=f107e628]: 500,000
+            - generic [ref=f107e629]:
+              - generic [ref=f107e632]:
+                - generic [ref=f107e634]:
+                  - text: "*"
+                  - generic [ref=f107e635]: Budget Max
+                - spinbutton [disabled] [ref=f107e641]: 600,000
+              - generic [ref=f107e644]:
+                - generic [ref=f107e646]:
+                  - text: "*"
+                  - generic [ref=f107e647]: JD Resource
+                - link "View Document ↗" [ref=f107e651] [cursor=pointer]:
+                  - /url: https://example.com/zz-test-jd.pdf
+            - generic [ref=f107e655]:
+              - generic [ref=f107e657]:
+                - text: "*"
+                - generic [ref=f107e658]: Position Title
+              - textbox [disabled] [ref=f107e662]: ZZ-TEST MRF Approval Fix B-UI
+            - generic [ref=f107e663]:
+              - generic [ref=f107e666]:
+                - generic [ref=f107e667]: MRF Raise Status
+                - generic [ref=f107e675]:
+                  - combobox "MRF Raise Status" [disabled] [ref=f107e677]
+                  - generic "rejected" [ref=f107e678]
+              - generic [ref=f107e681]:
+                - generic [ref=f107e682]: Form Submission Date
+                - textbox [disabled] [ref=f107e688]: 25 September 2026
+          - generic [ref=f107e689]:
+            - generic [ref=f107e690]: Submitted MRF Details
+            - generic [ref=f107e691]:
+              - generic [ref=f107e692]:
+                - generic [ref=f107e693]: Position
+                - generic [ref=f107e694]:
+                  - generic [ref=f107e697]:
+                    - generic [ref=f107e698]: Hiring Manager Name
+                    - textbox "Hiring Manager Name" [disabled] [ref=f107e704]: QA Test HM
+                  - generic [ref=f107e707]:
+                    - generic [ref=f107e708]: HM Designation
+                    - textbox "HM Designation" [disabled] [ref=f107e714]: QA
+                  - generic [ref=f107e717]:
+                    - generic [ref=f107e718]: Date of Submission
+                    - textbox [disabled] [ref=f107e724]: 25 September 2026
+                  - generic [ref=f107e727]:
+                    - generic [ref=f107e728]: Position Hiring For
+                    - textbox "Position Hiring For" [disabled] [ref=f107e734]: ZZ-TEST MRF Approval Fix B-UI
+                  - generic [ref=f107e737]:
+                    - generic [ref=f107e738]: Number of Positions
+                    - generic [ref=f107e746]:
+                      - combobox "Number of Positions" [disabled] [ref=f107e748]
+                      - generic "1" [ref=f107e749]
+                  - generic [ref=f107e752]:
+                    - generic [ref=f107e753]: Required In
+                    - generic [ref=f107e761]:
+                      - combobox "Required In" [disabled] [ref=f107e763]
+                      - generic "One month (standard closure time)" [ref=f107e764]
+                  - generic [ref=f107e767]:
+                    - generic [ref=f107e768]: Position Reports To
+                    - textbox "Position Reports To" [disabled] [ref=f107e774]
+                  - generic [ref=f107e777]:
+                    - generic [ref=f107e778]: Employment Type
+                    - generic [ref=f107e786]:
+                      - combobox "Employment Type" [disabled] [ref=f107e788]
+                      - generic "Full Time" [ref=f107e789]
+              - generic [ref=f107e790]:
+                - generic [ref=f107e791]: Requirement & Experience
+                - generic [ref=f107e792]:
+                  - generic [ref=f107e795]:
+                    - generic [ref=f107e796]: Requirement for Team
+                    - generic [ref=f107e804]:
+                      - combobox "Requirement for Team" [disabled] [ref=f107e806]
+                      - generic: Select your answer
+                  - generic [ref=f107e809]:
+                    - generic [ref=f107e810]: Requirement for Team (Other)
+                    - textbox "Requirement for Team (Other)" [disabled] [ref=f107e816]
+                  - generic [ref=f107e819]:
+                    - generic [ref=f107e820]: Desired Qualification
+                    - generic [ref=f107e828]:
+                      - combobox "Desired Qualification" [disabled] [ref=f107e830]
+                      - generic: Select your answer
+                  - generic [ref=f107e833]:
+                    - generic [ref=f107e834]: PG Information
+                    - textbox "PG Information" [disabled] [ref=f107e840]
+                  - generic [ref=f107e843]:
+                    - generic [ref=f107e844]: Graduate / Other Info
+                    - textbox "Graduate / Other Info" [disabled] [ref=f107e850]
+                  - generic [ref=f107e853]:
+                    - generic [ref=f107e854]: Other Qualification Info
+                    - textbox "Other Qualification Info" [disabled] [ref=f107e860]
+                  - generic [ref=f107e863]:
+                    - generic [ref=f107e864]: Replacement or New Role
+                    - generic [ref=f107e872]:
+                      - combobox "Replacement or New Role" [disabled] [ref=f107e874]
+                      - generic: Select your answer
+                  - generic [ref=f107e877]:
+                    - generic [ref=f107e878]: Replacement Comments
+                    - textbox "Replacement Comments" [disabled] [ref=f107e884]
+                  - generic [ref=f107e887]:
+                    - generic [ref=f107e888]: Total Years of Experience
+                    - spinbutton "Total Years of Experience" [disabled] [ref=f107e896]
+                  - generic [ref=f107e899]:
+                    - generic [ref=f107e900]: Relevant Years of Experience
+                    - spinbutton "Relevant Years of Experience" [disabled] [ref=f107e908]
+                  - generic [ref=f107e911]:
+                    - generic [ref=f107e912]: Project Name
+                    - textbox "Project Name" [disabled] [ref=f107e918]
+                  - generic [ref=f107e921]:
+                    - generic [ref=f107e922]: Project Duration
+                    - textbox "Project Duration" [disabled] [ref=f107e928]
+                  - generic [ref=f107e931]:
+                    - generic [ref=f107e932]: Existing Resource Info
+                    - textbox "Existing Resource Info" [disabled] [ref=f107e938]
+              - generic [ref=f107e939]:
+                - generic [ref=f107e940]: Skills & Responsibilities
+                - generic [ref=f107e941]:
+                  - generic [ref=f107e944]:
+                    - generic [ref=f107e945]: Roles & Responsibilities
+                    - generic [ref=f107e953]:
+                      - combobox "Roles & Responsibilities" [disabled] [ref=f107e955]
+                      - generic: Select your answer
+                  - generic [ref=f107e958]:
+                    - generic [ref=f107e959]: Mandatory Skills
+                    - generic [ref=f107e967]:
+                      - combobox "Mandatory Skills" [disabled] [ref=f107e969]
+                      - generic: Select your answer
+                  - generic [ref=f107e972]:
+                    - generic [ref=f107e973]: Good to Have Skills
+                    - generic [ref=f107e981]:
+                      - combobox "Good to Have Skills" [disabled] [ref=f107e983]
+                      - generic: Select your answer
+                  - generic [ref=f107e986]:
+                    - generic [ref=f107e987]: Competencies Required
+                    - textbox "Competencies Required" [disabled] [ref=f107e993]
+              - generic [ref=f107e994]:
+                - generic [ref=f107e995]: Interview Process
+                - generic [ref=f107e996]:
+                  - generic [ref=f107e999]:
+                    - generic [ref=f107e1000]: 1st Technical Round
+                    - textbox "1st Technical Round" [disabled] [ref=f107e1006]
+                  - generic [ref=f107e1009]:
+                    - generic [ref=f107e1010]: 2nd Technical Round
+                    - textbox "2nd Technical Round" [disabled] [ref=f107e1016]
+                  - generic [ref=f107e1019]:
+                    - generic [ref=f107e1020]: CEO / Management Round
+                    - generic [ref=f107e1028]:
+                      - combobox "CEO / Management Round" [disabled] [ref=f107e1030]
+                      - generic: Select your answer
+                  - generic [ref=f107e1033]:
+                    - generic [ref=f107e1034]: CEO Panel Details
+                    - textbox "CEO Panel Details" [disabled] [ref=f107e1040]
+                  - generic [ref=f107e1043]:
+                    - generic [ref=f107e1044]: HR Round
+                    - textbox "HR Round" [disabled] [ref=f107e1050]
+                  - generic [ref=f107e1053]:
+                    - generic [ref=f107e1054]: Client Round
+                    - generic [ref=f107e1062]:
+                      - combobox "Client Round" [disabled] [ref=f107e1064]
+                      - generic: Select your answer
+                  - generic [ref=f107e1067]:
+                    - generic [ref=f107e1068]: Client Round Coordinator
+                    - textbox "Client Round Coordinator" [disabled] [ref=f107e1074]
+                  - generic [ref=f107e1077]:
+                    - generic [ref=f107e1078]: Job Timing
+                    - textbox "Job Timing" [disabled] [ref=f107e1084]
+                  - generic [ref=f107e1087]:
+                    - generic [ref=f107e1088]: Interview Slot (Round 1)
+                    - textbox "Interview Slot (Round 1)" [disabled] [ref=f107e1094]
+                  - generic [ref=f107e1097]:
+                    - generic [ref=f107e1098]: Interview Slot (Round 2)
+                    - textbox "Interview Slot (Round 2)" [disabled] [ref=f107e1104]
+                  - generic [ref=f107e1107]:
+                    - generic [ref=f107e1108]: Weekly Meeting Slot
+                    - textbox "Weekly Meeting Slot" [disabled] [ref=f107e1114]
+              - generic [ref=f107e1115]:
+                - generic [ref=f107e1116]: Additional
+                - generic [ref=f107e1117]:
+                  - generic [ref=f107e1120]:
+                    - generic [ref=f107e1121]: Client Details
+                    - textbox "Client Details" [disabled] [ref=f107e1127]
+                  - generic [ref=f107e1130]:
+                    - generic [ref=f107e1131]: Additional Information
+                    - textbox "Additional Information" [disabled] [ref=f107e1137]: Automated test record for the MRF approval fix. Safe to ignore.
+                  - generic [ref=f107e1140]:
+                    - generic [ref=f107e1141]: Question Paper New Owner
+                    - textbox "Question Paper New Owner" [disabled] [ref=f107e1147]
+                  - generic [ref=f107e1150]:
+                    - generic [ref=f107e1151]: JD Document Link
+                    - textbox "JD Document Link" [disabled] [ref=f107e1157]
+        - generic [ref=f107e1159]:
+          - button "file-excel Export CSV" [ref=f107e1162] [cursor=pointer]:
+            - img "file-excel" [ref=f107e1164]
+            - generic [ref=f107e1167]: Export CSV
+          - button "Edit" [ref=f107e1169] [cursor=pointer]
+          - button "Close" [ref=f107e1172] [cursor=pointer]

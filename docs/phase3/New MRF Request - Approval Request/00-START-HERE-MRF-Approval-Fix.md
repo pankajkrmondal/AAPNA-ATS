@@ -3,13 +3,13 @@
 **This is the one document to follow.** It says what is wrong, what is needed to fix it, what is already done, and what to do next, step by step.
 The technical detail for each step is in [MRF-Approval-Unified-Fix-Plan.md](MRF-Approval-Unified-Fix-Plan.md) (section numbers like "plan §5" point there).
 
-Last updated: **25 Sep 2026, ~12:00 IST**, after Phases A and B were built **locally** and tested end-to-end with Playwright (localhost:5173 + local backend on the **staging DB**).
+Last updated: **25 Sep 2026, ~13:15 IST**, after the retest on **deployed staging** (ats-staging.aapnainfotech.com) with Playwright. Earlier: Phases A and B built locally and tested end-to-end (localhost + staging DB).
 
 ---
 
 ## Where we are, in one line
 
-**Phases 0, A and B are done and tested locally. Phase C is mostly done** (C1–C3 need people or decisions). **Next: commit (A10), then Pankaj deploys everything to staging once (A11), then the staging checks (§5 "Staging test").** Production comes only after staging sign-off.
+**Phases 0, A and B are done, committed and deployed to staging (25 Sep ~12:32 IST); the core approval flow passes on deployed staging (S3, partly).** **Next: fix nginx client IP (S7), finish S3 (ATS screens, reminder cron, rate limit), then S5, S6.** Production comes only after staging sign-off.
 
 ⚠️ **Never run the "undo" SQL in DB-CHANGE-LOG.md.** It is kept only as a record.
 
@@ -64,7 +64,7 @@ Plus smaller bugs: two people clicking at the same moment could both "win"; an u
 |---|---|
 | **Local branch** `pankaj-work-staging-v20` | Phases A + B + C code items **written and tested**. 231/231 backend unit tests pass (22 new), frontend builds. **Not committed, not pushed.** |
 | **Staging DB** | ✅ Phase B tables/columns/trigger applied (DB-CHANGE-LOG #6), `mrf_approvers` set (#7), test MRFs #670–#676 (#5, #8). Backup of `rpa_mrf`/`rpa_settings` taken before the DDL. |
-| **Staging app** (ats-staging) | Still the **old** code. It keeps working against the updated staging DB (the changes are additive). |
+| **Staging app** (ats-staging) | ✅ **New code** deployed 25 Sep ~12:32 IST (commit `c70afaf`). Retested 13:05–13:10 IST: see S3. ⚠️ nginx does not forward the client IP (S7). |
 | **Production DB** | Phase 0 done. **No Phase A/B change** (by design, D4). |
 | **Production app** | Old code until the single release. |
 
@@ -87,8 +87,8 @@ Legend: ✅ done · ⚠️ needs attention · ⏳ pending · ➖ optional · �
 | Step | What | Status |
 |---|---|---|
 | A0–A9 | Rebuilt the missing CHANGES code: reminder rules, reminder job, one-winner decision, 400/409, closes reminder rows at decision time, decision log line, friendly page, seed file, tests | ✅ Code + tests |
-| A10 | **Commit and push** everything (Phases A, B, C) | ⏳ Pankaj decides when |
-| A11 | **Deploy to staging, once** (backend + frontend). The staging DB is already prepared | ⏳ Pankaj |
+| A10 | **Commit and push** everything (Phases A, B, C) | ✅ Commit `c70afaf` |
+| A11 | **Deploy to staging, once** (backend + frontend). The staging DB is already prepared | ✅ 25 Sep ~12:32 IST (verified: new strings in the live bundle, new routes answer) |
 | A12 | Verify Phase A: junk action → 400; approve → success + reminder rows closed + log line; same link again → green "already approved"; two tabs / 10 simultaneous → exactly 1 wins; reminder job as 2 processes → 1 reminder for the pending MRF, decided MRF closed without one | ✅ Locally; ⏳ repeat on staging |
 | A13 | Extra fix: approval link no longer bounces to /login when the browser has an old ATS login | ✅ Locally |
 
@@ -127,7 +127,8 @@ Legend: ✅ done · ⚠️ needs attention · ⏳ pending · ➖ optional · �
 |---|---|---|
 | S1 | Schema parity staging vs production | ✅ 25 Sep (before the DDL). Re-check before the release |
 | S2 | Staging DB backup before the DDL | ✅ JSON export (log #6) |
-| S3 | Repeat A12 + the B tests on **deployed** staging, incl. walkthrough with Chhaya | ⏳ |
+| S3 | Repeat A12 + the B tests on **deployed** staging, incl. walkthrough with Chhaya | 🟡 25 Sep 13:10 IST (MRFs #677–#679, log #9). ✅ Passed: new code live (frontend + backend), 2 personal emails/links, "Reviewing as", approve + comment, "You approved…", "Already approved by…", late click → 409 + recorded attempt, junk action → 400, bad token → 401 + red page, race 10 → 1 winner (same link and A-vs-B), HR outcome / "already actioned" / confirmation emails, no live links in them, A13 stale login; after the S7 nginx fix: real client IP stored, rate limit 61st → 429. (MRFs #677–#679 have IP 127.0.0.1 from before the fix.) **ATS screens, 25 Sep ~13:55 IST** (request #187 → MRF #682, log #11): ✅ pending trail ("Waiting for a decision…", "Not opened yet"), ✅ Re-send approval links (2 old links closed, "Replaced by a newer link", old link page "This link was replaced"), ✅ decline via new link while status was `waiting` (n8n, C1), ✅ "Already declined by Staging Approver B" for A, ✅ decided trail with real IP 20.198.86.173 and Re-send button hidden, ✅ per-MRF CSV (Decided By / At / Comment), ✅ admin Approval audit CSV (events, IP, device), ✅ 6 main ATS pages load with no app errors. Screenshots `stg-ui-trail-pending.png`, `stg-ui-trail-decided.png`. ⏳ **Reminder cron: check after 26 Sep 14:30 IST** (read-only preview saved: log 786 + 788 of pending MRF #681 → 1 reminder each; log 752 `mrf_hm` → closed without a reminder; 25 Sep run → 0 rows, open outcome/alert rows untouched). ⏳ Non-admin view (IP/device hidden) not tested (needs a non-admin login). ⏳ Chhaya walkthrough |
+| S7 | **Fix nginx on staging, then production** (both configs checked 25 Sep: `NGNX/ats-staging.txt`, `NGNX/ats-production.txt`; same VM 20.207.205.137, no CDN in front, `TRUST_PROXY=true` in both env files). In the `location /api` block of each, add `proxy_set_header X-Real-IP $remote_addr;`, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` and `proxy_set_header X-Forwarded-Proto $scheme;` (the `/socket.io/` block already has them), then `nginx -t` and reload, and re-test that a decision stores the real client IP. Production today has the same gap, so its existing rate limiters (login etc.) also share one bucket and accept a faked IP. Without it every decision is stored with IP 127.0.0.1, a client can fake its IP with its own `X-Forwarded-For` header (proved: 203.0.113.77 was stored), and all approvers share one rate-limit bucket (60 per 15 min in total) | ✅ **Staging** 25 Sep ~13:25 IST: verified (MRF #680 decision stored the real IP; a faked `X-Forwarded-For` was ignored; rate limit now per IP: 61st request → 429). ⏳ **Production**: same change, then confirm |
 | S4 | Re-run the DB script on staging must change nothing | ✅ |
 | S5 | Rollback rehearsal on staging: set `MRF_APPROVAL_AUDIT_ENABLED=false`, restart, one shared-link MRF works; set back to true | ⏳ |
 | S6 | Sign-off (Pankaj + Chhaya) | ⏳ |

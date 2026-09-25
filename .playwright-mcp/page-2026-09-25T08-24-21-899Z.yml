@@ -1,0 +1,293 @@
+- generic [active] [ref=f107e1]:
+  - generic [ref=f107e12]:
+    - complementary [ref=f107e13]:
+      - generic [ref=f107e14]:
+        - generic [ref=f107e15] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f107e17]
+          - generic [ref=f107e18]: ATS Platform
+        - menu [ref=f107e19]:
+          - menuitem "dashboard Dashboard" [ref=f107e20] [cursor=pointer]:
+            - img "dashboard" [ref=f107e21]
+            - generic [ref=f107e24]: Dashboard
+          - menuitem "file-text MRF" [ref=f107e25] [cursor=pointer]:
+            - img "file-text" [ref=f107e26]
+            - generic [ref=f107e29]: MRF
+          - menuitem "solution Search Candidate" [ref=f107e30] [cursor=pointer]:
+            - img "solution" [ref=f107e31]
+            - generic [ref=f107e34]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f107e35] [cursor=pointer]:
+            - img "upload" [ref=f107e36]
+            - generic [ref=f107e39]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f107e40] [cursor=pointer]:
+            - img "shop" [ref=f107e41]
+            - generic [ref=f107e44]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f107e45] [cursor=pointer]:
+            - img "audit" [ref=f107e46]
+            - generic [ref=f107e49]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f107e50] [cursor=pointer]:
+            - img "filter" [ref=f107e51]
+            - generic [ref=f107e54]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f107e55] [cursor=pointer]:
+            - img "apartment" [ref=f107e56]
+            - generic [ref=f107e59]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f107e60] [cursor=pointer]:
+            - img "bar-chart" [ref=f107e61]
+            - generic [ref=f107e64]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=f107e65] [cursor=pointer]:
+            - img "mail" [ref=f107e66]
+            - generic [ref=f107e69]: Email Templates
+          - menuitem "setting Settings" [ref=f107e70] [cursor=pointer]:
+            - img "setting" [ref=f107e71]
+            - generic [ref=f107e74]: Settings
+    - generic [ref=f107e75]:
+      - banner [ref=f107e76]:
+        - generic [ref=f107e77]:
+          - button [ref=f107e79] [cursor=pointer]:
+            - img "menu-fold" [ref=f107e81]
+          - generic [ref=f107e84]: MRF
+        - generic [ref=f107e85]:
+          - button [ref=f107e88] [cursor=pointer]:
+            - img "bell" [ref=f107e90]
+          - button "Toggle theme" [ref=f107e94] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f107e106] [cursor=pointer]:
+            - generic [ref=f107e108]:
+              - img "user" [ref=f107e109]
+              - img "setting" [ref=f107e112]
+            - generic [ref=f107e115]: Admin Portal
+          - img "user" [ref=f107e120] [cursor=pointer]
+      - main [ref=f107e123]:
+        - generic [ref=f107e125]:
+          - generic [ref=f107e127]:
+            - generic [ref=f107e128]:
+              - heading "New MRF Request" [level=3] [ref=f107e129]
+              - text: Hiring Manager Details
+            - generic [ref=f107e130]:
+              - generic [ref=f107e131]:
+                - generic [ref=f107e134]:
+                  - generic [ref=f107e136]:
+                    - text: "*"
+                    - generic [ref=f107e137]: First Name *
+                  - textbox "* First Name * * First Name" [ref=f107e455]:
+                    - /placeholder: e.g. Abhijit
+                - generic [ref=f107e144]:
+                  - generic [ref=f107e146]:
+                    - text: "*"
+                    - generic [ref=f107e147]: Last Name *
+                  - textbox "* Last Name * * Last Name" [ref=f107e456]:
+                    - /placeholder: e.g. Roy
+                - generic [ref=f107e154]:
+                  - generic [ref=f107e156]:
+                    - text: "*"
+                    - generic [ref=f107e157]: Email *
+                  - textbox "* Email * * Manager Email" [ref=f107e457]:
+                    - /placeholder: e.g. aroy@aapnainfotech.com
+              - generic [ref=f107e162]:
+                - generic [ref=f107e165]:
+                  - generic [ref=f107e166]: CC Email (Keep Comma Separated)
+                  - textbox "CC Email (Keep Comma Separated)" [ref=f107e172]:
+                    - /placeholder: e.g. example1@aapnainfotech.com, example2@aapnainfotech.com
+                - generic [ref=f107e175]:
+                  - generic [ref=f107e177]:
+                    - text: "*"
+                    - generic [ref=f107e178]: Role *
+                  - textbox "* Role * * Position Title" [ref=f107e458]:
+                    - /placeholder: e.g. Senior Software Engineer
+                - generic [ref=f107e185]:
+                  - generic [ref=f107e187]:
+                    - text: "*"
+                    - generic [ref=f107e188]: JD Link *
+                  - textbox "* JD Link * * JD Resource" [ref=f107e459]:
+                    - /placeholder: e.g. https://link-to-jd.com
+              - generic [ref=f107e193]:
+                - generic [ref=f107e196]:
+                  - generic [ref=f107e198]:
+                    - text: "*"
+                    - generic [ref=f107e199]: Budget Min (Annual CTC) *
+                  - generic [ref=f107e203]:
+                    - generic:
+                      - button "Increase Value" [ref=f107e204] [cursor=pointer]:
+                        - img "up" [ref=f107e205]
+                      - button "Decrease Value" [ref=f107e208] [cursor=pointer]:
+                        - img "down" [ref=f107e209]
+                    - spinbutton "* Budget Min (Annual CTC) * * Budget Min" [ref=f107e460]
+                - generic [ref=f107e216]:
+                  - generic [ref=f107e218]:
+                    - text: "*"
+                    - generic [ref=f107e219]: Budget Max (Annual CTC) *
+                  - generic [ref=f107e223]:
+                    - generic:
+                      - button "Increase Value" [ref=f107e224] [cursor=pointer]:
+                        - img "up" [ref=f107e225]
+                      - button "Decrease Value" [ref=f107e228] [cursor=pointer]:
+                        - img "down" [ref=f107e229]
+                    - spinbutton "* Budget Max (Annual CTC) * * Budget Max" [ref=f107e461]
+              - generic [ref=f107e235]:
+                - generic [ref=f107e236]: Email Body
+                - textbox "Email Body" [ref=f107e242]:
+                  - /placeholder: "As discussed, we would like to initiate the hiring process for this position.\n\nWe request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing."
+              - generic [ref=f107e243]:
+                - button "send Submit Request" [ref=f107e245] [cursor=pointer]:
+                  - img "send" [ref=f107e247]
+                  - generic [ref=f107e250]: Submit Request
+                - button "clear Clear" [ref=f107e252] [cursor=pointer]:
+                  - img "clear" [ref=f107e254]
+                  - generic [ref=f107e257]: Clear
+          - generic [ref=f107e259]:
+            - generic [ref=f107e260]:
+              - generic [ref=f107e261]:
+                - generic [ref=f107e262]: Records
+                - textbox "Search records..." [ref=f107e263]
+                - generic [ref=f107e264]:
+                  - generic [ref=f107e265] [cursor=pointer]:
+                    - generic [ref=f107e266]:
+                      - radio "All" [checked]
+                    - text: All
+                  - generic [ref=f107e267] [cursor=pointer]:
+                    - generic [ref=f107e268]:
+                      - radio "Pending"
+                    - text: Pending
+                  - generic [ref=f107e269] [cursor=pointer]:
+                    - generic [ref=f107e270]:
+                      - radio "Manager Submitted"
+                    - text: Manager Submitted
+                  - generic [ref=f107e271] [cursor=pointer]:
+                    - generic [ref=f107e272]:
+                      - radio "Closed"
+                    - text: Closed
+              - button "file-excel Export CSV" [ref=f107e274] [cursor=pointer]:
+                - img "file-excel" [ref=f107e276]
+                - generic [ref=f107e279]: Export CSV
+              - button "file-excel Approval audit" [ref=f107e281] [cursor=pointer]:
+                - img "file-excel" [ref=f107e283]
+                - generic [ref=f107e286]: Approval audit
+            - generic [ref=f107e289]:
+              - table [ref=f107e293]:
+                - rowgroup [ref=f107e294]:
+                  - row [ref=f107e295]:
+                    - columnheader "FIRST NAME" [ref=f107e296]
+                    - columnheader "LAST NAME" [ref=f107e297]
+                    - columnheader "EMAIL" [ref=f107e298]
+                    - columnheader "ROLE" [ref=f107e299]
+                    - columnheader "MIN BUDGET" [ref=f107e300]
+                    - columnheader "MAX BUDGET" [ref=f107e301]
+                    - columnheader "MRF STATUS" [ref=f107e302]
+                    - columnheader "CREATED DATE" [ref=f107e303]
+                - rowgroup [ref=f107e304]:
+                  - row [ref=f107e305] [cursor=pointer]:
+                    - cell "ZZTest" [ref=f107e306]
+                    - cell "HM" [ref=f107e307]
+                    - cell "qa.mrf-approval-test@example.com" [ref=f107e308]
+                    - cell [ref=f107e309]:
+                      - strong [ref=f107e311]: ZZ-TEST MRF Approval Fix B-UI
+                    - cell "₹5,00,000" [ref=f107e312]
+                    - cell "₹6,00,000" [ref=f107e313]
+                    - cell "REJECTED" [ref=f107e314]
+                    - cell "25 Sept 2026" [ref=f107e316]
+                  - row [ref=f107e317] [cursor=pointer]:
+                    - cell "Chhaya Verma" [ref=f107e318]
+                    - cell "Chhaya Verma" [ref=f107e319]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e320]
+                    - cell [ref=f107e321]:
+                      - strong [ref=f107e323]: Test Pilot3
+                    - cell "₹2,00,000" [ref=f107e324]
+                    - cell "₹5,00,000" [ref=f107e325]
+                    - cell "APPROVED" [ref=f107e326]
+                    - cell "9 Sept 2026" [ref=f107e328]
+                  - row [ref=f107e329] [cursor=pointer]:
+                    - cell "Chhaya Verma" [ref=f107e330]
+                    - cell "Chhaya Verma" [ref=f107e331]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e332]
+                    - cell [ref=f107e333]:
+                      - strong [ref=f107e335]: Test
+                    - cell "₹5,00,000" [ref=f107e336]
+                    - cell "₹7,00,000" [ref=f107e337]
+                    - cell "APPROVED" [ref=f107e338]
+                    - cell "7 Sept 2026" [ref=f107e340]
+                  - row [ref=f107e341] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e342]
+                    - cell "M" [ref=f107e343]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e344]
+                    - cell [ref=f107e345]:
+                      - strong [ref=f107e347]: Junior AI Engineer
+                    - cell "₹5,00,000" [ref=f107e348]
+                    - cell "₹7,00,000" [ref=f107e349]
+                    - cell "MANAGER SUBMITTED" [ref=f107e350]
+                    - cell "1 Sept 2026" [ref=f107e352]
+                  - row [ref=f107e353] [cursor=pointer]:
+                    - cell "Chhaya" [ref=f107e354]
+                    - cell "Verma" [ref=f107e355]
+                    - cell "cverma@aapnainfotech.com" [ref=f107e356]
+                    - cell [ref=f107e357]:
+                      - strong [ref=f107e359]: SaaS Sales Lead
+                    - cell "₹10,00,000" [ref=f107e360]
+                    - cell "₹15,00,000" [ref=f107e361]
+                    - cell "PENDING" [ref=f107e362]
+                    - cell "1 Sept 2026" [ref=f107e364]
+                  - row [ref=f107e365] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e366]
+                    - cell "Mopuri" [ref=f107e367]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e368]
+                    - cell [ref=f107e369]:
+                      - strong [ref=f107e371]: QA Automation Engineer
+                    - cell "₹5,00,000" [ref=f107e372]
+                    - cell "₹7,00,000" [ref=f107e373]
+                    - cell "APPROVED" [ref=f107e374]
+                    - cell "21 Aug 2026" [ref=f107e376]
+                  - row [ref=f107e377] [cursor=pointer]:
+                    - cell "Naveen" [ref=f107e378]
+                    - cell "Satywali" [ref=f107e379]
+                    - cell "nsatywali@aapnainfotech.com" [ref=f107e380]
+                    - cell [ref=f107e381]:
+                      - strong [ref=f107e383]: HR
+                    - cell "₹10,00,000" [ref=f107e384]
+                    - cell "₹12,00,000" [ref=f107e385]
+                    - cell "APPROVED" [ref=f107e386]
+                    - cell "6 Jul 2026" [ref=f107e388]
+                  - row [ref=f107e389] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e390]
+                    - cell "Mopuri" [ref=f107e391]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e392]
+                    - cell [ref=f107e393]:
+                      - strong [ref=f107e395]: Python Developer
+                    - cell "₹5,00,000" [ref=f107e396]
+                    - cell "₹10,00,000" [ref=f107e397]
+                    - cell "MANAGER SUBMITTED" [ref=f107e398]
+                    - cell "18 Jun 2026" [ref=f107e400]
+                  - row [ref=f107e401] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e402]
+                    - cell "Mopuri" [ref=f107e403]
+                    - cell "hmopuri@aapnainfotech.com" [ref=f107e404]
+                    - cell [ref=f107e405]:
+                      - strong [ref=f107e407]: Python Developer
+                    - cell "₹5,00,000" [ref=f107e408]
+                    - cell "₹10,00,000" [ref=f107e409]
+                    - cell "MANAGER SUBMITTED" [ref=f107e410]
+                    - cell "18 Jun 2026" [ref=f107e412]
+                  - row [ref=f107e413] [cursor=pointer]:
+                    - cell "Harish" [ref=f107e414]
+                    - cell "Mopuri" [ref=f107e415]
+                    - cell "harishmopuri97@gmail.com" [ref=f107e416]
+                    - cell [ref=f107e417]:
+                      - strong [ref=f107e419]: QA Automation Engineer TEST
+                    - cell "₹50,00,000" [ref=f107e420]
+                    - cell "₹5,00,00,000" [ref=f107e421]
+                    - cell "PENDING" [ref=f107e422]
+                    - cell "17 Jun 2026" [ref=f107e424]
+              - list [ref=f107e425]:
+                - listitem "Previous Page" [ref=f107e426]:
+                  - button [disabled] [ref=f107e427]:
+                    - img "left" [ref=f107e428]
+                - listitem "1" [ref=f107e431] [cursor=pointer]
+                - listitem "2" [ref=f107e433] [cursor=pointer]
+                - listitem "3" [ref=f107e435] [cursor=pointer]
+                - listitem "4" [ref=f107e437] [cursor=pointer]
+                - listitem "5" [ref=f107e439] [cursor=pointer]
+                - listitem "Next 5 Pages" [ref=f107e441] [cursor=pointer]:
+                  - generic [ref=f107e443]:
+                    - img "double-right" [ref=f107e444]
+                    - generic [ref=f107e447]: •••
+                - listitem "13" [ref=f107e448] [cursor=pointer]
+                - listitem "Next Page" [ref=f107e450] [cursor=pointer]:
+                  - button [ref=f107e451]:
+                    - img "right" [ref=f107e452]
+  - generic: "* * * * * * *"

@@ -1,0 +1,1 @@
+[     434ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ https://ats-staging.aapnainfotech.com/api/mrf/public-details/679?token=eyJhbGciOiJIUzI1NiJ9.tampered.sig:0

@@ -1,0 +1,39 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - generic [ref=e7]:
+      - img "AAPNA"
+    - generic [ref=e8]:
+      - heading "Recruitment, reimagined for speed and precision." [level=1] [ref=e9]
+      - paragraph [ref=e10]: AAPNA's intelligent ATS streamlines every step — from sourcing and AI screening to requisitions, approvals, and analytics.
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - img "check-circle" [ref=e13]
+          - generic [ref=e16]: AI-powered candidate screening & profiling
+        - generic [ref=e17]:
+          - img "check-circle" [ref=e18]
+          - generic [ref=e21]: Automated requisition & approval workflows
+        - generic [ref=e22]:
+          - img "check-circle" [ref=e23]
+          - generic [ref=e26]: Real-time pipeline metrics & analytics
+    - generic [ref=e27]: © 2026 AAPNA Infotech · All rights reserved
+  - generic [ref=e30]:
+    - generic [ref=e31]:
+      - heading "Sign in to your account" [level=2] [ref=e32]
+      - text: Enter your credentials to access the dashboard
+    - generic [ref=e34]:
+      - generic [ref=e36]:
+        - generic [ref=e37]: Username or Email
+        - generic [ref=e43]:
+          - img "user" [ref=e45]
+          - textbox "Username or Email" [ref=e48]:
+            - /placeholder: Enter username or email
+      - generic [ref=e50]:
+        - generic [ref=e51]: Password
+        - generic [ref=e57]:
+          - img "lock" [ref=e59]
+          - textbox "Password" [ref=e62]:
+            - /placeholder: Enter password
+          - img "eye-invisible" [ref=e64] [cursor=pointer]
+      - button "Sign In" [disabled] [ref=e80]
+      - link "Forgot password?" [ref=e82] [cursor=pointer]:
+        - /url: /forgot-password

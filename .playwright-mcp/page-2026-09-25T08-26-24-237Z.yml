@@ -1,0 +1,20 @@
+- generic [active] [ref=f110e1]:
+  - generic [ref=f110e6]:
+    - generic [ref=f110e7]:
+      - img "AAPNA Infotech" [ref=f110e8]
+      - heading "Requisition declined" [level=1] [ref=f110e97]
+      - paragraph [ref=f110e10]: Your decision has been recorded and the HR team notified.
+    - generic [ref=f110e98]:
+      - img "close-circle" [ref=f110e100]
+      - generic [ref=f110e103]: Requisition Request Declined!
+      - generic [ref=f110e106]:
+        - text: Thank you for your decision. The requisition for
+        - strong [ref=f110e107]: ZZ-TEST MRF Approval Fix STG-UI
+        - text: has been marked as
+        - strong [ref=f110e108]: REJECTED
+        - text: . Notification emails have been dispatched to the HR team, the other approvers have been told, and a confirmation has been emailed to you.
+      - button "Close Window" [ref=f110e110] [cursor=pointer]
+    - generic [ref=f110e20]: © 2026 AAPNA Infotech. All rights reserved.
+  - generic [ref=f110e113]:
+    - img "check-circle" [ref=f110e114]
+    - generic [ref=f110e117]: Requisition request successfully rejected!

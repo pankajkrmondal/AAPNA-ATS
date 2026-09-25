@@ -1,0 +1,700 @@
+- generic [ref=f5e12]:
+  - complementary [ref=f5e13]:
+    - generic [ref=f5e14]:
+      - generic [ref=f5e15] [cursor=pointer]:
+        - img "AAPNA Infotech" [ref=f5e17]
+        - generic [ref=f5e18]: ATS Platform
+      - menu [ref=f5e19]:
+        - menuitem "dashboard Dashboard" [ref=f5e20] [cursor=pointer]:
+          - img "dashboard" [ref=f5e21]
+          - generic [ref=f5e24]: Dashboard
+        - menuitem "file-text MRF" [ref=f5e25] [cursor=pointer]:
+          - img "file-text" [ref=f5e26]
+          - generic [ref=f5e29]: MRF
+        - menuitem "solution Search Candidate" [ref=f5e30] [cursor=pointer]:
+          - img "solution" [ref=f5e31]
+          - generic [ref=f5e34]: Search Candidate
+        - menuitem "upload HR Manual Upload" [ref=f5e35] [cursor=pointer]:
+          - img "upload" [ref=f5e36]
+          - generic [ref=f5e39]: HR Manual Upload
+        - menuitem "shop Vendor Upload" [ref=f5e40] [cursor=pointer]:
+          - img "shop" [ref=f5e41]
+          - generic [ref=f5e44]: Vendor Upload
+        - menuitem "audit Vendor Dashboard" [ref=f5e45] [cursor=pointer]:
+          - img "audit" [ref=f5e46]
+          - generic [ref=f5e49]: Vendor Dashboard
+        - menuitem "filter Candidate Screening" [ref=f5e50] [cursor=pointer]:
+          - img "filter" [ref=f5e51]
+          - generic [ref=f5e54]: Candidate Screening
+        - menuitem "apartment Candidate Pipeline" [ref=f5e55] [cursor=pointer]:
+          - img "apartment" [ref=f5e56]
+          - generic [ref=f5e59]: Candidate Pipeline
+        - menuitem "bar-chart Recruitment Analytics" [ref=f5e60] [cursor=pointer]:
+          - img "bar-chart" [ref=f5e61]
+          - generic [ref=f5e64]: Recruitment Analytics
+        - menuitem "mail Email Templates" [ref=f5e65] [cursor=pointer]:
+          - img "mail" [ref=f5e66]
+          - generic [ref=f5e69]: Email Templates
+        - menuitem "setting Settings" [ref=f5e70] [cursor=pointer]:
+          - img "setting" [ref=f5e71]
+          - generic [ref=f5e74]: Settings
+  - generic [ref=f5e75]:
+    - banner [ref=f5e76]:
+      - generic [ref=f5e77]:
+        - button [ref=f5e79] [cursor=pointer]:
+          - img "menu-fold" [ref=f5e81]
+        - generic [ref=f5e84]: Settings
+      - generic [ref=f5e85]:
+        - button [ref=f5e88] [cursor=pointer]:
+          - img "bell" [ref=f5e90]
+        - button "Toggle theme" [ref=f5e94] [cursor=pointer]
+        - button "user setting Admin Portal" [ref=f5e106] [cursor=pointer]:
+          - generic [ref=f5e108]:
+            - img "user" [ref=f5e109]
+            - img "setting" [ref=f5e112]
+          - generic [ref=f5e115]: Admin Portal
+        - img "user" [ref=f5e120] [cursor=pointer]
+    - main [ref=f5e123]:
+      - generic [ref=f5e125]:
+        - generic [ref=f5e127]:
+          - generic [ref=f5e128]:
+            - heading "Appearance" [level=4] [ref=f5e129]
+            - text: Choose how AAPNA ATS looks to you. “System” follows your operating system setting.
+          - radiogroup "segmented control" [ref=f5e131]:
+            - generic [ref=f5e132]:
+              - generic [ref=f5e133] [cursor=pointer]:
+                - radio "sun Light" [checked]
+                - generic [ref=f5e134]:
+                  - img "sun" [ref=f5e136]
+                  - text: Light
+              - generic [ref=f5e139] [cursor=pointer]:
+                - radio "moon Dark"
+                - generic [ref=f5e140]:
+                  - img "moon" [ref=f5e142]
+                  - text: Dark
+              - generic [ref=f5e145] [cursor=pointer]:
+                - radio "desktop System"
+                - generic [ref=f5e146]:
+                  - img "desktop" [ref=f5e148]
+                  - text: System
+        - generic [ref=f5e152]:
+          - generic [ref=f5e153]:
+            - generic [ref=f5e154]:
+              - img "usergroup-add" [ref=f5e155]
+              - heading "Recruiters on Interview Meetings" [level=4] [ref=f5e158]
+              - generic [ref=f5e159]: NONE
+            - text: Interviews are booked from the recruitment mailbox, so they only appear in that mailbox’s calendar. Anyone listed here is added to the Microsoft Teams meeting as an optional attendee for Technical Rounds 1–3, the HR Round and the CEO / Final Round, so the interview shows up in their own Outlook and Teams.
+          - generic [ref=f5e164]:
+            - combobox [ref=f5e168]
+            - generic: Type email addresses separated by commas, or press Enter after each, e.g. name@aapnainfotech.com, second@aapnainfotech.com
+          - generic [ref=f5e169]:
+            - strong [ref=f5e170]: "What this means:"
+            - text: nobody extra is added. Interview meetings go to the candidate and the interviewers only. Changes apply to rounds booked from now on; an interview already booked picks them up the next time it is rescheduled. Recruiters get the Outlook invitation only, not the ATS’s candidate or interviewer emails, and a recruiter joining the call is never mistaken for the candidate when the system checks whether the interview happened.
+        - generic [ref=f5e172]:
+          - generic [ref=f5e173]:
+            - generic [ref=f5e174]:
+              - generic [ref=f5e175]:
+                - img "calendar" [ref=f5e176]
+                - heading "Interview Reminders" [level=4] [ref=f5e179]
+                - generic [ref=f5e180]: "ON"
+              - text: Automatically emails the candidate and the interviewer a reminder before their scheduled Technical Round, so nobody misses it. Each person is emailed once per interview.
+            - switch "ON OFF" [checked] [ref=f5e183] [cursor=pointer]:
+              - generic [ref=f5e185]:
+                - generic: "ON"
+                - generic: "OFF"
+          - generic [ref=f5e186]:
+            - generic [ref=f5e187]:
+              - generic [ref=f5e188]: Email them
+              - generic [ref=f5e190]:
+                - generic [ref=f5e191]:
+                  - generic:
+                    - button "Increase Value" [ref=f5e192] [cursor=pointer]:
+                      - img "up" [ref=f5e193]
+                    - button "Decrease Value" [ref=f5e196] [cursor=pointer]:
+                      - img "down" [ref=f5e197]
+                  - spinbutton [ref=f5e201]: "15"
+                - generic [ref=f5e202]: minutes
+              - generic [ref=f5e203]: before the interview starts
+            - generic [ref=f5e204]:
+              - text: How often the system checks for interviews coming up
+              - generic [ref=f5e205]: A background check that usually finds nothing — it only decides how precisely the timing above is hit. Shorter is more accurate.
+            - radiogroup "segmented control" [ref=f5e207]:
+              - generic [ref=f5e208]:
+                - generic [ref=f5e209] [cursor=pointer]:
+                  - radio "1 min"
+                  - generic "1 min" [ref=f5e210]
+                - generic [ref=f5e211] [cursor=pointer]:
+                  - radio "2 min" [checked]
+                  - generic "2 min" [ref=f5e212]
+                - generic [ref=f5e213] [cursor=pointer]:
+                  - radio "5 min"
+                  - generic "5 min" [ref=f5e214]
+                - generic [ref=f5e215] [cursor=pointer]:
+                  - radio "10 min"
+                  - generic "10 min" [ref=f5e216]
+                - generic [ref=f5e217] [cursor=pointer]:
+                  - radio "15 min"
+                  - generic "15 min" [ref=f5e218]
+                - generic [ref=f5e219] [cursor=pointer]:
+                  - radio "20 min"
+                  - generic "20 min" [ref=f5e220]
+                - generic [ref=f5e221] [cursor=pointer]:
+                  - radio "25 min"
+                  - generic "25 min" [ref=f5e222]
+                - generic [ref=f5e223] [cursor=pointer]:
+                  - radio "30 min"
+                  - generic "30 min" [ref=f5e224]
+                - generic [ref=f5e225] [cursor=pointer]:
+                  - radio "35 min"
+                  - generic "35 min" [ref=f5e226]
+                - generic [ref=f5e227] [cursor=pointer]:
+                  - radio "40 min"
+                  - generic "40 min" [ref=f5e228]
+                - generic [ref=f5e229] [cursor=pointer]:
+                  - radio "45 min"
+                  - generic "45 min" [ref=f5e230]
+                - generic [ref=f5e231] [cursor=pointer]:
+                  - radio "50 min"
+                  - generic "50 min" [ref=f5e232]
+                - generic [ref=f5e233] [cursor=pointer]:
+                  - radio "55 min"
+                  - generic "55 min" [ref=f5e234]
+                - generic [ref=f5e235] [cursor=pointer]:
+                  - radio "1 hour"
+                  - generic "1 hour" [ref=f5e236]
+            - generic [ref=f5e237]:
+              - strong [ref=f5e238]: "What this means:"
+              - text: for an interview at 3:00 PM, the candidate and interviewer are emailed at about
+              - strong [ref=f5e239]: 2:45 PM
+              - text: (within 2 minutes of that). Everyone gets one reminder per interview.
+        - generic [ref=f5e241]:
+          - generic [ref=f5e242]:
+            - generic [ref=f5e243]:
+              - generic [ref=f5e244]:
+                - img "calendar" [ref=f5e245]
+                - heading "Interview Completion Check" [level=4] [ref=f5e248]
+                - generic [ref=f5e249]: "ON"
+              - text: After an interview ends, checks whether it actually took place and emails the interviewer their scorecard. Without this, someone has to mark every interview as held by hand in the Candidate Pipeline before any score can be collected.
+            - switch "ON OFF" [checked] [ref=f5e252] [cursor=pointer]:
+              - generic [ref=f5e254]:
+                - generic: "ON"
+                - generic: "OFF"
+          - generic [ref=f5e255]:
+            - generic [ref=f5e256]:
+              - generic [ref=f5e257]: Wait
+              - generic [ref=f5e259]:
+                - generic [ref=f5e260]:
+                  - generic:
+                    - button "Increase Value" [ref=f5e261] [cursor=pointer]:
+                      - img "up" [ref=f5e262]
+                    - button "Decrease Value" [ref=f5e265] [cursor=pointer]:
+                      - img "down" [ref=f5e266]
+                  - spinbutton [ref=f5e270]: "5"
+                - generic [ref=f5e271]: minutes
+              - generic [ref=f5e272]: after the interview ends before checking
+            - generic [ref=f5e273]:
+              - text: How often the system checks for finished interviews
+              - generic [ref=f5e274]: Only decides how quickly a finished interview is picked up. Shorter means the scorecard request reaches the interviewer sooner.
+            - radiogroup "segmented control" [ref=f5e276]:
+              - generic [ref=f5e277]:
+                - generic [ref=f5e278] [cursor=pointer]:
+                  - radio "1 min"
+                  - generic "1 min" [ref=f5e279]
+                - generic [ref=f5e280] [cursor=pointer]:
+                  - radio "2 min" [checked]
+                  - generic "2 min" [ref=f5e281]
+                - generic [ref=f5e282] [cursor=pointer]:
+                  - radio "5 min"
+                  - generic "5 min" [ref=f5e283]
+                - generic [ref=f5e284] [cursor=pointer]:
+                  - radio "10 min"
+                  - generic "10 min" [ref=f5e285]
+                - generic [ref=f5e286] [cursor=pointer]:
+                  - radio "15 min"
+                  - generic "15 min" [ref=f5e287]
+                - generic [ref=f5e288] [cursor=pointer]:
+                  - radio "20 min"
+                  - generic "20 min" [ref=f5e289]
+                - generic [ref=f5e290] [cursor=pointer]:
+                  - radio "25 min"
+                  - generic "25 min" [ref=f5e291]
+                - generic [ref=f5e292] [cursor=pointer]:
+                  - radio "30 min"
+                  - generic "30 min" [ref=f5e293]
+                - generic [ref=f5e294] [cursor=pointer]:
+                  - radio "35 min"
+                  - generic "35 min" [ref=f5e295]
+                - generic [ref=f5e296] [cursor=pointer]:
+                  - radio "40 min"
+                  - generic "40 min" [ref=f5e297]
+                - generic [ref=f5e298] [cursor=pointer]:
+                  - radio "45 min"
+                  - generic "45 min" [ref=f5e299]
+                - generic [ref=f5e300] [cursor=pointer]:
+                  - radio "50 min"
+                  - generic "50 min" [ref=f5e301]
+                - generic [ref=f5e302] [cursor=pointer]:
+                  - radio "55 min"
+                  - generic "55 min" [ref=f5e303]
+                - generic [ref=f5e304] [cursor=pointer]:
+                  - radio "1 hour"
+                  - generic "1 hour" [ref=f5e305]
+            - generic [ref=f5e306]:
+              - strong [ref=f5e307]: "What this means:"
+              - text: for an interview ending at 8:00 PM, the system first looks at about
+              - strong [ref=f5e308]: 8:05 PM
+              - text: and settles it within 2 minutes of that. The interviewer’s scorecard email goes out as soon as the interview is confirmed held.
+            - generic [ref=f5e309]:
+              - strong [ref=f5e310]: Confirmed automatically.
+              - text: The verdict is read from the Teams attendance report. The interviewer must join signed in with the address on the booking; the candidate can join as a guest, with no Teams account and no sign-in. The round counts as held once the interviewer and at least one other person have attended. If nobody joined on one side it is recorded as a no-show instead, no scorecard is sent, and the team is alerted to reschedule or reject.
+        - generic [ref=f5e312]:
+          - generic [ref=f5e313]:
+            - generic [ref=f5e314]:
+              - generic [ref=f5e315]:
+                - img "video-camera" [ref=f5e316]
+                - heading "Interview Recording Capture" [level=4] [ref=f5e319]
+                - generic [ref=f5e320]: "ON"
+              - text: After a recorded interview ends, finds the Microsoft Teams recording and attaches it to the candidate’s round, so the final decision-makers can watch the earlier interviews. Without this the recording still exists in Teams, but nothing in the ATS points to it.
+            - switch "ON OFF" [checked] [ref=f5e323] [cursor=pointer]:
+              - generic [ref=f5e325]:
+                - generic: "ON"
+                - generic: "OFF"
+          - generic [ref=f5e326]:
+            - generic [ref=f5e327]:
+              - generic [ref=f5e328]: Wait
+              - generic [ref=f5e330]:
+                - generic [ref=f5e331]:
+                  - generic:
+                    - button "Increase Value" [ref=f5e332] [cursor=pointer]:
+                      - img "up" [ref=f5e333]
+                    - button "Decrease Value" [ref=f5e336] [cursor=pointer]:
+                      - img "down" [ref=f5e337]
+                  - spinbutton [ref=f5e341]: "10"
+                - generic [ref=f5e342]: minutes
+              - generic [ref=f5e343]: after the interview ends before looking
+            - generic [ref=f5e344]:
+              - text: How often the system looks for new recordings
+              - generic [ref=f5e345]: Microsoft Teams decides when a recording becomes available — usually a few minutes after the call, sometimes longer. Checking more often than every 5 minutes mostly asks a question Teams cannot answer yet, so 10–15 minutes is the sensible range.
+            - radiogroup "segmented control" [ref=f5e347]:
+              - generic [ref=f5e348]:
+                - generic [ref=f5e349] [cursor=pointer]:
+                  - radio "1 min"
+                  - generic "1 min" [ref=f5e350]
+                - generic [ref=f5e351] [cursor=pointer]:
+                  - radio "2 min"
+                  - generic "2 min" [ref=f5e352]
+                - generic [ref=f5e353] [cursor=pointer]:
+                  - radio "5 min"
+                  - generic "5 min" [ref=f5e354]
+                - generic [ref=f5e355] [cursor=pointer]:
+                  - radio "10 min"
+                  - generic "10 min" [ref=f5e356]
+                - generic [ref=f5e357] [cursor=pointer]:
+                  - radio "15 min" [checked]
+                  - generic "15 min" [ref=f5e358]
+                - generic [ref=f5e359] [cursor=pointer]:
+                  - radio "20 min"
+                  - generic "20 min" [ref=f5e360]
+                - generic [ref=f5e361] [cursor=pointer]:
+                  - radio "25 min"
+                  - generic "25 min" [ref=f5e362]
+                - generic [ref=f5e363] [cursor=pointer]:
+                  - radio "30 min"
+                  - generic "30 min" [ref=f5e364]
+                - generic [ref=f5e365] [cursor=pointer]:
+                  - radio "35 min"
+                  - generic "35 min" [ref=f5e366]
+                - generic [ref=f5e367] [cursor=pointer]:
+                  - radio "40 min"
+                  - generic "40 min" [ref=f5e368]
+                - generic [ref=f5e369] [cursor=pointer]:
+                  - radio "45 min"
+                  - generic "45 min" [ref=f5e370]
+                - generic [ref=f5e371] [cursor=pointer]:
+                  - radio "50 min"
+                  - generic "50 min" [ref=f5e372]
+                - generic [ref=f5e373] [cursor=pointer]:
+                  - radio "55 min"
+                  - generic "55 min" [ref=f5e374]
+                - generic [ref=f5e375] [cursor=pointer]:
+                  - radio "1 hour"
+                  - generic "1 hour" [ref=f5e376]
+            - generic [ref=f5e377]:
+              - strong [ref=f5e378]: "What this means:"
+              - text: an interview ending at 8:00 PM is first looked at around
+              - strong [ref=f5e379]: 8:10 PM
+              - text: ", and is re-checked every 15 minutes until the recording appears. A round that turns out never to have been recorded is simply left alone."
+            - generic [ref=f5e380]:
+              - strong [ref=f5e381]: "If you switch this off:"
+              - text: interviews carry on recording and nothing is lost in Teams — but the ATS stops linking those recordings to candidates, so nobody can open them from a candidate’s record. Switching it back on picks up anything from the last 45 days; older rounds can no longer be matched automatically, because Microsoft stops serving a meeting’s recording about 60 days after it took place.
+        - generic [ref=f5e383]:
+          - generic [ref=f5e384]:
+            - heading "Reminder Settings" [level=3] [ref=f5e385]
+            - text: Configure automated email reminder behaviour across all recruitment workflows. Changes take effect immediately for all future reminders.
+          - generic [ref=f5e386]:
+            - strong [ref=f5e387]: "How it works:"
+            - text: When a recipient hasn't responded to an email (MRF form, Approval, or Missing JD), the system automatically sends reminder emails based on these settings. These two values control
+            - strong [ref=f5e388]: all three email flows
+            - text: – no per-workflow configuration needed.
+          - generic [ref=f5e390]:
+            - generic [ref=f5e392]:
+              - generic [ref=f5e394]:
+                - text: "*"
+                - generic [ref=f5e395]: Remind After X Days of No Response *
+              - generic [ref=f5e399]:
+                - generic:
+                  - button "Increase Value" [ref=f5e400] [cursor=pointer]:
+                    - img "up" [ref=f5e401]
+                  - button "Decrease Value" [ref=f5e404] [cursor=pointer]:
+                    - img "down" [ref=f5e405]
+                - spinbutton "* Remind After X Days of No Response *" [ref=f5e409]: "1"
+            - generic [ref=f5e411]:
+              - generic [ref=f5e413]:
+                - text: "*"
+                - generic [ref=f5e414]: Maximum Number of Reminders to Send *
+              - generic [ref=f5e418]:
+                - generic:
+                  - button "Increase Value" [ref=f5e419] [cursor=pointer]:
+                    - img "up" [ref=f5e420]
+                  - button "Decrease Value" [ref=f5e423] [cursor=pointer]:
+                    - img "down" [ref=f5e424]
+                - spinbutton "* Maximum Number of Reminders to Send *" [ref=f5e428]: "1"
+            - generic [ref=f5e430]:
+              - generic [ref=f5e432]:
+                - text: "*"
+                - generic [ref=f5e433]: Daily Trigger Time *
+              - generic [ref=f5e438]:
+                - textbox "* Daily Trigger Time *" [ref=f5e439]:
+                  - /placeholder: Select time
+                  - text: 09:00
+                - generic:
+                  - img "clock-circle"
+                - button [ref=f5e440] [cursor=pointer]:
+                  - img "close-circle" [ref=f5e441]
+            - button "save Save Settings" [ref=f5e444] [cursor=pointer]:
+              - img "save" [ref=f5e446]
+              - generic [ref=f5e449]: Save Settings
+          - generic [ref=f5e450]:
+            - generic [ref=f5e451]: Email Coverage
+            - table [ref=f5e460]:
+              - rowgroup [ref=f5e463]:
+                - row [ref=f5e464]:
+                  - columnheader "WORKFLOW" [ref=f5e465]
+                  - columnheader "RESPONSE DETECTED BY" [ref=f5e466]
+              - rowgroup [ref=f5e467]:
+                - row [ref=f5e468]:
+                  - cell [ref=f5e469]:
+                    - strong [ref=f5e471]: HR to Hiring Manager
+                  - cell "HM submits the MRF form" [ref=f5e472]
+                - row [ref=f5e473]:
+                  - cell [ref=f5e474]:
+                    - strong [ref=f5e476]: Approval to Management
+                  - cell "Management clicks Approve or Decline" [ref=f5e477]
+                - row [ref=f5e478]:
+                  - cell [ref=f5e479]:
+                    - strong [ref=f5e481]: Missing JD to Candidate
+                  - cell "Candidate submits the missing details form" [ref=f5e482]
+        - generic [ref=f5e484]:
+          - generic [ref=f5e485]:
+            - heading "Assessment Automation" [level=3] [ref=f5e486]
+            - text: Controls for the Evalground assessment round on the Candidate Pipeline.
+          - generic [ref=f5e487]:
+            - strong [ref=f5e488]: "How it works:"
+            - text: The deadline days control how long a candidate has to complete the Evalground test after an invite is sent before recruiters get a reminder. When auto-advance/reject is ON, a CSV import with a Marks Scored above 50 automatically approves the candidate to the next round, and 50 or below automatically rejects them — both with a real outcome email, no recruiter click required. When OFF (default), nothing is automatic; recruiters always decide manually.
+          - generic [ref=f5e490]:
+            - generic [ref=f5e492]:
+              - generic [ref=f5e494]:
+                - text: "*"
+                - generic [ref=f5e495]: Invite Deadline (Days) *
+              - generic [ref=f5e499]:
+                - generic:
+                  - button "Increase Value" [ref=f5e500] [cursor=pointer]:
+                    - img "up" [ref=f5e501]
+                  - button "Decrease Value" [ref=f5e504] [cursor=pointer]:
+                    - img "down" [ref=f5e505]
+                - spinbutton "* Invite Deadline (Days) *" [ref=f5e509]: "2"
+            - generic [ref=f5e511]:
+              - generic [ref=f5e512]: Auto-Advance / Auto-Reject on Score
+              - switch "Auto-Advance / Auto-Reject on Score" [checked] [ref=f5e518] [cursor=pointer]
+            - button "save Save Settings" [ref=f5e521] [cursor=pointer]:
+              - img "save" [ref=f5e523]
+              - generic [ref=f5e526]: Save Settings
+        - generic [ref=f5e528]:
+          - generic [ref=f5e529]:
+            - heading [level=3] [ref=f5e530]:
+              - img "apartment" [ref=f5e531]
+              - text: Pipeline Configuration
+            - text: The stages candidates move through, the outcomes each stage offers, and the reasons recorded on a Reject or Hold. Changes apply immediately to the Candidate Pipeline board.
+          - generic [ref=f5e534]:
+            - strong [ref=f5e535]: "Before you change a stage:"
+            - text: stage order defines the route candidates take, so re-ordering affects everyone currently mid-pipeline. A stage cannot be deactivated while open candidates are sitting on it — move them on first, or they would be left unable to advance.
+          - generic [ref=f5e536]:
+            - tablist [ref=f5e537]:
+              - generic [ref=f5e539]:
+                - tab "Stages & Outcomes" [selected] [ref=f5e541] [cursor=pointer]
+                - tab "Reject / Hold Reasons" [ref=f5e543] [cursor=pointer]
+                - tab "Outcome Emails" [ref=f5e545] [cursor=pointer]
+                - tab "Email Routing" [ref=f5e547] [cursor=pointer]
+            - tabpanel "Stages & Outcomes" [ref=f5e550]:
+              - button "plus Add stage" [ref=f5e553] [cursor=pointer]:
+                - img "plus" [ref=f5e555]
+                - generic [ref=f5e559]: Add stage
+              - table [ref=f5e566]:
+                - rowgroup [ref=f5e575]:
+                  - row [ref=f5e576]:
+                    - columnheader [ref=f5e577]
+                    - columnheader "Order" [ref=f5e578]
+                    - columnheader "Stage" [ref=f5e579]
+                    - columnheader "Type" [ref=f5e580]
+                    - columnheader "Flags" [ref=f5e581]
+                    - columnheader "Outcomes" [ref=f5e582]
+                    - columnheader [ref=f5e583]
+                - rowgroup [ref=f5e584]:
+                  - row [ref=f5e585]:
+                    - cell [ref=f5e586]:
+                      - generic [ref=f5e587]:
+                        - button "Move stage up" [disabled] [ref=f5e589]:
+                          - generic:
+                            - img "arrow-up"
+                        - button "Move stage down" [ref=f5e591] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e593]
+                    - cell "10" [ref=f5e596]
+                    - cell "Shortlisted shortlist" [ref=f5e597]:
+                      - generic [ref=f5e598]:
+                        - strong [ref=f5e601]: Shortlisted
+                        - generic [ref=f5e602]: shortlist
+                    - cell "manual" [ref=f5e603]
+                    - cell "Inactive" [ref=f5e605]
+                    - cell [ref=f5e609]:
+                      - button "4 outcome(s)" [ref=f5e610] [cursor=pointer]
+                    - cell [ref=f5e612]:
+                      - button "edit Edit" [ref=f5e613] [cursor=pointer]:
+                        - img "edit" [ref=f5e615]
+                        - generic [ref=f5e618]: Edit
+                  - row [ref=f5e619]:
+                    - cell [ref=f5e620]:
+                      - generic [ref=f5e621]:
+                        - button "Move stage up" [ref=f5e623] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e625]
+                        - button "Move stage down" [ref=f5e629] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e631]
+                    - cell "20" [ref=f5e634]
+                    - cell "HR Screening (Zeko) zeko_hr" [ref=f5e635]:
+                      - generic [ref=f5e636]:
+                        - strong [ref=f5e639]: HR Screening (Zeko)
+                        - generic [ref=f5e640]: zeko_hr
+                    - cell "zeko" [ref=f5e641]
+                    - cell "Active" [ref=f5e643]
+                    - cell [ref=f5e647]:
+                      - button "3 outcome(s)" [ref=f5e648] [cursor=pointer]
+                    - cell [ref=f5e650]:
+                      - button "edit Edit" [ref=f5e651] [cursor=pointer]:
+                        - img "edit" [ref=f5e653]
+                        - generic [ref=f5e656]: Edit
+                  - row [ref=f5e657]:
+                    - cell [ref=f5e658]:
+                      - generic [ref=f5e659]:
+                        - button "Move stage up" [ref=f5e661] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e663]
+                        - button "Move stage down" [ref=f5e667] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e669]
+                    - cell "30" [ref=f5e672]
+                    - cell "IQ / Tech Assessment assessment" [ref=f5e673]:
+                      - generic [ref=f5e674]:
+                        - strong [ref=f5e677]: IQ / Tech Assessment
+                        - generic [ref=f5e678]: assessment
+                    - cell "manual" [ref=f5e679]
+                    - cell "Active" [ref=f5e681]
+                    - cell [ref=f5e685]:
+                      - button "3 outcome(s)" [ref=f5e686] [cursor=pointer]
+                    - cell [ref=f5e688]:
+                      - button "edit Edit" [ref=f5e689] [cursor=pointer]:
+                        - img "edit" [ref=f5e691]
+                        - generic [ref=f5e694]: Edit
+                  - row [ref=f5e695]:
+                    - cell [ref=f5e696]:
+                      - generic [ref=f5e697]:
+                        - button "Move stage up" [ref=f5e699] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e701]
+                        - button "Move stage down" [ref=f5e705] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e707]
+                    - cell "40" [ref=f5e710]
+                    - cell "Functional Screening (Zeko) zeko_fn" [ref=f5e711]:
+                      - generic [ref=f5e712]:
+                        - strong [ref=f5e715]: Functional Screening (Zeko)
+                        - generic [ref=f5e716]: zeko_fn
+                    - cell "zeko" [ref=f5e717]
+                    - cell "Active" [ref=f5e719]
+                    - cell [ref=f5e723]:
+                      - button "3 outcome(s)" [ref=f5e724] [cursor=pointer]
+                    - cell [ref=f5e726]:
+                      - button "edit Edit" [ref=f5e727] [cursor=pointer]:
+                        - img "edit" [ref=f5e729]
+                        - generic [ref=f5e732]: Edit
+                  - row [ref=f5e733]:
+                    - cell [ref=f5e734]:
+                      - generic [ref=f5e735]:
+                        - button "Move stage up" [ref=f5e737] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e739]
+                        - button "Move stage down" [ref=f5e743] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e745]
+                    - cell "50" [ref=f5e748]
+                    - cell "Technical Round 1 tech1" [ref=f5e749]:
+                      - generic [ref=f5e750]:
+                        - strong [ref=f5e753]: Technical Round 1
+                        - generic [ref=f5e754]: tech1
+                    - cell "scheduled_interview" [ref=f5e755]
+                    - cell "Active" [ref=f5e757]
+                    - cell [ref=f5e761]:
+                      - button "3 outcome(s)" [ref=f5e762] [cursor=pointer]
+                    - cell [ref=f5e764]:
+                      - button "edit Edit" [ref=f5e765] [cursor=pointer]:
+                        - img "edit" [ref=f5e767]
+                        - generic [ref=f5e770]: Edit
+                  - row [ref=f5e771]:
+                    - cell [ref=f5e772]:
+                      - generic [ref=f5e773]:
+                        - button "Move stage up" [ref=f5e775] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e777]
+                        - button "Move stage down" [ref=f5e781] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e783]
+                    - cell "60" [ref=f5e786]
+                    - cell "Technical Round 2 tech2" [ref=f5e787]:
+                      - generic [ref=f5e788]:
+                        - strong [ref=f5e791]: Technical Round 2
+                        - generic [ref=f5e792]: tech2
+                    - cell "scheduled_interview" [ref=f5e793]
+                    - cell "Active" [ref=f5e795]
+                    - cell [ref=f5e799]:
+                      - button "3 outcome(s)" [ref=f5e800] [cursor=pointer]
+                    - cell [ref=f5e802]:
+                      - button "edit Edit" [ref=f5e803] [cursor=pointer]:
+                        - img "edit" [ref=f5e805]
+                        - generic [ref=f5e808]: Edit
+                  - row [ref=f5e809]:
+                    - cell [ref=f5e810]:
+                      - generic [ref=f5e811]:
+                        - button "Move stage up" [ref=f5e813] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e815]
+                        - button "Move stage down" [ref=f5e819] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e821]
+                    - cell "70" [ref=f5e824]
+                    - cell "Technical Round 3 tech3" [ref=f5e825]:
+                      - generic [ref=f5e826]:
+                        - strong [ref=f5e829]: Technical Round 3
+                        - generic [ref=f5e830]: tech3
+                    - cell "scheduled_interview" [ref=f5e831]
+                    - cell "Optional Active" [ref=f5e833]:
+                      - generic [ref=f5e834]:
+                        - generic [ref=f5e835]: Optional
+                        - generic [ref=f5e837]: Active
+                    - cell [ref=f5e839]:
+                      - button "3 outcome(s)" [ref=f5e840] [cursor=pointer]
+                    - cell [ref=f5e842]:
+                      - button "edit Edit" [ref=f5e843] [cursor=pointer]:
+                        - img "edit" [ref=f5e845]
+                        - generic [ref=f5e848]: Edit
+                  - row [ref=f5e849]:
+                    - cell [ref=f5e850]:
+                      - generic [ref=f5e851]:
+                        - button "Move stage up" [ref=f5e853] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e855]
+                        - button "Move stage down" [ref=f5e859] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e861]
+                    - cell "80" [ref=f5e864]
+                    - cell "HR Round hr_round" [ref=f5e865]:
+                      - generic [ref=f5e866]:
+                        - strong [ref=f5e869]: HR Round
+                        - generic [ref=f5e870]: hr_round
+                    - cell "scheduled_interview" [ref=f5e871]
+                    - cell "Active" [ref=f5e873]
+                    - cell [ref=f5e877]:
+                      - button "3 outcome(s)" [ref=f5e878] [cursor=pointer]
+                    - cell [ref=f5e880]:
+                      - button "edit Edit" [ref=f5e881] [cursor=pointer]:
+                        - img "edit" [ref=f5e883]
+                        - generic [ref=f5e886]: Edit
+                  - row [ref=f5e887]:
+                    - cell [ref=f5e888]:
+                      - generic [ref=f5e889]:
+                        - button "Move stage up" [ref=f5e891] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e893]
+                        - button "Move stage down" [ref=f5e897] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e899]
+                    - cell "90" [ref=f5e902]
+                    - cell "CEO / Final Round ceo" [ref=f5e903]:
+                      - generic [ref=f5e904]:
+                        - strong [ref=f5e907]: CEO / Final Round
+                        - generic [ref=f5e908]: ceo
+                    - cell "scheduled_interview" [ref=f5e909]
+                    - cell "Active" [ref=f5e911]
+                    - cell [ref=f5e915]:
+                      - button "3 outcome(s)" [ref=f5e916] [cursor=pointer]
+                    - cell [ref=f5e918]:
+                      - button "edit Edit" [ref=f5e919] [cursor=pointer]:
+                        - img "edit" [ref=f5e921]
+                        - generic [ref=f5e924]: Edit
+                  - row [ref=f5e925]:
+                    - cell [ref=f5e926]:
+                      - generic [ref=f5e927]:
+                        - button "Move stage up" [ref=f5e929] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e931]
+                        - button "Move stage down" [ref=f5e935] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e937]
+                    - cell "100" [ref=f5e940]
+                    - cell "Client Interview client" [ref=f5e941]:
+                      - generic [ref=f5e942]:
+                        - strong [ref=f5e945]: Client Interview
+                        - generic [ref=f5e946]: client
+                    - cell "scheduled_interview" [ref=f5e947]
+                    - cell "Optional Active" [ref=f5e949]:
+                      - generic [ref=f5e950]:
+                        - generic [ref=f5e951]: Optional
+                        - generic [ref=f5e953]: Active
+                    - cell [ref=f5e955]:
+                      - button "3 outcome(s)" [ref=f5e956] [cursor=pointer]
+                    - cell [ref=f5e958]:
+                      - button "edit Edit" [ref=f5e959] [cursor=pointer]:
+                        - img "edit" [ref=f5e961]
+                        - generic [ref=f5e964]: Edit
+                  - row [ref=f5e965]:
+                    - cell [ref=f5e966]:
+                      - generic [ref=f5e967]:
+                        - button "Move stage up" [ref=f5e969] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e971]
+                        - button "Move stage down" [ref=f5e975] [cursor=pointer]:
+                          - img "arrow-down" [ref=f5e977]
+                    - cell "110" [ref=f5e980]
+                    - cell "Documents documents" [ref=f5e981]:
+                      - generic [ref=f5e982]:
+                        - strong [ref=f5e985]: Documents
+                        - generic [ref=f5e986]: documents
+                    - cell "document" [ref=f5e987]
+                    - cell "Active" [ref=f5e989]
+                    - cell [ref=f5e993]:
+                      - button "3 outcome(s)" [ref=f5e994] [cursor=pointer]
+                    - cell [ref=f5e996]:
+                      - button "edit Edit" [ref=f5e997] [cursor=pointer]:
+                        - img "edit" [ref=f5e999]
+                        - generic [ref=f5e1002]: Edit
+                  - row [ref=f5e1003]:
+                    - cell [ref=f5e1004]:
+                      - generic [ref=f5e1005]:
+                        - button "Move stage up" [ref=f5e1007] [cursor=pointer]:
+                          - img "arrow-up" [ref=f5e1009]
+                        - button "Move stage down" [disabled] [ref=f5e1013]:
+                          - generic:
+                            - img "arrow-down"
+                    - cell "120" [ref=f5e1014]
+                    - cell "Offer offer" [ref=f5e1015]:
+                      - generic [ref=f5e1016]:
+                        - strong [ref=f5e1019]: Offer
+                        - generic [ref=f5e1020]: offer
+                    - cell "offer" [ref=f5e1021]
+                    - cell "Active" [ref=f5e1023]
+                    - cell [ref=f5e1027]:
+                      - button "11 outcome(s)" [ref=f5e1028] [cursor=pointer]
+                    - cell [ref=f5e1030]:
+                      - button "edit Edit" [ref=f5e1031] [cursor=pointer]:
+                        - img "edit" [ref=f5e1033]
+                        - generic [ref=f5e1036]: Edit

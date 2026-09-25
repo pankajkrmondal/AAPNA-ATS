@@ -1,0 +1,390 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e12]:
+    - complementary [ref=f1e13]:
+      - generic [ref=f1e14]:
+        - generic [ref=f1e15] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f1e17]
+          - generic [ref=f1e18]: ATS Platform
+        - menu [ref=f1e19]:
+          - menuitem "dashboard Dashboard" [ref=f1e20] [cursor=pointer]:
+            - img "dashboard" [ref=f1e21]
+            - generic [ref=f1e24]: Dashboard
+          - menuitem "file-text MRF" [ref=f1e25] [cursor=pointer]:
+            - img "file-text" [ref=f1e26]
+            - generic [ref=f1e29]: MRF
+          - menuitem "solution Search Candidate" [ref=f1e30] [cursor=pointer]:
+            - img "solution" [ref=f1e31]
+            - generic [ref=f1e34]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f1e35] [cursor=pointer]:
+            - img "upload" [ref=f1e36]
+            - generic [ref=f1e39]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f1e40] [cursor=pointer]:
+            - img "shop" [ref=f1e41]
+            - generic [ref=f1e44]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f1e45] [cursor=pointer]:
+            - img "audit" [ref=f1e46]
+            - generic [ref=f1e49]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f1e50] [cursor=pointer]:
+            - img "filter" [ref=f1e51]
+            - generic [ref=f1e54]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f1e55] [cursor=pointer]:
+            - img "apartment" [ref=f1e56]
+            - generic [ref=f1e59]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f1e60] [cursor=pointer]:
+            - img "bar-chart" [ref=f1e61]
+            - generic [ref=f1e64]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=f1e65] [cursor=pointer]:
+            - img "mail" [ref=f1e66]
+            - generic [ref=f1e69]: Email Templates
+          - menuitem "setting Settings" [ref=f1e70] [cursor=pointer]:
+            - img "setting" [ref=f1e71]
+            - generic [ref=f1e74]: Settings
+    - generic [ref=f1e75]:
+      - banner [ref=f1e76]:
+        - generic [ref=f1e77]:
+          - button [ref=f1e79] [cursor=pointer]:
+            - img "menu-fold" [ref=f1e81]
+          - generic [ref=f1e84]: Dashboard
+        - generic [ref=f1e85]:
+          - button [ref=f1e88] [cursor=pointer]:
+            - img "bell" [ref=f1e90]
+          - button "Toggle theme" [ref=f1e94] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f1e106] [cursor=pointer]:
+            - generic [ref=f1e108]:
+              - img "user" [ref=f1e109]
+              - img "setting" [ref=f1e112]
+            - generic [ref=f1e115]: Admin Portal
+          - img "user" [ref=f1e120] [cursor=pointer]
+      - main [ref=f1e123]:
+        - generic [ref=f1e125]:
+          - generic [ref=f1e127]:
+            - generic [ref=f1e128]:
+              - generic [ref=f1e129]: AAPNA ATS Platform
+              - heading "Good afternoon, Pan mondal 👋" [level=2] [ref=f1e131]:
+                - generic [ref=f1e132]: Good afternoon, Pan mondal
+                - text: 👋
+              - generic [ref=f1e133]: Here's what's happening across your recruitment pipeline · 01:57:33 PM
+            - generic [ref=f1e134]:
+              - generic [ref=f1e135]:
+                - button "search Search… ⌘K" [ref=f1e137] [cursor=pointer]:
+                  - img "search" [ref=f1e139]
+                  - generic [ref=f1e142]: Search…
+                  - generic [ref=f1e143]: ⌘K
+                - button "plus New MRF Request" [ref=f1e145] [cursor=pointer]:
+                  - img "plus" [ref=f1e147]
+                  - generic [ref=f1e151]: New MRF Request
+              - generic [ref=f1e152]:
+                - generic [ref=f1e154]:
+                  - text: Period
+                  - button "About Date range" [ref=f1e155]:
+                    - img "info-circle" [ref=f1e156]
+                - radiogroup "segmented control" [ref=f1e161]:
+                  - generic [ref=f1e162]:
+                    - generic [ref=f1e163] [cursor=pointer]:
+                      - radio "7d"
+                      - generic [ref=f1e164]: 7d
+                    - generic [ref=f1e165] [cursor=pointer]:
+                      - radio "30d" [checked]
+                      - generic [ref=f1e166]: 30d
+                    - generic [ref=f1e167] [cursor=pointer]:
+                      - radio "90d"
+                      - generic [ref=f1e168]: 90d
+                - generic "Filter the dashboard graphs by role" [ref=f1e170] [cursor=pointer]:
+                  - generic [ref=f1e172]:
+                    - combobox "Filter the dashboard graphs by role" [ref=f1e174]
+                    - generic "All roles" [ref=f1e175]
+          - generic [ref=f1e179]:
+            - generic [ref=f1e183]:
+              - generic [ref=f1e184]:
+                - generic [ref=f1e185]:
+                  - img "team" [ref=f1e187]
+                  - generic [ref=f1e190]:
+                    - img "arrow-up" [ref=f1e191]
+                    - text: 100%
+                - generic [ref=f1e194]:
+                  - text: Total Candidates
+                  - button "About Total Candidates" [ref=f1e196]:
+                    - img "info-circle" [ref=f1e197]
+                - generic [ref=f1e201]: "443"
+                - generic [ref=f1e202]: 200 added in the last 30 days
+              - img "New candidates added per day over the last 30 days. The number above covers all roles and all time." [ref=f1e204]
+            - generic [ref=f1e219]:
+              - generic [ref=f1e220]:
+                - img "file-text" [ref=f1e223]
+                - generic [ref=f1e226]:
+                  - text: Active MRFs
+                  - button "About Active MRFs" [ref=f1e228]:
+                    - img "info-circle" [ref=f1e229]
+                - generic [ref=f1e233]: "56"
+                - generic [ref=f1e234]: 0 awaiting approval
+              - img "New requisitions raised per day over the last 30 days. The number above is every open requisition, however old." [ref=f1e236]
+            - generic [ref=f1e251]:
+              - generic [ref=f1e252]:
+                - img "calendar" [ref=f1e255]
+                - generic [ref=f1e258]:
+                  - text: Today's Uploads
+                  - button "About Today's Uploads" [ref=f1e260]:
+                    - img "info-circle" [ref=f1e261]
+                - generic [ref=f1e265]: "0"
+                - generic [ref=f1e266]: 200 in the last 30 days
+              - img "Uploads per day over the last 30 days, so today reads in context." [ref=f1e268]
+            - generic [ref=f1e283]:
+              - generic [ref=f1e284]:
+                - img "check-circle" [ref=f1e287]
+                - generic [ref=f1e291]:
+                  - text: Shortlisted
+                  - button "About Shortlisted" [ref=f1e293]:
+                    - img "info-circle" [ref=f1e294]
+                - generic [ref=f1e298]: "211"
+                - generic [ref=f1e299]: 48% of sourced
+              - img "Candidates entering the interview pipeline per day over the last 30 days. The number above is everyone currently shortlisted." [ref=f1e301]
+          - generic [ref=f1e313]:
+            - generic [ref=f1e316]:
+              - generic [ref=f1e317]:
+                - generic [ref=f1e318]:
+                  - heading [level=5] [ref=f1e319]:
+                    - text: Hiring Trends
+                    - button "About Hiring Trends" [ref=f1e320]:
+                      - img "info-circle" [ref=f1e321]
+                  - generic [ref=f1e325]: New candidates added · last 30 days
+                - generic [ref=f1e326]:
+                  - generic [ref=f1e327]: "200"
+                  - generic [ref=f1e328]:
+                    - text: total
+                    - img "info-circle" [ref=f1e329]
+              - img [ref=f1e336]:
+                - generic [ref=f1e340]:
+                  - generic [ref=f1e341]: Aug 27
+                  - generic [ref=f1e343]: Aug 31
+                  - generic [ref=f1e345]: Sep 04
+                  - generic [ref=f1e347]: Sep 08
+                  - generic [ref=f1e349]: Sep 12
+                  - generic [ref=f1e351]: Sep 16
+                  - generic [ref=f1e353]: Sep 20
+                  - generic [ref=f1e355]: Sep 24
+                - generic [ref=f1e358]:
+                  - generic [ref=f1e359]: "0"
+                  - generic [ref=f1e361]: "35"
+                  - generic [ref=f1e363]: "70"
+                  - generic [ref=f1e365]: "122"
+            - generic [ref=f1e373]:
+              - generic [ref=f1e375]:
+                - heading [level=5] [ref=f1e376]:
+                  - text: Needs Your Attention
+                  - button "About Needs Your Attention" [ref=f1e377]:
+                    - img "info-circle" [ref=f1e378]
+                - text: Your actionable queue
+              - generic [ref=f1e382]:
+                - generic [ref=f1e383] [cursor=pointer]:
+                  - img "file-text" [ref=f1e385]
+                  - generic [ref=f1e388]: MRFs awaiting approval
+                  - generic [ref=f1e389]: "0"
+                  - img "arrow-right" [ref=f1e390]
+                - generic [ref=f1e393] [cursor=pointer]:
+                  - img "branches" [ref=f1e395]
+                  - generic [ref=f1e398]:
+                    - text: Duplicates to review
+                    - generic [ref=f1e399]: LIVE
+                  - generic [ref=f1e401]: "0"
+                  - img "arrow-right" [ref=f1e402]
+                - generic [ref=f1e405] [cursor=pointer]:
+                  - img "filter" [ref=f1e407]
+                  - generic [ref=f1e410]: Awaiting screening
+                  - generic [ref=f1e411]: "246"
+                  - img "arrow-right" [ref=f1e412]
+                - generic [ref=f1e415] [cursor=pointer]:
+                  - img "calendar" [ref=f1e417]
+                  - generic [ref=f1e420]: Interviews today
+                  - generic [ref=f1e421]: "0"
+                  - img "arrow-right" [ref=f1e422]
+          - generic [ref=f1e425]:
+            - generic [ref=f1e428]:
+              - generic [ref=f1e429]:
+                - generic [ref=f1e430]:
+                  - heading [level=5] [ref=f1e431]:
+                    - text: Conversion Funnel
+                    - button "About Conversion Funnel" [ref=f1e432]:
+                      - img "info-circle" [ref=f1e433]
+                  - text: Sourced → hired conversion
+                - generic [ref=f1e438]:
+                  - generic [ref=f1e439]: 9%
+                  - text: overall
+              - generic [ref=f1e440]:
+                - generic [ref=f1e441]:
+                  - generic [ref=f1e442]:
+                    - generic [ref=f1e443]:
+                      - generic [ref=f1e444]: Sourced
+                      - generic [ref=f1e445]: "443"
+                    - generic [ref=f1e446]: 100%
+                  - generic [ref=f1e449]:
+                    - img "arrow-down" [ref=f1e450]
+                    - generic [ref=f1e453]: 44% advance
+                - generic [ref=f1e454]:
+                  - generic [ref=f1e455]:
+                    - generic [ref=f1e456]:
+                      - generic [ref=f1e457]: AI Screened
+                      - generic [ref=f1e458]: "197"
+                    - generic [ref=f1e459]: 44%
+                  - generic [ref=f1e462]:
+                    - img "arrow-down" [ref=f1e463]
+                    - generic [ref=f1e466]: 107% advance
+                - generic [ref=f1e467]:
+                  - generic [ref=f1e468]:
+                    - generic [ref=f1e469]:
+                      - generic [ref=f1e470]: Shortlisted
+                      - generic [ref=f1e471]: "211"
+                    - generic [ref=f1e472]: 48%
+                  - generic [ref=f1e475]:
+                    - img "arrow-down" [ref=f1e476]
+                    - generic [ref=f1e479]: 18% advance
+                - generic [ref=f1e481]:
+                  - generic [ref=f1e482]:
+                    - generic [ref=f1e483]: Hired
+                    - generic [ref=f1e484]: "39"
+                  - generic [ref=f1e485]: 9%
+            - generic [ref=f1e490]:
+              - generic [ref=f1e491]:
+                - generic [ref=f1e492]:
+                  - heading [level=5] [ref=f1e493]:
+                    - text: Talent Insights
+                    - button "About Talent Insights" [ref=f1e494]:
+                      - img "info-circle" [ref=f1e495]
+                  - text: Top applied roles
+                - radiogroup "segmented control" [ref=f1e499]:
+                  - generic [ref=f1e500]:
+                    - generic [ref=f1e501] [cursor=pointer]:
+                      - radio "Roles" [checked]
+                      - generic [ref=f1e502]: Roles
+                    - generic [ref=f1e503] [cursor=pointer]:
+                      - radio "Skills"
+                      - generic [ref=f1e504]: Skills
+              - img [ref=f1e508]:
+                - generic [ref=f1e510]:
+                  - generic [ref=f1e511]: RPA Developer
+                  - generic [ref=f1e513]: Product Sales Head
+                  - generic [ref=f1e515]: QA Automation Engineer
+            - generic [ref=f1e528]:
+              - generic [ref=f1e529]:
+                - generic [ref=f1e530]:
+                  - heading [level=5] [ref=f1e531]:
+                    - text: Upcoming Interviews
+                    - button "About Upcoming Interviews" [ref=f1e532]:
+                      - img "info-circle" [ref=f1e533]
+                  - text: Next 7 days
+                - generic [ref=f1e537] [cursor=pointer]:
+                  - text: View all
+                  - img "arrow-right" [ref=f1e538]
+              - generic [ref=f1e542]:
+                - img "No data" [ref=f1e544]
+                - generic [ref=f1e550]: No interviews scheduled
+          - generic [ref=f1e551]:
+            - generic [ref=f1e554]:
+              - generic [ref=f1e556]:
+                - heading [level=5] [ref=f1e557]:
+                  - text: Recruiter Activity
+                  - button "About Recruiter Activity" [ref=f1e558]:
+                    - img "info-circle" [ref=f1e559]
+                - text: Candidates added vs. shortlisted per recruiter
+              - generic [ref=f1e565]:
+                - img [ref=f1e566]:
+                  - generic [ref=f1e568]:
+                    - generic [ref=f1e569]: Unattributed
+                    - generic [ref=f1e571]: phase3-testpass
+                    - generic [ref=f1e573]: Naveen Satywali
+                    - generic [ref=f1e575]: harish.mopuri130
+                    - generic [ref=f1e577]: Saurabh Kumar
+                    - generic [ref=f1e579]: Chhaya Verma
+                    - generic [ref=f1e581]: Harish Mopuri
+                    - generic [ref=f1e583]: Admin Supers
+                    - generic [ref=f1e585]: Self Applied
+                    - generic [ref=f1e587]: Sahil Dubey
+                - list [ref=f1e624]:
+                  - listitem [ref=f1e625]: Added
+                  - listitem [ref=f1e628]: Shortlisted
+            - generic [ref=f1e633]:
+              - generic [ref=f1e634]:
+                - generic [ref=f1e635]:
+                  - heading [level=5] [ref=f1e636]:
+                    - text: Live Activity
+                    - button "About Live Activity" [ref=f1e637]:
+                      - img "info-circle" [ref=f1e638]
+                  - text: Real-time pipeline events
+                - generic [ref=f1e642]: LIVE
+              - generic [ref=f1e644]: Listening for new uploads & reviews…
+          - generic [ref=f1e648]:
+            - generic [ref=f1e651]:
+              - generic [ref=f1e652]:
+                - generic [ref=f1e653]:
+                  - heading [level=5] [ref=f1e654]:
+                    - text: Latest uploads
+                    - button "About Latest uploads" [ref=f1e655]:
+                      - img "info-circle" [ref=f1e656]
+                  - text: The five most recent candidates
+                - button [ref=f1e660] [cursor=pointer]:
+                  - text: Search all candidates
+                  - img "arrow-right" [ref=f1e661]
+              - generic [ref=f1e664]:
+                - button "VG VIPIN GARG Role not specified Sep 9" [ref=f1e665] [cursor=pointer]:
+                  - generic [ref=f1e666]: VG
+                  - generic [ref=f1e667]:
+                    - generic [ref=f1e668]: VIPIN GARG
+                    - generic [ref=f1e669]: Role not specified
+                  - generic [ref=f1e670]: Sep 9
+                - button "SK Sandeep Kumar Role not specified Sep 9" [ref=f1e671] [cursor=pointer]:
+                  - generic [ref=f1e672]: SK
+                  - generic [ref=f1e673]:
+                    - generic [ref=f1e674]: Sandeep Kumar
+                    - generic [ref=f1e675]: Role not specified
+                  - generic [ref=f1e676]: Sep 9
+                - button "RM Rekha Mallick Role not specified Sep 9" [ref=f1e677] [cursor=pointer]:
+                  - generic [ref=f1e678]: RM
+                  - generic [ref=f1e679]:
+                    - generic [ref=f1e680]: Rekha Mallick
+                    - generic [ref=f1e681]: Role not specified
+                  - generic [ref=f1e682]: Sep 9
+                - button "DK DHEERAJ KUMAR Role not specified Sep 9" [ref=f1e683] [cursor=pointer]:
+                  - generic [ref=f1e684]: DK
+                  - generic [ref=f1e685]:
+                    - generic [ref=f1e686]: DHEERAJ KUMAR
+                    - generic [ref=f1e687]: Role not specified
+                  - generic [ref=f1e688]: Sep 9
+                - button "US UTTAM SINGH NEGI Role not specified Sep 9" [ref=f1e689] [cursor=pointer]:
+                  - generic [ref=f1e690]: US
+                  - generic [ref=f1e691]:
+                    - generic [ref=f1e692]: UTTAM SINGH NEGI
+                    - generic [ref=f1e693]: Role not specified
+                  - generic [ref=f1e694]: Sep 9
+            - generic [ref=f1e697]:
+              - generic [ref=f1e699]:
+                - heading "Quick Actions" [level=5] [ref=f1e700]
+                - text: Jump into your modules
+              - generic [ref=f1e701]:
+                - button "filter Candidate Screening lock" [disabled] [ref=f1e702]:
+                  - img "filter" [ref=f1e704]
+                  - generic [ref=f1e707]: Candidate Screening
+                  - img "lock" [ref=f1e708]
+                - button "bar-chart Recruitment Analytics lock" [disabled] [ref=f1e711]:
+                  - img "bar-chart" [ref=f1e713]
+                  - generic [ref=f1e716]: Recruitment Analytics
+                  - img "lock" [ref=f1e717]
+                - button "plus New MRF Request arrow-right" [ref=f1e720] [cursor=pointer]:
+                  - img "plus" [ref=f1e722]
+                  - generic [ref=f1e726]: New MRF Request
+                  - img "arrow-right" [ref=f1e727]
+                - button "search Search & Edit Candidates lock" [disabled] [ref=f1e730]:
+                  - img "search" [ref=f1e732]
+                  - generic [ref=f1e735]: Search & Edit Candidates
+                  - img "lock" [ref=f1e736]
+                - button "upload HR Manual Upload arrow-right" [ref=f1e739] [cursor=pointer]:
+                  - img "upload" [ref=f1e741]
+                  - generic [ref=f1e744]: HR Manual Upload
+                  - img "arrow-right" [ref=f1e745]
+                - button "cloud-upload Vendor Upload lock" [disabled] [ref=f1e748]:
+                  - img "cloud-upload" [ref=f1e750]
+                  - generic [ref=f1e754]: Vendor Upload
+                  - img "lock" [ref=f1e755]
+                - button "setting System Configuration arrow-right" [ref=f1e758] [cursor=pointer]:
+                  - img "setting" [ref=f1e760]
+                  - generic [ref=f1e763]: System Configuration
+                  - img "arrow-right" [ref=f1e764]
+  - generic [aria-hidden] [ref=f1e767]: Unattributed
