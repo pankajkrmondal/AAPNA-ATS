@@ -588,6 +588,26 @@ const config = {
   },
 
   /**
+   * MRF approval audit trail (docs/phase3/New MRF Request - Approval Request/).
+   * Each approver gets a personal link; every decision records who / when / IP /
+   * device / comment, and the other approvers are told. Requires
+   * prisma/ddl/2026-09-25-mrf-approval-audit.sql.
+   */
+  mrfApprovalAudit: {
+    /**
+     * Kill switch. false = the previous single shared-link flow (the Phase A
+     * behaviour); the audit tables are left untouched, so turning it back on
+     * loses nothing.
+     */
+    enabled: env('MRF_APPROVAL_AUDIT_ENABLED', 'true') === 'true',
+    /** Personal approval links expire after this many days (was 30 for the shared link). */
+    tokenDays: parseInt(env('MRF_APPROVAL_TOKEN_DAYS', '14'), 10),
+    /** Public approval routes: requests per IP per window. A brake on hammering, not the access control. */
+    rateWindowMs: parseInt(env('MRF_APPROVAL_RATE_WINDOW_MS', String(15 * 60 * 1000)), 10),
+    rateMax: parseInt(env('MRF_APPROVAL_RATE_MAX', '60'), 10),
+  },
+
+  /**
    * Set TRUST_PROXY=true when running behind a reverse proxy (nginx/IIS/Azure)
    * so Express derives the real client IP from X-Forwarded-For; otherwise the
    * rate limiter keys every request on the proxy's own IP.

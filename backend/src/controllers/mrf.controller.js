@@ -17,6 +17,18 @@ import { assertSignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import mrfExport, { buildMrfWhere, attachApprovalStatus } from '../exports/mrf.export.js';
 import mrfDetailExport from '../exports/mrfDetail.export.js';
+import mrfApprovalAuditExport from '../exports/mrfApprovalAudit.export.js';
+import { MRF_APPROVAL_LOG_TYPES, isOpenApprovalStatus } from '../jobs/reminderEligibility.js';
+import {
+  issueApprovalRequests,
+  getPublicDetails as getPublicApprovalDetails,
+  decide as decideMrfApproval,
+  clientOf as approvalClientOf,
+  getApprovalTrail as loadApprovalTrail,
+  reissueApprovalLinks as reissueLinks,
+} from '../services/mrfApproval.service.js';
+import { MAX_COMMENT_LENGTH } from '../utils/mrfApprovalRules.js';
+import { isAdminTier } from '../config/roles.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -168,6 +180,22 @@ export const exportMrfRequests = catchAsync(async (req, res) => runExport(req, r
   filters: mrfExport.parseFilters(req),
   fetch: mrfExport.fetch,
 }));
+
+/**
+ * @desc    Export the MRF approval audit (all requisitions, last `?days=`, default 90)
+ * @route   GET /api/mrf/approval-audit/export
+ * @access  Private — admin tier only (carries IP address and device)
+ */
+export const exportApprovalAudit = catchAsync(async (req, res) => {
+  const filters = mrfApprovalAuditExport.parseFilters(req);
+  return runExport(req, res, {
+    key: 'mrf-approval-audit',
+    label: `MRF-Approval-Audit_${filters.days}d`,
+    columns: mrfApprovalAuditExport.columns,
+    filters,
+    fetch: mrfApprovalAuditExport.fetch,
+  });
+});
 
 /**
  * @desc    Export ONE requisition — the request plus the MRF the Hiring Manager
@@ -812,21 +840,26 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     });
   }
 
-  // 4) Generate secure approval token
-  const token = jwt.sign(
-    { mrfId: newMrf.id.toString(), email: submitter_email },
-    config.jwt.secret,
-    { expiresIn: '30d' }
-  );
-
-  // 5) Send interactive email notification to Abhijit Roy / Leaders (runs async)
-  sendMrfApprovalEmail({
-    mrfRecord: newMrf,
-    token,
-    frontendUrl: req.headers.origin || config.cors.frontendUrl
-  }).catch((err) => {
-    logger.error(`Failed to send MRF Approval Email in background: ${err.message}`);
-  });
+  // 4–5) Route for approval, in the background (the HM's submission must not
+  // wait on Graph).
+  const frontendUrl = req.headers.origin || config.cors.frontendUrl;
+  if (config.mrfApprovalAudit.enabled) {
+    // One PERSONAL link per approver, so every decision is attributable and
+    // the others can be told (MRF approval audit trail).
+    issueApprovalRequests({ mrfRecord: newMrf, frontendUrl }).catch((err) => {
+      logger.error(`Failed to issue MRF approval requests in background: ${err.message}`);
+    });
+  } else {
+    // Previous flow: one email, one SHARED link for every approver.
+    const token = jwt.sign(
+      { mrfId: newMrf.id.toString(), email: submitter_email },
+      config.jwt.secret,
+      { expiresIn: '30d' }
+    );
+    sendMrfApprovalEmail({ mrfRecord: newMrf, token, frontendUrl }).catch((err) => {
+      logger.error(`Failed to send MRF Approval Email in background: ${err.message}`);
+    });
+  }
 
   // 5b) Send the HR-team submission notification (n8n "Send a message To HR"), async
   sendMrfSubmissionHrEmail({ mrfRecord: newMrf }).catch((err) => {
@@ -850,8 +883,14 @@ export const getPublicMrfDetails = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { token } = req.query;
 
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
   if (!token) {
     throw new AppError('Approval token is required to view requisition details.', 400);
+  }
+
+  if (config.mrfApprovalAudit.enabled) {
+    const data = await getPublicApprovalDetails(id, String(token), approvalClientOf(req));
+    return success(res, data, 'MRF details retrieved successfully');
   }
 
   // Verify token
@@ -874,9 +913,10 @@ export const getPublicMrfDetails = catchAsync(async (req, res) => {
     throw new AppError('Requisition request not found.', 404);
   }
 
-  // Safe serialization (BigInt to string)
+  // Safe serialization (BigInt to string). The audit columns are never public.
+  const { decided_ip: _ip, decided_by_email: _email, decision_event_id: _ev, ...publicMrf } = mrf;
   const responseData = {
-    ...mrf,
+    ...publicMrf,
     id: mrf.id.toString(),
   };
 
@@ -896,6 +936,29 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
     throw new AppError('Token and action parameters are required.', 400);
   }
 
+  // Only the two real decisions are accepted. Anything else used to fall
+  // through to `isApproved = false` and was saved as a rejection.
+  const normalizedAction = String(action).trim().toLowerCase();
+  if (normalizedAction !== 'approve' && normalizedAction !== 'reject') {
+    throw new AppError('Action must be either "approve" or "reject".', 400);
+  }
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  if (comments !== undefined && comments !== null && String(comments).length > MAX_COMMENT_LENGTH) {
+    throw new AppError(`Comments must be at most ${MAX_COMMENT_LENGTH} characters.`, 400);
+  }
+
+  if (config.mrfApprovalAudit.enabled) {
+    // Personal-link flow: identity from the token row, decision + proof in one
+    // transaction, other approvers notified (services/mrfApproval.service.js).
+    const result = await decideMrfApproval(
+      id,
+      { token: String(token), action: normalizedAction, comments },
+      approvalClientOf(req),
+    );
+    return success(res, result, `Requisition request successfully ${result.approval_status}`);
+  }
+
+  // ── Previous shared-link flow (MRF_APPROVAL_AUDIT_ENABLED=false) ──────
   // Verify token
   let decoded;
   try {
@@ -916,20 +979,58 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
     throw new AppError('Requisition request not found.', 404);
   }
 
-  const currentStatus = (mrf.approval_status || '').toLowerCase();
-  if (currentStatus !== 'pending' && currentStatus !== 'waiting') {
-    throw new AppError('This requisition request has already been processed.', 400);
+  // 409, not 400: the request is valid, the requisition's state is what
+  // changed (usually the other approver decided first). The approval page
+  // turns a 409 into its neutral "already decided" view.
+  if (!isOpenApprovalStatus(mrf.approval_status)) {
+    throw new AppError('This requisition request has already been processed.', 409);
   }
 
-  const isApproved = action.toLowerCase() === 'approve';
+  const isApproved = normalizedAction === 'approve';
 
-  // Update DB status
-  const updatedMrf = await prisma.rpa_mrf.update({
-    where: { id: BigInt(id) },
+  // Atomic transition, conditional on the exact status just read. Both
+  // approvers hold the same link; with a plain read-then-update, two confirms
+  // arriving together both passed the check above (last write won, and two
+  // outcome emails went out). Only one request can win this update.
+  const { count } = await prisma.rpa_mrf.updateMany({
+    where: { id: BigInt(id), approval_status: mrf.approval_status },
     data: {
       approval_status: isApproved ? 'approved' : 'rejected'
     }
   });
+
+  if (count === 0) {
+    throw new AppError('This requisition request has already been processed.', 409);
+  }
+
+  const updatedMrf = await prisma.rpa_mrf.findUnique({
+    where: { id: BigInt(id) }
+  });
+
+  // rpa_mrf has no updated_at / approved_by, and production drops HTTP access
+  // logs, so this line is the only record of when a decision was taken and
+  // from where. The token is never logged. (Who decided is not knowable yet —
+  // both approvers share one link; see MRF-Approval-Unified-Fix-Plan.md Phase B.)
+  logger.info(
+    `MRF ${id} ${updatedMrf.approval_status} via approval link at ${new Date().toISOString()}`,
+    { mrfId: id, decision: updatedMrf.approval_status, ip: req.ip, userAgent: req.get('user-agent') || null }
+  );
+
+  // Close this MRF's approval log rows so the reminder cron never re-sends the
+  // Approve/Reject buttons after the decision. Non-fatal: the cron's own
+  // status check (reminderEligibility.js) is the backstop.
+  try {
+    await prisma.rpa_email_log.updateMany({
+      where: {
+        email_type: { in: [...MRF_APPROVAL_LOG_TYPES] },
+        reference_id: Number(id),
+        responded_at: null,
+      },
+      data: { responded_at: new Date() },
+    });
+  } catch (err) {
+    logger.warn(`MRF ${id}: could not close approval reminder rows: ${err.message}`);
+  }
 
   // Update parent rpa_mrf_jd_send status to approved/rejected
   const parentSend = await prisma.rpa_mrf_jd_send.findFirst({
@@ -952,7 +1053,8 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
         mrfRecord: updatedMrf,
         approved: isApproved,
         comments: comments || '',
-        approverName: decoded.email,
+        // No approverName: the token only carries the SUBMITTER's email, not
+        // the approver's, and the template never used it.
         hmEmail: updatedMrf.submitter_email || (parentSend && parentSend.email) || ''
       }).catch((err) => {
         logger.error(`Error sending MRF outcome email: ${err.message}`);
@@ -965,6 +1067,39 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
   return success(res, { approval_status: updatedMrf.approval_status }, `Requisition request successfully ${updatedMrf.approval_status}`);
 });
 
+
+/**
+ * @desc    Approval trail of one requisition: who the request went to, who
+ *          opened it, who decided, when, and who was told. IP address and
+ *          device are included for admin-tier users only.
+ * @route   GET /api/mrf/:id/approval-trail   (:id = rpa_mrf id)
+ * @access  Private (MRF export roles)
+ */
+export const getApprovalTrail = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const trail = await loadApprovalTrail(id, { includeClientData: isAdminTier(req.user?.role) });
+  return success(res, trail, 'Approval trail retrieved');
+});
+
+/**
+ * @desc    Replace the approvers' links for a still-pending requisition (lost
+ *          or expired email, changed approver list). Old links stop working.
+ * @route   POST /api/mrf/:id/approval-links/reissue   (:id = rpa_mrf id)
+ * @access  Private (MRF closure roles)
+ */
+export const reissueApprovalLinks = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  if (!config.mrfApprovalAudit.enabled) {
+    throw new AppError('Personal approval links are switched off (MRF_APPROVAL_AUDIT_ENABLED=false).', 409);
+  }
+  const result = await reissueLinks(id, {
+    user: req.user,
+    frontendUrl: req.headers.origin || config.cors.frontendUrl,
+  });
+  return success(res, result, `Approval links re-sent to ${result.sent} approver(s)`);
+});
 
 // ── Manual requisition closure (Q34) ──────────────────────────────────
 //

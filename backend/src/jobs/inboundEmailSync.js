@@ -19,6 +19,7 @@ import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { fetchMessagesSince, isAdminSender } from '../services/outlookReader.service.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
+import { MRF_APPROVAL_LOG_TYPES } from './reminderEligibility.js';
 
 const WATERMARK_KEY = 'inbound_sync_last_sync';
 
@@ -147,12 +148,17 @@ export async function processInboundMessages(messages) {
     // A genuine reply means the sender has responded: close out their open
     // rpa_email_log rows so the reminder cron stops following up. Matched by
     // recipient address, so it works even for sends without Graph ids.
+    // MRF approval requests are excluded: a reply (to that or ANY other email)
+    // is not a decision, and matching by address would silence an approver's
+    // reminders for a still-pending MRF. The decision and the MRF status close
+    // those rows instead (mrfApproval.service.js, reminderEligibility.js).
     if (!msg.isBounce) {
       try {
         const closed = await prisma.rpa_email_log.updateMany({
           where: {
             responded_at: null,
             recipient_email: { equals: msg.fromEmail, mode: 'insensitive' },
+            email_type: { notIn: [...MRF_APPROVAL_LOG_TYPES] },
           },
           data: { responded_at: new Date(msg.receivedAt) },
         });

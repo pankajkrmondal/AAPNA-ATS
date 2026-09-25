@@ -220,6 +220,13 @@ export function buildDetailRows(jdSend, mainMrf) {
   push('Workflow', 'Closed On', formatDateTime(mainMrf?.closed_at));
   push('Workflow', 'Closure Reason', mrfClosureReasonLabel(mainMrf?.closure_reason));
   push('Workflow', 'Closure Note', mainMrf?.closure_note || '—');
+  // Who decided and when (MRF approval audit trail). IP is deliberately NOT
+  // exported here: this export is open to recruiters/HR, and IP is admin-only.
+  push('Workflow', 'Decided By', mainMrf?.decided_by_name
+    ? `${mainMrf.decided_by_name}${mainMrf.decided_by_email ? ` (${mainMrf.decided_by_email})` : ''}`
+    : '—');
+  push('Workflow', 'Decided At', formatDateTime(mainMrf?.decided_at));
+  push('Workflow', 'Decision Comment', mainMrf?.decision_comments || '—');
 
   // ── Section 2: New MRF Request Info (rpa_mrf_jd_send) ───────────────
   const REQUEST = 'New MRF Request';

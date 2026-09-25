@@ -79,9 +79,29 @@ const RECIPIENTS = {
     duplicateAlert:     { to: 'claudepankajmondal@gmail.com', cc: '' },
     mrfApproval:        { to: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com', cc: '' },
     mrfSubmitHrNotify:  { to: 'recruitment@aapnainfotech.in, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com', cc: '' },
-    mrfOutcome:         { to: 'recruitment@aapnainfotech.in', cc: 'sroy@aapnainfotech.com, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com' },
+    // aroy@ added 2026-09-25 (MRF-Approval-Unified-Fix-Plan.md Phase 0 step 2 /
+    // A8): the CEO approves MRFs but never received the outcome email.
+    mrfOutcome:         { to: 'recruitment@aapnainfotech.in', cc: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com' },
     shortlistCc:        { to: '', cc: 'recruitment@aapnainfotech.in' },
   },
+};
+
+/**
+ * MRF approvers, with names, for the personal approval links (MRF approval
+ * audit trail). Each approver gets their own email and link; the name is what
+ * the decision is recorded under and what the other approvers are told.
+ * Staging uses internal test mailboxes (mail is redirected to the test inbox
+ * anyway); two entries so the "other approver is notified" path is exercised.
+ */
+const MRF_APPROVERS = {
+  staging: [
+    { email: 'hmopuri@aapnainfotech.com', name: 'Staging Approver A' },
+    { email: 'saukumar@aapnainfotech.com', name: 'Staging Approver B' },
+  ],
+  production: [
+    { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy' },
+    { email: 'sroy@aapnainfotech.com', name: 'Sanghamitra Roy' },
+  ],
 };
 
 async function main() {
@@ -105,6 +125,14 @@ async function main() {
       count++;
     }
   }
+
+  const approvers = JSON.stringify(MRF_APPROVERS[profile]);
+  await prisma.rpa_settings.upsert({
+    where: { key: 'mrf_approvers' },
+    update: { value: approvers },
+    create: { key: 'mrf_approvers', value: approvers },
+  });
+  count++;
 
   console.log(`Done. Upserted ${count} rpa_settings row(s).`);
 }

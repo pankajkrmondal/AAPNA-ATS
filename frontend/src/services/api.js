@@ -33,6 +33,17 @@ api.interceptors.request.use(
 );
 
 /**
+ * Pages opened from an emailed link by people who need no ATS session (MRF
+ * approvers, hiring managers, candidates, interviewers). A stale token left in
+ * the browser makes AuthContext's /auth/me return 401 on mount; redirecting
+ * then bounced an MRF approver from their approval link to the login page and
+ * lost the link. Keep in step with the public routes in App.jsx.
+ */
+const isPublicLinkPage = (pathname) =>
+  /^\/mrf\/[^/]+\/approve\/?$/.test(pathname) ||
+  ['/mrf-submit', '/missing-jd-upload', '/scorecard/', '/documents/'].some((p) => pathname.startsWith(p));
+
+/**
  * Response interceptor — normalise errors and handle 401 (unauthorized).
  */
 api.interceptors.response.use(
@@ -45,8 +56,10 @@ api.interceptors.response.use(
       localStorage.removeItem('ats_token');
       localStorage.removeItem('ats_user');
 
-      // Only redirect if we're not already on the login page
-      if (!window.location.pathname.includes('/login')) {
+      // Only redirect if we're not already on the login page, and never away
+      // from a public emailed-link page (the stale token is simply dropped).
+      const { pathname } = window.location;
+      if (!pathname.includes('/login') && !isPublicLinkPage(pathname)) {
         window.location.href = '/login';
       }
     }

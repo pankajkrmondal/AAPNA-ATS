@@ -20,6 +20,26 @@ const fmtOther = (sel, other) =>
     ? `Other - ${other}`
     : (sel || 'Not specified');
 
+// Statuses that still await a decision — same set the approve endpoint accepts.
+const OPEN_STATUSES = ['pending', 'waiting'];
+
+// Wording for a requisition that is no longer open. "declined" matches the
+// outcome email ("Declined: New MRF Request").
+const decidedLabel = (status) => {
+  switch (status) {
+    case 'approved': return 'approved';
+    case 'rejected': return 'declined';
+    case 'completed': return 'completed';
+    case 'closed': return 'closed';
+    default: return 'processed';
+  }
+};
+
+// These public calls use plain axios, not the `api` wrapper, so the server's
+// message is on err.response.data — err.message is only "Request failed with
+// status code …".
+const apiErrorMessage = (err, fallback) => err?.response?.data?.message || fallback;
+
 export default function MrfApprovalAction() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -31,6 +51,15 @@ export default function MrfApprovalAction() {
   const [mrfDetails, setMrfDetails] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
+  // Set when the requisition was already decided (usually by the other
+  // approver). Deliberately NOT an error: the earlier decision succeeded.
+  const [decidedStatus, setDecidedStatus] = useState('');
+  // With personal links the server also says WHO decided and WHEN (name and
+  // time only — never the decider's email, IP or device), and whether the
+  // decision was yours.
+  const [decision, setDecision] = useState(null);
+  // An HR re-issue replaced this link with a newer email.
+  const [linkReplaced, setLinkReplaced] = useState(false);
   const [success, setSuccess] = useState(false);
   const [successStatus, setSuccessStatus] = useState('');
   const [currentAction, setCurrentAction] = useState(actionParam.toLowerCase() === 'reject' ? 'reject' : 'approve');
@@ -47,16 +76,22 @@ export default function MrfApprovalAction() {
   const fetchMrfDetails = async () => {
     setLoading(true);
     setError('');
+    setDecidedStatus('');
+    setDecision(null);
+    setLinkReplaced(false);
     try {
       const res = await mrfService.getPublicMrfDetails(id, token);
       const data = res?.data || res;
       setMrfDetails(data);
-      const status = (data.approval_status || '').toLowerCase();
-      if (status !== 'pending' && status !== 'waiting') {
-        setError(`This requisition has already been processed. Current status is: ${data.approval_status.toUpperCase()}.`);
+      const status = (data.approval_status || '').trim().toLowerCase();
+      if (!OPEN_STATUSES.includes(status)) {
+        setDecidedStatus(status || 'processed');
+        setDecision(data.decision || null);
+      } else if (data.link_state === 'replaced') {
+        setLinkReplaced(true);
       }
     } catch (err) {
-      setError(err?.message || 'Failed to retrieve requisition details. The link may have expired or is invalid.');
+      setError(apiErrorMessage(err, 'Failed to retrieve requisition details. The link may have expired or is invalid.'));
     } finally {
       setLoading(false);
     }
@@ -76,7 +111,13 @@ export default function MrfApprovalAction() {
       setSuccess(true);
       message.success(`Requisition request successfully ${actionType === 'approve' ? 'approved' : 'rejected'}!`);
     } catch (err) {
-      setError(err?.message || 'Failed to process requisition action. Please try again.');
+      if (err?.response?.status === 409) {
+        // Someone decided while this page was open: reload, which lands on
+        // the neutral "already decided" view.
+        await fetchMrfDetails();
+      } else {
+        setError(apiErrorMessage(err, 'Failed to process requisition action. Please try again.'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -102,7 +143,8 @@ export default function MrfApprovalAction() {
           title={<span style={{ fontWeight: 700 }}>Requisition Request {isApproved ? 'Approved' : 'Declined'}!</span>}
           subTitle={
             <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-              Thank you for your decision. The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has been marked as <strong>{successStatus.toUpperCase()}</strong>. Notification emails have been dispatched to the HR team.
+              Thank you for your decision. The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has been marked as <strong>{successStatus.toUpperCase()}</strong>. Notification emails have been dispatched to the HR team
+              {mrfDetails?.approver ? ', the other approvers have been told, and a confirmation has been emailed to you' : ''}.
             </Paragraph>
           }
           extra={[
@@ -115,6 +157,88 @@ export default function MrfApprovalAction() {
               Close Window
             </Button>
           ]}
+        />
+      </PublicPageShell>
+    );
+  }
+
+  if (decidedStatus) {
+    const label = decidedLabel(decidedStatus);
+    const byName = decision?.decidedByName;
+    const when = decision?.decidedAtIst;
+    // Who and when, when the server knows (personal links). Older decisions
+    // (shared link / before the audit trail) keep the generic wording.
+    let title = `This requisition has already been ${label}`;
+    let body = (
+      <>
+        The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has already been <strong>{label}</strong>.
+        Only one approval is needed, so if you did not take this decision yourself, another approver already has.
+      </>
+    );
+    if (decision?.isYou) {
+      title = `You ${label} this requisition`;
+      body = (
+        <>
+          You {label} <strong>{mrfDetails?.position_hiring_for}</strong>{when ? <> on <strong>{when}</strong></> : null}. Nothing more is needed.
+        </>
+      );
+    } else if (byName && !byName.startsWith('Unknown')) {
+      title = `Already ${label} by ${byName}`;
+      body = (
+        <>
+          <strong>{byName}</strong> {label} <strong>{mrfDetails?.position_hiring_for}</strong>{when ? <> on <strong>{when}</strong></> : null}.
+          Only one approval is needed, so no action is required from you.
+        </>
+      );
+    }
+    return (
+      <PublicPageShell
+        title={`Requisition already ${label}`}
+        subtitle="No further action is needed from you."
+      >
+        <Result
+          status={decidedStatus === 'approved' ? 'success' : 'info'}
+          title={<span style={{ fontWeight: 700 }}>{title}</span>}
+          subTitle={
+            <>
+              <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{body}</Paragraph>
+              {decision?.comments && (
+                <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <strong>Comment:</strong> {decision.comments}
+                </Paragraph>
+              )}
+            </>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>
+          ]}
+        />
+      </PublicPageShell>
+    );
+  }
+
+  if (linkReplaced) {
+    return (
+      <PublicPageShell
+        title="This link was replaced"
+        subtitle="A newer approval email has been sent to you."
+      >
+        <Result
+          status="info"
+          title={<span style={{ fontWeight: 700 }}>Please use the most recent approval email</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              The HR team re-sent the approval request for <strong>{mrfDetails?.position_hiring_for}</strong>, so this older link no longer works.
+              Open the latest &quot;New MRF Request - Approval Request&quot; email to approve or decline.
+            </Paragraph>
+          }
         />
       </PublicPageShell>
     );
@@ -148,6 +272,15 @@ export default function MrfApprovalAction() {
       title="Review Requisition Request"
       subtitle={`Manpower Requisition Form submitted by ${mrfDetails?.hiring_manager_name || 'a hiring manager'}.`}
     >
+        {mrfDetails?.approver && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ borderRadius: 10, marginBottom: 20 }}
+            message={<>Reviewing as <strong>{mrfDetails.approver.name}</strong></>}
+            description="This link is personal to you: your decision is recorded under your name. Only one approval is needed; the other approvers are told as soon as you decide."
+          />
+        )}
         {/* Detailed Requisition Info */}
         <div style={{ background: 'rgba(255,255,255,0.4)', borderRadius: 12, padding: 20, marginBottom: 24, border: '1px solid #e8ede0' }}>
           <Descriptions

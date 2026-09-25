@@ -15,6 +15,7 @@ import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoSchedule
 import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
 import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
 import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
+import { startMrfAuditRetentionJob, stopMrfAuditRetentionJob } from './jobs/mrfAuditRetentionSweep.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
@@ -72,6 +73,10 @@ async function startServer() {
     // outstanding ("reminders until submitted"); pure DB polling, always runs.
     startDocumentReminderJob();
 
+    // MRF approval audit privacy sweep — masks approvers' IP/device after the
+    // retention period (default 12 months); pure DB, off-peak, always runs.
+    startMrfAuditRetentionJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -109,6 +114,7 @@ async function gracefulShutdown(signal) {
   stopAssessmentDeadlineJob();
   stopOfferSweepJob();
   stopDocumentReminderJob();
+  stopMrfAuditRetentionJob();
 
   // Stop accepting new connections
   server.close(async () => {

@@ -5,6 +5,30 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-09-25 — MRF approval: personal links, provable decisions, no stale reminders
+**Why:** production, 23–24 Sep 2026. The CEO clicked Approve on MRF #9 and got "Link inactive or
+invalid — already processed". It had been approved 13 h earlier through the SAME link both approvers
+share, nothing recorded who, nobody told him, and the reminder job had been re-sending live Approve
+buttons after decisions (MRFs 6–8). Plan and status:
+[00-START-HERE-MRF-Approval-Fix.md](./phase3/New%20MRF%20Request%20-%20Approval%20Request/00-START-HERE-MRF-Approval-Fix.md).
+
+- **Phase A (no schema change):** reminder cron whitelists remindable email types, joins each to the
+  right table, stops once the MRF is decided / HM submitted, claims each row before sending (at most
+  one send even with two processes). Approve endpoint: only `approve`/`reject` (400), atomic
+  one-winner decision (409), closes reminder rows at decision time, decision log line with IP/device.
+  Approval page: neutral "already approved" view instead of the red error. Public emailed-link pages
+  no longer bounce to /login when the browser holds an expired ATS token.
+- **Phase B (DDL `backend/prisma/ddl/2026-09-25-mrf-approval-audit.sql`, applied to staging only):**
+  one personal email/link per approver (`mrf_approvers` setting); decision records name, email,
+  time, IP, device, comment in one transaction with its append-only audit event (tamper-guard
+  trigger); the other approvers are emailed "already approved by X at Y", the decider gets a
+  confirmation, HR's outcome email names the approver and copies all approvers; approval page shows
+  who/when; Approval Trail in the MRF modal + HR "Re-send approval links"; admin-only approval-audit
+  CSV; nightly 02:30 IST sweep masks IP/device after 12 months; rate limit on the public routes;
+  replies no longer close approval reminders; kill switch `MRF_APPROVAL_AUDIT_ENABLED`.
+- **Tests:** 231/231 backend unit tests (22 new); Playwright end-to-end on localhost against the
+  staging DB (both approvers, late click, re-issue + replaced link, races, reminders, retention).
+
 ## 2026-08-27 — Pipeline drawer: the conversation reply box gets a real rich-text editor
 **Why:** direct feedback on the Conversation panel shipped earlier the same day — the reply box was
 plain single-line text, unlike every other email-composing surface in the app. Full write-up:
