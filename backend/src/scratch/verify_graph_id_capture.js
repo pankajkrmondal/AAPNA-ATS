@@ -52,17 +52,22 @@ try {
   results.push(`2. failed-send log: FAILED — ${err.message}`);
 }
 
-// 3) Reminder query with the status guard (same SQL as reminderScheduler.js).
+// 3) Reminder query with the status guard. Includes the email-type whitelist
+//    reminderScheduler.js applies (reminderEligibility.js), so this check no
+//    longer counts outcome / HR-notify / alert rows that are never reminded.
 try {
+  const { REMINDABLE_EMAIL_TYPES } = await import('../jobs/reminderEligibility.js');
   const pending = await prisma.$queryRawUnsafe(
     `SELECT el.id FROM rpa_email_log el
-     WHERE el.responded_at IS NULL AND el.status = 'sent' AND el.reminder_count < $1
+     WHERE el.email_type = ANY($3::text[])
+       AND el.responded_at IS NULL AND el.status = 'sent' AND el.reminder_count < $1
        AND (
          (el.last_reminder_at IS NULL AND el.sent_at <= NOW() - ($2 || ' days')::interval)
          OR (el.last_reminder_at IS NOT NULL AND el.last_reminder_at <= NOW() - ($2 || ' days')::interval)
        ) LIMIT 5;`,
     3,
-    2
+    2,
+    [...REMINDABLE_EMAIL_TYPES]
   );
   results.push(`3. reminder query with status guard: OK — ${pending.length} sample row(s) matched`);
 } catch (err) {

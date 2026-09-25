@@ -6,6 +6,7 @@ import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
 import { authenticate, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
+import { mrfApprovalLimiter } from '../middleware/mrfApprovalRateLimit.js';
 import AppError from '../utils/AppError.js';
 
 /**
@@ -68,8 +69,8 @@ router.post('/submit', upload.fields([
   { name: 'attach_jd', maxCount: 1 },
   { name: 'attach_online_test_paper', maxCount: 1 }
 ]), mrfController.submitHiringManagerMrf);
-router.get('/public-details/:id', mrfController.getPublicMrfDetails);
-router.post('/:id/approve', mrfController.handleMrfApproval);
+router.get('/public-details/:id', mrfApprovalLimiter, mrfController.getPublicMrfDetails);
+router.post('/:id/approve', mrfApprovalLimiter, mrfController.handleMrfApproval);
 
 // ── Private MRF endpoints (Require login) ──────────────────────────────
 router.use(authenticate);
@@ -79,6 +80,9 @@ router.get('/', mrfController.listMrfRequests);
 // Registered before '/:id' so 'export' is never captured as an MRF id — the
 // controller would run BigInt('export') and 500.
 router.get('/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfRequests);
+// Approval audit across all requisitions. Admin tier only: it carries IP
+// address and device. Two segments, registered before '/:id'.
+router.get('/approval-audit/export', restrictTo('admin', 'superadmin'), exportLimiter, mrfController.exportApprovalAudit);
 // One requisition (request + the MRF the Hiring Manager submitted), from the
 // details modal. Two path segments, so it cannot collide with '/:id'.
 router.get('/:id/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfDetail);
@@ -90,6 +94,11 @@ router.patch('/main/:id', mrfController.updateMainMrf);
 router.get('/closure-reasons', mrfController.listClosureReasons);
 router.post('/:id/close', restrictTo(...MRF_CLOSURE_ROLES), mrfController.closeMrf);
 router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reopenMrf);
+// MRF approval audit trail. :id is the rpa_mrf id (the submitted requisition).
+// Two/three path segments, so no '/:id' collision. IP/device inside the trail
+// are further restricted to admin tier in the controller.
+router.get('/:id/approval-trail', restrictTo(...MRF_EXPORT_ROLES), mrfController.getApprovalTrail);
+router.post('/:id/approval-links/reissue', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reissueApprovalLinks);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

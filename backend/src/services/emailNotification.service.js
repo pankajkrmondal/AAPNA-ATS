@@ -1062,44 +1062,31 @@ body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
   }
 }
 
-/**
- * Sends an MRF approval request email to Abhijit Roy (and other leaders).
- */
-export async function sendMrfApprovalEmail({ mrfRecord, token, frontendUrl }) {
-  try {
-    const sender = config.microsoft.defaultSender;
-
-    // Resolve approval recipients (prod -> approvers; non-prod -> internal test inbox)
-    const { to: toEmail, cc: ccEmail } = resolveRecipients('mrfApproval');
-
-    const baseUrl = frontendUrl || config.cors.frontendUrl;
-    const approveLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=approve&token=${token}`;
-    const rejectLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=reject&token=${token}`;
-
-    let introText = `We have received a new Manpower Requisition Form (MRF) request for your review and approval.<br><br>
+const DEFAULT_MRF_APPROVAL_INTRO = `We have received a new Manpower Requisition Form (MRF) request for your review and approval.<br><br>
 Kindly review the filled MRF and the attached Job Description and share your approval.
 Please review the filled MRF and attached JD and confirm your approval. Also, let us know whether this should be a permanent role or a different engagement model.<br><br>
 Also, please help define the priority of the role (High / Moderate / Low) as per the business need.`;
 
-    const template = await prisma.rpa_email_templates.findFirst({
-      where: { name: 'MRF Approval Request', is_active: true }
-    });
+/** The editable "MRF Approval Request" template (intro + subject), with the built-in defaults. */
+async function loadMrfApprovalTemplate() {
+  const template = await prisma.rpa_email_templates.findFirst({
+    where: { name: 'MRF Approval Request', is_active: true }
+  });
+  return {
+    introText: template?.body_html || DEFAULT_MRF_APPROVAL_INTRO,
+    subject: template?.subject || `New MRF Request - Approval Request`,
+  };
+}
 
-    if (template && template.body_html) {
-      introText = template.body_html;
-    }
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-    const actionButtonsHtml = `
-      <div style="margin: 24px 0; text-align: center;">
-        <a href="${approveLink}" style="background-color: #7a922e; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 15px; display: inline-block;">Approve Requisition</a>
-        <a href="${rejectLink}" style="background-color: #d9534f; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reject Requisition</a>
-      </div>
-    `;
-
-    const greeting = `Dear Abhijit Roy & Sanghamitra Roy,`;
-    const tableBody = mrfRecord.emailbody || '';
-
-    const html = `
+/**
+ * The approval-request email body, shared by the shared-link flow and the
+ * per-approver flow so the two cannot drift apart.
+ */
+function renderMrfApprovalRequestHtml({ greeting, introText, approveLink, rejectLink, noteHtml = '', tableBody }) {
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -1119,15 +1106,44 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
   </div>
   <p><strong>${greeting}</strong></p>
   <div class="intro">${introText}</div>
-  ${actionButtonsHtml}
+  ${noteHtml}
+  <div style="margin: 24px 0; text-align: center;">
+    <a href="${approveLink}" style="background-color: #7a922e; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 15px; display: inline-block;">Approve Requisition</a>
+    <a href="${rejectLink}" style="background-color: #d9534f; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reject Requisition</a>
+  </div>
   <hr style="border: none; border-top: 1px solid #e8ede0; margin: 20px 0;"/>
   ${tableBody}
 </div>
 </body>
 </html>
     `;
+}
 
-    const subject = template && template.subject ? template.subject : `New MRF Request - Approval Request`;
+/**
+ * Sends an MRF approval request email to Abhijit Roy (and other leaders).
+ * The single SHARED-link flow, used only when MRF_APPROVAL_AUDIT_ENABLED=false;
+ * the default is one personal email per approver (sendMrfPersonalApprovalEmail).
+ */
+export async function sendMrfApprovalEmail({ mrfRecord, token, frontendUrl }) {
+  try {
+    const sender = config.microsoft.defaultSender;
+
+    // Resolve approval recipients (prod -> approvers; non-prod -> internal test inbox)
+    const { to: toEmail, cc: ccEmail } = resolveRecipients('mrfApproval');
+
+    const baseUrl = frontendUrl || config.cors.frontendUrl;
+    const approveLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=approve&token=${token}`;
+    const rejectLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=reject&token=${token}`;
+
+    const { introText, subject } = await loadMrfApprovalTemplate();
+
+    const html = renderMrfApprovalRequestHtml({
+      greeting: `Dear Abhijit Roy & Sanghamitra Roy,`,
+      introText,
+      approveLink,
+      rejectLink,
+      tableBody: mrfRecord.emailbody || '',
+    });
 
     await sendGraphEmail({
       sender,
@@ -1161,6 +1177,162 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
       err
     });
     return false;
+  }
+}
+
+const mrfLabel = (mrfRecord) =>
+  `MRF #${mrfRecord.id}${mrfRecord.position_hiring_for ? ` – ${mrfRecord.position_hiring_for}` : ''}`;
+
+/**
+ * One PERSONAL approval request per approver (MRF approval audit trail). The
+ * link carries that approver's own token, so whoever uses it is recorded as
+ * that approver. Addressed to the approver's real mailbox; sendGraphEmail
+ * redirects it to the test inbox outside production.
+ *
+ * @returns {Promise<number|null>} the rpa_email_log id, or null if the send failed
+ */
+export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherApprovers = [], token, frontendUrl }) {
+  const referenceId = Number(mrfRecord.id);
+  try {
+    const sender = config.microsoft.defaultSender;
+    const baseUrl = frontendUrl || config.cors.frontendUrl;
+    const approveLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=approve&token=${token}`;
+    const rejectLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=reject&token=${token}`;
+    const { introText, subject } = await loadMrfApprovalTemplate();
+
+    const others = otherApprovers.map((a) => `<strong>${escapeHtml(a.name)}</strong>`).join(', ');
+    const noteHtml = `
+  <p style="background:#f4f7ec; border-left:4px solid #7a922e; padding:10px 14px; border-radius:4px; font-size:13px;">
+    ${others ? `This request was also sent to ${others}. <strong>Only one approval is needed</strong> — the first decision recorded applies, and everyone will be notified.<br/>` : ''}
+    These buttons are personal to you and record your decision under your name, so please do not forward this email.
+  </p>`;
+
+    const html = renderMrfApprovalRequestHtml({
+      greeting: `Dear ${escapeHtml(approver.name)},`,
+      introText,
+      approveLink,
+      rejectLink,
+      noteHtml,
+      tableBody: mrfRecord.emailbody || '',
+    });
+
+    await sendGraphEmail({ sender, to: approver.email, subject, html });
+
+    const row = await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_approval_request',
+        recipient_email: approver.email,
+        recipient_name: approver.name,
+        subject,
+        body_html: html,
+        reference_id: referenceId,
+        sent_at: new Date(),
+      },
+    });
+    logger.info(`MRF personal approval request sent to ${approver.email} for MRF ID: ${mrfRecord.id} (log ${row.id})`);
+    return row.id;
+  } catch (err) {
+    logger.error(`Failed to send MRF personal approval request to ${approver?.email} for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({
+      emailType: 'mrf_approval_request',
+      recipientEmail: approver?.email,
+      recipientName: approver?.name,
+      referenceId,
+      err,
+    });
+    return null;
+  }
+}
+
+/** Shared body for the two post-decision notices below. */
+function renderMrfDecisionNoticeHtml({ greeting, lead, decision, closing }) {
+  const comment = decision.comments
+    ? `<p><strong>Comment:</strong> ${escapeHtml(decision.comments)}</p>`
+    : '';
+  return `
+<html>
+  <body style="font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
+    <p>${greeting}</p>
+    <p>${lead}</p>
+    <table style="border-collapse: collapse; margin: 12px 0;">
+      <tr><td style="padding: 4px 12px 4px 0; color: #666;">Decision</td><td style="padding: 4px 0;"><strong>${escapeHtml(decision.word.toUpperCase())}</strong></td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #666;">By</td><td style="padding: 4px 0;">${escapeHtml(decision.byName)}</td></tr>
+      <tr><td style="padding: 4px 12px 4px 0; color: #666;">When</td><td style="padding: 4px 0;">${escapeHtml(decision.atIst)}</td></tr>
+    </table>
+    ${comment}
+    <p>${closing}</p>
+    <p>Regards,<br/>AAPNA Recruitment Team</p>
+  </body>
+</html>`;
+}
+
+/**
+ * Tells an approver who did NOT decide that the MRF has already been decided
+ * by someone else, so they never meet "already processed" on the page cold.
+ * @returns {Promise<number|null>} rpa_email_log id, or null on failure
+ */
+export async function sendMrfAlreadyActionedEmail({ mrfRecord, recipient, decision }) {
+  const referenceId = Number(mrfRecord.id);
+  const subject = `${mrfLabel(mrfRecord)} – already ${decision.word.toUpperCase()} by ${decision.byName}`;
+  try {
+    const html = renderMrfDecisionNoticeHtml({
+      greeting: `Dear ${escapeHtml(recipient.name)},`,
+      lead: `The requisition <strong>${escapeHtml(mrfLabel(mrfRecord))}</strong> that was sent to you for approval has already been <strong>${escapeHtml(decision.word)}</strong>.`,
+      decision,
+      closing: 'Only one approval is needed, so <strong>no action is required from you</strong>. Your approval link for this request is now closed.',
+    });
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to: recipient.email, subject, html });
+    const row = await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_already_actioned',
+        recipient_email: recipient.email,
+        recipient_name: recipient.name,
+        subject,
+        body_html: html,
+        reference_id: referenceId,
+        sent_at: new Date(),
+      },
+    });
+    return row.id;
+  } catch (err) {
+    logger.error(`Failed to send "already actioned" notice to ${recipient?.email} for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({ emailType: 'mrf_already_actioned', recipientEmail: recipient?.email, recipientName: recipient?.name, subject, referenceId, err });
+    return null;
+  }
+}
+
+/**
+ * Confirms to the approver who decided that their decision was recorded. Also
+ * the approver's alarm if a forwarded link was used by someone else.
+ * @returns {Promise<number|null>} rpa_email_log id, or null on failure
+ */
+export async function sendMrfDecisionConfirmationEmail({ mrfRecord, recipient, decision }) {
+  const referenceId = Number(mrfRecord.id);
+  const subject = `You ${decision.word} ${mrfLabel(mrfRecord)}`;
+  try {
+    const html = renderMrfDecisionNoticeHtml({
+      greeting: `Dear ${escapeHtml(recipient.name)},`,
+      lead: `Your decision on <strong>${escapeHtml(mrfLabel(mrfRecord))}</strong> has been recorded and the HR team notified.`,
+      decision,
+      closing: 'If you did not take this decision yourself, please contact the HR team immediately.',
+    });
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to: recipient.email, subject, html });
+    const row = await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_decision_confirmation',
+        recipient_email: recipient.email,
+        recipient_name: recipient.name,
+        subject,
+        body_html: html,
+        reference_id: referenceId,
+        sent_at: new Date(),
+      },
+    });
+    return row.id;
+  } catch (err) {
+    logger.error(`Failed to send decision confirmation to ${recipient?.email} for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({ emailType: 'mrf_decision_confirmation', recipientEmail: recipient?.email, recipientName: recipient?.name, subject, referenceId, err });
+    return null;
   }
 }
 
@@ -1222,22 +1394,39 @@ export async function sendMrfSubmissionHrEmail({ mrfRecord }) {
 
 /**
  * Sends a notification of the MRF approval or rejection outcome to the HR team.
+ *
+ * @param {object} [params.decidedBy]  { name, atIst } — who decided and when
+ *   (audit trail flow). Omitted by the shared-link flow, which cannot know.
+ * @param {string[]} [params.approverEmails]  every approver the request went
+ *   to; CC'd in production so nobody is left out (Abhijit was, until 25 Sep).
  */
-export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, approverName, hmEmail }) {
+export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, hmEmail, decidedBy = null, approverEmails = [] }) {
   try {
     const sender = config.microsoft.defaultSender;
 
     // Resolve outcome recipients (prod -> HR + leaders cc + HM; non-prod -> test inbox, no cc)
     const { to: toEmail, cc: baseCc } = resolveRecipients('mrfOutcome');
     let ccEmail = baseCc;
-    // In production, also CC the hiring manager who submitted the MRF.
-    if (!config.email.redirectInNonProd && hmEmail) {
-      ccEmail = [baseCc, hmEmail].filter(Boolean).join(', ');
+    // In production, also CC the hiring manager who submitted the MRF and every
+    // approver, without duplicating anyone already on the list.
+    if (!config.email.redirectInNonProd) {
+      const seen = new Set(String(toEmail || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean));
+      const cc = [];
+      for (const e of [...String(baseCc || '').split(','), hmEmail, ...approverEmails]) {
+        const v = String(e || '').trim();
+        if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); cc.push(v); }
+      }
+      ccEmail = cc.join(', ');
     }
 
     const statusText = approved ? 'Approved' : 'Declined';
-    const commentSection = comments 
-      ? `<p><strong>Comment from Management:</strong> ${comments}</p>`
+    // Escaped: the comment is typed on a PUBLIC page. The label text is also
+    // what the audit backfill parses, so keep "Comment from Management:".
+    const commentSection = comments
+      ? `<p><strong>Comment from Management:</strong> ${escapeHtml(comments)}</p>`
+      : '';
+    const decidedBySection = decidedBy
+      ? `<p><strong>${statusText} by:</strong> ${escapeHtml(decidedBy.name)} on ${escapeHtml(decidedBy.atIst)}</p>`
       : '';
 
     let outcomeBody = '';
@@ -1247,6 +1436,7 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
   <body style="font-family: Calibri, sans-serif; font-size: 14px; color: #333;">
     <p>Hi Team,</p>
     <p>This is to formally inform you that Management has approved the request to proceed with the recruitment of additional manpower.</p>
+    ${decidedBySection}
     ${commentSection}
     <p>Please initiate the recruitment process as per company policies and the approved MRF details.</p>
     <p>Thank you for your continued support, and we look forward to timely updates on the progress.</p>
@@ -1260,6 +1450,7 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, appro
   <body style="font-family: Calibri, sans-serif; font-size: 14px; color: #333;">
     <p>Hi Team,</p>
     <p>This is to formally inform you that Management has reviewed the request for additional manpower and has decided not to proceed with it at this time.</p>
+    ${decidedBySection}
     ${commentSection}
     <p>Accordingly, please place the recruitment activity on hold until further instructions.</p>
     <p>Thank you for your understanding.</p>

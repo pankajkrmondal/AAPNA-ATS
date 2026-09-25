@@ -44,6 +44,15 @@ const mrfService = {
   },
 
   /**
+   * Download the MRF approval audit (all requisitions, last `days`) as CSV.
+   * Admin tier only — it carries IP address and device.
+   * @param {{ days?: number }} params
+   */
+  exportApprovalAuditCsv(params = {}, config = {}) {
+    return api.get('/mrf/approval-audit/export', { params, ...config });
+  },
+
+  /**
    * Get MRF request details by ID.
    * @param {string|number} id
    * @returns {Promise}
@@ -142,6 +151,24 @@ const mrfService = {
    */
   handleMrfApproval(id, payload) {
     return axios.post(`/api/mrf/${id}/approve`, payload).then((res) => res.data);
+  },
+
+  /**
+   * Approval trail of a submitted requisition (who it went to, opened, decided,
+   * was told). IP/device are included by the server for admin-tier users only.
+   * @param {string} mrfId — rpa_mrf id (record.mrf_id)
+   */
+  getApprovalTrail(mrfId) {
+    return api.get(`/mrf/${mrfId}/approval-trail`).then((res) => res.data?.data ?? res.data);
+  },
+
+  /**
+   * Replace the approvers' links of a still-pending requisition with fresh
+   * personal links (old links stop working).
+   * @param {string} mrfId — rpa_mrf id
+   */
+  reissueApprovalLinks(mrfId) {
+    return api.post(`/mrf/${mrfId}/approval-links/reissue`).then((res) => res.data);
   },
 };
 

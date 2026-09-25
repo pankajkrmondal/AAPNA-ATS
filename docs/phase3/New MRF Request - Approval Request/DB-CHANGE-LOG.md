@@ -1,0 +1,33 @@
+# DB Change Log: MRF Approval Fix
+
+Every database change made for [MRF-Approval-Unified-Fix-Plan.md](MRF-Approval-Unified-Fix-Plan.md) is recorded here (plan §0.1 rule 4).
+**Order:** staging first, then production with the same script (D4). The only exceptions are Phase 0 and the interim guard (§4.1), which are production-only.
+
+Times in IST. DB names: staging = `recruitmentautomationdb`, production = `recruitmentautomationdbProd` (same server `20.244.34.176`).
+
+| # | Date / time (IST) | Env | Plan ref | Change | Script / method | Rows | Result | By |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 25 Sep 2026 09:51 | **Production** | Phase 0 step 1 | Closed MRF #9's open `rpa_email_log` rows so the reminder cron cannot re-send live Approve buttons: `responded_at` NULL → `2026-09-25 04:21:20 UTC` for ids 15117 (`mrf_submit_hr`), 15118 (`mrf_approval_request`), 15119 (`mrf_approval`) | Guarded Node script: `current_database()` check, exact-row assertions, dry run first, single transaction | 3 | ✅ Committed. Verified by replaying the live cron query for the 26 Sep and 29 Sep runs: 0 MRF #9 reminders | Claude (at Pankaj's request) |
+| 2 | 25 Sep 2026 | **Production** | Phase 0 step 2 | Added `aroy@aapnainfotech.com` to `email_recipients.mrfOutcome.cc`. Before: `sroy@, nsatywali@, cverma@`. After: `aroy@aapnainfotech.com,sroy@aapnainfotech.com, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com` (the missing space is harmless: `sendGraphEmail` trims each address) | Settings → Flow Keys screen (super admin; reloads the in-memory cache) | 1 | ✅ Done. Verified read-only in prod; staging unchanged (internal test addresses, by design) | Pankaj |
+| 3 | 25 Sep 2026, after 09:52 IST and just before #2's save | **Production** | — | ⚠️ **#1 was reverted.** Rows 15117/15118/15119 were set back to `responded_at = NULL` by one transaction (xid 1027399) that touched **exactly those 3 rows and nothing else**, just before the #2 settings save (xid 1027405). No application code sets `responded_at` to NULL. The statement matches the undo that used to appear here as a runnable SQL block, so it was most likely run by hand. Found 25 Sep 10:41 IST during the Phase A read-only preview. | — | 3 | ⚠️ MRF #9 was exposed again to the 26 Sep 14:30 IST reminder run (fixed by #4) | detected by Claude |
+| 4 | 25 Sep 2026 11:03 | **Production** | Phase 0 step 1 (re-apply) | Re-applied #1: `responded_at` NULL → `2026-09-25 05:33:32 UTC` for ids 15117, 15118, 15119 | Same guarded script as #1 (dry run first) | 3 | ✅ Committed. Verified from fresh connections: live cron replay for 26 Sep and 29 Sep → **0 reminders**; interim guard shows no MRF #9 rows | Claude (Pankaj approved re-apply) |
+
+| 5 | 25 Sep 2026 11:20–11:26 | Staging | A12 (local test) | **Test data only.** Created test MRFs #670–#674 ("ZZ-TEST MRF Approval Fix …", submitter `qa.mrf-approval-test@example.com`) through the local public submit API and decided 670/671/672/674 through the approval link and API. For the reminder test: backdated the approval-request row of #673 by 3 days, and re-opened and backdated #674's (the production bug state). One reminder pass then sent 1 reminder for #673 (to the test inbox) and closed #674's row | Local app + guarded scratch scripts (refuse any DB but staging, and any MRF not named ZZ-TEST) | ~6 | ✅ Test rows can stay; they are clearly labelled | Claude |
+
+| 6 | 25 Sep 2026 ~11:40 | Staging | S2 + B2 | **S2 backup:** `rpa_mrf` (86 rows) and `rpa_settings` (35 rows) exported to JSON (Claude's session scratchpad `backup-staging-2026-09-25/`). **B2:** applied `backend/prisma/ddl/2026-09-25-mrf-approval-audit.sql`: new tables `rpa_mrf_approval_tokens`, `rpa_mrf_approval_events`, tamper-guard trigger, 6 new `rpa_mrf` columns; backfilled **10** already-decided MRFs as "Unknown (before audit trail)" with their decision time from the outcome email | `node scripts/run-ddl.mjs --env .env.staging --expect-db recruitmentautomationdb --file prisma/ddl/2026-09-25-mrf-approval-audit.sql` (dry run first) | 30 | ✅ Committed. **S4:** re-run changed 0 rows. Wrong-DB run refused. Tamper tests: UPDATE, DELETE, TRUNCATE and sweep-mode misuse all refused by the trigger | Claude |
+
+| 7 | 25 Sep 2026 ~11:45 | Staging | B1 | Inserted setting `mrf_approvers` = `[{"email":"hmopuri@aapnainfotech.com","name":"Staging Approver A"},{"email":"saukumar@aapnainfotech.com","name":"Staging Approver B"}]` (before: none). Same value as the staging profile in `backend/prisma/seed-email-recipients.js` | Guarded upsert of that one row (not the full seed) | 1 | ✅ | Claude |
+| 8 | 25 Sep 2026 11:48–11:56 | Staging | B-tests | **Test data only.** Test MRFs #675 ("B-1 two approvers") and #676 ("B-UI", linked to MRF request #186 created from the ATS form), their personal tokens, audit events, and approval / "already actioned" / confirmation / outcome emails (all to the test inbox). Two 400-day-old events inserted on #675 for the retention test: the `link_opened` one was deleted by the sweep, the other now has a masked IP (`meta.test` marks it) | Local app, Playwright, guarded scratch scripts (ZZ-TEST MRFs only) | ~40 | ✅ Test rows can stay; clearly labelled | Claude |
+
+**Production release order (from B2):** `rpa_mrf` now has 6 new columns that the Prisma client selects on **every** `rpa_mrf` query, so **the DDL must run before the new code is deployed** (staging: already done, #6). Production: the same runner command with `--env .env.production --expect-db recruitmentautomationdbProd`, dry run first, then upsert `mrf_approvers` = Abhijit Roy / Sanghamitra Roy (production profile of the seed file).
+
+**Undo for #1: reference only. DO NOT run** unless you deliberately want MRF #9's reminders to go out again. It is kept commented so copying this block cannot execute it:
+```sql
+-- UPDATE rpa_email_log SET responded_at = NULL WHERE id IN (15117, 15118, 15119);
+```
+
+## Interim guard runs (plan §4.1, production, daily before 14:30 IST)
+
+| Date | Rows found | Ids closed | By |
+|---|---|---|---|
+| 25 Sep 2026 11:05 IST | 0 that can still be reminded (MRF #9 closed by #4; 9 rows for MRFs 6–8 are already at the 2-reminder max, so no action needed) | — | Claude |

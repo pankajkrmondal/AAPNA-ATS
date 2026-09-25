@@ -9,6 +9,8 @@ import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, mes
 import { SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import ExportButton from '../components/common/ExportButton';
+import ApprovalTrail from '../components/mrf/ApprovalTrail';
+import useAuth from '../hooks/useAuth';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 
 const { Title, Text } = Typography;
@@ -167,6 +169,8 @@ const OTHER_DEPENDENTS = {
 };
 
 export default function MRF() {
+  const { user } = useAuth();
+  const isAdminTierUser = ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [mainForm] = Form.useForm();
@@ -855,6 +859,16 @@ export default function MRF() {
             fallbackName="AAPNA-ATS_MRF-Requests.csv"
             rowCount={total}
           />
+          {/* Admin tier only (the server enforces the same): every approval
+              event of the last 90 days, with IP address and device. */}
+          {isAdminTierUser && (
+            <ExportButton
+              request={(cfg) => mrfService.exportApprovalAuditCsv({ days: 90 }, cfg)}
+              fallbackName="AAPNA-ATS_MRF-Approval-Audit_90d.csv"
+              label="Approval audit"
+              tooltip="Every MRF approval event of the last 90 days (who, when, IP, device) as a CSV file."
+            />
+          )}
         </div>
 
         {/* Records Table */}
@@ -1008,6 +1022,17 @@ export default function MRF() {
                 </div>
               )}
             </div>
+
+            {/* Approval trail — who the approval request went to, who opened
+                it, who approved/declined and when, and who was told. Only once
+                the Hiring Manager has submitted (that is when approval starts). */}
+            {selectedRecord?.mrf_id && (
+              <ApprovalTrail
+                key={selectedRecord.mrf_id}
+                mrfId={selectedRecord.mrf_id}
+                onStatus={(status) => setSelectedRecord((r) => (r && r.approval_status !== status ? { ...r, approval_status: status } : r))}
+              />
+            )}
 
             {/* Section 2: New MRF Request Info */}
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--brand-primary)', marginBottom: 16 }}>
