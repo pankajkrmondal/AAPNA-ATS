@@ -1834,6 +1834,19 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
       .slice(0, 8)
       .join('\n');
 
+    // A wrapped error (AppError with { cause }) hides the real failure behind the
+    // user-facing message; walk the chain so the alert shows what actually broke.
+    // Escaped because causes can carry raw upstream response bodies.
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const causes = [];
+    for (let c = err.cause; c && causes.length < 3; c = c.cause) {
+      causes.push(`${c.name || 'Error'}${c.status ? ` (status ${c.status})` : ''}: ${c.message || String(c)}`);
+    }
+    const causeBlock = causes.length
+      ? `<p style="margin-top:14px;font-weight:700;">Underlying cause:</p>
+    <p style="font-family:monospace;white-space:pre-wrap;">${causes.map(esc).join('\n↳ ')}</p>`
+      : '';
+
     const subject = `🚨 Backend Error Alert — ${finalErr.statusCode} on ${route}`;
     const html = `
 <!DOCTYPE html>
@@ -1858,6 +1871,7 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
     </table>
     <p style="margin-top:14px;font-weight:700;">Real error message:</p>
     <p style="font-family:monospace;white-space:pre-wrap;">${String(err.message || 'n/a')}</p>
+    ${causeBlock}
     <p style="margin-top:14px;font-weight:700;">Stack (top frames — full trace in server logs):</p>
     <pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;background:#f9fbf5;padding:10px;border-radius:4px;">${stackSnippet}</pre>
   </div>

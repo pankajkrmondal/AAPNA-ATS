@@ -136,9 +136,9 @@ Legend: ✅ done · ⚠️ needs attention · ⏳ pending · ➖ optional · �
 
 | Step | What | Status |
 |---|---|---|
-| P1 | Pre-checks: C1 done, `TRUST_PROXY=true`, schema parity, reminder preview on production | ⏳ |
+| P1 | Pre-checks: C1 done, `TRUST_PROXY=true`, schema parity, reminder preview on production | 🟡 **12 Oct (read-only):** production DB has **none** of the changes (0 tables / 0 columns / no trigger / no `mrf_approvers`); production app still old code; schema identical to staging apart from the 6 new columns (116/116); no pending MRFs; daily guard 0 hits; PROD-2 will backfill MRFs 6, 7, 8, 9. Still open: C1, `TRUST_PROXY` |
 | P2 | Production DB backup | ⏳ |
-| P3 | **DB script FIRST** (`--env .env.production --expect-db recruitmentautomationdbProd`, dry run then real), then set `mrf_approvers` (Abhijit Roy, Sanghamitra Roy). ⚠️ The new code reads the new columns on every MRF query, so it must not be deployed before this step | ⏳ |
+| P3 | **DB changes FIRST, in pgAdmin:** run [PROD-1-CHECK-read-only.sql](PROD-1-CHECK-read-only.sql) (expect 0/0/0/NOT SET), then [PROD-2-APPLY-run-once.sql](PROD-2-APPLY-run-once.sql) (whole file, once; it includes the DB script **and** `mrf_approvers`), then PROD-1 again (expect 2/6/2/SET). Log it in DB-CHANGE-LOG. ⚠️ The new code reads the new columns on every MRF query, so it must not be deployed before this step. (Checked 12 Oct: production still runs the old code, so the order is still safe) | ⏳ |
 | P4 | Deploy backend + frontend (stop the queue worker before `prisma generate`) | ⏳ |
 | P5 | Confirm feature switch on (default) and settings | ⏳ |
 | P6 | Brief approvers: separate emails; only one approval needed | ⏳ |

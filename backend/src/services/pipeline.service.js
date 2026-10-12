@@ -579,11 +579,13 @@ export async function getZekoSharedReportLink(pipelineId, { stageKey } = {}) {
     // The losing work is not cancelled (see withDeadline): a timeout here is
     // usually the OTP login still running, which finishes in the background and
     // makes the next click fast. So the message asks for a retry rather than
-    // reporting a dead end.
+    // reporting a dead end. The real failure rides along as `cause` so the 5xx
+    // alert shows it — without it the email only repeated the user's message.
     throw new AppError(
       'Zeko could not produce a no-login link for this report just now. '
       + 'Try again in a moment, or use the recruiter link.',
       502,
+      { cause: err },
     );
   }
 
