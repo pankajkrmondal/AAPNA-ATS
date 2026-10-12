@@ -9,9 +9,11 @@ export default class AppError extends Error {
   /**
    * @param {string} message - Human-readable error message
    * @param {number} statusCode - HTTP status code (e.g. 400, 404, 500)
+   * @param {{ cause?: unknown }} [options] - the underlying error, kept for the
+   *   backend error alert; never sent to the client
    */
-  constructor(message, statusCode) {
-    super(message);
+  constructor(message, statusCode, options) {
+    super(message, options);
 
     /** @type {number} */
     this.statusCode = statusCode;

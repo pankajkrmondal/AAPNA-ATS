@@ -1210,13 +1210,6 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             }
             const resume_term_updated_at = resume_technical_terms.length > 0 ? new Date() : null;
 
-            const missingFields = getMissingFields(parsed);
-            if (isExcel) {
-              missingFields.uploadResume = 'Null';
-            }
-            const missingDataJson = JSON.stringify(missingFields);
-            const statusActive = Object.keys(missingFields).length > 0 ? 'INACTIVE' : 'ACTIVE';
-
             // 5) Build dedupe keys from validated identifiers (drops non-email junk that the
             //    parser may have echoed into unique_key, the uploader's/vendor's own email,
             //    and the placeholder phone default).
@@ -1225,8 +1218,31 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             // or returns the placeholder phone; those won't be present in the source text.
             const resumeTextLower = fullText.toLowerCase();
             const resumeDigits = fullText.replace(/\D/g, '');
-            const cleanEmails = sanitizeMatchEmails(parsed.EmailID || parsed.unique_key, [email, attrEmail])
+            let cleanEmails = sanitizeMatchEmails(parsed.EmailID || parsed.unique_key, [email, attrEmail])
               .filter((e) => resumeTextLower.includes(e));
+
+            // Fallback: the parser sometimes "corrects" a real email toward the
+            // candidate's name (rihannaqureshi0@ -> rihanaqureshi0@ for "Rihana"),
+            // which the check above then drops and the resume is rejected. Read the
+            // address straight from the resume text instead — still only emails that
+            // are actually printed in it, so fabricated ones cannot get through.
+            if (cleanEmails.length === 0) {
+              const textEmails = [...new Set(fullText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [])];
+              cleanEmails = sanitizeMatchEmails(textEmails.join(','), [email, attrEmail]);
+              if (cleanEmails.length > 0) {
+                logger.info(`Email taken from resume text for ${item.filename} (parser returned "${parsed.EmailID}").`);
+                parsed.EmailID = cleanEmails.join(', ');
+                parsed.unique_key = cleanEmails[0];
+              }
+            }
+
+            // Computed after the email fallback so EmailID reflects the resolved value.
+            const missingFields = getMissingFields(parsed);
+            if (isExcel) {
+              missingFields.uploadResume = 'Null';
+            }
+            const missingDataJson = JSON.stringify(missingFields);
+            const statusActive = Object.keys(missingFields).length > 0 ? 'INACTIVE' : 'ACTIVE';
             const cleanContactNumbers = sanitizeMatchContacts(parsed.ContactNumber)
               .filter((n) => {
                 const digits = n.replace(/\D/g, '');
