@@ -322,6 +322,17 @@ const config = {
     model: env('COHERE_MODEL', 'rerank-v3.5'),
   },
 
+  /**
+   * Candidate Screening — strict filtering (Phase 3 "Do Now", section A).
+   * SCREENING_V2=true routes Keyword / JD search and their CSV exports to
+   * screeningV2.service.js. Stays false in production until RT signs off on
+   * the before/after comparison (N11); the old functions remain for that
+   * comparison.
+   */
+  screening: {
+    v2: env('SCREENING_V2', 'false') === 'true',
+  },
+
   /** Zeko AI video interview platform */
   zeko: {
     apiUrl: env('ZEKO_API_URL', ''),

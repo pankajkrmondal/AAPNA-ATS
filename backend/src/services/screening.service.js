@@ -14,6 +14,9 @@ import { createPipelineJourney } from './pipeline.service.js';
 import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
 import { Prisma } from '@prisma/client';
 import { emailMatchesSql } from '../utils/emailMatch.js';
+import { matchesQualification, getCandidateEducationCategories } from '../utils/educationCategories.js';
+// Shared with screeningV2.service.js (Phase 3 N01); identical to the local copy it replaced.
+import { splitSkillPhrases } from '../utils/screeningFilters.js';
 
 /**
  * GET /api/screening/roles
@@ -57,7 +60,7 @@ export async function getApprovedRoles() {
 /**
  * Helper: Parse Education Percentages
  */
-function parseEduScores(c) {
+export function parseEduScores(c) {
   const result = {};
   if (c.a10th != null && c.a10th !== 'null' && String(c.a10th).trim() !== '') {
     result['10th'] = parseFloat(String(c.a10th).replace('%', '').trim());
@@ -75,59 +78,9 @@ function parseEduScores(c) {
 }
 
 /**
- * Helper: Matches Qualification checks
- */
-function matchesQualification(candidateDegrees, roleQualification) {
-  const degrees = [candidateDegrees.graduationdegree, candidateDegrees.postgraduationdegree].filter(
-    (d) => d && d.toUpperCase() !== 'NULL'
-  );
-  if (!roleQualification || roleQualification.toUpperCase() === 'NULL') return true;
-  const roleUpper = roleQualification.toUpperCase();
-
-  const techGrad = [
-    'BTECH',
-    'B.TECH',
-    'B TECH',
-    'BE',
-    'B.E',
-    'B.E.',
-    'BACHELOR OF ENGINEERING',
-    'BACHELOR OF TECHNOLOGY',
-    'ENGINEERING GRADUATE',
-    'ENGG',
-    'MCA',
-  ];
-  const postGrad = [
-    'MTECH',
-    'M.TECH',
-    'M TECH',
-    'MSC',
-    'M.SC',
-    'MCA',
-    'MASTER OF TECHNOLOGY',
-    'MASTER OF SCIENCE',
-    'MASTER OF COMPUTER APPLICATIONS',
-  ];
-  const grad = ['BSC', 'B.SC', 'BCA', 'BACHELOR OF SCIENCE', 'BACHELOR OF COMPUTER APPLICATIONS'];
-  const normalizedDegrees = degrees.map((d) => d.toUpperCase().replace(/[^A-Z]/g, ''));
-
-  if (roleUpper.includes('TECH_GRADUATE')) {
-    return normalizedDegrees.some((d) => techGrad.some((tg) => d.includes(tg.replace(/[^A-Z]/g, ''))));
-  } else if (roleUpper.includes('POST_GRADUATE')) {
-    return normalizedDegrees.some((d) => postGrad.some((pg) => d.includes(pg.replace(/[^A-Z]/g, ''))));
-  } else if (roleUpper.includes('GRADUATE')) {
-    return normalizedDegrees.some(
-      (d) => grad.some((g) => d.includes(g.replace(/[^A-Z]/g, ''))) || d.includes('BACHELOR')
-    );
-  } else {
-    return degrees.some((d) => d.toUpperCase().includes(roleUpper));
-  }
-}
-
-/**
  * Helper: Parse Max Tenure in Years
  */
-function parseMaxTenureYears(employmentHistory) {
+export function parseMaxTenureYears(employmentHistory) {
   try {
     const data = typeof employmentHistory === 'string' ? JSON.parse(employmentHistory) : employmentHistory;
     const companies = data?.companies;
@@ -157,141 +110,6 @@ function parseMaxTenureYears(employmentHistory) {
   }
 }
 
-/**
- * Helper: Educational Group Match Checker for Checkboxes
- */
-const EDUCATION_GROUPS = {
-  tech_cs_it_mca_mtech: {
-    degrees: ['btech', 'b.tech', 'b tech', 'be', 'b.e', 'b e', 'mca', 'mtech', 'm.tech', 'm tech'],
-    specs: ['computer', 'information technology', 'software', 'application', 'applications', 'data science', 'cybersecurity', 'cyber security', 'programming', 'network', 'web', 'it', 'cs'],
-  },
-  tech_other_it_msc_ms: {
-    degrees: ['btech', 'b.tech', 'b tech', 'be', 'b.e', 'b e', 'msc', 'm.sc', 'm sc', 'ms'],
-  },
-  tech_bca_bsc_it_grad: {
-    degrees: ['bca', 'bsc', 'b.sc', 'b sc'],
-    specs: ['computer', 'information technology', 'software', 'application', 'applications', 'data science', 'cybersecurity', 'cyber security', 'programming', 'network', 'web', 'it', 'cs'],
-  },
-  fin_ca_mba_cma_icwa: {
-    degrees: ['ca', 'mba', 'cma', 'icwa', 'pgdm'],
-    specs: ['finance', 'fin'],
-  },
-  fin_mcom: { degrees: ['mcom', 'm.com', 'master of commerce'] },
-  fin_bcom: { degrees: ['bcom', 'b.com', 'bachelor of commerce'] },
-  sales_mba_be_btech_mca_it: {
-    degrees: ['mba', 'btech', 'b.tech', 'b tech', 'be', 'b.e', 'b e', 'mca', 'bca', 'bsc', 'b.sc', 'b sc'],
-    specs: ['computer', 'information technology', 'software', 'application', 'applications', 'data science', 'cybersecurity', 'cyber security', 'programming', 'network', 'web', 'it', 'cs'],
-  },
-  sales_any_postgrad_non_it: {
-    degrees: ['master', 'postgraduate', 'pg', 'ma', 'm.a', 'msc', 'm.sc', 'm sc', 'mcom', 'm.com'],
-  },
-  sales_any_grad: {
-    degrees: ['bachelor', 'graduate', 'degree', 'ba', 'b.a', 'bba', 'b.b.a', 'bsc', 'b.sc', 'b sc', 'bcom', 'b.com'],
-  },
-};
-
-function getCandidateEducationCategories(c) {
-  const categories = [];
-  const highest = (c.HighestQualification || '').toLowerCase();
-  const gradDeg = (c.graduationdegree || '').toLowerCase();
-  const pgDeg = (c.postgraduationdegree || '').toLowerCase();
-
-  const cGradSpec = (c.graduationspecialization || '').toLowerCase();
-  const cPgSpec = (c.postgraduationspecialization || '').toLowerCase();
-
-  const checkMatch = (degText, specText, groupKey) => {
-    const group = EDUCATION_GROUPS[groupKey];
-    if (!group) return false;
-
-    const hasDeg = group.degrees.some((d) => degText.includes(d) || highest.includes(d));
-    if (!hasDeg) return false;
-
-    if (group.specs) {
-      return group.specs.some(
-        (s) => specText.includes(s) || degText.includes(s) || highest.includes(s)
-      );
-    }
-    return true;
-  };
-
-  // Tech groups
-  if (
-    checkMatch(gradDeg, cGradSpec, 'tech_cs_it_mca_mtech') ||
-    checkMatch(pgDeg, cPgSpec, 'tech_cs_it_mca_mtech')
-  ) {
-    categories.push('tech_cs_it_mca_mtech');
-  }
-
-  const isBTech = ['btech', 'b.tech', 'b tech', 'be', 'b.e', 'b e'].some(
-    (d) => gradDeg.includes(d) || highest.includes(d)
-  );
-  const isMSc = ['msc', 'm.sc', 'm sc', 'ms'].some((d) => pgDeg.includes(d) || highest.includes(d));
-  if ((isBTech && !categories.includes('tech_cs_it_mca_mtech')) || isMSc) {
-    categories.push('tech_other_it_msc_ms');
-  }
-
-  if (checkMatch(gradDeg, cGradSpec, 'tech_bca_bsc_it_grad')) {
-    categories.push('tech_bca_bsc_it_grad');
-  }
-
-  // Non-tech fallback
-  const isGraduate =
-    isBTech ||
-    isMSc ||
-    ['bca', 'bsc', 'ba', 'bcom', 'bba', 'graduation', 'bachelor', 'graduate'].some(
-      (d) => gradDeg.includes(d) || highest.includes(d)
-    );
-  if (
-    isGraduate &&
-    !categories.includes('tech_cs_it_mca_mtech') &&
-    !categories.includes('tech_other_it_msc_ms') &&
-    !categories.includes('tech_bca_bsc_it_grad')
-  ) {
-    categories.push('tech_non_it_grad');
-  }
-
-  // Finance groups
-  const isCA = ['ca', 'chartered accountant', 'icai'].some(
-    (d) => highest.includes(d) || gradDeg.includes(d) || pgDeg.includes(d)
-  );
-  const isCMA = ['cma', 'icwa'].some((d) => highest.includes(d) || gradDeg.includes(d) || pgDeg.includes(d));
-  const isMbaFinance =
-    ['mba', 'pgdm'].some((d) => pgDeg.includes(d) || highest.includes(d)) &&
-    (cPgSpec.includes('finance') || cPgSpec.includes('fin'));
-  if (isCA || isCMA || isMbaFinance) {
-    categories.push('fin_ca_mba_cma_icwa');
-  }
-
-  if (['mcom', 'm.com'].some((d) => pgDeg.includes(d) || highest.includes(d))) {
-    categories.push('fin_mcom');
-  }
-  if (['bcom', 'b.com'].some((d) => gradDeg.includes(d) || highest.includes(d))) {
-    categories.push('fin_bcom');
-  }
-  if (isGraduate && !isCA && !isCMA && !isMbaFinance && !categories.includes('fin_mcom') && !categories.includes('fin_bcom')) {
-    categories.push('fin_any_other_grad');
-  }
-
-  // Sales/HR groups
-  if (
-    ['mba', 'pgdm', 'btech', 'b.tech', 'be', 'b.e', 'mca', 'bca'].some(
-      (d) => gradDeg.includes(d) || pgDeg.includes(d) || highest.includes(d)
-    )
-  ) {
-    categories.push('sales_mba_be_btech_mca_it');
-  }
-  const isPostGraduate = ['master', 'postgraduate', 'pg', 'ma', 'm.a', 'msc', 'mcom'].some(
-    (d) => pgDeg.includes(d) || highest.includes(d)
-  );
-  if (isPostGraduate && !categories.includes('sales_mba_be_btech_mca_it')) {
-    categories.push('sales_any_postgrad_non_it');
-  }
-  if (isGraduate) {
-    categories.push('sales_any_grad');
-  }
-
-  return categories;
-}
 
 /**
  * 8-Parameter Scoring Logic
@@ -316,7 +134,7 @@ function scoreRelevantExperience(candidateTotalExp, roleRelevantYears) {
   return 2;
 }
 
-function scoreJobStability(maxTenureYears, totalExpYears) {
+export function scoreJobStability(maxTenureYears, totalExpYears) {
   if (maxTenureYears === 0) return 4;
   const goodThreshold = Math.max(totalExpYears - 2, 0);
   if (goodThreshold === 0) return 4;
@@ -379,22 +197,8 @@ function scoreJDMatch(top5Skills, roleSkills) {
   return 2;
 }
 
-/**
- * Split a JD skill string into individual skill phrases.
- * Splits only on list separators (comma / semicolon / newline / slash) so that
- * multi-word skills like "Machine Learning" stay intact (unlike scoreJDMatch,
- * which tokenizes for percentage scoring).
- */
-function splitSkillPhrases(skillsStr) {
-  if (!skillsStr) return [];
-  return String(skillsStr)
-    .split(/[,;\n/]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
 /** Parse Top5KeySkills which may be a JS array, a Postgres array literal, or a comma string. */
-function parseDeclaredSkills(top5) {
+export function parseDeclaredSkills(top5) {
   if (Array.isArray(top5)) return top5.map((s) => String(s).trim()).filter(Boolean);
   if (!top5) return [];
   const str = String(top5).trim().replace(/^\{|\}$/g, ''); // strip Postgres {..} braces if present
@@ -405,7 +209,7 @@ function parseDeclaredSkills(top5) {
 }
 
 /** Parse resume_technical_terms (JSON column) into a normalized [{term, count}] array. */
-function parseTechnicalTerms(raw) {
+export function parseTechnicalTerms(raw) {
   let arr = [];
   try {
     arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? JSON.parse(raw) : [];
@@ -545,7 +349,7 @@ function scoreCTCAlignment(expectedCTC, budgetMin, budgetMax) {
   return 2;
 }
 
-function scoreAvailability(noticePeriodDays) {
+export function scoreAvailability(noticePeriodDays) {
   const days = parseFloat(noticePeriodDays);
   if (isNaN(days)) return 6;
   if (days <= 15) return 10;
@@ -575,7 +379,7 @@ function getJdJsonField(parsedJd, ...keys) {
  * so any previously-analyzed candidate still shows their AI Insights in the drawer,
  * even when they rank outside this search's top-N (which is the only set re-analyzed).
  */
-function resolveProfile(insights, candidate) {
+export function resolveProfile(insights, candidate) {
   if (insights && insights.profile) return insights.profile;
   let cached = candidate && candidate.ai_profile_insights;
   if (!cached) return null;
@@ -586,7 +390,7 @@ function resolveProfile(insights, candidate) {
   return cached.profile || (cached.summary ? cached : null);
 }
 
-function mapStars(score) {
+export function mapStars(score) {
   if (score >= 9) return { stars: 5, label: 'Excellent Fit' };
   if (score >= 7) return { stars: 4, label: 'Strong Candidate' };
   if (score >= 5) return { stars: 3, label: 'Moderate Fit' };
@@ -597,7 +401,7 @@ function mapStars(score) {
 /**
  * Single-Batch Gemini Profile Insights & Skill Matching Evaluator
  */
-async function generateProfileInsights(roleContext, candidates) {
+export async function generateProfileInsights(roleContext, candidates) {
   if ((!config.gemini.apiKey && !config.openrouter?.apiKey) || candidates.length === 0) {
     return candidates.map((c) => ({
       id: c.id,
@@ -1198,7 +1002,7 @@ const STAGE_HISTORY_LIMIT = 5;
  * @param {Array<object>} candidates - scored + filtered results
  * @returns {Promise<Array<object>>} the same array, each row gaining `pipelineHistory`
  */
-async function attachStageHistory(candidates) {
+export async function attachStageHistory(candidates) {
   if (!candidates || candidates.length === 0) return candidates || [];
 
   try {
@@ -1265,7 +1069,7 @@ async function attachStageHistory(candidates) {
  * cooldown window used by the JD tab.
  * @returns {Promise<Set<string>>} cv_id values (as strings) still cooling down.
  */
-async function getRejectionCooldownExcludedCvIds() {
+export async function getRejectionCooldownExcludedCvIds() {
   const rows = await prisma.rpa_shortlisted_candidates.findMany({
     where: { pipeline_status: 'rejected', cv_id: { not: null }, modified_at: { gt: getCooldownCutoff() } },
     select: { cv_id: true },

@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
+import redis from '../config/redis.js';
 import { uploadFileToOneDrive } from '../services/onedrive.service.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
@@ -236,6 +237,9 @@ export const getMrfRequest = catchAsync(async (req, res) => {
   // approval_status and fill state are independent facts — see
   // attachApprovalStatus() in exports/mrf.export.js for why they are carried
   // separately rather than one overwriting the other.
+  // The budget lives here, so the linked MRF's JD screening must recompute.
+  if (updated.mrf_id) await clearScreeningCache(updated.mrf_id);
+
   let approval_status = 'pending';
   let mrf_filled = false;
   let mrf_closed = false;
@@ -265,6 +269,28 @@ export const getMrfRequest = catchAsync(async (req, res) => {
 
   return success(res, responseData, 'MRF Request retrieved successfully');
 });
+
+/**
+ * Drops the cached JD screening results for an MRF after an edit, so the next
+ * search applies the new skills / experience / budget instead of serving the
+ * old result for up to an hour (Phase 3 N10). With `insights`, also drops the
+ * per-MRF AI insights, which describe the candidate against the old JD.
+ * Never fails the edit.
+ *
+ * @param {bigint|number|string} mrfId
+ * @param {{insights?: boolean}} [opts]
+ */
+async function clearScreeningCache(mrfId, { insights = false } = {}) {
+  try {
+    await redis.del(`screening:role:${mrfId}`, `screening:role:v2:${mrfId}`);
+    if (insights) {
+      const keys = await redis.keys(`insight:mrf:${mrfId}:cv:*`);
+      if (keys.length > 0) await redis.del(keys);
+    }
+  } catch (err) {
+    logger.warn(`MRF ${mrfId} edited but its screening cache was not cleared: ${err.message}`);
+  }
+}
 
 /**
  * @desc    Update an MRF Request by ID
@@ -456,6 +482,7 @@ export const updateMainMrf = catchAsync(async (req, res) => {
     where: { id: BigInt(id) },
     data: dataToUpdate,
   });
+  await clearScreeningCache(updated.id, { insights: true });
 
   return success(
     res,

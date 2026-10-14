@@ -5,6 +5,53 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-10-14: Candidate Screening, JD tab: role card shows the rules it enforces (Phase 3 N07–N10)
+
+Backend write-up: [CHANGES-2026-10-14-strict-jd-filtering.md](../docs/changelog/CHANGES-2026-10-14-strict-jd-filtering.md).
+The layout was agreed with the reviewer on a design mockup before it was built. Applies only when the backend runs with `SCREENING_V2=true` (the response then carries `summary.mode === 'jd-strict'`); otherwise the tab is unchanged.
+
+Role card:
+- **Experience:** the range the search enforces ("2 – 6 yrs", or "2 yrs or more") with its source underneath ("From the JD" / "MRF minimum (the JD gives no range)").
+- **Budget:** "Up to ₹15 LPA, from the MRF request", or "Not set" with "Expected CTC is not checked" in amber.
+- **Qualification:** the requirement enforced, e.g. "BE/BTech or MCA (any branch)"; hidden when the MRF sets none.
+- **Mandatory skills:** "Candidates must have all of these" with each parsed skill as a tag, or "None found".
+
+Results:
+- **Summary line:** "2 matched — of 8 · 3 meet education, budget and experience · of those, 2 have all 2 mandatory skills" (from `summary.summaryDetail`). The star chips are unchanged; "AI insights unavailable" now also shows on this tab.
+- **No mandatory skills on the MRF:** a warning replaces the results ("This MRF has no mandatory skills, so no candidates are shown.") and the summary bar is hidden.
+- **Candidate cards:** unchanged.
+- **Drawer:** the score reasons come from the deterministic ranking (not the AI text), and the experience criterion shows the enforced range.
+
+## 2026-10-13: Candidate Screening, keyword tab: classic filter form (Phase 3 N02–N06)
+
+Backend write-up: [CHANGES-2026-10-13-strict-keyword-filtering.md](../docs/changelog/CHANGES-2026-10-13-strict-keyword-filtering.md).
+The layout was agreed with the reviewer on a design mockup before it was built. Two earlier versions were rejected: a separate lookup row, then a two-mode toggle.
+
+The keyword tab is a plain form of labelled fields:
+
+| Row | Fields |
+|---|---|
+| 1 | **Skills**, with a small **"Match any one skill"** checkbox on the label line (unticked = the candidate must have every skill) · **Location** · **Position applied for** |
+| 2 | **Candidate name** · **Email** · **Phone** · **Gender** |
+| 3 | **Experience** (min–max) · **Expected CTC (LPA)** (min–max) · **Notice period** · **Added within** |
+| 4 | **Education / Qualification**: the same three expandable groups as before |
+
+Field details:
+- **Lookups:** Candidate name, Email and Phone each find one person by exact match and skip the other filters. Lookups work even when the backend runs with `SCREENING_V2` off.
+- **Location:** typed city tags; each must match a stored city exactly ("Noida" never matches "Greater Noida").
+- **Position applied for** and **Added within** (7 / 15 / 30 / 90 days) are new. **Designation is removed.**
+- **Notice period** gains an "Immediate" option.
+- **Expected CTC:** this field was labelled "Annual CTC" before.
+
+Buttons: **Refresh**, **Clear**, **Search Candidates**.
+
+Results:
+- **Card:** an **email · phone** line ("—" when missing). Notice reads "30 days notice" or "Immediate joiner", never "3 Months days notice".
+- **Drawer:** explains the keyword score (Skill Match and Job Stability, with their share of the score).
+- **Summary bar:** "N matched (X searched; removed by location …, skills …)". Score chips follow the star thresholds and are hidden for a lookup. An "AI insights unavailable" tag appears when AI insights couldn't be generated.
+
+**Playwright suite** (`frontend/e2e`, `npm run e2e`): the repo's first committed browser tests. It uses the installed Edge. Credentials come from `E2E_USER` / `E2E_PASSWORD`, falling back to `VERIFY_EMAIL` / `VERIFY_PASSWORD`.
+
 ## 2026-08-27 — Conversation reply box: plain text → rich text
 
 Backend write-up: [CHANGES-2026-08-27-conversation-reply-rich-text.md](../docs/changelog/CHANGES-2026-08-27-conversation-reply-rich-text.md).

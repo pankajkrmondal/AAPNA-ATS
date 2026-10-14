@@ -1,4 +1,6 @@
 import * as screeningService from '../services/screening.service.js';
+import * as screeningV2 from '../services/screeningV2.service.js';
+import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -25,7 +27,9 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   }
 
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
-  const result = await screeningService.searchRoleCandidates(mrfId, force);
+  const result = config.screening.v2
+    ? await screeningV2.searchRoleCandidatesV2(mrfId, force)
+    : await screeningService.searchRoleCandidates(mrfId, force);
   return success(res, result, 'Role-matched candidates retrieved successfully');
 });
 
@@ -34,7 +38,10 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
  */
 export const searchKeywordCandidates = catchAsync(async (req, res) => {
   const filters = req.body || {};
-  const result = await screeningService.searchKeywordCandidates(filters);
+  // Lookups (name / email / phone) always use V2 — the old search has none.
+  const result = config.screening.v2 || screeningV2.isLookupRequest(filters)
+    ? await screeningV2.searchKeywordCandidatesV2(filters)
+    : await screeningService.searchKeywordCandidates(filters);
   return success(res, result, 'Keyword-filtered candidates retrieved successfully');
 });
 

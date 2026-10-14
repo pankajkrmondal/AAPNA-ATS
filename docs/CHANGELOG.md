@@ -5,6 +5,54 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-14: Screening rules document for RT (Phase 3 N12)
+**Why:** promised to RT on 10 Sep; RT could not see why a candidate was or was not shown.
+
+- **New `docs/Screening-Rules-for-RT.md`**, in plain language:
+  - every filter on both tabs, and what a blank value means;
+  - how skills are matched, the All / Any choice and the spelling aliases;
+  - the four JD checks, the ranking weights, the star bands and what the AI does and does not decide;
+  - three worked examples (sample candidates) and a "why isn't this candidate showing?" checklist.
+- The before/after comparison (N11) waits for production data; staging has too few candidates. Real examples can replace the sample ones then.
+
+## 2026-10-14: Strict JD filtering (Phase 3 N07–N10), behind `SCREENING_V2`
+**Why:** RT 29 Sep (§5). JD filtering showed profiles with no mandatory skill, passed freshers on an experience maximum, read the budget by role name, mapped "Any" qualification to BE/BTech, reused AI scores across roles, and was slow.
+
+Full write-up: [CHANGES-2026-10-14-strict-jd-filtering.md](./changelog/CHANGES-2026-10-14-strict-jd-filtering.md).
+
+- **New module `utils/jdScreeningRules.js`** (pure, unit-tested): MRF mandatory-skills parsing, experience band, budget, qualification mapping ("Any" = any stream), education gate in SQL and JS, ranking (`JD_RANK_WEIGHTS`).
+- **`searchRoleCandidatesV2`** in `services/screeningV2.service.js`:
+  - every gate is hard (ALL mandatory skills, education, budget from the MRF request, experience band); an empty value excludes
+  - cheap gates run first in the database, resume text last: same result, about 3× faster
+  - the score only orders; AI insights cached per MRF in Redis, never in the shared column, and an AI failure no longer fails the search
+  - an MRF with no checkable mandatory skill shows no candidates and says why
+- **Flag:** controller and JD CSV export dispatch on `SCREENING_V2`. The old function is untouched for N11.
+- **Cache:** new key `screening:role:v2:<mrfId>`, cleared on MRF close / reopen and on both MRF edit routes.
+- **Screen:** role card shows the enforced rules (design approved on a mockup); candidate cards unchanged.
+- **Tests:** 484 backend unit (45 new), 12 integration (local DB), Playwright `jd-screening.spec.js` (4 passed, 2 skipped locally).
+
+## 2026-10-13: Strict keyword filtering (Phase 3 N01–N06), behind `SCREENING_V2`
+**Why:** RT 29 Sep (§6.2, §8). Keyword search returned non-matching candidates:
+- substring skills ("java" also matched "javascript")
+- location and gender ignored when skills were typed
+- blank values kept by the range filters
+- passing candidates hidden by a low score
+- a name search returning 42 look-alikes
+
+Full write-up: [CHANGES-2026-10-13-strict-keyword-filtering.md](./changelog/CHANGES-2026-10-13-strict-keyword-filtering.md).
+
+- **New module `utils/screeningFilters.js`** (pure, unit-tested): whole-word matcher with aliases, exact location-part match, NULL-excluding SQL builders, removed-by funnel. Also new: `utils/phone.js` and `utils/educationCategories.js` (moved verbatim).
+- **New `services/screeningV2.service.js`:**
+  - exact lookup by name, email or phone
+  - every filter applied as a hard filter
+  - All / Any skills toggle
+  - the score only orders results; it never hides anyone
+  - an AI failure no longer fails the search
+- **Flag:** controller and CSV export dispatch on `SCREENING_V2` (default off). The old functions are untouched for the N11 comparison. The CSV export now fills keyword rating columns.
+- **Screen:** classic filter form approved on a design mockup. It has separate Candidate name / Email / Phone lookups, a "Match any one skill" checkbox, and the new **Position applied for** and **Added within** filters. Designation is removed.
+- **Lookups:** name / email / phone always use the new search, even with the flag off.
+- **Tests:** 439 backend unit (60 new), 23 integration (local DB), 10 Playwright (`frontend/e2e`, `npm run e2e`).
+
 ## 2026-09-25 — MRF approval: personal links, provable decisions, no stale reminders
 **Why:** production, 23–24 Sep 2026. The CEO clicked Approve on MRF #9 and got "Link inactive or
 invalid — already processed". It had been approved 13 h earlier through the SAME link both approvers
