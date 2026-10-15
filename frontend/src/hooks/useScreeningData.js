@@ -13,14 +13,19 @@ import { getSocket } from '../services/socket';
 // Query key factories (shared with prefetch + manual cache writes).
 export const screeningKeys = {
   roles: ['screening', 'roles'],
+  // Under the roles key on purpose: invalidating `roles` refreshes both lists.
+  rolesWithClosed: ['screening', 'roles', 'withClosed'],
   roleCandidates: (roleId) => ['screening', 'roleCandidates', roleId],
 };
 
 // Normalize the axios envelope ({ data: { data } } | { data }) to the useful payload.
 const unwrap = (res) => res?.data?.data ?? res?.data ?? null;
 
-/** Approved MRF roles for the JD Filtering dropdown. */
-export function useApprovedRoles() {
+/**
+ * Approved MRF roles for the JD Filtering dropdown — one entry per MRF (N19).
+ * @param {{ includeClosed?: boolean }} [opts] also list closed MRFs (N20)
+ */
+export function useApprovedRoles({ includeClosed = false, enabled = true } = {}) {
   const queryClient = useQueryClient();
 
   // staleTime:Infinity means this list never refetches on its own, so a
@@ -38,15 +43,24 @@ export function useApprovedRoles() {
       }
     };
 
+    // 'mrf:updated' (N19): an MRF was approved or edited, so the list changed.
+    const onMrfUpdated = () => queryClient.invalidateQueries({ queryKey: screeningKeys.roles });
+
     socket.on('mrf:closed', onMrfClosed);
-    return () => socket.off('mrf:closed', onMrfClosed);
+    socket.on('mrf:updated', onMrfUpdated);
+    return () => {
+      socket.off('mrf:closed', onMrfClosed);
+      socket.off('mrf:updated', onMrfUpdated);
+    };
   }, [queryClient]);
 
   return useQuery({
-    queryKey: screeningKeys.roles,
-    queryFn: screeningService.getRoles,
+    queryKey: includeClosed ? screeningKeys.rolesWithClosed : screeningKeys.roles,
+    queryFn: () => screeningService.getRoles({ includeClosed }),
     select: (res) => unwrap(res) || [],
     staleTime: Infinity,
+    // Off for users without Candidate Screening access (Search Candidate, N21).
+    enabled,
   });
 }
 

@@ -1,6 +1,6 @@
 # Implementation plan: Phase 3 enhancements, Do Now
 
-**Date:** 7 Oct 2026 · **Updated:** 12 Oct 2026 (added Missing-details completed: bell alert & dates (N44), hot priority)
+**Date:** 7 Oct 2026 · **Updated:** 12 Oct 2026 (added Missing-details completed: bell alert & dates (N44), hot priority) · 15 Oct 2026 (added Outcome email opt-out (N45); section C decisions recorded under N17, N18, N21 and N45)
 **Scope:** the "Phase 3 Enh - Do Now" sheet of `ATS App - Phase wise Task Items.xlsx`
 **Companion files:**
 - [Phase-3-Feedback-Triage-Notes.md](Phase-3-Feedback-Triage-Notes.md): coverage of RT and CEO feedback, and where each item came from
@@ -36,13 +36,13 @@ This list holds the Phase 3 feedback that is being delivered now. It comes from 
 |---|---|---|
 | A. Strict keyword & JD filtering | Strict keyword & JD filtering (N01–N12) | 75 |
 | B. JD tagging on upload | JD tagging on upload (N13–N15) | 48 |
-| C. Other RT feedback | Other RT feedback items (N16–N27), Missing-details completed (N44) | 99 |
+| C. Other RT feedback | Other RT feedback items (N16–N27), Missing-details completed (N44), Outcome email opt-out (N45) | 101 |
 | D. Bugs & data correctness | Bugs & data correctness items (N28–N34) | 50 |
 | E. CEO clarity, dashboard & analytics | CEO clarity, dashboard & analytics items (N35–N39) | 62 |
 | F. Developer logging & system documentation | Developer logging & error tracing (N42), System documentation & development history (N43) | 54 |
 | G. Housekeeping (no code) | Housekeeping (N40) | 0 |
 | H. To brainstorm later | Upload speed (N41) | — |
-| **Total** | | **388** (≈ 5 weeks for 2 developers, easy items first) |
+| **Total** | | **390** (≈ 5 weeks for 2 developers, easy items first) |
 
 ---
 
@@ -713,6 +713,12 @@ Shorthand used in the items:
 #### N17 · JD attached to emails
 **High · 16 h · Week 3 · RT §11 (most important), our #63**
 
+**Decisions (15 Oct)**
+- The JD is attached **only to shortlist emails sent from the Keyword filtering tab**, together with the About AAPNA text. JD-filtering shortlists and pipeline stage emails are unchanged.
+- HR manual upload and vendor upload emails get the JD after section B (JD tagging), which tells the upload which MRF it is for.
+- The About AAPNA text is **plain text** (setting `company_profile_text`, at most 3000 characters, admin only). The server escapes it and keeps line breaks.
+- Over 3 MB, or unreadable: the email carries a "View the job description" link instead.
+
 **Goal**
 - **Today:** shortlist and next-stage emails carry no JD.
 - **Change:** attach the MRF's JD, add an AAPNA company section, and include a link if the attachment can't be sent.
@@ -764,6 +770,10 @@ Shorthand used in the items:
 - Should the company section text be written by RT or HR? Recommended: RT drafts it and the admin pastes it into Settings.
 
 #### N18 · Candidate form overhaul
+
+**Decisions (15 Oct)**
+- The public form is a **short version of the recruiter Edit form**: the same labels, order, lists and rules, showing only the fields missing for the candidate. **One field per row** on both forms.
+- The Recruiter (AAPNA) list comes from the **active Recruiter accounts**, plus "None". To remove or add a name, the admin deactivates or creates the user (Prakash and Naveen out, Sweta Ganguly in).
 **Medium · 16 h · Week 4 · RT §2**
 
 **Goal**
@@ -872,6 +882,10 @@ Shorthand used in the items:
 **Open decisions:** none.
 
 #### N21 · Search Candidate → JD
+
+**Decisions (15 Oct)**
+- Ticks are for staff with Candidate Screening access, never vendors. "Add to JD" runs the same shortlist as the Screening page (same skip rules, same email).
+- The result names every candidate not added and why: cool-off ("Rejected on … Can be added again after …"), already shortlisted, or already in the pipeline for the MRF. The Screening page shows the same result.
 **High · 8 h · Week 3 · RT §6.2**
 
 **Goal**
@@ -1166,6 +1180,27 @@ Record the result in `docs/changelog`.
 **Open decisions**
 - The ATS logs its own requests as `data_collection`, but the reminder cron only reminds the legacy `missing_jd` type (`reminderEligibility.js:19, 43-47`). So requests sent by the ATS are never reminded.
 - Recommended: confirm with RT. If it is not intended, add `data_collection` to the remindable types as a separate 1 h fix.
+
+#### N45 · Outcome email opt-out
+**Medium · 2 h · Section C · Feedback 15 Oct (Harish)**
+
+**Goal**
+- **Today:** every Approve / Hold / Reject on a pipeline round emails the candidate; the recruiter can edit the email but cannot skip it.
+- **Change:** a "Send email notification to candidate" checkbox on the outcome dialog, ticked by default, as on the Screening shortlist dialog.
+- **Done when:** an outcome saved with the box unticked sends no candidate email and the round shows "Email not sent".
+
+**Decisions (15 Oct)**
+- Outcome emails only. A vendor's status update still goes out as today.
+
+**Design**
+- `POST /api/pipeline/:id/outcome` takes `send_email` (default true). `setStageOutcome` skips `sendStageOutcomeEmail` when it is false and records `email_sent=false` with `email_error = OUTCOME_EMAIL_NOT_SENT` ("Not sent: the recruiter chose not to email the candidate.").
+- Outcome dialog: unticked hides the email editor, explains what happens, and the button reads "Save outcome". The round's email line reads "Email not sent" rather than "failed".
+
+**Files:** `backend/src/services/pipeline.service.js`, `backend/src/controllers/pipeline.controller.js`, `frontend/src/components/pipeline/PipelineDrawer.jsx`
+
+**Tests:** integration `sectionC.test.js` (event records the reason); Playwright `e2e/section-c.spec.js` (request carries `send_email:false`).
+
+**Depends on:** none.
 
 ### D. Bugs & data correctness
 
@@ -1828,7 +1863,7 @@ Status: brainstorm later. No solution is designed here, as agreed.
 | # | File (proposed) | Item | Change |
 |---|---|---|---|
 | 1 | `2026-10-xx-candidate-mrf-tags.sql` (+ rollback) | JD tagging - data model (N13) | New table `rpa_candidate_mrf_tags` |
-| 2 | `2026-10-xx-mrf-jd-item-id.sql` (+ rollback) | JD attached to emails (N17) | `rpa_mrf.jd_item_id text` |
+| 2 | `2026-10-15-mrf-jd-item-id.sql` (+ rollback) | JD attached to emails (N17) | `rpa_mrf.jd_item_id varchar(512)` |
 | 3 | `2026-10-xx-ceo-round-optional.sql` (+ rollback) | CEO round optional (N24) | `UPDATE rpa_pipeline_stages SET is_optional=true WHERE stage_key='ceo'` |
 | 5 | `2026-10-xx-error-log.sql` (+ rollback) | Developer logging & error tracing (N42) | New table `rpa_error_log` |
 | 4 | (only if JD - search speed (N10) measures a need) `2026-10-xx-cv-vectors-index.sql` | JD - search speed (N10) | pgvector index on `rpa_cv_vectors` |
@@ -1838,7 +1873,7 @@ Status: brainstorm later. No solution is designed here, as agreed.
 
 | Key | Item | Default |
 |---|---|---|
-| `company_profile_html` | JD attached to emails (N17) | empty (no section until set) |
+| `company_profile_text` | JD attached to emails (N17) | empty (no section until set); plain text, admin only |
 | `interview_reminder_enabled` | Candidate phone & interview reminders (N22) | set to `true` in production |
 | `mrf_approvers` (title added) | MRF approval alert (N16) | update the roster with titles |
 | `job_heartbeat_<name>` (written by the system); env `LOG_LEVEL` | Developer logging & error tracing (N42) | `info` |
@@ -1860,7 +1895,7 @@ Status: brainstorm later. No solution is designed here, as agreed.
 | Email | Change | Item |
 |---|---|---|
 | Shortlist | JD attachment; company block; phone-request link when missing | JD attached to emails (N17), Candidate phone & interview reminders (N22) |
-| Stage outcome (approved → next) | JD attachment | JD attached to emails (N17) |
+| Stage outcome | No JD (decision 15 Oct); "Send email notification to candidate" can be unticked | JD attached to emails (N17), Outcome email opt-out (N45) |
 | MRF approval (per approver) | Wording | Approver email wording (N32) |
 | Interview reminder | Enabled in production | Candidate phone & interview reminders (N22) |
 | Job failure / crash alerts (developers) | New | Developer logging & error tracing (N42) |
@@ -1880,7 +1915,7 @@ Status: brainstorm later. No solution is designed here, as agreed.
 |---|---|---|
 | 1 (end of week 1) | Hot item: Missing-details completed (N44). Quick wins: Approver email wording (N32), Interview host visibility (N26, check only), MRF approval alert (N16), Skip guard (N33), Approve-without-score label (N25), Date Added column (N27), Dark mode on public forms (N31), QA Automation tag (N20), JD date & version (N19), Interviewer & interviewee (N23), Pipeline popup crash (N30), CEO round optional (N24); Housekeeping (N40) done by the admin | DDL #3 (CEO round optional), #6 (details dates, N44); approver roster titles (N16); tell RT that completed candidates no longer get missing-details reminders (N44) |
 | 2 (end of week 2) | Developer logging & error tracing (N42), Labels & legends (N35), Scores in the pipeline drawer (N28), Date format (N34), Candidate data sync (N29) | DDL #5 (`rpa_error_log`); set the developer alert list; RT briefing on the new labels |
-| 3 (end of week 3) | Candidate phone & interview reminders (N22), JD tagging - data model (N13), JD tagging - uploads (N14), Search Candidate to JD (N21), JD attached to emails (N17) | DDL #1 (tag table), #2 (JD item id); `interview_reminder_enabled=true`; set `company_profile_html` |
+| 3 (end of week 3) | Candidate phone & interview reminders (N22), JD tagging - data model (N13), JD tagging - uploads (N14), Search Candidate to JD (N21), JD attached to emails (N17) | DDL #1 (tag table), #2 (JD item id); `interview_reminder_enabled=true`; set the About AAPNA text (`company_profile_text`) in Settings |
 | 4 (end of week 4) | Candidate form overhaul (N18), Dashboard fixes (N36), Raw vs qualified, interim (N37), Analytics - Positions tab (N39) | "Definitions updated" note on the dashboard |
 | 5 (after RT sign-off) | Filtering rework (N01–N12), Recency filter (N38), JD tagging - screening filter (N15); System documentation & development history (N43) published | `SCREENING_V2=true`; bump the screening cache version |
 
@@ -1963,3 +1998,4 @@ Status: brainstorm later. No solution is designed here, as agreed.
 | N42 | Developer logging & error tracing |
 | N43 | System documentation & development history |
 | N44 | Missing-details completed: bell alert & dates |
+| N45 | Outcome email opt-out |

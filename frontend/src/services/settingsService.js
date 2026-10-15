@@ -127,6 +127,23 @@ const settingsService = {
   saveFlowKey(payload) {
     return api.post('/settings/flow-keys', payload);
   },
+
+  /**
+   * The "About AAPNA" text added under keyword-shortlist emails. Admin only.
+   * @returns {Promise} — { text }
+   */
+  getCompanyProfile() {
+    return api.get('/settings/company-profile');
+  },
+
+  /**
+   * Save the "About AAPNA" text. Empty adds nothing to the email.
+   * @param {object} payload — { text }
+   * @returns {Promise}
+   */
+  saveCompanyProfile(payload) {
+    return api.post('/settings/company-profile', payload);
+  },
 };
 
 export default settingsService;

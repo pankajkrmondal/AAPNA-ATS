@@ -19,11 +19,18 @@
         } catch (e) {
           /* storage unavailable (private mode) — fall through to light */
         }
+        // Public token-link pages (candidate / approver / interviewer forms)
+        // are always light — keep in step with the ForceLight routes in App.jsx.
+        var path = window.location.pathname;
+        var publicPage =
+          /^\/(missing-jd-upload|mrf-submit|scorecard\/|documents\/)/.test(path) ||
+          /^\/mrf\/[^/]+\/approve/.test(path);
         var dark =
-          mode === 'dark' ||
-          (mode === 'system' &&
-            window.matchMedia &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches);
+          !publicPage &&
+          (mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches));
         var theme = dark ? 'dark' : 'light';
         var el = document.documentElement;
         el.setAttribute('data-theme', theme);

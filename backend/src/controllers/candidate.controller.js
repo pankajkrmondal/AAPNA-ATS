@@ -9,13 +9,18 @@ import { saveCandidateVector } from '../services/vectorStore.service.js';
 import logger from '../config/logger.js';
 import { extractTextFromFile, parseResumeWithOpenRouter } from '../services/hrUpload.service.js';
 import { updateJobByCvId } from '../services/uploadJob.service.js';
-import { getApprovedRoles } from '../services/screening.service.js';
+import { getPublicRoleNames } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { assertSignature } from '../utils/fileSignature.js';
 import path from 'path';
+import fsp from 'fs/promises';
+import { validateCandidateFields, describeFieldErrors } from '../utils/candidateFieldRules.js';
+import { getLocationSuggestions, getRecruiterNames } from '../services/candidateFormOptions.service.js';
 import runExport from '../exports/runExport.js';
 import candidatesExport from '../exports/candidates.export.js';
+import { notify, NOTIFICATION_TYPES, pipelineLink } from '../services/notification.service.js';
+import { describeDetailsCompletion } from '../utils/missingDetails.js';
 
 /**
  * @desc    Search candidates with pagination and filters
@@ -33,13 +38,14 @@ export const searchCandidates = catchAsync(async (req, res) => {
     name,
     email,
     phone,
+    completedWithin,
     page = 1,
     limit = 20,
     sort = 'createdAt',
     order = 'desc',
   } = req.query;
 
-  const requested = { search, status, finalStatus, vendorEmail, position, location, name, email, phone };
+  const requested = { search, status, finalStatus, vendorEmail, position, location, name, email, phone, completedWithin };
   // `vendorEmail` is a plain query param, so a vendor-role token could omit it
   // (or name someone else's address) and page through the entire candidate
   // table. Scope is forced server-side from the session instead.
@@ -206,8 +212,27 @@ export const getCandidateEmails = catchAsync(async (req, res) => {
  * authenticated /api/screening/roles endpoint. This exposes the same approved
  * roles publicly (read-only) for the "Position Applied" dropdown.
  */
+/**
+ * @desc    City names already in the ATS, for the Current location field (N18)
+ * @route   GET /api/candidates/public/locations
+ * @access  Public (names only)
+ */
+export const getPublicLocations = catchAsync(async (req, res) => {
+  return success(res, await getLocationSuggestions(), 'Locations retrieved');
+});
+
+/**
+ * @desc    Active recruiter names, for the Recruiter (AAPNA) field (N18)
+ * @route   GET /api/candidates/public/recruiters
+ * @access  Public (display names only)
+ */
+export const getPublicRecruiters = catchAsync(async (req, res) => {
+  return success(res, await getRecruiterNames(), 'Recruiters retrieved');
+});
+
 export const getPublicRoles = catchAsync(async (req, res) => {
-  const roles = await getApprovedRoles();
+  // One entry per role NAME: candidates pick a role, not a requisition (N19).
+  const roles = await getPublicRoleNames();
   return success(res, roles, 'Approved roles retrieved successfully');
 });
 
@@ -265,6 +290,62 @@ export const getPublicMissingData = catchAsync(async (req, res) => {
     missingFields
   }, 'Candidate missing data fields retrieved successfully');
 });
+
+/**
+ * Side effects of a candidate FIRST completing the missing-details form (N44):
+ *  1. closes their open request/reminder rows in rpa_email_log, so the reminder
+ *     cron stops asking for details they have already given;
+ *  2. rings the staff bell, linking to their live pipeline card when they have
+ *     one, otherwise to the candidate page.
+ * Best effort: the submission is already saved, so a failure here is logged and
+ * never surfaces to the candidate.
+ *
+ * @param {object} cv - the updated rpa_cv row
+ * @param {Date} completedAt
+ */
+async function onMissingDetailsCompleted(cv, completedAt) {
+  try {
+    const closed = await prisma.rpa_email_log.updateMany({
+      where: {
+        reference_id: Number(cv.id),
+        email_type: { in: ['data_collection', 'missing_jd'] },
+        responded_at: null,
+      },
+      data: { responded_at: completedAt },
+    });
+    logger.info(`[missing-data] candidate ${cv.id} completed; closed ${closed.count} open request row(s)`);
+  } catch (e) {
+    logger.warn(`[missing-data] could not close request rows for candidate ${cv.id}: ${e.message}`);
+  }
+
+  try {
+    const journey = await prisma.rpa_candidate_pipeline.findFirst({
+      where: { cv_id: cv.id, final_outcome: null },
+      orderBy: { modified_at: 'desc' },
+      select: { id: true },
+    });
+    const { title, description } = describeDetailsCompletion({
+      name: cv.Name,
+      position: cv.PositionApplied,
+      requestedAt: cv.details_requested_at,
+      completedAt,
+    });
+    await notify({
+      type: NOTIFICATION_TYPES.CANDIDATE_DETAILS_COMPLETED,
+      title,
+      description,
+      pipelineId: journey?.id ?? null,
+      linkPath: journey ? pipelineLink(journey.id) : `/candidates/${Number(cv.id)}`,
+      meta: {
+        cvId: Number(cv.id),
+        requestedAt: cv.details_requested_at || null,
+        completedAt,
+      },
+    });
+  } catch (e) {
+    logger.warn(`[missing-data] completion alert failed for candidate ${cv.id}: ${e.message}`);
+  }
+}
 
 /**
  * @desc    Submit candidate's missing data fields via public token
@@ -374,8 +455,23 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
       : String(submissions.CurrentCompany);
   }
 
+  // Same field rules as the recruiter Edit form (N18): checked before any
+  // upload or AI parsing, so a bad number costs the candidate one retry, not a
+  // half-saved form. The temp resume file is removed on rejection.
+  const fieldErrors = validateCandidateFields(updateData, candidate);
+  if (fieldErrors.length) {
+    if (req.file?.path) await fsp.unlink(req.file.path).catch(() => {});
+    throw new AppError(describeFieldErrors(fieldErrors), 400);
+  }
+
   // Check if a resume file was uploaded
   let parsedResume = null;
+  // Declared up here, not at the merge step below: the resume-parse block
+  // writes the full text and technical terms into it. When it was declared
+  // later, those writes hit the temporal dead zone, threw a ReferenceError that
+  // the parse catch logged as "OpenRouter parsing failed", and the resume text
+  // was silently dropped for every resume uploaded through this form.
+  const resumeData = {};
   let cvUrl = null;
   // Null when the OneDrive upload failed and cvUrl fell back to local storage;
   // the dossier's fetch treats a missing id plus a local path as "no attachment".
@@ -439,7 +535,6 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
   }
 
   // Merge parsed fields from resume
-  const resumeData = {};
   if (parsedResume) {
     const resumeFields = [
       'Name', 'NoticePeriod', 'ContactNumber', 'EmailID',
@@ -520,6 +615,14 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     finalUpdateData.cvMissingTokenStatus = 'RECEIVED';
   }
 
+  // First full completion only (N44): later submissions and staff edits never
+  // move the date, and only this first completion notifies anyone.
+  const firstCompletion = stillMissingCount === 0 && !candidate.details_completed_at;
+  const completedAt = new Date();
+  if (firstCompletion) {
+    finalUpdateData.details_completed_at = completedAt;
+  }
+
   finalUpdateData.modifiedAt = new Date();
 
   // Save candidate
@@ -545,6 +648,10 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     } catch (e) {
       logger.warn(`Failed to advance upload job after missing-info submission: ${e.message}`);
     }
+  }
+
+  if (firstCompletion) {
+    await onMissingDetailsCompleted(updatedCandidate, completedAt);
   }
 
   // Regenerate vector and update candidate metadata asynchronously in the background

@@ -29,6 +29,7 @@ import {
   jdRankScore,
   JD_RANK_WEIGHTS,
 } from '../../utils/jdScreeningRules.js';
+import { wholeWordMatch } from '../../utils/screeningFilters.js';
 
 describe('resolveMandatoryText', () => {
   const jd = { mandatory_skills: 'Java, Spring Boot' };
@@ -86,6 +87,17 @@ describe('parseMandatorySkills', () => {
   test('aliases collapse; the first spelling is kept', () => {
     const r = parseMandatorySkills('.NET, dotnet, ASP.NET, C#, csharp, Node.js, NodeJS');
     assert.deepEqual(r.skills, ['.net', 'c#', 'node.js']);
+  });
+
+  test('a bare "NET" on the MRF means .NET and collapses with "DOT NET" (review 15 Oct)', () => {
+    const r = parseMandatorySkills('NET, DOT NET, C#');
+    assert.deepEqual(r.skills, ['.net', 'c#']);
+    assert.deepEqual(r.labels, ['.NET', 'C#']);
+    // And a typical .NET profile now has every required skill.
+    const profile = 'Skills: .NET Core, C#, ASP.NET MVC, SQL Server';
+    for (const s of r.skills) assert.ok(wholeWordMatch(profile, s), s);
+    // "net" inside another phrase is untouched.
+    assert.deepEqual(parseMandatorySkills('Network security').skills, ['network security']);
   });
 
   test('".NET" keeps its leading dot; bullets and numbering are removed', () => {

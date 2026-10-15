@@ -145,6 +145,7 @@ The MRF's text is tidied before it is used, so it reads the way a recruiter mean
 | React and Redux | React **and** Redux (both required) |
 | Python (Django/Flask) | Python (the brackets are treated as examples) |
 | CI/CD, PL/SQL | CI/CD and PL/SQL, each kept as one skill |
+| NET, DOT NET, C# | .NET and C# ("NET" on an MRF means .NET, so it and "DOT NET" are one skill) |
 | Good communication skills | not checked (a soft skill) |
 | 3+ years of experience | not checked (the experience check covers it) |
 | Java or Kotlin | not checked ("either/or" cannot be required) |

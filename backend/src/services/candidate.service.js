@@ -3,6 +3,8 @@ import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { mapReferralFields } from '../utils/referralView.js';
+import { completedSince } from '../utils/missingDetails.js';
+import { validateCandidateFields, describeFieldErrors } from '../utils/candidateFieldRules.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
 
 /**
@@ -100,6 +102,9 @@ export function mapCandidate(c) {
     finalStatus: c.FinalStatus || '',
     createdAt: c.createdAt,
     modifiedAt: c.modifiedAt,
+    // Missing-details form (N44): first emailed / first fully completed.
+    detailsRequestedAt: c.details_requested_at || null,
+    detailsCompletedAt: c.details_completed_at || null,
     resumeTextQuality: c.resume_text_quality || 'unknown',
     resumeTechnicalTerms: c.resume_technical_terms || [],
     resumeTermUpdatedAt: c.resume_term_updated_at || null,
@@ -520,6 +525,21 @@ export async function update(id, data, actor = null) {
 
   const dbData = unmapCandidate(data);
 
+  // Field rules shared with the public form (N18). The Edit form sends every
+  // field, including old values entered before these rules ("3 years"), so
+  // only the fields whose value actually changes are checked.
+  const ruleFields = ['ContactNumber', 'EmailID', 'CTC_LPA', 'ExpectedCTC_LPA', 'TotalExperienceYears',
+    'LastCompanyExperienceYears', 'a10th', 'a12th', 'graduation', 'postGraduation'];
+  const existingRow = await prisma.rpa_cv.findUnique({
+    where: { id: BigInt(id) },
+    select: Object.fromEntries(ruleFields.map((k) => [k, true])),
+  });
+  const changed = Object.fromEntries(
+    Object.entries(dbData).filter(([k, v]) => ruleFields.includes(k) && String(v ?? '') !== String(existingRow?.[k] ?? '')),
+  );
+  const fieldErrors = validateCandidateFields(changed, existingRow || {});
+  if (fieldErrors.length) throw new AppError(describeFieldErrors(fieldErrors), 400);
+
   if (dbData.TotalExperienceYears !== undefined) {
     dbData.TotalExperienceYearsNumeric = parseExperienceNumeric(dbData.TotalExperienceYears);
   }
@@ -645,6 +665,13 @@ export function buildWhereClause(filters = {}) {
     and.push({ CurrentLocation: { contains: filters.location, mode: 'insensitive' } });
   }
 
+  // "Details completed in" (N44): candidates who finished the missing-details
+  // form recently. NULL dates never match — they predate the column.
+  const since = completedSince(filters.completedWithin);
+  if (since) {
+    and.push({ details_completed_at: { gte: since } });
+  }
+
   // Restrict to all vendor-sourced candidates (recruiter "all vendors" overview).
   if (filters.vendorOnly) {
     and.push({ VendorEmail: { not: null } });
@@ -697,6 +724,8 @@ export const EXPORT_SELECT = {
   cvFileUrl: true,
   createdAt: true,
   modifiedAt: true,
+  details_requested_at: true,
+  details_completed_at: true,
 };
 
 /**
@@ -711,6 +740,9 @@ export function resolveSortField(sort) {
   if (sort === 'email') return 'EmailID';
   if (sort === 'position') return 'PositionApplied';
   if (sort === 'modifiedAt') return 'modifiedAt';
+  // Used only together with the "Details completed in" filter, which excludes
+  // NULL dates — so no NULL-first surprise under DESC.
+  if (sort === 'detailsCompletedAt') return 'details_completed_at';
   return 'createdAt';
 }
 

@@ -889,6 +889,40 @@ All calls go through `generateContentWithFallback` (`backend/src/utils/geminiHel
 
 **Open decisions:** whether imported scores count toward stage approvals. Recommended: yes, with a visible "Imported" label.
 
+#### P12 · Screening: see who was left out, and why
+**Medium · 16 h · Harish, review of Phase 3 week 1 (15 Oct 2026)**
+
+**Goal**
+- **Today:** the screening summary says how many candidates each rule removed ("0 matched of 206 · 1 recently rejected · 63 meet education and experience · of those, 0 have all 3 mandatory skills"), but the recruiter cannot see WHO was removed. When the result is 0 or surprisingly small there is no way to check whether a rule, or the MRF's own wording, is too strict.
+- **Change:** a read-only "Not shown" list beside the results: the candidates each rule removed, with the reason.
+- **Done when:** for any JD or keyword search, a recruiter can open the left-out candidates and see, per candidate, which rule removed them.
+
+**Current behaviour**
+- Strict search (`SCREENING_V2`): every rule is a hard filter. `buildPassCountSql` / `removedByFromPassCounts` (`backend/src/utils/screeningFilters.js`) count how many fail each rule; only the counts reach the screen (`summary.summaryDetail`).
+- Old search (flag off): candidates are also hidden by a low score ("21 hidden by low score"); those are dropped after scoring and not returned.
+
+**Design**
+- **Backend:** with `includeExcluded=1`, the JD and keyword searches also return `excluded: [{ candidate, failedRules: [...] }]`, capped (e.g. 200), ordered "nearest miss first" (fewest failed rules, then score).
+  - Reasons in plain words, e.g. "Missing mandatory skill: C#", "Experience 1 yr, needs 3+", "Education: BCom, needs BE/BTech or MCA", "Expected CTC 18 LPA over budget 15", "Rejected for this role 12 days ago", "Low score (old search)".
+  - Computed on request only, so the normal search stays as fast as it is.
+- **Screen:** under the summary line, a link "See the N not shown". It opens a list (same compact card, greyed) grouped or filterable by reason. Read-only: no Shortlist / Reject from it (see open decision).
+- **Export:** the existing CSV export gains an optional "include not shown" with a Reason column.
+
+**Files:** `backend/src/services/screeningV2.service.js`, `backend/src/utils/screeningFilters.js`, `backend/src/utils/jdScreeningRules.js`, `backend/src/services/screening.service.js` (old-search low-score list), `backend/src/exports/screening.export.js`, `frontend/src/pages/CandidateScreening.jsx`.
+
+**Reuse:** the per-rule SQL builders and pass counts already used for the summary line; `passesStrictFilters` for per-candidate reasons.
+
+**Tests:**
+- Unit: reason text for each rule; nearest-miss ordering.
+- Integration: a fixture failing exactly one rule is listed with that rule; the matched list is unchanged with and without `includeExcluded`.
+- Playwright: open "See the N not shown" on a JD search.
+
+**Risks & rollout:** large pools (thousands left out) → cap and paginate; say "showing the nearest 200". Personal data stays on staff-only screens, as today.
+
+**Depends on:** Filter utility (N01) and the strict JD / keyword rules (N02–N09). **Blocks:** none.
+
+**Open decisions:** may a recruiter shortlist a left-out candidate from this list (with a reason)? Recommended: no in the first version (read-only); revisit after RT has used it.
+
 ---
 
 ## 6. Cross-cutting tables
@@ -971,6 +1005,7 @@ Each release follows [PLAN-Phase3-Now.md](PLAN-Phase3-Now.md) §6.
 | 9 | Website sender pattern | Website candidates report (P07) | RT / IT | — |
 | 10 | Zeko 90-day: warn or block | Zeko 90-day re-interview check (P09) | RT | Warn + override reason |
 | 11 | Imported scores count for approval | Excel scores to round scorecards (P11) | RT | Yes, labelled |
+| 12 | Shortlist from the "not shown" list | Screening: see who was left out (P12) | RT / Harish | No (read-only first) |
 
 ## 9. ID index (ID → task name)
 
@@ -1000,3 +1035,4 @@ Each release follows [PLAN-Phase3-Now.md](PLAN-Phase3-Now.md) §6.
 | P09 | Zeko 90-day re-interview check |
 | P10 | Admin Config UI polish |
 | P11 | Excel scores to round scorecards |
+| P12 | Screening: see who was left out, and why |

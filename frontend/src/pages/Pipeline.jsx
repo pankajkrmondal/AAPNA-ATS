@@ -38,6 +38,7 @@ import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import ErrorState from '../components/common/ErrorState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
+import { fmtDate } from '../utils/dateFormat';
 
 const { Text, Title } = Typography;
 
@@ -389,6 +390,8 @@ function BoardScroller({ children }) {
 export default function Pipeline() {
   const { message } = AntApp.useApp();
   const queryClient = useQueryClient();
+  // A Position option key (N19): 'mrf:<id>' for one requisition, or
+  // 'text:<role>' for keyword shortlists, which carry no MRF.
   const [position, setPosition] = useState();
   const [source, setSource] = useState();
   const [onHoldOnly, setOnHoldOnly] = useState(false);
@@ -400,6 +403,15 @@ export default function Pipeline() {
   const [myCandidatesOnly, setMyCandidatesOnly] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [openPipelineId, setOpenPipelineId] = useState(null);
+  // The candidate the drawer is RENDERING. It outlives openPipelineId by the
+  // length of the close animation, so the drawer slides out with its content
+  // and its modals instead of everything unmounting in one frame — the
+  // close-time blank page of N30. Cleared once the drawer has fully closed.
+  const [drawerPipelineId, setDrawerPipelineId] = useState(null);
+  const openDrawer = useCallback((id) => {
+    setOpenPipelineId(id);
+    setDrawerPipelineId(id);
+  }, []);
   const [nlQuery, setNlQuery] = useState('');
   const [nlRead, setNlRead] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -420,7 +432,8 @@ export default function Pipeline() {
   const recordingParam = searchParams.get('recording');
   useEffect(() => {
     const id = Number(candidateParam);
-    if (Number.isFinite(id) && id > 0) setOpenPipelineId(id);
+    if (Number.isFinite(id) && id > 0) openDrawer(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateParam]);
 
   /** Closes the drawer and drops the deep-link params so a refresh doesn't reopen it. */
@@ -435,7 +448,8 @@ export default function Pipeline() {
   }, [candidateParam, recordingParam, searchParams, setSearchParams]);
 
   const filters = {
-    position,
+    position: position?.startsWith('text:') ? position.slice(5) : undefined,
+    position_mrf_id: position?.startsWith('mrf:') ? position.slice(4) : undefined,
     source,
     on_hold_only: onHoldOnly ? '1' : undefined,
     rejected_only: rejectedOnly ? '1' : undefined,
@@ -516,6 +530,21 @@ export default function Pipeline() {
   };
 
   const positions = useMemo(() => data?.positions || [], [data]);
+  // One entry per MRF, then the keyword shortlists (N19). Closed MRFs stay
+  // listed, tagged, so a role like QA Automation can always be found.
+  const positionSelectOptions = useMemo(() => {
+    const opts = data?.positionOptions || positions.map((p) => ({ key: `text:${p}`, mrfId: null, role: p }));
+    const toOption = (o) => ({
+      value: o.key,
+      label: o.mrfId ? `${o.role} · MRF-${o.mrfId}${o.created_at ? ` · ${fmtDate(o.created_at)}` : ''}` : o.role,
+      closed: o.closed,
+    });
+    const mrf = opts.filter((o) => o.mrfId).map(toOption);
+    const text = opts.filter((o) => !o.mrfId).map(toOption);
+    return text.length && mrf.length
+      ? [...mrf, { label: 'Keyword shortlists (no MRF)', title: 'Keyword shortlists', options: text }]
+      : [...mrf, ...text];
+  }, [data, positions]);
 
   const handleNlSearch = (text) => {
     setNlQuery(text);
@@ -528,7 +557,8 @@ export default function Pipeline() {
       return;
     }
     const parsed = parseNlQuery(text, positions);
-    setPosition(parsed.position);
+    // A typed role name matches every MRF of that name.
+    setPosition(parsed.position ? `text:${parsed.position}` : undefined);
     setSource(parsed.source);
     setOnHoldOnly(parsed.hold);
     if (parsed.hold) setRejectedOnly(false);
@@ -622,10 +652,22 @@ export default function Pipeline() {
         <Select
           allowClear
           placeholder="Position"
-          style={{ minWidth: 200 }}
+          style={{ minWidth: 330 }}
+          popupMatchSelectWidth={false}
+          showSearch
+          optionFilterProp="label"
           value={position}
           onChange={setPosition}
-          options={positions.map((p) => ({ value: p, label: p }))}
+          options={positionSelectOptions}
+          // A role name picked by "Ask the board" may match only MRF entries,
+          // so it has no option of its own — show the name, never the raw key.
+          labelRender={({ label, value }) => label ?? String(value).replace(/^(text|mrf):/, '')}
+          optionRender={(opt) => (
+            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+              <span style={opt.data.closed ? { color: 'var(--text-3)' } : undefined}>{opt.data.label}</span>
+              {opt.data.closed && <Tag style={{ margin: 0 }}>Closed</Tag>}
+            </Space>
+          )}
         />
         <Select
           allowClear
@@ -699,7 +741,7 @@ export default function Pipeline() {
                         size="small"
                         type="link"
                         style={{ padding: 0, height: 'auto' }}
-                        onClick={() => setOpenPipelineId(iv.pipeline_id)}
+                        onClick={() => openDrawer(iv.pipeline_id)}
                       >
                         {iv.candidate_name || `Journey ${iv.pipeline_id}`}
                       </Button>
@@ -776,7 +818,7 @@ export default function Pipeline() {
                 />
               ) : (
                 col.cards.map((card) => (
-                  <CandidateCard key={card.id} card={card} onOpen={setOpenPipelineId} />
+                  <CandidateCard key={card.id} card={card} onOpen={openDrawer} />
                 ))
               )}
             </Card>
@@ -785,7 +827,9 @@ export default function Pipeline() {
       </BoardScroller>
 
       <PipelineDrawer
-        pipelineId={openPipelineId}
+        pipelineId={drawerPipelineId}
+        open={openPipelineId != null}
+        onAfterClose={() => setDrawerPipelineId(null)}
         focusRecordingId={Number(recordingParam) > 0 ? Number(recordingParam) : null}
         onClose={closeDrawer}
         onChanged={() => {

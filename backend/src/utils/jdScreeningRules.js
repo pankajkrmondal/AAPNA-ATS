@@ -103,6 +103,18 @@ const MAX_WORDS = 4;
 const normalise = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 /**
+ * MRF-side spellings that name a skill under another form. Applied to the
+ * MRF's mandatory skills only, never to candidate text: an MRF listing "NET"
+ * means .NET (e.g. "NET, DOT NET, C#"), but treating every "net" in a resume
+ * as .NET would match "net salary". Without this, bare "NET" was its own
+ * required skill that no profile ever had, so such an MRF matched nobody
+ * (review 15 Oct 2026).
+ */
+const MRF_SKILL_FIXES = {
+  net: { term: '.net', label: '.NET' },
+};
+
+/**
  * Turns an MRF's mandatory-skills text into the skills a candidate must have.
  *
  * Splits on commas / semicolons / new lines / slashes (splitSkillPhrases) and
@@ -165,12 +177,13 @@ export function parseMandatorySkills(text) {
       continue;
     }
 
-    const term = normalise(p);
+    const fix = MRF_SKILL_FIXES[normalise(p)];
+    const term = fix ? fix.term : normalise(p);
     const key = termVariants(term).join('|');
     if (seen.has(key)) continue;
     seen.add(key);
     out.skills.push(term);
-    out.labels.push(p);
+    out.labels.push(fix ? fix.label : p);
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, message } from 'antd';
+import { Card, Form, Input, Button, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, App } from 'antd';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import dayjs from 'dayjs';
@@ -183,6 +183,9 @@ const OTHER_PAIRS = {
 };
 
 export default function MrfSubmit() {
+  // App.useApp(), not the static `message`: static toasts render outside the
+  // light ForceLight provider and picked up the user's dark theme (N31).
+  const { message } = App.useApp();
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get('role') || '';
   const emailParam = searchParams.get('emailid') || '';

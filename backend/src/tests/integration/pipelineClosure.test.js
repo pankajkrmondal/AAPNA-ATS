@@ -31,6 +31,10 @@ import { FINAL_OUTCOMES, VACATING_OUTCOMES, STAGE_KEYS } from '../../config/pipe
 import { VENDOR_LOCK_FROZEN } from '../../utils/vendorLock.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL, VENDOR_EMAIL } from '../helpers/fixture.js';
 
+// Fixture journeys carry no Zeko/assessment/scorecard score, so an approval
+// needs the "approve without score" note since N25.
+const NO_SCORE_NOTE = 'Approved by the integration test without a score (N25).';
+
 const ACTED_BY = 2;
 const createdJourneys = [];
 const createdCvs = [];
@@ -121,7 +125,7 @@ describe('PIPE-04 â€” a closed journey refuses every further action', () =>
       }, label);
     };
 
-    await expect409(() => setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY }), 'setStageOutcome');
+    await expect409(() => setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY }), 'setStageOutcome');
     await expect409(() => advanceStage(journey.id, { actedBy: ACTED_BY }), 'advanceStage');
     await expect409(() => setFinalOutcome(journey.id, { finalOutcomeKey: FINAL_OUTCOMES.JOINED, actedBy: ACTED_BY }), 'setFinalOutcome');
     await expect409(() => sendAdHocEmail(journey.id, { subject: 'x', body: 'y' }), 'sendAdHocEmail');
@@ -292,7 +296,7 @@ describe('PIPE-15 â€” advancing onto a since-deactivated stage', () => {
   test('a candidate on a stage that was deactivated under them cannot advance', async () => {
     const { journey } = await makeJourney({ name: 'PIPE15' });
     // Move to assessment, then deactivate assessment underneath the candidate.
-    await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
 
     const restore = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: 'assessment' } });
     try {
@@ -358,7 +362,7 @@ async function walkTo(journeyId, targetStage) {
   for (let i = 0; i < 12; i++) {
     const row = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journeyId) } });
     if (row.current_stage_key === targetStage) return row;
-    await setStageOutcome(journeyId, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journeyId, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
   }
   throw new Error(`could not reach ${targetStage}`);
 }
@@ -686,5 +690,55 @@ describe('MRF-01 - manual requisition closure', () => {
     assert.equal(back.closure_reason, null);
     const rolesAgain = await getApprovedRoles();
     assert.ok(rolesAgain.some((r) => Number(r.id) === Number(mrfId)), 're-opening puts it back');
+  });
+});
+
+describe('MRF-02 - one dropdown entry per requisition (N19 / N20)', () => {
+  test('MRFs sharing a role name are all listed, newest marked Latest; closed ones only on request', async () => {
+    const { getApprovedRoles, getPublicRoleNames } = await import('../../services/screening.service.js');
+    const name = `Dup role N19 ${Date.now()}`;
+    const ids = [];
+    for (let i = 0; i < 3; i += 1) {
+      const row = await prisma.rpa_mrf.create({
+        data: {
+          position_hiring_for: name,
+          number_of_positions: 1,
+          submitter_email: 'pkmondal@aapnainfotech.com',
+          approval_status: 'approved',
+          additional_information: FIXTURE_TAG,
+          created_at: new Date(Date.now() - (3 - i) * 86400000),
+        },
+      });
+      createdMrfs.push(row.id);
+      ids.push(Number(row.id));
+    }
+    const [oldest, middle, newest] = ids;
+
+    const mine = (list) => list.filter((r) => r.role === name);
+    const open = mine(await getApprovedRoles());
+    assert.deepEqual(open.map((r) => r.id), [newest, middle, oldest], 'all three, newest first');
+    assert.deepEqual(open.map((r) => r.isLatest), [true, false, false]);
+    assert.deepEqual(open.map((r) => r.ref), ids.slice().reverse().map((id) => `MRF-${id}`));
+    assert.ok(open.every((r) => r.closed === false && r.created_at));
+
+    // The candidate-facing form keeps one entry per name.
+    assert.equal(mine(await getPublicRoleNames()).length, 1);
+
+    // Closing the newest: it leaves the default list, the next one becomes Latest,
+    // and includeClosed brings it back after the open ones, flagged.
+    await closeMrfManually(BigInt(newest), { reason: 'budget_withdrawn', actedBy: ACTED_BY });
+    const afterClose = mine(await getApprovedRoles());
+    assert.deepEqual(afterClose.map((r) => [r.id, r.isLatest]), [[middle, true], [oldest, false]]);
+
+    const all = await getApprovedRoles({ includeClosed: true });
+    const withClosed = mine(all);
+    assert.deepEqual(withClosed.map((r) => r.id), [middle, oldest, newest]);
+    const closedRow = withClosed[2];
+    assert.equal(closedRow.closed, true);
+    assert.equal(closedRow.isLatest, false);
+    assert.equal(closedRow.closure_reason, 'budget_withdrawn');
+    assert.ok(closedRow.closed_at);
+    const firstClosedIdx = all.findIndex((r) => r.closed);
+    assert.ok(all.slice(firstClosedIdx).every((r) => r.closed), 'every closed MRF comes after every open one');
   });
 });

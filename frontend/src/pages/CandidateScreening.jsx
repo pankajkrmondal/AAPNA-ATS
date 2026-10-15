@@ -63,8 +63,11 @@ import SkillTags from '../components/common/SkillTags';
 import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
+import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
+import { fmtDate } from '../utils/dateFormat';
+import { mrfOptionLabel, closureReasonLabel } from '../utils/mrfLabel';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -383,13 +386,19 @@ export default function CandidateScreening() {
 
   // ── Roles Dropdown State ──
   // Roles come from React Query (prefetched at app load), cached for the session.
-  const rolesQuery = useApprovedRoles();
+  // One entry per MRF (N19); "Include closed MRFs" adds the closed ones (N20).
+  const [includeClosedMrfs, setIncludeClosedMrfs] = useState(false);
+  const rolesQuery = useApprovedRoles({ includeClosed: includeClosedMrfs });
   const roles = rolesQuery.data || [];
   const loadingRoles = rolesQuery.isLoading;
   const [selectedRoleId, setSelectedRoleId] = useState(() => {
     const v = localStorage.getItem('screening_selected_role');
     return v ? Number(v) : null;
   });
+  const selectedRole = roles.find((r) => r.id === selectedRoleId) || null;
+  // A closed MRF can still be searched, read-only: Shortlist / Reject are off (N20).
+  // The server refuses a shortlist onto a closed MRF too (409).
+  const selectedRoleClosed = Boolean(selectedRole?.closed);
   const [roleDetails, setRoleDetails] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -597,6 +606,24 @@ export default function CandidateScreening() {
     }
   };
 
+  // The remembered role may have closed since last visit. Show it as closed
+  // (tick the box) rather than as a bare number; drop it only if it is gone.
+  useEffect(() => {
+    if (!rolesQuery.isSuccess || !selectedRoleId) return;
+    if (roles.some((r) => r.id === selectedRoleId)) return;
+    if (!includeClosedMrfs) setIncludeClosedMrfs(true);
+    else handleRoleSelect(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolesQuery.isSuccess, roles, selectedRoleId, includeClosedMrfs]);
+
+  // Open MRFs first; closed ones (only when asked for) in their own group.
+  const roleOptions = useMemo(() => {
+    const toOption = (r) => ({ value: r.id, label: mrfOptionLabel(r), role: r });
+    const open = roles.filter((r) => !r.closed).map(toOption);
+    const closed = roles.filter((r) => r.closed).map(toOption);
+    return closed.length ? [...open, { label: 'Closed', title: 'Closed', options: closed }] : open;
+  }, [roles]);
+
   // Force-reload the selected role's candidates, bypassing the backend Redis cache,
   // and write the fresh result into the query cache so the UI updates.
   const forceReloadRoleCandidates = async () => {
@@ -725,6 +752,9 @@ export default function CandidateScreening() {
     }
   };
 
+  // N21: who a shortlist left out, and why — shown after the request returns.
+  const [shortlistResult, setShortlistResult] = useState(null);
+
   const handleDecisionConfirm = async ({ mrfId, roleName, reason, sendEmail, emailOverride }) => {
     const decision = decisionModalOpen;
     if (!decision) return;
@@ -739,6 +769,8 @@ export default function CandidateScreening() {
       email_override: emailOverride,
     };
     if (decision === 'reject') payload.reason = reason;
+    // N17: only a Keyword-tab shortlist attaches the JD and adds About AAPNA.
+    else payload.source = activeTab;
 
     setIsShortlisting(true);
     try {
@@ -751,11 +783,24 @@ export default function CandidateScreening() {
         ? (result.rejected ?? selectedList.length)
         : (result.shortlisted ?? selectedList.length);
       const skippedCount = result.skipped ?? 0;
-      const skippedNote = skippedCount > 0
+      const skippedList = decision === 'shortlist' ? (result.skipped_candidates || []) : [];
+      const skippedNote = skippedCount > 0 && skippedList.length === 0
         ? ` ${skippedCount} already had a record for this role and ${skippedCount === 1 ? 'was' : 'were'} left unchanged.`
         : '';
       const failures = result.email_failures || [];
       const verb = decision === 'reject' ? 'Rejected' : 'Shortlisted';
+
+      if (skippedList.length > 0) {
+        // N21: name each one left out and why, instead of a bare count.
+        const skippedIds = new Set(skippedList.map((x) => String(x.cv_id)));
+        const selectedRole = roles.find((r) => r.id === mrfId);
+        setShortlistResult({
+          roleLabel: selectedRole ? mrfOptionLabel(selectedRole) : roleName,
+          added: selectedList.filter((c) => !skippedIds.has(String(c.id))).map((c) => c.Name || 'Candidate'),
+          emailed: sendEmail && failures.length === 0,
+          skipped: skippedList,
+        });
+      }
 
       if (failures.length > 0) {
         // Group identical reasons so the message stays readable for bulk actions.
@@ -774,6 +819,8 @@ export default function CandidateScreening() {
           ),
           duration: 0,
         });
+      } else if (skippedList.length > 0) {
+        // The result dialog says it all.
       } else {
         const emailNote = sendEmail
           ? ` Sent ${emailsSent} notification email(s).`
@@ -815,7 +862,8 @@ export default function CandidateScreening() {
       setSelectedCandidateKeys([]);
       setDecisionModalOpen(null);
 
-      const decidedIds = new Set(selectedList.map((c) => c.id));
+      const leftOut = new Set(skippedList.map((x) => String(x.cv_id)));
+      const decidedIds = new Set(selectedList.map((c) => c.id).filter((id) => !leftOut.has(String(id))));
       if (decision === 'reject') {
         // A rejected candidate should no longer sit in this role's current result
         // list (the backend also excludes them from future searches of this role).
@@ -1128,11 +1176,15 @@ export default function CandidateScreening() {
                             loading={loadingRoles}
                             value={selectedRoleId}
                             onChange={handleRoleSelect}
-                            optionFilterProp="children"
-                            options={roles.map((r) => ({
-                              value: r.id,
-                              label: `${r.role} (${r.number_of_positions} openings)`,
-                            }))}
+                            optionFilterProp="label"
+                            options={roleOptions}
+                            optionRender={(opt) => (
+                              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                <span style={opt.data.role?.closed ? { color: 'var(--text-3)' } : undefined}>{opt.data.label}</span>
+                                {opt.data.role?.isLatest && <Tag color="green" style={{ margin: 0 }}>Latest</Tag>}
+                                {opt.data.role?.closed && <Tag style={{ margin: 0 }}>Closed</Tag>}
+                              </Space>
+                            )}
                           />
                           <Tooltip title="Refresh roles & candidates">
                             <Button
@@ -1143,6 +1195,25 @@ export default function CandidateScreening() {
                             />
                           </Tooltip>
                         </Space.Compact>
+                        <Checkbox
+                          checked={includeClosedMrfs}
+                          onChange={(e) => setIncludeClosedMrfs(e.target.checked)}
+                          style={{ marginTop: 4 }}
+                        >
+                          Include closed MRFs
+                        </Checkbox>
+                        {selectedRoleClosed && (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginTop: 4 }}
+                            message={
+                              `This MRF was closed${selectedRole.closed_at ? ` on ${fmtDate(selectedRole.closed_at)}` : ''}`
+                              + `${selectedRole.closure_reason ? ` (${closureReasonLabel(selectedRole.closure_reason)})` : ''}.`
+                              + ' Results are read-only: Shortlist and Reject are turned off.'
+                            }
+                          />
+                        )}
                       </Space>
                     </Col>
 
@@ -1724,6 +1795,11 @@ export default function CandidateScreening() {
                             )}
                           </Space>
 
+                          {/* When the candidate entered the database (N27) — "–" for legacy rows with no date. */}
+                          <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                            Added on <strong style={{ color: 'var(--text-2)' }}>{fmtDate(c.createdAt)}</strong>
+                          </div>
+
                           {/* Shortlisted/Rejected by/on — plainly visible, no hover required */}
                           {c.shortlisted_by && (
                             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
@@ -1994,6 +2070,8 @@ export default function CandidateScreening() {
             type="primary"
             icon={<CheckCircleOutlined />}
             onClick={() => openDecisionModal('shortlist')}
+            disabled={activeTab === 'jd' && selectedRoleClosed}
+            title={activeTab === 'jd' && selectedRoleClosed ? 'This MRF is closed' : undefined}
             style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Shortlist Selected
@@ -2002,6 +2080,8 @@ export default function CandidateScreening() {
             danger
             icon={<CloseCircleOutlined />}
             onClick={() => openDecisionModal('reject')}
+            disabled={activeTab === 'jd' && selectedRoleClosed}
+            title={activeTab === 'jd' && selectedRoleClosed ? 'This MRF is closed' : undefined}
             style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Reject Selected
@@ -2029,6 +2109,15 @@ export default function CandidateScreening() {
         confirmLoading={isShortlisting}
         onCancel={() => setDecisionModalOpen(null)}
         onConfirm={handleDecisionConfirm}
+      />
+
+      <ShortlistResultModal
+        open={Boolean(shortlistResult)}
+        roleLabel={shortlistResult?.roleLabel || ''}
+        added={shortlistResult?.added}
+        emailed={shortlistResult?.emailed}
+        skipped={shortlistResult?.skipped}
+        onClose={() => setShortlistResult(null)}
       />
 
       {/* Full-page blocker while the shortlist/reject request (incl. email sends) runs.

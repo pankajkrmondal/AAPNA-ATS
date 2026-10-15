@@ -8,7 +8,8 @@ import path from 'path';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
 import redis from '../config/redis.js';
-import { uploadFileToOneDrive } from '../services/onedrive.service.js';
+import { uploadFileToOneDrive, uploadFileToOneDriveDetailed } from '../services/onedrive.service.js';
+import { saveMrfJdItemId } from '../services/jdAttachment.service.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
@@ -30,6 +31,7 @@ import {
 } from '../services/mrfApproval.service.js';
 import { MAX_COMMENT_LENGTH } from '../utils/mrfApprovalRules.js';
 import { isAdminTier } from '../config/roles.js';
+import { broadcast } from '../socket/index.js';
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -483,6 +485,7 @@ export const updateMainMrf = catchAsync(async (req, res) => {
     data: dataToUpdate,
   });
   await clearScreeningCache(updated.id, { insights: true });
+  broadcastMrfUpdated(updated.id, 'edited');
 
   return success(
     res,
@@ -490,6 +493,22 @@ export const updateMainMrf = catchAsync(async (req, res) => {
     'Main MRF details updated successfully'
   );
 });
+
+/**
+ * Tells every open screen that the approved-MRF list changed (N19): the role
+ * dropdowns (JD filtering, shortlist dialog) refetch on `mrf:updated`, just as
+ * they already do on `mrf:closed`. Best effort — a socket failure never undoes
+ * the change it reports.
+ * @param {bigint|number|string} mrfId
+ * @param {'edited'|'approved'|'rejected'} reason
+ */
+function broadcastMrfUpdated(mrfId, reason) {
+  try {
+    broadcast('mrf:updated', { mrf_id: Number(mrfId), reason });
+  } catch (err) {
+    logger.warn(`MRF ${mrfId} ${reason}, but the mrf:updated broadcast failed: ${err.message}`);
+  }
+}
 
 /**
  * Helper to generate the legacy HTML table representation of the MRF data.
@@ -674,6 +693,8 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
   const testPaperFile = req.files && req.files['attach_online_test_paper'] ? req.files['attach_online_test_paper'][0] : null;
 
   let jdUrl = null;
+  // OneDrive item id of the JD, so keyword shortlist emails can attach the file (N17).
+  let jdItemId = null;
   let testPaperUrl = null;
   let jdText = '';
   let parsedJdJson = null;
@@ -681,7 +702,9 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
   // Process JD File
   if (jdFile) {
     try {
-      jdUrl = await uploadFileToOneDrive(jdFile.path, jdFile.originalname);
+      const uploadedJd = await uploadFileToOneDriveDetailed(jdFile.path, jdFile.originalname);
+      jdUrl = uploadedJd.webUrl;
+      jdItemId = uploadedJd.id || null;
       const fileBuffer = fs.readFileSync(jdFile.path);
       jdText = await extractTextFromBuffer(fileBuffer, jdFile.mimetype);
     } catch (err) {
@@ -837,6 +860,8 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     },
   });
 
+  if (jdItemId) await saveMrfJdItemId(newMrf.id, jdItemId);
+
   // 3) Update Parent rpa_mrf_jd_send record status
   let parentRecord = null;
   if (parent_id) {
@@ -982,6 +1007,8 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
       { token: String(token), action: normalizedAction, comments },
       approvalClientOf(req),
     );
+    // A newly approved MRF must appear in the role dropdowns without a reload.
+    broadcastMrfUpdated(id, result.approval_status === 'approved' ? 'approved' : 'rejected');
     return success(res, result, `Requisition request successfully ${result.approval_status}`);
   }
 
@@ -1091,6 +1118,7 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
       logger.error(`Failed to import email module for outcome notifications: ${err.message}`);
     });
 
+  broadcastMrfUpdated(id, updatedMrf.approval_status === 'approved' ? 'approved' : 'rejected');
   return success(res, { approval_status: updatedMrf.approval_status }, `Requisition request successfully ${updatedMrf.approval_status}`);
 });
 

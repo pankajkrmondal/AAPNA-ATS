@@ -37,6 +37,7 @@ import {
   parseApproverRoster,
   publicDecision,
   summarizeUserAgent,
+  titleForApprover,
 } from '../utils/mrfApprovalRules.js';
 import {
   sendMrfPersonalApprovalEmail,
@@ -164,12 +165,24 @@ export async function verifyApprovalLink(id, token) {
     decoded = jwt.verify(token, config.jwt.secret);
   } catch (err) {
     if (err?.name === 'TokenExpiredError') {
+      // Re-verify with expiry ignored: only a link WE signed, for THIS MRF,
+      // may still show the decision (N16). A forged or foreign token stays a
+      // plain "expired" error and reveals nothing.
+      let stale = null;
+      try {
+        stale = jwt.verify(token, config.jwt.secret, { ignoreExpiration: true });
+      } catch {
+        stale = null;
+      }
+      const signedForThisMrf = Boolean(stale)
+        && String(stale.mrfId) === String(id)
+        && (!stale.jti || stale.typ === APPROVAL_TOKEN_TYP);
       // Still attribute the attempt to its approver, if it was a personal link.
-      const peek = jwt.decode(token);
+      const peek = stale || jwt.decode(token);
       const expiredTokenRow = peek?.jti && /^[0-9a-f-]{36}$/i.test(peek.jti)
         ? await prisma.rpa_mrf_approval_tokens.findUnique({ where: { token_jti: peek.jti } }).catch(() => null)
         : null;
-      return { error: 'expired', expiredTokenRow };
+      return { error: 'expired', expiredTokenRow, signedForThisMrf };
     }
     return { error: 'invalid' };
   }
@@ -182,6 +195,47 @@ export async function verifyApprovalLink(id, token) {
 }
 
 async function rejectBadLink(id, verdict, client) {
+  await recordBadLink(id, verdict, client);
+  if (verdict.error === 'mismatch') throw new AppError('Token verification failed: Resource ID mismatch.', 403);
+  throw new AppError(
+    verdict.error === 'expired'
+      ? 'This approval link has expired. Please ask the HR team to send you a new one.'
+      : 'Invalid or expired approval token.',
+    401,
+  );
+}
+
+/**
+ * An expired link that we signed for this MRF, on an MRF that is already
+ * decided: the approver is shown who decided instead of "link expired" (N16).
+ * @returns {Promise<object|null>} the rpa_mrf row, or null when the normal
+ *   rejection applies
+ */
+async function decidedMrfBehindExpiredLink(id, verdict) {
+  if (verdict.error !== 'expired' || !verdict.signedForThisMrf || !/^\d+$/.test(String(id))) return null;
+  const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
+  return mrf && publicDecision(mrf, null) ? mrf : null;
+}
+
+/** Title (e.g. "CEO") of whoever decided, from the approver roster. Never throws. */
+async function decidedByTitleFor(mrf) {
+  if (!mrf?.decided_by_email) return null;
+  try {
+    return titleForApprover(await getApproverRoster(), mrf.decided_by_email);
+  } catch {
+    return null;
+  }
+}
+
+/** "This MRF has already been approved by the CEO Abhijit Roy on 9 Oct 2026, 10:43 AM IST." */
+function alreadyDecidedMessage(mrf, title) {
+  const name = mrf?.decided_by_name && !String(mrf.decided_by_name).startsWith('Unknown') ? mrf.decided_by_name : null;
+  const by = name ? ` by ${title ? `the ${title} ` : ''}${name}` : '';
+  const when = mrf?.decided_at ? ` on ${formatIst(mrf.decided_at)}` : '';
+  return `This MRF has already been ${decisionWord(mrf?.approval_status)}${by}${when}.`;
+}
+
+async function recordBadLink(id, verdict, client) {
   if (/^\d+$/.test(String(id)) && shouldRecordFailure(`${client.ip}:${id}:${verdict.error}`)) {
     const exists = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) }, select: { id: true } }).catch(() => null);
     if (exists) {
@@ -199,13 +253,6 @@ async function rejectBadLink(id, verdict, client) {
       });
     }
   }
-  if (verdict.error === 'mismatch') throw new AppError('Token verification failed: Resource ID mismatch.', 403);
-  throw new AppError(
-    verdict.error === 'expired'
-      ? 'This approval link has expired. Please ask the HR team to send you a new one.'
-      : 'Invalid or expired approval token.',
-    401,
-  );
 }
 
 /** Link state the page shows for a personal token. */
@@ -259,13 +306,18 @@ async function trackLinkOpen(tokenRow, mrf, client) {
  */
 export async function getPublicDetails(id, token, client) {
   const verdict = await verifyApprovalLink(id, token);
-  if (verdict.error) await rejectBadLink(id, verdict, client);
+  let expiredButDecided = null;
+  if (verdict.error) {
+    expiredButDecided = await decidedMrfBehindExpiredLink(id, verdict);
+    if (!expiredButDecided) await rejectBadLink(id, verdict, client);
+    await recordBadLink(id, verdict, client);
+  }
 
-  const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
+  const mrf = expiredButDecided || await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
   if (!mrf) throw new AppError('Requisition request not found.', 404);
 
-  const { tokenRow } = verdict;
-  if (tokenRow) await trackLinkOpen(tokenRow, mrf, client);
+  const tokenRow = expiredButDecided ? verdict.expiredTokenRow : verdict.tokenRow;
+  if (tokenRow && !expiredButDecided) await trackLinkOpen(tokenRow, mrf, client);
 
   const {
     decided_ip: _ip, decided_by_email: _email, decision_event_id: _ev, decision_comments: comments, ...safe
@@ -275,8 +327,10 @@ export async function getPublicDetails(id, token, client) {
     ...safe,
     id: mrf.id.toString(),
     approver: tokenRow ? { name: tokenRow.approver_name || tokenRow.approver_email } : null,
-    link_state: linkState(tokenRow, mrf),
-    decision: decision ? { ...decision, comments: comments || null } : null,
+    link_state: expiredButDecided ? 'expired' : linkState(tokenRow, mrf),
+    decision: decision
+      ? { ...decision, decidedByTitle: await decidedByTitleFor(mrf), comments: comments || null }
+      : null,
   };
 }
 
@@ -290,7 +344,16 @@ export async function getPublicDetails(id, token, client) {
  */
 export async function decide(id, { token, action, comments }, client) {
   const verdict = await verifyApprovalLink(id, token);
-  if (verdict.error) await rejectBadLink(id, verdict, client);
+  if (verdict.error) {
+    // An expired link can never decide, but on an MRF that is already decided
+    // the approver is told who decided rather than "link expired" (N16).
+    const decided = await decidedMrfBehindExpiredLink(id, verdict);
+    if (decided) {
+      await recordBadLink(id, verdict, client);
+      throw new AppError(alreadyDecidedMessage(decided, await decidedByTitleFor(decided)), 409);
+    }
+    await rejectBadLink(id, verdict, client);
+  }
 
   const mrf = await prisma.rpa_mrf.findUnique({ where: { id: BigInt(id) } });
   if (!mrf) throw new AppError('Requisition request not found.', 404);
@@ -371,11 +434,9 @@ export async function decide(id, { token, action, comments }, client) {
   if (result.conflict) {
     const current = await prisma.rpa_mrf.findUnique({
       where: { id: mrf.id },
-      select: { approval_status: true, decided_by_name: true, decided_at: true },
+      select: { approval_status: true, decided_by_name: true, decided_by_email: true, decided_at: true },
     });
-    const by = current?.decided_by_name ? ` by ${current.decided_by_name}` : '';
-    const when = current?.decided_at ? ` on ${formatIst(current.decided_at)}` : '';
-    throw new AppError(`This requisition has already been ${decisionWord(current?.approval_status)}${by}${when}.`, 409);
+    throw new AppError(alreadyDecidedMessage(current, await decidedByTitleFor(current)), 409);
   }
 
   // No token, ever. IP and browser are here too, so evidence also exists in

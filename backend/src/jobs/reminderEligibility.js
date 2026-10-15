@@ -71,7 +71,7 @@ export function isOpenHmRequest({ mrfstatus, mrf_id } = {}) {
  * Decide whether a selected log row should be reminded.
  *
  * @param {object} row — an rpa_email_log row plus the join columns selected by
- *   reminderScheduler.js: candidate_exists_id, cvMissingToken, mrf_exists_id,
+ *   reminderScheduler.js: candidate_exists_id, cvMissingToken, cvMissingTokenStatus, mrf_exists_id,
  *   mrf_approval_status, mrf_request_exists_id, mrf_request_status, mrf_request_mrf_id,
  *   and for personal approval links approval_token_id / _revoked_at /
  *   _revoked_reason / _used_at / _expires_at.
@@ -85,6 +85,12 @@ export function reminderSkipReason(row, now = Date.now()) {
       if (!row.candidate_exists_id) return `referenced candidate ID ${row.reference_id} does not exist`;
       // Never build a portal link with an empty token — the portal rejects it.
       if (!row.cvMissingToken) return `candidate ID ${row.reference_id} has no cvMissingToken; cannot build a valid portal link`;
+      // Backstop for N44: submitting the completed form closes these rows, but
+      // a row that slipped past (or predates that) must still never remind a
+      // candidate who has already given every detail.
+      if (String(row.cvMissingTokenStatus || '').toUpperCase() === 'RECEIVED') {
+        return `candidate ID ${row.reference_id} already completed the missing-details form`;
+      }
       return null;
 
     case MRF_HM_EMAIL_TYPE:

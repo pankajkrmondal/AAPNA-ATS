@@ -61,10 +61,19 @@ export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, s
     if (h > 0) iframe.style.height = `${h}px`;
   };
 
+  // False once the editor has unmounted: the paste handler defers its sync
+  // with setTimeout, and closing the dialog/drawer in that gap must not push
+  // a stale body into a parent that is already gone (N30).
+  const mountedRef = useRef(true);
+
   // Stop observing when the editor unmounts (it remounts per template).
-  useEffect(() => () => {
-    resizeObsRef.current?.disconnect();
-    resizeObsRef.current = null;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      resizeObsRef.current?.disconnect();
+      resizeObsRef.current = null;
+    };
   }, []);
 
   // Frozen on first mount only — reloading on every keystroke would drop the
@@ -90,6 +99,7 @@ export default function useEmailIframeEditor({ initialHtml, onChange, wrapper, s
 
   /** Reads back only the editable region — the slot in protected-chrome mode, the whole document otherwise. */
   const syncFromEditor = () => {
+    if (!mountedRef.current) return;
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
     const slot = doc.querySelector('[data-editable-body]');

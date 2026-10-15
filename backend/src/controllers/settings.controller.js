@@ -25,6 +25,7 @@ import {
 import { isAttendanceEnabled, isGuestCandidateMode } from '../services/graphAttendance.service.js';
 import { isRecordingFetchEnabled } from '../services/graphRecording.service.js';
 import { isCalendarEnabled } from '../services/graphCalendar.service.js';
+import { getCompanyProfile, saveCompanyProfileText, COMPANY_PROFILE_MAX_LENGTH } from '../services/companyProfile.service.js';
 import {
   parseOptionalAttendees,
   getOptionalAttendeeEmails,
@@ -537,3 +538,26 @@ export const saveFlowKey = catchAsync(async (req, res) => {
   return success(res, describeFlowKeys().find((f) => f.flowKey === flowKey), 'Email routing updated successfully');
 });
 
+/**
+ * @desc    "About AAPNA" text added to keyword shortlist emails (N17)
+ * @route   GET /api/settings/company-profile
+ * @access  Private
+ */
+export const getCompanyProfileSetting = catchAsync(async (req, res) => {
+  return success(res, await getCompanyProfile(), 'Company profile retrieved');
+});
+
+/**
+ * @desc    Save the "About AAPNA" text (plain text; empty = nothing added to emails)
+ * @route   POST /api/settings/company-profile
+ * @access  Admin (requireAdmin on the route)
+ */
+export const saveCompanyProfileSetting = catchAsync(async (req, res) => {
+  const { text } = req.body || {};
+  if (text !== undefined && typeof text !== 'string') throw new AppError('text must be a string.', 400);
+  if (String(text || '').length > COMPANY_PROFILE_MAX_LENGTH) {
+    throw new AppError(`About AAPNA can be at most ${COMPANY_PROFILE_MAX_LENGTH} characters.`, 400);
+  }
+  const saved = await saveCompanyProfileText(text || '');
+  return success(res, saved, saved.text ? 'About AAPNA saved' : 'About AAPNA cleared');
+});

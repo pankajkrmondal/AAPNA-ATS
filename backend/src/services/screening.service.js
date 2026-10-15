@@ -7,31 +7,57 @@ import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, lo
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
-import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage } from '../config/pipelineStages.js';
+import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LEGACY_MRF_CLOSED_STATUS } from '../config/pipelineStages.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
-import { createPipelineJourney } from './pipeline.service.js';
-import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
+import { createPipelineJourney, findRecentRejection } from './pipeline.service.js';
+import { getCompanyProfileText } from './companyProfile.service.js';
+import { fmtIstDate } from '../utils/missingDetails.js';
+import { getCooldownCutoff, REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
 import { Prisma } from '@prisma/client';
 import { emailMatchesSql } from '../utils/emailMatch.js';
 import { matchesQualification, getCandidateEducationCategories } from '../utils/educationCategories.js';
 // Shared with screeningV2.service.js (Phase 3 N01); identical to the local copy it replaced.
-import { splitSkillPhrases } from '../utils/screeningFilters.js';
+import { splitSkillPhrases, parseScreeningFilters } from '../utils/screeningFilters.js';
+import { firstValidPhone, toIndianE164, maskPhone } from '../utils/phone.js';
+import { companyBlockHtml, jdLinkHtml, phoneConfirmHtml, appendToBody } from '../utils/candidateEmailBlocks.js';
+import { getMrfJdAttachment } from './jdAttachment.service.js';
 
 /**
  * GET /api/screening/roles
+ *
+ * Every approved MRF, one entry per requisition (N19). This used to be
+ * DISTINCT ON (position_hiring_for), which collapsed four ".NET Developer"
+ * MRFs into the newest one, so recruiters could not pick the older ones at all.
+ * Each entry now carries its reference and date, and `isLatest` marks the
+ * newest open MRF for each role name.
+ *
+ * Open MRFs come first, grouped by role name, newest first within a name.
+ * With `includeClosed` (N20) the filled / closed ones follow, most recently
+ * closed first, flagged `closed` with when and why — JD screening can then
+ * still find a role such as QA Automation after its MRF closed.
+ *
+ * @param {{ includeClosed?: boolean }} [opts]
+ * @returns {Promise<Array<{ id: number, ref: string, role: string, number_of_positions: number,
+ *   created_at: Date, isLatest: boolean, closed: boolean, closed_at: Date|null, closure_reason: string|null }>>}
  */
-export async function getApprovedRoles() {
+export async function getApprovedRoles({ includeClosed = false } = {}) {
   const mrfList = await prisma.$queryRawUnsafe(
-    `SELECT DISTINCT ON (position_hiring_for)
-        id,
+    `SELECT id,
         position_hiring_for AS role,
         number_of_positions,
-        created_at
+        created_at,
+        filled_at,
+        closed_at,
+        closure_reason,
+        approval_status
     FROM rpa_mrf
     WHERE (
             approval_status = 'approved'
          OR (approval_status = 'completed' AND approved_by_abhijit IN ('approved', 'true'))
+            -- Pre-migration rows closed by the old lossy path (isMrfFilled):
+            -- only ever listed as closed, never as open.
+         OR ($1::boolean AND approval_status = $2)
           )
       -- Filled requisitions leave JD filtering. This used to happen implicitly
       -- because closure overwrote approval_status to 'closed'; that was lossy
@@ -39,22 +65,61 @@ export async function getApprovedRoles() {
       -- and has to be filtered explicitly.
       -- The approval test above MUST stay parenthesised: AND binds tighter than
       -- OR, so without the brackets plain 'approved' rows would skip this check.
-      AND filled_at IS NULL
       -- …and manually closed ones too (Q34, 2026-08-26). A requisition the
       -- business cancelled — budget pulled, role withdrawn, hired externally —
       -- had no representation at all before closed_at existed, so it sat in
       -- this dropdown forever. THIS is the line that takes it out; the partial
       -- index idx_rpa_mrf_open was widened to match both predicates.
-      AND closed_at IS NULL
-    ORDER BY position_hiring_for, created_at DESC;`
+      -- includeClosed (N20) lifts both, on request only.
+      AND ($1::boolean OR (filled_at IS NULL AND closed_at IS NULL))
+    ORDER BY position_hiring_for, created_at DESC, id DESC;`,
+    includeClosed,
+    LEGACY_MRF_CLOSED_STATUS,
   );
 
-  return mrfList.map(mrf => ({
-    id: Number(mrf.id),
-    role: mrf.role,
-    number_of_positions: Number(mrf.number_of_positions || 0),
-    created_at: mrf.created_at
-  }));
+  const rows = mrfList.map((mrf) => {
+    const closed = isMrfClosed(mrf);
+    return {
+      id: Number(mrf.id),
+      ref: `MRF-${Number(mrf.id)}`,
+      role: mrf.role,
+      number_of_positions: Number(mrf.number_of_positions || 0),
+      created_at: mrf.created_at,
+      isLatest: false,
+      closed,
+      closed_at: closed ? (mrf.closed_at || mrf.filled_at || null) : null,
+      closure_reason: closed ? (mrf.closure_reason || null) : null,
+    };
+  });
+
+  // Rows arrive grouped by name, newest first: the first OPEN row of each name
+  // is the latest. Role names are free text, so compare them loosely.
+  const seen = new Set();
+  for (const r of rows) {
+    const name = String(r.role || '').trim().toLowerCase();
+    if (!r.closed && !seen.has(name)) {
+      r.isLatest = true;
+      seen.add(name);
+    }
+  }
+
+  const open = rows.filter((r) => !r.closed);
+  const closedRows = rows
+    .filter((r) => r.closed)
+    .sort((a, b) => new Date(b.closed_at || 0) - new Date(a.closed_at || 0));
+  return [...open, ...closedRows];
+}
+
+/**
+ * The public missing-details form (candidate-facing) lists each role NAME
+ * once — no MRF references or dates — and submits the role text (N19).
+ * @returns {Promise<Array<{ id: number, role: string, number_of_positions: number, created_at: Date }>>}
+ */
+export async function getPublicRoleNames() {
+  const roles = await getApprovedRoles();
+  return roles
+    .filter((r) => r.isLatest)
+    .map(({ id, role, number_of_positions, created_at }) => ({ id, role, number_of_positions, created_at }));
 }
 
 /**
@@ -1089,6 +1154,12 @@ export async function searchKeywordCandidates(filters) {
   const fGender = (filters.gender || '').toLowerCase().trim();
   const fNoticePeriod =
     filters.noticePeriod != null && filters.noticePeriod !== '' ? parseFloat(filters.noticePeriod) : null;
+  // "Added within" (7/15/30/90 days). The form offers it whether or not
+  // SCREENING_V2 is on, and this search used to drop it silently, listing
+  // candidates added months ago under "Last 30 days". Same validation and rule
+  // as the strict search: whole days 1-3650, and a candidate with no
+  // createdAt is excluded while the filter is set.
+  const fAddedWithinDays = parseScreeningFilters({ addedWithinDays: filters.addedWithinDays }).addedWithinDays;
 
   let candidates = [];
   let keywordDegraded = false;
@@ -1123,6 +1194,11 @@ export async function searchKeywordCandidates(filters) {
     // Every id here comes from our own BigInt cv_id column (never user input) —
     // safe to inline directly, same treatment as the dynamically-built termClause/textGate above.
     const excludedIdsClause = excludedIds.size > 0 ? `AND c.id NOT IN (${[...excludedIds].join(',')})` : '';
+    // A validated integer (parseScreeningFilters), so safe to inline like the
+    // clauses above. NULL createdAt fails the comparison and is excluded.
+    const addedWithinClause = fAddedWithinDays != null
+      ? `AND c."createdAt" >= now() - make_interval(days => ${fAddedWithinDays})`
+      : '';
 
     // 1) Combined SQL Pre-filtered Vector Search (exp/CTC range + full-text + per-term match in DB to avoid candidate starvation)
     candidates = await prisma.$queryRawUnsafe(
@@ -1184,6 +1260,7 @@ export async function searchKeywordCandidates(filters) {
                ${textGate}
            )
            ${excludedIdsClause}
+           ${addedWithinClause}
        ORDER BY distance ASC`,
       vectorStr,
       fExpMin || 0,
@@ -1250,6 +1327,11 @@ export async function searchKeywordCandidates(filters) {
 
     if (excludedIds.size > 0) {
       where.id = { notIn: [...excludedIds].map((id) => BigInt(id)) };
+    }
+
+    // "Added within" — see fAddedWithinDays above. `gte` never matches NULL.
+    if (fAddedWithinDays != null) {
+      where.createdAt = { gte: new Date(Date.now() - fAddedWithinDays * 24 * 60 * 60 * 1000) };
     }
 
     candidates = await prisma.rpa_cv.findMany({
@@ -1673,10 +1755,16 @@ async function refreshCandidateVector(candidateId) {
  * POST /api/screening/shortlist
  */
 export async function shortlistCandidates(candidates, mrfId, roleName, user, options = {}) {
-  const { sendEmail = true, emailOverride = null } = options;
+  // source: where the shortlist came from — 'jd' / 'keyword' (Screening tabs)
+  // or 'search_candidate' (Search Candidate → Add to JD, N21). Only 'keyword'
+  // attaches the MRF's JD and the About AAPNA text (N17, Keyword shortlist only).
+  const { sendEmail = true, emailOverride = null, source = null } = options;
   let emailsSent = 0;
   let shortlistedCount = 0;
   let skippedCount = 0;
+  // Who was not shortlisted and why, by name (N21). Skipped candidates get no
+  // shortlist row and no email.
+  const skippedCandidates = [];
   const emailFailures = [];
   const pipelineEntries = [];
 
@@ -1685,6 +1773,26 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
   // such MRF) violates the rpa_shortlisted_candidates_mrf_id_fkey constraint.
   const mrfRef = mrfId > 0 ? BigInt(mrfId) : null;
   const searchType = mrfId > 0 ? 'jd' : 'keyword';
+
+  // A closed or filled MRF takes no new candidates (N20). The screen disables
+  // Shortlist for one; this is the server-side guard that matches it.
+  if (mrfRef) {
+    const mrf = await prisma.rpa_mrf.findUnique({
+      where: { id: mrfRef },
+      select: { filled_at: true, closed_at: true, approval_status: true, position_hiring_for: true },
+    });
+    if (!mrf) throw new AppError('MRF not found.', 404);
+    if (isMrfClosed(mrf)) {
+      throw new AppError(`"${mrf.position_hiring_for || `MRF-${mrfId}`}" (MRF-${mrfId}) is closed, so candidates cannot be shortlisted for it.`, 409);
+    }
+  }
+
+  // Keyword shortlists carry the MRF's JD and the About AAPNA text (N17).
+  // Read once for the whole batch; neither ever blocks an email.
+  const isKeywordShortlist = source === 'keyword' || (source === null && searchType === 'keyword');
+  const jd = sendEmail && isKeywordShortlist && mrfRef ? await getMrfJdAttachment(mrfRef) : null;
+  const companyBlock = sendEmail && isKeywordShortlist ? companyBlockHtml(await getCompanyProfileText()) : '';
+  const stageLabels = await stageLabelMap();
 
   // 1) Fetch template — skipped when the recruiter's edited draft (emailOverride)
   // fully replaces it, or when the email is being skipped entirely.
@@ -1716,6 +1824,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     if (exists?.pipeline_status === 'shortlisted') {
       logger.info(`Candidate ${c.Name} already shortlisted for MRF ${mrfId}, skipping.`);
       skippedCount++;
+      skippedCandidates.push({ cv_id: Number(candidateId), name: c.Name || 'Candidate', reason: 'already_shortlisted', message: mrfRef ? 'Already shortlisted for this MRF.' : 'Already shortlisted.' });
       continue;
     }
     if (exists && exists.pipeline_status !== 'rejected') {
@@ -1724,6 +1833,23 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
       // Re-shortlisting from a Screening search must never regress that stage.
       logger.info(`Candidate ${c.Name} has an existing '${exists.pipeline_status}' record for MRF ${mrfId} — leaving untouched, skipping.`);
       skippedCount++;
+      skippedCandidates.push({ cv_id: Number(candidateId), name: c.Name || 'Candidate', reason: 'in_pipeline', message: `Already in the pipeline for this MRF (${String(exists.pipeline_status).replace(/_/g, ' ')}).` });
+      continue;
+    }
+
+    // Re-application cool-off (N21). createPipelineJourney refuses a new
+    // journey within the window, but that refusal came AFTER the shortlist row
+    // and the email, so a cooled-off candidate was emailed with no journey to
+    // show for it. Checked first now: no row, no email, and the reason is named.
+    const priorRejection = await findRecentRejection(candidateId);
+    if (priorRejection) {
+      skippedCount++;
+      skippedCandidates.push({
+        cv_id: Number(candidateId),
+        name: c.Name || 'Candidate',
+        reason: 'cool_off',
+        message: coolOffMessage(priorRejection, stageLabels),
+      });
       continue;
     }
 
@@ -1820,11 +1946,21 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
       // per-candidate below, so one edited draft works correctly across a batch.
       const baseSubject = emailOverride?.subject ?? template.subject;
       const baseBody = emailOverride?.body ?? template.body_html;
-      const { subject, html: bodyHtml } = compileTemplate(baseSubject, baseBody, {
+      const { subject, html: compiledHtml } = compileTemplate(baseSubject, baseBody, {
         candidate_name: c.Name || 'Candidate',
         position: roleName,
         role_paragraph: roleParagraph,
       });
+      // N22: a candidate with no valid phone is asked to confirm it on the
+      // details form. N17: keyword shortlists add the JD link (when it cannot
+      // be attached) and the About AAPNA text.
+      const phoneLink = await requestPhoneIfMissing(candidateId);
+      const bodyHtml = appendToBody(
+        compiledHtml,
+        phoneLink ? phoneConfirmHtml(phoneLink) : '',
+        jd && !jd.attachment ? jdLinkHtml(jd.link) : '',
+        companyBlock,
+      );
 
       try {
         // Send from the authorized shared mailbox (MS_DEFAULT_SENDER_EMAIL).
@@ -1843,6 +1979,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
           cc: ccEmail,
           subject,
           html: injectTrackingPixel(bodyHtml, trackingToken),
+          attachments: jd?.attachment ? [jd.attachment] : [],
         });
 
         emailsSent++;
@@ -1863,6 +2000,8 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
             candidate_id: candidateId,
             mrf_id: mrfRef,
             shortlist_id: shortlist.id,
+            has_attachments: Boolean(jd?.attachment),
+            attachments_json: jd?.attachment ? [{ name: jd.attachment.name, size: jd.sizeBytes, kind: 'jd' }] : undefined,
             sent_at: new Date(),
           },
         });
@@ -1925,10 +2064,64 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     success: true,
     shortlisted: shortlistedCount,
     skipped: skippedCount,
+    skipped_candidates: skippedCandidates,
     emails_sent: emailsSent,
     email_failures: emailFailures,
     pipeline_entries: pipelineEntries,
   };
+}
+
+/** stage_key -> label, for messages. */
+async function stageLabelMap() {
+  const rows = await prisma.rpa_pipeline_stages.findMany({ select: { stage_key: true, label: true } });
+  return new Map(rows.map((r) => [r.stage_key, r.label]));
+}
+
+/**
+ * "Rejected on 02 Jul 2026 (Tech 1). Can be added again after 02 Jan 2027." (N21)
+ * @param {{current_stage_key: string, modified_at: Date}} rejection
+ * @param {Map<string,string>} labels
+ */
+function coolOffMessage(rejection, labels) {
+  const rejectedOn = new Date(rejection.modified_at);
+  const again = new Date(rejectedOn);
+  again.setMonth(again.getMonth() + REAPPLICATION_COOLING_OFF_MONTHS);
+  const stage = labels.get(rejection.current_stage_key) || rejection.current_stage_key;
+  return `Rejected on ${fmtIstDate(rejectedOn)} (${stage}). Can be added again after ${fmtIstDate(again)}.`;
+}
+
+/**
+ * N22: when the candidate has no valid mobile number, puts ContactNumber on
+ * their missing-details list (so the public form asks for it) and returns the
+ * form link for the shortlist email. Returns null when a valid number exists.
+ * Never throws: a failure here must not stop the shortlist email.
+ * @param {bigint} cvId
+ * @returns {Promise<string|null>}
+ */
+async function requestPhoneIfMissing(cvId) {
+  try {
+    const cv = await prisma.rpa_cv.findUnique({
+      where: { id: cvId },
+      select: { ContactNumber: true, EmailID: true, missingData: true, cvMissingToken: true },
+    });
+    if (!cv || firstValidPhone(cv.ContactNumber) || !cv.EmailID) return null;
+    let missing = {};
+    try {
+      missing = cv.missingData ? (typeof cv.missingData === 'string' ? JSON.parse(cv.missingData) : cv.missingData) : {};
+    } catch {
+      missing = {};
+    }
+    missing.ContactNumber = missing.ContactNumber || 'Null';
+    const token = cv.cvMissingToken || Buffer.from(cv.EmailID).toString('base64');
+    await prisma.rpa_cv.update({
+      where: { id: cvId },
+      data: { missingData: JSON.stringify(missing), cvMissingToken: token },
+    });
+    return `${config.cors.frontendUrl}/missing-jd-upload?token=${token}`;
+  } catch (err) {
+    logger.warn(`Could not add the phone request for candidate ${cvId}: ${err.message}`);
+    return null;
+  }
 }
 
 /**
@@ -2432,12 +2625,22 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   // inbox, so no real candidate is ever invited from local or staging.
   const zekoUrl = `${config.zeko.scheduleApiBase}/interview/${interviewId}/schedule`;
   const zekoCandidateEmail = nonProdSafeCandidateEmail(shortlist.candidate_email, 'zeko:schedule');
+  // Phone (N22): Zeko's own SMS reminders need it — this used to be sent blank.
+  // First valid number on the CV, as +91XXXXXXXXXX. Same non-prod rule as the
+  // email above: Zeko texts this number itself, so outside production only the
+  // configured test number (ZEKO_TEST_PHONE) or nothing is sent.
+  const cvForPhone = shortlist.cv_id
+    ? await prisma.rpa_cv.findUnique({ where: { id: shortlist.cv_id }, select: { ContactNumber: true } })
+    : null;
+  const candidatePhone = toIndianE164(cvForPhone?.ContactNumber);
+  const zekoPhone = config.email.redirectInNonProd ? toIndianE164(config.zeko.testPhone) : candidatePhone;
+  logger.info(`Zeko API: phone for shortlist ${shortlistId}: ${candidatePhone ? maskPhone(candidatePhone) : '(none on file)'}${config.email.redirectInNonProd ? ` -> non-prod ${zekoPhone ? maskPhone(zekoPhone) : '(none sent)'}` : ''}`);
   const zekoPayload = {
     candidates: [
       {
         name: shortlist.candidate_name,
         email: zekoCandidateEmail,
-        phone: '',
+        phone: zekoPhone,
         resumeLink: '',
         metaData: {
           Id: shortlistId,

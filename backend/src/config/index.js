@@ -337,6 +337,12 @@ const config = {
   zeko: {
     apiUrl: env('ZEKO_API_URL', ''),
     apiKey: env('ZEKO_API_KEY', ''),
+    /**
+     * Outside production, the phone number sent to Zeko instead of the
+     * candidate's (N22): Zeko texts that number itself, so a real candidate must
+     * never get an SMS from local or staging. Empty = send no phone at all.
+     */
+    testPhone: env('ZEKO_TEST_PHONE', ''),
     /** Base for Zeko interview management API calls (schedule/cancel/results/token). */
     scheduleApiBase: env('ZEKO_SCHEDULE_API_BASE', 'https://interview-api.zeko.ai/api/v1'),
     /** Base for candidate-facing interview links. */

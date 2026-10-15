@@ -9,8 +9,25 @@ const screeningService = {
    * Get approved MRF roles list for selection dropdown.
    * @returns {Promise<{ data: Array }>}
    */
-  getRoles() {
-    return api.get('/screening/roles');
+  /**
+   * One entry per approved MRF (N19). `includeClosed` also lists filled /
+   * closed MRFs, flagged `closed` (N20). Also used directly as a React Query
+   * queryFn, whose context object carries no includeClosed — so only an explicit
+   * `true` asks for closed ones.
+   */
+  getRoles(opts = {}) {
+    return opts?.includeClosed === true
+      ? api.get('/screening/roles', { params: { includeClosed: 1 } })
+      : api.get('/screening/roles');
+  },
+
+  /**
+   * Whether this MRF's JD can go as an email attachment (N17).
+   * @param {number} mrfId
+   * @returns {Promise<{ data: { data: { attachable: boolean, name: string|null, size_bytes: number|null, has_link: boolean, reason: string|null } } }>}
+   */
+  getRoleJd(mrfId) {
+    return api.get(`/screening/roles/${mrfId}/jd`);
   },
 
   /**

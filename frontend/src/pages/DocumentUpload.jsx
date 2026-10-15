@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Button, Typography, Alert, Spin, Space, Result, Tag, Upload, message,
+  Button, Typography, Alert, Spin, Space, Result, Tag, Upload, App,
 } from 'antd';
 import {
   UploadOutlined, CheckCircleOutlined, FileTextOutlined, CloseCircleOutlined,
@@ -46,6 +46,9 @@ const STATUS_TAG = {
 };
 
 export default function DocumentUpload() {
+  // App.useApp(), not the static `message`: static toasts render outside the
+  // light ForceLight provider and picked up the user's dark theme (N31).
+  const { message } = App.useApp();
   const { token } = useParams();
 
   const [loading, setLoading] = useState(true);
@@ -278,6 +281,9 @@ export default function DocumentUpload() {
 
 /** One checklist row: what's needed, its state, and the file chooser. */
 function DocumentRow({ item, stagedFile, onChoose, onClear }) {
+  // App.useApp(), not the static `message`: static toasts render outside the
+  // light ForceLight provider and picked up the user's dark theme (N31).
+  const { message } = App.useApp();
   const tag = STATUS_TAG[item.status] || STATUS_TAG.pending;
   const locked = item.status === 'verified';
   // beforeUpload returning false keeps the file client-side; nothing is sent

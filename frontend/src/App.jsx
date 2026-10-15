@@ -3,13 +3,14 @@
  * Sets up React Router, AntD ConfigProvider with theme, Auth context,
  * Theme context, and route definitions with protected/public guards.
  */
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { AuthProvider } from './context/AuthContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, pushForceLight } from './context/ThemeContext';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import { BrandProvider } from './context/BrandContext';
 import useAuth from './hooks/useAuth';
 import useTheme from './hooks/useTheme';
@@ -261,15 +262,33 @@ const OVERLAY_CONFIG = {
  * data-theme="light" wrapper re-scopes the CSS variables (see the
  * `:root, [data-theme='light']` selector in theme/index.css); the nested
  * ConfigProvider pins AntD tokens.
+ *
+ * Portals (dropdowns, date pickers, modals, toasts) render on <body>, outside
+ * the wrapper, so <html data-theme> is pinned light too while the page is
+ * mounted (pushForceLight, N31). The nested <AntApp> gives these pages their
+ * own App.useApp() message/modal instances under the LIGHT ConfigProvider —
+ * the root one sits under the user's theme.
  */
 function ForceLight({ children }) {
+  useLayoutEffect(() => pushForceLight(), []);
   return (
     <ConfigProvider theme={lightTheme}>
-      <div data-theme="light" style={{ colorScheme: 'light', minHeight: '100vh' }}>
-        {children}
-      </div>
+      <AntApp>
+        <div data-theme="light" style={{ colorScheme: 'light', minHeight: '100vh' }}>
+          {children}
+        </div>
+      </AntApp>
     </ConfigProvider>
   );
+}
+
+/**
+ * Catches a render error anywhere in the routed app and shows the error screen
+ * instead of a blank page (N30). Navigating to another page clears it.
+ */
+function RouteErrorBoundary({ children }) {
+  const location = useLocation();
+  return <ErrorBoundary variant="page" resetKey={location.pathname}>{children}</ErrorBoundary>;
 }
 
 function AppShell() {
@@ -302,6 +321,7 @@ function AppShell() {
     <ConfigProvider theme={currentTheme} {...OVERLAY_CONFIG}>
       <AntApp>
         <BrowserRouter>
+          <RouteErrorBoundary>
           <Routes>
             {/* Public (auth) routes */}
             <Route
@@ -403,6 +423,7 @@ function AppShell() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </RouteErrorBoundary>
         </BrowserRouter>
       </AntApp>
     </ConfigProvider>

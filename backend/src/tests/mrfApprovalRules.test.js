@@ -21,6 +21,9 @@ import {
   parseApproverRoster,
   publicDecision,
   summarizeUserAgent,
+  approverLabel,
+  approverNoteHtml,
+  titleForApprover,
 } from '../utils/mrfApprovalRules.js';
 import { reminderSkipReason, MRF_APPROVAL_REQUEST_EMAIL_TYPE } from '../jobs/reminderEligibility.js';
 import { splitSql } from '../utils/splitSql.js';
@@ -53,6 +56,36 @@ test('roster: missing/invalid setting falls back to the flow-key emails (submiss
   assert.match(parseApproverRoster(JSON.stringify([{ email: 'nope' }]), fb).error, /invalid email/);
   // name defaults to the email
   assert.deepEqual(parseApproverRoster(null, 'a@b.co').approvers, [{ email: 'a@b.co', name: 'a@b.co' }]);
+});
+
+test('roster: optional title is carried when set and absent otherwise (N16)', () => {
+  const r = parseApproverRoster(JSON.stringify([
+    { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy', title: ' CEO ' },
+    { email: 'sroy@aapnainfotech.com', name: 'Sanghamitra Roy', title: '' },
+  ]), '');
+  assert.deepEqual(r.approvers, [
+    { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },
+    { email: 'sroy@aapnainfotech.com', name: 'Sanghamitra Roy' },
+  ]);
+  assert.equal(titleForApprover(r.approvers, 'AROY@aapnainfotech.com'), 'CEO');
+  assert.equal(titleForApprover(r.approvers, 'sroy@aapnainfotech.com'), null);
+  assert.equal(titleForApprover(r.approvers, null), null);
+  assert.equal(titleForApprover(r.approvers, 'someone@else.com'), null);
+});
+
+test('approval email note names the other approvers with their titles (N32)', () => {
+  assert.equal(approverLabel({ name: 'Abhijit Roy', title: 'CEO' }), 'Abhijit Roy (CEO)');
+  assert.equal(approverLabel({ name: 'Abhijit Roy' }), 'Abhijit Roy');
+  assert.equal(
+    approverNoteHtml([{ name: 'Sanghamitra Roy', title: 'CHRO' }]),
+    'This request was also sent to <strong>Sanghamitra Roy (CHRO)</strong>. The first decision is final.',
+  );
+  assert.equal(
+    approverNoteHtml([{ name: 'A' }, { name: 'B' }, { name: 'C <x>' }]),
+    'This request was also sent to <strong>A</strong>, <strong>B</strong> and <strong>C &lt;x&gt;</strong>. The first decision is final.',
+  );
+  assert.equal(approverNoteHtml([]), '', 'a sole approver gets no "also sent to" line');
+  assert.doesNotMatch(approverNoteHtml([{ name: 'Staging Approver A' }]), /Approver A \/ Approver B/);
 });
 
 test('normalizeIp: keeps real v4/v6, strips the v4-mapped prefix, rejects junk (stored as NULL)', () => {

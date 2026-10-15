@@ -4,8 +4,24 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
+import { approverNoteHtml } from '../utils/mrfApprovalRules.js';
 
 
+
+/**
+ * Graph `fileAttachment` objects for a message (N17). Pure, for unit tests.
+ * @param {Array<{name: string, contentType?: string, contentBytes: string}>} attachments
+ */
+export function buildGraphAttachments(attachments = []) {
+  return attachments
+    .filter((a) => a && a.name && a.contentBytes)
+    .map((a) => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: String(a.name),
+      contentType: a.contentType || 'application/octet-stream',
+      contentBytes: a.contentBytes,
+    }));
+}
 
 /**
  * Sends a HTML email using the Microsoft Graph API.
@@ -34,10 +50,14 @@ import { getAccessToken } from './onedrive.service.js';
  * @param {boolean} [params.allowRealRecipients=false] - bypass the non-prod
  *   redirect. ONLY for flows whose key is in NEVER_REDIRECT or
  *   OPERATOR_ADDRESSED; pass the resolved recipients straight through.
+ * @param {Array<{name: string, contentType?: string, contentBytes: string}>} [params.attachments]
+ *   file attachments, contentBytes base64 (N17). Graph takes them inline up
+ *   to ~3 MB in total — callers cap the size and fall back to a link above it
+ *   (see jdAttachment.service.js).
  * @returns {Promise<{graphMessageId: string|null, conversationId: string|null, internetMessageId: string|null}>}
  *   Truthy on success (so old boolean-style callers keep working); throws on failure.
  */
-export async function sendGraphEmail({ sender, to, cc = '', subject, html, allowRealRecipients = false }) {
+export async function sendGraphEmail({ sender, to, cc = '', subject, html, allowRealRecipients = false, attachments = [] }) {
   const defaultSender = config.microsoft.defaultSender || 'pkmondal@aapnainfotech.com';
   const requestedSender = sender || defaultSender;
 
@@ -111,10 +131,11 @@ export async function sendGraphEmail({ sender, to, cc = '', subject, html, allow
         content: html
       },
       toRecipients,
-      ...(ccRecipients.length > 0 ? { ccRecipients } : {})
+      ...(ccRecipients.length > 0 ? { ccRecipients } : {}),
+      ...(attachments?.length ? { attachments: buildGraphAttachments(attachments) } : {})
     };
 
-    logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}...`);
+    logger.info(`MS Graph Email: Attempting to send email from "${activeSender}" to "${to}"${cc ? ` cc "${cc}"` : ''}${attachments?.length ? ` with ${attachments.length} attachment(s)` : ''}...`);
 
     // Legacy one-shot send: cannot capture Graph ids, but only needs Mail.Send.
     async function legacySendMail() {
@@ -527,12 +548,15 @@ export async function sendMissingDataEmail(candidate, hrUserEmail) {
       }
     });
 
-    // 3) Mark the token SENT (it was already written above).
+    // 3) Mark the token SENT (it was already written above), and stamp the
+    //    request date the first time only — a re-send keeps the original date,
+    //    which is what "responded in N days" on the completion alert counts from (N44).
     if (candidate.id) {
-      await prisma.rpa_cv.update({
-        where: { id: BigInt(candidate.id) },
-        data: { cvMissingTokenStatus: 'SENT' }
-      });
+      await prisma.$executeRaw`
+        UPDATE rpa_cv
+        SET "cvMissingTokenStatus" = 'SENT',
+            details_requested_at = COALESCE(details_requested_at, now())
+        WHERE id = ${BigInt(candidate.id)}`;
     }
 
     logger.info(`Missing data email sent & logged for candidate ID ${candidate.id}`);
@@ -1200,10 +1224,10 @@ export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherA
     const rejectLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=reject&token=${token}`;
     const { introText, subject } = await loadMrfApprovalTemplate();
 
-    const others = otherApprovers.map((a) => `<strong>${escapeHtml(a.name)}</strong>`).join(', ');
+    const alsoSent = approverNoteHtml(otherApprovers);
     const noteHtml = `
   <p style="background:#f4f7ec; border-left:4px solid #7a922e; padding:10px 14px; border-radius:4px; font-size:13px;">
-    ${others ? `This request was also sent to ${others}. <strong>Only one approval is needed</strong> — the first decision recorded applies, and everyone will be notified.<br/>` : ''}
+    ${alsoSent ? `${alsoSent}<br/>` : ''}
     These buttons are personal to you and record your decision under your name, so please do not forward this email.
   </p>`;
 

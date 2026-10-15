@@ -60,9 +60,59 @@ export function parseApproverRoster(settingValue, fallbackEmails = '') {
     if (seen.has(email.toLowerCase())) continue;
     seen.add(email.toLowerCase());
     const name = String(entry?.name || '').trim() || email;
-    approvers.push({ email, name });
+    // Optional job title (N16), e.g. "CEO" / "CHRO". Only carried when set, so
+    // a roster without titles parses exactly as before.
+    const title = String(entry?.title || '').trim().slice(0, MAX_TITLE_LENGTH);
+    approvers.push(title ? { email, name, title } : { email, name });
   }
   return { approvers, source: 'setting' };
+}
+
+const MAX_TITLE_LENGTH = 60;
+
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+/**
+ * "Abhijit Roy (CEO)", or just the name when the roster has no title.
+ * @param {{ name?: string, title?: string }|null} approver
+ */
+export function approverLabel(approver) {
+  const name = String(approver?.name || '').trim();
+  const title = String(approver?.title || '').trim();
+  return title ? `${name} (${title})` : name;
+}
+
+/**
+ * The "also sent to" sentence in a personal approval email (N32), as HTML.
+ * Empty when this approver is the only one.
+ * @param {{ name?: string, title?: string }[]} otherApprovers
+ */
+export function approverNoteHtml(otherApprovers = []) {
+  const others = otherApprovers
+    .filter((a) => a && String(a.name || '').trim())
+    .map((a) => `<strong>${escapeHtml(approverLabel(a))}</strong>`);
+  if (others.length === 0) return '';
+  const list = others.length === 1
+    ? others[0]
+    : `${others.slice(0, -1).join(', ')} and ${others[others.length - 1]}`;
+  return `This request was also sent to ${list}. The first decision is final.`;
+}
+
+/**
+ * Title of whoever decided, looked up in the roster by the decider's email —
+ * the email itself never leaves the server (N16).
+ * @param {{ email: string, title?: string }[]} approvers
+ * @param {string|null} deciderEmail
+ * @returns {string|null}
+ */
+export function titleForApprover(approvers = [], deciderEmail) {
+  if (!deciderEmail) return null;
+  const hit = approvers.find((a) => a.email.toLowerCase() === String(deciderEmail).toLowerCase());
+  return hit?.title || null;
 }
 
 /**

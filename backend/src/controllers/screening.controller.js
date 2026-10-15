@@ -6,14 +6,35 @@ import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import screeningExport from '../exports/screening.export.js';
+import { getMrfJdAttachment } from '../services/jdAttachment.service.js';
 
 /**
- * GET /api/screening/roles
+ * GET /api/screening/roles[?includeClosed=1]
+ * One entry per approved MRF (N19); `includeClosed` also lists filled/closed
+ * MRFs after the open ones, flagged `closed` (N20).
  */
 export const getRoles = catchAsync(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  const roles = await screeningService.getApprovedRoles();
+  const flag = String(req.query.includeClosed || '').toLowerCase();
+  const roles = await screeningService.getApprovedRoles({ includeClosed: flag === '1' || flag === 'true' });
   return success(res, roles, 'Approved MRF roles retrieved successfully');
+});
+
+/**
+ * GET /api/screening/roles/:id/jd
+ * For the shortlist dialog's "JD attached" line (N17). Never returns the file itself.
+ */
+export const getRoleJdAttachment = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId) || mrfId <= 0) throw new AppError('Invalid MRF ID provided.', 400);
+  const jd = await getMrfJdAttachment(mrfId);
+  return success(res, {
+    attachable: Boolean(jd.attachment),
+    name: jd.name,
+    size_bytes: jd.sizeBytes,
+    has_link: Boolean(jd.link),
+    reason: jd.reason,
+  }, 'JD attachment details');
 });
 
 /**
@@ -82,7 +103,7 @@ export const exportRoleSummary = catchAsync(async (req, res) => runExport(
  * POST /api/screening/shortlist
  */
 export const shortlistCandidates = catchAsync(async (req, res) => {
-  const { candidates, mrf_id, role_name, send_email, email_override } = req.body;
+  const { candidates, mrf_id, role_name, send_email, email_override, source } = req.body;
   if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
     throw new AppError('Candidates array is required.', 400);
   }
@@ -94,6 +115,8 @@ export const shortlistCandidates = catchAsync(async (req, res) => {
   const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user, {
     sendEmail: send_email !== false,
     emailOverride: email_override || null,
+    // 'jd' | 'keyword' | 'search_candidate' — only 'keyword' attaches the JD (N17).
+    source: ['jd', 'keyword', 'search_candidate'].includes(source) ? source : null,
   });
   return success(res, result, 'Candidates shortlisted successfully');
 });

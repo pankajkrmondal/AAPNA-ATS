@@ -47,6 +47,9 @@ export const NOTIFICATION_TYPES = Object.freeze({
   ASSESSMENT_IMPORT_DONE: 'assessment.import_done',
   ASSESSMENT_DEADLINE_EXPIRED: 'assessment.deadline_expired',
   REVIEW_NEW: 'review.new',
+  // A candidate finished the public missing-details form (nothing left
+  // missing). Fires once per candidate — partial submissions never notify (N44).
+  CANDIDATE_DETAILS_COMPLETED: 'candidate.details_completed',
 });
 
 /** BigInt ids don't survive JSON.stringify — same helper the other services use. */

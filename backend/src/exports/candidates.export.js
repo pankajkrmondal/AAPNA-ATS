@@ -43,6 +43,8 @@ export const columns = [
   { header: 'Resume URL', key: 'cvFileUrl' },
   { header: 'Created At', key: 'createdAt', type: 'datetime' },
   { header: 'Last Modified', key: 'modifiedAt', type: 'datetime' },
+  { header: 'Details Requested', key: 'detailsRequestedAt', type: 'datetime' },
+  { header: 'Details Completed', key: 'detailsCompletedAt', type: 'datetime' },
 ];
 
 /**
@@ -56,7 +58,7 @@ export const columns = [
 export function parseFilters(req) {
   const {
     search, status, finalStatus, vendorEmail, position, location, name, email, phone,
-    vendorOnly,
+    vendorOnly, completedWithin,
   } = req.query;
 
   return {
@@ -70,6 +72,7 @@ export function parseFilters(req) {
     email,
     phone,
     vendorOnly: vendorOnly === 'true' || vendorOnly === '1',
+    completedWithin,
   };
 }
 
@@ -80,7 +83,9 @@ export async function fetch({ filters, user, max }) {
   const scoped = candidateService.enforceVendorScope(filters, user);
 
   return candidateService.findAllForExport(scoped, {
-    sort: 'createdAt',
+    // Same order the screen shows: newest completion first while the
+    // "Details completed in" filter is on (N44), newest added otherwise.
+    sort: scoped.completedWithin ? 'detailsCompletedAt' : 'createdAt',
     order: 'desc',
     max,
   });

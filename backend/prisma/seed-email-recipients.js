@@ -92,15 +92,25 @@ const RECIPIENTS = {
  * the decision is recorded under and what the other approvers are told.
  * Staging uses internal test mailboxes (mail is redirected to the test inbox
  * anyway); two entries so the "other approver is notified" path is exercised.
+ * Staging carries the PRODUCTION names and titles on those test mailboxes, so
+ * staging emails and the approval page read exactly as they will in
+ * production (N32) rather than "Staging Approver A / B".
+ *
+ * `title` is optional (N16): the approval page says "already approved by the
+ * CEO Abhijit Roy" and the email says "also sent to Sanghamitra Roy (CHRO)".
+ *
+ * NOTE this script overwrites EVERY email_recipients.* key as well. To change
+ * only the roster on a live database, update the `mrf_approvers` row alone
+ * (see docs/changelog/CHANGES-2026-10-14-phase3-week1.md, release steps).
  */
 const MRF_APPROVERS = {
   staging: [
-    { email: 'hmopuri@aapnainfotech.com', name: 'Staging Approver A' },
-    { email: 'saukumar@aapnainfotech.com', name: 'Staging Approver B' },
+    { email: 'hmopuri@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },
+    { email: 'saukumar@aapnainfotech.com', name: 'Sanghamitra Roy', title: 'CHRO' },
   ],
   production: [
-    { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy' },
-    { email: 'sroy@aapnainfotech.com', name: 'Sanghamitra Roy' },
+    { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },
+    { email: 'sroy@aapnainfotech.com', name: 'Sanghamitra Roy', title: 'CHRO' },
   ],
 };
 

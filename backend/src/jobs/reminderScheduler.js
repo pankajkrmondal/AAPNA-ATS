@@ -100,6 +100,7 @@ export async function sendPendingReminders() {
     const query = `
       SELECT el.*,
              c."cvMissingToken",
+             c."cvMissingTokenStatus",
              c.id AS candidate_exists_id,
              m.id AS mrf_exists_id,
              m.approval_status AS mrf_approval_status,

@@ -49,6 +49,9 @@ const upload = multer({
 
 // Public candidate routes (unauthenticated)
 router.get('/public/roles', candidateController.getPublicRoles);
+// Option lists for the candidate forms (N18): names only, cached for an hour.
+router.get('/public/locations', candidateController.getPublicLocations);
+router.get('/public/recruiters', candidateController.getPublicRecruiters);
 router.get('/public/missing-data', candidateController.getPublicMissingData);
 router.post('/public/missing-data', upload.single('uploadResume'), candidateController.submitPublicMissingData);
 

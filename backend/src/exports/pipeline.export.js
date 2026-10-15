@@ -132,7 +132,7 @@ export const columns = [
 export function parseFilters(req) {
   const {
     position, source, on_hold_only: onHoldOnly, rejected_only: rejectedOnly, stuck_days: stuckDays,
-    include_closed: includeClosed, mrf_id: mrfId, owned_by: ownedBy,
+    include_closed: includeClosed, mrf_id: mrfId, owned_by: ownedBy, position_mrf_id: positionMrfId,
   } = req.query;
 
   return {
@@ -142,7 +142,8 @@ export function parseFilters(req) {
     rejectedOnly: rejectedOnly === 'true' || rejectedOnly === '1',
     stuckDays: stuckDays ? Number(stuckDays) : undefined,
     includeClosed: includeClosed === 'true' || includeClosed === '1',
-    mrfId: mrfId || undefined,
+    // The board's per-MRF Position choice (N19) is just an MRF filter here.
+    mrfId: mrfId || positionMrfId || undefined,
     // Same server-side resolution as listPipeline — never trust a
     // client-supplied identity for "my candidates".
     ownedByUsername: ownedBy === 'me' ? req.user?.username : undefined,
