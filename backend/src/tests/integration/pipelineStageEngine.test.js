@@ -26,10 +26,15 @@ import prisma from '../../config/database.js';
 import { disconnectRedis } from '../../config/redis.js';
 import {
   setStageOutcome,
+  advanceStage,
   createPipelineJourney,
 } from '../../services/pipeline.service.js';
 import { STAGE_KEYS } from '../../config/pipelineStages.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL } from '../helpers/fixture.js';
+
+// Fixture journeys carry no Zeko/assessment/scorecard score, so an approval
+// needs the "approve without score" note since N25.
+const NO_SCORE_NOTE = 'Approved by the integration test without a score (N25).';
 
 /** Acting user — the seeded admin (id 2). */
 const ACTED_BY = 2;
@@ -118,7 +123,7 @@ describe('PIPE-01 — happy-path stage advance (approve)', () => {
     const { journey } = await makeJourney({ name: 'PIPE01' });
     assert.equal(journey.current_stage_key, STAGE_KEYS.ZEKO_HR, 'journeys must start at zeko_hr');
 
-    const result = await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    const result = await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
 
     // zeko_hr(20) -> assessment(30) is the next ACTIVE stage by sort_order.
     assert.equal(result.pipeline.current_stage_key, 'assessment');
@@ -191,8 +196,8 @@ describe('PIPE-03 — concurrent approval race', () => {
     const { journey } = await makeJourney({ name: 'PIPE03' });
 
     const [a, b] = await Promise.allSettled([
-      setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY }),
-      setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY }),
+      setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY }),
+      setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY }),
     ]);
 
     const fulfilled = [a, b].filter((r) => r.status === 'fulfilled');
@@ -235,7 +240,7 @@ describe('D3 — stale-tab decision must not double-advance', () => {
 
     // Tab A: approves from zeko_hr and completes. Not concurrent — awaited.
     const first = await setStageOutcome(journey.id, {
-      outcomeKey: 'approved',
+      outcomeKey: 'approved', notes: NO_SCORE_NOTE,
       expectedStageKey: 'zeko_hr',
       actedBy: ACTED_BY,
     });
@@ -244,7 +249,7 @@ describe('D3 — stale-tab decision must not double-advance', () => {
     // Tab B: still displaying zeko_hr, clicks approve some time later.
     await assert.rejects(
       () => setStageOutcome(journey.id, {
-        outcomeKey: 'approved',
+        outcomeKey: 'approved', notes: NO_SCORE_NOTE,
         expectedStageKey: 'zeko_hr',
         actedBy: ACTED_BY,
       }),
@@ -275,7 +280,7 @@ describe('D3 — stale-tab decision must not double-advance', () => {
 
     // The ordinary case — a fresh tab, sending the stage it is really showing.
     const result = await setStageOutcome(journey.id, {
-      outcomeKey: 'approved',
+      outcomeKey: 'approved', notes: NO_SCORE_NOTE,
       expectedStageKey: 'zeko_hr',
       actedBy: ACTED_BY,
     });
@@ -287,7 +292,7 @@ describe('D3 — stale-tab decision must not double-advance', () => {
 
     // Jobs, scripts and the pre-existing tests never send a stage. They must
     // keep working — the guard is opt-in, driven by whoever has a screen.
-    const result = await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    const result = await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
     assert.equal(result.pipeline.current_stage_key, 'assessment');
   });
 
@@ -299,8 +304,8 @@ describe('D3 — stale-tab decision must not double-advance', () => {
     // is what separates them. This is the case the new guard cannot catch, and
     // it proves the old one was not replaced.
     const [a, b] = await Promise.allSettled([
-      setStageOutcome(journey.id, { outcomeKey: 'approved', expectedStageKey: 'zeko_hr', actedBy: ACTED_BY }),
-      setStageOutcome(journey.id, { outcomeKey: 'approved', expectedStageKey: 'zeko_hr', actedBy: ACTED_BY }),
+      setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, expectedStageKey: 'zeko_hr', actedBy: ACTED_BY }),
+      setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, expectedStageKey: 'zeko_hr', actedBy: ACTED_BY }),
     ]);
 
     assert.equal([a, b].filter((r) => r.status === 'fulfilled').length, 1, 'exactly one winner');
@@ -318,7 +323,7 @@ describe('PIPE-06 — legacy write-back on outcome', () => {
   test('approving writes FinalStatus to rpa_cv and pipeline_status to the shortlist row', async () => {
     const { cv, shortlist, journey } = await makeJourney({ name: 'PIPE06' });
 
-    await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
 
     const cvRow = await prisma.rpa_cv.findUnique({ where: { id: cv.id }, select: { FinalStatus: true } });
     assert.ok(cvRow.FinalStatus, 'FinalStatus must be written back');
@@ -369,7 +374,7 @@ describe('PIPE-16 — skip_optional_next', () => {
     // Walk to tech2, whose next active stage (tech3) is optional.
     const path = ['assessment', 'zeko_fn', 'tech1', 'tech2'];
     for (const expected of path) {
-      const r = await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+      const r = await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
       assert.equal(r.pipeline.current_stage_key, expected);
     }
 
@@ -377,7 +382,7 @@ describe('PIPE-16 — skip_optional_next', () => {
     assert.equal(tech3.is_optional, true, 'tech3 must be optional for this case to mean anything');
 
     const result = await setStageOutcome(journey.id, {
-      outcomeKey: 'approved', skipOptionalNext: true, actedBy: ACTED_BY,
+      outcomeKey: 'approved', notes: NO_SCORE_NOTE, skipOptionalNext: true, actedBy: ACTED_BY,
     });
     assert.equal(result.pipeline.current_stage_key, 'hr_round', 'must bypass tech3');
 
@@ -385,5 +390,84 @@ describe('PIPE-16 — skip_optional_next', () => {
     const skip = events.filter((e) => e.event_type === 'skip');
     assert.equal(skip.length, 1, 'the bypassed stage gets a skip event, not entered');
     assert.equal(skip[0].stage_key, 'hr_round');
+  });
+});
+
+/**
+ * N33 / N24 / N25 (Phase 3 "Do Now", week 1).
+ *  - N33: the server, not just the UI, refuses to skip a mandatory stage.
+ *  - N24: CEO round is optional; HR Round can go straight to Documents past
+ *    CEO and Client, with ONE skip arrival event and one outcome.
+ *  - N25: approving a round with no score needs a note of 10+ characters.
+ */
+describe('N33 / N24 / N25 — skip guard, optional CEO round, approve without score', () => {
+  const approve = (id, extra = {}) => setStageOutcome(id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY, ...extra });
+  const is400 = (re) => (err) => { assert.equal(err.statusCode, 400, err.message); assert.match(err.message, re); return true; };
+  const stageOf = async (id) => (await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(id) } })).current_stage_key;
+
+  test('advanceStage refuses to move a candidate off a mandatory stage, with or without skip', async () => {
+    const { journey } = await makeJourney({ name: 'N33a' });
+    const before = (await eventsFor(journey.id)).length;
+    await assert.rejects(() => advanceStage(journey.id, { skip: true, actedBy: ACTED_BY }), is400(/mandatory/));
+    await assert.rejects(() => advanceStage(journey.id, { actedBy: ACTED_BY }), is400(/mandatory/));
+    assert.equal(await stageOf(journey.id), 'zeko_hr');
+    assert.equal((await eventsFor(journey.id)).length, before, 'a refused skip writes nothing');
+  });
+
+  test('approve-and-skip over a mandatory next stage is refused, not silently ignored', async () => {
+    const { journey } = await makeJourney({ name: 'N33b' });
+    await assert.rejects(() => approve(journey.id, { skipOptionalNext: true }), is400(/mandatory/));
+    await assert.rejects(() => approve(journey.id, { skipToStageKey: 'zeko_fn' }), is400(/has to happen first/));
+    assert.equal(await stageOf(journey.id), 'zeko_hr');
+    assert.equal((await eventsFor(journey.id)).filter((e) => e.event_type === 'outcome').length, 0);
+  });
+
+  test('HR Round -> Documents past CEO and Client: one outcome, one skip arrival, nothing for the bypassed stages', async () => {
+    const ceo = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: 'ceo' } });
+    assert.equal(ceo.is_optional, true, 'run prisma/ddl/2026-10-14-ceo-round-optional.sql first');
+
+    const { journey } = await makeJourney({ name: 'N24' });
+    for (const expected of ['assessment', 'zeko_fn', 'tech1', 'tech2', 'tech3', 'hr_round']) {
+      const r = await approve(journey.id);
+      assert.equal(r.pipeline.current_stage_key, expected);
+    }
+    const before = (await eventsFor(journey.id)).length;
+
+    const r = await approve(journey.id, { skipToStageKey: 'documents' });
+    assert.equal(r.pipeline.current_stage_key, 'documents');
+
+    const added = (await eventsFor(journey.id)).slice(before);
+    assert.deepEqual(added.map((e) => [e.event_type, e.stage_key]), [['outcome', 'hr_round'], ['skip', 'documents']]);
+    const skip = await prisma.rpa_pipeline_stage_events.findFirst({
+      where: { pipeline_id: BigInt(journey.id), event_type: 'skip', stage_key: 'documents' },
+    });
+    assert.match(skip.notes, /^Skipped optional stages ceo (.+), client (.+)$/);
+    const bypassed = await prisma.rpa_pipeline_stage_events.count({
+      where: { pipeline_id: BigInt(journey.id), stage_key: { in: ['ceo', 'client'] } },
+    });
+    assert.equal(bypassed, 0, 'no arrival is recorded for a stage nobody entered');
+  });
+
+  test('advanceStage still skips an optional stage the candidate is sitting on', async () => {
+    const { journey } = await makeJourney({ name: 'N33c' });
+    for (let i = 0; i < 5; i += 1) await approve(journey.id); // -> tech3 (optional)
+    assert.equal(await stageOf(journey.id), 'tech3');
+    const r = await advanceStage(journey.id, { skip: true, actedBy: ACTED_BY });
+    assert.equal(r.current_stage_key, 'hr_round');
+  });
+
+  test('approve without a score needs a note of at least 10 characters (N25)', async () => {
+    const { journey } = await makeJourney({ name: 'N25' });
+    await assert.rejects(() => setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY }), is400(/no score yet/));
+    await assert.rejects(() => setStageOutcome(journey.id, { outcomeKey: 'approved', notes: ' too short ', actedBy: ACTED_BY }), is400(/at least 10/));
+    assert.equal(await stageOf(journey.id), 'zeko_hr', 'a refused approval moves nothing');
+
+    await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: 'Panel gave a verbal go-ahead', actedBy: ACTED_BY });
+    const outcome = await prisma.rpa_pipeline_stage_events.findFirst({
+      where: { pipeline_id: BigInt(journey.id), event_type: 'outcome' },
+    });
+    assert.equal(outcome.notes, 'Panel gave a verbal go-ahead', 'the note is saved on the outcome event');
+
+    // Reject/Hold are unaffected: they already need a reason, never this note.
   });
 });

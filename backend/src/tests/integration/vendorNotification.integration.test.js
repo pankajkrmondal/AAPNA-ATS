@@ -36,6 +36,10 @@ import { activeVendorFor, isVendorLockActive, VENDOR_LOCK_FROZEN } from '../../u
 import { STAGE_KEYS } from '../../config/pipelineStages.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL, VENDOR_EMAIL } from '../helpers/fixture.js';
 
+// Fixture journeys carry no Zeko/assessment/scorecard score, so an approval
+// needs the "approve without score" note since N25.
+const NO_SCORE_NOTE = 'Approved by the integration test without a score (N25).';
+
 const ACTED_BY = 2;
 const createdJourneys = [];
 const createdCvs = [];
@@ -150,7 +154,7 @@ describe('VEND-01 — dual-send fires end to end', () => {
     assert.equal(journey.source, 'vendor', 'journey must derive source=vendor from the live lock');
     assert.equal(journey.vendor_email, VENDOR_EMAIL);
 
-    await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
 
     const msgs = await messagesForCandidate(cv.id);
     const vendorMsgs = msgs.filter(isVendorCopy);

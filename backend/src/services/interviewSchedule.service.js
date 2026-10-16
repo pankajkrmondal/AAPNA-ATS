@@ -25,6 +25,7 @@ import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRec
 import { sendGraphEmail, compileTemplate } from './emailNotification.service.js';
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { interviewerGreeting } from '../utils/emailGreeting.js';
+import { normalisePhone } from '../utils/phone.js';
 import { createInterviewEvent, updateInterviewEventTime, cancelInterviewEvent, isCalendarEnabled, applyMeetingOptions, isMeetingRecordAuto } from './graphCalendar.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.js';
@@ -68,7 +69,10 @@ export const SCHEDULABLE_STAGES = Object.freeze({
   // already handles a null ownerField/slotField gracefully ("not specified").
   tech3: { ownerField: null, slotField: null, label: 'Technical Round 3' },
   hr_round: { ownerField: 'hr_round', slotField: null, label: 'HR Round' },
-  ceo: { ownerField: 'ceo_management_round', slotField: null, label: 'CEO / Final Round' },
+  // ceo_panel_details, NOT ceo_management_round: the latter is the MRF's Yes/No
+  // "is there a CEO round" select, which pre-filled "Yes" as the interviewer's
+  // name (N23). The panel member names are in ceo_panel_details.
+  ceo: { ownerField: 'ceo_panel_details', slotField: null, label: 'CEO / Final Round' },
   // Disabled 2026-08-25 — RT: the Client Interview is arranged entirely offline
   // and the app only marks the round. Booking it in-app was beyond that scope,
   // and the booking's interviewer address was what the scorecard link got sent
@@ -220,14 +224,15 @@ async function applyRecordingOptions(stageKey, onlineMeetingId) {
  * Placeholder values recruiters typed into the MRF's interviewer/slot columns
  * that carry no information — treated as "not specified" rather than shown.
  */
-const EMPTY_HINTS = new Set(['na', 'n/a', 'no', 'none', '-', '']);
-const cleanHint = (value) => {
+// "yes" too (N23): a Yes/No answer typed or mapped into a name column is never a person.
+const EMPTY_HINTS = new Set(['na', 'n/a', 'no', 'yes', 'none', '-', '']);
+export const cleanHint = (value) => {
   const trimmed = (value || '').trim();
   return EMPTY_HINTS.has(trimmed.toLowerCase()) ? null : trimmed;
 };
 
 // Exact placeholder/non-person values seen in the real interviewer column.
-const NON_NAME_TOKENS = new Set(['dev', 'demo', 'xxx', 'xx', 'abc', 'asdf', 'tbd', 'todo', 'null', 'none']);
+const NON_NAME_TOKENS = new Set(['dev', 'demo', 'xxx', 'xx', 'abc', 'asdf', 'tbd', 'todo', 'null', 'none', 'yes', 'no', 'na']);
 
 /**
  * Decides whether an MRF interviewer value looks like an actual human name,
@@ -383,6 +388,64 @@ export function mrfRoundHints(mrf, stageKey) {
     interviewerName: mapping.ownerField ? cleanInterviewerName(mrf[mapping.ownerField]) : null,
     // The slot is free-form ("4-5", "11 AM- 12 PM"), so it keeps the lenient cleaner.
     preferredSlot: mapping.slotField ? cleanHint(mrf[mapping.slotField]) : null,
+  };
+}
+
+/** "+91 98765 43210" for the first usable number in a free-text phone field, else null. */
+function displayPhone(raw) {
+  const [first] = normalisePhone(raw);
+  return first ? `+91 ${first.slice(0, 5)} ${first.slice(5)}` : null;
+}
+
+/**
+ * Who the Schedule dialog shows as Interviewee and pre-fills as Interviewer (N23).
+ *
+ * Interviewee: the CV's live name/address/phone (the address the invite really
+ * uses — liveCandidateEmail). Outside production the calendar invite goes to the
+ * test inbox instead, and `inviteEmail` says so; it is null when no redirect applies.
+ *
+ * Interviewer pre-fill order: the last booking for this round (a re-booking after
+ * a cancel keeps the same panel), then the MRF's named interviewer, then blank.
+ *
+ * @param {object} pipeline - journey row incl. rpa_shortlisted_candidates.mrf
+ * @param {string} stageKey
+ * @returns {Promise<object|null>} null for a stage that is not booked in-app
+ */
+export async function getInterviewParties(pipeline, stageKey) {
+  if (!isSchedulableStage(stageKey)) return null;
+  const shortlist = pipeline.rpa_shortlisted_candidates || null;
+  const cv = pipeline.cv_id
+    ? await prisma.rpa_cv.findUnique({ where: { id: pipeline.cv_id }, select: { Name: true, EmailID: true, ContactNumber: true } })
+    : null;
+  const email = liveCandidateEmail({ ...shortlist, cv }) || null;
+  const testInbox = (config.email.testRecipients || '').split(',')[0].trim();
+  const inviteEmail = email && config.email.redirectInNonProd && testInbox && testInbox !== email ? testInbox : null;
+
+  const last = await prisma.rpa_interview_schedule.findFirst({
+    where: {
+      pipeline_id: BigInt(pipeline.id),
+      stage_key: stageKey,
+      OR: [{ interviewer_email: { not: null } }, { interviewer_name: { not: null } }],
+    },
+    orderBy: { created_at: 'desc' },
+    select: { interviewer_name: true, interviewer_email: true },
+  });
+  const hint = mrfRoundHints(shortlist?.mrf, stageKey);
+  let interviewer = { name: '', emails: '', source: null };
+  if (last) {
+    interviewer = { name: cleanInterviewerName(last.interviewer_name) || '', emails: last.interviewer_email || '', source: 'last_booking' };
+  } else if (hint?.interviewerName) {
+    interviewer = { name: hint.interviewerName, emails: '', source: 'mrf' };
+  }
+
+  return {
+    interviewee: {
+      name: cv?.Name || shortlist?.candidate_name || '',
+      email,
+      inviteEmail,
+      phone: displayPhone(cv?.ContactNumber),
+    },
+    interviewer,
   };
 }
 
@@ -1500,7 +1563,8 @@ export async function rescheduleInterviewRound(pipelineId, {
         pipeline_id: pipeline.id,
         stage_key: stageKey,
         event_type: 'note',
-        notes: `${stageLabel} rescheduled: ${previousWhen} → ${when}${resolvedName ? ` with ${resolvedName}` : ''}`,
+        // `when` is scoped to the email block above; format again here.
+        notes: `${stageLabel} rescheduled: ${previousWhen} → ${fmtIst(start)}${resolvedName ? ` with ${resolvedName}` : ''}`,
         acted_by: actedBy || null,
       },
     });

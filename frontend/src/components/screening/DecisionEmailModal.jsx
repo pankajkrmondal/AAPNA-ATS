@@ -6,11 +6,21 @@
  * Open JD" for Keyword-tab Shortlist (so the notification names a real role
  * instead of the generic fallback copy), and an opt-out "send email" checkbox
  * with an editable Subject/Body seeded from the live rpa_email_templates row.
+ *
+ * Phase 3 "Do Now", section C:
+ *   - activeTab 'search' is Search Candidate's "Add to JD" (N21): the same
+ *     shortlist, titled for adding to an MRF.
+ *   - Keyword-tab shortlists show whether the MRF's JD goes as an attachment (N17).
+ *   - Shortlists say how many candidates have no valid phone (their email asks
+ *     them to confirm it, N22) and how many will be emailed.
  */
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Modal, Space, Typography, Select, Input, Checkbox, Tag } from 'antd';
-import { MailOutlined } from '@ant-design/icons';
+import { MailOutlined, PaperClipOutlined } from '@ant-design/icons';
 import emailTemplateService from '../../services/emailTemplateService';
+import screeningService from '../../services/screeningService';
+import { firstValidPhone } from '../../constants/candidateFields';
+import { mrfOptionLabel } from '../../utils/mrfLabel';
 import { EmailEditorTabs } from '../common/EmailBodyEditor';
 
 const { Text } = Typography;
@@ -35,6 +45,14 @@ function buildRoleParagraph(roleName) {
     : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
 }
 
+/** "240 KB" / "1.2 MB" */
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
 /** Lightweight client-side mirror of the backend's compileTemplate(), for preview only. */
 function compilePreview(subject, body, replacements) {
   let s = subject || '';
@@ -51,8 +69,8 @@ function compilePreview(subject, body, replacements) {
  * @param {{
  *   open: boolean,
  *   decision: 'shortlist' | 'reject',
- *   activeTab: 'jd' | 'keyword',
- *   candidates: Array<{ id: number, Name?: string, EmailID?: string }>,
+ *   activeTab: 'jd' | 'keyword' | 'search',
+ *   candidates: Array<{ id: number, Name?: string, EmailID?: string, ContactNumber?: string }>,
  *   roles: Array<{ id: number, role: string, number_of_positions: number }>,
  *   defaultMrfId?: number,
  *   defaultRoleName?: string,
@@ -77,7 +95,9 @@ export default function DecisionEmailModal({
   // Keyword-tab candidates aren't tied to a role by default (unlike JD-tab, where
   // defaultMrfId/defaultRoleName are already known) — require tagging one for both
   // decisions so the notification email names the actual role either way.
-  const requireRoleTag = activeTab === 'keyword';
+  // Search Candidate's "Add to JD" (N21) picks the MRF the same way.
+  const requireRoleTag = activeTab === 'keyword' || activeTab === 'search';
+  const isAddToJd = activeTab === 'search';
 
   const [selectedRoleId, setSelectedRoleId] = useState(undefined);
   const [reason, setReason] = useState(undefined);
@@ -90,6 +110,9 @@ export default function DecisionEmailModal({
   // Bumped every time {role_paragraph} is (re-)baked into `body` as static text,
   // so the editor (uncontrolled after mount) remounts and shows the fresh text.
   const [roleParagraphRev, setRoleParagraphRev] = useState(0);
+  // N17: the tagged MRF's JD, for Keyword-tab shortlists only.
+  const [jdInfo, setJdInfo] = useState(null);
+  const showJd = activeTab === 'keyword' && !isReject;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -123,6 +146,16 @@ export default function DecisionEmailModal({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, decision, activeTab, defaultMrfId]);
+
+  useEffect(() => {
+    setJdInfo(null);
+    if (!open || !showJd || !selectedRoleId) return undefined;
+    let cancelled = false;
+    screeningService.getRoleJd(selectedRoleId)
+      .then((res) => { if (!cancelled) setJdInfo(res.data?.data || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, showJd, selectedRoleId]);
 
   const roleName = useMemo(() => {
     if (activeTab === 'jd') return defaultRoleName || null;
@@ -178,6 +211,16 @@ export default function DecisionEmailModal({
   };
 
   const candidateCount = candidates?.length || 0;
+  // N22: their shortlist email asks them to confirm a mobile number.
+  const noPhoneCount = isReject ? 0 : (candidates || []).filter((c) => !firstValidPhone(c.ContactNumber)).length;
+
+  const title = isAddToJd
+    ? `Add ${plural(candidateCount, 'candidate', 'candidates')} to a JD`
+    : isReject ? 'Reject candidates' : 'Shortlist candidates';
+  const verb = isAddToJd ? 'Add' : isReject ? 'Reject' : 'Shortlist';
+  const okText = roleReady && sendEmail
+    ? `${verb} & send`
+    : isAddToJd ? 'Add' : `${verb} & continue`;
 
   return (
     <Modal
@@ -187,14 +230,16 @@ export default function DecisionEmailModal({
       width={640}
       destroyOnClose
       confirmLoading={confirmLoading}
-      okText={isReject ? 'Reject & continue' : 'Shortlist & continue'}
+      okText={okText}
       okButtonProps={{ danger: isReject, disabled: confirmDisabled }}
-      title={isReject ? 'Reject candidates' : 'Shortlist candidates'}
+      title={title}
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        <Text type="secondary">
-          {candidateCount} candidate{candidateCount === 1 ? '' : 's'} selected
-        </Text>
+        {!isAddToJd && (
+          <Text type="secondary">
+            {candidateCount} candidate{candidateCount === 1 ? '' : 's'} selected
+          </Text>
+        )}
 
         {activeTab === 'jd' && (
           <Text type="secondary" style={{ fontSize: 12.5 }}>
@@ -204,9 +249,11 @@ export default function DecisionEmailModal({
 
         {requireRoleTag && (
           <div>
-            <Text strong style={{ fontSize: 12.5 }}>Tag to Open JD <Text type="danger">*</Text></Text>
+            <Text strong style={{ fontSize: 12.5 }}>{isAddToJd ? 'Open JD (MRF)' : 'Tag to Open JD'} <Text type="danger">*</Text></Text>
             <Text type="secondary" style={{ display: 'block', fontSize: 11.5, marginBottom: 4 }}>
-              Required — so the notification names the actual role instead of generic fallback wording.
+              {isAddToJd
+                ? 'They join the pipeline at the first stage.'
+                : 'Required — so the notification names the actual role instead of generic fallback wording.'}
             </Text>
             <Select
               style={{ width: '100%' }}
@@ -215,10 +262,20 @@ export default function DecisionEmailModal({
               onChange={setSelectedRoleId}
               showSearch
               optionFilterProp="label"
-              options={(roles || []).map((r) => ({
+              // One entry per OPEN MRF, labelled like the JD picker so the
+              // recruiter tags the exact requisition (N19). Closed MRFs can be
+              // browsed on the JD tab but never tagged.
+              options={(roles || []).filter((r) => !r.closed).map((r) => ({
                 value: r.id,
-                label: `${r.role} (${r.number_of_positions} opening${r.number_of_positions === 1 ? '' : 's'})`,
+                label: mrfOptionLabel(r),
+                isLatest: r.isLatest,
               }))}
+              optionRender={(opt) => (
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <span>{opt.data.label}</span>
+                  {opt.data.isLatest && <Tag color="green" style={{ margin: 0 }}>Latest</Tag>}
+                </Space>
+              )}
             />
           </div>
         )}
@@ -254,6 +311,29 @@ export default function DecisionEmailModal({
               Send email notification to candidate(s)
             </Checkbox>
 
+            {sendEmail && showJd && jdInfo?.attachable && (
+              <Text style={{ fontSize: 12.5 }} data-testid="jd-attached">
+                <PaperClipOutlined style={{ marginInlineEnd: 4 }} />
+                JD attached: <Text strong>{jdInfo.name}</Text> ({formatSize(jdInfo.size_bytes)}) <Text type="secondary">from the MRF</Text>
+              </Text>
+            )}
+            {sendEmail && showJd && jdInfo && !jdInfo.attachable && (
+              <div data-testid="jd-not-attached" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', color: 'var(--warn-text)', borderRadius: 6, padding: '6px 10px', fontSize: 12.5 }}>
+                {jdInfo.has_link
+                  ? 'This MRF\'s JD is over 3 MB or cannot be read: the email will carry a "View the job description" link instead.'
+                  : 'This MRF has no JD file: the email goes without one.'}
+              </div>
+            )}
+
+            {sendEmail && noPhoneCount > 0 && (
+              <Text type="secondary" style={{ fontSize: 12.5 }} data-testid="no-phone-note">
+                {candidateCount === 1
+                  ? 'This candidate has no valid phone number.'
+                  : `${noPhoneCount} of these candidates ${noPhoneCount === 1 ? 'has' : 'have'} no valid phone number.`}
+                {' '}Their email asks them to confirm their mobile number.
+              </Text>
+            )}
+
             {sendEmail && (
               <div style={{ borderTop: '1px solid var(--border-light, #eaebe8)', paddingTop: 10 }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -287,6 +367,12 @@ export default function DecisionEmailModal({
                   {candidateCount > 1 && ` Preview shown for ${firstCandidateName} (+${candidateCount - 1} more, personalized individually when sent).`}
                 </Text>
               </div>
+            )}
+
+            {sendEmail && (
+              <Text strong style={{ fontSize: 12.5 }} data-testid="email-count">
+                This will email {plural(candidateCount, 'candidate', 'candidates')}.
+              </Text>
             )}
           </>
         )}

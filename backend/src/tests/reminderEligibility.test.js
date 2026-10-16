@@ -102,6 +102,17 @@ test('candidate data request needs an existing candidate AND a portal token', ()
   assert.match(reminderSkipReason({ ...base, cvMissingToken: null }), /cvMissingToken/);
 });
 
+test('candidate data request is closed once the candidate completed the form (N44)', () => {
+  const base = { email_type: CANDIDATE_DATA_EMAIL_TYPE, reference_id: 5, candidate_exists_id: 5n, cvMissingToken: 'abc' };
+  // Still waiting on the candidate: remind.
+  for (const status of [null, 'PENDING', 'SENT', 'FAILED']) {
+    assert.equal(reminderSkipReason({ ...base, cvMissingTokenStatus: status }), null, String(status));
+  }
+  // Completed: never "we are still awaiting your details" again.
+  assert.match(reminderSkipReason({ ...base, cvMissingTokenStatus: 'RECEIVED' }), /already completed/);
+  assert.match(reminderSkipReason({ ...base, cvMissingTokenStatus: 'received' }), /already completed/);
+});
+
 test('notifications and alerts are never remindable, even when a matching MRF exists', () => {
   const neverRemind = [
     'mrf_approved', 'mrf_declined', 'mrf_submit_hr', LEGACY_MRF_APPROVAL_COPY_EMAIL_TYPE,

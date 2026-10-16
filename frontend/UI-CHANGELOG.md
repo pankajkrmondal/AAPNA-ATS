@@ -5,6 +5,112 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-10-15: Phase 3 section C screens
+
+Backend write-up: [CHANGES-2026-10-15-phase3-section-c.md](../docs/changelog/CHANGES-2026-10-15-phase3-section-c.md).
+All layouts were agreed on the "Section C" design mockup first. New shared lists and rules: `constants/candidateFields.js`.
+
+- **Settings (N17):** new admin card **Candidate emails: About AAPNA**, with a plain-text box (3000 characters), Preview in email and Save.
+- **Shortlist dialog (N17, N22, N21):**
+  - on the Keyword tab, "JD attached: <file> (<size>) from the MRF", or a yellow line when the email will carry a link instead;
+  - "N of these candidates have no valid phone number. Their email asks them to confirm their mobile number.";
+  - "This will email N candidates."; the button reads "Shortlist & send" while email is on.
+- **Shortlist result (N21):** when anyone is left out, a **Result** dialog lists who was added and, for each candidate not added, why (e.g. "Rejected on 25 Sep 2026 (Technical Round 1). Can be added again after 25 Mar 2027."). This shows on Screening and on Search Candidate.
+- **Search Candidate (N21):**
+  - row ticks (staff with screening access) and a "N selected · Add to JD · Clear selection" bar next to Export;
+  - **Add N candidates to a JD** uses the shortlist dialog with "Open JD (MRF)".
+- **Edit Candidate (N18):**
+  - one field per row, 680 px;
+  - Highest qualification, Notice period, Preferred shift (adds Flexible) and Recruiter info (active recruiters plus None) are lists, and an old value shows as "(old value)";
+  - Current location and Position applied suggest values;
+  - phone, CTC, experience and percentage rules match the candidate form.
+- **Complete your profile (public, N18):**
+  - only the missing fields, in the Edit form's order and labels, one per row, 640 px;
+  - the same lists, with Other (please specify) for qualification and position;
+  - city suggestions, and the rules shown under each field;
+  - a refused submit keeps the form open with the reason.
+- **Schedule interview (N22):** the Interviewee phone is editable (red when invalid) and is saved to the candidate's record with the invite.
+- **Record round outcome (N45):** a **Send email notification to candidate** checkbox, ticked by default. Unticked, it hides the email editor, explains what happens, and the button reads "Save outcome". The round's email line reads "Email not sent".
+
+## 2026-10-14: Phase 3 week 1 (Release 1) screens
+
+Backend write-up: [CHANGES-2026-10-14-phase3-week1.md](../docs/changelog/CHANGES-2026-10-14-phase3-week1.md).
+All layouts were agreed with the reviewer on a design mockup before they were built. New shared helpers: `utils/dateFormat.js` (`fmtDate` → "07 Oct 2026", `fmtDateTime`, IST; the app-wide sweep is N34) and `utils/mrfLabel.js`.
+
+- **Search Candidate (N44, N27):**
+  - a fourth search field, **Details completed in** (Any time / Today / Last 7 days / Last 30 days);
+  - three columns, **Date added**, **Details requested**, **Details completed** ("–" when missing);
+  - with the filter on, a line reads "N candidates completed their details in the last 7 days. Newest first."; otherwise the order stays newest-added first;
+  - the table now scrolls sideways instead of squeezing names.
+  - **Reworked 15 Oct (design re-approved):** full content width (no 1200 px cap, no extra page padding); title and subtitle on one line; the four fields plus Search / Reset on one row (36 px controls); one-line 11.5 px headers; 8 px cell padding; View / Edit are icon buttons like CV and Conversations. Fits on one row at ~1800 px with the nav open.
+- **Candidate Screening (N19, N20, N27):**
+  - the JD role picker lists every MRF as "<role> · MRF-<id> · <date> · <n> openings" with a green **Latest** tag;
+  - a plain **Include closed MRFs** checkbox adds closed MRFs in a "Closed" group, greyed and tagged;
+  - selecting one shows "This MRF was closed on <date> (<reason>). Results are read-only…", and Shortlist / Reject are disabled;
+  - candidate cards on both tabs show "Added on <date>".
+- **Shortlist dialog (N19):** the role list uses the same labels (open MRFs only).
+- **Pipeline (N19):** the Position filter has one entry per MRF ("<role> · MRF-<id> · <date>"), closed ones tagged, then "Keyword shortlists (no MRF)".
+- **Record round outcome (N24, N25):**
+  - "After approval, move the candidate to" lists every reachable stage, e.g. "Documents (skip CEO / Final Round and Client Interview)", pre-selected from the MRF with the reason shown;
+  - when the round has no score, an **Approve without score** notice appears and the note becomes required (10+ characters).
+- **Schedule interview (N23):**
+  - the grey "From the MRF" box is replaced by an **Interviewee** section (name, email, phone; read-only, staging redirect noted) and an **Interviewer** section (name, email(s), pre-fill source noted);
+  - the MRF preferred slot shows under the time.
+- **MRF approval page (N16):** "MRF already approved" / "MRF has already been approved by the CEO <Name>", with the MRF reference; an expired link shows the decision plus "This link has expired…".
+- **Public forms (N31):** fully light under a dark saved theme, including dropdowns, date pickers, dialogs and toasts.
+- **Errors (N30):**
+  - a render error shows "Something went wrong · Reload · Go to Dashboard" instead of a blank page;
+  - inside the pipeline drawer it shows "This candidate could not be shown · Try again · Close";
+  - the drawer now slides closed with its content.
+- **Bell (N44):** new message "<Name> completed their missing details"; no visual change to the bell.
+
+## 2026-10-14: Candidate Screening, JD tab: role card shows the rules it enforces (Phase 3 N07–N10)
+
+Backend write-up: [CHANGES-2026-10-14-strict-jd-filtering.md](../docs/changelog/CHANGES-2026-10-14-strict-jd-filtering.md).
+The layout was agreed with the reviewer on a design mockup before it was built. Applies only when the backend runs with `SCREENING_V2=true` (the response then carries `summary.mode === 'jd-strict'`); otherwise the tab is unchanged.
+
+Role card:
+- **Experience:** the range the search enforces ("2 – 6 yrs", or "2 yrs or more") with its source underneath ("From the JD" / "MRF minimum (the JD gives no range)").
+- **Budget:** "Up to ₹15 LPA, from the MRF request", or "Not set" with "Expected CTC is not checked" in amber.
+- **Qualification:** the requirement enforced, e.g. "BE/BTech or MCA (any branch)"; hidden when the MRF sets none.
+- **Mandatory skills:** "Candidates must have all of these" with each parsed skill as a tag, or "None found".
+
+Results:
+- **Summary line:** "2 matched — of 8 · 3 meet education, budget and experience · of those, 2 have all 2 mandatory skills" (from `summary.summaryDetail`). The star chips are unchanged; "AI insights unavailable" now also shows on this tab.
+- **No mandatory skills on the MRF:** a warning replaces the results ("This MRF has no mandatory skills, so no candidates are shown.") and the summary bar is hidden.
+- **Candidate cards:** unchanged.
+- **Drawer:** the score reasons come from the deterministic ranking (not the AI text), and the experience criterion shows the enforced range.
+
+## 2026-10-13: Candidate Screening, keyword tab: classic filter form (Phase 3 N02–N06)
+
+Backend write-up: [CHANGES-2026-10-13-strict-keyword-filtering.md](../docs/changelog/CHANGES-2026-10-13-strict-keyword-filtering.md).
+The layout was agreed with the reviewer on a design mockup before it was built. Two earlier versions were rejected: a separate lookup row, then a two-mode toggle.
+
+The keyword tab is a plain form of labelled fields:
+
+| Row | Fields |
+|---|---|
+| 1 | **Skills**, with a small **"Match any one skill"** checkbox on the label line (unticked = the candidate must have every skill) · **Location** · **Position applied for** |
+| 2 | **Candidate name** · **Email** · **Phone** · **Gender** |
+| 3 | **Experience** (min–max) · **Expected CTC (LPA)** (min–max) · **Notice period** · **Added within** |
+| 4 | **Education / Qualification**: the same three expandable groups as before |
+
+Field details:
+- **Lookups:** Candidate name, Email and Phone each find one person by exact match and skip the other filters. Lookups work even when the backend runs with `SCREENING_V2` off.
+- **Location:** typed city tags; each must match a stored city exactly ("Noida" never matches "Greater Noida").
+- **Position applied for** and **Added within** (7 / 15 / 30 / 90 days) are new. **Designation is removed.**
+- **Notice period** gains an "Immediate" option.
+- **Expected CTC:** this field was labelled "Annual CTC" before.
+
+Buttons: **Refresh**, **Clear**, **Search Candidates**.
+
+Results:
+- **Card:** an **email · phone** line ("—" when missing). Notice reads "30 days notice" or "Immediate joiner", never "3 Months days notice".
+- **Drawer:** explains the keyword score (Skill Match and Job Stability, with their share of the score).
+- **Summary bar:** "N matched (X searched; removed by location …, skills …)". Score chips follow the star thresholds and are hidden for a lookup. An "AI insights unavailable" tag appears when AI insights couldn't be generated.
+
+**Playwright suite** (`frontend/e2e`, `npm run e2e`): the repo's first committed browser tests. It uses the installed Edge. Credentials come from `E2E_USER` / `E2E_PASSWORD`, falling back to `VERIFY_EMAIL` / `VERIFY_PASSWORD`.
+
 ## 2026-08-27 — Conversation reply box: plain text → rich text
 
 Backend write-up: [CHANGES-2026-08-27-conversation-reply-rich-text.md](../docs/changelog/CHANGES-2026-08-27-conversation-reply-rich-text.md).

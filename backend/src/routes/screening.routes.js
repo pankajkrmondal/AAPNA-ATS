@@ -28,6 +28,13 @@ router.get('/roles', screeningController.getRoles);
 router.post('/roles/:id/search', screeningController.searchRoleCandidates);
 
 /**
+ * GET /api/screening/roles/:id/jd
+ * The MRF's JD file as it would be attached to a keyword shortlist email (N17):
+ * name and size, or why it cannot be attached. Also warms the attachment cache.
+ */
+router.get('/roles/:id/jd', screeningController.getRoleJdAttachment);
+
+/**
  * POST /api/screening/roles/:id/export
  * CSV of the JD-filtering results. POST (not GET) because it re-runs the same
  * search; the server never accepts a client-supplied candidate list.

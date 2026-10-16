@@ -68,7 +68,8 @@ const STAGES = [
   { stage_key: 'tech2',     label: 'Technical Round 2',       sort_order: 60,  stage_type: 'scheduled_interview' },
   { stage_key: 'tech3',     label: 'Technical Round 3',       sort_order: 70,  stage_type: 'scheduled_interview', is_optional: true },
   { stage_key: 'hr_round',  label: 'HR Round',                sort_order: 80,  stage_type: 'scheduled_interview' },
-  { stage_key: 'ceo',       label: 'CEO / Final Round',       sort_order: 90,  stage_type: 'scheduled_interview' },
+  // Optional since N24 (prisma/ddl/2026-10-14-ceo-round-optional.sql): many MRFs have no CEO round.
+  { stage_key: 'ceo',       label: 'CEO / Final Round',       sort_order: 90,  stage_type: 'scheduled_interview', is_optional: true },
   { stage_key: 'client',    label: 'Client Interview',        sort_order: 100, stage_type: 'scheduled_interview', is_optional: true },
   { stage_key: 'documents', label: 'Documents',               sort_order: 110, stage_type: 'document' },
   { stage_key: 'offer',     label: 'Offer',                   sort_order: 120, stage_type: 'offer' },

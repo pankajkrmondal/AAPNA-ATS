@@ -88,7 +88,10 @@ export default function useDashboardData() {
       screeningService.getRoles()
         .then((res) => {
           const list = res.data?.data || res.data || [];
-          setRoles(Array.isArray(list) ? list : []);
+          // The roles API lists every MRF since N19. This filter still matches
+          // by role NAME, so keep one entry per name (the latest open MRF)
+          // until N36 moves it to MRF ids.
+          setRoles(Array.isArray(list) ? list.filter((r) => r.isLatest !== false) : []);
         })
         .catch((e) => { errs.roles = e?.message || 'failed'; }),
 

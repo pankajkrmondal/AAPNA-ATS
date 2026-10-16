@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 // `Card` went with the hand-rolled shell this page used to render — the page
 // body now sits inside PublicPageShell's own card.
-import { Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, message } from 'antd';
+import { Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, App } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, FileDoneOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 // The shared public-page frame, mirroring the branded email the approver clicks
@@ -41,6 +41,9 @@ const decidedLabel = (status) => {
 const apiErrorMessage = (err, fallback) => err?.response?.data?.message || fallback;
 
 export default function MrfApprovalAction() {
+  // App.useApp(), not the static `message`: static toasts render outside the
+  // light ForceLight provider and picked up the user's dark theme (N31).
+  const { message } = App.useApp();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
@@ -165,35 +168,43 @@ export default function MrfApprovalAction() {
   if (decidedStatus) {
     const label = decidedLabel(decidedStatus);
     const byName = decision?.decidedByName;
+    const byTitle = decision?.decidedByTitle;
     const when = decision?.decidedAtIst;
+    // "<position> (MRF-41)" — the reference tells apart MRFs sharing a name.
+    const which = (
+      <>
+        <strong>{mrfDetails?.position_hiring_for}</strong>{mrfDetails?.id ? ` (MRF-${mrfDetails.id})` : ''}
+      </>
+    );
     // Who and when, when the server knows (personal links). Older decisions
     // (shared link / before the audit trail) keep the generic wording.
-    let title = `This requisition has already been ${label}`;
+    let title = `This MRF has already been ${label}`;
     let body = (
       <>
-        The requisition for <strong>{mrfDetails?.position_hiring_for}</strong> has already been <strong>{label}</strong>.
+        {which} has already been <strong>{label}</strong>.
         Only one approval is needed, so if you did not take this decision yourself, another approver already has.
       </>
     );
     if (decision?.isYou) {
-      title = `You ${label} this requisition`;
+      title = `You ${label} this MRF`;
       body = (
         <>
           You {label} <strong>{mrfDetails?.position_hiring_for}</strong>{when ? <> on <strong>{when}</strong></> : null}. Nothing more is needed.
         </>
       );
     } else if (byName && !byName.startsWith('Unknown')) {
-      title = `Already ${label} by ${byName}`;
+      // RT's wording (N16): "MRF has already been approved by the CEO <Name>".
+      title = `MRF has already been ${label} by ${byTitle ? `the ${byTitle} ` : ''}${byName}`;
       body = (
         <>
-          <strong>{byName}</strong> {label} <strong>{mrfDetails?.position_hiring_for}</strong>{when ? <> on <strong>{when}</strong></> : null}.
+          {byName} {label} {which}{when ? <> on <strong>{when}</strong></> : null}.
           Only one approval is needed, so no action is required from you.
         </>
       );
     }
     return (
       <PublicPageShell
-        title={`Requisition already ${label}`}
+        title={`MRF already ${label}`}
         subtitle="No further action is needed from you."
       >
         <Result
@@ -206,6 +217,13 @@ export default function MrfApprovalAction() {
                 <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
                   <strong>Comment:</strong> {decision.comments}
                 </Paragraph>
+              )}
+              {mrfDetails?.link_state === 'expired' && (
+                <Alert
+                  type="info"
+                  style={{ maxWidth: 520, margin: '8px auto 0', textAlign: 'left' }}
+                  message="This link has expired. It still shows the decision, but it can no longer be used to approve or decline."
+                />
               )}
             </>
           }

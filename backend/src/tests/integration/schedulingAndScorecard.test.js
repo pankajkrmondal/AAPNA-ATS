@@ -48,6 +48,10 @@ import {
 } from '../../services/interviewScorecard.service.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL } from '../helpers/fixture.js';
 
+// Fixture journeys carry no Zeko/assessment/scorecard score, so an approval
+// needs the "approve without score" note since N25.
+const NO_SCORE_NOTE = 'Approved by the integration test without a score (N25).';
+
 const ACTED_BY = 2;
 /** Panel address — receives REAL mail (see header). */
 const INTERVIEWER = 'claudepankajmondal@gmail.com';
@@ -88,7 +92,7 @@ async function advanceTo(journeyId, targetStage) {
   for (const stage of order) {
     const row = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journeyId) } });
     if (row.current_stage_key === targetStage) return;
-    await setStageOutcome(journeyId, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journeyId, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
     if (stage === targetStage) return;
   }
 }

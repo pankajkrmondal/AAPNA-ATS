@@ -5,6 +5,104 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-15: Phase 3 section C: JD attachment, candidate forms, Add to JD, phone, outcome email opt-out
+**Why:** RT feedback (section C of the Phase 3 plan) and the 15 Oct review. Plan items N17, N18, N20 (server), N21, N22, N45 (new).
+
+Full write-up and staging steps: [CHANGES-2026-10-15-phase3-section-c.md](./changelog/CHANGES-2026-10-15-phase3-section-c.md).
+
+- **N17:**
+  - Keyword-tab shortlist emails attach the MRF's JD (3 MB limit, otherwise a link) and add the About AAPNA text (new setting `company_profile_text`, admin only);
+  - `sendGraphEmail` takes `attachments`;
+  - DDL `2026-10-15-mrf-jd-item-id.sql` adds `rpa_mrf.jd_item_id`, and the code tolerates the column being absent.
+- **N20:** the server refuses a shortlist onto a closed MRF (409).
+- **N21:**
+  - Search Candidate can tick candidates and "Add to JD";
+  - the shortlist skips cooled-off, already-shortlisted and in-pipeline candidates by name with the reason (`skipped_candidates`), with no row and no email. Cooled-off candidates used to be emailed "shortlisted" and then refused by the pipeline.
+- **N22:**
+  - the shortlist email asks a candidate with no valid mobile to confirm it;
+  - the Schedule dialog phone is editable and saved to the CV (`candidate_phone`);
+  - Zeko gets `+91…`, or `ZEKO_TEST_PHONE` outside production.
+- **N18:**
+  - shared field rules (`utils/candidateFieldRules.js`) on the public form and the recruiter edit (changed fields only);
+  - new public `/api/candidates/public/locations` and `/recruiters` (active Recruiter accounts).
+- **N45:** `send_email:false` on a stage outcome saves it without the candidate email ("Email not sent"); the vendor update still goes.
+- **Bug fixed (older than Phase 3):** an interview reschedule never wrote its "rescheduled: old → new" note or the vendor status line (`when` out of scope in `interviewSchedule.service.js`). Vendors will now get that line.
+- **Dates:** `fmtIstDate` writes "Sep", not en-GB's "Sept", matching the screens (bell text and cool-off messages).
+- **Tests:**
+  - 746 backend unit;
+  - new integration `sectionC` and Playwright `section-c`;
+  - week 1, drawer, public-form and section A specs re-run green.
+
+## 2026-10-14: Phase 3 week 1 (Release 1): missing-details alert, MRF lists, stage rules, public forms
+**Why:** RT feedback 29 Sep and the 12 Oct hot item; bugs found in review. Plan items N44, N16, N19, N20, N23, N24, N25, N26, N27, N30, N31, N32, N33.
+
+Full write-up and release steps: [CHANGES-2026-10-14-phase3-week1.md](./changelog/CHANGES-2026-10-14-phase3-week1.md).
+
+- **N44 (hot):**
+  - new `rpa_cv.details_requested_at` / `details_completed_at` (DDL `2026-10-14-cv-details-dates.sql`, backfill of the requested date);
+  - completing the missing-details form rings the bell for staff and closes the candidate's open reminder rows;
+  - Search Candidate gets date columns and a "Details completed in" filter (`completedWithin`).
+- **Bug fixed:** a resume uploaded through the missing-details form never saved its text (`resumeData` used before declaration).
+- **N16 / N32:** approver titles in `mrf_approvers`; an expired link on a decided MRF shows "already approved by the CEO <Name>"; the approval email names the other approver with title.
+- **N33 / N24 / N25:**
+  - the server refuses to skip a mandatory stage;
+  - the CEO round is optional (DDL `2026-10-14-ceo-round-optional.sql`), and HR Round can land on Documents with one `skip` arrival event;
+  - approving a round with no score needs a 10+ character note.
+- **N19 / N20:** `/api/screening/roles` lists every approved MRF (`ref`, `isLatest`, `includeClosed`); `mrf:updated` socket event; Pipeline Position filter per MRF (`position_mrf_id`).
+- **N23:** CEO interviewer from `ceo_panel_details` ("Yes" is never a name); `interviewParties` on the pipeline detail.
+- **N27 / N31 / N30:** Date added on cards and Search Candidate; public forms fully light under a dark theme; drawer kept mounted through close, plus error boundaries. The crash itself was not reproduced locally.
+- **N26:** production check list only.
+- **Review fixes (15 Oct):** Search Candidate reworked to full width (design re-approved); "Added within" now also applies on the old keyword search (`SCREENING_V2` off), which used to drop it. **Run DDL #6 before starting this build** — without the columns every candidate read fails. JD filtering: a bare "NET" in an MRF's mandatory skills now means .NET (it used to be a separate skill nobody matched, so such MRFs showed 0).
+- **Tests:** 734 backend unit; new integration files `missingDetailsCompleted`, `mrfApprovalExpiredLink`; new Playwright `week1-ui`, `pipeline-drawer`, `public-forms-theme`.
+
+## 2026-10-14: Screening rules document for RT (Phase 3 N12)
+**Why:** promised to RT on 10 Sep; RT could not see why a candidate was or was not shown.
+
+- **New `docs/Screening-Rules-for-RT.md`**, in plain language:
+  - every filter on both tabs, and what a blank value means;
+  - how skills are matched, the All / Any choice and the spelling aliases;
+  - the four JD checks, the ranking weights, the star bands and what the AI does and does not decide;
+  - three worked examples (sample candidates) and a "why isn't this candidate showing?" checklist.
+- The before/after comparison (N11) waits for production data; staging has too few candidates. Real examples can replace the sample ones then.
+
+## 2026-10-14: Strict JD filtering (Phase 3 N07–N10), behind `SCREENING_V2`
+**Why:** RT 29 Sep (§5). JD filtering showed profiles with no mandatory skill, passed freshers on an experience maximum, read the budget by role name, mapped "Any" qualification to BE/BTech, reused AI scores across roles, and was slow.
+
+Full write-up: [CHANGES-2026-10-14-strict-jd-filtering.md](./changelog/CHANGES-2026-10-14-strict-jd-filtering.md).
+
+- **New module `utils/jdScreeningRules.js`** (pure, unit-tested): MRF mandatory-skills parsing, experience band, budget, qualification mapping ("Any" = any stream), education gate in SQL and JS, ranking (`JD_RANK_WEIGHTS`).
+- **`searchRoleCandidatesV2`** in `services/screeningV2.service.js`:
+  - every gate is hard (ALL mandatory skills, education, budget from the MRF request, experience band); an empty value excludes
+  - cheap gates run first in the database, resume text last: same result, about 3× faster
+  - the score only orders; AI insights cached per MRF in Redis, never in the shared column, and an AI failure no longer fails the search
+  - an MRF with no checkable mandatory skill shows no candidates and says why
+- **Flag:** controller and JD CSV export dispatch on `SCREENING_V2`. The old function is untouched for N11.
+- **Cache:** new key `screening:role:v2:<mrfId>`, cleared on MRF close / reopen and on both MRF edit routes.
+- **Screen:** role card shows the enforced rules (design approved on a mockup); candidate cards unchanged.
+- **Tests:** 484 backend unit (45 new), 12 integration (local DB), Playwright `jd-screening.spec.js` (4 passed, 2 skipped locally).
+
+## 2026-10-13: Strict keyword filtering (Phase 3 N01–N06), behind `SCREENING_V2`
+**Why:** RT 29 Sep (§6.2, §8). Keyword search returned non-matching candidates:
+- substring skills ("java" also matched "javascript")
+- location and gender ignored when skills were typed
+- blank values kept by the range filters
+- passing candidates hidden by a low score
+- a name search returning 42 look-alikes
+
+Full write-up: [CHANGES-2026-10-13-strict-keyword-filtering.md](./changelog/CHANGES-2026-10-13-strict-keyword-filtering.md).
+
+- **New module `utils/screeningFilters.js`** (pure, unit-tested): whole-word matcher with aliases, exact location-part match, NULL-excluding SQL builders, removed-by funnel. Also new: `utils/phone.js` and `utils/educationCategories.js` (moved verbatim).
+- **New `services/screeningV2.service.js`:**
+  - exact lookup by name, email or phone
+  - every filter applied as a hard filter
+  - All / Any skills toggle
+  - the score only orders results; it never hides anyone
+  - an AI failure no longer fails the search
+- **Flag:** controller and CSV export dispatch on `SCREENING_V2` (default off). The old functions are untouched for the N11 comparison. The CSV export now fills keyword rating columns.
+- **Screen:** classic filter form approved on a design mockup. It has separate Candidate name / Email / Phone lookups, a "Match any one skill" checkbox, and the new **Position applied for** and **Added within** filters. Designation is removed.
+- **Lookups:** name / email / phone always use the new search, even with the flag off.
+- **Tests:** 439 backend unit (60 new), 23 integration (local DB), 10 Playwright (`frontend/e2e`, `npm run e2e`).
+
 ## 2026-09-25 — MRF approval: personal links, provable decisions, no stale reminders
 **Why:** production, 23–24 Sep 2026. The CEO clicked Approve on MRF #9 and got "Link inactive or
 invalid — already processed". It had been approved 13 h earlier through the SAME link both approvers

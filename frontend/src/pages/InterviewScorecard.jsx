@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Card, Button, Typography, Alert, Spin, Rate, Input, Radio, Space, Result, Divider, message,
+  Card, Button, Typography, Alert, Spin, Rate, Input, Radio, Space, Result, Divider, App,
 } from 'antd';
 import { WarningOutlined } from '@ant-design/icons';
 import scorecardService from '../services/scorecardService';
@@ -19,6 +19,9 @@ const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export default function InterviewScorecard() {
+  // App.useApp(), not the static `message`: static toasts render outside the
+  // light ForceLight provider and picked up the user's dark theme (N31).
+  const { message } = App.useApp();
   const { token } = useParams();
 
   const [loading, setLoading] = useState(true);

@@ -111,6 +111,23 @@ const candidateService = {
   },
 
   /**
+   * Cities already in the ATS, most common first, for the Current location
+   * suggestions on both candidate forms (N18). No auth required.
+   * @returns {Promise} — data: string[]
+   */
+  getPublicLocations() {
+    return api.get('/candidates/public/locations');
+  },
+
+  /**
+   * Active recruiter names for the "Recruiter info (AAPNA)" list (N18). No auth required.
+   * @returns {Promise} — data: string[]
+   */
+  getPublicRecruiters() {
+    return api.get('/candidates/public/recruiters');
+  },
+
+  /**
    * Get candidate's missing data fields using base64 token.
    * @param {string} token
    * @returns {Promise}

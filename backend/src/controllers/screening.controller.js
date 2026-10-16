@@ -1,17 +1,40 @@
 import * as screeningService from '../services/screening.service.js';
+import * as screeningV2 from '../services/screeningV2.service.js';
+import config from '../config/index.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import screeningExport from '../exports/screening.export.js';
+import { getMrfJdAttachment } from '../services/jdAttachment.service.js';
 
 /**
- * GET /api/screening/roles
+ * GET /api/screening/roles[?includeClosed=1]
+ * One entry per approved MRF (N19); `includeClosed` also lists filled/closed
+ * MRFs after the open ones, flagged `closed` (N20).
  */
 export const getRoles = catchAsync(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  const roles = await screeningService.getApprovedRoles();
+  const flag = String(req.query.includeClosed || '').toLowerCase();
+  const roles = await screeningService.getApprovedRoles({ includeClosed: flag === '1' || flag === 'true' });
   return success(res, roles, 'Approved MRF roles retrieved successfully');
+});
+
+/**
+ * GET /api/screening/roles/:id/jd
+ * For the shortlist dialog's "JD attached" line (N17). Never returns the file itself.
+ */
+export const getRoleJdAttachment = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId) || mrfId <= 0) throw new AppError('Invalid MRF ID provided.', 400);
+  const jd = await getMrfJdAttachment(mrfId);
+  return success(res, {
+    attachable: Boolean(jd.attachment),
+    name: jd.name,
+    size_bytes: jd.sizeBytes,
+    has_link: Boolean(jd.link),
+    reason: jd.reason,
+  }, 'JD attachment details');
 });
 
 /**
@@ -25,7 +48,9 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   }
 
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
-  const result = await screeningService.searchRoleCandidates(mrfId, force);
+  const result = config.screening.v2
+    ? await screeningV2.searchRoleCandidatesV2(mrfId, force)
+    : await screeningService.searchRoleCandidates(mrfId, force);
   return success(res, result, 'Role-matched candidates retrieved successfully');
 });
 
@@ -34,7 +59,10 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
  */
 export const searchKeywordCandidates = catchAsync(async (req, res) => {
   const filters = req.body || {};
-  const result = await screeningService.searchKeywordCandidates(filters);
+  // Lookups (name / email / phone) always use V2 — the old search has none.
+  const result = config.screening.v2 || screeningV2.isLookupRequest(filters)
+    ? await screeningV2.searchKeywordCandidatesV2(filters)
+    : await screeningService.searchKeywordCandidates(filters);
   return success(res, result, 'Keyword-filtered candidates retrieved successfully');
 });
 
@@ -75,7 +103,7 @@ export const exportRoleSummary = catchAsync(async (req, res) => runExport(
  * POST /api/screening/shortlist
  */
 export const shortlistCandidates = catchAsync(async (req, res) => {
-  const { candidates, mrf_id, role_name, send_email, email_override } = req.body;
+  const { candidates, mrf_id, role_name, send_email, email_override, source } = req.body;
   if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
     throw new AppError('Candidates array is required.', 400);
   }
@@ -87,6 +115,8 @@ export const shortlistCandidates = catchAsync(async (req, res) => {
   const result = await screeningService.shortlistCandidates(candidates, mrfId, role_name, req.user, {
     sendEmail: send_email !== false,
     emailOverride: email_override || null,
+    // 'jd' | 'keyword' | 'search_candidate' — only 'keyword' attaches the JD (N17).
+    source: ['jd', 'keyword', 'search_candidate'].includes(source) ? source : null,
   });
   return success(res, result, 'Candidates shortlisted successfully');
 });

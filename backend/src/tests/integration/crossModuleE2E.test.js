@@ -29,6 +29,10 @@ import { FINAL_OUTCOMES } from '../../config/pipelineStages.js';
 import { VENDOR_LOCK_FROZEN } from '../../utils/vendorLock.js';
 import { FIXTURE_TAG, CANDIDATE_EMAIL, VENDOR_EMAIL } from '../helpers/fixture.js';
 
+// Fixture journeys carry no Zeko/assessment/scorecard score, so an approval
+// needs the "approve without score" note since N25.
+const NO_SCORE_NOTE = 'Approved by the integration test without a score (N25).';
+
 const ACTED_BY = 2;
 const createdJourneys = [];
 const createdCvs = [];
@@ -88,7 +92,7 @@ async function walkTo(journeyId, targetStage) {
   for (let i = 0; i < 12; i++) {
     const row = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journeyId) } });
     if (row.current_stage_key === targetStage) return row;
-    await setStageOutcome(journeyId, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journeyId, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
   }
   throw new Error(`could not reach ${targetStage}`);
 }
@@ -398,7 +402,7 @@ describe('E2E-05 — the manual Client round does not break the chain around it'
     assert.equal(after, before, 'nothing is sent for the client round');
 
     // HR records the outcome manually; the chain resumes.
-    await setStageOutcome(journey.id, { outcomeKey: 'approved', actedBy: ACTED_BY });
+    await setStageOutcome(journey.id, { outcomeKey: 'approved', notes: NO_SCORE_NOTE, actedBy: ACTED_BY });
     const row = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(journey.id) } });
     assert.equal(row.current_stage_key, 'documents', 'approving the client round advances into documents');
 

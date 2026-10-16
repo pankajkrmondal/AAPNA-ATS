@@ -154,6 +154,8 @@ model rpa_cv {
   referral_note                String?
   referral_set_by              String?                      @db.VarChar(255)
   referral_set_at              DateTime?                    @db.Timestamptz(6)
+  details_requested_at         DateTime?                    @db.Timestamptz(6)
+  details_completed_at         DateTime?                    @db.Timestamptz(6)
   emails                       rpa_email_messages[]
   rpa_referral_audit           rpa_referral_audit[]
   shortlisted                  rpa_shortlisted_candidates[]
@@ -236,6 +238,7 @@ model rpa_mrf {
   decided_ip                    String?                      @db.Inet
   decision_comments             String?                      @db.VarChar(2000)
   decision_event_id             BigInt?
+  jd_item_id                    String?                      @db.VarChar(512)
   emails                        rpa_email_messages[]
   shortlisted                   rpa_shortlisted_candidates[]
   approval_tokens               rpa_mrf_approval_tokens[]

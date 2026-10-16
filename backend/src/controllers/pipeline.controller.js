@@ -67,7 +67,7 @@ import {
  * Board data for the kanban view: columns (stages) + cards (journeys), filterable.
  */
 export const listPipeline = catchAsync(async (req, res) => {
-  const { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, include_closed, owned_by } = req.query;
+  const { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, position_mrf_id, include_closed, owned_by } = req.query;
   const result = await pipelineService.listPipeline({
     source: source || undefined,
     onHoldOnly: on_hold_only === '1' || on_hold_only === 'true',
@@ -75,6 +75,9 @@ export const listPipeline = catchAsync(async (req, res) => {
     mrfId: mrf_id ? parseInt(mrf_id, 10) : undefined,
     stuckDays: stuck_days ? parseInt(stuck_days, 10) : undefined,
     position: position || undefined,
+    // The Position filter's per-MRF choice (N19); `position` stays for the
+    // keyword shortlists, which have no MRF.
+    positionMrfId: position_mrf_id ? parseInt(position_mrf_id, 10) || undefined : undefined,
     includeClosed: include_closed === '1' || include_closed === 'true',
     // G6 — "my candidates". Resolved server-side to the caller's own
     // identity; a client-supplied user id/name would let anyone view anyone
@@ -236,6 +239,8 @@ export const getOutcomePreview = catchAsync(async (req, res) => {
  * stage. Approve auto-advances to the next active stage in the same call.
  * If that next stage is optional, `skip_optional_next: true` lands on the
  * stage after it instead, logging the bypassed stage as a skip.
+ * `skip_to_stage_key` lands on any later stage, provided every stage in
+ * between is optional (N24). Skipping a mandatory stage is a 400 (N33).
  *
  * `expected_stage_key` is the stage the client was DISPLAYING when the recruiter
  * decided. Sending it turns a stale-tab decision into a 409 instead of a second
@@ -245,7 +250,7 @@ export const getOutcomePreview = catchAsync(async (req, res) => {
 export const setStageOutcome = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
-  const { outcome_key, reason_id, other_text, notes, email_subject, email_body, skip_optional_next, expected_stage_key } = req.body;
+  const { outcome_key, reason_id, other_text, notes, email_subject, email_body, skip_optional_next, skip_to_stage_key, expected_stage_key, send_email } = req.body;
   if (!outcome_key) throw new AppError('outcome_key is required.', 400);
 
   const result = await pipelineService.setStageOutcome(id, {
@@ -256,7 +261,11 @@ export const setStageOutcome = catchAsync(async (req, res) => {
     emailSubject: email_subject || null,
     emailBody: email_body || null,
     skipOptionalNext: !!skip_optional_next,
+    skipToStageKey: typeof skip_to_stage_key === 'string' && skip_to_stage_key ? skip_to_stage_key : null,
     expectedStageKey: expected_stage_key || null,
+    // N45: "Send email notification to candidate" unticked. Anything but an
+    // explicit false keeps today's behaviour (the email is sent).
+    sendEmail: send_email !== false,
     actedBy: req.user?.id,
   });
   return success(res, result, 'Stage outcome recorded successfully');
@@ -285,10 +294,17 @@ export const scheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name, notes,
-    candidate_subject, candidate_body, panel_subject, panel_body,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and interview start time are required.', 400);
+  }
+
+  // N22: the Interviewee phone is editable in the dialog. Saved to the
+  // candidate's record BEFORE booking, so an invalid number is refused without
+  // leaving a half-done booking behind.
+  if (candidate_phone !== undefined && candidate_phone !== null && String(candidate_phone).trim() !== '') {
+    await pipelineService.updateCandidatePhoneForPipeline(id, candidate_phone);
   }
 
   const result = await pipelineService.scheduleInterviewRound(id, {
@@ -340,10 +356,14 @@ export const rescheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name,
-    candidate_subject, candidate_body, panel_subject, panel_body,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and new interview start time are required.', 400);
+  }
+  // N22: the phone typed in the dialog is saved to the CV first, as for a new booking.
+  if (candidate_phone !== undefined && candidate_phone !== null && String(candidate_phone).trim() !== '') {
+    await pipelineService.updateCandidatePhoneForPipeline(id, candidate_phone);
   }
 
   const result = await pipelineService.rescheduleInterviewRound(id, {

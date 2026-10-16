@@ -38,14 +38,48 @@ const osIsDark = () => window.matchMedia?.('(prefers-color-scheme: dark)').match
 /** @returns {'light' | 'dark'} */
 const resolveMode = (mode) => (mode === 'system' ? (osIsDark() ? 'dark' : 'light') : mode);
 
+/**
+ * While > 0, the DOM is pinned light whatever the user's theme (public pages,
+ * see pushForceLight). Module state, not React state: it has to win over
+ * every applyResolvedTheme call, including the OS-change listener's.
+ */
+let forceLightDepth = 0;
+/** The theme the app WANTS, so releasing the pin restores it. */
+let lastResolved = 'light';
+
 /** Syncs the resolved theme to the DOM (html attribute, color-scheme, theme-color meta). */
 function applyResolvedTheme(resolved) {
+  lastResolved = resolved;
+  const effective = forceLightDepth > 0 ? 'light' : resolved;
   const el = document.documentElement;
-  el.setAttribute('data-theme', resolved);
-  el.style.colorScheme = resolved;
+  el.setAttribute('data-theme', effective);
+  el.style.colorScheme = effective;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', THEME_COLOR[resolved]);
+    ?.setAttribute('content', THEME_COLOR[effective]);
+}
+
+/**
+ * Pins the whole document light until the returned release function runs.
+ *
+ * A light wrapper <div> alone is not enough: dropdowns, date pickers, modals
+ * and toasts are portalled onto <body>, outside that div, and resolve their
+ * CSS variables against <html data-theme>. With a dark saved theme they came
+ * up dark on the light public forms (N31). Pinning <html> fixes every portal
+ * at once; the user's own theme is untouched and returns on release.
+ *
+ * @returns {() => void} release
+ */
+export function pushForceLight() {
+  forceLightDepth += 1;
+  applyResolvedTheme(lastResolved);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    forceLightDepth = Math.max(0, forceLightDepth - 1);
+    applyResolvedTheme(lastResolved);
+  };
 }
 
 /**

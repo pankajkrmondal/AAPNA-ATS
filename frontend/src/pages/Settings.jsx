@@ -10,6 +10,7 @@ import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
 import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
+import CompanyProfileCard from '../components/settings/CompanyProfileCard';
 
 const { Title, Text } = Typography;
 
@@ -450,6 +451,10 @@ export default function Settings() {
           />
         </div>
       </Card>
+
+      {/* What keyword-shortlist emails say about the company (N17). Admin
+          only, matching the API's requireAdmin. */}
+      {isAdmin && <CompanyProfileCard />}
 
       {/* Recruiters added to every booked round's Teams meeting. First in the
           interview chain (book → remind → confirm held → capture recording),

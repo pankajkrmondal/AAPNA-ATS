@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as settingsController from '../controllers/settings.controller.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -35,5 +35,10 @@ router.post('/assessment-automation', settingsController.saveAssessmentAutomatio
  *  controller (same pattern as assessment-automation above). */
 router.get('/flow-keys', settingsController.getFlowKeys);
 router.post('/flow-keys', settingsController.saveFlowKey);
+
+/** "About AAPNA" text for candidate emails (N17). Anyone signed in can read it
+ *  (the shortlist dialog previews it); only admins can change it. */
+router.get('/company-profile', settingsController.getCompanyProfileSetting);
+router.post('/company-profile', requireAdmin, settingsController.saveCompanyProfileSetting);
 
 export default router;

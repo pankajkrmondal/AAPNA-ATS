@@ -19,7 +19,7 @@ import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } f
 // cancelInterviewRound is also re-exported below for the controller's benefit;
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
+import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, getInterviewParties, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
 import { SCORECARD_STATUS } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
@@ -37,6 +37,9 @@ import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../uti
 import { emailCandidates } from '../utils/emailMatch.js';
 import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
 import { withDeadline } from '../utils/withDeadline.js';
+import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stageSkip.js';
+import { scoreSourceFor, noScoreNoteError } from '../utils/stageScore.js';
+import { firstValidPhone, maskPhone } from '../utils/phone.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
 
@@ -168,6 +171,45 @@ async function vendorAttributionFor(cvIdBig) {
  * @param {object} filters - { positionId, source, onHoldOnly, rejectedOnly, stuckDays, ownedByUsername }
  * @returns {Promise<{ stages: object[], columns: object[] }>}
  */
+/**
+ * The board's Position filter, one entry per requisition (N19): four
+ * ".NET Developer" MRFs are four entries, each with its reference and date.
+ * Open MRFs first (by role, newest first), then closed ones flagged, then the
+ * keyword shortlists, which carry no MRF and stay keyed by their role text.
+ *
+ * @param {object[]} journeys - rows loaded by listPipeline (shortlist + mrf included)
+ * @param {object[]} cards - the mapped cards for those journeys
+ * @returns {Array<{ key: string, mrfId: number|null, role: string, created_at: Date|null, closed: boolean }>}
+ */
+function buildPositionOptions(journeys, cards) {
+  const byMrf = new Map();
+  const textOnly = new Set();
+  journeys.forEach((j, i) => {
+    const card = cards[i];
+    const mrf = j.rpa_shortlisted_candidates?.mrf;
+    if (card.mrf_id && mrf) {
+      if (!byMrf.has(card.mrf_id)) {
+        byMrf.set(card.mrf_id, {
+          key: `mrf:${card.mrf_id}`,
+          mrfId: card.mrf_id,
+          role: card.position || `MRF-${card.mrf_id}`,
+          created_at: mrf.created_at || null,
+          closed: card.mrf_closed,
+        });
+      }
+    } else if (card.position) {
+      textOnly.add(card.position);
+    }
+  });
+  const mrfOptions = [...byMrf.values()].sort((a, b) => (
+    Number(a.closed) - Number(b.closed)
+    || a.role.localeCompare(b.role)
+    || new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  ));
+  const textOptions = [...textOnly].sort().map((role) => ({ key: `text:${role}`, mrfId: null, role, created_at: null, closed: false }));
+  return [...mrfOptions, ...textOptions];
+}
+
 export async function listPipeline(filters = {}) {
   const stages = await prisma.rpa_pipeline_stages.findMany({
     where: { is_active: true },
@@ -416,6 +458,11 @@ export async function listPipeline(filters = {}) {
   if (filters.position) {
     filtered = filtered.filter((c) => c.position === filters.position);
   }
+  // One requisition (N19). Applied here, like `position`, rather than in the
+  // query, so positionOptions below still lists every MRF on the board.
+  if (filters.positionMrfId) {
+    filtered = filtered.filter((c) => c.mrf_id === Number(filters.positionMrfId));
+  }
 
   const columns = stages.map((s) => ({
     stage_key: s.stage_key,
@@ -426,16 +473,46 @@ export async function listPipeline(filters = {}) {
   }));
 
   const positions = [...new Set(cards.map((c) => c.position).filter(Boolean))].sort();
+  const positionOptions = buildPositionOptions(journeys, cards);
 
   return {
     stages: serializeBigInts(stages),
     columns: serializeBigInts(columns),
     positions,
+    positionOptions,
     total: cards.length,
     filteredTotal: filtered.length,
     closedCount,
   };
 }
+
+/**
+ * Saves the candidate's mobile number from the Schedule dialog (N22).
+ * Stored as 10 digits (the ATS treats every number as Indian, +91). The log
+ * shows only the last 4 digits.
+ *
+ * @param {number} pipelineId
+ * @param {string} rawPhone - as typed: spaces, dashes and +91 are fine
+ * @returns {Promise<{changed: boolean, phone: string}>}
+ * @throws {AppError} 400 for anything that is not a 10-digit number
+ */
+export async function updateCandidatePhoneForPipeline(pipelineId, rawPhone) {
+  const phone = firstValidPhone(rawPhone);
+  if (!phone) {
+    throw new AppError('Enter a 10-digit mobile number (for example 98765 43210 or +91 98765 43210).', 400);
+  }
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({ where: { id: BigInt(pipelineId) }, select: { cv_id: true } });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  if (!pipeline.cv_id) throw new AppError('This journey has no candidate record to save the phone to.', 400);
+  const cv = await prisma.rpa_cv.findUnique({ where: { id: pipeline.cv_id }, select: { ContactNumber: true } });
+  if (firstValidPhone(cv?.ContactNumber) === phone) return { changed: false, phone };
+  await prisma.rpa_cv.update({ where: { id: pipeline.cv_id }, data: { ContactNumber: phone, modifiedAt: new Date() } });
+  logger.info(`Pipeline ${pipelineId}: candidate phone updated to ${maskPhone(phone)} from the Schedule dialog.`);
+  return { changed: true, phone };
+}
+
+/** Recorded as email_error when the recruiter chose not to email the candidate (N45). */
+export const OUTCOME_EMAIL_NOT_SENT = 'Not sent: the recruiter chose not to email the candidate.';
 
 /**
  * One journey's Zeko round for a given stage, and THAT CANDIDATE'S result row.
@@ -492,6 +569,31 @@ async function findZekoRoundResult(pipeline, stageKey) {
     : null;
 
   return { round, result };
+}
+
+/**
+ * Whether the stage's decision has its score on file (N25): a Zeko result, an
+ * assessment result, or a submitted scorecard — see utils/stageScore.js.
+ * @param {object} pipeline - journey row including rpa_shortlisted_candidates
+ * @param {string} stageKey
+ * @returns {Promise<boolean|null>} null when the stage expects no score
+ */
+export async function stageHasScore(pipeline, stageKey) {
+  const source = scoreSourceFor(stageKey);
+  if (source === 'zeko') {
+    const { result } = await findZekoRoundResult(pipeline, stageKey);
+    return Boolean(result);
+  }
+  if (source === 'assessment') {
+    return (await prisma.rpa_assessment_results.count({ where: { pipeline_id: pipeline.id } })) > 0;
+  }
+  if (source === 'scorecard') {
+    const submitted = await prisma.rpa_interview_scorecard.count({
+      where: { pipeline_id: pipeline.id, stage_key: stageKey, status: SCORECARD_STATUS.SUBMITTED },
+    });
+    return submitted > 0;
+  }
+  return null;
 }
 
 /**
@@ -744,9 +846,12 @@ export async function getPipelineDetail(pipelineId) {
   const interviewSchedules = await getSchedulesByStage(pipeline.id);
   let interviewSchedule = null;
   let mrfInterviewHints = null;
+  let interviewParties = null;
   if (isSchedulableStage(pipeline.current_stage_key)) {
     mrfInterviewHints = mrfRoundHints(pipeline.rpa_shortlisted_candidates?.mrf, pipeline.current_stage_key);
     interviewSchedule = interviewSchedules[pipeline.current_stage_key] || null;
+    // Interviewee + interviewer pre-fill for the Schedule dialog (N23).
+    interviewParties = await getInterviewParties(pipeline, pipeline.current_stage_key);
   }
 
   // The offer record drives the Offer round's own action bar (request approval →
@@ -754,8 +859,13 @@ export async function getPipelineDetail(pipelineId) {
   // current stage, so a closed journey's drawer still shows what was offered.
   const offer = await prisma.rpa_offers.findUnique({ where: { pipeline_id: pipeline.id } });
 
+  // Drives the approve dialog's "Approve without score" prompt (N25) — the
+  // same check setStageOutcome enforces, so the two can never disagree.
+  const currentStageHasScore = pipeline.final_outcome ? null : await stageHasScore(pipeline, pipeline.current_stage_key);
+
   return serializeBigInts({
     pipeline,
+    currentStageHasScore,
     currentStageOutcomes: outcomes,
     reasons,
     zekoScores,
@@ -768,6 +878,7 @@ export async function getPipelineDetail(pipelineId) {
     interviewSchedule,
     interviewSchedules,
     mrfInterviewHints,
+    interviewParties,
     offer,
   });
 }
@@ -829,16 +940,21 @@ export async function getOutcomePreview(pipelineId, outcomeKey) {
  * @param {string|null} [params.notes]
  * @param {string|null} [params.emailSubject] - recruiter-edited subject from the preview step; falls back to server compile if omitted
  * @param {string|null} [params.emailBody] - recruiter-edited body from the preview step; falls back to server compile if omitted
- * @param {boolean} [params.skipOptionalNext] - when approving and the resolved next stage is
- *   optional, land two stages ahead instead of one and log the bypassed stage as a 'skip'
- *   event (02-BUSINESS-DESIGN.md §2 rule 2) rather than 'entered'. Ignored otherwise.
+ * @param {boolean} [params.skipOptionalNext] - when approving, bypass the next stage and land
+ *   two ahead, logging a 'skip' arrival event (02-BUSINESS-DESIGN.md §2 rule 2) rather than
+ *   'entered'. 400 when the next stage is not optional (N33).
+ * @param {string|null} [params.skipToStageKey] - when approving, land on this later stage,
+ *   bypassing every stage between — all of which must be optional (N24: HR Round straight to
+ *   Documents past CEO Round and Client Round). Takes precedence over skipOptionalNext.
  * @param {string|null} [params.expectedStageKey] - the stage the CLIENT was displaying when the
  *   recruiter decided. Guards against a stale tab; see the note below. Optional for backwards
  *   compatibility with direct service callers (jobs, scripts, tests).
+ * @param {boolean} [params.sendEmail=true] - false saves the outcome without the candidate's
+ *   outcome email (N45); the event records OUTCOME_EMAIL_NOT_SENT as its email_error.
  * @param {number} params.actedBy - rpa_users.id
  * @returns {Promise<object>} the updated pipeline row + event
  */
-export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, skipOptionalNext = false, expectedStageKey = null, actedBy }) {
+export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null, otherText = null, notes = null, emailSubject = null, emailBody = null, skipOptionalNext = false, skipToStageKey = null, expectedStageKey = null, sendEmail = true, actedBy }) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: true },
@@ -902,6 +1018,16 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
     }
   }
 
+  // Approve without score (N25): allowed, but the recruiter must say why. The
+  // note is saved on the outcome event like any other.
+  if (outcomeKey === STAGE_OUTCOMES.APPROVED) {
+    const noteError = noScoreNoteError({
+      hasScore: await stageHasScore(pipeline, pipeline.current_stage_key),
+      notes,
+    });
+    if (noteError) throw new AppError(noteError, 400);
+  }
+
   const statusLabel = finalStatusLabelFor(pipeline.current_stage_key, outcomeKey);
   const nextStageStatus = outcomeKey === STAGE_OUTCOMES.APPROVED
     ? 'approved'
@@ -919,7 +1045,7 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   // advanceStage(skip:true) already produces for a candidate skipping from
   // an optional stage they're already sitting on.
   let nextStage = null;
-  let skippedStage = null;
+  let skippedStages = [];
   if (outcomeKey === STAGE_OUTCOMES.APPROVED) {
     const stages = await prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } });
     const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
@@ -933,13 +1059,10 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
         409
       );
     }
-    if (currentIdx < stages.length - 1) {
-      nextStage = stages[currentIdx + 1];
-      if (skipOptionalNext && nextStage.is_optional && currentIdx + 2 < stages.length) {
-        skippedStage = nextStage;
-        nextStage = stages[currentIdx + 2];
-      }
-    }
+    // Only optional stages may be bypassed (N33), and a run of them can be
+    // bypassed in one go — HR Round straight to Documents past CEO Round and
+    // Client Round (N24). Refused with 400, never silently ignored.
+    ({ nextStage, skipped: skippedStages } = resolveApproveLanding(stages, currentIdx, { skipToStageKey, skipOptionalNext }));
   }
 
   const pipelineUpdateData = nextStage
@@ -989,8 +1112,10 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
         data: {
           pipeline_id: pipeline.id,
           stage_key: nextStage.stage_key,
-          event_type: skippedStage ? 'skip' : 'entered',
-          notes: skippedStage ? `Skipped optional stage ${skippedStage.stage_key} (${skippedStage.label})` : null,
+          // ONE arrival event at the landing stage, however many were bypassed
+          // (utils/stageSkip.js explains why not one per bypassed stage).
+          event_type: skippedStages.length ? 'skip' : 'entered',
+          notes: skippedStages.length ? skipNote(skippedStages) : null,
           acted_by: actedBy || null,
         },
       });
@@ -1024,7 +1149,11 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   // Sends the recruiter-edited subject/body from the preview step verbatim
   // when provided; falls back to a fresh server-side compile otherwise.
   const stageRow = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: pipeline.current_stage_key } });
-  const emailResult = await sendStageOutcomeEmail({
+  // N45: the recruiter can save an outcome without emailing the candidate.
+  // The vendor's separate status line below still goes out as before.
+  const emailResult = !sendEmail
+    ? { sent: false, error: OUTCOME_EMAIL_NOT_SENT }
+    : await sendStageOutcomeEmail({
     pipelineRow: updatedPipeline,
     stageKey: pipeline.current_stage_key,
     outcomeKey,
@@ -1058,8 +1187,8 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
 
   if (nextStage) {
     logger.info(
-      skippedStage
-        ? `Pipeline ${pipelineId} approved ${pipeline.current_stage_key}, skipped optional ${skippedStage.stage_key}, and advanced to ${nextStage.stage_key}.`
+      skippedStages.length
+        ? `Pipeline ${pipelineId} approved ${pipeline.current_stage_key}, skipped optional ${skippedStages.map((s) => s.stage_key).join(', ')}, and advanced to ${nextStage.stage_key}.`
         : `Pipeline ${pipelineId} approved and auto-advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key}.`
     );
   }
@@ -1112,6 +1241,10 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
   if (currentIdx === stages.length - 1) {
     throw new AppError('No next stage available (already at the final stage).', 400);
   }
+  // Moving on without an outcome IS skipping the current stage, whatever the
+  // `skip` flag says — so only an optional stage can be left this way (N33).
+  // Mandatory stages move forward through setStageOutcome (Approve).
+  assertSkippable(stages[currentIdx]);
 
   const nextStage = stages[currentIdx + 1];
 

@@ -63,11 +63,65 @@ import SkillTags from '../components/common/SkillTags';
 import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
+import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
+import { fmtDate } from '../utils/dateFormat';
+import { mrfOptionLabel, closureReasonLabel } from '../utils/mrfLabel';
 
 const { Title, Text, Paragraph } = Typography;
-const { Panel } = Collapse;
+
+/**
+ * Notice period as display text. NoticePeriodDays is the parsed number the
+ * filters use; the raw NoticePeriod column is free text ("3 Months",
+ * "Immediate"), which used to render as "3 Months days notice".
+ */
+const formatNotice = (c) => {
+  if (!c) return null;
+  if (c.NoticePeriodDays != null && c.NoticePeriodDays !== '') {
+    const days = Number(c.NoticePeriodDays);
+    return days === 0 ? 'Immediate joiner' : `${days} days notice`;
+  }
+  const raw = c.NoticePeriod == null ? '' : String(c.NoticePeriod).trim();
+  if (!raw) return null;
+  return /^\d+(\.\d+)?$/.test(raw) ? `${raw} days notice` : `${raw} notice`;
+};
+
+/** Education filter checkboxes, grouped by the kind of role they suit. */
+const EDUCATION_FILTER_GROUPS = [
+  {
+    key: 'tech',
+    prefix: 'tech_',
+    title: 'Technical Roles',
+    options: [
+      { value: 'tech_cs_it_mca_mtech', label: 'BE/B.Tech (CS/IT)/MCA/M.Tech' },
+      { value: 'tech_other_it_msc_ms', label: 'BE/B.Tech (Other)/M.Sc IT/MS IT' },
+      { value: 'tech_bca_bsc_it_grad', label: 'BCA/B.Sc IT/CS/IT Graduate' },
+      { value: 'tech_non_it_grad', label: 'Non-IT Graduate' },
+    ],
+  },
+  {
+    key: 'fin',
+    prefix: 'fin_',
+    title: 'Accounts & Finance',
+    options: [
+      { value: 'fin_ca_mba_cma_icwa', label: 'CA/MBA Finance/CMA/ICWA' },
+      { value: 'fin_mcom', label: 'M.Com' },
+      { value: 'fin_bcom', label: 'B.Com' },
+      { value: 'fin_any_other_grad', label: 'Any Other Graduate' },
+    ],
+  },
+  {
+    key: 'sales',
+    prefix: 'sales_',
+    title: 'Sales & HR Roles',
+    options: [
+      { value: 'sales_mba_be_btech_mca_it', label: 'MBA/BE/B.Tech/MCA/IT Graduate' },
+      { value: 'sales_any_postgrad_non_it', label: 'Any Postgraduate (Non-IT)' },
+      { value: 'sales_any_grad', label: 'Any Graduate' },
+    ],
+  },
+];
 
 const formatCurrentCompany = (companyStr) => {
   if (!companyStr) return null;
@@ -99,6 +153,18 @@ const formatCurrentCompany = (companyStr) => {
 };
 
 // Friendly labels for the backend's required_qualification codes (role JD panel).
+/** Strict JD search: where the experience band came from (Phase 3 N08). */
+const BAND_SOURCE_LABELS = {
+  jd: 'From the JD',
+  mrf: 'MRF minimum (the JD gives no range)',
+  none: 'Not set on the MRF',
+};
+
+/** "3 – 6 yrs", or "2 yrs or more" for an open band. */
+const formatExperienceBand = (band) => (band.max != null
+  ? `${band.min} – ${band.max} yrs`
+  : `${band.min} yrs or more`);
+
 const ROLE_QUAL_LABELS = {
   TECH_GRADUATE: 'BE / BTech / MCA / Any',
   POST_GRADUATE: 'Post Graduate',
@@ -317,17 +383,22 @@ export default function CandidateScreening() {
 
   // ── Mode/Tab State (persisted so returning to the page restores the view) ──
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('screening_active_tab') || 'jd'); // 'jd' or 'keyword'
-  const [activeEduKeys, setActiveEduKeys] = useState([]);
 
   // ── Roles Dropdown State ──
   // Roles come from React Query (prefetched at app load), cached for the session.
-  const rolesQuery = useApprovedRoles();
+  // One entry per MRF (N19); "Include closed MRFs" adds the closed ones (N20).
+  const [includeClosedMrfs, setIncludeClosedMrfs] = useState(false);
+  const rolesQuery = useApprovedRoles({ includeClosed: includeClosedMrfs });
   const roles = rolesQuery.data || [];
   const loadingRoles = rolesQuery.isLoading;
   const [selectedRoleId, setSelectedRoleId] = useState(() => {
     const v = localStorage.getItem('screening_selected_role');
     return v ? Number(v) : null;
   });
+  const selectedRole = roles.find((r) => r.id === selectedRoleId) || null;
+  // A closed MRF can still be searched, read-only: Shortlist / Reject are off (N20).
+  // The server refuses a shortlist onto a closed MRF too (409).
+  const selectedRoleClosed = Boolean(selectedRole?.closed);
   const [roleDetails, setRoleDetails] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -362,6 +433,7 @@ export default function CandidateScreening() {
   // ── Keyword Filter Fields ──
   const [form] = Form.useForm();
   const [selectedEduCategories, setSelectedEduCategories] = useState([]);
+  const [activeEduKeys, setActiveEduKeys] = useState([]);
 
   // ── Sliding Drawer State ──
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -394,11 +466,17 @@ export default function CandidateScreening() {
     }
   }, [convMessages, convModalVisible, convLoading]);
 
+  // The drawer's score block serves both tabs: JD rows carry starRating, keyword
+  // rows relevanceScore — keyword scores used to have no explanation at all (N06).
+  const drawerRating = selectedCandidate?.starRating || selectedCandidate?.relevanceScore || null;
+  const drawerScore = drawerRating ? (drawerRating.finalScore ?? drawerRating.avgScore ?? 0) : 0;
+
   const getCriteria = (key) => {
     if (activeTab !== 'jd' || !roleDetails || !selectedCandidate) return null;
     switch (key) {
       case 'totalExperience':
-        return roleDetails.total_experience 
+        if (roleDetails.experienceBand) return `Required: ${formatExperienceBand(roleDetails.experienceBand)}`;
+        return roleDetails.total_experience
           ? `Required: ${roleDetails.total_experience} yrs total${roleDetails.relevant_experience ? ' · ' + roleDetails.relevant_experience + ' yrs relevant' : ''}` 
           : null;
       case 'relevantExperience':
@@ -414,8 +492,8 @@ export default function CandidateScreening() {
           ? `Budget: ₹${roleDetails.budget_min || '0'}-₹${roleDetails.budget_max || '0'} LPA · Candidate: ₹${selectedCandidate.ExpectedCTC_LPA || '0'} LPA`
           : null;
       case 'availability':
-        return selectedCandidate.NoticePeriod != null 
-          ? `Candidate: ${selectedCandidate.NoticePeriod} days notice` 
+        return formatNotice(selectedCandidate)
+          ? `Candidate: ${formatNotice(selectedCandidate)}`
           : null;
       default:
         return null;
@@ -528,6 +606,24 @@ export default function CandidateScreening() {
     }
   };
 
+  // The remembered role may have closed since last visit. Show it as closed
+  // (tick the box) rather than as a bare number; drop it only if it is gone.
+  useEffect(() => {
+    if (!rolesQuery.isSuccess || !selectedRoleId) return;
+    if (roles.some((r) => r.id === selectedRoleId)) return;
+    if (!includeClosedMrfs) setIncludeClosedMrfs(true);
+    else handleRoleSelect(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rolesQuery.isSuccess, roles, selectedRoleId, includeClosedMrfs]);
+
+  // Open MRFs first; closed ones (only when asked for) in their own group.
+  const roleOptions = useMemo(() => {
+    const toOption = (r) => ({ value: r.id, label: mrfOptionLabel(r), role: r });
+    const open = roles.filter((r) => !r.closed).map(toOption);
+    const closed = roles.filter((r) => r.closed).map(toOption);
+    return closed.length ? [...open, { label: 'Closed', title: 'Closed', options: closed }] : open;
+  }, [roles]);
+
   // Force-reload the selected role's candidates, bypassing the backend Redis cache,
   // and write the fresh result into the query cache so the UI updates.
   const forceReloadRoleCandidates = async () => {
@@ -553,15 +649,33 @@ export default function CandidateScreening() {
     }
   };
 
-  const handleKeywordSearch = async (values) => {
+  const handleKeywordSearch = async () => {
     setSelectedCandidateKeys([]);
     setCandidates([]);
     setSummary(null);
     setCurrentPage(1);
     setLoadingCandidates(true);
 
+    const v = form.getFieldsValue(true);
     const payload = {
-      ...values,
+      // Any of these three makes the backend look one person up by exact
+      // match and skip the filters below (always, whatever SCREENING_V2 says).
+      name: v.name,
+      email: v.email,
+      phone: v.phone,
+      keyword: v.keyword,
+      matchMode: v.anySkill ? 'any' : 'all',
+      // Tags arrive as an array; sent as a comma list so the pre-V2 backend
+      // (which lower-cases a string) keeps working while SCREENING_V2 is off.
+      location: Array.isArray(v.location) ? v.location.join(',') : v.location,
+      gender: v.gender,
+      expMin: v.expMin,
+      expMax: v.expMax,
+      ctcMin: v.ctcMin,
+      ctcMax: v.ctcMax,
+      noticePeriod: v.noticePeriod,
+      position: v.position,
+      addedWithinDays: v.addedWithinDays,
       education: selectedEduCategories.join(','),
     };
     // Kept so Export can re-run the identical search server-side (the export
@@ -573,7 +687,12 @@ export default function CandidateScreening() {
       const data = res.data?.data || res.data || {};
       setCandidates(data.candidates || []);
       setSummary(data.summary || null);
-      message.success(`Search completed: ${data.candidates?.length || 0} matches`);
+      message.success(data.summary?.mode === 'lookup'
+        ? `Lookup completed: ${data.candidates?.length || 0} candidate(s) found`
+        : `Search completed: ${data.candidates?.length || 0} matches`);
+      if (data.summary?.aiUnavailable) {
+        message.warning('AI insights are unavailable right now — results are shown without them.');
+      }
       if (data.summary?.degraded) {
         notification.warning({
           message: 'Showing a limited candidate list',
@@ -633,6 +752,9 @@ export default function CandidateScreening() {
     }
   };
 
+  // N21: who a shortlist left out, and why — shown after the request returns.
+  const [shortlistResult, setShortlistResult] = useState(null);
+
   const handleDecisionConfirm = async ({ mrfId, roleName, reason, sendEmail, emailOverride }) => {
     const decision = decisionModalOpen;
     if (!decision) return;
@@ -647,6 +769,8 @@ export default function CandidateScreening() {
       email_override: emailOverride,
     };
     if (decision === 'reject') payload.reason = reason;
+    // N17: only a Keyword-tab shortlist attaches the JD and adds About AAPNA.
+    else payload.source = activeTab;
 
     setIsShortlisting(true);
     try {
@@ -659,11 +783,24 @@ export default function CandidateScreening() {
         ? (result.rejected ?? selectedList.length)
         : (result.shortlisted ?? selectedList.length);
       const skippedCount = result.skipped ?? 0;
-      const skippedNote = skippedCount > 0
+      const skippedList = decision === 'shortlist' ? (result.skipped_candidates || []) : [];
+      const skippedNote = skippedCount > 0 && skippedList.length === 0
         ? ` ${skippedCount} already had a record for this role and ${skippedCount === 1 ? 'was' : 'were'} left unchanged.`
         : '';
       const failures = result.email_failures || [];
       const verb = decision === 'reject' ? 'Rejected' : 'Shortlisted';
+
+      if (skippedList.length > 0) {
+        // N21: name each one left out and why, instead of a bare count.
+        const skippedIds = new Set(skippedList.map((x) => String(x.cv_id)));
+        const selectedRole = roles.find((r) => r.id === mrfId);
+        setShortlistResult({
+          roleLabel: selectedRole ? mrfOptionLabel(selectedRole) : roleName,
+          added: selectedList.filter((c) => !skippedIds.has(String(c.id))).map((c) => c.Name || 'Candidate'),
+          emailed: sendEmail && failures.length === 0,
+          skipped: skippedList,
+        });
+      }
 
       if (failures.length > 0) {
         // Group identical reasons so the message stays readable for bulk actions.
@@ -682,6 +819,8 @@ export default function CandidateScreening() {
           ),
           duration: 0,
         });
+      } else if (skippedList.length > 0) {
+        // The result dialog says it all.
       } else {
         const emailNote = sendEmail
           ? ` Sent ${emailsSent} notification email(s).`
@@ -723,7 +862,8 @@ export default function CandidateScreening() {
       setSelectedCandidateKeys([]);
       setDecisionModalOpen(null);
 
-      const decidedIds = new Set(selectedList.map((c) => c.id));
+      const leftOut = new Set(skippedList.map((x) => String(x.cv_id)));
+      const decidedIds = new Set(selectedList.map((c) => c.id).filter((id) => !leftOut.has(String(id))));
       if (decision === 'reject') {
         // A rejected candidate should no longer sit in this role's current result
         // list (the backend also excludes them from future searches of this role).
@@ -1036,11 +1176,15 @@ export default function CandidateScreening() {
                             loading={loadingRoles}
                             value={selectedRoleId}
                             onChange={handleRoleSelect}
-                            optionFilterProp="children"
-                            options={roles.map((r) => ({
-                              value: r.id,
-                              label: `${r.role} (${r.number_of_positions} openings)`,
-                            }))}
+                            optionFilterProp="label"
+                            options={roleOptions}
+                            optionRender={(opt) => (
+                              <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                                <span style={opt.data.role?.closed ? { color: 'var(--text-3)' } : undefined}>{opt.data.label}</span>
+                                {opt.data.role?.isLatest && <Tag color="green" style={{ margin: 0 }}>Latest</Tag>}
+                                {opt.data.role?.closed && <Tag style={{ margin: 0 }}>Closed</Tag>}
+                              </Space>
+                            )}
                           />
                           <Tooltip title="Refresh roles & candidates">
                             <Button
@@ -1051,6 +1195,25 @@ export default function CandidateScreening() {
                             />
                           </Tooltip>
                         </Space.Compact>
+                        <Checkbox
+                          checked={includeClosedMrfs}
+                          onChange={(e) => setIncludeClosedMrfs(e.target.checked)}
+                          style={{ marginTop: 4 }}
+                        >
+                          Include closed MRFs
+                        </Checkbox>
+                        {selectedRoleClosed && (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginTop: 4 }}
+                            message={
+                              `This MRF was closed${selectedRole.closed_at ? ` on ${fmtDate(selectedRole.closed_at)}` : ''}`
+                              + `${selectedRole.closure_reason ? ` (${closureReasonLabel(selectedRole.closure_reason)})` : ''}.`
+                              + ' Results are read-only: Shortlist and Reject are turned off.'
+                            }
+                          />
+                        )}
                       </Space>
                     </Col>
 
@@ -1070,18 +1233,46 @@ export default function CandidateScreening() {
                               <Text type="secondary" style={{ fontSize: 12 }}>Openings</Text>
                               <div style={{ fontWeight: 600 }}>{roleDetails.role_openings} openings</div>
                             </Col>
-                            <Col xs={12} sm={6} md={5}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Experience Required</Text>
-                              <div style={{ fontWeight: 600 }}>{roleDetails.total_experience} yrs (rel {roleDetails.relevant_experience} yrs)</div>
-                            </Col>
-                            <Col xs={24} sm={12} md={5}>
-                              <Text type="secondary" style={{ fontSize: 12 }}>Target Budget</Text>
-                              <div style={{ fontWeight: 600 }}>
-                                {roleDetails.budget_min && roleDetails.budget_max 
-                                  ? `₹${roleDetails.budget_min} - ₹${roleDetails.budget_max} LPA`
-                                  : 'N/A'}
-                              </div>
-                            </Col>
+                            {roleDetails.experienceBand ? (
+                              <>
+                                {/* Strict JD search (Phase 3 N08): what the gates
+                                    actually enforce, and where each value came from. */}
+                                <Col xs={12} sm={6} md={5}>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>Experience</Text>
+                                  <div style={{ fontWeight: 600 }}>{formatExperienceBand(roleDetails.experienceBand)}</div>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>{BAND_SOURCE_LABELS[roleDetails.experienceBand.source]}</Text>
+                                </Col>
+                                <Col xs={24} sm={12} md={5}>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>Budget</Text>
+                                  {roleDetails.budget_max ? (
+                                    <>
+                                      <div style={{ fontWeight: 600 }}>Up to ₹{roleDetails.budget_max} LPA</div>
+                                      <Text type="secondary" style={{ fontSize: 12 }}>From the MRF request</Text>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div style={{ fontWeight: 600, color: 'var(--text-3)' }}>Not set</div>
+                                      <Text type="warning" style={{ fontSize: 12 }}>Expected CTC is not checked</Text>
+                                    </>
+                                  )}
+                                </Col>
+                              </>
+                            ) : (
+                              <>
+                                <Col xs={12} sm={6} md={5}>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>Experience Required</Text>
+                                  <div style={{ fontWeight: 600 }}>{roleDetails.total_experience} yrs (rel {roleDetails.relevant_experience} yrs)</div>
+                                </Col>
+                                <Col xs={24} sm={12} md={5}>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>Target Budget</Text>
+                                  <div style={{ fontWeight: 600 }}>
+                                    {roleDetails.budget_min && roleDetails.budget_max
+                                      ? `₹${roleDetails.budget_min} - ₹${roleDetails.budget_max} LPA`
+                                      : 'N/A'}
+                                  </div>
+                                </Col>
+                              </>
+                            )}
                             <Col xs={24} sm={12} md={5} style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                               <Button
                                 type="text"
@@ -1096,7 +1287,9 @@ export default function CandidateScreening() {
                               {(() => {
                                 const team = roleDetails.requirement_for_team || roleDetails.role_team;
                                 const qualKey = roleDetails.required_qualification || roleDetails.role_required_qualification;
-                                const qualLabel = ROLE_QUAL_LABELS[qualKey] || qualKey;
+                                // Strict JD search names the requirement it enforces; null = none checked.
+                                const strictJd = Boolean(roleDetails.experienceBand);
+                                const qualLabel = strictJd ? roleDetails.educationRequirement : (ROLE_QUAL_LABELS[qualKey] || qualKey);
                                 const stream = roleDetails.required_stream || roleDetails.role_required_qualification_stream;
                                 const responsibilities = roleDetails.role_responsibilities || roleDetails.roles_and_responsibilities;
                                 return (
@@ -1121,10 +1314,26 @@ export default function CandidateScreening() {
                                     )}
                                     {/* Skills */}
                                     <Space size={6} direction="vertical" style={{ width: '100%' }}>
-                                      <div>
-                                        <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
-                                        <Text style={{ fontSize: 13 }}>{roleDetails.role_mandatory_skills || 'N/A'}</Text>
-                                      </div>
+                                      {strictJd ? (
+                                        <div>
+                                          <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
+                                          <Text style={{ fontSize: 13 }} type={roleDetails.mandatorySkillsParsed?.length ? undefined : 'secondary'}>
+                                            {roleDetails.mandatorySkillsParsed?.length ? 'Candidates must have all of these' : 'None found'}
+                                          </Text>
+                                          {roleDetails.mandatorySkillsParsed?.length > 0 && (
+                                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                                              {roleDetails.mandatorySkillsParsed.map((skill) => (
+                                                <Tag key={skill} color="blue" style={{ margin: 0, fontWeight: 600, fontSize: 13, padding: '2px 10px' }}>{skill}</Tag>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <Tag color="blue" style={{ borderRadius: 4, fontWeight: 600 }}>MANDATORY SKILLS</Tag>
+                                          <Text style={{ fontSize: 13 }}>{roleDetails.role_mandatory_skills || 'N/A'}</Text>
+                                        </div>
+                                      )}
                                       {roleDetails.role_good_to_have_skills && (
                                         <div>
                                           <Tag color="cyan" style={{ borderRadius: 4, fontWeight: 600 }}>GOOD TO HAVE</Tag>
@@ -1168,88 +1377,137 @@ export default function CandidateScreening() {
                   className="screening-filter"
                   style={{ marginTop: 8 }}
                 >
-                  <Row gutter={[16, 8]}>
-                    <Col xs={24} sm={8}>
-                      <Form.Item
-                        label="Skills"
-                        name="keyword"
-                        extra={
-                          <span className="field-hint">
-                            Separate skills with commas — matched against skills, resume keywords &amp; full resume text.
-                          </span>
-                        }
-                      >
-                        <Input size="large" allowClear placeholder="e.g. Python, Django, AWS" prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />} />
+                  {/* Classic form (design approved 13 Oct). Every filled filter must
+                      match, and a candidate missing that detail is left out.
+                      Candidate name / Email / Phone find one person by exact match
+                      and skip the other filters (N02). */}
+                  <Row gutter={[20, 4]}>
+                    <Col xs={24} lg={12}>
+                      <div className="screening-skills-head">
+                        <label htmlFor="keyword-skills" className="screening-field-label">Skills</label>
+                        <Form.Item name="anySkill" valuePropName="checked" noStyle>
+                          <Checkbox data-testid="any-skill" className="screening-any-skill">Match any one skill</Checkbox>
+                        </Form.Item>
+                      </div>
+                      <Form.Item name="keyword">
+                        <Input
+                          id="keyword-skills"
+                          size="large"
+                          allowClear
+                          placeholder="e.g. Java, Spring Boot, AWS"
+                          prefix={<SearchOutlined style={{ color: 'var(--text-3)' }} />}
+                        />
                       </Form.Item>
                     </Col>
-                    <Col xs={24} sm={8}>
-                      <Form.Item label="Designation" name="designation" extra={<span className="field-hint">Target role or title</span>}>
-                        <Input size="large" allowClear placeholder="e.g. Senior Developer" prefix={<SolutionOutlined style={{ color: 'var(--text-3)' }} />} />
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Location" name="location">
+                        <Select
+                          mode="tags"
+                          size="large"
+                          allowClear
+                          open={false}
+                          tokenSeparators={[',']}
+                          suffixIcon={<EnvironmentOutlined style={{ color: 'var(--text-3)' }} />}
+                          placeholder="Add city"
+                        />
                       </Form.Item>
                     </Col>
-                    <Col xs={24} sm={8}>
-                      <Form.Item label="Location" name="location" extra={<span className="field-hint">City or region</span>}>
-                        <Input size="large" allowClear placeholder="e.g. Noida, Pune" prefix={<EnvironmentOutlined style={{ color: 'var(--text-3)' }} />} />
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Position applied for" name="position">
+                        <Input size="large" allowClear placeholder="e.g. Java Developer" />
                       </Form.Item>
                     </Col>
-                    <Col xs={12} sm={4}>
-                      <Form.Item label="Gender" name="gender" extra={<span className="field-hint">Optional</span>}>
+
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Candidate name" name="name" extra={<span className="field-hint">Exact match. Other filters are skipped.</span>}>
+                        <Input size="large" allowClear placeholder="Full name" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Email" name="email" extra={<span className="field-hint">Exact match. Other filters are skipped.</span>}>
+                        <Input size="large" allowClear placeholder="name@example.com" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Phone" name="phone" extra={<span className="field-hint">Exact match. Other filters are skipped.</span>}>
+                        <Input size="large" allowClear placeholder="10-digit mobile number" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Gender" name="gender">
                         <Select
                           size="large"
                           placeholder="Any"
+                          allowClear
                           options={[
-                            { value: '', label: 'Any' },
                             { value: 'male', label: 'Male' },
                             { value: 'female', label: 'Female' },
                           ]}
                         />
                       </Form.Item>
                     </Col>
-                    <Col xs={12} sm={5}>
-                      <Form.Item label="Experience (Years)" extra={<span className="field-hint">Range in years</span>}>
-                        <Input.Group compact style={{ display: 'flex' }}>
+
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Experience (years)">
+                        <Space.Compact style={{ width: '100%' }}>
                           <Form.Item name="expMin" noStyle>
-                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" style={{ width: '50%' }} min={0} />
                           </Form.Item>
                           <Form.Item name="expMax" noStyle>
-                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" style={{ width: '50%' }} min={0} />
                           </Form.Item>
-                        </Input.Group>
+                        </Space.Compact>
                       </Form.Item>
                     </Col>
-                    <Col xs={24} sm={5}>
-                      <Form.Item label="Annual CTC (LPA)" extra={<span className="field-hint">Range in LPA</span>}>
-                        <Input.Group compact style={{ display: 'flex' }}>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Expected CTC (LPA)">
+                        <Space.Compact style={{ width: '100%' }}>
                           <Form.Item name="ctcMin" noStyle>
-                            <InputNumber size="large" placeholder="Min" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Min" style={{ width: '50%' }} min={0} />
                           </Form.Item>
                           <Form.Item name="ctcMax" noStyle>
-                            <InputNumber size="large" placeholder="Max" style={{ width: '50%', textAlign: 'center' }} min={0} />
+                            <InputNumber size="large" placeholder="Max" style={{ width: '50%' }} min={0} />
                           </Form.Item>
-                        </Input.Group>
+                        </Space.Compact>
                       </Form.Item>
                     </Col>
-                    <Col xs={24} sm={5}>
-                      <Form.Item label="Notice Period (Max Days)" name="noticePeriod" extra={<span className="field-hint">Max joining time</span>}>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Notice period" name="noticePeriod">
                         <Select
                           size="large"
                           placeholder="Any"
+                          allowClear
                           options={[
-                            { value: '', label: 'Any' },
-                            { value: '15', label: '15 days' },
-                            { value: '30', label: '30 days' },
-                            { value: '45', label: '45 days' },
-                            { value: '60', label: '60 days' },
-                            { value: '90', label: '90 days' },
+                            { value: '0', label: 'Immediate' },
+                            { value: '15', label: 'Up to 15 days' },
+                            { value: '30', label: 'Up to 30 days' },
+                            { value: '45', label: 'Up to 45 days' },
+                            { value: '60', label: 'Up to 60 days' },
+                            { value: '90', label: 'Up to 90 days' },
+                          ]}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12} lg={6}>
+                      <Form.Item label="Added within" name="addedWithinDays">
+                        <Select
+                          size="large"
+                          placeholder="Any time"
+                          allowClear
+                          options={[
+                            { value: 7, label: 'Last 7 days' },
+                            { value: 15, label: 'Last 15 days' },
+                            { value: 30, label: 'Last 30 days' },
+                            { value: 90, label: 'Last 90 days' },
                           ]}
                         />
                       </Form.Item>
                     </Col>
 
-                    {/* Collapsible Education Groups */}
+                    {/* Education: the same three expandable groups as before. */}
                     <Col xs={24}>
                       <Text strong style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Education / Qualification (Click categories below to expand)
+                        Education / Qualification (click categories below to expand)
                       </Text>
                       <Collapse
                         bordered={false}
@@ -1257,109 +1515,36 @@ export default function CandidateScreening() {
                         style={{ background: 'transparent', marginTop: 6 }}
                         activeKey={activeEduKeys}
                         onChange={setActiveEduKeys}
-                      >
-                        <Panel
-                          header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
-                                Technical Roles{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
-                                  {activeEduKeys.includes('tech') ? '(click to collapse)' : '(click to expand)'}
-                                </span>
-                              </Text>
-                              {selectedEduCategories.filter(x => x.startsWith('tech_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('tech_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
-                              )}
-                            </div>
-                          }
-                          key="tech"
-                          className="screening-edu-panel"
-                        >
-                          <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
-                            <Row gutter={[16, 8]}>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="tech_cs_it_mca_mtech">BE/B.Tech (CS/IT)/MCA/M.Tech</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="tech_other_it_msc_ms">BE/B.Tech (Other)/M.Sc IT/MS IT</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="tech_bca_bsc_it_grad">BCA/B.Sc IT/CS/IT Graduate</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="tech_non_it_grad">Non-IT Graduate</Checkbox>
-                              </Col>
-                            </Row>
-                          </Checkbox.Group>
-                        </Panel>
-                        
-                        <Panel
-                          header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
-                                Accounts & Finance{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
-                                  {activeEduKeys.includes('fin') ? '(click to collapse)' : '(click to expand)'}
-                                </span>
-                              </Text>
-                              {selectedEduCategories.filter(x => x.startsWith('fin_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('fin_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
-                              )}
-                            </div>
-                          }
-                          key="fin"
-                          className="screening-edu-panel"
-                        >
-                          <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
-                            <Row gutter={[16, 8]}>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="fin_ca_mba_cma_icwa">CA/MBA Finance/CMA/ICWA</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="fin_mcom">M.Com</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="fin_bcom">B.Com</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="fin_any_other_grad">Any Other Graduate</Checkbox>
-                              </Col>
-                            </Row>
-                          </Checkbox.Group>
-                        </Panel>
-
-                        <Panel
-                          header={
-                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
-                              <Text strong style={{ fontSize: 13 }}>
-                                Sales & HR Roles{' '}
-                                <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
-                                  {activeEduKeys.includes('sales') ? '(click to collapse)' : '(click to expand)'}
-                                </span>
-                              </Text>
-                              {selectedEduCategories.filter(x => x.startsWith('sales_')).length > 0 && (
-                                <Badge count={selectedEduCategories.filter(x => x.startsWith('sales_')).length} style={{ backgroundColor: 'var(--color-primary)' }} />
-                              )}
-                            </div>
-                          }
-                          key="sales"
-                          className="screening-edu-panel"
-                        >
-                          <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange}>
-                            <Row gutter={[16, 8]}>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="sales_mba_be_btech_mca_it">MBA/BE/B.Tech/MCA/IT Graduate</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="sales_any_postgrad_non_it">Any Postgraduate (Non-IT)</Checkbox>
-                              </Col>
-                              <Col xs={24} sm={12}>
-                                <Checkbox value="sales_any_grad">Any Graduate</Checkbox>
-                              </Col>
-                            </Row>
-                          </Checkbox.Group>
-                        </Panel>
-                      </Collapse>
+                        items={EDUCATION_FILTER_GROUPS.map((group) => {
+                          const picked = selectedEduCategories.filter((x) => x.startsWith(group.prefix)).length;
+                          return {
+                            key: group.key,
+                            className: 'screening-edu-panel',
+                            label: (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', paddingRight: 12 }}>
+                                <Text strong style={{ fontSize: 13 }}>
+                                  {group.title}{' '}
+                                  <span style={{ fontSize: '11px', fontWeight: 'normal', color: 'var(--text-3)', marginLeft: 8 }}>
+                                    {activeEduKeys.includes(group.key) ? '(click to collapse)' : '(click to expand)'}
+                                  </span>
+                                </Text>
+                                {picked > 0 && <Badge count={picked} style={{ backgroundColor: 'var(--color-primary)' }} />}
+                              </div>
+                            ),
+                            children: (
+                              <Checkbox.Group value={selectedEduCategories} onChange={handleEduCheckboxChange} style={{ width: '100%' }}>
+                                <Row gutter={[16, 8]}>
+                                  {group.options.map((o) => (
+                                    <Col xs={24} sm={12} key={o.value}>
+                                      <Checkbox value={o.value}>{o.label}</Checkbox>
+                                    </Col>
+                                  ))}
+                                </Row>
+                              </Checkbox.Group>
+                            ),
+                          };
+                        })}
+                      />
                     </Col>
 
                     <Col xs={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
@@ -1376,7 +1561,7 @@ export default function CandidateScreening() {
                         </Button>
                       </Tooltip>
                       <Button onClick={handleClearFilters} className="cta-secondary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 22 }}>
-                        Clear Filters
+                        Clear
                       </Button>
                       <Button type="primary" htmlType="submit" icon={<SearchOutlined />} className="cta-primary" size="large" style={{ height: 44, borderRadius: 10, fontWeight: 600, paddingInline: 26 }}>
                         Search Candidates
@@ -1394,7 +1579,7 @@ export default function CandidateScreening() {
         {/* Search summary metrics bar. Layout stays inline; the surface
             (fill/border/radius) moved to .screening-summary-bar so Design V2 can
             put it on the glass tier — a stylesheet cannot override an inline style. */}
-        {summary && (
+        {summary && !summary.noMandatorySkills && (
           <div
             className="screening-summary-bar"
             style={{
@@ -1410,9 +1595,11 @@ export default function CandidateScreening() {
             {(() => {
               // Show a clean primary count; drop the trailing "· ★..." (the chips cover it),
               // and mute the parenthetical breakdown detail.
+              // Strict JD search sends its detail line separately: it uses "·" itself.
+              const strictJd = summary.mode === 'jd-strict';
               const primary = (summary.summaryText || `${candidates.length} candidates match`).split('·')[0].trim();
-              const [head, ...rest] = primary.split('(');
-              const detail = rest.length ? `(${rest.join('(')}` : '';
+              const [head, ...rest] = strictJd ? [`${summary.shown} matched`] : primary.split('(');
+              const detail = strictJd ? summary.summaryDetail || '' : (rest.length ? `(${rest.join('(')}` : '');
               return (
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                   <Text strong style={{ color: 'var(--text)', fontSize: 15, letterSpacing: '-0.01em' }}>{head.trim()}</Text>
@@ -1436,7 +1623,12 @@ export default function CandidateScreening() {
               );
             })()}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(activeTab === 'jd'
+              {summary.aiUnavailable && (
+                <Tooltip title="The AI service did not respond. Filtering and ranking are unaffected; AI summaries are missing for this search.">
+                  <Tag color="warning" style={{ margin: 0 }}>AI insights unavailable</Tag>
+                </Tooltip>
+              )}
+              {summary.mode !== 'lookup' && (activeTab === 'jd'
                 ? [
                     { label: '5★', value: summary.fiveStar || 0, color: 'var(--kpi-c)' },
                     { label: '4★', value: summary.fourStar || 0, color: 'var(--kpi-a)' },
@@ -1603,6 +1795,11 @@ export default function CandidateScreening() {
                             )}
                           </Space>
 
+                          {/* When the candidate entered the database (N27) — "–" for legacy rows with no date. */}
+                          <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                            Added on <strong style={{ color: 'var(--text-2)' }}>{fmtDate(c.createdAt)}</strong>
+                          </div>
+
                           {/* Shortlisted/Rejected by/on — plainly visible, no hover required */}
                           {c.shortlisted_by && (
                             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
@@ -1656,6 +1853,22 @@ export default function CandidateScreening() {
                               <div className="cand-company" style={{ marginTop: '-1px' }}>{companyName}</div>
                             ) : null;
                           })()}
+
+                          {/* Contact (N06): enough to act on a candidate without
+                              opening the drawer. Click does not open the drawer, so
+                              the text can be selected and copied. */}
+                          <div
+                            className="cand-contact"
+                            data-testid="cand-contact"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-2)', cursor: 'text' }}
+                          >
+                            <MailOutlined style={{ color: 'var(--text-3)' }} />
+                            <span style={{ wordBreak: 'break-all' }}>{c.EmailID || '—'}</span>
+                            <span style={{ color: 'var(--text-3)' }}>·</span>
+                            <PhoneOutlined style={{ color: 'var(--text-3)' }} />
+                            <span>{c.ContactNumber || '—'}</span>
+                          </div>
 
                           {/* Detail Indicators (Pills) */}
                           <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
@@ -1732,10 +1945,10 @@ export default function CandidateScreening() {
                               </Tag>
                             </div>
                           )}
-                          {c.NoticePeriod && (
+                          {formatNotice(c) && (
                             <span className="screening-pill" style={{ fontSize: 10.5 }}>
                               <ClockCircleOutlined style={{ color: 'var(--green)' }} />
-                              <span>{c.NoticePeriod} days notice</span>
+                              <span>{formatNotice(c)}</span>
                             </span>
                           )}
                         </div>
@@ -1791,6 +2004,16 @@ export default function CandidateScreening() {
               </div>
             )}
           </div>
+        ) : activeTab === 'jd' && summary?.noMandatorySkills ? (
+          // Strict JD search found no checkable mandatory skill on the MRF, so
+          // it shows nobody rather than everyone in the experience band.
+          <Alert
+            type="warning"
+            showIcon
+            style={{ margin: 8 }}
+            message="This MRF has no mandatory skills, so no candidates are shown."
+            description="Edit the MRF and list the technical skills a candidate must have, separated by commas (for example: SQL, Power BI, JIRA)."
+          />
         ) : (
           <div style={{ padding: '64px 24px', textAlign: 'center' }}>
             <div
@@ -1847,6 +2070,8 @@ export default function CandidateScreening() {
             type="primary"
             icon={<CheckCircleOutlined />}
             onClick={() => openDecisionModal('shortlist')}
+            disabled={activeTab === 'jd' && selectedRoleClosed}
+            title={activeTab === 'jd' && selectedRoleClosed ? 'This MRF is closed' : undefined}
             style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Shortlist Selected
@@ -1855,6 +2080,8 @@ export default function CandidateScreening() {
             danger
             icon={<CloseCircleOutlined />}
             onClick={() => openDecisionModal('reject')}
+            disabled={activeTab === 'jd' && selectedRoleClosed}
+            title={activeTab === 'jd' && selectedRoleClosed ? 'This MRF is closed' : undefined}
             style={{ borderRadius: 8, fontWeight: 700 }}
           >
             Reject Selected
@@ -1882,6 +2109,15 @@ export default function CandidateScreening() {
         confirmLoading={isShortlisting}
         onCancel={() => setDecisionModalOpen(null)}
         onConfirm={handleDecisionConfirm}
+      />
+
+      <ShortlistResultModal
+        open={Boolean(shortlistResult)}
+        roleLabel={shortlistResult?.roleLabel || ''}
+        added={shortlistResult?.added}
+        emailed={shortlistResult?.emailed}
+        skipped={shortlistResult?.skipped}
+        onClose={() => setShortlistResult(null)}
       />
 
       {/* Full-page blocker while the shortlist/reject request (incl. email sends) runs.
@@ -2144,25 +2380,25 @@ export default function CandidateScreening() {
                       )}
 
                       {/* Candidate Score Header & Parameter Breakdown Cards */}
-                      {selectedCandidate.starRating?.breakdown && (
+                      {drawerRating?.breakdown && Object.keys(drawerRating.breakdown).length > 0 && (
                         <div>
                           {/* Section Header */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Candidate Score</div>
                             <span style={{ fontSize: '10px', color: 'var(--text-3)', fontFamily: 'monospace' }}>
-                              {selectedCandidate.starRating.mode || (selectedRoleId ? 'JD Mode' : 'Keyword Mode')}
+                              {drawerRating.mode === 'keyword' ? 'Keyword Mode' : (drawerRating.mode || (selectedRoleId ? 'JD Mode' : 'Keyword Mode'))}
                             </span>
                           </div>
                           
                           {/* Score visual breakdown row */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', marginBottom: '14px' }}>
-                            <div>{renderStars(selectedCandidate.starRating.stars)}</div>
+                            <div>{renderStars(drawerRating.stars)}</div>
                             <span style={{ fontSize: '22px', fontWeight: 700, color: '#6d7e3d', fontFamily: 'monospace', lineHeight: 1 }}>
-                              {Math.round(selectedCandidate.starRating.finalScore)}
+                              {Math.round(drawerScore)}
                             </span>
                             {(() => {
-                              const label = selectedCandidate.starRating.label;
-                              const val = selectedCandidate.starRating.finalScore;
+                              const label = drawerRating.label;
+                              const val = drawerScore;
                               let borderColor = 'rgba(230,126,34,0.35)';
                               let bgColor = 'rgba(230,126,34,0.08)';
                               let textColor = '#e67e22';
@@ -2201,9 +2437,13 @@ export default function CandidateScreening() {
 
                           {/* Individual Parameter Cards */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {Object.entries(selectedCandidate.starRating.breakdown).map(([key, item]) => {
+                            {Object.entries(drawerRating.breakdown).map(([key, item]) => {
                               const scoreVal = item.score ?? item.pts ?? 0;
-                              const reason = selectedCandidate.profile?.scoreReasons?.[key] || item.reason || 'Criteria metrics verified';
+                              // Keyword reasons are computed from the actual match
+                              // (which skill was found where), so they win over the
+                              // AI's generic per-parameter text.
+                              const reason = (drawerRating.mode === 'keyword' || drawerRating.mode === 'JD Strict' ? item.reason : null)
+                                || selectedCandidate.profile?.scoreReasons?.[key] || item.reason || 'Criteria metrics verified';
                               
                               // Map color based on score value
                               let color = '#c0392b'; // Red
@@ -2240,6 +2480,9 @@ export default function CandidateScreening() {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: (reason || criteria) ? '7px' : '0' }}>
                                     <div style={{ fontSize: '11.5px', color: 'var(--text-2)', fontWeight: 500, flex: 1 }}>
                                       {item.label}
+                                      {item.weight != null && item.weight < 1 && (
+                                        <span style={{ color: 'var(--text-3)', fontWeight: 400 }}> · {Math.round(item.weight * 100)}% of score</span>
+                                      )}
                                     </div>
                                     
                                     {/* Custom Progress Bar */}

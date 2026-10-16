@@ -33,7 +33,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Row, Col, Select, Space, Spin, Tag, Tooltip, Typography,
 } from 'antd';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
@@ -45,6 +45,7 @@ import dayjs from 'dayjs';
 import useAuth from '../../hooks/useAuth';
 import pipelineService from '../../services/pipeline';
 import ReferralChip from '../candidates/ReferralChip';
+import ErrorBoundary from '../common/ErrorBoundary';
 import { getSocket } from '../../services/socket';
 import screeningService from '../../services/screeningService';
 import { cleanMsgBody } from '../../utils/emailText';
@@ -56,6 +57,15 @@ import { EmailEditorTabs } from '../common/EmailBodyEditor';
 import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
 import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConfig';
+import { firstValidPhone } from '../../constants/candidateFields';
+
+/**
+ * The email_error the server records when the recruiter unticks "Send email
+ * notification to candidate" on an outcome (N45). Must match
+ * OUTCOME_EMAIL_NOT_SENT in backend/src/services/pipeline.service.js. It is a
+ * choice, not a failure, so it reads "Email not sent" rather than "failed".
+ */
+const OUTCOME_EMAIL_NOT_SENT = 'Not sent: the recruiter chose not to email the candidate.';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -367,9 +377,11 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
           detail: `Approved from ${previousStageOutcome.stageLabel} — ${
             previousStageOutcome.emailSent
               ? `outcome email sent ${fmtDateTime(previousStageOutcome.sentAt)}`
-              : previousStageOutcome.emailError
-                ? 'outcome email failed to send'
-                : 'no outcome email recorded'
+              : previousStageOutcome.emailError === OUTCOME_EMAIL_NOT_SENT
+                ? 'email not sent (recruiter chose not to)'
+                : previousStageOutcome.emailError
+                  ? 'outcome email failed to send'
+                  : 'no outcome email recorded'
           }`,
         }
       : { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
@@ -685,7 +697,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     } else {
       s4 = { state: 'done', detail: `${tag?.label || outcomeEvent.outcome} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
     }
-    emails.push(`Outcome email → candidate · ${new Date(outcomeEvent.created_at).toLocaleDateString()} · ${outcomeEvent.email_sent ? 'delivered' : (outcomeEvent.email_error ? 'failed' : 'not sent')}`);
+    emails.push(`Outcome email → candidate · ${new Date(outcomeEvent.created_at).toLocaleDateString()} · ${outcomeEvent.email_sent ? 'delivered' : outcomeEvent.email_error === OUTCOME_EMAIL_NOT_SENT ? 'Email not sent' : (outcomeEvent.email_error ? 'failed' : 'not sent')}`);
   } else if (stage.stage_key === 'offer') {
     // Already set by the offer branch above, in the offer's own vocabulary.
     // The two fallbacks below are written for interview rounds — they talk
@@ -807,7 +819,7 @@ function ZekoReportLink({ pipelineId, stageKey, recruiterLink, sharedLink }) {
   );
 }
 
-export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStaleConflict, focusRecordingId }) {
+export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClose, onClose, onChanged, onStaleConflict, focusRecordingId }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -838,10 +850,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // reply sends, the same way DecisionEmailModal.jsx remounts on a new key
   // when its content source changes.
   const [replyEditorKey, setReplyEditorKey] = useState(0);
-  // Approving into an optional stage (Tech 3, Client Interview): recruiter picks
-  // whether to send the candidate there or skip straight past it, right in the
-  // same Approve modal — defaults to NOT skipping (the safer, current behavior).
-  const [skipOptionalNext, setSkipOptionalNext] = useState(false);
+  // Approving into optional stage(s) (Tech 3, CEO Round, Client Interview): the
+  // recruiter picks where the candidate lands — the next stage, or straight past
+  // a run of optional ones (HR Round -> Documents, N24). null = the suggestion.
+  const [landingStageKey, setLandingStageKey] = useState(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleJobId, setScheduleJobId] = useState(null);
   const [scheduleDates, setScheduleDates] = useState(null);
@@ -859,6 +871,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // holds a real name, but editable: tech3 has no MRF interviewer column at all,
   // and the MRF field is free text that is often a team rather than a person.
   const [interviewerName, setInterviewerName] = useState('');
+  // N22: the Interviewee phone as typed in the Schedule dialog; null = not
+  // touched, so the number on file shows and nothing is sent.
+  const [intervieweePhone, setIntervieweePhone] = useState(null);
+  // N45: "Send email notification to candidate" on the outcome dialog.
+  const [outcomeSendEmail, setOutcomeSendEmail] = useState(true);
   // Only surface the "required" error once the field has been visited or a
   // submit attempted — an error on a pristine, never-touched field reads as broken.
   const [interviewerEmailTouched, setInterviewerEmailTouched] = useState(false);
@@ -921,7 +938,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // How the picked status reads, for the modal's per-outcome email warning.
   const closureLabel = CLOSURE_OPTIONS.find((o) => o.value === closureOutcome)?.label || 'This status';
 
-  const open = !!pipelineId;
+  // `open` comes from the parent when it keeps pipelineId through the close
+  // animation (Pipeline.jsx, N30); otherwise "has an id" means open.
+  const open = openProp ?? !!pipelineId;
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['pipeline-detail', pipelineId],
@@ -1458,8 +1477,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // entered per booking, so the invite can actually be delivered. Serves both
   // fresh scheduling and rescheduling (cancel old + rebook) based on `mode`.
   const interviewMutation = useMutation({
-    mutationFn: ({ stageKey, startAt, duration, email, name, mode }) => {
+    mutationFn: ({ stageKey, startAt, duration, email, name, mode, candidatePhone }) => {
       const payload = {
+        // N22: only when the recruiter typed a new number; saved to the CV first.
+        ...(candidatePhone ? { candidate_phone: candidatePhone } : {}),
         stage_key: stageKey,
         start_at: startAt,
         duration_minutes: duration,
@@ -1649,7 +1670,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     },
   });
 
-  if (!open) return null;
+  // Rendered while there is a candidate, open OR closing: returning null the
+  // moment `open` flipped unmounted the drawer, its modals, the email editor
+  // iframe and the video player in one frame — the close-time blank page (N30).
+  if (!pipelineId) return null;
 
   const currentStageOutcomes = data?.currentStageOutcomes || [];
   const reasons = data?.reasons || [];
@@ -1660,6 +1684,8 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // the button skips the mint and opens straight away.
   const zekoSharedReportLink = data?.zekoSharedReportLink;
   const mrfInterviewHints = data?.mrfInterviewHints;
+  // Interviewee details and interviewer pre-fill for the Schedule dialog (N23).
+  const interviewParties = data?.interviewParties;
   const cvFileUrl = data?.cvFileUrl;
   const screening = data?.screening;
   // Referral state for this candidate. The drawer is where the recruiter and the
@@ -1728,12 +1754,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
 
   const openInterviewModal = () => {
     setInterviewMode('schedule');
+    setIntervieweePhone(null);
     setInterviewAt(null);
     setInterviewDuration(60);
-    setInterviewerEmail('');
-    // The MRF names who takes this round — start from that rather than making the
-    // recruiter retype what is already displayed above the field.
-    setInterviewerName(mrfInterviewHints?.interviewerName || '');
+    // Pre-filled (N23): the last booking for this round (a re-booking keeps its
+    // panel), else the MRF's named interviewer, else blank — the server decides
+    // which, see getInterviewParties(). Never "Yes".
+    setInterviewerEmail(interviewParties?.interviewer?.emails || '');
+    setInterviewerName(interviewParties?.interviewer?.name || mrfInterviewHints?.interviewerName || '');
     setInterviewerEmailTouched(false);
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
@@ -1744,6 +1772,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // duration), with the date left blank so the recruiter picks a new one.
   const openRescheduleModal = () => {
     setInterviewMode('reschedule');
+    setIntervieweePhone(null);
     setInterviewAt(null);
     const mins = interviewSchedule
       ? Math.round((new Date(interviewSchedule.scheduled_end_at) - new Date(interviewSchedule.scheduled_start_at)) / 60000)
@@ -1771,6 +1800,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       );
       return;
     }
+    const typedPhone = intervieweePhone === null ? '' : intervieweePhone.trim();
+    if (typedPhone && !firstValidPhone(typedPhone)) {
+      message.error('Enter a 10-digit mobile number for the interviewee (for example 98765 43210).');
+      return;
+    }
     interviewMutation.mutate({
       stageKey: pipeline.current_stage_key,
       startAt: interviewAt.toDate().toISOString(),
@@ -1778,6 +1812,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       email: interviewerEmail.trim(),
       name: interviewerName.trim(),
       mode: interviewMode,
+      candidatePhone: typedPhone && firstValidPhone(typedPhone) !== firstValidPhone(interviewParties?.interviewee?.phone)
+        ? typedPhone
+        : undefined,
     });
   };
 
@@ -1811,8 +1848,38 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
   // instead of silently walking onto it — send the candidate there, or skip straight to
   // the stage after it (allStages[currentIdx + 2]).
   const nextStageIfApproved = allStages[currentIdx + 1];
-  const stageAfterOptionalNext = allStages[currentIdx + 2];
-  const showOptionalNextChoice = decisionOutcome === 'approved' && !!nextStageIfApproved?.is_optional;
+  // Every stage an approval can land on: the next one, and past each
+  // consecutive OPTIONAL stage the one after it. The server enforces the same
+  // rule (utils/stageSkip.js) — a mandatory stage is never offered as skippable.
+  const landingStages = [];
+  for (let i = currentIdx + 1; i < allStages.length; i += 1) {
+    landingStages.push(allStages[i]);
+    if (!allStages[i].is_optional) break;
+  }
+  const showOptionalNextChoice = decisionOutcome === 'approved' && landingStages.length > 1;
+  // The MRF already says whether there is a CEO and a Client round; pre-select
+  // past the ones it rules out, and say why. The recruiter can still change it.
+  const landingMrf = pipeline?.rpa_shortlisted_candidates?.mrf;
+  const mrfSaysNo = (stageKey) => (
+    (stageKey === 'ceo' && String(landingMrf?.ceo_management_round || '').trim().toLowerCase() === 'no')
+    || (stageKey === 'client' && String(landingMrf?.client_round || '').trim().toLowerCase() === 'no')
+  );
+  const suggestedLanding = landingStages.find((st) => !(st.is_optional && mrfSaysNo(st.stage_key)))
+    || landingStages[landingStages.length - 1];
+  const landingReason = landingStages
+    .filter((st) => st.is_optional && mrfSaysNo(st.stage_key))
+    .map((st) => (st.stage_key === 'ceo' ? 'CEO round "No"' : 'Client round "No"'))
+    .join(', ');
+  const effectiveLandingKey = landingStageKey || suggestedLanding?.stage_key || nextStageIfApproved?.stage_key;
+  // Approve without score (N25): the server says whether this round's score is
+  // on file; when it is not, approving needs a reason in the notes.
+  const NO_SCORE_NOTE_MIN = 10;
+  const approvingWithoutScore = decisionOutcome === 'approved'
+    && selectedStageKey === pipeline?.current_stage_key
+    && data?.currentStageHasScore === false;
+  let noScoreWhat = 'No scorecard has been submitted';
+  if (['zeko_hr', 'zeko_fn'].includes(selectedStageKey)) noScoreWhat = 'No Zeko result has come in';
+  else if (selectedStageKey === 'assessment') noScoreWhat = 'No assessment result has been imported';
 
   // Opens the "Record round outcome" modal — mirrors the prototype's
   // decision modal: pick Approve/Hold/Reject, (for Reject/Hold) a mandatory
@@ -1829,8 +1896,9 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     setNotes('');
     setEmailSubject('');
     setEmailBody('');
-    setSkipOptionalNext(false);
+    setLandingStageKey(null);
     setCloseAsRejected(outcomeKey === 'rejected' && !isZekoStageKey(selectedStageKey));
+    setOutcomeSendEmail(true);
     setOutcomeModalOpen(true);
   };
 
@@ -1841,6 +1909,10 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
     }
     if (selectedReason?.is_other && !otherText.trim()) {
       message.error('Please type the reason — "Other" alone cannot be saved.');
+      return;
+    }
+    if (approvingWithoutScore && notes.trim().length < NO_SCORE_NOTE_MIN) {
+      message.error(`Approving without a score needs a note of at least ${NO_SCORE_NOTE_MIN} characters.`);
       return;
     }
     // G2.2 — two sequential calls, not a combined service function.
@@ -1855,9 +1927,14 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
         reason_id: reasonId || undefined,
         other_text: selectedReason?.is_other ? otherText.trim() : undefined,
         notes: notes.trim() || undefined,
-        email_subject: emailSubject,
-        email_body: emailBody,
-        skip_optional_next: showOptionalNextChoice ? skipOptionalNext : undefined,
+        // N45: unticked = no candidate email; a vendor's update still goes.
+        send_email: outcomeSendEmail,
+        email_subject: outcomeSendEmail ? emailSubject : undefined,
+        email_body: outcomeSendEmail ? emailBody : undefined,
+        // Only sent when the recruiter lands past the next stage (N24).
+        skip_to_stage_key: showOptionalNextChoice && effectiveLandingKey !== nextStageIfApproved?.stage_key
+          ? effectiveLandingKey
+          : undefined,
         // The stage THIS DRAWER is displaying. If someone else moved the candidate
         // while this tab sat open, the server 409s instead of silently advancing
         // them a second time (defect D3). Sent from the rendered pipeline, not
@@ -2287,9 +2364,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
       )}
       open={open}
       onClose={onClose}
+      afterOpenChange={(isOpen) => { if (!isOpen) onAfterClose?.(); }}
       width={680}
-      destroyOnClose
+      destroyOnHidden
     >
+      <ErrorBoundary variant="panel" resetKey={pipelineId} onClose={onClose}>
       {isLoading && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
           <Spin size="large" />
@@ -2636,17 +2715,18 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           )}
         </>
       )}
+      </ErrorBoundary>
     </Drawer>
 
     <Modal
       open={outcomeModalOpen}
       onCancel={() => setOutcomeModalOpen(false)}
-      title="Record round outcome"
+      title={decisionOutcome === 'approved' ? 'Record round outcome: Approve' : 'Record round outcome'}
       width={MODAL_WIDTH.EMAIL}
       footer={[
         <Button key="cancel" onClick={() => setOutcomeModalOpen(false)}>Cancel</Button>,
         <Button key="confirm" type="primary" onClick={submitOutcome} loading={outcomeMutation.isPending}>
-          Save &amp; send email
+          {outcomeSendEmail ? 'Save & send email' : 'Save outcome'}
         </Button>,
       ]}
     >
@@ -2657,18 +2737,37 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
           </Text>
           {showOptionalNextChoice && (
             <div>
-              <Text strong style={{ fontSize: 12.5 }}>Next stage — {nextStageIfApproved.label} is optional</Text>
+              <Text strong style={{ fontSize: 12.5 }}>After approval, move the candidate to</Text>
               <Radio.Group
                 style={{ display: 'block', marginTop: 6 }}
-                value={skipOptionalNext}
-                onChange={(e) => setSkipOptionalNext(e.target.value)}
+                value={effectiveLandingKey}
+                onChange={(e) => setLandingStageKey(e.target.value)}
               >
                 <Space direction="vertical">
-                  <Radio value={false}>Send to {nextStageIfApproved.label}</Radio>
-                  <Radio value={true}>Skip straight to {stageAfterOptionalNext?.label || 'the next stage'}</Radio>
+                  {landingStages.map((st, i) => {
+                    const skipped = landingStages.slice(0, i).map((x) => x.label);
+                    return (
+                      <Radio key={st.stage_key} value={st.stage_key}>
+                        {st.label}{skipped.length ? ` (skip ${skipped.join(' and ')})` : ''}
+                      </Radio>
+                    );
+                  })}
                 </Space>
               </Radio.Group>
+              {landingReason && (
+                <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                  Pre-selected because the MRF says: {landingReason}. You can change it.
+                </Text>
+              )}
             </div>
+          )}
+          {approvingWithoutScore && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Approve without score"
+              description={`${noScoreWhat} for ${allStages[selectedIdx]?.label || 'this round'}. You can still approve, but the note below is required.`}
+            />
           )}
           {isRejectOrHold && (
             <div>
@@ -2696,12 +2795,36 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               Close this candidate&apos;s record as Rejected
             </Checkbox>
           )}
+          {approvingWithoutScore && (
+            <Text strong style={{ fontSize: 12.5 }}>
+              Notes <Text type="danger">*</Text>{' '}
+              <Text type="secondary" style={{ fontWeight: 400, fontSize: 12 }}>
+                (why approve without a score; at least {NO_SCORE_NOTE_MIN} characters)
+              </Text>
+            </Text>
+          )}
           <Input.TextArea
-            rows={2}
+            rows={approvingWithoutScore ? 3 : 2}
             placeholder="Notes — internal, shown on the round; not sent to the candidate"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            status={approvingWithoutScore && notes.trim().length > 0 && notes.trim().length < NO_SCORE_NOTE_MIN ? 'error' : undefined}
           />
+          {/* N45: the same opt-out as the Screening shortlist dialog. */}
+          <Checkbox
+            data-testid="outcome-send-email"
+            checked={outcomeSendEmail}
+            onChange={(e) => setOutcomeSendEmail(e.target.checked)}
+          >
+            Send email notification to candidate
+          </Checkbox>
+          {!outcomeSendEmail && (
+            <Text type="secondary" style={{ fontSize: 12.5 }}>
+              No email will go to the candidate. The outcome is saved and shown on the round as &quot;Email not sent&quot;.
+              A vendor&apos;s status update still goes out as today.
+            </Text>
+          )}
+          {outcomeSendEmail && (
           <div style={{ borderTop: '1px solid var(--border-2, #eaebe8)', paddingTop: 10 }}>
             <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
               {/* "→ candidate" with no vendor appended, even when one is
@@ -2740,6 +2863,7 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               Editable before send — the exact text above goes out once sent.
             </Text>
           </div>
+          )}
         </Space>
       )}
     </Modal>
@@ -2918,20 +3042,98 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
             />
           )}
 
-          {/* Who interviews is defined on the MRF — shown read-only, since the
-              column is free text and cannot be resolved to a mailbox. */}
-          <div style={{ background: 'var(--ink-3)', borderRadius: 10, padding: '10px 14px' }}>
-            <Text type="secondary" style={{ fontSize: 11, letterSpacing: 0.4 }}>FROM THE MRF</Text>
-            <div style={{ marginTop: 4 }}>
-              <Text style={{ fontSize: 12.5 }}>
-                Interviewer: <Text strong>{mrfInterviewHints?.interviewerName || 'not specified'}</Text>
-              </Text>
-              <br />
-              <Text style={{ fontSize: 12.5 }}>
-                Preferred slot: <Text strong>{mrfInterviewHints?.preferredSlot || 'not specified'}</Text>
+          {/* Interviewee (N23): who the invite goes to. The address is the live
+              CV address the send really uses; outside production the calendar
+              invite is redirected to the test inbox, and this says so. The
+              phone is editable (N22) and saved to the CV when the invite goes. */}
+          <fieldset style={{ border: '1px solid var(--border-2, #e2e5dc)', borderRadius: 8, padding: '10px 14px 12px', margin: 0 }}>
+            <legend style={{ fontSize: 12.5, fontWeight: 700, padding: '0 6px', width: 'auto', marginBottom: 0, border: 0 }}>Interviewee</legend>
+            <Row gutter={12}>
+              <Col xs={24} sm={8}>
+                <Text strong style={{ fontSize: 12 }}>Name</Text>
+                <Input readOnly value={interviewParties?.interviewee?.name || pipeline.rpa_shortlisted_candidates?.candidate_name || ''} style={{ marginTop: 4 }} />
+              </Col>
+              <Col xs={24} sm={8}>
+                <Text strong style={{ fontSize: 12 }}>Email</Text>
+                <Input readOnly value={interviewParties?.interviewee?.email || ''} placeholder="Not on file" style={{ marginTop: 4 }} />
+              </Col>
+              <Col xs={24} sm={8}>
+                <Text strong style={{ fontSize: 12 }}>Phone</Text>
+                <Input
+                  data-testid="interviewee-phone"
+                  value={intervieweePhone ?? (interviewParties?.interviewee?.phone || '')}
+                  onChange={(e) => setIntervieweePhone(e.target.value)}
+                  placeholder="10-digit mobile"
+                  status={intervieweePhone && intervieweePhone.trim() && !firstValidPhone(intervieweePhone) ? 'error' : undefined}
+                  style={{ marginTop: 4 }}
+                />
+              </Col>
+            </Row>
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 6 }}>
+              {interviewParties?.interviewee?.inviteEmail
+                ? `The invite goes to this address. On this test system it is redirected to ${interviewParties.interviewee.inviteEmail}.`
+                : 'The invite goes to this address.'}
+              {' '}A phone you change here is saved to the candidate&apos;s record when you create the invite.
+            </Text>
+          </fieldset>
+
+          <fieldset style={{ border: '1px solid var(--border-2, #e2e5dc)', borderRadius: 8, padding: '10px 14px 12px', margin: 0 }}>
+            <legend style={{ fontSize: 12.5, fontWeight: 700, padding: '0 6px', width: 'auto', marginBottom: 0, border: 0 }}>Interviewer</legend>
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {/* Optional, but it is what the panel invite greets them by — left
+                blank the email opens "Hi there,". Prefilled from the MRF above. */}
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Name</Text>
+              <Input
+                placeholder="Who is taking this round?"
+                value={interviewerName}
+                onChange={(e) => setInterviewerName(e.target.value)}
+                style={{ marginTop: 4 }}
+                allowClear
+              />
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                {parsedInterviewers.emails.length > 1
+                  ? 'With more than one interviewer the invite opens “Hi all,”.'
+                  : 'Used to address the interviewer’s invitation email.'}
               </Text>
             </div>
-          </div>
+
+            <div>
+              <Text strong style={{ fontSize: 12.5 }}>Email(s) <Text type="danger">*</Text></Text>
+              <TextArea
+                autoSize={{ minRows: 1, maxRows: 3 }}
+                placeholder="name@aapnainfotech.com, second@aapnainfotech.com"
+                value={interviewerEmail}
+                onChange={(e) => setInterviewerEmail(e.target.value)}
+                onBlur={() => setInterviewerEmailTouched(true)}
+                status={interviewerEmailTouched && !interviewerEmailOk ? 'error' : undefined}
+                style={{ marginTop: 4 }}
+              />
+              {interviewerEmailTouched && !interviewerEmailOk ? (
+                <Text type="danger" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                  {parsedInterviewers.invalid.length > 0
+                    ? `Not a valid email address: ${parsedInterviewers.invalid.join(', ')}`
+                    : "At least one interviewer's email is required so they receive the invite."}
+                </Text>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                  {parsedInterviewers.emails.length > 1
+                    ? `${parsedInterviewers.emails.length} interviewers will be invited.`
+                    : 'The MRF stores the interviewer’s name only, so enter their mailbox. Separate multiple interviewers with commas.'}
+                </Text>
+              )}
+            </div>
+            </Space>
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 6 }}>
+              {interviewMode === 'reschedule'
+                ? 'Pre-filled from the current booking.'
+                : interviewParties?.interviewer?.source === 'last_booking'
+                  ? 'Pre-filled from the last booking for this round.'
+                  : interviewParties?.interviewer?.source === 'mrf'
+                    ? 'Pre-filled from the MRF panel details.'
+                    : 'Not on the MRF — enter who is taking this round.'}
+            </Text>
+          </fieldset>
 
           <div>
             <Text strong style={{ fontSize: 12.5 }}>{interviewMode === 'reschedule' ? 'New start' : 'Start'} time (IST) <Text type="danger">*</Text></Text>
@@ -2961,50 +3163,11 @@ export default function PipelineDrawer({ pipelineId, onClose, onChanged, onStale
               </Text>
             )}
           </div>
-
-          {/* Optional, but it is what the panel invite greets them by — left
-              blank the email opens "Hi there,". Prefilled from the MRF above. */}
-          <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interviewer name</Text>
-            <Input
-              placeholder="Who is taking this round?"
-              value={interviewerName}
-              onChange={(e) => setInterviewerName(e.target.value)}
-              style={{ marginTop: 4 }}
-              allowClear
-            />
-            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-              {parsedInterviewers.emails.length > 1
-                ? 'With more than one interviewer the invite opens “Hi all,”.'
-                : 'Used to address the interviewer’s invitation email.'}
+          {mrfInterviewHints?.preferredSlot && (
+            <Text type="secondary" style={{ fontSize: 11.5, marginTop: -8 }}>
+              MRF preferred slot: {mrfInterviewHints.preferredSlot}
             </Text>
-          </div>
-
-          <div>
-            <Text strong style={{ fontSize: 12.5 }}>Interviewer email(s) <Text type="danger">*</Text></Text>
-            <TextArea
-              autoSize={{ minRows: 1, maxRows: 3 }}
-              placeholder="name@aapnainfotech.com, second@aapnainfotech.com"
-              value={interviewerEmail}
-              onChange={(e) => setInterviewerEmail(e.target.value)}
-              onBlur={() => setInterviewerEmailTouched(true)}
-              status={interviewerEmailTouched && !interviewerEmailOk ? 'error' : undefined}
-              style={{ marginTop: 4 }}
-            />
-            {interviewerEmailTouched && !interviewerEmailOk ? (
-              <Text type="danger" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-                {parsedInterviewers.invalid.length > 0
-                  ? `Not a valid email address: ${parsedInterviewers.invalid.join(', ')}`
-                  : "At least one interviewer's email is required so they receive the invite."}
-              </Text>
-            ) : (
-              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
-                {parsedInterviewers.emails.length > 1
-                  ? `${parsedInterviewers.emails.length} interviewers will be invited.`
-                  : 'The MRF stores the interviewer’s name only, so enter their mailbox. Separate multiple interviewers with commas.'}
-              </Text>
-            )}
-          </div>
+          )}
 
           {/* Earlier rounds this candidate already has a recording for. Booking
               the next round is when someone wants to look back at the last one,

@@ -42,3 +42,7 @@ coverage
 dump.rdb
 Excel/*
 .claude/*
+# Playwright end-to-end suite (e2e/): saved login session, run output
+e2e/.auth/
+test-results/
+playwright-report/

@@ -11,13 +11,22 @@
  * name, email or phone.
  *
  * Order is fixed at id descending (newest first, first-ever-added last) and is not
- * user-adjustable, so there are no sort arrows anywhere in the table.
+ * user-adjustable, so there are no sort arrows anywhere in the table. The one
+ * exception is the "Details completed in" quick filter (N44), which lists the
+ * most recent completions first.
  *
- * Retained as-is: the view/edit/conversations modals and CSV export. Export takes the
+ * Retained as-is: the view/conversations modals and CSV export. Export takes the
  * same filter object as the table, so it exports exactly what is on screen.
+ *
+ * Phase 3 "Do Now", section C:
+ *   - N21: staff with Candidate Screening access can tick candidates and "Add to
+ *     JD": the same shortlist as the Screening page (same skip rules, same
+ *     email), then a result listing who was added and who was not, and why.
+ *   - N18: the Edit form is one field per row and uses the candidate form's
+ *     lists and rules (constants/candidateFields.js).
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin } from 'antd';
+import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin, AutoComplete } from 'antd';
 import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
@@ -27,8 +36,49 @@ import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
+import { fmtDate } from '../utils/dateFormat';
+import DecisionEmailModal from '../components/screening/DecisionEmailModal';
+import ShortlistResultModal from '../components/screening/ShortlistResultModal';
+import screeningService from '../services/screeningService';
+import useAuth from '../hooks/useAuth';
+import { useApprovedRoles } from '../hooks/useScreeningData';
+import { mrfOptionLabel } from '../utils/mrfLabel';
+import {
+  QUALIFICATION_OPTIONS, QUALIFICATION_OTHER, NOTICE_PERIOD_OPTIONS, SHIFT_OPTIONS, ENGLISH_RATING_OPTIONS,
+  RECRUITER_NONE, phoneRule, experienceRule, notMoreThanTotalRule, ctcRule, percentRule, optionsKeeping,
+} from '../constants/candidateFields';
 
 const { Title, Text, Paragraph } = Typography;
+
+/**
+ * Table header cells: one line, small caps-size type (the approved full-width
+ * design). antd's default ~14px header made the three date labels alone
+ * ~490px wide and pushed the Action column off-screen with the nav open.
+ */
+const HEADER_CELL_STYLE = { whiteSpace: 'nowrap', fontSize: 11.5, letterSpacing: '0.03em', color: 'var(--text-2)', padding: '10px 8px' };
+/** Body cells: the design's 8px side padding (the theme's ~20px made 11 columns ~440px wider). */
+const BODY_CELL_STYLE = { padding: '10px 8px' };
+
+/** "Details completed in" choices (N44). Values match the API's completedWithin. */
+const COMPLETED_IN_OPTIONS = [
+  { value: '', label: 'Any time' },
+  { value: 'today', label: 'Today' },
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+];
+const COMPLETED_IN_PHRASE = { today: 'today', 7: 'in the last 7 days', 30: 'in the last 30 days' };
+
+/** Edit-form label and hint, in the form's existing small-caps style. */
+const fieldLabel = (text) => <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>{text}</span>;
+const fieldHint = (text) => <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{text}</span>;
+
+/** AutoComplete filter: the typed text anywhere in the option, any case. */
+const filterByText = (input, option) => String(option?.value ?? '').toLowerCase().includes(String(input || '').toLowerCase());
+
+/** A date cell: DD Mon YYYY in IST, or a dash when there is no date on file. */
+const dateCell = (value) => (
+  <Text style={{ fontSize: 12.5, color: value ? 'var(--text)' : 'var(--text-3)', whiteSpace: 'nowrap' }}>{fmtDate(value)}</Text>
+);
 
 export default function Candidates() {
   const [form] = Form.useForm();
@@ -51,8 +101,10 @@ export default function Candidates() {
   // searches by. There used to be a free-text "quick search" box AND a collapsible
   // "Advanced filters" panel carrying position/location on top of these — two
   // competing search affordances for one table, which just made the page confusing.
+  // Plus one quick filter (N44): candidates who completed the missing-details
+  // form recently — the "warm" ones recruiters chase first.
   const [searchParams, setSearchParams] = useState({
-    name: '', email: '', phone: '',
+    name: '', email: '', phone: '', completedWithin: '',
   });
 
   // Modals state
@@ -66,6 +118,30 @@ export default function Candidates() {
   const [emailsLoading, setEmailsLoading] = useState(false);
   
   const [updating, setUpdating] = useState(false);
+
+  // N21: tick candidates and add them to an open MRF. Staff with Candidate
+  // Screening access only (the shortlist API is behind that module); never vendors.
+  const { user } = useAuth();
+  const userRole = (user?.role || '').toLowerCase();
+  const canAddToJd = userRole !== 'vendor'
+    && (userRole === 'admin' || userRole === 'superadmin' || (user?.permissions || []).includes('candidate_screening'));
+  const rolesQuery = useApprovedRoles({ enabled: canAddToJd });
+  const openRoles = useMemo(() => (rolesQuery.data || []).filter((r) => !r.closed), [rolesQuery.data]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [addToJdOpen, setAddToJdOpen] = useState(false);
+  const [addingToJd, setAddingToJd] = useState(false);
+  const [addResult, setAddResult] = useState(null);
+
+  // N18: the Edit form's suggestion lists, loaded the first time it opens.
+  const [cityNames, setCityNames] = useState([]);
+  const [recruiterNames, setRecruiterNames] = useState([]);
+  const formOptionsLoaded = useRef(false);
+  const cityOptions = useMemo(() => cityNames.map((c) => ({ value: c })), [cityNames]);
+  const roleNameOptions = useMemo(
+    () => [...new Set(openRoles.map((r) => r.role).filter(Boolean))].sort().map((r) => ({ value: r })),
+    [openRoles],
+  );
 
   /** Filters actually sent to the API — blanks are omitted entirely. */
   const activeFilters = useMemo(() => {
@@ -93,8 +169,10 @@ export default function Candidates() {
   const loadCandidates = useCallback(async () => {
     setLoading(true);
     try {
+      // The one exception to the fixed order: while "Details completed in" is on,
+      // newest completion first — that is the whole point of the filter (N44).
       const res = await candidateService.search(
-        { ...activeFilters, sort: 'id', order: 'desc' },
+        { ...activeFilters, sort: activeFilters.completedWithin ? 'detailsCompletedAt' : 'id', order: 'desc' },
         page,
         pageSize,
       );
@@ -124,13 +202,14 @@ export default function Candidates() {
       name: (values.name || '').trim(),
       email: (values.email || '').trim(),
       phone: (values.phone || '').trim(),
+      completedWithin: values.completedWithin || '',
     });
     setPage(1);
   };
 
   const handleClearFilters = () => {
     form.resetFields();
-    setSearchParams({ name: '', email: '', phone: '' });
+    setSearchParams({ name: '', email: '', phone: '', completedWithin: '' });
     setPage(1);
   };
 
@@ -153,6 +232,11 @@ export default function Candidates() {
   const handleOpenEdit = (record) => {
     setSelectedCandidate(record);
     editForm.resetFields();
+    if (!formOptionsLoaded.current) {
+      formOptionsLoaded.current = true;
+      candidateService.getPublicLocations().then((res) => setCityNames(res.data?.data || [])).catch(() => {});
+      candidateService.getPublicRecruiters().then((res) => setRecruiterNames(res.data?.data || [])).catch(() => {});
+    }
     
     // Parse employment history companies
     const companies = record.employment_history?.companies || [];
@@ -224,7 +308,8 @@ export default function Candidates() {
         name: values.name,
         email: values.email,
         phone: values.phone,
-        education: values.education,
+        // "Other (please specify)" saves what was typed, not the label.
+        education: values.education === QUALIFICATION_OTHER ? values.educationOther?.trim() : values.education,
         experience: values.experience,
         lastCompanyExperience: values.lastCompanyExperience,
         location: values.location,
@@ -323,76 +408,7 @@ export default function Candidates() {
     document.body.removeChild(link);
   };
 
-  // Custom validation helpers
-  const contactNumberValidator = (_, value) => {
-    if (!value) return Promise.resolve();
-    const val = String(value).trim();
-    if (val === '') return Promise.resolve();
-    if (/[a-zA-Z]/.test(val)) return Promise.reject(new Error('No alphabets allowed'));
-    if (!/^[0-9\s\-+\(\)\.,]+$/.test(val)) return Promise.reject(new Error('Invalid characters in phone number'));
-    const parts = val.split(',').map(p => p.trim());
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i];
-      if (p === '') return Promise.reject(new Error('Empty number between commas'));
-      const digits = p.replace(/[^0-9]/g, '');
-      if (digits.length < 7 || digits.length > 15) {
-        return Promise.reject(new Error('Invalid length (7-15 digits)'));
-      }
-    }
-    return Promise.resolve();
-  };
-
-  const experienceValidator = (_, value) => {
-    if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
-    const val = String(value).trim();
-    if (!/^[\d.]+$/.test(val)) return Promise.reject(new Error('Only numeric values are allowed'));
-    if ((val.match(/\./g) || []).length > 1) return Promise.reject(new Error('Invalid number format'));
-    const parts = val.split('.');
-    if (parts[1] !== undefined && parts[1].length > 2) return Promise.reject(new Error('Max 2 decimal places'));
-    const num = parseFloat(val);
-    if (isNaN(num) || num < 0) return Promise.reject(new Error('Only numeric values are allowed'));
-    if (num > 60) return Promise.reject(new Error('Value out of range (max 60)'));
-    const experienceRegex = /^(60(\.0{1,2})?|[0-5]?\d(\.\d{1,2})?)$/;
-    if (!experienceRegex.test(val)) return Promise.reject(new Error('Invalid format'));
-    return Promise.resolve();
-  };
-
-  const lastCompanyExpValidator = (_, value) => {
-    if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
-    const val = String(value).trim();
-    if (!/^[\d.]+$/.test(val)) return Promise.reject(new Error('Only numeric values are allowed'));
-    if ((val.match(/\./g) || []).length > 1) return Promise.reject(new Error('Invalid number format'));
-    const parts = val.split('.');
-    if (parts[1] !== undefined && parts[1].length > 2) return Promise.reject(new Error('Max 2 decimal places'));
-    const num = parseFloat(val);
-    if (isNaN(num) || num < 0) return Promise.reject(new Error('Only numeric values are allowed'));
-    if (num > 60) return Promise.reject(new Error('Value out of range (max 60)'));
-    const experienceRegex = /^(60(\.0{1,2})?|[0-5]?\d(\.\d{1,2})?)$/;
-    if (!experienceRegex.test(val)) return Promise.reject(new Error('Invalid format'));
-    
-    // Check total experience
-    const totalExp = editForm.getFieldValue('experience');
-    if (totalExp) {
-      const totalNum = parseFloat(totalExp);
-      if (!isNaN(totalNum) && num > totalNum) {
-        return Promise.reject(new Error('Cannot exceed Total Experience'));
-      }
-    }
-    return Promise.resolve();
-  };
-
-  const decimalFieldValidator = (_, value) => {
-    if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
-    const val = String(value).trim();
-    if (!/^[\d.]+$/.test(val)) return Promise.reject(new Error('Only numeric values are allowed'));
-    if ((val.match(/\./g) || []).length > 1) return Promise.reject(new Error('Invalid number format'));
-    const parts = val.split('.');
-    if (parts[1] !== undefined && parts[1].length > 2) return Promise.reject(new Error('Max 2 decimal places'));
-    const num = parseFloat(val);
-    if (isNaN(num) || num < 0) return Promise.reject(new Error('Only numeric values are allowed'));
-    return Promise.resolve();
-  };
-
+  // Validation for the fields the shared rules (constants/candidateFields.js) do not cover.
   const wholeNumberValidator = (_, value) => {
     if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
     const val = String(value).trim();
@@ -406,18 +422,47 @@ export default function Candidates() {
     return Promise.resolve();
   };
 
-  const noticePeriodValidator = (_, value) => {
-    if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
-    const val = String(value).trim();
-    if (val.includes('+') || val.includes('-')) return Promise.reject(new Error('Signs (+/-) not allowed'));
-    return Promise.resolve();
+  /** N21: shortlist the ticked candidates onto the chosen MRF. */
+  const handleAddToJd = async ({ mrfId, roleName, sendEmail, emailOverride }) => {
+    if (selectedRows.length === 0) return;
+    setAddingToJd(true);
+    try {
+      const res = await screeningService.shortlistCandidates({
+        candidates: selectedRows.map((r) => ({ id: r.id, Name: r.name, EmailID: r.email })),
+        mrf_id: mrfId,
+        role_name: roleName,
+        send_email: sendEmail,
+        email_override: emailOverride,
+        source: 'search_candidate',
+      });
+      const result = res.data?.data || res.data || {};
+      const skipped = result.skipped_candidates || [];
+      // Compared as strings: row ids and the server's cv_id differ in type.
+      const skippedIds = new Set(skipped.map((x) => String(x.cv_id)));
+      const failures = result.email_failures || [];
+      const role = openRoles.find((r) => r.id === mrfId);
+      setAddResult({
+        roleLabel: role ? mrfOptionLabel(role) : roleName,
+        added: selectedRows.filter((r) => !skippedIds.has(String(r.id))).map((r) => r.name || 'Candidate'),
+        emailed: sendEmail && failures.length === 0,
+        skipped,
+        failures,
+      });
+      setAddToJdOpen(false);
+      setSelectedRowKeys([]);
+      setSelectedRows([]);
+    } catch (err) {
+      message.error(err?.message || 'Failed to add the candidates to the JD.');
+    } finally {
+      setAddingToJd(false);
+    }
   };
 
   const columns = [
     {
       title: '#',
       key: 'index',
-      width: 50,
+      width: 40,
       render: (_, __, index) => <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>{(page - 1) * pageSize + index + 1}</span>,
     },
     // No column is sortable. The table is always id-descending (see
@@ -439,7 +484,7 @@ export default function Candidates() {
       // content width — which broke a long name into one character per line.
       render: (text, record) => (
         <>
-          <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text || '—'}</Text>
+          <Text strong style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }}>{text || '—'}</Text>
           {record.isReferral ? (
             <>
               {' '}
@@ -479,11 +524,32 @@ export default function Candidates() {
       key: 'location',
       render: (text) => <Text style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{text || '—'}</Text>,
     },
+    // Dates (N27, N44). Not sortable, like every other column — see above.
+    {
+      title: 'DATE ADDED',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: dateCell,
+    },
+    {
+      title: 'DETAILS REQUESTED',
+      dataIndex: 'detailsRequestedAt',
+      key: 'detailsRequestedAt',
+      render: dateCell,
+    },
+    {
+      title: 'DETAILS COMPLETED',
+      dataIndex: 'detailsCompletedAt',
+      key: 'detailsCompletedAt',
+      render: (value) => (value
+        ? <Text strong style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{fmtDate(value)}</Text>
+        : dateCell(value)),
+    },
     {
       title: 'ACTION',
       key: 'action',
       align: 'right',
-      width: 180,
+      width: 120,
       render: (_, record) => {
         const fileUrl = record.cvFileUrl;
         const hasCv = fileUrl && fileUrl !== 'null' && fileUrl !== 'undefined' && String(fileUrl).trim() !== '';
@@ -492,6 +558,7 @@ export default function Candidates() {
             <Button
               size="small"
               title="CV/Resume"
+              aria-label="CV/Resume"
               icon={<FileTextOutlined />}
               onClick={() => handleDownloadResume(fileUrl)}
               style={{
@@ -507,21 +574,24 @@ export default function Candidates() {
             />
             <Button
               size="small"
+              title="View"
+              aria-label="View"
+              icon={<EyeOutlined />}
               onClick={() => handleOpenView(record)}
-              style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)', fontWeight: 500 }}
-            >
-              View
-            </Button>
+              style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)' }}
+            />
             <Button
               size="small"
+              title="Edit"
+              aria-label="Edit"
+              icon={<EditOutlined />}
               onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff', fontWeight: 500 }}
-            >
-              Edit
-            </Button>
+              style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff' }}
+            />
             <Button
               size="small"
               title="Conversations"
+              aria-label="Conversations"
               icon={<MessageOutlined />}
               onClick={() => handleOpenEmails(record)}
               style={{
@@ -538,7 +608,9 @@ export default function Candidates() {
   ];
 
   return (
-    <div ref={rootRef} style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }} className="stagger-children">
+    // Full width of the content area (no 1200px cap, no extra padding — MainLayout
+    // already pads every page): with the date columns the table needs the room.
+    <div ref={rootRef} className="stagger-children">
       {/* 3-Field Candidate Search Card — tier 2, and this page's one feature
           surface, so it takes the spotlight (the same way /candidates/:id spends
           it on its header card and the dashboard on exactly one widget).
@@ -551,10 +623,11 @@ export default function Candidates() {
       <Card
         bordered={false}
         className="glass-card spotlight"
-        style={{ marginBottom: 28 }}
+        style={{ marginBottom: 16 }}
+        styles={{ body: { padding: '18px 20px' } }}
       >
-        <div style={{ marginBottom: 18 }}>
-          <Title level={3} style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, margin: '0 0 4px 0' }}>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <Title level={4} style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, margin: 0 }}>
             Search Candidate
           </Title>
           <Text type="secondary" style={{ fontSize: 13 }}>
@@ -565,43 +638,55 @@ export default function Candidates() {
         </div>
 
         <Form form={form} layout="vertical" onFinish={handleSearch}>
-          <Row gutter={16}>
+          <Row gutter={14} align="bottom">
             {[
               { name: 'name', label: 'Candidate Name', ph: 'e.g. Rahul Sharma' },
               { name: 'email', label: 'Email ID', ph: 'candidate@example.com' },
               { name: 'phone', label: 'Phone / Contact Number', ph: '+91 98765 43210' },
             ].map((f) => (
-              <Col xs={24} sm={12} lg={8} key={f.name}>
+              <Col flex="1 1 200px" key={f.name}>
                 <Form.Item
                   label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>{f.label}</span>}
                   name={f.name}
+                  style={{ marginBottom: 0 }}
                 >
-                  <Input placeholder={f.ph} allowClear style={{ height: 42, borderRadius: 8 }} />
+                  <Input placeholder={f.ph} allowClear style={{ height: 36, borderRadius: 8 }} />
                 </Form.Item>
               </Col>
             ))}
+            <Col flex="1 1 200px">
+              <Form.Item
+                label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Details completed in</span>}
+                name="completedWithin"
+                initialValue=""
+                style={{ marginBottom: 0 }}
+              >
+                <Select options={COMPLETED_IN_OPTIONS} style={{ height: 36 }} />
+              </Form.Item>
+            </Col>
+            <Col flex="none">
+              <Form.Item style={{ marginBottom: 0 }}>
+                <Space>
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    icon={<SearchOutlined />}
+                    loading={loading}
+                    style={{ height: 36, borderRadius: 8, fontWeight: 600, padding: '0 20px' }}
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    onClick={handleClearFilters}
+                    disabled={!hasFilters}
+                    style={{ height: 36, borderRadius: 8 }}
+                  >
+                    Reset
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Col>
           </Row>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Space>
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<SearchOutlined />}
-                loading={loading}
-                style={{ height: 42, borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
-              >
-                Search
-              </Button>
-              <Button
-                onClick={handleClearFilters}
-                disabled={!hasFilters}
-                style={{ height: 42, borderRadius: 8 }}
-              >
-                Reset
-              </Button>
-            </Space>
-          </Form.Item>
         </Form>
       </Card>
 
@@ -645,6 +730,18 @@ export default function Candidates() {
               {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'}
               {hasFilters ? ' matching' : ' in total'}
             </Text>
+            {activeFilters.completedWithin && (
+              <Text style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 1 }}>
+                {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'} completed their details {COMPLETED_IN_PHRASE[activeFilters.completedWithin]}. Newest first.
+              </Text>
+            )}
+            {canAddToJd && selectedRowKeys.length > 0 && (
+              <Space size={8} data-testid="selection-bar">
+                <Text strong style={{ fontSize: 12.5 }}>{selectedRowKeys.length} selected</Text>
+                <Button type="primary" size="small" onClick={() => setAddToJdOpen(true)}>Add to JD</Button>
+                <Button size="small" onClick={() => { setSelectedRowKeys([]); setSelectedRows([]); }}>Clear selection</Button>
+              </Space>
+            )}
             <ExportButton
               request={(cfg) => candidateService.exportCsv(activeFilters, cfg)}
               fallbackName="AAPNA-ATS_Candidates.csv"
@@ -656,10 +753,31 @@ export default function Candidates() {
           <div style={{ overflowX: 'auto' }}>
             <Table
               dataSource={candidates}
-              columns={columns}
+              // Every header on one line (review 15 Oct): the table scrolls
+              // sideways when it must, it never stacks a header into two rows.
+              columns={columns.map((col) => ({ ...col, onHeaderCell: () => ({ style: HEADER_CELL_STYLE }), onCell: () => ({ style: BODY_CELL_STYLE }) }))}
               rowKey={(r) => r.id ?? r.EmailID}
+              // N21: ticks for staff with screening access; kept across pages.
+              rowSelection={canAddToJd ? {
+                selectedRowKeys,
+                preserveSelectedRowKeys: true,
+                columnWidth: 32,
+                onChange: (keys, rows) => {
+                  setSelectedRowKeys(keys);
+                  // antd drops rows it has not seen on this page from `rows`;
+                  // keep the ones remembered from earlier pages.
+                  setSelectedRows((prev) => {
+                    const byId = new Map(prev.map((r) => [r.id, r]));
+                    rows.filter(Boolean).forEach((r) => byId.set(r.id, r));
+                    return keys.map((k) => byId.get(k)).filter(Boolean);
+                  });
+                },
+              } : undefined}
               loading={loading}
               onChange={handleTableChange}
+              // Natural column widths, scrolling sideways when the dates make the
+              // table wider than the card (N27/N44) — never squeezing a name mid-word.
+              scroll={{ x: 'max-content' }}
               locale={{
                 // The Phase 2 EmptyState, in its two real shapes: a search that
                 // matched nothing (recoverable — offer the reset) versus a
@@ -718,7 +836,9 @@ export default function Candidates() {
         <CandidateDetailCard candidate={selectedCandidate} />
       </Modal>
 
-      {/* 2) EDIT CANDIDATE DETAILS MODAL (High Fidelity) */}
+      {/* 2) EDIT CANDIDATE DETAILS MODAL. One field per row (N18 review), with
+          the same lists and rules as the candidate's own details form
+          (constants/candidateFields.js); the server checks them again. */}
       <Modal
         title={<span style={{ fontSize: 16, fontFamily: "'Sora', sans-serif", fontWeight: 700 }}>Edit Candidate</span>}
         open={editOpen}
@@ -726,7 +846,7 @@ export default function Candidates() {
         onCancel={() => setEditOpen(false)}
         okText="Update Candidate"
         okButtonProps={{ loading: updating }}
-        width={750}
+        width={680}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
         <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
@@ -736,117 +856,87 @@ export default function Candidates() {
             <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE NAME</span>} name="name">
-                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
-                <Input readonly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('CANDIDATE NAME')} name="name">
+            <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
-                name="phone"
-                rules={[{ validator: contactNumberValidator }]}
-                extra={<span style={{ fontSize: 10, color: 'var(--text-3)' }}>Use commas to add multiple numbers (Supports international formats)</span>}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HIGHEST QUALIFICATION</span>} 
-                name="education"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('CANDIDATE EMAIL')} name="email">
+            <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOTAL EXPERIENCE (YEARS)</span>} 
-                name="experience"
-                rules={[{ validator: experienceValidator }]}
-              >
-                <Input placeholder="e.g. 5 or 5.50" style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LAST COMPANY EXPERIENCE (YEARS)</span>} 
-                name="lastCompanyExperience"
-                dependencies={['experience']}
-                rules={[{ validator: lastCompanyExpValidator }]}
-              >
-                <Input placeholder="e.g. 5 or 5.50" style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label={fieldLabel('CANDIDATE CONTACT NUMBER')}
+            name="phone"
+            rules={[phoneRule]}
+            extra={fieldHint('10 digits; +91, spaces and dashes are fine.')}
+          >
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} name="location">
+          <Form.Item label={fieldLabel('HIGHEST QUALIFICATION')} name="education">
+            <Select
+              placeholder="Select"
+              showSearch
+              allowClear
+              options={optionsKeeping(QUALIFICATION_OPTIONS, selectedCandidate?.education)}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(a, b) => a.education !== b.education}>
+            {({ getFieldValue }) => (getFieldValue('education') === QUALIFICATION_OTHER ? (
+              <Form.Item
+                label={fieldLabel('SPECIFY QUALIFICATION')}
+                name="educationOther"
+                rules={[{ required: true, whitespace: true, message: 'Enter the qualification.' }]}
+              >
                 <Input style={{ borderRadius: 6 }} />
               </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CTC (LPA)</span>} 
-                name="currentCTC"
-                rules={[{ validator: decimalFieldValidator }]}
-              >
-                <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+            ) : null)}
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>EXPECTED CTC (LPA)</span>} 
-                name="expectedCTC"
-                rules={[{ validator: decimalFieldValidator }]}
-              >
-                <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>NOTICE PERIOD (DAYS)</span>} 
-                name="noticePeriod"
-                rules={[{ validator: noticePeriodValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('TOTAL EXPERIENCE (YEARS)')} name="experience" rules={[experienceRule('Total experience')]}>
+            <Input placeholder="e.g. 5 or 5.5" style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POSITION APPLIED</span>} 
-                name="position"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>JOB SOURCE</span>} name="jobSource">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label={fieldLabel('LAST COMPANY EXPERIENCE (YEARS)')}
+            name="lastCompanyExperience"
+            dependencies={['experience']}
+            rules={[experienceRule('Last company experience'), notMoreThanTotalRule('experience')]}
+          >
+            <Input placeholder="e.g. 2 or 2.5" style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item
+            label={fieldLabel('CURRENT LOCATION')}
+            name="location"
+            extra={fieldHint('Suggests cities already in the ATS; free text allowed.')}
+          >
+            <AutoComplete options={cityOptions} filterOption={filterByText} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('CTC (LPA)')} name="currentCTC" rules={[ctcRule('CTC (LPA)')]}>
+            <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('EXPECTED CTC (LPA)')} name="expectedCTC" rules={[ctcRule('Expected CTC (LPA)')]}>
+            <Input placeholder="e.g. 10 or 10.5" style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('NOTICE PERIOD')} name="noticePeriod">
+            <Select placeholder="Select" allowClear options={optionsKeeping(NOTICE_PERIOD_OPTIONS, selectedCandidate?.noticePeriod)} />
+          </Form.Item>
+
+          <Form.Item
+            label={fieldLabel('POSITION APPLIED')}
+            name="position"
+            extra={fieldHint('Search open roles, or type another.')}
+          >
+            <AutoComplete options={roleNameOptions} filterOption={filterByText} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('JOB SOURCE')} name="jobSource">
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
           {/* Referral sits next to Job Source because that is the free-text field
               recruiters have been using for it ("Referral - Anuj"). This is the
@@ -862,91 +952,65 @@ export default function Candidates() {
             />
           ) : null}
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>RECRUITER INFO (AAPNA)</span>} 
-                name="recruiterInfo"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ENGLISH COMMUNICATION RATING</span>} name="englishCommunicationRating">
-                <Select placeholder="Select" style={{ height: 38 }}>
-                  <Select.Option value="1">1</Select.Option>
-                  <Select.Option value="2">2</Select.Option>
-                  <Select.Option value="3">3</Select.Option>
-                  <Select.Option value="4">4</Select.Option>
-                  <Select.Option value="5">5</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label={fieldLabel('RECRUITER INFO (AAPNA)')}
+            name="recruiterInfo"
+            extra={fieldHint('Active recruiter accounts, or "None".')}
+          >
+            <Select
+              placeholder="Select"
+              showSearch
+              allowClear
+              options={optionsKeeping([...recruiterNames, RECRUITER_NONE], selectedCandidate?.recruiterInfo)}
+            />
+          </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TOP 5 KEY SKILLS</span>} name="top5KeySkills">
+          <Form.Item label={fieldLabel('ENGLISH COMMUNICATION RATING')} name="englishCommunicationRating">
+            <Select placeholder="Select" options={ENGLISH_RATING_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('TOP 5 KEY SKILLS')} name="top5KeySkills">
             <Input.TextArea placeholder="React, Node.js, Python, AWS, Docker" style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GENDER</span>} name="gender">
-                <Select placeholder="Select" style={{ height: 38 }}>
-                  <Select.Option value="Male">Male</Select.Option>
-                  <Select.Option value="Female">Female</Select.Option>
-                  <Select.Option value="Other">Other</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>PREFERRED SHIFT</span>} name="preferredShift">
-                <Select placeholder="Select" style={{ height: 38 }}>
-                  <Select.Option value="2pm - 11pm/3pm - 12am">2pm - 11pm/3pm - 12am</Select.Option>
-                  <Select.Option value="4pm - 1am">4pm - 1am</Select.Option>
-                  <Select.Option value="Others">Others</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('GENDER')} name="gender">
+            <Select placeholder="Select">
+              <Select.Option value="Male">Male</Select.Option>
+              <Select.Option value="Female">Female</Select.Option>
+              <Select.Option value="Other">Other</Select.Option>
+            </Select>
+          </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>REASON FOR JOB CHANGE</span>} name="reasonForJobChange">
+          <Form.Item label={fieldLabel('PREFERRED SHIFT')} name="preferredShift">
+            <Select placeholder="Select" allowClear options={optionsKeeping(SHIFT_OPTIONS, selectedCandidate?.preferredShift)} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('REASON FOR JOB CHANGE')} name="reasonForJobChange">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>WILLING TO TAKE ONLINE TEST?</span>} name="willingToTakeOnlineTest">
-                <Select placeholder="Select" style={{ height: 38 }}>
-                  <Select.Option value="Yes">Yes</Select.Option>
-                  <Select.Option value="No">No</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HAS LAPTOP FOR INITIAL DAYS?</span>} name="hasLaptopForInitialDays">
-                <Select placeholder="Select" style={{ height: 38 }}>
-                  <Select.Option value="Yes">Yes</Select.Option>
-                  <Select.Option value="No">No</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('WILLING TO TAKE ONLINE TEST?')} name="willingToTakeOnlineTest">
+            <Select placeholder="Select">
+              <Select.Option value="Yes">Yes</Select.Option>
+              <Select.Option value="No">No</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('HAS LAPTOP FOR INITIAL DAYS?')} name="hasLaptopForInitialDays">
+            <Select placeholder="Select">
+              <Select.Option value="Yes">Yes</Select.Option>
+              <Select.Option value="No">No</Select.Option>
+            </Select>
+          </Form.Item>
 
           <div style={{ background: 'var(--ink-4)', padding: '14px 18px', borderRadius: 8, border: '1px solid var(--border-light)', marginBottom: 24 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Current Company</span>
-            <Row gutter={12}>
-              <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>COMPANY NAME</span>} name={['currentCompany', 'Name']} style={{ marginBottom: 0 }}>
-                  <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
-                  <Input placeholder="https://example.com" style={{ borderRadius: 6 }} />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>COMPANY NAME</span>} name={['currentCompany', 'Name']}>
+              <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
+            </Form.Item>
+            <Form.Item label={<span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)' }}>WEBSITE</span>} name={['currentCompany', 'Website']} style={{ marginBottom: 0 }}>
+              <Input placeholder="https://example.com" style={{ borderRadius: 6 }} />
+            </Form.Item>
           </div>
 
           {/* Section 2: Education */}
@@ -955,75 +1019,39 @@ export default function Candidates() {
             <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>10TH PERCENTAGE</span>} name="a10th">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>12TH PERCENTAGE</span>} name="a12th">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('10TH PERCENTAGE')} name="a10th" rules={[percentRule('10th percentage')]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION PERCENTAGE</span>} name="graduation">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION PERCENTAGE</span>} name="postGraduation">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('12TH PERCENTAGE')} name="a12th" rules={[percentRule('12th percentage')]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION DEGREE</span>} 
-                name="graduationdegree"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>GRADUATION SPECIALIZATION</span>} 
-                name="graduationspecialization"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('GRADUATION PERCENTAGE')} name="graduation" rules={[percentRule('Graduation percentage')]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION DEGREE</span>} 
-                name="postgraduationdegree"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>POST GRADUATION SPECIALIZATION</span>} 
-                name="postgraduationspecialization"
-                rules={[{ validator: nonNumericValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('POST GRADUATION PERCENTAGE')} name="postGraduation" rules={[percentRule('Post graduation percentage')]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>LINKEDIN PROFILE LINK</span>} name="LinkedInProfile">
+          <Form.Item label={fieldLabel('GRADUATION DEGREE')} name="graduationdegree" rules={[{ validator: nonNumericValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('GRADUATION SPECIALIZATION')} name="graduationspecialization" rules={[{ validator: nonNumericValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('POST GRADUATION DEGREE')} name="postgraduationdegree" rules={[{ validator: nonNumericValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('POST GRADUATION SPECIALIZATION')} name="postgraduationspecialization" rules={[{ validator: nonNumericValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('LINKEDIN PROFILE LINK')} name="LinkedInProfile">
             <Input placeholder="https://linkedin.com/in/..." style={{ borderRadius: 6 }} />
           </Form.Item>
 
@@ -1037,13 +1065,12 @@ export default function Candidates() {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...restField }) => (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr 0.4fr', gap: 12, marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
+                  <div key={key} style={{ marginBottom: 12, padding: '12px 14px', background: 'var(--ink-4)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
                     <Form.Item
                       {...restField}
                       name={[name, 'CompanyName']}
                       label={<span style={{ fontSize: 10, fontWeight: 600 }}>COMPANY NAME</span>}
                       rules={[{ required: true, message: 'Required' }]}
-                      style={{ marginBottom: 0 }}
                     >
                       <Input placeholder="e.g. Google" style={{ borderRadius: 6 }} />
                     </Form.Item>
@@ -1051,7 +1078,6 @@ export default function Candidates() {
                       {...restField}
                       name={[name, 'StartDate']}
                       label={<span style={{ fontSize: 10, fontWeight: 600 }}>START DATE</span>}
-                      style={{ marginBottom: 0 }}
                     >
                       <Input placeholder="e.g. Jan 2023" style={{ borderRadius: 6 }} />
                     </Form.Item>
@@ -1059,20 +1085,19 @@ export default function Candidates() {
                       {...restField}
                       name={[name, 'EndDate']}
                       label={<span style={{ fontSize: 10, fontWeight: 600 }}>END DATE</span>}
-                      style={{ marginBottom: 0 }}
+                      style={{ marginBottom: 8 }}
                     >
                       <Input placeholder="e.g. Dec 2024" style={{ borderRadius: 6 }} />
                     </Form.Item>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                      <Button
-                        type="text"
-                        danger
-                        title="Remove"
-                        icon={<DeleteOutlined />}
-                        onClick={() => remove(name)}
-                        style={{ height: 38 }}
-                      />
-                    </div>
+                    <Button
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() => remove(name)}
+                    >
+                      Remove
+                    </Button>
                   </div>
                 ))}
                 <Form.Item>
@@ -1090,96 +1115,60 @@ export default function Candidates() {
             <div style={{ height: 1, background: 'var(--border-light)', marginTop: 6 }} />
           </div>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HEAT</span>} name="Heat">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>FINAL STATUS</span>} name="FinalStatus">
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('HEAT')} name="Heat">
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR QUICK COMMENTS</span>} name="HRQuickcomments">
+          <Form.Item label={fieldLabel('FINAL STATUS')} name="FinalStatus">
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('HR QUICK COMMENTS')} name="HRQuickcomments">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>IQ SCORE</span>} 
-                name="IQScore"
-                rules={[{ validator: wholeNumberValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH SCORE</span>} 
-                name="TechScore"
-                rules={[{ validator: wholeNumberValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO INTERVIEW SCORE</span>} 
-                name="ZekoInterviewScore"
-                rules={[{ validator: wholeNumberValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('IQ SCORE')} name="IQScore" rules={[{ validator: wholeNumberValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO CODING SCORE</span>} 
-                name="ZekoCodingScore"
-                rules={[{ validator: wholeNumberValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>ZEKO COMMUNICATION SCORE</span>} 
-                name="ZekoCommunicationScore"
-                rules={[{ validator: wholeNumberValidator }]}
-              >
-                <Input style={{ borderRadius: 6 }} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item label={fieldLabel('TECH SCORE')} name="TechScore" rules={[{ validator: wholeNumberValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND ONE FEEDBACK</span>} name="TechRoundOne">
+          <Form.Item label={fieldLabel('ZEKO INTERVIEW SCORE')} name="ZekoInterviewScore" rules={[{ validator: wholeNumberValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('ZEKO CODING SCORE')} name="ZekoCodingScore" rules={[{ validator: wholeNumberValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('ZEKO COMMUNICATION SCORE')} name="ZekoCommunicationScore" rules={[{ validator: wholeNumberValidator }]}>
+            <Input style={{ borderRadius: 6 }} />
+          </Form.Item>
+
+          <Form.Item label={fieldLabel('TECH ROUND ONE FEEDBACK')} name="TechRoundOne">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND TWO FEEDBACK</span>} name="TechRoundTwo">
+          <Form.Item label={fieldLabel('TECH ROUND TWO FEEDBACK')} name="TechRoundTwo">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>TECH ROUND THREE FEEDBACK</span>} name="TechRoundThree">
+          <Form.Item label={fieldLabel('TECH ROUND THREE FEEDBACK')} name="TechRoundThree">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>MANAGERIAL / CEO FEEDBACK</span>} name="ManagerialOrCEOFeedback">
+          <Form.Item label={fieldLabel('MANAGERIAL / CEO FEEDBACK')} name="ManagerialOrCEOFeedback">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>HR INTERVIEW</span>} name="HRInterview">
+          <Form.Item label={fieldLabel('HR INTERVIEW')} name="HRInterview">
             <Input.TextArea style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>APPLICATION STATUS</span>} name="status">
-            <Select style={{ height: 38 }}>
+          <Form.Item label={fieldLabel('APPLICATION STATUS')} name="status">
+            <Select>
               <Select.Option value="new">New</Select.Option>
               <Select.Option value="screening">Screening</Select.Option>
               <Select.Option value="shortlisted">Shortlisted</Select.Option>
@@ -1268,6 +1257,31 @@ export default function Candidates() {
           </div>
         )}
       </Modal>
+
+      {/* N21: Add to JD — the Screening page's shortlist dialog and result. */}
+      {canAddToJd && (
+        <>
+          <DecisionEmailModal
+            open={addToJdOpen}
+            decision="shortlist"
+            activeTab="search"
+            candidates={selectedRows.map((r) => ({ id: r.id, Name: r.name, EmailID: r.email, ContactNumber: r.phone }))}
+            roles={openRoles}
+            confirmLoading={addingToJd}
+            onCancel={() => setAddToJdOpen(false)}
+            onConfirm={handleAddToJd}
+          />
+          <ShortlistResultModal
+            open={Boolean(addResult)}
+            roleLabel={addResult?.roleLabel || ''}
+            added={addResult?.added}
+            emailed={addResult?.emailed}
+            skipped={addResult?.skipped}
+            emailFailures={addResult?.failures}
+            onClose={() => setAddResult(null)}
+          />
+        </>
+      )}
     </div>
   );
 }

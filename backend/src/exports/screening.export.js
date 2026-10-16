@@ -19,11 +19,21 @@
  * alternative.
  */
 import * as screeningService from '../services/screening.service.js';
+import * as screeningV2 from '../services/screeningV2.service.js';
+import config from '../config/index.js';
 
-/** Whichever rating object this candidate shape carries. */
-const rating = (c) => c.starRating || c.rating || {};
-/** One deterministic sub-score from the rating breakdown. */
-const subScore = (c, key) => rating(c).breakdown?.[key]?.score ?? '';
+/**
+ * Whichever rating object this candidate shape carries: JD rows carry
+ * starRating, keyword rows carry relevanceScore. Keyword rows used to fall
+ * through to {} here, which is why the keyword CSV's rating columns were blank
+ * (Phase 3 N06).
+ */
+const rating = (c) => c.starRating || c.relevanceScore || c.rating || {};
+/** One deterministic sub-score from the rating breakdown (JD uses `score`, keyword `pts`). */
+const subScore = (c, key) => {
+  const item = rating(c).breakdown?.[key];
+  return item?.score ?? item?.pts ?? '';
+};
 
 /** Top5KeySkills is stored as JSON text or a loose comma list. */
 function parseSkills(raw) {
@@ -88,9 +98,13 @@ export const columns = [
   { header: 'Score — Education', value: (c) => subScore(c, 'education'), numeric: true },
   { header: 'Score — Communication', value: (c) => subScore(c, 'communication'), numeric: true },
   { header: 'Score — JD Matching', value: (c) => subScore(c, 'jdMatching'), numeric: true },
+  { header: 'Score — Skill Match (Keyword)', value: (c) => subScore(c, 'skillMatch'), numeric: true },
   { header: 'Score — CTC Alignment', value: (c) => subScore(c, 'ctcAlignment'), numeric: true },
   { header: 'Score — Availability', value: (c) => subScore(c, 'availability'), numeric: true },
-  { header: 'JD Matching Reason', value: (c) => rating(c).breakdown?.jdMatching?.reason || '' },
+  {
+    header: 'JD Matching Reason',
+    value: (c) => rating(c).breakdown?.jdMatching?.reason || rating(c).breakdown?.skillMatch?.reason || '',
+  },
   {
     header: 'Mandatory Skills Present',
     value: (c) => skillsBy(c, (s) => s.inSignals || s.inSkillsSection),
@@ -122,7 +136,9 @@ export function roleSpec(mrfId) {
     fetch: async ({ max }) => {
       // force=false: read the cache the on-screen search just populated so the
       // CSV matches what the recruiter is looking at.
-      const result = await screeningService.searchRoleCandidates(mrfId, false);
+      const result = config.screening.v2
+        ? await screeningV2.searchRoleCandidatesV2(mrfId, false)
+        : await screeningService.searchRoleCandidates(mrfId, false);
       return {
         rows: (result.candidates || []).slice(0, max),
         degraded: Boolean(result.summary?.degraded),
@@ -144,7 +160,9 @@ export function keywordSpec(filters) {
     columns,
     filters,
     fetch: async ({ max }) => {
-      const result = await screeningService.searchKeywordCandidates(filters);
+      const result = config.screening.v2 || screeningV2.isLookupRequest(filters)
+        ? await screeningV2.searchKeywordCandidatesV2(filters)
+        : await screeningService.searchKeywordCandidates(filters);
       return {
         rows: (result.candidates || []).slice(0, max),
         degraded: Boolean(result.summary?.degraded),
