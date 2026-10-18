@@ -59,6 +59,16 @@ const assessmentImportService = {
   getInviteState(pipelineId) {
     return api.get(`/pipeline/assessment-import/invite/${pipelineId}`);
   },
+
+  /**
+   * Withdraws the latest open Evalground invite (flexible stages). The link
+   * itself must also be disabled in Evalground's dashboard; there is no API.
+   * @param {number|string} pipelineId
+   * @param {{ reason: string, notify_candidate?: boolean }} payload
+   */
+  withdrawInvite(pipelineId, payload) {
+    return api.post(`/pipeline/assessment-import/invite/${pipelineId}/withdraw`, payload);
+  },
 };
 
 export default assessmentImportService;

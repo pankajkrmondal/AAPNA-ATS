@@ -46,6 +46,7 @@ model rpa_users {
   rpa_offers_rpa_offers_shared_byTorpa_users   rpa_offers[]                   @relation("rpa_offers_shared_byTorpa_users")
   rpa_outlook_accounts                         rpa_outlook_accounts[]
   rpa_pipeline_stage_events                    rpa_pipeline_stage_events[]
+  rpa_pipeline_stage_state                     rpa_pipeline_stage_state[]
   rpa_referral_audit                           rpa_referral_audit[]
   sessions                                     rpa_sessions[]
   company                                      rpa_companies?                 @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -782,6 +783,7 @@ model rpa_candidate_pipeline {
   rpa_notifications          rpa_notifications[]
   rpa_offers                 rpa_offers?
   rpa_pipeline_stage_events  rpa_pipeline_stage_events[]
+  rpa_pipeline_stage_state   rpa_pipeline_stage_state[]
   rpa_recording_share_link   rpa_recording_share_link[]
 
   @@index([cv_id], map: "idx_candidate_pipeline_cv")
@@ -821,12 +823,33 @@ model rpa_pipeline_stage_events {
   email_error            String?
   acted_by               Int?
   created_at             DateTime               @default(now()) @db.Timestamptz(6)
+  from_stage_key         String?                @db.VarChar(50)
   rpa_users              rpa_users?             @relation(fields: [acted_by], references: [id], onUpdate: NoAction)
   rpa_candidate_pipeline rpa_candidate_pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   rpa_outcome_reasons    rpa_outcome_reasons?   @relation(fields: [reason_id], references: [id], onUpdate: NoAction)
 
   @@index([created_at], map: "idx_stage_events_created")
   @@index([pipeline_id], map: "idx_stage_events_pipeline")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rpa_pipeline_stage_state {
+  id                     BigInt                 @id @default(autoincrement())
+  pipeline_id            BigInt
+  stage_key              String                 @db.VarChar(50)
+  status                 String                 @db.VarChar(20)
+  entered_at             DateTime?              @db.Timestamptz(6)
+  completed_at           DateTime?              @db.Timestamptz(6)
+  skipped_at             DateTime?              @db.Timestamptz(6)
+  updated_at             DateTime               @default(now()) @db.Timestamptz(6)
+  updated_by             Int?
+  rpa_candidate_pipeline rpa_candidate_pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pipeline_stage_state_pipeline")
+  rpa_pipeline_stages    rpa_pipeline_stages    @relation(fields: [stage_key], references: [stage_key], onDelete: NoAction, onUpdate: NoAction, map: "fk_pipeline_stage_state_stage")
+  rpa_users              rpa_users?             @relation(fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_pipeline_stage_state_user")
+
+  @@unique([pipeline_id, stage_key], map: "uq_pipeline_stage_state")
+  @@index([pipeline_id], map: "idx_pipeline_stage_state_pipeline")
 }
 
 model rpa_pipeline_stages {
@@ -844,6 +867,7 @@ model rpa_pipeline_stages {
   rpa_interview_schedule    rpa_interview_schedule[]
   rpa_interview_scorecard   rpa_interview_scorecard[]
   rpa_outcome_reasons       rpa_outcome_reasons[]
+  rpa_pipeline_stage_state  rpa_pipeline_stage_state[]
   rpa_stage_email_templates rpa_stage_email_templates[]
   rpa_stage_outcomes        rpa_stage_outcomes[]
 
@@ -1146,6 +1170,9 @@ model rpa_assessment_invites {
   created_by             Int?
   created_at             DateTime               @default(now()) @db.Timestamptz(6)
   modified_at            DateTime               @default(now()) @db.Timestamptz(6)
+  withdrawn_at           DateTime?              @db.Timestamptz(6)
+  withdrawn_by           Int?
+  withdraw_reason        String?
   rpa_users              rpa_users?             @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   rpa_candidate_pipeline rpa_candidate_pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

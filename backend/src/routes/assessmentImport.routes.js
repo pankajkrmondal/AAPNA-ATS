@@ -63,4 +63,7 @@ router.post('/invite', assessmentImportController.sendInvite);
 /** GET /api/pipeline/assessment-import/invite/:pipelineId — latest invite + overdue state for one journey. */
 router.get('/invite/:pipelineId', assessmentImportController.getInviteState);
 
+/** POST /api/pipeline/assessment-import/invite/:pipelineId/withdraw — withdraw the open invite (C11). */
+router.post('/invite/:pipelineId/withdraw', assessmentImportController.withdrawInvite);
+
 export default router;

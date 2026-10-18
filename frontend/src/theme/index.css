@@ -3711,6 +3711,16 @@ html.theme-transition *::after {
 .cp-stage-pill--done { background: rgba(39, 174, 96, 0.12); border-color: rgba(39, 174, 96, 0.35); color: #1e8449; }
 .cp-stage-pill--current { background: var(--gradient-primary); border-color: transparent; color: #fff; box-shadow: var(--glow-accent); }
 .cp-stage-pill--future { background: var(--ink-3); color: var(--text-3); }
+/* Flexible stages: moved past without being done; can be visited later. */
+.cp-stage-pill--skipped { background: transparent; border-style: dashed; border-color: var(--status-hold, #d4a017); color: var(--text-2); }
+
+/* Flexible stages — drag and drop on the board. */
+.cp-column-drop--invalid { opacity: 0.45; filter: grayscale(0.6); transition: opacity 120ms ease; }
+.cp-column-drop--valid { transition: box-shadow 120ms ease; }
+.cp-column-drop--over { box-shadow: 0 0 0 2px var(--brand-primary, #7a922e), var(--shadow-md); }
+.cp-card-draggable { touch-action: none; }
+.cp-card-draggable--dragging { opacity: 0.35; }
+.cp-card-lock { color: var(--text-3); font-size: 12px; }
 .cp-stage-pill--selected { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--gold); }
 .cp-stage-pill:not(:disabled):hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 

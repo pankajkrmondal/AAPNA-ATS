@@ -625,6 +625,21 @@ const config = {
   },
 
   /**
+   * Flexible stage movement (docs/phase3/pipeline/FLEXIBLE-STAGE-MOVEMENT-DRAG-DROP-PLAN.md).
+   * Requires prisma/ddl/2026-10-16-flexible-stage-movement.sql.
+   */
+  pipeline: {
+    /**
+     * true = a candidate can be moved to any stage not yet passed, in either
+     * direction ("Move to…" and drag and drop), and Approve lands on the next
+     * stage not yet passed. false = the forward-only engine, exactly as before.
+     * Per-stage state is written either way, so switching this on needs no
+     * second backfill.
+     */
+    flexibleStagesEnabled: env('FLEXIBLE_STAGES_ENABLED', 'false') === 'true',
+  },
+
+  /**
    * Set TRUST_PROXY=true when running behind a reverse proxy (nginx/IIS/Azure)
    * so Express derives the real client IP from X-Forwarded-For; otherwise the
    * rate limiter keys every request on the proxy's own IP.

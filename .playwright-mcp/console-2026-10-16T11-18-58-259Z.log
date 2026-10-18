@@ -1,0 +1,82 @@
+[     846ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=e8508ca9:21550
+[    1058ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[    1058ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[    1913ms] [ERROR] Warning: [antd: Tooltip] `overlayInnerStyle` is deprecated. Please use `styles={{ body: {} }}` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[    1946ms] [ERROR] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[    5760ms] [ERROR] Warning: [antd: Card] `bordered` is deprecated. Please use `variant` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[   82558ms] [WARNING] [socket] disconnected: transport close @ http://localhost:5173/src/services/socket.js:39
+[   83878ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[   83878ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[   85438ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[   85446ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[  118631ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=e8508ca9:21550
+[  118708ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  118709ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  119874ms] [ERROR] Warning: [antd: Tooltip] `overlayInnerStyle` is deprecated. Please use `styles={{ body: {} }}` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  119888ms] [ERROR] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  124146ms] [ERROR] Warning: [antd: Card] `bordered` is deprecated. Please use `variant` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  367264ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=e8508ca9:21550
+[  367373ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  367373ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  368187ms] [ERROR] Warning: [antd: Tooltip] `overlayInnerStyle` is deprecated. Please use `styles={{ body: {} }}` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  368202ms] [ERROR] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  371045ms] [ERROR] Warning: [antd: Card] `bordered` is deprecated. Please use `variant` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  416496ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:5173/api/pipeline/2370/move:0
+[  574811ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  575848ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  576805ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  577633ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  578248ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:5173/api/pipeline/2374/move:0
+[  648799ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=e8508ca9:21550
+[  649097ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  649098ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=e12f18fb:4426
+[  650226ms] [ERROR] Warning: [antd: Tooltip] `overlayInnerStyle` is deprecated. Please use `styles={{ body: {} }}` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  650247ms] [ERROR] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  654060ms] [ERROR] Warning: [antd: Card] `bordered` is deprecated. Please use `variant` instead. @ http://localhost:5173/node_modules/.vite/deps/chunk-SC5NTUDY.js?v=e8508ca9:1049
+[  659305ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  660365ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  661300ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  662209ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  662570ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2374/move:0
+[  663135ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:5173/api/pipeline/2374/move:0
+[ 1020110ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/2373/documents/cancel:0
+[ 1154710ms] [ERROR] Failed to load resource: the server responded with a status of 409 (Conflict) @ http://localhost:5173/api/pipeline/assessment-import/invite/2375/withdraw:0
+[ 1155112ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/assessment-import/invite/2372/withdraw:0
+[ 1155957ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://localhost:5173/api/pipeline/assessment-import/invite/2372/withdraw:0
+[ 1440608ms] [WARNING] [socket] disconnected: transport close @ http://localhost:5173/src/services/socket.js:39
+[ 1442369ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1442370ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1444777ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1444783ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1449835ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1449836ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1454887ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1454888ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1459921ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1459921ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1465571ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1465594ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1469248ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/pipeline/interviews/unresolved:0
+[ 1470401ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/pipeline/interviews/unresolved:0
+[ 1470840ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1470845ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1475910ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1475911ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 1481189ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 1481195ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2497709ms] [WARNING] [socket] disconnected: transport close @ http://localhost:5173/src/services/socket.js:39
+[ 2499130ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2499132ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2501530ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2501536ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2877740ms] [WARNING] [socket] disconnected: transport close @ http://localhost:5173/src/services/socket.js:39
+[ 2878867ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2878871ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2880835ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2880836ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2884434ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2884437ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2889482ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2889484ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36
+[ 2894536ms] [ERROR] WebSocket connection to 'ws://localhost:5173/socket.io/?EIO=4&transport=websocket' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/socket__io-client.js?v=bc59d6cc:1523
+[ 2894537ms] [WARNING] [socket] connect_error: websocket error @ http://localhost:5173/src/services/socket.js:36

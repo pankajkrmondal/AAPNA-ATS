@@ -53,6 +53,7 @@ import {
 import { packSizeNotice } from '../utils/dossierModel.js';
 import { buildPack, sendPack } from '../exports/candidateDossier.export.js';
 import pipelineExport from '../exports/pipeline.export.js';
+import moveHistoryExport from '../exports/moveHistory.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
 // this controller's — listStageTemplates reads them so the admin screen shows
@@ -114,6 +115,23 @@ export const exportPipeline = catchAsync(async (req, res) => runExport(req, res,
   filters: pipelineExport.parseFilters(req),
   fetch: pipelineExport.fetch,
 }));
+
+/**
+ * GET /api/pipeline/move-history/export?date_from&date_to&moved_by&mrf_id
+ * Flexible stages (C12): CSV of every stage move.
+ */
+export const exportMoveHistory = catchAsync(async (req, res) => runExport(req, res, {
+  key: 'pipeline_move_history',
+  label: 'Pipeline-Move-History',
+  columns: moveHistoryExport.columns,
+  filters: moveHistoryExport.parseFilters(req),
+  fetch: moveHistoryExport.fetch,
+}));
+
+/** GET /api/pipeline/move-history/users — who has moved candidates (report filter). */
+export const listMoveHistoryUsers = catchAsync(async (req, res) => (
+  success(res, await moveHistoryExport.listMovers(), 'Move history users retrieved')
+));
 
 /**
  * GET /api/pipeline/analytics/export?table=…
@@ -282,6 +300,26 @@ export const advanceStage = catchAsync(async (req, res) => {
   const { skip } = req.body || {};
   const result = await pipelineService.advanceStage(id, { skip: !!skip, actedBy: req.user?.id });
   return success(res, result, 'Pipeline advanced successfully');
+});
+
+/**
+ * POST /api/pipeline/:id/move  { target_stage_key, from_stage_key }
+ * Flexible stage movement (FLEXIBLE_STAGES_ENABLED): moves the candidate to any
+ * stage not yet passed, forward or backward. No email is sent. `from_stage_key`
+ * is the stage the client was displaying; a mismatch is a 409, as for outcomes.
+ * Access is the router's Candidate Pipeline module check (D1).
+ */
+export const moveToStage = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
+  const { target_stage_key, from_stage_key } = req.body || {};
+  if (typeof target_stage_key !== 'string' || !target_stage_key) throw new AppError('target_stage_key is required.', 400);
+  const result = await pipelineService.moveToStage(id, {
+    targetStageKey: target_stage_key,
+    fromStageKey: typeof from_stage_key === 'string' && from_stage_key ? from_stage_key : null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Candidate moved');
 });
 
 /**
@@ -1010,6 +1048,18 @@ export const requestDocuments = catchAsync(async (req, res) => {
 export const remindDocuments = catchAsync(async (req, res) => {
   const result = await documentService.sendReminder(pipelineIdFrom(req), { actedBy: req.user?.id });
   return success(res, result, 'Reminder sent');
+});
+
+/**
+ * POST /api/pipeline/:id/documents/cancel  { reason? }
+ * Cancels the open document request: closes the upload link (flexible stages, C11).
+ */
+export const cancelDocumentRequest = catchAsync(async (req, res) => {
+  const result = await documentService.cancelDocumentRequest(pipelineIdFrom(req), {
+    reason: typeof req.body?.reason === 'string' ? req.body.reason : null,
+    actedBy: req.user?.id,
+  });
+  return success(res, result, 'Document request cancelled');
 });
 
 /**
