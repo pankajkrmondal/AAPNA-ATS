@@ -551,7 +551,9 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // raw timeline also carries email-dispatch rows and system chatter, which
   // would bury the three lines an interviewer actually wants.
   const stages = pipeline.rpa_pipeline_stage_events
-    .filter((e) => ['outcome', 'advance', 'closure', 'note'].includes(e.event_type))
+    // 'moved' (flexible stages, C9/C12): the order the candidate actually went
+    // through the stages, with who moved them and when.
+    .filter((e) => ['outcome', 'advance', 'closure', 'note', 'moved'].includes(e.event_type))
     .map((e) => {
       // Commercial stages keep their ROW but lose their PROSE.
       //
@@ -570,7 +572,9 @@ export async function buildDossierModel(pipelineId, options = {}) {
         event_type: e.event_type,
         outcome: e.outcome ? e.outcome.replace(/_/g, ' ') : null,
         reason: commercial ? null : (e.rpa_outcome_reasons?.reason_label || e.reason_text || null),
-        notes: commercial ? null : (e.notes || null),
+        // A move's note is generated ("Moved forward from X to Offer") and
+        // carries no terms, so it survives on a commercial stage too.
+        notes: commercial && e.event_type !== 'moved' ? null : (e.notes || null),
         decided_by: e.rpa_users?.username || null,
         decided_at: e.created_at,
       };

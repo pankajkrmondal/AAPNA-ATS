@@ -14,7 +14,23 @@ import {
   isMrfFilled,
   isMrfClosed,
   isStageArrival,
+  stagePendingLabelFor,
+  EVENT_TYPES,
 } from '../config/pipelineStages.js';
+import {
+  STAGE_STATES,
+  stateForCurrentStatus,
+  planMove,
+  moveNote,
+  resolveFlexibleApproveLanding,
+} from '../utils/stageState.js';
+import {
+  loadStageStates,
+  writeStageStates,
+  ensureStageStateRows,
+  getStageLock,
+  getStageLocks,
+} from './stageState.service.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
 // cancelInterviewRound is also re-exported below for the controller's benefit;
 // this import is the local binding setFinalOutcome calls (a re-export creates
@@ -393,6 +409,24 @@ export async function listPipeline(filters = {}) {
     rows.forEach((r) => referralCvIds.add(String(r.id)));
   }
 
+  // Flexible stages: the lock (can this card be dragged?) and the stages each
+  // candidate already passed (greyed out while dragging, D2). One shared rule
+  // with the move endpoint — see stageState.service.js.
+  const flexibleStages = config.pipeline.flexibleStagesEnabled;
+  const locks = flexibleStages ? await getStageLocks(journeys) : new Map();
+  const passedByJourney = new Map();
+  if (flexibleStages && journeys.length) {
+    const passedRows = await prisma.rpa_pipeline_stage_state.findMany({
+      where: { pipeline_id: { in: journeys.map((j) => j.id) }, status: STAGE_STATES.COMPLETED },
+      select: { pipeline_id: true, stage_key: true },
+    });
+    for (const r of passedRows) {
+      const k = String(r.pipeline_id);
+      if (!passedByJourney.has(k)) passedByJourney.set(k, []);
+      passedByJourney.get(k).push(r.stage_key);
+    }
+  }
+
   const now = Date.now();
   const cards = journeys.map((j) => {
     const lastEvent = j.rpa_pipeline_stage_events[0];
@@ -449,6 +483,10 @@ export async function listPipeline(filters = {}) {
       days_in_stage: daysInStage,
       concurrent_journeys: activeByCv.get(String(j.cv_id)) || 1,
       last_event_at: lastEvent?.created_at || j.modified_at,
+      ...(flexibleStages ? {
+        lock: locks.get(String(j.id)) || { locked: false, code: null, reason: null },
+        passed_stage_keys: passedByJourney.get(String(j.id)) || [],
+      } : {}),
     };
   });
 
@@ -483,6 +521,7 @@ export async function listPipeline(filters = {}) {
     total: cards.length,
     filteredTotal: filtered.length,
     closedCount,
+    flexibleStages,
   };
 }
 
@@ -863,8 +902,17 @@ export async function getPipelineDetail(pipelineId) {
   // same check setStageOutcome enforces, so the two can never disagree.
   const currentStageHasScore = pipeline.final_outcome ? null : await stageHasScore(pipeline, pipeline.current_stage_key);
 
+  // Flexible stages: each stage's real state for the drawer strip, and whether
+  // the candidate can be moved right now (and why not).
+  const flexibleStages = config.pipeline.flexibleStagesEnabled;
+  const stageStates = await loadStageStates(pipeline);
+  const stageLock = flexibleStages ? await getStageLock(pipeline) : null;
+
   return serializeBigInts({
     pipeline,
+    flexibleStages,
+    stageStates,
+    stageLock,
     currentStageHasScore,
     currentStageOutcomes: outcomes,
     reasons,
@@ -1046,6 +1094,7 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   // an optional stage they're already sitting on.
   let nextStage = null;
   let skippedStages = [];
+  const flexible = config.pipeline.flexibleStagesEnabled;
   if (outcomeKey === STAGE_OUTCOMES.APPROVED) {
     const stages = await prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } });
     const currentIdx = stages.findIndex((s) => s.stage_key === pipeline.current_stage_key);
@@ -1059,10 +1108,19 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
         409
       );
     }
-    // Only optional stages may be bypassed (N33), and a run of them can be
-    // bypassed in one go — HR Round straight to Documents past CEO Round and
-    // Client Round (N24). Refused with 400, never silently ignored.
-    ({ nextStage, skipped: skippedStages } = resolveApproveLanding(stages, currentIdx, { skipToStageKey, skipOptionalNext }));
+    if (flexible) {
+      // Flexible stages (C4): land on the next stage not yet passed, or on any
+      // not-passed stage the recruiter picked — the mandatory check is lifted
+      // (D4). A passed stage is never a landing (D2).
+      const states = await loadStageStates(pipeline);
+      const legacyPick = skipOptionalNext ? stages[currentIdx + 2]?.stage_key || null : null;
+      ({ nextStage, skipped: skippedStages } = resolveFlexibleApproveLanding(stages, currentIdx, states, { skipToStageKey: skipToStageKey || legacyPick }));
+    } else {
+      // Only optional stages may be bypassed (N33), and a run of them can be
+      // bypassed in one go — HR Round straight to Documents past CEO Round and
+      // Client Round (N24). Refused with 400, never silently ignored.
+      ({ nextStage, skipped: skippedStages } = resolveApproveLanding(stages, currentIdx, { skipToStageKey, skipOptionalNext }));
+    }
   }
 
   const pipelineUpdateData = nextStage
@@ -1115,11 +1173,22 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
           // ONE arrival event at the landing stage, however many were bypassed
           // (utils/stageSkip.js explains why not one per bypassed stage).
           event_type: skippedStages.length ? 'skip' : 'entered',
-          notes: skippedStages.length ? skipNote(skippedStages) : null,
+          notes: skippedStages.length ? (flexible ? `Approve landed on ${nextStage.label || nextStage.stage_key}, past ${skippedStages.map((s) => s.label || s.stage_key).join(', ')}` : skipNote(skippedStages)) : null,
           acted_by: actedBy || null,
         },
       });
     }
+
+    // Per-stage state (C1), written whether or not flexible stages are on so
+    // the flag can be switched on with no second backfill. Forward-only
+    // bypassed stages are 'skipped' (the backfill rule); under the flag they
+    // stay not visited, because the order is free and nothing was skipped.
+    await ensureStageStateRows(tx, pipeline);
+    await writeStageStates(tx, pipeline.id, [
+      { stageKey: pipeline.current_stage_key, status: nextStage ? STAGE_STATES.COMPLETED : stateForCurrentStatus(nextStageStatus) },
+      ...(flexible ? [] : skippedStages.map((s) => ({ stageKey: s.stage_key, status: STAGE_STATES.SKIPPED }))),
+      ...(nextStage ? [{ stageKey: nextStage.stage_key, status: STAGE_STATES.ACTIVE }] : []),
+    ], actedBy);
 
     // updateMany returns a count, not the row — re-read inside the transaction
     // so callers still get the post-update row they had before.
@@ -1241,12 +1310,23 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
   if (currentIdx === stages.length - 1) {
     throw new AppError('No next stage available (already at the final stage).', 400);
   }
-  // Moving on without an outcome IS skipping the current stage, whatever the
-  // `skip` flag says — so only an optional stage can be left this way (N33).
-  // Mandatory stages move forward through setStageOutcome (Approve).
-  assertSkippable(stages[currentIdx]);
-
-  const nextStage = stages[currentIdx + 1];
+  const flexible = config.pipeline.flexibleStagesEnabled;
+  let nextStage = stages[currentIdx + 1];
+  if (flexible) {
+    // Under flexible stages any stage may be left without an outcome (D4), but
+    // only when nothing has started in it (§2), and never into a passed stage
+    // (D2) — the same rules as a move.
+    const lock = await getStageLock(pipeline);
+    if (lock.locked) throw new AppError(lock.reason, 409);
+    const states = await loadStageStates(pipeline);
+    ({ nextStage } = resolveFlexibleApproveLanding(stages, currentIdx, states));
+    if (!nextStage) throw new AppError('No later stage the candidate has not already passed.', 400);
+  } else {
+    // Moving on without an outcome IS skipping the current stage, whatever the
+    // `skip` flag says — so only an optional stage can be left this way (N33).
+    // Mandatory stages move forward through setStageOutcome (Approve).
+    assertSkippable(stages[currentIdx]);
+  }
 
   // Same claim-then-act guard as setStageOutcome: two people advancing the same
   // candidate at once must not skip a stage between them.
@@ -1270,11 +1350,118 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
         acted_by: actedBy || null,
       },
     });
+    await ensureStageStateRows(tx, pipeline);
+    await writeStageStates(tx, pipeline.id, [
+      { stageKey: pipeline.current_stage_key, status: STAGE_STATES.SKIPPED },
+      { stageKey: nextStage.stage_key, status: STAGE_STATES.ACTIVE },
+    ], actedBy);
     return tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
   });
 
   logger.info(`Pipeline ${pipelineId} advanced ${pipeline.current_stage_key} -> ${nextStage.stage_key} (skip=${skip}).`);
   return serializeBigInts(updatedPipeline);
+}
+
+export const MOVE_STALE_MESSAGE = 'Someone else moved this candidate while you were deciding. Reopen the candidate to see where they are now.';
+
+/**
+ * Moves a candidate to any stage they have not passed, forward or backward
+ * (flexible stage movement, C3). Behind FLEXIBLE_STAGES_ENABLED.
+ *
+ * Refused when the journey is closed or paused, when the current stage has
+ * started (409 with the lock reason, §2), when the target was already passed
+ * (400, D2), or when the screen was stale (409). Sends NO email (D5); records
+ * one 'moved' event with from, to, who and when (C12), and writes the legacy
+ * status so the Vendor Dashboard shows where the candidate is (C6).
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string} params.targetStageKey
+ * @param {string|null} [params.fromStageKey] the stage the user's screen showed
+ * @param {number} params.actedBy
+ */
+export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = null, actedBy }) {
+  if (!config.pipeline.flexibleStagesEnabled) {
+    throw new AppError('Moving candidates between stages in any order is not switched on.', 400);
+  }
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: true },
+  });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  assertJourneyOpen(pipeline, 'move them');
+  if (fromStageKey && fromStageKey !== pipeline.current_stage_key) throw new AppError(MOVE_STALE_MESSAGE, 409);
+
+  const lock = await getStageLock(pipeline);
+  if (lock.locked) throw new AppError(lock.reason, 409);
+
+  const stages = await prisma.rpa_pipeline_stages.findMany({ orderBy: { sort_order: 'asc' } });
+  const states = await loadStageStates(pipeline, prisma, stages);
+  const plan = planMove({ stages, states, pipeline, targetStageKey });
+  const notes = moveNote(plan);
+  const leftStatus = states[pipeline.current_stage_key] === STAGE_STATES.COMPLETED ? STAGE_STATES.COMPLETED : STAGE_STATES.SKIPPED;
+
+  const { updatedPipeline, event } = await prisma.$transaction(async (tx) => {
+    // Claim-then-act, as setStageOutcome: a second tab or a second recruiter
+    // racing this move loses with 409 instead of moving the candidate twice.
+    const claim = await tx.rpa_candidate_pipeline.updateMany({
+      where: {
+        id: pipeline.id,
+        current_stage_key: pipeline.current_stage_key,
+        current_stage_status: { in: ['in_progress', 'approved'] },
+        final_outcome: null,
+        is_paused: false,
+      },
+      data: { current_stage_key: plan.toStage.stage_key, current_stage_status: 'in_progress', modified_at: new Date() },
+    });
+    if (claim.count !== 1) throw new AppError(MOVE_STALE_MESSAGE, 409);
+
+    const moved = await tx.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: pipeline.id,
+        stage_key: plan.toStage.stage_key,
+        from_stage_key: pipeline.current_stage_key,
+        event_type: EVENT_TYPES.MOVED,
+        notes,
+        acted_by: actedBy || null,
+      },
+    });
+    await ensureStageStateRows(tx, pipeline);
+    await writeStageStates(tx, pipeline.id, [
+      { stageKey: pipeline.current_stage_key, status: leftStatus },
+      { stageKey: plan.toStage.stage_key, status: STAGE_STATES.ACTIVE },
+    ], actedBy);
+    const row = await tx.rpa_candidate_pipeline.findUnique({ where: { id: pipeline.id } });
+    return { updatedPipeline: row, event: moved };
+  });
+
+  // Legacy write-back (not an email, C6) — best effort, like setStageOutcome's.
+  try {
+    if (pipeline.cv_id) {
+      const label = stagePendingLabelFor(plan.toStage.stage_key);
+      await prisma.$executeRaw`UPDATE rpa_cv SET "FinalStatus" = ${label} WHERE id = ${pipeline.cv_id};`;
+    }
+    if (pipeline.shortlist_id) {
+      await prisma.rpa_shortlisted_candidates.update({
+        where: { id: pipeline.shortlist_id },
+        data: { pipeline_status: shortlistStatusFor(STAGE_OUTCOMES.APPROVED) },
+      });
+    }
+  } catch (err) {
+    logger.error(`Legacy write-back failed for moved pipeline ${pipelineId}: ${err.message}`);
+  }
+
+  logger.info(`Pipeline ${pipelineId} moved ${plan.direction} ${pipeline.current_stage_key} -> ${plan.toStage.stage_key} by user ${actedBy || 'unknown'}.`);
+  return serializeBigInts({
+    pipeline: updatedPipeline,
+    event,
+    move: {
+      from_stage_key: plan.fromStage.stage_key,
+      to_stage_key: plan.toStage.stage_key,
+      direction: plan.direction,
+      skipped_count: plan.skippedCount,
+    },
+  });
 }
 
 /**
@@ -1951,6 +2138,7 @@ export async function createPipelineJourney({
       notes: 'Entered pipeline — already shortlisted on Candidate Screening.',
     },
   });
+  await writeStageStates(prisma, created.id, [{ stageKey: STAGE_KEYS.ZEKO_HR, status: STAGE_STATES.ACTIVE }]);
 
   return serializeBigInts(created);
 }

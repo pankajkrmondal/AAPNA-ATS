@@ -128,6 +128,27 @@ const pipelineService = {
   },
 
   /**
+   * Flexible stages: moves the candidate to any stage not yet passed, forward or
+   * backward. Sends no email. 409 when the candidate is locked or the screen was
+   * stale; 400 for a passed stage.
+   * @param {number} id
+   * @param {{ target_stage_key: string, from_stage_key: string }} payload
+   */
+  moveToStage(id, payload) {
+    return api.post(`/pipeline/${id}/move`, payload);
+  },
+
+  /** Flexible stages: the Move history CSV (every 'moved' event), filterable. */
+  exportMoveHistory(params = {}, config = {}) {
+    return api.get('/pipeline/move-history/export', { params, ...config });
+  },
+
+  /** Flexible stages: everyone who has moved a candidate (the report's user filter). */
+  listMoveHistoryUsers() {
+    return api.get('/pipeline/move-history/users');
+  },
+
+  /**
    * Books the interview for the candidate's current scheduled round (tech1/tech2).
    * @param {number} id - pipeline id
    * @param {Object} payload - { stage_key, start_at, duration_minutes?, interviewer_email?, interviewer_name?, notes? }
@@ -369,6 +390,10 @@ const pipelineService = {
   /** Re-sends the upload link for an outstanding request. */
   remindDocuments(id) {
     return api.post(`/pipeline/${id}/documents/remind`, {});
+  },
+  /** Cancels the open request: closes the upload link and unlocks the card. */
+  cancelDocumentRequest(id, reason) {
+    return api.post(`/pipeline/${id}/documents/cancel`, { reason });
   },
   /** Marks one uploaded document as verified. */
   verifyDocument(docId) {

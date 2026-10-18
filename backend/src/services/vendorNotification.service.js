@@ -51,6 +51,9 @@ export const VENDOR_EVENTS = Object.freeze({
   INTERVIEW_RESCHEDULED: 'interview_rescheduled',
   INTERVIEW_CANCELLED: 'interview_cancelled',
   ASSESSMENT_INVITED: 'assessment_invited',
+  // Withdraw Evalground invite (flexible stages, C11): the matching line for
+  // the "assessment invitation sent" the vendor was already told.
+  ASSESSMENT_CANCELLED: 'assessment_cancelled',
   OFFER_SHARED: 'offer_shared',
   OFFER_ACCEPTED: 'offer_accepted',
   OFFER_DECLINED: 'offer_declined',
@@ -113,6 +116,7 @@ function statusLineFor({ eventType, stageLabel, outcomeLabel, policy }) {
     case VENDOR_EVENTS.INTERVIEW_RESCHEDULED: return `${stageLabel} — interview rescheduled.`;
     case VENDOR_EVENTS.INTERVIEW_CANCELLED: return `${stageLabel} — interview cancelled.`;
     case VENDOR_EVENTS.ASSESSMENT_INVITED: return `${stageLabel} — assessment invitation sent.`;
+    case VENDOR_EVENTS.ASSESSMENT_CANCELLED: return `${stageLabel} — assessment cancelled.`;
     case VENDOR_EVENTS.ADHOC_CONTACT: return `${stageLabel} — the recruitment team has been in touch with the candidate.`;
     case VENDOR_EVENTS.CLOSURE: return outcomeLabel ? `Closed — ${outcomeLabel}.` : 'The record has been closed.';
     default: return outcomeLabel ? `${outcomeLabel}.` : `Now at ${stageLabel}.`;

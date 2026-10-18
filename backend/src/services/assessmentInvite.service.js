@@ -14,6 +14,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { sendAdHocCandidateEmail } from './stageNotification.service.js';
+import { compileTemplate } from './emailNotification.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
 
@@ -129,7 +130,9 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
 
 /**
  * Latest invite (or null) + overdue state, for PipelineDrawer.jsx's
- * "Invite Sent"/"Awaiting Test" rendering.
+ * "Invite Sent"/"Awaiting Test" rendering. A withdrawn latest invite is
+ * returned with isWithdrawn so the drawer can offer "Send Evalground invite"
+ * again; it is never overdue.
  * @param {number|string} pipelineId
  */
 export async function getInviteState(pipelineId) {
@@ -138,13 +141,108 @@ export async function getInviteState(pipelineId) {
     orderBy: { sent_at: 'desc' },
   });
   if (!latest) {
-    return { invite: null, isOverdue: false, hasResult: false };
+    return { invite: null, isOverdue: false, hasResult: false, isWithdrawn: false };
   }
 
   const result = await prisma.rpa_assessment_results.findFirst({
     where: { pipeline_id: BigInt(pipelineId), status: { in: ['matched', 'score_overwritten'] } },
   });
-  const isOverdue = !result && new Date(latest.deadline_at) < new Date();
+  const isWithdrawn = !!latest.withdrawn_at;
+  const isOverdue = !result && !isWithdrawn && new Date(latest.deadline_at) < new Date();
 
-  return serializeBigInts({ invite: latest, isOverdue, hasResult: !!result });
+  return serializeBigInts({ invite: latest, isOverdue, hasResult: !!result, isWithdrawn });
+}
+
+/** Overridable from the Email Templates page; the inline copy below is used until then. */
+export const ASSESSMENT_CANCELLED_TEMPLATE = 'Evalground Test Cancelled';
+
+const CANCELLED_FALLBACK = Object.freeze({
+  subject: 'Your assessment for {{position}} has been cancelled',
+  body: `<p>Dear {{candidate_name}},</p>
+<p>The online assessment we sent you for <strong>{{position}}</strong> has been cancelled, so you do not need to take it. Please ignore the earlier test link.</p>
+<p>The recruitment team will be in touch about the next step.</p>`,
+});
+
+/**
+ * Withdraws the latest open Evalground invite (flexible stages, C11). Evalground
+ * has no API, so the recruiter must also disable the link in Evalground's own
+ * dashboard; the drawer says so. The row stays (history) and is only marked.
+ *
+ * Unlocks the Assessment card, stops the deadline reminder (the checker skips
+ * withdrawn invites), optionally emails the candidate, and tells the vendor
+ * "assessment cancelled" to match the "invited" they were sent.
+ *
+ * @param {number|string} pipelineId
+ * @param {object} params
+ * @param {string} params.reason - required
+ * @param {boolean} [params.notifyCandidate=true]
+ * @param {number|null} [params.actedBy]
+ */
+export async function withdrawAssessmentInvite(pipelineId, { reason, notifyCandidate = true, actedBy = null }) {
+  const why = String(reason || '').trim();
+  if (!why) throw new AppError('A reason is required to withdraw an Evalground invite.', 400);
+
+  const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: true } } },
+  });
+  if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
+  if (pipeline.final_outcome) throw new AppError('This candidate\'s record is closed. Reopen it first.', 409);
+
+  const latest = await prisma.rpa_assessment_invites.findFirst({
+    where: { pipeline_id: pipeline.id },
+    orderBy: { sent_at: 'desc' },
+  });
+  if (!latest || latest.withdrawn_at) throw new AppError('There is no open Evalground invite to withdraw.', 400);
+  const result = await prisma.rpa_assessment_results.count({
+    where: { pipeline_id: pipeline.id, status: { in: ['matched', 'score_overwritten'] } },
+  });
+  if (result > 0) {
+    throw new AppError('A result has already arrived for this test. Record the decision instead.', 409);
+  }
+
+  const claim = await prisma.rpa_assessment_invites.updateMany({
+    where: { id: latest.id, withdrawn_at: null },
+    data: { withdrawn_at: new Date(), withdrawn_by: actedBy || null, withdraw_reason: why, modified_at: new Date() },
+  });
+  if (claim.count !== 1) throw new AppError('This invite has already been withdrawn.', 400);
+
+  const candidate = pipeline.rpa_shortlisted_candidates;
+  let emailResult = { sent: false, error: 'Not sent: the recruiter chose not to email the candidate.' };
+  if (notifyCandidate) {
+    const tpl = await prisma.rpa_email_templates.findFirst({ where: { name: ASSESSMENT_CANCELLED_TEMPLATE, is_active: true } });
+    const compiled = compileTemplate(tpl?.subject || CANCELLED_FALLBACK.subject, tpl?.body_html || CANCELLED_FALLBACK.body, {
+      candidate_name: candidate?.candidate_name || 'there',
+      position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+    });
+    emailResult = await sendAdHocCandidateEmail({
+      pipelineRow: pipeline,
+      candidate: { name: candidate?.candidate_name, email: candidate?.candidate_email },
+      subject: compiled.subject,
+      body: compiled.html,
+    });
+  }
+
+  await notifyVendor({
+    pipelineRow: pipeline,
+    candidate: { name: candidate?.candidate_name },
+    eventType: VENDOR_EVENTS.ASSESSMENT_CANCELLED,
+    stageKey: 'assessment',
+    positionLabel: candidate?.position_applied || 'the role',
+  });
+
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: pipeline.id,
+      stage_key: 'assessment',
+      event_type: 'note',
+      notes: `Evalground invite withdrawn. Reason: ${why}`,
+      email_sent: !!emailResult.sent,
+      email_error: emailResult.sent ? null : emailResult.error,
+      acted_by: actedBy || null,
+    },
+  });
+
+  logger.info(`Evalground invite ${latest.id} withdrawn for pipeline ${pipelineId} (emailed=${!!emailResult.sent}).`);
+  return getInviteState(pipelineId);
 }

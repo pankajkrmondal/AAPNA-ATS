@@ -27,11 +27,17 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Badge, Button, Card, Checkbox, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
+  Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, LockOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, SwapOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import {
+  DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors,
+} from '@dnd-kit/core';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
+import MoveStageModal from '../components/pipeline/MoveStageModal';
+import MoveHistoryExport from '../components/pipeline/MoveHistoryExport';
+import { canMoveCard, moveBlockReason } from '../components/pipeline/stageMove';
 import ReferralChip from '../components/candidates/ReferralChip';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 import ExportButton from '../components/common/ExportButton';
@@ -130,7 +136,50 @@ function cardProgressSegments(card) {
   ];
 }
 
-function CandidateCard({ card, onOpen }) {
+/**
+ * Flexible stages (C8): the card's "Move to…" menu — the keyboard / small-screen
+ * alternative to dragging, through the same confirmation popup. A locked card
+ * shows a lock with the reason instead.
+ */
+function CardMoveControl({ card, stages, onMoveRequest }) {
+  // The button's tooltip must not stay up over the open menu: it sat on top of
+  // the menu's items and swallowed the click (found in the T4 browser run).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const stop = (e) => e.stopPropagation();
+  if (!canMoveCard(card)) {
+    return (
+      <Tooltip title={card.lock?.reason || 'This candidate cannot be moved right now.'}>
+        <LockOutlined className="cp-card-lock" onClick={stop} aria-label={`Locked: ${card.lock?.reason || ''}`} data-testid={`card-lock-${card.id}`} />
+      </Tooltip>
+    );
+  }
+  const items = stages.filter((s) => s.stage_key !== card.current_stage_key).map((s) => {
+    const blocked = moveBlockReason(card, s.stage_key);
+    return {
+      key: s.stage_key,
+      disabled: !!blocked,
+      label: <span data-testid={`move-to-${s.stage_key}`}>{s.label}{blocked ? ' — passed' : ''}</span>,
+    };
+  });
+  return (
+    // Stops the board's drag sensors (mouse / touch / keyboard) and the card's
+    // own click from seeing a press on this button.
+    <span onClick={stop} onPointerDown={stop} onMouseDown={stop} onTouchStart={stop} onKeyDown={stop} role="presentation">
+      <Dropdown
+        trigger={['click']}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        menu={{ items, onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); setMenuOpen(false); onMoveRequest({ card, toStageKey: key }); } }}
+      >
+        <Tooltip title="Move to…" open={menuOpen ? false : undefined}>
+          <Button size="small" type="text" icon={<SwapOutlined />} aria-label="Move to another stage" data-testid={`card-move-${card.id}`} style={{ height: 20, width: 22, minWidth: 22 }} />
+        </Tooltip>
+      </Dropdown>
+    </span>
+  );
+}
+
+function CandidateCard({ card, onOpen, flexible = false, stages = [], onMoveRequest }) {
   const status = cardStatus(card);
   const segs = cardProgressSegments(card);
   const segTooltip = `Invite: ${segs[0].state} · Awaiting: ${segs[1].state} · Results: ${segs[2].state} · Decision: ${segs[3].state}`;
@@ -140,6 +189,7 @@ function CandidateCard({ card, onOpen }) {
       hoverable
       onClick={() => onOpen(card.id)}
       className="cp-candidate-card"
+      data-testid={`pipeline-card-${card.id}`}
       styles={{ body: { padding: '9px 11px' } }}
       // The left border encodes STATUS — it is data, not decoration. It used to
       // be painted here as an inline `borderInlineStart`, which a stylesheet can
@@ -157,11 +207,14 @@ function CandidateCard({ card, onOpen }) {
             <Text strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {card.candidate_name || 'Unnamed candidate'}
             </Text>
-            <Tooltip title="Days in current stage">
-              {card.days_in_stage > 10
-                ? <Tag color="red" className="tag-attention" style={{ marginInlineEnd: 0, fontSize: 10.5, lineHeight: '16px' }}>{card.days_in_stage}d</Tag>
-                : <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{card.days_in_stage}d</Text>}
-            </Tooltip>
+            <Space size={4} style={{ flexShrink: 0 }}>
+              <Tooltip title="Days in current stage">
+                {card.days_in_stage > 10
+                  ? <Tag color="red" className="tag-attention" style={{ marginInlineEnd: 0, fontSize: 10.5, lineHeight: '16px' }}>{card.days_in_stage}d</Tag>
+                  : <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{card.days_in_stage}d</Text>}
+              </Tooltip>
+              {flexible && onMoveRequest && <CardMoveControl card={card} stages={stages} onMoveRequest={onMoveRequest} />}
+            </Space>
           </div>
           <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {card.position || 'No position on file'} · {sourceLabel(card)}{card.owner ? ` · ${card.owner}` : ''}
@@ -387,6 +440,107 @@ function BoardScroller({ children }) {
   );
 }
 
+/**
+ * Flexible stages (C8, phase 5): a card that can be dragged to another column.
+ * A locked card cannot be picked up; it shows a lock with the reason instead.
+ */
+function DraggableCard({ card, children }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `card-${card.id}`,
+    data: { card },
+    disabled: !canMoveCard(card),
+  });
+  const movable = canMoveCard(card);
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      // dnd-kit's attributes make the wrapper a keyboard-draggable button. On
+      // a locked card they also say aria-disabled="true", which announced the
+      // whole card — including its click-to-open — as disabled (found in the
+      // T4 browser run), so a locked card gets none of them.
+      {...(movable ? attributes : {})}
+      tabIndex={movable ? 0 : -1}
+      aria-roledescription={movable ? 'draggable candidate card' : undefined}
+      className={`cp-card-draggable${isDragging ? ' cp-card-draggable--dragging' : ''}`}
+      data-testid={`drag-card-${card.id}`}
+      data-locked={movable ? 'false' : 'true'}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A board column as a drop target. While a card is dragged, columns it cannot
+ * go to (its current stage, stages it already passed — D2) are greyed out and
+ * refuse the drop; the column under the pointer is outlined.
+ */
+function DroppableColumn({ stageKey, activeCard, children }) {
+  const blocked = activeCard ? moveBlockReason(activeCard, stageKey) : null;
+  const { setNodeRef, isOver } = useDroppable({ id: stageKey, disabled: !activeCard || !!blocked });
+  let cls = '';
+  if (activeCard) cls = blocked ? 'cp-column-drop--invalid' : `cp-column-drop--valid${isOver ? ' cp-column-drop--over' : ''}`;
+  return (
+    <div
+      ref={setNodeRef}
+      className={cls}
+      // minWidth 0: a flex item's automatic minimum is its min-content, so one
+      // long nowrap line (a vendor email) widened the whole column past 260px
+      // — and COLUMN_STEP scrolls by 260+12. The card text already ellipsizes.
+      style={{ flex: '0 0 260px', minWidth: 0, borderRadius: 12 }}
+      data-testid={`column-${stageKey}`}
+      data-drop-state={activeCard ? (blocked ? 'invalid' : 'valid') : 'idle'}
+      title={activeCard && blocked ? blocked : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Which column a drop lands in: the one under the POINTER. dnd-kit's default
+ * compares the dragged card's rectangle with the columns and skips disabled
+ * ones, so a drop on a greyed (passed) column picked the neighbouring column
+ * the card overlapped and offered a stage nobody aimed at (found in the T5
+ * run). Over a greyed column this returns nothing, so nothing happens. The
+ * keyboard sensor has no pointer and keeps the rectangle check.
+ */
+function boardCollision(args) {
+  if (!args.pointerCoordinates) return rectIntersection(args);
+  return pointerWithin(args);
+}
+
+/**
+ * The board after a confirmed move, before the server answers (C8: "the card
+ * moves at once and is put back on 409"). Pure, so a refused move can restore
+ * the previous snapshot unchanged.
+ */
+function moveCardInBoard(board, cardId, toKey) {
+  if (!board?.columns) return board;
+  let moved = null;
+  const columns = board.columns.map((c) => ({
+    ...c,
+    cards: c.cards.filter((x) => {
+      if (x.id !== cardId) return true;
+      moved = x;
+      return false;
+    }),
+  }));
+  if (!moved) return board;
+  const updated = {
+    ...moved,
+    current_stage_key: toKey,
+    current_stage_status: 'in_progress',
+    days_in_stage: 0,
+    invited: false,
+    scheduled: false,
+    ready_for_decision: false,
+    assessment_pending: toKey === 'assessment',
+  };
+  return { ...board, columns: columns.map((c) => (c.stage_key === toKey ? { ...c, cards: [updated, ...c.cards] } : c)) };
+}
+
 export default function Pipeline() {
   const { message } = AntApp.useApp();
   const queryClient = useQueryClient();
@@ -516,6 +670,60 @@ export default function Pipeline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient]);
 
+  // ── Flexible stages: one move flow for the card menu, the drawer and drag
+  // and drop — always through the confirmation popup (C8, D5).
+  const [pendingMove, setPendingMove] = useState(null); // { card, toStageKey }
+  const [activeDragCard, setActiveDragCard] = useState(null);
+  const sensors = useSensors(
+    // A short travel before a drag starts, so a plain click still opens the drawer.
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    // Press-and-hold on touch screens, so a swipe still scrolls the board.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
+    useSensor(KeyboardSensor),
+  );
+
+  const requestMove = useCallback(({ card, toStageKey }) => {
+    if (!canMoveCard(card)) {
+      message.warning(card.lock?.reason || 'This candidate cannot be moved right now.');
+      return;
+    }
+    const blocked = moveBlockReason(card, toStageKey);
+    if (blocked) {
+      message.warning(blocked);
+      return;
+    }
+    setPendingMove({ card, toStageKey });
+  }, [message]);
+
+  const confirmMove = async () => {
+    if (!pendingMove) return;
+    const { card, toStageKey } = pendingMove;
+    const boardKey = ['pipeline-board', filters];
+    const before = queryClient.getQueryData(boardKey);
+    const toLabel = (data?.columns || []).find((c) => c.stage_key === toStageKey)?.label || toStageKey;
+    // Move the card at once; put it back if the server refuses (C8).
+    queryClient.setQueryData(boardKey, (b) => moveCardInBoard(b, card.id, toStageKey));
+    setPendingMove(null);
+    try {
+      await pipelineService.moveToStage(card.id, { target_stage_key: toStageKey, from_stage_key: card.current_stage_key });
+      message.success(`${card.candidate_name || 'Candidate'} moved to ${toLabel}. No email was sent.`);
+    } catch (err) {
+      queryClient.setQueryData(boardKey, before);
+      message.error(err?.message || 'The move was refused. The board has been refreshed.', 6);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', card.id] });
+      refreshBoard();
+    }
+  };
+
+  const onDragStart = ({ active }) => setActiveDragCard(active?.data?.current?.card || null);
+  const onDragEnd = ({ active, over }) => {
+    const card = active?.data?.current?.card;
+    setActiveDragCard(null);
+    if (!card || !over || over.id === card.current_stage_key) return;
+    requestMove({ card, toStageKey: String(over.id) });
+  };
+
   const anyFilterActive = Boolean(position || source || onHoldOnly || rejectedOnly || stuckOnly || showClosed || myCandidatesOnly || nlQuery.trim());
   const clearFilters = () => {
     setPosition(undefined);
@@ -593,6 +801,8 @@ export default function Pipeline() {
   }
 
   const columns = data?.columns || [];
+  const flexible = !!data?.flexibleStages;
+  const boardStages = columns.map((c) => ({ stage_key: c.stage_key, label: c.label }));
   const total = data?.total ?? 0;
   const filteredTotal = data?.filteredTotal ?? total;
   const closedCount = data?.closedCount ?? 0;
@@ -627,6 +837,8 @@ export default function Pipeline() {
             fallbackName="AAPNA-ATS_Candidate-Pipeline.csv"
             rowCount={filteredTotal}
           />
+          {/* Flexible stages (C12): every move, filterable by date / user / position. */}
+          {flexible && <MoveHistoryExport positionOptions={positionSelectOptions} mrfId={position?.startsWith('mrf:') ? position.slice(4) : undefined} />}
         </Space>
       </div>
 
@@ -767,9 +979,17 @@ export default function Pipeline() {
 
       <div style={{ height: 18 }} />
 
+      {flexible && (
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }} data-testid="flexible-hint">
+          <SwapOutlined style={{ marginInlineEnd: 4 }} />
+          Drag a card to any stage the candidate has not passed, or use its Move to… menu. A card with a lock has started its current stage.
+        </Text>
+      )}
+
+      <DndContext sensors={sensors} collisionDetection={boardCollision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveDragCard(null)}>
       <BoardScroller>
         {columns.map((col) => (
-          <div key={col.stage_key} style={{ flex: '0 0 260px' }}>
+          <DroppableColumn key={col.stage_key} stageKey={col.stage_key} activeCard={flexible ? activeDragCard : null}>
             <Card
               size="small"
               title={(
@@ -817,14 +1037,42 @@ export default function Pipeline() {
                   style={{ padding: '18px 8px' }}
                 />
               ) : (
-                col.cards.map((card) => (
+                col.cards.map((card) => (flexible ? (
+                  <DraggableCard key={card.id} card={card}>
+                    <CandidateCard card={card} onOpen={openDrawer} flexible stages={boardStages} onMoveRequest={requestMove} />
+                  </DraggableCard>
+                ) : (
                   <CandidateCard key={card.id} card={card} onOpen={openDrawer} />
-                ))
+                )))
               )}
             </Card>
-          </div>
+          </DroppableColumn>
         ))}
       </BoardScroller>
+      {/* Rendered in a portal above the board, so the dragged card is never
+          clipped by its column's overflow:hidden. */}
+      {createPortal(
+        <DragOverlay dropAnimation={null}>
+          {activeDragCard ? (
+            <div style={{ width: 260, cursor: 'grabbing' }}>
+              <CandidateCard card={activeDragCard} onOpen={() => {}} />
+            </div>
+          ) : null}
+        </DragOverlay>,
+        document.body,
+      )}
+      </DndContext>
+
+      <MoveStageModal
+        open={!!pendingMove}
+        candidate={pendingMove?.card}
+        fromStage={pendingMove ? boardStages.find((s) => s.stage_key === pendingMove.card.current_stage_key) || { stage_key: pendingMove.card.current_stage_key, label: pendingMove.card.current_stage_key } : null}
+        toStage={pendingMove ? boardStages.find((s) => s.stage_key === pendingMove.toStageKey) : null}
+        stages={boardStages}
+        passedStageKeys={pendingMove?.card?.passed_stage_keys || []}
+        onCancel={() => setPendingMove(null)}
+        onConfirm={confirmMove}
+      />
 
       <PipelineDrawer
         pipelineId={drawerPipelineId}
@@ -841,6 +1089,7 @@ export default function Pipeline() {
         // board is stale and must reload, but nothing the recruiter asked for
         // succeeded, so "Pipeline updated." would contradict the error message.
         onStaleConflict={handleStaleConflict}
+        onRequestMove={flexible ? requestMove : undefined}
       />
 
       {/* Stale-conflict scrim (defect D3). Same treatment as LoadingOverlay —

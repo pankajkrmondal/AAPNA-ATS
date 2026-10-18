@@ -1,0 +1,300 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e4]:
+    - complementary [ref=f5e5]:
+      - generic [ref=f5e6]:
+        - generic [ref=f5e7] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f5e9]
+          - generic [ref=f5e10]: ATS Platform
+        - menu [ref=f5e11]:
+          - menuitem "dashboard Dashboard" [ref=f5e12] [cursor=pointer]:
+            - img "dashboard" [ref=f5e13]
+            - generic [ref=f5e16]: Dashboard
+          - menuitem "file-text MRF" [ref=f5e17] [cursor=pointer]:
+            - img "file-text" [ref=f5e18]
+            - generic [ref=f5e21]: MRF
+          - menuitem "solution Search Candidate" [ref=f5e22] [cursor=pointer]:
+            - img "solution" [ref=f5e23]
+            - generic [ref=f5e26]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f5e27] [cursor=pointer]:
+            - img "upload" [ref=f5e28]
+            - generic [ref=f5e31]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f5e32] [cursor=pointer]:
+            - img "shop" [ref=f5e33]
+            - generic [ref=f5e36]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f5e37] [cursor=pointer]:
+            - img "audit" [ref=f5e38]
+            - generic [ref=f5e41]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f5e42] [cursor=pointer]:
+            - img "filter" [ref=f5e43]
+            - generic [ref=f5e46]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f5e47] [cursor=pointer]:
+            - img "apartment" [ref=f5e48]
+            - generic [ref=f5e51]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f5e52] [cursor=pointer]:
+            - img "bar-chart" [ref=f5e53]
+            - generic [ref=f5e56]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=f5e57] [cursor=pointer]:
+            - img "mail" [ref=f5e58]
+            - generic [ref=f5e61]: Email Templates
+          - menuitem "setting Settings" [ref=f5e62] [cursor=pointer]:
+            - img "setting" [ref=f5e63]
+            - generic [ref=f5e66]: Settings
+    - generic [ref=f5e67]:
+      - banner [ref=f5e68]:
+        - generic [ref=f5e69]:
+          - button [ref=f5e71] [cursor=pointer]:
+            - img "menu-fold" [ref=f5e73]
+          - generic [ref=f5e76]: Candidate Pipeline
+        - generic [ref=f5e77]:
+          - button [ref=f5e80] [cursor=pointer]:
+            - img "bell" [ref=f5e82]
+          - button "Toggle theme" [ref=f5e86] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f5e98] [cursor=pointer]:
+            - generic [ref=f5e100]:
+              - img "user" [ref=f5e101]
+              - img "setting" [ref=f5e104]
+            - generic [ref=f5e107]: Admin Portal
+          - img "user" [ref=f5e112] [cursor=pointer]
+      - main [ref=f5e115]:
+        - generic [ref=f5e117]:
+          - generic [ref=f5e119]:
+            - generic [ref=f5e120]:
+              - generic [ref=f5e121]:
+                - heading "Candidate Pipeline" [level=3] [ref=f5e122]
+                - text: Candidates enter here when shortlisted from Candidate Screening.
+              - generic [ref=f5e123]:
+                - generic [ref=f5e124]: Updated just now
+                - button "reload Refresh" [ref=f5e127] [cursor=pointer]:
+                  - img "reload" [ref=f5e129]
+                  - generic [ref=f5e132]: Refresh
+                - button "file-excel Export CSV" [ref=f5e135] [cursor=pointer]:
+                  - img "file-excel" [ref=f5e137]
+                  - generic [ref=f5e140]: Export CSV
+                - button "history Move history" [ref=f5e142] [cursor=pointer]:
+                  - img "history" [ref=f5e144]
+                  - generic [ref=f5e147]: Move history
+            - generic [ref=f5e149]:
+              - generic [ref=f5e150]:
+                - img "robot" [ref=f5e152]
+                - searchbox "Ask the board — e.g. \"vendor candidates stuck on hold\"" [ref=f5e155]
+              - button [ref=f5e158] [cursor=pointer]:
+                - img "search" [ref=f5e159]
+            - generic [ref=f5e162]:
+              - generic [ref=f5e166]:
+                - combobox [ref=f5e168]
+                - generic "FlexStage Test Role · MRF-686 · 16 Oct 2026" [ref=f5e169]
+              - generic [ref=f5e177] [cursor=pointer]:
+                - combobox [ref=f5e179]
+                - generic: Source
+              - generic [ref=f5e181] [cursor=pointer]:
+                - checkbox "On Hold only" [ref=f5e183]
+                - generic [ref=f5e185]: On Hold only
+              - generic [ref=f5e187] [cursor=pointer]:
+                - checkbox "Rejected only" [ref=f5e189]
+                - generic [ref=f5e191]: Rejected only
+              - generic [ref=f5e193] [cursor=pointer]:
+                - checkbox "Stuck > 10 days" [ref=f5e195]
+                - generic [ref=f5e197]: Stuck > 10 days
+              - generic [ref=f5e199] [cursor=pointer]:
+                - checkbox "My candidates" [ref=f5e201]
+                - generic [ref=f5e203]: My candidates
+              - generic [ref=f5e205] [cursor=pointer]:
+                - checkbox "Show closed (4)" [ref=f5e207]
+                - generic [ref=f5e209]: Show closed (4)
+              - button "clear Clear filters" [ref=f5e211] [cursor=pointer]:
+                - img "clear" [ref=f5e213]
+                - generic [ref=f5e216]: Clear filters
+              - generic [ref=f5e217]: 7 of 36 candidates
+          - alert [ref=f5e219]:
+            - img "warning" [ref=f5e220]
+            - generic [ref=f5e223]:
+              - generic [ref=f5e224]: 2 interviews awaiting confirmation
+              - generic [ref=f5e226]:
+                - text: These rounds ended without anyone recording whether they happened. No scorecard is requested until one is marked held.
+                - generic [ref=f5e227]:
+                  - generic [ref=f5e228]:
+                    - button "KUPPALA NATESH" [ref=f5e229] [cursor=pointer]
+                    - generic [ref=f5e231]: CEO / Final Round · Chhaya · ended 44d ago
+                    - generic [ref=f5e232]: never confirmed
+                  - generic [ref=f5e233]:
+                    - button "KUPPALA NATESH" [ref=f5e234] [cursor=pointer]
+                    - generic [ref=f5e236]: Technical Round 2 · chhaya verma · ended 44d ago
+                    - generic [ref=f5e237]: never confirmed
+          - generic [ref=f5e239]:
+            - img "swap" [ref=f5e240]
+            - text: Drag a card to any stage the candidate has not passed, or use its Move to… menu. A card with a lock has started its current stage.
+          - generic [ref=f5e243]:
+            - generic [ref=f5e245]:
+              - generic [ref=f5e247]:
+                - strong [ref=f5e252]: HR Screening (Zeko)
+                - superscript [ref=f5e257]:
+                  - generic [ref=f5e258]: "1"
+              - 'button "FF Flex Fresh A 0d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass In progress Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e262]':
+                - generic [ref=f5e265] [cursor=pointer]:
+                  - generic [ref=f5e266]: FF
+                  - generic [ref=f5e267]:
+                    - generic [ref=f5e268]:
+                      - strong [ref=f5e270]: Flex Fresh A
+                      - generic [ref=f5e271]:
+                        - generic [ref=f5e272]: 0d
+                        - button "Move to another stage" [ref=f5e275]:
+                          - img "swap" [ref=f5e277]
+                    - generic [ref=f5e280]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f5e281]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e284]'
+            - generic [ref=f5e290]:
+              - generic [ref=f5e292]:
+                - strong [ref=f5e297]: IQ / Tech Assessment
+                - generic [ref=f5e299]:
+                  - button [ref=f5e301] [cursor=pointer]:
+                    - img "import" [ref=f5e303]
+                  - superscript [ref=f5e308]:
+                    - generic [ref=f5e309]: "2"
+              - generic [ref=f5e311]:
+                - 'button "FV Flex Vendor 0d Move to another stage FlexStage Test Role · genaiuserpankajmondal@gmail.com · flexstage-testpass Evalground test pending shop Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e313]':
+                  - generic [ref=f5e316] [cursor=pointer]:
+                    - generic [ref=f5e317]: FV
+                    - generic [ref=f5e318]:
+                      - generic [ref=f5e319]:
+                        - strong [ref=f5e321]: Flex Vendor
+                        - generic [ref=f5e322]:
+                          - generic [ref=f5e323]: 0d
+                          - button "Move to another stage" [ref=f5e326]:
+                            - img "swap" [ref=f5e328]
+                      - generic [ref=f5e331]: FlexStage Test Role · genaiuserpankajmondal@gmail.com · flexstage-testpass
+                      - generic [ref=f5e332]:
+                        - generic [ref=f5e333]: Evalground test pending
+                        - img "shop" [ref=f5e336]
+                      - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e339]'
+                - 'button "FA Flex Assessment 0d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Evalground test pending Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e344]':
+                  - generic [ref=f5e347] [cursor=pointer]:
+                    - generic [ref=f5e348]: FA
+                    - generic [ref=f5e349]:
+                      - generic [ref=f5e350]:
+                        - strong [ref=f5e352]: Flex Assessment
+                        - generic [ref=f5e353]:
+                          - generic [ref=f5e354]: 0d
+                          - button "Move to another stage" [ref=f5e357]:
+                            - img "swap" [ref=f5e359]
+                      - generic [ref=f5e362]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                      - generic [ref=f5e363]: Evalground test pending
+                      - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e366]'
+            - generic [ref=f5e372]:
+              - generic [ref=f5e374]:
+                - strong [ref=f5e379]: Functional Screening (Zeko)
+                - superscript [ref=f5e384]: "0"
+              - generic [ref=f5e387]:
+                - img "inbox" [ref=f5e389]
+                - generic [ref=f5e392]: No candidates here
+                - generic [ref=f5e393]: No one in this stage matches the current filters.
+            - generic [ref=f5e395]:
+              - generic [ref=f5e397]:
+                - strong [ref=f5e402]: Technical Round 1
+                - superscript [ref=f5e407]:
+                  - generic [ref=f5e408]: "1"
+              - generic [ref=f5e415] [cursor=pointer]:
+                - generic [ref=f5e416]: FI
+                - generic [ref=f5e417]:
+                  - generic [ref=f5e418]:
+                    - strong [ref=f5e420]: Flex Interview
+                    - generic [ref=f5e421]:
+                      - generic [ref=f5e422]: 0d
+                      - 'img "Locked: Interview booked for 19 Oct 2026. Cancel the interview to move the candidate." [ref=f5e425]'
+                  - generic [ref=f5e428]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                  - generic [ref=f5e429]: Scheduled
+                  - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f5e432]'
+            - generic [ref=f5e438]:
+              - generic [ref=f5e440]:
+                - strong [ref=f5e445]: Technical Round 2
+                - superscript [ref=f5e450]:
+                  - generic [ref=f5e451]: "1"
+              - 'button "FP Flex Passed Fn 0d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass In progress Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e455]':
+                - generic [ref=f5e458] [cursor=pointer]:
+                  - generic [ref=f5e459]: FP
+                  - generic [ref=f5e460]:
+                    - generic [ref=f5e461]:
+                      - strong [ref=f5e463]: Flex Passed Fn
+                      - generic [ref=f5e464]:
+                        - generic [ref=f5e465]: 0d
+                        - button "Move to another stage" [ref=f5e468]:
+                          - img "swap" [ref=f5e470]
+                    - generic [ref=f5e473]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f5e474]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e477]'
+            - generic [ref=f5e483]:
+              - generic [ref=f5e485]:
+                - generic [ref=f5e487]:
+                  - strong [ref=f5e490]: Technical Round 3
+                  - generic [ref=f5e491]: optional
+                - superscript [ref=f5e497]: "0"
+              - generic [ref=f5e500]:
+                - img "inbox" [ref=f5e502]
+                - generic [ref=f5e505]: No candidates here
+                - generic [ref=f5e506]: No one in this stage matches the current filters.
+            - generic [ref=f5e508]:
+              - generic [ref=f5e510]:
+                - strong [ref=f5e515]: HR Round
+                - superscript [ref=f5e520]: "0"
+              - generic [ref=f5e523]:
+                - img "inbox" [ref=f5e525]
+                - generic [ref=f5e528]: No candidates here
+                - generic [ref=f5e529]: No one in this stage matches the current filters.
+            - generic [ref=f5e531]:
+              - generic [ref=f5e533]:
+                - generic [ref=f5e535]:
+                  - strong [ref=f5e538]: CEO / Final Round
+                  - generic [ref=f5e539]: optional
+                - superscript [ref=f5e545]: "0"
+              - generic [ref=f5e548]:
+                - img "inbox" [ref=f5e550]
+                - generic [ref=f5e553]: No candidates here
+                - generic [ref=f5e554]: No one in this stage matches the current filters.
+            - generic [ref=f5e556]:
+              - generic [ref=f5e558]:
+                - generic [ref=f5e560]:
+                  - strong [ref=f5e563]: Client Interview
+                  - generic [ref=f5e564]: optional
+                - superscript [ref=f5e570]: "0"
+              - generic [ref=f5e573]:
+                - img "inbox" [ref=f5e575]
+                - generic [ref=f5e578]: No candidates here
+                - generic [ref=f5e579]: No one in this stage matches the current filters.
+            - generic [ref=f5e581]:
+              - generic [ref=f5e583]:
+                - strong [ref=f5e588]: Documents
+                - superscript [ref=f5e593]:
+                  - generic [ref=f5e594]: "1"
+              - 'button "FD Flex Documents 0d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass In progress Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e598]':
+                - generic [ref=f5e601] [cursor=pointer]:
+                  - generic [ref=f5e602]: FD
+                  - generic [ref=f5e603]:
+                    - generic [ref=f5e604]:
+                      - strong [ref=f5e606]: Flex Documents
+                      - generic [ref=f5e607]:
+                        - generic [ref=f5e608]: 0d
+                        - button "Move to another stage" [ref=f5e611]:
+                          - img "swap" [ref=f5e613]
+                    - generic [ref=f5e616]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f5e617]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e620]'
+            - generic [ref=f5e626]:
+              - generic [ref=f5e628]:
+                - strong [ref=f5e633]: Offer
+                - superscript [ref=f5e638]:
+                  - generic [ref=f5e639]: "1"
+              - generic [ref=f5e646] [cursor=pointer]:
+                - generic [ref=f5e647]: FF
+                - generic [ref=f5e648]:
+                  - generic [ref=f5e649]:
+                    - strong [ref=f5e651]: Flex Fresh B
+                    - generic [ref=f5e652]:
+                      - generic [ref=f5e653]: 0d
+                      - 'img "Locked: Offer shared on 16 Oct 2026." [ref=f5e656]'
+                  - generic [ref=f5e659]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                  - generic [ref=f5e660]: In progress
+                  - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f5e663]'
+          - status [ref=f5e668]: Draggable item card-2374 was dropped over droppable area assessment
+  - button "Scroll pipeline stages left" [ref=f5e669] [cursor=pointer]:
+    - img "left" [ref=f5e670]
+  - button "Scroll pipeline stages right" [ref=f5e673] [cursor=pointer]:
+    - img "right" [ref=f5e674]

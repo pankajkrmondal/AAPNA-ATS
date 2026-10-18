@@ -27,6 +27,10 @@ router.get('/analytics', pipelineController.getPipelineAnalytics);
 /** GET /api/pipeline/export — CSV of every journey matching the board filters.
  * Registered before "/:id" for the same reason as "analytics" above. */
 router.get('/export', exportLimiter, pipelineController.exportPipeline);
+/** GET /api/pipeline/move-history/export — CSV of every stage move (flexible stages, C12). */
+router.get('/move-history/export', exportLimiter, pipelineController.exportMoveHistory);
+/** GET /api/pipeline/move-history/users — the report's "Moved by" filter options. */
+router.get('/move-history/users', pipelineController.listMoveHistoryUsers);
 /** GET /api/pipeline/analytics/export?table=… — CSV of one analytics table. */
 router.get('/analytics/export', exportLimiter, pipelineController.exportPipelineAnalytics);
 
@@ -126,6 +130,8 @@ router.get('/:id/outcome-preview', pipelineController.getOutcomePreview);
 router.post('/:id/outcome', pipelineController.setStageOutcome);
 /** POST /api/pipeline/:id/advance — move to the next stage (or explicitly skip an optional one). */
 router.post('/:id/advance', pipelineController.advanceStage);
+/** POST /api/pipeline/:id/move — move to any stage not yet passed (flexible stages, C3). */
+router.post('/:id/move', pipelineController.moveToStage);
 /** POST /api/pipeline/:id/closure — set the final/closure outcome (Q12). */
 router.post('/:id/closure', pipelineController.setFinalOutcome);
 /** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
@@ -140,6 +146,8 @@ router.post('/:id/pause', pipelineController.setJourneyPaused);
 router.get('/:id/documents', pipelineController.getDocumentStatus);
 router.post('/:id/documents/request', pipelineController.requestDocuments);
 router.post('/:id/documents/remind', pipelineController.remindDocuments);
+/** Cancel the open request: closes the upload link and unlocks the card (C11). */
+router.post('/:id/documents/cancel', pipelineController.cancelDocumentRequest);
 
 /** Offer round (Module 5) — record-only; the letter itself never enters the ATS. */
 /** Client round — marked, never booked. Nothing here reaches the client (Q14). */

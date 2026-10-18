@@ -7,7 +7,7 @@ import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, lo
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
-import { ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LEGACY_MRF_CLOSED_STATUS } from '../config/pipelineStages.js';
+import { STAGE_KEYS, ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LEGACY_MRF_CLOSED_STATUS } from '../config/pipelineStages.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney, findRecentRejection } from './pipeline.service.js';
@@ -2842,6 +2842,30 @@ export async function cancelInterview(pipelineId, reason, user) {
       cancel_reason: reason,
     },
   });
+
+  // The candidate's pipeline history should show the cancel too (flexible
+  // stages, C11): it is what unlocks a started Zeko stage. Best effort — the
+  // cancel itself has already happened at Zeko and on the row above.
+  try {
+    const journey = await prisma.rpa_candidate_pipeline.findFirst({
+      where: { shortlist_id: pipeline.candidate_id },
+      orderBy: { modified_at: 'desc' },
+      select: { id: true },
+    });
+    if (journey) {
+      await prisma.rpa_pipeline_stage_events.create({
+        data: {
+          pipeline_id: journey.id,
+          stage_key: normalizeZekoRoundStage(pipeline.stage) === ZEKO_ROUND_STAGES.FUNCTIONAL ? STAGE_KEYS.ZEKO_FUNCTIONAL : STAGE_KEYS.ZEKO_HR,
+          event_type: 'note',
+          notes: `Zeko interview cancelled. Reason: ${reason || 'Not specified'}`,
+          acted_by: user?.id || null,
+        },
+      });
+    }
+  } catch (err) {
+    logger.error(`Zeko cancel: stage event not written for Zeko row ${pipelineId}: ${err.message}`);
+  }
 
   // 4) Load & Compile Zeko Interview Cancelled template from database
   const template = await prisma.rpa_email_templates.findFirst({

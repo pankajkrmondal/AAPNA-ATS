@@ -294,6 +294,40 @@ export async function sendReminder(pipelineId, { actedBy } = {}) {
 }
 
 /**
+ * Cancels an open document request (flexible stages, C11): closes the no-login
+ * upload link, so the candidate sees "link closed" and the reminder sweep (which
+ * only chases 'active' links) stops. The Documents card unlocks. Uploaded files
+ * and the row stay; "Request documents" reopens the same link later.
+ *
+ * Sends nothing — the candidate learns the link is closed when they open it.
+ *
+ * @param {number} pipelineId
+ * @param {object} params
+ * @param {string|null} [params.reason]
+ * @param {number} params.actedBy
+ */
+export async function cancelDocumentRequest(pipelineId, { reason = null, actedBy } = {}) {
+  const pipeline = await loadPipeline(pipelineId);
+  if (pipeline.final_outcome) {
+    throw new AppError('This candidate\'s record is closed, so the document link is already closed.', 409);
+  }
+  const request = await prisma.rpa_document_requests.findUnique({ where: { pipeline_id: pipeline.id } });
+  if (!request) throw new AppError('No document request has been raised for this candidate yet.', 400);
+
+  // Conditional claim: a double click writes one audit note, not two.
+  const claim = await prisma.rpa_document_requests.updateMany({
+    where: { id: request.id, token_status: { not: 'closed' } },
+    data: { token_status: 'closed', modified_at: new Date() },
+  });
+  if (claim.count !== 1) throw new AppError('This document request is already closed.', 400);
+
+  const why = reason && String(reason).trim() ? ` Reason: ${String(reason).trim()}` : '';
+  await auditNote(pipeline.id, `Document request cancelled — the upload link is closed.${why}`, actedBy);
+  logger.info(`Document request cancelled: pipeline ${pipelineId} by user ${actedBy || 'unknown'}.`);
+  return getDocumentStatus(pipelineId);
+}
+
+/**
  * Public read for the tokenized upload page: the checklist and each item's
  * current state, with no candidate PII beyond their own name.
  * @param {string} token - uuid

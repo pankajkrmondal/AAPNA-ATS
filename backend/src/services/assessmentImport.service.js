@@ -260,7 +260,7 @@ async function matchRowToPipeline(email) {
     LEFT JOIN LATERAL (
       SELECT MAX(created_at) AS entered_at
       FROM rpa_pipeline_stage_events
-      WHERE pipeline_id = p.id AND stage_key = 'assessment' AND event_type IN ('entered', 'skip')
+      WHERE pipeline_id = p.id AND stage_key = 'assessment' AND event_type IN ('entered', 'skip', 'moved')
     ) ev ON true
     WHERE ${emailMatchesSql(Prisma.sql`cv."EmailID"`, email)}
       AND p.current_stage_key = 'assessment'
@@ -693,6 +693,31 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
         logger.info(
           `Assessment auto-advance skipped for pipeline ${pipelineId} (row ${row.rowNumber}): candidate is at "${journey?.current_stage_key || 'unknown'}"${journey?.final_outcome ? ' and closed' : ''}, not the assessment round. Result recorded for manual review.`
         );
+      }
+    }
+
+    // LATE RESULT (flexible stages, C11): the invite was withdrawn but the
+    // candidate took the test anyway from a link nobody disabled in Evalground.
+    // Never auto-decide on that — flag it for a human instead.
+    let lateAfterWithdraw = false;
+    if (pipelineId) {
+      const latestInvite = await prisma.rpa_assessment_invites.findFirst({
+        where: { pipeline_id: BigInt(pipelineId) },
+        orderBy: { sent_at: 'desc' },
+        select: { withdrawn_at: true },
+      });
+      lateAfterWithdraw = !!latestInvite?.withdrawn_at;
+      if (lateAfterWithdraw) {
+        onAssessmentStage = false;
+        await prisma.rpa_pipeline_stage_events.create({
+          data: {
+            pipeline_id: BigInt(pipelineId),
+            stage_key: 'assessment',
+            event_type: 'note',
+            notes: `Evalground result arrived after the invite was withdrawn (test "${row.testName}"). Not decided automatically; review it before recording an outcome.`,
+            acted_by: actedByUser?.id || null,
+          },
+        });
       }
     }
 

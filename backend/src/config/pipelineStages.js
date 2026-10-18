@@ -98,6 +98,9 @@ export const EVENT_TYPES = Object.freeze({
   SKIP: 'skip',
   OUTCOME: 'outcome',
   NOTE: 'note',
+  // A flexible-stage move (Move to… / drag and drop): stage_key is the stage
+  // moved TO, from_stage_key the stage moved FROM. An arrival, like 'entered'.
+  MOVED: 'moved',
 });
 
 /** The event types that actually move a journey. See EVENT_TYPES. */
@@ -105,10 +108,11 @@ export const TRANSITION_EVENT_TYPES = Object.freeze([
   EVENT_TYPES.ENTERED,
   EVENT_TYPES.SKIP,
   EVENT_TYPES.OUTCOME,
+  EVENT_TYPES.MOVED,
 ]);
 
 /** The event types that put a candidate INTO a stage (i.e. start its clock). */
-export const STAGE_ARRIVAL_EVENT_TYPES = Object.freeze([EVENT_TYPES.ENTERED, EVENT_TYPES.SKIP]);
+export const STAGE_ARRIVAL_EVENT_TYPES = Object.freeze([EVENT_TYPES.ENTERED, EVENT_TYPES.SKIP, EVENT_TYPES.MOVED]);
 
 /**
  * True if an event moved the journey (as opposed to annotating it).
@@ -332,6 +336,20 @@ export function finalStatusLabelFor(stageKey, outcomeKey) {
     default:
       return `${stageLabel} ${outcomeKey}`;
   }
+}
+
+/**
+ * Legacy status text for a candidate who has just ARRIVED in a stage without an
+ * outcome — a flexible-stage move (C6). Written to rpa_cv.FinalStatus so the
+ * Vendor Dashboard and exports show where the candidate really is.
+ * classifyStatus() in VendorDashboard.jsx reads it as "in process".
+ *
+ * @param {string} stageKey
+ * @returns {string} e.g. "Technical Round 1 Pending", "Evalground Test Pending"
+ */
+export function stagePendingLabelFor(stageKey) {
+  if (stageKey === STAGE_KEYS.ASSESSMENT) return 'Evalground Test Pending';
+  return `${STAGE_LABELS[stageKey] || stageKey} Pending`;
 }
 
 /**
