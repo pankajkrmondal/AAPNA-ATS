@@ -23,6 +23,7 @@ This file is the **single source of truth** for this feature. Everything agreed 
 | Date | DB | File | Result |
 |---|---|---|---|
 | 16 Oct 2026 | staging `recruitmentautomationdb` | `2026-10-16-flexible-stage-movement.sql` | Applied. Backfill 101 rows; re-run 0 rows |
+| 18 Oct 2026 | staging `recruitmentautomationdb` | same file, revised (INSERT only for journeys with no rows; `updated_by` fill) | Applied: INSERT 0, `updated_by` filled on 84 rows (77 from events + 7 shortlister); re-run 0/0/0. See PW-Task T1 run 3 |
 
 **What was built (file map):**
 | Area | Files |

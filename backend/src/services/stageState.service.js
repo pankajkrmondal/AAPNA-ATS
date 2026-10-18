@@ -13,6 +13,7 @@ import {
   resolveStageStates,
   stateRowStamps,
   computeStageLock,
+  stageActorsFromEvents,
 } from '../utils/stageState.js';
 
 /**
@@ -70,10 +71,20 @@ export async function ensureStageStateRows(tx, pipeline) {
   const count = await tx.rpa_pipeline_stage_state.count({ where: { pipeline_id: BigInt(pipeline.id) } });
   if (count > 0) return;
   const states = await loadStageStates(pipeline, tx);
+  // The rows are history, so they carry whoever acted on that stage then —
+  // not the user whose action triggered this catch-up.
+  const events = await tx.rpa_pipeline_stage_events.findMany({
+    where: { pipeline_id: BigInt(pipeline.id), acted_by: { not: null } },
+    select: { stage_key: true, event_type: true, outcome: true, acted_by: true, created_at: true },
+  });
+  const actors = stageActorsFromEvents(states, events);
   const now = new Date();
   for (const [stageKey, status] of Object.entries(states)) {
     await tx.rpa_pipeline_stage_state.create({
-      data: { pipeline_id: BigInt(pipeline.id), stage_key: stageKey, status, ...stateRowStamps(status, now), updated_at: now },
+      data: {
+        pipeline_id: BigInt(pipeline.id), stage_key: stageKey, status, ...stateRowStamps(status, now),
+        updated_at: now, updated_by: actors[stageKey] ?? null,
+      },
     });
   }
 }

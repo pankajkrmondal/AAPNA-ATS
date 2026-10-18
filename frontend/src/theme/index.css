@@ -3720,7 +3720,32 @@ html.theme-transition *::after {
 .cp-column-drop--over { box-shadow: 0 0 0 2px var(--brand-primary, #7a922e), var(--shadow-md); }
 .cp-card-draggable { touch-action: none; }
 .cp-card-draggable--dragging { opacity: 0.35; }
-.cp-card-lock { color: var(--text-3); font-size: 12px; }
+/* Card move / lock controls: coloured chips so they stand out on the card at a
+   glance — brand-filled for the "Move to…" action, amber for a locked card. */
+.cp-card-lock {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 20px; border-radius: 6px; font-size: 12px;
+  color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border);
+  cursor: help;
+}
+.ant-btn.cp-card-move {
+  height: 20px; width: 24px; min-width: 24px; padding: 0; border-radius: 6px;
+  color: var(--brand-primary-active);
+  background: color-mix(in srgb, var(--brand-primary) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, transparent);
+  transition: background .15s, color .15s, transform .15s, box-shadow .15s;
+}
+.ant-btn.cp-card-move .anticon { font-size: 12px; }
+.ant-btn.cp-card-move:not(:disabled):hover,
+.ant-btn.cp-card-move:not(:disabled):focus-visible {
+  color: #fff; background: var(--brand-primary); transform: scale(1.08);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--brand-primary) 45%, transparent);
+}
+/* Dark theme's brand green is light — a light glyph at rest, a dark glyph on
+   the solid hover fill keeps the contrast. */
+[data-theme='dark'] .ant-btn.cp-card-move { color: var(--brand-primary-hover); }
+[data-theme='dark'] .ant-btn.cp-card-move:not(:disabled):hover,
+[data-theme='dark'] .ant-btn.cp-card-move:not(:disabled):focus-visible { color: #0a0e0c; }
 .cp-stage-pill--selected { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--gold); }
 .cp-stage-pill:not(:disabled):hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 

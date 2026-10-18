@@ -15,6 +15,7 @@ import {
   computeStageLock,
   LOCK_CODES,
   isMoveTarget,
+  stageActorsFromEvents,
 } from '../../utils/stageState.js';
 import { stagePendingLabelFor, isStageArrival, isTransitionEvent } from '../../config/pipelineStages.js';
 import { parseMoveNote, parseFilters, buildWhere } from '../../exports/moveHistory.export.js';
@@ -187,6 +188,21 @@ test('C12: Move history filters are validated, days are IST', () => {
   assert.equal(w.created_at.lte.toISOString(), '2026-10-16T18:29:59.999Z');
   assert.equal(w.acted_by, 7);
   assert.equal(w.rpa_candidate_pipeline.mrf_id, 137n);
+});
+
+test('updated_by for history rows: whoever put the stage in its state, latest first', () => {
+  const t = (m) => new Date(`2026-10-0${m}T10:00:00Z`);
+  const events = [
+    { stage_key: 'zeko_hr', event_type: 'entered', acted_by: 4, created_at: t(1) },
+    { stage_key: 'zeko_hr', event_type: 'outcome', outcome: 'hold', acted_by: 5, created_at: t(2) },
+    { stage_key: 'zeko_hr', event_type: 'outcome', outcome: 'approved', acted_by: 6, created_at: t(3) },
+    { stage_key: 'tech1', event_type: 'entered', acted_by: 6, created_at: t(3) },
+    { stage_key: 'tech1', event_type: 'moved', acted_by: 7, created_at: t(4) },
+    { stage_key: 'tech2', event_type: 'outcome', outcome: 'rejected', acted_by: null, created_at: t(5) },
+  ];
+  const actors = stageActorsFromEvents({ zeko_hr: S.COMPLETED, tech1: S.ACTIVE, tech2: S.REJECTED, assessment: S.SKIPPED }, events);
+  assert.deepEqual(actors, { zeko_hr: 6, tech1: 7, tech2: null, assessment: null });
+  assert.equal(stageActorsFromEvents({ zeko_hr: S.HOLD }, events).zeko_hr, 5, 'hold -> the hold outcome, not the later approve');
 });
 
 test('C9: a moved event is an arrival and a transition (funnel, days-in-stage)', () => {

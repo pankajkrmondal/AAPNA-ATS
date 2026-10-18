@@ -1913,6 +1913,8 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
         mrfId: mrfRef,
         shortlistId: shortlist.id,
         source: 'screening_shortlist',
+        // Who shortlisted: stamped on the journey's first event and stage row.
+        actedBy: user?.id || null,
       });
       pipelineEntries.push({ cv_id: Number(candidateId), pipeline_id: journey.id });
     } catch (err) {

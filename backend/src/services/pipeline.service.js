@@ -2050,6 +2050,9 @@ export async function sendAdHocEmail(pipelineId, { subject, body }) {
  * @param {number|null} params.shortlistId
  * @param {string} params.source - recruiter | bulk_excel | screening_shortlist | email_intake
  * @param {number} [params.coolingOffMonths] - default 6 (Q11)
+ * @param {number|null} [params.actedBy] - rpa_users.id of whoever shortlisted;
+ *   recorded on the 'entered' event and the first stage-state row. Null for
+ *   system intake paths that have no user.
  * @returns {Promise<object>} the created (or existing) pipeline row
  */
 export async function createPipelineJourney({
@@ -2058,6 +2061,7 @@ export async function createPipelineJourney({
   shortlistId,
   source,
   coolingOffMonths = REAPPLICATION_COOLING_OFF_MONTHS,
+  actedBy = null,
 }) {
   if (!cvId) {
     throw new AppError('cvId is required to create a pipeline journey.', 400);
@@ -2136,9 +2140,10 @@ export async function createPipelineJourney({
       stage_key: STAGE_KEYS.ZEKO_HR,
       event_type: 'entered',
       notes: 'Entered pipeline — already shortlisted on Candidate Screening.',
+      acted_by: actedBy || null,
     },
   });
-  await writeStageStates(prisma, created.id, [{ stageKey: STAGE_KEYS.ZEKO_HR, status: STAGE_STATES.ACTIVE }]);
+  await writeStageStates(prisma, created.id, [{ stageKey: STAGE_KEYS.ZEKO_HR, status: STAGE_STATES.ACTIVE }], actedBy);
 
   return serializeBigInts(created);
 }

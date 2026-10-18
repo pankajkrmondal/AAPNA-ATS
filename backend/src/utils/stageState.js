@@ -78,6 +78,36 @@ export function deriveStageStates({ stages, pipeline, events = [] }) {
 }
 
 /**
+ * Who put each stage in its state, read from the event history — for state
+ * rows written after the fact (the backfill, and ensureStageStateRows for a
+ * journey with no rows yet). Same rule as the UPDATE in
+ * prisma/ddl/2026-10-16-flexible-stage-movement.sql:
+ *   completed / rejected / hold -> whoever recorded that outcome there, latest;
+ *   active / skipped            -> latest arrival (entered/skip/moved) or outcome there.
+ * A stage with no attributed event stays unknown (null): a system action, or a
+ * stage that was only jumped over.
+ *
+ * @param {Record<string, string>} states
+ * @param {{stage_key: string, event_type: string, outcome?: string|null, acted_by?: number|null, created_at: Date|string}[]} events
+ * @returns {Record<string, number|null>}
+ */
+export function stageActorsFromEvents(states, events = []) {
+  const OUTCOME_FOR = { [STAGE_STATES.COMPLETED]: 'approved', [STAGE_STATES.REJECTED]: 'rejected', [STAGE_STATES.HOLD]: 'hold' };
+  const newestFirst = [...events]
+    .filter((e) => e.acted_by != null)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const out = {};
+  for (const [stageKey, status] of Object.entries(states)) {
+    const wanted = OUTCOME_FOR[status];
+    const ev = newestFirst.find((e) => e.stage_key === stageKey && (wanted
+      ? e.event_type === 'outcome' && e.outcome === wanted
+      : ['entered', 'skip', 'moved', 'outcome'].includes(e.event_type)));
+    out[stageKey] = ev ? ev.acted_by : null;
+  }
+  return out;
+}
+
+/**
  * The state map for a journey: its stored rows when it has any, otherwise the
  * derived fallback. The current stage always follows the journey's own status,
  * so a stale row can never contradict the board.

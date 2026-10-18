@@ -172,7 +172,7 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
         menu={{ items, onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); setMenuOpen(false); onMoveRequest({ card, toStageKey: key }); } }}
       >
         <Tooltip title="Move to…" open={menuOpen ? false : undefined}>
-          <Button size="small" type="text" icon={<SwapOutlined />} aria-label="Move to another stage" data-testid={`card-move-${card.id}`} style={{ height: 20, width: 22, minWidth: 22 }} />
+          <Button size="small" type="text" icon={<SwapOutlined />} className="cp-card-move" aria-label="Move to another stage" data-testid={`card-move-${card.id}`} />
         </Tooltip>
       </Dropdown>
     </span>

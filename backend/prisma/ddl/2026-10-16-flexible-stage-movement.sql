@@ -71,7 +71,12 @@ ALTER TABLE rpa_assessment_invites ADD COLUMN IF NOT EXISTS withdraw_reason TEXT
 --      means the candidate went past it without approving it there);
 --   4. everything else: no row (not visited).
 -- The inactive 'shortlist' stage is never a board column and gets no row.
--- ON CONFLICT DO NOTHING keeps any row the app has written since.
+-- Only journeys with NO state rows are filled (the same rule as
+-- ensureStageStateRows in the app). Rule 3 is only true for forward-only
+-- history: once a journey has been moved under FLEXIBLE_STAGES_ENABLED, a stage
+-- before the current one may never have been visited, and re-running this
+-- file must not relabel it "skipped" (found on the 18 Oct re-run, journeys 7
+-- and 2360). ON CONFLICT DO NOTHING stays as a second guard.
 INSERT INTO rpa_pipeline_stage_state
        (pipeline_id, stage_key, status, entered_at, completed_at, skipped_at, updated_at)
 SELECT x.pipeline_id, x.stage_key, x.status,
@@ -108,6 +113,61 @@ SELECT x.pipeline_id, x.stage_key, x.status,
       CROSS JOIN rpa_pipeline_stages s
      WHERE s.stage_key <> 'shortlist'
        AND (s.is_active OR s.stage_key = p.current_stage_key)
+       AND NOT EXISTS (SELECT 1 FROM rpa_pipeline_stage_state z WHERE z.pipeline_id = p.id)
   ) x
  WHERE x.status IS NOT NULL
 ON CONFLICT (pipeline_id, stage_key) DO NOTHING;
+
+-- ── Who (added 18 Oct 2026; safe to re-run) ─────────────────────────────────
+-- The INSERT above left updated_by NULL on every backfilled row, although the
+-- event history usually knows who acted. Fill it from the event that put the
+-- stage in its state — the same rule as stageActorsFromEvents() in
+-- backend/src/utils/stageState.js:
+--   completed / rejected / hold -> latest outcome of that kind on the stage;
+--   active / skipped            -> latest arrival (entered/skip/moved) or outcome.
+-- Only NULLs are touched, so a row the app has since written keeps its user.
+-- updated_at is left alone: it says when the ROW was written, not who acted.
+-- A stage with no attributed event (system action, or only jumped over) stays
+-- NULL, which reads as "system / unknown".
+UPDATE rpa_pipeline_stage_state s
+   SET updated_by = a.acted_by
+  FROM (
+    SELECT DISTINCT ON (st.id) st.id, e.acted_by
+      FROM rpa_pipeline_stage_state st
+      JOIN rpa_pipeline_stage_events e
+        ON e.pipeline_id = st.pipeline_id
+       AND e.stage_key = st.stage_key
+       AND e.acted_by IS NOT NULL
+       AND CASE st.status
+             WHEN 'completed' THEN e.event_type = 'outcome' AND e.outcome = 'approved'
+             WHEN 'rejected'  THEN e.event_type = 'outcome' AND e.outcome = 'rejected'
+             WHEN 'hold'      THEN e.event_type = 'outcome' AND e.outcome = 'hold'
+             ELSE e.event_type IN ('entered', 'skip', 'moved', 'outcome')
+           END
+     WHERE st.updated_by IS NULL
+     ORDER BY st.id, e.created_at DESC
+  ) a
+ WHERE a.id = s.id
+   AND s.updated_by IS NULL;
+
+-- The journey's FIRST stage, still active: before 18 Oct, createPipelineJourney
+-- wrote its 'entered' event with no user. The person who put the candidate
+-- there is whoever shortlisted them, which rpa_shortlisted_candidates.
+-- shortlisted_by records by username. Only that case, and only for a username
+-- that is a real user — never for a completed stage, which someone else (or
+-- the system) decided.
+UPDATE rpa_pipeline_stage_state s
+   SET updated_by = u.id
+  FROM rpa_candidate_pipeline p
+  JOIN rpa_shortlisted_candidates sc ON sc.id = p.shortlist_id
+  JOIN rpa_users u ON u.username = sc.shortlisted_by
+ WHERE p.id = s.pipeline_id
+   AND s.updated_by IS NULL
+   AND s.stage_key = 'zeko_hr'
+   AND s.status = 'active'
+   AND EXISTS (SELECT 1 FROM rpa_pipeline_stage_events e
+                WHERE e.pipeline_id = s.pipeline_id AND e.stage_key = 'zeko_hr'
+                  AND e.event_type = 'entered' AND e.acted_by IS NULL)
+   AND NOT EXISTS (SELECT 1 FROM rpa_pipeline_stage_events e
+                    WHERE e.pipeline_id = s.pipeline_id AND e.stage_key = 'zeko_hr'
+                      AND e.acted_by IS NOT NULL);
