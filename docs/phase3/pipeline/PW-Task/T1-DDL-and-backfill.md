@@ -73,3 +73,22 @@ npm run prisma:generate
 | T1-13 | PASS | Integration tests and journeys 2361-2368 deleting journeys left no orphan rows (`pipeline_id not in rpa_candidate_pipeline` → 0 rows) |
 | T1-14 | PASS | Rollback `--dry-run`: 5 statements OK, rolled back |
 | T1-15 | PASS | Prisma client already regenerated; backend started and used the new model |
+
+### Run 3: 18 Oct 2026 — `updated_by` was NULL on backfilled rows (reported from pgAdmin)
+
+**Finding.** 115 of 136 `rpa_pipeline_stage_state` rows had `updated_by = NULL`: 98 from the 16 Oct backfill (the INSERT never set it) and 17 written by the app on paths that passed no user (journey creation, the catch-up rows of `ensureStageStateRows`, system auto-approves).
+
+**Second finding while fixing.** Re-running the backfill would have inserted 25 rows marking never-visited stages "skipped" on six journeys that had been moved under the flag — including two a staging user had moved (7, 2360). The INSERT now only fills journeys with no state rows (the app's own rule).
+
+**Fixes.**
+- DDL file (same file, still re-runnable): INSERT limited to journeys with no rows; new UPDATE fills NULL `updated_by` from the event that put the stage in its state (same rule as `stageActorsFromEvents()`); new UPDATE credits a journey's first, still-active HR Screening row to the shortlister (`shortlisted_by` → real user only).
+- `createPipelineJourney({ actedBy })`, passed by `shortlistCandidates` (`user.id`): the 'entered' event and first stage row now carry who shortlisted.
+- `ensureStageStateRows`: catch-up rows take the actor from the event history.
+
+| ID | Result | Notes |
+|---|---|---|
+| T1-17 | PASS | Unit: `stageActorsFromEvents` (latest matching event; hold vs approve; no attributed event → null). 766/766 |
+| T1-18 | PASS | Dry run: INSERT 0, UPDATE 77, UPDATE 7. Applied; re-run: 0 / 0 / 0 |
+| T1-19 | PASS | `updated_by` filled on 105 of 136 rows (was 21). The 31 NULLs are system actions (e.g. 8 Evalground auto-approvals), stages only jumped over (6), and fixture rows — NULL = "system / unknown" |
+| T1-20 | PASS | Journeys 7 and 2360 unchanged (2 rows each, by pankaj), no stage relabelled |
+| T1-21 | PASS | New journey created with `actedBy: 1`: entered event `acted_by = 1`, first state row `updated_by = 1` (temporary tagged CV, deleted after) |
