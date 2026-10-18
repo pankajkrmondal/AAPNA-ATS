@@ -7,11 +7,13 @@
  * until "Yes, move" is clicked, and Cancel holds the focus, so an Enter pressed
  * by accident cancels rather than confirms (D5). No reason is asked (D6).
  */
-import { Alert, Button, Modal, Space, Tag, Typography } from 'antd';
-import { ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { Alert, Button, Modal, Space } from 'antd';
+import {
+  ArrowLeftOutlined, ArrowRightOutlined, AuditOutlined, CheckCircleOutlined, MailOutlined, MinusCircleOutlined, SwapOutlined,
+} from '@ant-design/icons';
 import { describeMove } from './stageMove';
 
-const { Text } = Typography;
+const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('') || '?';
 
 /**
  * @param {object} props
@@ -32,11 +34,22 @@ export default function MoveStageModal({ open, candidate, fromStage, toStage, st
   const fromLabel = fromStage.label || fromStage.stage_key;
   const toLabel = toStage.label || toStage.stage_key;
   const fromPassed = passedStageKeys.includes(fromStage.stage_key);
+  const dir = backward ? 'back' : 'fwd';
+  const skips = move.skippedCount > 0 ? ` · skips ${move.skippedCount} stage${move.skippedCount === 1 ? '' : 's'}` : '';
 
   return (
     <Modal
       open={open}
-      title="Move candidate?"
+      className="cp-move-modal"
+      title={(
+        <div className="cp-move-modal__head">
+          <span className={`cp-move-modal__icon cp-move-modal__icon--${dir}`}><SwapOutlined /></span>
+          <div>
+            <div className="cp-move-modal__title">Move candidate?</div>
+            <div className="cp-move-modal__sub">Review the change before you confirm.</div>
+          </div>
+        </div>
+      )}
       onCancel={loading ? undefined : onCancel}
       maskClosable={!loading}
       closable={!loading}
@@ -53,33 +66,39 @@ export default function MoveStageModal({ open, candidate, fromStage, toStage, st
       )}
     >
       <div data-testid="move-stage-modal">
-        <Text strong>{candidate?.candidate_name || 'Unnamed candidate'}</Text>
-        {candidate?.position && <Text type="secondary"> · {candidate.position}</Text>}
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px', margin: '14px 0', alignItems: 'center' }}>
-          <Text type="secondary">From:</Text>
-          <Text data-testid="move-from">{fromLabel}</Text>
-          <Text type="secondary">To:</Text>
-          <Space size={8} wrap>
-            <Text strong data-testid="move-to">{toLabel}</Text>
-            <Tag
-              color={backward ? 'orange' : 'blue'}
-              icon={backward ? <ArrowLeftOutlined /> : <ArrowRightOutlined />}
-              data-testid="move-direction"
-              style={{ marginInlineEnd: 0 }}
-            >
-              {backward ? 'BACKWARD' : 'FORWARD'}
-              {move.skippedCount > 0 ? ` (skips ${move.skippedCount} stage${move.skippedCount === 1 ? '' : 's'})` : ''}
-            </Tag>
-          </Space>
+        <div className="cp-move-modal__who">
+          <span className="cp-move-modal__avatar">{initials(candidate?.candidate_name)}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="cp-move-modal__name">{candidate?.candidate_name || 'Unnamed candidate'}</div>
+            {candidate?.position && <div className="cp-move-modal__pos">{candidate.position}</div>}
+          </div>
         </div>
 
-        <ul style={{ paddingInlineStart: 18, margin: 0 }}>
+        {/* The route: where the candidate is → where they go, direction in the middle. */}
+        <div className={`cp-move-route cp-move-route--${dir}`}>
+          <div className="cp-move-route__stage cp-move-route__stage--from">
+            <span className="cp-move-route__cap">From</span>
+            <span className="cp-move-route__label" data-testid="move-from">{fromLabel}</span>
+          </div>
+          <div className="cp-move-route__arrow" aria-hidden="true">{backward ? <ArrowLeftOutlined /> : <ArrowRightOutlined />}</div>
+          <div className="cp-move-route__stage cp-move-route__stage--to">
+            <span className="cp-move-route__cap">To</span>
+            <span className="cp-move-route__label" data-testid="move-to">{toLabel}</span>
+          </div>
+        </div>
+        <div className="cp-move-route__dir-wrap">
+          <span className={`cp-move-route__dir cp-move-route__dir--${dir}`} data-testid="move-direction">
+            {backward ? <ArrowLeftOutlined /> : <ArrowRightOutlined />}
+            {backward ? 'BACKWARD' : 'FORWARD'}{skips}
+          </span>
+        </div>
+
+        <ul className="cp-move-notes">
           {fromPassed
-            ? <li>{fromLabel} stays marked "Passed".</li>
-            : <li>{fromLabel} will be marked "Skipped". You can move back to it later.</li>}
-          <li>No email is sent to the candidate or the vendor.</li>
-          <li>This move is recorded under your name.</li>
+            ? <li><CheckCircleOutlined className="cp-move-notes__icon cp-move-notes__icon--ok" /><span><strong>{fromLabel}</strong> stays marked "Passed".</span></li>
+            : <li><MinusCircleOutlined className="cp-move-notes__icon cp-move-notes__icon--warn" /><span><strong>{fromLabel}</strong> will be marked "Skipped". You can move back to it later.</span></li>}
+          <li><MailOutlined className="cp-move-notes__icon" /><span>No email is sent to the candidate or the vendor.</span></li>
+          <li><AuditOutlined className="cp-move-notes__icon" /><span>This move is recorded under your name.</span></li>
         </ul>
 
         {move.bigJump && (

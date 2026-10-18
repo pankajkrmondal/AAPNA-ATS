@@ -22,14 +22,14 @@
  * The mock prototype at /candidate-pipeline-prototype stays live alongside
  * this page until RT signs off and the real Tracker is verified end-to-end.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, LockOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, SwapOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, CheckCircleFilled, ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, LockOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, SwapOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import {
   DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core';
@@ -153,12 +153,28 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
       </Tooltip>
     );
   }
-  const items = stages.filter((s) => s.stage_key !== card.current_stage_key).map((s) => {
-    const blocked = moveBlockReason(card, s.stage_key);
+  // Every stage in board order, the current one included (disabled) so the
+  // user sees where the candidate is and which way each option moves them.
+  const currentIdx = stages.findIndex((s) => s.stage_key === card.current_stage_key);
+  const currentLabel = stages[currentIdx]?.label || card.current_stage_key;
+  const items = stages.map((s, i) => {
+    const isCurrent = s.stage_key === card.current_stage_key;
+    const blocked = !isCurrent && moveBlockReason(card, s.stage_key);
+    let marker;
+    if (isCurrent) marker = <span className="cp-move-opt__badge cp-move-opt__badge--current">Current</span>;
+    else if (blocked) marker = <span className="cp-move-opt__badge cp-move-opt__badge--passed"><CheckCircleFilled /> Passed</span>;
+    else marker = i > currentIdx ? <ArrowRightOutlined className="cp-move-opt__dir cp-move-opt__dir--fwd" /> : <ArrowLeftOutlined className="cp-move-opt__dir cp-move-opt__dir--back" />;
     return {
       key: s.stage_key,
-      disabled: !!blocked,
-      label: <span data-testid={`move-to-${s.stage_key}`}>{s.label}{blocked ? ' — passed' : ''}</span>,
+      disabled: isCurrent || !!blocked,
+      className: `cp-move-item${isCurrent ? ' cp-move-item--current' : ''}${blocked ? ' cp-move-item--passed' : ''}`,
+      label: (
+        <span className="cp-move-opt" data-testid={isCurrent ? `move-current-${s.stage_key}` : `move-to-${s.stage_key}`}>
+          <span className="cp-move-opt__num">{i + 1}</span>
+          <span className="cp-move-opt__label">{s.label}</span>
+          {marker}
+        </span>
+      ),
     };
   });
   return (
@@ -170,6 +186,21 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
         open={menuOpen}
         onOpenChange={setMenuOpen}
         menu={{ items, onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); setMenuOpen(false); onMoveRequest({ card, toStageKey: key }); } }}
+        // A framed panel with its own header, so the menu reads as a popup over
+        // the board instead of blending into the white cards behind it.
+        popupRender={(menu) => (
+          <div className="cp-move-menu" data-testid={`card-move-menu-${card.id}`}>
+            <div className="cp-move-menu__head">
+              <span className="cp-move-menu__icon"><SwapOutlined /></span>
+              <div style={{ minWidth: 0 }}>
+                <div className="cp-move-menu__title">Move {card.candidate_name || 'candidate'}</div>
+                <div className="cp-move-menu__sub">Now in <strong>{currentLabel}</strong></div>
+              </div>
+            </div>
+            {cloneElement(menu, { style: { boxShadow: 'none', background: 'transparent', padding: 6 } })}
+            <div className="cp-move-menu__foot">Passed stages cannot be entered again.</div>
+          </div>
+        )}
       >
         <Tooltip title="Move to…" open={menuOpen ? false : undefined}>
           <Button size="small" type="text" icon={<SwapOutlined />} className="cp-card-move" aria-label="Move to another stage" data-testid={`card-move-${card.id}`} />
