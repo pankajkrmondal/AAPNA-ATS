@@ -25,6 +25,7 @@ import config from '../config/index.js';
 // import { wrapBrandedEmail } from '../services/emailLayout.service.js';
 import { setFinalOutcome } from '../services/pipeline.service.js';
 import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let task = null;
 
@@ -165,6 +166,7 @@ export async function runOfferSweep() {
     await runPostJoiningAutoClose();
   } catch (err) {
     logger.error(`[Offer Sweep] auto-close pass failed: ${err.message}`);
+    throw err; // reported by runJob (N42)
   }
 }
 
@@ -178,10 +180,10 @@ export function startOfferSweepJob() {
     return;
   }
 
-  task = cron.schedule(expression, () => {
+  task = cron.schedule(expression, () => runJob('offerSweep', async () => {
     logger.info('⏰ Running offer sweep (post-joining auto-close)…');
-    runOfferSweep();
-  });
+    await runOfferSweep();
+  }));
   logger.info(`📅 Offer sweep cron scheduled: "${expression}".`);
 }
 

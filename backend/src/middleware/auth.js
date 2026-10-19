@@ -4,6 +4,7 @@ import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
 import { isAdminTier, isSuperadmin, ROLE_RANK, normalizeRole } from '../config/roles.js';
+import { setContextUser } from './requestContext.js';
 
 /**
  * JWT authentication middleware.
@@ -79,6 +80,7 @@ export const authenticate = catchAsync(async (req, _res, next) => {
   req.company_id = user.company_id ?? null;
   req.token = token;
   req.session = session;
+  setContextUser(user); // every later log line of this request names the user (N42)
 
   next();
 });

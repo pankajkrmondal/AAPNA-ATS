@@ -26,6 +26,7 @@ import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { getAccessToken } from './onedrive.service.js';
 import { resolveUserId } from './graphCalendar.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -84,7 +85,7 @@ async function listArtifacts(onlineMeetingId, kind) {
     const userId = await resolveUserId(organizerMailbox());
     if (!userId) return null;
 
-    const res = await fetch(
+    const res = await tracedFetch('graph', 
       `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(onlineMeetingId)}/${kind}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -157,7 +158,7 @@ function normalize(artifact, kind) {
 export async function openRecordingContent(contentUrl) {
   const token = await getAccessToken();
 
-  const probe = await fetch(contentUrl, {
+  const probe = await tracedFetch('graph', contentUrl, {
     headers: { Authorization: `Bearer ${token}`, Range: 'bytes=0-0' },
   });
   if (!probe.ok && probe.status !== 206) {
@@ -171,7 +172,7 @@ export async function openRecordingContent(contentUrl) {
     throw new Error('Could not determine the recording size; refusing to upload without it.');
   }
 
-  const full = await fetch(contentUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const full = await tracedFetch('graph', contentUrl, { headers: { Authorization: `Bearer ${token}` } });
   if (!full.ok || !full.body) {
     throw new Error(`Could not open the recording stream (${full.status}).`);
   }

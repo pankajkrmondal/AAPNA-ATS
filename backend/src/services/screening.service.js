@@ -25,6 +25,7 @@ import { roleCacheKey, isCacheableRecency } from '../utils/screeningCacheKeys.js
 import { firstValidPhone, toIndianE164, maskPhone } from '../utils/phone.js';
 import { companyBlockHtml, jdLinkHtml, phoneConfirmHtml, appendToBody } from '../utils/candidateEmailBlocks.js';
 import { getMrfJdAttachment } from './jdAttachment.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 /**
  * GET /api/screening/roles
@@ -2651,7 +2652,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   let zekoRes;
   try {
-    zekoRes = await fetch(zekoUrl, {
+    zekoRes = await tracedFetch('zeko', zekoUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${tokenRecord.access_token}`,
@@ -2794,7 +2795,7 @@ export async function cancelInterview(pipelineId, reason, user) {
 
   logger.info(`Zeko API: Cancelling interview at Zeko for candidate ${zekoCandidateEmail}`);
 
-  const zekoRes = await fetch(zekoUrl, {
+  const zekoRes = await tracedFetch('zeko', zekoUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${tokenRecord.access_token}`,

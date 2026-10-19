@@ -5,6 +5,20 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-20: Phase 3 section F: developer logging & error tracing, system docs, user guides
+**Why:** "logs should be visible to developers" (our #52) and the CEO's longevity item (docs, runbooks, monitoring, error handling). Plan items N42, N43.
+
+Full write-up: [CHANGES-2026-10-20-phase3-section-f.md](./changelog/CHANGES-2026-10-20-phase3-section-f.md).
+
+- **N42:**
+  - a ref on every request and job run ("ref: K7Q2MX" on server errors);
+  - masked logs; every outside call logged with its duration;
+  - the error store `rpa_error_log` (DDL `2026-10-20-error-log.sql`, kept 30 days);
+  - `runJob` for all scheduled jobs (alert + heartbeat), crash alerts, browser error capture;
+  - Super Admin → **Logs & errors** (Errors, Find a ref, Jobs, Health).
+- **N43:** `docs/system/` (8 developer pages including the runbook and the 2026 history), `docs/user-guides/` (recruiter, admin, super admin, vendor, email-only guides with masked screenshots), and a root `README.md`.
+- **Tests:** 20 new unit tests, all unit files green; integration `errorTrail` 6/6 on staging (DDL applied 20 Oct); forced job failure: one alert, errors stored; frontend build; screenshot spec 12/12 with a leak scan; docs link check. Fixed in testing: stored routes (`routeShape`) and the Redis health check.
+
 ## 2026-10-15: Phase 3 section C: JD attachment, candidate forms, Add to JD, phone, outcome email opt-out
 **Why:** RT feedback (section C of the Phase 3 plan) and the 15 Oct review. Plan items N17, N18, N20 (server), N21, N22, N45 (new).
 

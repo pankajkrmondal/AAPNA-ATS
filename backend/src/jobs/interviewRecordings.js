@@ -36,6 +36,7 @@ import { stageIsRecorded } from '../services/interviewSchedule.service.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let job = null;
 let retentionJob = null;
@@ -104,13 +105,7 @@ export async function startInterviewRecordingJob() {
     // nobody is watching. It also runs on its own daily schedule rather than
     // inside the sweep: deleting is not a thing to do every 15 minutes.
     if (config.microsoft.recordingRetainMonths > 0) {
-      retentionJob = cron.schedule('30 3 * * *', async () => {
-        try {
-          await purgeExpiredRecordings();
-        } catch (err) {
-          logger.error(`Recording retention sweep failed: ${err.message}`);
-        }
-      });
+      retentionJob = cron.schedule('30 3 * * *', () => runJob('recordingRetention', () => purgeExpiredRecordings()));
       logger.info(`🗑️  Recording retention: deleting archived video ${config.microsoft.recordingRetainMonths} months after a journey closes (daily 03:30).`);
     }
 
@@ -124,18 +119,14 @@ export async function startInterviewRecordingJob() {
       return;
     }
     const expression = cronForInterval(intervalMin);
-    job = cron.schedule(expression, async () => {
-      try {
-        await sweepInterviewRecordings();
-        // Archiving runs after discovery in the same tick, so a recording found
-        // on this pass is copied on this pass rather than waiting for the next.
-        await archiveRecordings();
-        // Then rule on rounds that were supposed to record and did not.
-        await flagMissingRecordings();
-      } catch (err) {
-        logger.error(`Interview recording sweep failed: ${err.message}`);
-      }
-    });
+    job = cron.schedule(expression, () => runJob('interviewRecordings', async () => {
+      await sweepInterviewRecordings();
+      // Archiving runs after discovery in the same tick, so a recording found
+      // on this pass is copied on this pass rather than waiting for the next.
+      await archiveRecordings();
+      // Then rule on rounds that were supposed to record and did not.
+      await flagMissingRecordings();
+    }));
     logger.info(`🎥 Interview recording sweep running every ${intervalMin} min ("${expression}").`);
   } catch (err) {
     logger.error(`Failed to start interview recording job: ${err.message}`);

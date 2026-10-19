@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import config from '../config/index.js';
 import logger from '../config/logger.js';
+import { tracedFetch, logExternal } from './externalCall.js';
 
 let genAI = null;
 if (config.gemini.apiKey) {
@@ -55,7 +56,7 @@ export async function generateContentWithFallback(prompt, options = {}) {
       }
 
       const baseUrl = config.openrouter.baseUrl || 'https://openrouter.ai/api/v1';
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await tracedFetch('openrouter', `${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -97,7 +98,7 @@ export async function generateContentWithFallback(prompt, options = {}) {
           generationConfig: options.generationConfig || {}
         });
 
-        const response = await model.generateContent(prompt);
+        const response = await logExternal('gemini', `generateContent ${modelName}`, () => model.generateContent(prompt));
         const text = response.response.text();
         return text;
       } catch (err) {

@@ -16,6 +16,7 @@ import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -39,7 +40,7 @@ export async function resolveUserId(upnOrId) {
   if (_userIdCache.has(upnOrId)) return _userIdCache.get(upnOrId);
   try {
     const token = await getAccessToken();
-    const res = await fetch(`${GRAPH_BASE}/users/${encodeURIComponent(upnOrId)}?$select=id`, {
+    const res = await tracedFetch('graph', `${GRAPH_BASE}/users/${encodeURIComponent(upnOrId)}?$select=id`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -151,7 +152,7 @@ export async function createInterviewEvent({ subject, bodyHtml, start, end, atte
 
   try {
     const token = await getAccessToken();
-    const res = await fetch(`${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events`, {
+    const res = await tracedFetch('graph', `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
@@ -213,7 +214,7 @@ export async function getOnlineMeetingDetails(joinUrl) {
     const userId = await resolveUserId(mailbox);
     if (!userId) return empty;
     // The event only hands back the join URL, so resolve the meeting by it.
-    const res = await fetch(
+    const res = await tracedFetch('graph', 
       `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings?$filter=JoinWebUrl eq '${joinUrl}'`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -306,7 +307,7 @@ export async function applyMeetingOptions(onlineMeetingId) {
     const userId = await resolveUserId(config.microsoft.calendarMailbox);
     if (!userId) return fail('could not resolve the calendar mailbox to an object id');
 
-    const res = await fetch(
+    const res = await tracedFetch('graph', 
       `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(onlineMeetingId)}`,
       {
         method: 'PATCH',
@@ -390,7 +391,7 @@ export async function updateInterviewEventTime(eventId, { start, end, subject, a
         ? { attendees: toGraphAttendees(attendees) }
         : {}),
     };
-    const res = await fetch(
+    const res = await tracedFetch('graph', 
       `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(eventId)}`,
       {
         method: 'PATCH',
@@ -442,7 +443,7 @@ export async function cancelInterviewEvent(eventId, comment = 'This interview ha
   const mailbox = config.microsoft.calendarMailbox;
   try {
     const token = await getAccessToken();
-    const res = await fetch(
+    const res = await tracedFetch('graph', 
       `${GRAPH_BASE}/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(eventId)}/cancel`,
       {
         method: 'POST',

@@ -3,6 +3,7 @@
  * Central HTTP client with JWT token injection and 401 handling.
  */
 import axios from 'axios';
+import { reportError } from './errorReporter';
 
 // In dev we rely on the Vite proxy (baseURL '/api'). For staging/production
 // builds, set VITE_API_URL to the backend origin (e.g. https://ats.aapnainfotech.com).
@@ -64,14 +65,38 @@ api.interceptors.response.use(
       }
     }
 
+    // The request's reference (N42): in the error body as `ref`, and in the
+    // x-request-id header. Shown to the user on server errors only, so HR can
+    // quote it ("ref: K7Q2MX"); validation messages stay as they are.
+    const status = response?.status || 0;
+    const ref = response?.data?.ref || response?.headers?.['x-request-id'] || null;
+    let message =
+      response?.data?.message ||
+      response?.data?.error ||
+      error.message ||
+      'An unexpected error occurred';
+    if (status >= 500 && ref && !message.includes(ref)) {
+      message = `${message} (ref: ${ref})`;
+    }
+
+    // A server error without a ref never reached our error handler (a proxy
+    // 502/504), and a timeout never reached the server at all: neither is in the
+    // server's error log, so record them from here.
+    if ((status >= 500 && !response?.data?.ref) || error.code === 'ECONNABORTED') {
+      reportError({
+        kind: 'api',
+        message: `${error.config?.method?.toUpperCase() || 'GET'} ${error.config?.url || ''} failed: ${status || error.code || 'network'} ${error.message || ''}`.trim(),
+        ref: ref || undefined,
+        apiStatus: status || undefined,
+        apiPath: error.config?.url,
+      });
+    }
+
     // Build a consistent error shape
     const formattedError = {
-      status: response?.status || 0,
-      message:
-        response?.data?.message ||
-        response?.data?.error ||
-        error.message ||
-        'An unexpected error occurred',
+      status,
+      message,
+      ref,
       data: response?.data || null,
     };
 

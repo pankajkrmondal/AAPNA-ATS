@@ -91,7 +91,7 @@ know who you want. These lookups also show people who were recently rejected.
 | **Experience (years)** | Total experience between the min and max you enter (both included). You can fill just one. | Not shown |
 | **Expected CTC (LPA)** | Expected CTC between the min and max you enter. | Not shown |
 | **Notice period** | Notice of at most the days chosen. "Immediate" means 0 days. | Not shown |
-| **Added within** | Uploaded in the last 7 / 15 / 30 / 90 days. | — |
+| **Added within** | Uploaded in the last 7, 10 or 15 days, 1 month or 3 months. The JD tab has the same choice. | — |
 | **Education / Qualification** | The candidate must fit at least one ticked category. | Not shown |
 
 Two more rules:

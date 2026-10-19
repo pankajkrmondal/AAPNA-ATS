@@ -1,5 +1,8 @@
 # Feature Modules & System Relationships
 
+> **Superseded (20 Oct 2026):** describes the June screening and upload logic (top-50 vector search, 8-parameter mean). Current behaviour: [docs/system/02-MODULES.md](../system/02-MODULES.md) and [docs/Screening-Rules-for-RT.md](../Screening-Rules-for-RT.md). Kept for history.
+
+
 This document details the functional modules of the AAPNA ATS, their underlying logic, and how they interact to automate the recruitment pipeline.
 
 ---

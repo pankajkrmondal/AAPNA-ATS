@@ -16,6 +16,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { emitToRole } from '../socket/index.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let job = null;
 
@@ -26,14 +27,10 @@ export function startAssessmentDeadlineJob() {
     logger.error(`Invalid ASSESSMENT_DEADLINE_CHECK_CRON "${configured}" — falling back to hourly.`);
   }
 
-  job = cron.schedule(schedule, async () => {
+  job = cron.schedule(schedule, () => runJob('assessmentDeadline', async () => {
     logger.info('⏰ Running Evalground invite deadline check…');
-    try {
-      await checkOverdueAssessmentInvites();
-    } catch (error) {
-      logger.error('Assessment deadline check failed:', { error: error.message });
-    }
-  });
+    await checkOverdueAssessmentInvites();
+  }));
 
   logger.info(`📅 Assessment deadline checker cron scheduled: "${schedule}"`);
 }

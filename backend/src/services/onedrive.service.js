@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import logger from '../config/logger.js';
 import config from '../config/index.js'; // updated env config with gemini and local uploads
+import { tracedFetch } from '../utils/externalCall.js';
 
 let cachedToken = null;
 let tokenExpiry = null;
@@ -36,7 +37,7 @@ export async function getAccessToken() {
     grant_type: 'client_credentials'
   });
 
-  const response = await fetch(tokenUrl, {
+  const response = await tracedFetch('graph', tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
@@ -100,7 +101,7 @@ async function ensureChildFolder(accessToken, parentId, folderName) {
   const byPathUrl = `${driveBase}/items/${parentId}:/${encodeURIComponent(folderName)}?$select=id,folder`;
 
   const lookup = async () => {
-    const res = await fetch(byPathUrl, {
+    const res = await tracedFetch('graph', byPathUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
     });
@@ -112,7 +113,7 @@ async function ensureChildFolder(accessToken, parentId, folderName) {
   const existingId = await lookup();
   if (existingId) return existingId;
 
-  const createRes = await fetch(`${driveBase}/items/${parentId}/children`, {
+  const createRes = await tracedFetch('graph', `${driveBase}/items/${parentId}/children`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -159,7 +160,7 @@ export async function ensureDriveFolderPathFromRoot(folderPath = []) {
     ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
     : 'https://graph.microsoft.com/v1.0/drive';
 
-  const rootRes = await fetch(`${driveBase}/root?$select=id`, {
+  const rootRes = await tracedFetch('graph', `${driveBase}/root?$select=id`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
   });
@@ -200,7 +201,7 @@ export async function uploadStreamToOneDrive({ webStream, totalBytes, parentItem
     ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
     : 'https://graph.microsoft.com/v1.0/drive';
 
-  const sessionRes = await fetch(
+  const sessionRes = await tracedFetch('graph', 
     `${driveBase}/items/${parentItemId}:/${encodeURIComponent(fileName)}:/createUploadSession`,
     {
       method: 'POST',
@@ -229,7 +230,7 @@ export async function uploadStreamToOneDrive({ webStream, totalBytes, parentItem
   const putChunk = async (buf) => {
     const start = offset;
     const end = offset + buf.length - 1;
-    const res = await fetch(uploadUrl, {
+    const res = await tracedFetch('graph', uploadUrl, {
       method: 'PUT',
       headers: {
         'Content-Length': String(buf.length),
@@ -264,7 +265,7 @@ export async function uploadStreamToOneDrive({ webStream, totalBytes, parentItem
   } catch (err) {
     // Abandon the session so a failed attempt does not leave a half-written
     // placeholder occupying the name for the next retry.
-    await fetch(uploadUrl, { method: 'DELETE' }).catch(() => {});
+    await tracedFetch('graph', uploadUrl, { method: 'DELETE' }).catch(() => {});
     throw err;
   }
 
@@ -294,7 +295,7 @@ export async function deleteDriveItem(itemId) {
     ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(defaultSender)}/drive`
     : 'https://graph.microsoft.com/v1.0/drive';
 
-  const res = await fetch(`${driveBase}/items/${itemId}`, {
+  const res = await tracedFetch('graph', `${driveBase}/items/${itemId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(GRAPH_METADATA_TIMEOUT_MS),
@@ -366,7 +367,7 @@ export async function uploadFileToOneDriveDetailed(localFilePath, originalName, 
 
     logger.info(`OneDrive: Uploading local file ${localFilePath} to folder ID ${parentId} as "${cleanFilename}"...`);
 
-    const response = await fetch(uploadUrl, {
+    const response = await tracedFetch('graph', uploadUrl, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -485,7 +486,7 @@ export async function downloadDriveItem({ itemId, webUrl, maxBytes, timeoutMs = 
   // Legacy row: resolve the stored URL to an item first, so we learn its id and
   // its real filename (which the URL only approximates).
   if (!resolvedId) {
-    const metaRes = await fetch(`https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(webUrl)}/driveItem`, {
+    const metaRes = await tracedFetch('graph', `https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(webUrl)}/driveItem`, {
       headers: auth,
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -503,7 +504,7 @@ export async function downloadDriveItem({ itemId, webUrl, maxBytes, timeoutMs = 
     }
   }
 
-  const res = await fetch(`${driveBase}/items/${resolvedId}/content`, {
+  const res = await tracedFetch('graph', `${driveBase}/items/${resolvedId}/content`, {
     headers: auth,
     signal: AbortSignal.timeout(timeoutMs),
   });

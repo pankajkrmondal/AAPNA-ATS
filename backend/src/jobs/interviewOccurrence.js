@@ -32,6 +32,7 @@ import {
 } from '../services/interviewSchedule.service.js';
 import { getAttendanceOutcome, isAttendanceEnabled } from '../services/graphAttendance.service.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let job = null;
 
@@ -146,9 +147,7 @@ export async function startInterviewOccurrenceJob() {
       }
       sweeping = true;
       try {
-        await sweepInterviewOccurrence();
-      } catch (err) {
-        logger.error(`Interview occurrence sweep failed: ${err.message}`);
+        await runJob('interviewOccurrence', () => sweepInterviewOccurrence());
       } finally {
         sweeping = false;
       }

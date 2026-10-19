@@ -31,6 +31,7 @@ import { activeVendorFor, vendorLockExpiry } from '../utils/vendorLock.js';
 import { findRecentRejection } from './pipeline.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
 import { syncShortlistIdentity, syncShortlistIdentitySafe, clearScreeningRoleCache } from './candidateSync.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 // Marker stamped on candidates who applied themselves (website or direct email),
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
@@ -805,7 +806,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
     if (prefix) {
       const url = `${prefix}/webhook/hr-upload/merge/staging`;
       logger.info(`Triggering background n8n merge webhook (asynchronous/best-effort) via: ${url}`);
-      fetch(url, {
+      tracedFetch('n8n', url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, token })
@@ -871,7 +872,7 @@ export async function deleteDuplicates(ids, token) {
     if (prefix) {
       const url = `${prefix}/webhook/hr-upload/delete/staging`;
       logger.info(`Triggering background n8n delete webhook (asynchronous/best-effort) via: ${url}`);
-      fetch(url, {
+      tracedFetch('n8n', url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids, token })

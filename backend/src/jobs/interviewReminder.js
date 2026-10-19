@@ -23,6 +23,7 @@ import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
 import { SCHEDULABLE_STAGES, buildTeamsBlock, stageSendsInvites } from '../services/interviewSchedule.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 /**
  * Template names for the two reminder emails (seeded by
@@ -99,13 +100,7 @@ export async function startInterviewReminderJob() {
     }
 
     const expression = cronForInterval(intervalMin);
-    job = cron.schedule(expression, async () => {
-      try {
-        await sendInterviewReminders();
-      } catch (err) {
-        logger.error(`Interview reminder job execution failed: ${err.message}`);
-      }
-    });
+    job = cron.schedule(expression, () => runJob('interviewReminder', () => sendInterviewReminders()));
 
     logger.info(`📅 Interview reminder scheduler running every ${intervalMin} min ("${expression}").`);
   } catch (err) {

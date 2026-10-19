@@ -10,6 +10,7 @@
 import config from '../config/index.js';
 import logger from '../config/logger.js';
 import { getAccessToken } from './onedrive.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -80,7 +81,7 @@ export function isAdminSender(fromEmail) {
 async function graphGet(url, token, label) {
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(url, {
+    const res = await tracedFetch('graph', url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Prefer: 'outlook.body-content-type="html"',

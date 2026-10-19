@@ -5,6 +5,8 @@ import config from '../config/index.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
 import { approverNoteHtml } from '../utils/mrfApprovalRules.js';
+import { tracedFetch } from '../utils/externalCall.js';
+import { alertAllowed, ERROR_ALERT_COOLDOWN_MS, JOB_ALERT_COOLDOWN_MS } from '../utils/alertThrottle.js';
 
 
 
@@ -178,7 +180,7 @@ export async function sendGraphEmail({ sender, to, cc = '', subject, html, allow
     if (!sendRes.ok) {
       const errorData = await sendRes.json().catch(() => ({}));
       // Best-effort: don't leave the unsent draft behind in the mailbox.
-      fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+      tracedFetch('graph', `${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
       throw new Error(`Graph sendMail failed: ${sendRes.statusText}. ${JSON.stringify(errorData)}`);
     }
 
@@ -269,7 +271,7 @@ export async function sendGraphReply({ mailbox, graphMessageId, html, toOverride
   });
   if (!patchRes.ok) {
     const errText = await patchRes.text().catch(() => '');
-    fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+    tracedFetch('graph', `${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
     throw new Error(`Graph reply draft update failed (${patchRes.status}): ${errText}`);
   }
 
@@ -280,7 +282,7 @@ export async function sendGraphReply({ mailbox, graphMessageId, html, toOverride
   });
   if (!sendRes.ok) {
     const errorData = await sendRes.json().catch(() => ({}));
-    fetch(`${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
+    tracedFetch('graph', `${baseUrl}/messages/${encodeURIComponent(draft.id)}`, { method: 'DELETE', headers }).catch(() => {});
     throw new Error(`Graph reply send failed: ${sendRes.statusText}. ${JSON.stringify(errorData)}`);
   }
 
@@ -295,7 +297,7 @@ export async function sendGraphReply({ mailbox, graphMessageId, html, toOverride
 }
 
 /**
- * fetch() with retry on transient network failures (connect timeouts / resets).
+ * fetch() (traced, N42) with retry on transient network failures (connect timeouts / resets).
  * Graph itself does not throw — a non-ok HTTP status is a real rejection, is
  * NOT retried, and is returned to the caller to handle.
  */
@@ -303,7 +305,7 @@ async function fetchWithNetRetry(url, options) {
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await fetch(url, options);
+      return await tracedFetch('graph', url, options);
     } catch (netErr) {
       if (attempt === MAX_ATTEMPTS) {
         throw new Error(`Graph sendMail network error after ${MAX_ATTEMPTS} attempts: ${netErr.message}${netErr.cause ? ` (${netErr.cause.code || netErr.cause.message})` : ''}`);
@@ -1813,9 +1815,6 @@ export async function sendPasswordResetEmail({ user, resetUrl }) {
   }
 }
 
-/** Last-alerted timestamp per error signature, so a sustained outage sends one email, not a flood. */
-const errorAlertCooldown = new Map();
-const ERROR_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 
 /**
  * Alerts developers by email when a 5xx error reaches the global error handler,
@@ -1838,12 +1837,9 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
     const route = `${req.method} ${req.originalUrl}`;
     const signature = `${err.code || err.name || 'Error'}:${route}`;
 
-    const now = Date.now();
-    const lastSent = errorAlertCooldown.get(signature);
-    if (lastSent && now - lastSent < ERROR_ALERT_COOLDOWN_MS) {
+    if (!alertAllowed(signature)) {
       return false; // Same error/route alerted recently — skip.
     }
-    errorAlertCooldown.set(signature, now);
 
     const sender = config.microsoft.defaultSender;
     const { to: toEmail } = resolveRecipients('backendErrorAlert');
@@ -1888,6 +1884,7 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Environment:</td><td>${config.env}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Time:</td><td>${new Date().toISOString()}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Route:</td><td>${route}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Reference:</td><td>${req.requestId || 'n/a'} (Super Admin → Logs &amp; errors → Find a ref)</td></tr>
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Status sent to user:</td><td>${finalErr.statusCode}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Message shown to user:</td><td>${finalErr.message}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;font-weight:700;">Error name:</td><td>${err.name || 'n/a'}</td></tr>
@@ -1920,6 +1917,90 @@ export async function sendBackendErrorAlert({ err, finalErr, req }) {
     return true;
   } catch (alertErr) {
     logger.error(`Failed to send backend error alert: ${alertErr.message}`);
+    return false;
+  }
+}
+
+/**
+ * Alerts developers when a scheduled job fails or the process crashes (N42).
+ * Same recipients (backendErrorAlert, never redirected) as the 5xx alert.
+ * Throttled per signature: crashes every 5 minutes, job failures hourly.
+ * Never throws.
+ *
+ * @param {Object} params
+ * @param {'job_failure'|'crash'} params.kind
+ * @param {string} params.title     e.g. "Job failed: mailboxPoller"
+ * @param {string} params.signature throttle key
+ * @param {Error} params.err
+ * @param {string} [params.ref]     the job run's / request's ref
+ * @param {Array<[string, string]>} [params.details] extra table rows
+ * @returns {Promise<boolean>}
+ */
+export async function sendOpsAlert({ kind, title, signature, err, ref, details = [] }) {
+  try {
+    if (!alertAllowed(`${kind}:${signature}`, kind === 'job_failure' ? JOB_ALERT_COOLDOWN_MS : ERROR_ALERT_COOLDOWN_MS)) return false;
+
+    const sender = config.microsoft.defaultSender;
+    const { to: toEmail } = resolveRecipients('backendErrorAlert');
+    if (!toEmail) {
+      logger.warn('Skipping ops alert: no recipient configured.');
+      return false;
+    }
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const stackSnippet = (err?.stack || 'No stack trace available.').split('\n').slice(0, 10).join('\n');
+    const rows = [
+      ['Environment', config.env],
+      ['Time', new Date().toISOString()],
+      ['Reference', ref ? `${ref} (Super Admin → Logs & errors → Find a ref)` : 'n/a'],
+      ...details,
+      ['Error name', err?.name || 'n/a'],
+      ['Error code', err?.code || 'n/a'],
+    ];
+    const heading = kind === 'crash' ? 'Backend crashed' : 'Scheduled job failed';
+    const intro = kind === 'crash'
+      ? 'The backend process hit an unhandled error and is exiting. PM2 restarts it; check why it crashed.'
+      : 'A scheduled job failed. It runs again on its normal schedule; this alert repeats at most once an hour for the same job and error. Super Admin → Logs & errors → Jobs shows whether later runs succeeded.';
+    const subject = `🚨 ${title} [${config.env}]`;
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/>
+<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
+</head>
+<body>
+  <div style="background:#b71c1c;color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;font-weight:700;">${esc(heading)}</div>
+  <div style="border:1px solid #e8ede0;border-top:none;padding:16px;border-radius:0 0 6px 6px;">
+    <p>${esc(intro)}</p>
+    <table style="border-collapse:collapse;font-size:13px;">
+      ${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:700;">${esc(k)}:</td><td>${esc(v)}</td></tr>`).join('\n      ')}
+    </table>
+    <p style="margin-top:14px;font-weight:700;">Error message:</p>
+    <p style="font-family:monospace;white-space:pre-wrap;">${esc(err?.message || String(err ?? 'n/a'))}</p>
+    <p style="margin-top:14px;font-weight:700;">Stack (top frames — full trace in server logs):</p>
+    <pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;background:#f9fbf5;padding:10px;border-radius:4px;">${esc(stackSnippet)}</pre>
+  </div>
+</body>
+</html>
+    `;
+
+    // NEVER_REDIRECT: internal developer alert, same as the 5xx alert.
+    await sendGraphEmail({ sender, to: toEmail, subject, html, allowRealRecipients: true });
+
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: kind === 'crash' ? 'crash_alert' : 'job_failure_alert',
+        recipient_email: toEmail,
+        recipient_name: 'Dev Team',
+        subject,
+        body_html: html,
+        sent_at: new Date()
+      }
+    }).catch(() => {});
+
+    return true;
+  } catch (alertErr) {
+    logger.error(`Failed to send ops alert (${kind}): ${alertErr.message}`);
     return false;
   }
 }

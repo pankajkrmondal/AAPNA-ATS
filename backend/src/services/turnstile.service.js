@@ -8,6 +8,7 @@
  */
 import config from '../config/index.js';
 import logger from '../config/logger.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
@@ -32,7 +33,7 @@ export async function verifyTurnstileToken(token, remoteip) {
   }
 
   try {
-    const res = await fetch(SITEVERIFY_URL, { method: 'POST', body });
+    const res = await tracedFetch('turnstile', SITEVERIFY_URL, { method: 'POST', body });
     const data = await res.json();
 
     if (!data.success) {

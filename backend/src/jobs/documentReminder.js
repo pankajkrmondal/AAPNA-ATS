@@ -22,6 +22,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendReminder } from '../services/documentCollection.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let task = null;
 
@@ -86,12 +87,10 @@ export function startDocumentReminderJob() {
     return;
   }
 
-  task = cron.schedule(expression, () => {
+  task = cron.schedule(expression, () => runJob('documentReminder', async () => {
     logger.info('⏰ Running document reminder sweep…');
-    runDocumentReminders().catch((err) =>
-      logger.error(`[Document Reminder] Unhandled error: ${err.message}`)
-    );
-  });
+    await runDocumentReminders();
+  }));
   logger.info(
     `📄 Document reminder sweep scheduled: "${expression}" ` +
     `(first after ${config.document.reminder.afterDays} day(s), max ${config.document.reminder.maxCount}).`

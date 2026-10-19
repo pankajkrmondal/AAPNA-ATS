@@ -1,5 +1,8 @@
 # Screening Page — Resume Signals & Skill Matching
 
+> **Superseded (20 Oct 2026):** the result caps described below changed in October (strict filtering, `SCREENING_V2`). Current rules: [docs/Screening-Rules-for-RT.md](../Screening-Rules-for-RT.md) and `backend/src/utils/screeningFilters.js`; module map: [docs/system/02-MODULES.md](../system/02-MODULES.md) §6.
+
+
 **Last updated:** 2026-06-30
 
 This document covers the skill-signal features on the Screening page and their pagination.

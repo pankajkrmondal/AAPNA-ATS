@@ -16,6 +16,7 @@ import scorecardRoutes from './scorecard.routes.js';
 import documentRoutes from './document.routes.js';
 import recordingShareRoutes from './recordingShare.routes.js';
 import notificationRoutes from './notification.routes.js';
+import clientErrorRoutes from './clientError.routes.js';
 
 const router = Router();
 
@@ -57,6 +58,8 @@ router.use('/mrf', mrfRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/email', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);
+// Browser error reports from signed-in users (N42; see clientError.routes.js).
+router.use('/errors', clientErrorRoutes);
 router.use('/zeko', Router().get('/', placeholder('Zeko AI')));
 router.use('/analytics', Router().get('/', placeholder('Analytics')));
 router.use('/resumes', Router().get('/', placeholder('Resumes')));

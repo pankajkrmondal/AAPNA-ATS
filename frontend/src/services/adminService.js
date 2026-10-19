@@ -170,6 +170,34 @@ const adminService = {
   toggleCompanyStatus(id, is_active) {
     return api.post('/admin/companies/toggle-status', { id, is_active });
   },
+
+  // ── Logs & errors (N42, Super Admin only) ───────────────────────────
+
+  /**
+   * Errors grouped by fingerprint, or one group's occurrences.
+   * @param {{ source?: string, env?: string, days?: number, q?: string, fingerprint?: string }} [params]
+   */
+  getErrors(params = {}) {
+    return api.get('/admin/errors', { params });
+  },
+
+  /**
+   * Everything known about one ref: stored errors plus matching log lines.
+   * @param {string} ref
+   */
+  findRef(ref) {
+    return api.get('/admin/logs', { params: { ref } });
+  },
+
+  /** Last run / success / failure of each scheduled job. */
+  getJobs() {
+    return api.get('/admin/jobs');
+  },
+
+  /** Database, Redis, upload queue and Microsoft login checks (503 if one fails). */
+  getDeepHealth() {
+    return api.get('/admin/health/deep');
+  },
 };
 
 export default adminService;

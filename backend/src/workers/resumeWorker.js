@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis.js';
 import logger from '../config/logger.js';
 import { runBatchParsing } from '../services/hrUpload.service.js';
+import { recordError } from '../services/errorLog.service.js';
 
 /**
  * BullMQ worker for the 'resume-processing' queue.
@@ -66,6 +67,14 @@ resumeWorker.on('failed', (job, err) => {
   logger.error(`Job ${job?.id} failed`, {
     error: err.message,
     attemptsMade: job?.attemptsMade,
+  });
+  // Shown on Logs & errors (N42); one row per failed attempt.
+  recordError({
+    source: 'job',
+    err,
+    route: 'job:resumeWorker',
+    requestId: `job-resumeWorker-${job?.id ?? 'unknown'}`,
+    meta: { job: 'resumeWorker', kind: `attempt ${job?.attemptsMade ?? '?'}` },
   });
 });
 
