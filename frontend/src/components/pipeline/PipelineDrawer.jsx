@@ -59,6 +59,7 @@ import DateTimeField from './DateTimeField';
 import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConfig';
 import { firstValidPhone } from '../../constants/candidateFields';
 import { fmtDate, fmtDateTime, fmtTime } from '../../utils/dateFormat';
+import { CARD_STATUSES } from '../../constants/pipelineLabels';
 
 /**
  * The email_error the server records when the recruiter unticks "Send email
@@ -173,6 +174,8 @@ const OUTCOME_TAG = {
   future_prospect: { label: 'Future Prospect', color: 'blue' },
 };
 
+/** The journey's status on its current stage, in words (N35) — not the raw column value. */
+const STAGE_STATUS_WORD = { in_progress: 'In this stage', approved: 'Approved', hold: 'On Hold', rejected: 'Rejected' };
 const STATE_WORD = { pending: 'Not started yet', active: 'In progress', done: 'Done', hold: 'On Hold', rejected: 'Rejected' };
 
 /** See the comment beside conversationReplyText's useState for why this isn't ''. */
@@ -616,7 +619,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       s1 = overdue
         ? { state: 'active', detail: `Deadline passed ${Math.abs(daysLeft)} day(s) ago (was due ${fmtDateTime(invite.deadline_at)})` }
         : { state: 'done', detail: `Invite ${invite.method === 'email' ? 'emailed' : 'marked sent manually'} · ${fmtDateTime(invite.sent_at)} · deadline in ${daysLeft} day(s)` };
-      s2 = { state: 'active', detail: 'Evalground test pending' };
+      s2 = { state: 'active', detail: 'Test sent — waiting for the candidate to take it' };
       s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
       // Re-invite stays available once an invite exists and no result has
       // landed — but NOT after an outcome has been recorded on the stage. This
@@ -2548,8 +2551,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 has synced a score for an in-progress Zeko stage, the journey is
                 no longer just "in progress" — it's waiting on the recruiter. */}
             {isReadyForDecision
-              ? <Tag color="green">Ready for decision</Tag>
-              : <Tag color={pipeline.current_stage_status === 'hold' ? 'gold' : 'blue'}>{pipeline.current_stage_status}</Tag>}
+              ? <Tooltip title={CARD_STATUSES.awaitingDecision.meaning}><Tag color="green">{CARD_STATUSES.awaitingDecision.label}</Tag></Tooltip>
+              : <Tag color={pipeline.current_stage_status === 'hold' ? 'gold' : 'blue'}>{STAGE_STATUS_WORD[pipeline.current_stage_status] || pipeline.current_stage_status}</Tag>}
             {pipeline.is_paused && !pipeline.final_outcome && <Tag color="orange">Paused</Tag>}
             {pipeline.final_outcome && <Tag color="purple">Closed — {pipeline.final_outcome}</Tag>}
             {/* Pause / resume (Q33). Offered only on an OPEN journey — a closed

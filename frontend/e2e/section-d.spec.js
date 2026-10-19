@@ -104,7 +104,8 @@ test.describe('N29 pipeline scores in Search Candidate', () => {
     test.skip(!found, 'no candidate with pipeline scores (or the API is not reachable)');
 
     const cv = await api(page, `/api/candidates/${found.card.cv_id}`);
-    await page.getByPlaceholder(/name/i).first().fill(cv.name);
+    // By label: the placeholder is an example ("e.g. Rahul Sharma"), not the word "name".
+    await page.getByLabel('Candidate Name').fill(cv.name);
     await page.getByRole('button', { name: 'Search' }).click();
     await page.getByRole('button', { name: 'View' }).first().click();
     const modal = page.locator('.ant-modal:visible');

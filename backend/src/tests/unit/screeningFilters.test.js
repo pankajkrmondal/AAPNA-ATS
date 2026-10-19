@@ -214,6 +214,16 @@ describe('passesStrictFilters — empty value for an applied filter excludes', (
     assert.equal(parseScreeningFilters({ addedWithinDays: '' }).addedWithinDays, null);
     assert.equal(parseScreeningFilters({ addedWithinDays: '2.5' }).addedWithinDays, null);
   });
+
+  test('added within 10 days (N38 option): day 9 passes, day 11 is out', () => {
+    const f = parseScreeningFilters({ addedWithinDays: 10 });
+    assert.equal(f.addedWithinDays, 10);
+    assert.equal(passesStrictFilters(candidate({ createdAt: new Date(Date.now() - 9 * 86400000) }), f).pass, true);
+    assert.equal(passesStrictFilters(candidate({ createdAt: new Date(Date.now() - 11 * 86400000) }), f).failedOn, 'addedWithin');
+    const cond = buildFilterConditions(f).find((c) => c.key === 'addedWithin');
+    assert.ok(cond, 'the JD search reuses this SQL condition');
+    assert.deepEqual(cond.sql.values, [10]);
+  });
 });
 
 describe('location — exact match on one part of the stored location', () => {

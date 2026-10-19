@@ -140,6 +140,18 @@
 
 ---
 
+## Staging run, 19 Oct
+Run against the staging database from the dev machine, with the mail redirect confirmed on. No email was sent.
+
+| # | Check | Result |
+|---|---|---|
+| T5 | `candidateDataSync.test.js` | **6/6**, including the old link opening after an email edit (T1 in test form) |
+| T3, T4, T8 | `frontend/e2e/section-d.spec.js` | **9/9**. One check first failed on the test itself: it looked for a placeholder containing "name", but the box says "e.g. Rahul Sharma". The selector now uses the field's label; the page was fine. |
+| T1 | Real email: link after an email edit | Not run by hand. Covered by T5. |
+| T2 | Link after an upload merge | Not run: needs a real upload |
+| T6 | Approver test | Not run: waits for the staging approver list to be restored |
+| T7 | No mail to saukumar@ after a worker restart | Not run: needs the deployed staging server |
+
 ## Staging steps (dev → staging)
 1. **Approver list (N32), the list row only.** Don't re-run `seed-email-recipients.js` (it overwrites every `email_recipients.*` key). This is week 1's step 4, never run. Check first, then:
    ```sql

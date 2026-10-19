@@ -16,6 +16,7 @@ import {
   isStageArrival,
   stagePendingLabelFor,
   EVENT_TYPES,
+  LEGACY_MRF_CLOSED_STATUS,
 } from '../config/pipelineStages.js';
 import {
   STAGE_STATES,
@@ -44,6 +45,7 @@ import {
   stageClockStart,
   bucketFor,
   timeToHireFor,
+  positionsOverview,
 } from './pipelineAnalytics.helpers.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { reopenMrfIfUnfilled, closeMrfIfFilled } from './mrfClosure.service.js';
@@ -57,6 +59,7 @@ import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stage
 import { scoreSourceFor, noScoreNoteError } from '../utils/stageScore.js';
 import { buildZekoRounds, zekoScoresFromResult, uploadedScoresFromCv, UPLOADED_SCORE_FIELDS } from '../utils/roundScores.js';
 import { firstValidPhone, maskPhone } from '../utils/phone.js';
+import { assessmentInviteState, latestInviteByPipeline } from '../utils/assessmentInviteState.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
 
@@ -386,6 +389,16 @@ export async function listPipeline(filters = {}) {
     });
     results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
   }
+  // N35: was the Evalground test actually sent, and is it late? One batched
+  // read (newest first, first row per journey wins) instead of getInviteState
+  // per card; the overdue rule is the drawer's own (assessmentInviteState).
+  const latestInvites = assessmentPipelineIds.length > 0
+    ? latestInviteByPipeline(await prisma.rpa_assessment_invites.findMany({
+        where: { pipeline_id: { in: assessmentPipelineIds } },
+        orderBy: { sent_at: 'desc' },
+        select: { pipeline_id: true, sent_at: true, deadline_at: true, withdrawn_at: true },
+      }))
+    : new Map();
 
   // Referral flags for the board chip, one lookup keyed by cv_id.
   //
@@ -448,6 +461,9 @@ export async function listPipeline(filters = {}) {
       && j.current_stage_status === 'in_progress'
       && scheduledKeys.has(`${j.id}:${j.current_stage_key}`);
     const assessmentPending = j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress' && !assessmentResultPipelineIds.has(String(j.id));
+    const invite = assessmentPending
+      ? assessmentInviteState(latestInvites.get(String(j.id)) || null, false, new Date(now))
+      : null;
 
     return {
       id: Number(j.id),
@@ -464,6 +480,11 @@ export async function listPipeline(filters = {}) {
       invited,
       scheduled,
       assessment_pending: assessmentPending,
+      // N35 — only set while assessment_pending: "Test not sent" /
+      // "Test sent · due <date>" / "Test overdue" on the card.
+      assessment_invite_sent_at: invite?.sent ? invite.sentAt : null,
+      assessment_due_at: invite?.sent ? invite.dueAt : null,
+      assessment_overdue: invite?.isOverdue || false,
       final_outcome: j.final_outcome,
       // The requisition this candidate is running against has already been
       // filled. Free to compute — the MRF is loaded with the journey above —
@@ -2553,6 +2574,53 @@ export async function getPipelineAnalytics({
     timeToHire,
     vendorPerformance: vendorPerformanceTop,
     sourceOfHire,
+  };
+}
+
+/**
+ * Analytics "Positions" tab (N39): one row per requisition — opened, days
+ * open, candidates at each stage, offers, joined, joining ratio, closure.
+ *
+ * Lists every MRF that was approved (open or closed) plus any other MRF that
+ * has candidates in the pipeline, so nothing with a journey is hidden. The
+ * counting is positionsOverview() (pipelineAnalytics.helpers.js), kept pure so
+ * it is unit-tested.
+ *
+ * @returns {Promise<{ stages: Array<{ stage_key: string, label: string }>, rows: Array }>}
+ */
+export async function getPositionsOverview() {
+  const [stages, journeys] = await Promise.all([
+    prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } }),
+    prisma.rpa_candidate_pipeline.findMany({
+      where: { mrf_id: { not: null } },
+      select: {
+        id: true,
+        mrf_id: true,
+        current_stage_key: true,
+        current_stage_status: true,
+        final_outcome: true,
+        rpa_offers: { select: { candidate_decision: true } },
+        rpa_pipeline_stage_events: { select: { event_type: true, stage_key: true }, orderBy: { created_at: 'asc' } },
+      },
+    }),
+  ]);
+  const journeyMrfIds = [...new Set(journeys.map((j) => String(j.mrf_id)))].map((k) => BigInt(k));
+  const mrfs = await prisma.rpa_mrf.findMany({
+    where: {
+      OR: [
+        { approval_status: { in: ['approved', 'completed', LEGACY_MRF_CLOSED_STATUS] } },
+        ...(journeyMrfIds.length ? [{ id: { in: journeyMrfIds } }] : []),
+      ],
+    },
+    select: {
+      id: true, position_hiring_for: true, number_of_positions: true, created_at: true, decided_at: true,
+      filled_at: true, closed_at: true, closure_reason: true, paused_at: true, approval_status: true,
+    },
+    orderBy: { id: 'desc' },
+  });
+  return {
+    stages: stages.map((s) => ({ stage_key: s.stage_key, label: s.label })),
+    rows: positionsOverview(journeys, mrfs, stages),
   };
 }
 

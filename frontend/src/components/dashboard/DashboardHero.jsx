@@ -1,6 +1,6 @@
 /**
  * DashboardHero — the "wow" header: animated gradient-mesh background, greeting with a
- * live clock/pulse, the primary CTAs, and the global controls (date-range, role filter,
+ * live clock/pulse, the primary CTAs, and the global controls (date-range, MRF filter,
  * ⌘K command palette trigger). Presentational — all state is owned by the page.
  *
  * Under Design V2 (`.ats-v2`) this is the flagship glass surface: the mesh below gains a
@@ -13,6 +13,7 @@ import { Button, Select, Segmented, Space, Typography, Tooltip } from 'antd';
 import { PlusOutlined, FilterOutlined, ThunderboltOutlined, SearchOutlined } from '@ant-design/icons';
 import AapnaLogo from '../common/AapnaLogo';
 import MetricInfo from '../common/MetricInfo';
+import { mrfOptionLabel } from '../../utils/mrfLabel';
 
 const { Title, Text } = Typography;
 
@@ -32,9 +33,9 @@ export default function DashboardHero({
   onScreen,
   rangeDays,
   onRangeChange,
-  role,
-  onRoleChange,
-  roles = [],
+  mrfId,
+  onMrfChange,
+  mrfOptions = [],
   onOpenCommand,
 }) {
   const [now, setNow] = useState(new Date());
@@ -43,15 +44,17 @@ export default function DashboardHero({
     return () => clearInterval(id);
   }, []);
 
-  const roleOptions = [
-    { value: '', label: 'All roles' },
-    ...roles
-      .map((r) => {
-        const label = r?.role_name || r?.PositionApplied || r?.name || r?.label || (typeof r === 'string' ? r : '');
-        return label ? { value: label, label } : null;
-      })
-      .filter(Boolean),
+  // N36: one entry per open MRF, labelled as in Screening (role · MRF-41 ·
+  // date, "Latest" on the newest of a name). The old list read a field the API
+  // never sent, so it only ever offered "All roles".
+  const mrfSelectOptions = [
+    { value: '', label: 'All MRFs' },
+    ...mrfOptions.map((r) => ({
+      value: String(r.id),
+      label: `${mrfOptionLabel(r, { openings: false })}${r.isLatest ? ' · Latest' : ''}`,
+    })),
   ];
+  const selected = mrfOptions.find((r) => String(r.id) === String(mrfId || ''));
 
   return (
     <div className="dash-hero">
@@ -82,7 +85,7 @@ export default function DashboardHero({
           </Title>
           <Text className="dash-hero__subtitle">
             Here's what's happening across your recruitment pipeline ·{' '}
-            <Tooltip title={`Your local time — ${now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })}. Everything on this page is counted in this timezone.`}>
+            <Tooltip title={`Your local time — ${now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })}. Days on this page are counted in India time (IST).`}>
               <span className="mono">
                 {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
               </span>
@@ -133,7 +136,7 @@ export default function DashboardHero({
               lifetime totals and stay put, which otherwise looks like the control is
               broken. Each period option is labelled in full — "7d" alone is jargon. */}
           <Space size={10} wrap className="dash-hero__filters">
-            <Tooltip title="Choose the period the graphs cover. Every card graph and Hiring Trends updates; the big totals on the cards are lifetime figures and stay the same.">
+            <Tooltip title="Choose the period the graphs cover. Every card graph, Hiring Trends, Talent Insights and the shortlist rate update; the big totals on the cards are lifetime figures and stay the same.">
               <span className="dash-hero__filter-label">
                 Period <MetricInfo metric="dateRange" size={11} />
               </span>
@@ -147,21 +150,24 @@ export default function DashboardHero({
                 { label: <Tooltip title="Show the last 90 days">90d</Tooltip>, value: 90 },
               ]}
             />
-            <Tooltip title={role
-              ? `Showing ${role} only. The graphs on this page cover just this role — clear it to see all roles again.`
-              : 'Narrow every graph on this page to a single role. The card totals cover all roles either way.'}>
+            <Tooltip title={selected
+              ? `Showing ${selected.role} (${selected.ref}). Shortlisted and the pipeline graph follow this MRF; candidates added are matched on the role they applied for. Clear it to see everything again.`
+              : 'Narrow the page to one MRF. Total Candidates, Active MRFs and the funnel cover everything either way.'}>
               <Select
-                value={role || ''}
-                onChange={onRoleChange}
-                options={roleOptions}
-                style={{ minWidth: 180 }}
+                value={mrfId ? String(mrfId) : ''}
+                onChange={(v) => onMrfChange(v || null)}
+                options={mrfSelectOptions}
+                style={{ minWidth: 220, maxWidth: 360 }}
+                popupMatchSelectWidth={false}
                 showSearch
                 optionFilterProp="label"
-                placeholder="Filter by role"
-                aria-label="Filter the dashboard graphs by role"
+                placeholder="Filter by MRF"
+                aria-label="Filter the dashboard by MRF"
+                data-testid="dashboard-mrf-filter"
                 suffixIcon={<ThunderboltOutlined style={{ color: 'var(--gold)' }} />}
               />
             </Tooltip>
+            <MetricInfo metric="roleFilter" size={11} />
           </Space>
         </div>
       </div>

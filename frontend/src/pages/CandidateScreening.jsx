@@ -86,6 +86,18 @@ const formatNotice = (c) => {
   return /^\d+(\.\d+)?$/.test(raw) ? `${raw} days notice` : `${raw} notice`;
 };
 
+/**
+ * "Added within" choices, shared by the Keyword and JD tabs (N38). The backend
+ * caches JD results only for these values (utils/screeningCacheKeys.js).
+ */
+const ADDED_WITHIN_OPTIONS = [
+  { value: 7, label: 'Last 7 days' },
+  { value: 10, label: 'Last 10 days' },
+  { value: 15, label: 'Last 15 days' },
+  { value: 30, label: 'Last 1 month' },
+  { value: 90, label: 'Last 3 months' },
+];
+
 /** Education filter checkboxes, grouped by the kind of role they suit. */
 const EDUCATION_FILTER_GROUPS = [
   {
@@ -401,8 +413,10 @@ export default function CandidateScreening() {
   const [roleDetails, setRoleDetails] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Per-role candidates (JD tab) — cached per role so revisiting the page keeps results.
-  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd');
+  // N38: "Added within" on the JD tab — only candidates added in the last N days.
+  const [jdAddedWithin, setJdAddedWithin] = useState(null);
+  // Per-role candidates (JD tab) — cached per role (and window) so revisiting the page keeps results.
+  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd', jdAddedWithin);
 
   // ── Candidates List State ──
   const [candidates, setCandidates] = useState([]);
@@ -627,8 +641,8 @@ export default function CandidateScreening() {
   // and write the fresh result into the query cache so the UI updates.
   const forceReloadRoleCandidates = async () => {
     if (!selectedRoleId) return;
-    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true });
-    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), res);
+    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true, addedWithinDays: jdAddedWithin });
+    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin), res);
   };
 
   /* ═══════ REFRESH (roles + current candidates) ═══════ */
@@ -738,7 +752,7 @@ export default function CandidateScreening() {
       // The JD list is sourced from the react-query cache (sync effect
       // above), so patch the cached axios envelope; the effect then
       // refreshes the local render state.
-      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId), (prev) => {
+      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin), (prev) => {
         const payload = prev?.data?.data ?? prev?.data;
         if (!payload?.candidates) return prev;
         const updated = { ...payload, candidates: updater(payload.candidates) };
@@ -1194,13 +1208,28 @@ export default function CandidateScreening() {
                             />
                           </Tooltip>
                         </Space.Compact>
-                        <Checkbox
-                          checked={includeClosedMrfs}
-                          onChange={(e) => setIncludeClosedMrfs(e.target.checked)}
-                          style={{ marginTop: 4 }}
-                        >
-                          Include closed MRFs
-                        </Checkbox>
+                        <Space wrap size={16} style={{ marginTop: 4 }}>
+                          <Checkbox
+                            checked={includeClosedMrfs}
+                            onChange={(e) => setIncludeClosedMrfs(e.target.checked)}
+                          >
+                            Include closed MRFs
+                          </Checkbox>
+                          <Tooltip title="Only candidates added to the database in this period. Candidates with no added date are left out while this is set.">
+                            <Space size={6}>
+                              <Text type="secondary" style={{ fontSize: 13 }}>Added within</Text>
+                              <Select
+                                value={jdAddedWithin}
+                                onChange={(v) => { setJdAddedWithin(v ?? null); setCurrentPage(1); setSelectedCandidateKeys([]); }}
+                                options={ADDED_WITHIN_OPTIONS}
+                                placeholder="Any time"
+                                allowClear
+                                style={{ width: 150 }}
+                                data-testid="jd-added-within"
+                              />
+                            </Space>
+                          </Tooltip>
+                        </Space>
                         {selectedRoleClosed && (
                           <Alert
                             type="warning"
@@ -1493,12 +1522,7 @@ export default function CandidateScreening() {
                           size="large"
                           placeholder="Any time"
                           allowClear
-                          options={[
-                            { value: 7, label: 'Last 7 days' },
-                            { value: 15, label: 'Last 15 days' },
-                            { value: 30, label: 'Last 30 days' },
-                            { value: 90, label: 'Last 90 days' },
-                          ]}
+                          options={ADDED_WITHIN_OPTIONS}
                         />
                       </Form.Item>
                     </Col>
@@ -1607,7 +1631,7 @@ export default function CandidateScreening() {
                       cards have no room for. The server re-runs the search. */}
                   <ExportButton
                     request={(cfg) => (activeTab === 'jd'
-                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg)
+                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg, jdAddedWithin)
                       : screeningService.exportKeywordCandidates(lastKeywordPayload || {}, cfg))}
                     fallbackName={activeTab === 'jd'
                       ? 'AAPNA-ATS_Screening-Results.csv'
@@ -1629,21 +1653,23 @@ export default function CandidateScreening() {
               )}
               {summary.mode !== 'lookup' && (activeTab === 'jd'
                 ? [
-                    { label: '5★', value: summary.fiveStar || 0, color: 'var(--kpi-c)' },
-                    { label: '4★', value: summary.fourStar || 0, color: 'var(--kpi-a)' },
-                    { label: '3★', value: summary.threeStar || 0, color: 'var(--warning)' },
+                    { label: '5★', value: summary.fiveStar || 0, color: 'var(--kpi-c)', hint: 'Excellent match: ranking score 9 or more out of 10.' },
+                    { label: '4★', value: summary.fourStar || 0, color: 'var(--kpi-a)', hint: 'Strong match: ranking score 7 to 8.9.' },
+                    { label: '3★', value: summary.threeStar || 0, color: 'var(--warning)', hint: 'Moderate match: ranking score 5 to 6.9.' },
                   ]
                 : [
-                    { label: 'Strong', value: summary.high || 0, color: 'var(--kpi-c)' },
-                    { label: 'Moderate', value: summary.medium || 0, color: 'var(--kpi-a)' },
-                    { label: 'Weak', value: summary.low || 0, color: 'var(--warning)' },
+                    { label: 'Strong', value: summary.high || 0, color: 'var(--kpi-c)', hint: 'Strong match: 4 or 5 stars (score 7 or more out of 10).' },
+                    { label: 'Moderate', value: summary.medium || 0, color: 'var(--kpi-a)', hint: 'Moderate match: 3 stars (score 5 to 6.9).' },
+                    { label: 'Weak', value: summary.low || 0, color: 'var(--warning)', hint: 'Weak match: 1 or 2 stars (score below 5).' },
                   ]
               ).map((s) => (
-                <span key={s.label} className="screening-stat-chip">
-                  <span className="dot" style={{ background: s.color }} />
-                  {s.label}
-                  <span style={{ color: 'var(--text)', fontWeight: 800 }}>{s.value}</span>
-                </span>
+                <Tooltip key={s.label} title={s.hint}>
+                  <span className="screening-stat-chip">
+                    <span className="dot" style={{ background: s.color }} />
+                    {s.label}
+                    <span style={{ color: 'var(--text)', fontWeight: 800 }}>{s.value}</span>
+                  </span>
+                </Tooltip>
               ))}
             </div>
           </div>

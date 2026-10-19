@@ -23,6 +23,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import { roleCacheKeyV2, isCacheableRecency } from '../utils/screeningCacheKeys.js';
 import redis from '../config/redis.js';
 import AppError from '../utils/AppError.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
@@ -552,8 +553,8 @@ export async function searchKeywordCandidatesV2(body) {
 const ROLE_CACHE_TTL = 3600;
 const INSIGHT_TTL = 7 * 24 * 3600;
 
-/** Redis key of the cached V2 JD result for one MRF. Cleared on MRF edit and close. */
-export const roleCacheKeyV2 = (mrfId) => `screening:role:v2:${mrfId}`;
+/** Redis key of the cached V2 JD result for one MRF (and "Added within" value). Cleared on MRF edit and close. */
+export { roleCacheKeyV2 };
 
 /**
  * AI insights per MRF and candidate. Never the shared ai_profile_insights
@@ -648,10 +649,14 @@ async function insightsForTop(mrfId, roleContext, top) {
  * @param {number} mrfId
  * @param {boolean} [force=false] - skip the cache
  */
-export async function searchRoleCandidatesV2(mrfId, force = false) {
+export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null } = {}) {
   const t0 = Date.now();
-  const cacheKey = roleCacheKeyV2(mrfId);
-  if (!force) {
+  // N38 "Added within": same parser and SQL as keyword search. Each offered
+  // value has its own cache entry; any other value is computed fresh.
+  const recencyDays = parseScreeningFilters({ addedWithinDays }).addedWithinDays;
+  const cacheable = isCacheableRecency(recencyDays);
+  const cacheKey = roleCacheKeyV2(mrfId, recencyDays);
+  if (!force && cacheable) {
     try {
       const cached = await redis.get(cacheKey);
       if (cached) {
@@ -756,6 +761,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false) {
     expMin: band.min,
     expMax: band.max,
     ctcMax: budgetMax,
+    addedWithinDays: recencyDays,
   };
   const byKey = Object.fromEntries(buildFilterConditions(f, 'c').map((cond) => [cond.key, cond]));
   const eduSql = educationGateSql(eduReq, 'c');
@@ -770,6 +776,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false) {
     eduSql ? { key: 'education', sql: Prisma.sql`COALESCE((${eduSql}), false)` } : null,
     byKey.ctc || null,
     byKey.experience,
+    byKey.addedWithin || null,
   ].filter(Boolean);
   const keys = [...cheapConds.map((cond) => cond.key), 'skills'];
 
@@ -924,6 +931,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false) {
   detail.push(`of those, ${fmt(passedSkillGate)} have all ${mandatory.skills.length} mandatory skill${mandatory.skills.length === 1 ? '' : 's'}`);
   if (budgetMax == null) detail.push('no budget on this MRF, CTC not checked');
   if (!eduReq) detail.push('no education requirement on this MRF');
+  if (recencyDays != null) detail.push(`only candidates added in the last ${recencyDays} days`);
   const summaryDetail = detail.join(' · ');
   const summaryText = `${candidates.length} matched (${summaryDetail})`;
 
@@ -950,13 +958,14 @@ export async function searchRoleCandidatesV2(mrfId, force = false) {
       oneStar: countByStars[1],
       summaryText,
       summaryDetail,
+      addedWithinDays: recencyDays,
       aiUnavailable,
       timings: { t_embed: tEmbed, t_sql: tSql, t_ai: tAi, t_total: tTotal },
     },
   };
 
   try {
-    await redis.set(cacheKey, JSON.stringify(payload, bigintSafe), 'EX', ROLE_CACHE_TTL);
+    if (cacheable) await redis.set(cacheKey, JSON.stringify(payload, bigintSafe), 'EX', ROLE_CACHE_TTL);
   } catch (err) {
     logger.warn(`[screening:v2] JD cache write skipped: ${err.message}`);
   }

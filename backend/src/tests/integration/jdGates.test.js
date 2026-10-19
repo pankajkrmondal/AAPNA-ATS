@@ -228,3 +228,24 @@ describe('MRF lookup', () => {
     await assert.rejects(searchRoleCandidatesV2(999999999, true), (err) => err.statusCode === 404);
   });
 });
+
+describe('N38 — "Added within" on JD search', () => {
+  test('a 15-day window keeps the recent passer and drops the one added 20 days ago', async () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    await prisma.rpa_cv.update({ where: { id: cvId.Q }, data: { createdAt: twentyDaysAgo } });
+    try {
+      const all = await searchRoleCandidatesV2(Number(mrfId.main), true);
+      assert.equal(sorted(letters(all)), 'PQ', 'no window: both passers');
+
+      const recent = await searchRoleCandidatesV2(Number(mrfId.main), true, { addedWithinDays: 15 });
+      assert.equal(sorted(letters(recent)), 'P');
+      assert.equal(recent.summary.addedWithinDays, 15);
+      assert.match(recent.summary.summaryText, /added in the last 15 days/);
+
+      const wide = await searchRoleCandidatesV2(Number(mrfId.main), true, { addedWithinDays: 30 });
+      assert.equal(sorted(letters(wide)), 'PQ', '30 days reaches back past Q');
+    } finally {
+      await prisma.rpa_cv.update({ where: { id: cvId.Q }, data: { createdAt: new Date() } });
+    }
+  });
+});

@@ -1,7 +1,7 @@
 /**
  * Dashboard — recruiter command centre.
  *
- * Built frontend-only on existing endpoints (see useDashboardData). Composed as four
+ * Numbers are counted on the server (see useDashboardData, N36). Composed as four
  * bands, each a 24-column row: COMMAND (hero) · SIGNAL (four uniform KPIs) ·
  * ANALYSIS (trends, action queue, funnel, talent, agenda) · ACTIVITY (recruiter
  * breakdown, live feed, latest uploads, quick actions).
@@ -15,9 +15,9 @@
  * for the recruiter reading the screen — no endpoint paths, no table or column names,
  * no roadmap notes. See the header of that file.
  *
- * THE GLOBAL FILTERS (range + role, both owned here) reach every graph on the page:
- * the four KPI card sparklines, Hiring Trends, and Talent Insights. They deliberately
- * do NOT change the KPI headline numbers, which are lifetime totals from the server —
+ * THE GLOBAL FILTERS (range + MRF, both owned here) reach every graph on the page:
+ * the four KPI card sparklines, Hiring Trends, and Talent Insights. The range does
+ * NOT change the KPI headline numbers, which are lifetime totals from the server —
  * so each card's footnote and hover text say which period they are describing, and the
  * range control's own tooltip says the totals stay put. A filter that silently moves
  * some numbers and not others is worse than one that explains itself.
@@ -40,18 +40,12 @@ import {
   CheckCircleOutlined,
   ArrowRightOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import useAuth from '../hooks/useAuth';
 import useBrand from '../hooks/useBrand';
 import useDashboardData from '../hooks/useDashboardData';
 import useLiveActivity from '../hooks/useLiveActivity';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
-import {
-  sparkPoints,
-  cumulativePoints,
-  sampleCoversWindow,
-  periodOverPeriod,
-} from '../utils/dashboardAggregations';
+import { toPoints, runningTotal } from '../utils/dashboardAggregations';
 
 import StatCard from '../components/common/StatCard';
 import DashboardHero from '../components/dashboard/DashboardHero';
@@ -61,7 +55,8 @@ import TopRolesSkillsCard from '../components/dashboard/TopRolesSkillsCard';
 import RecruiterBreakdownCard from '../components/dashboard/RecruiterBreakdownCard';
 import ActionCenterCard from '../components/dashboard/ActionCenterCard';
 import LiveActivityFeed from '../components/dashboard/LiveActivityFeed';
-import UpcomingInterviews from '../components/dashboard/UpcomingInterviews';
+import UpcomingInterviews, { isTodayIst } from '../components/dashboard/UpcomingInterviews';
+import DefinitionsUpdatedNote from '../components/dashboard/DefinitionsUpdatedNote';
 import LatestUploads from '../components/dashboard/LatestUploads';
 import CommandPalette from '../components/dashboard/CommandPalette';
 
@@ -93,16 +88,16 @@ export default function Dashboard() {
   const pageRef = useRef(null);
   usePointerSpotlight(pageRef);
 
-  // ── Advanced data (existing endpoints, parallel) + live socket feed ──
-  const {
-    stats, funnel, candidates: aggCandidates, pendingMrfs, pipeline, roles,
-    recruiterBreakdown, loading: statsLoading,
-  } = useDashboardData();
-  const { events: liveEvents, reviewCount } = useLiveActivity();
-
   // ── Global filters ──
   const [rangeDays, setRangeDays] = useState(30);
-  const [role, setRole] = useState('');
+  const [mrfId, setMrfId] = useState(null);
+
+  // ── Server-counted data + live socket feed ──
+  const {
+    stats, funnel, trends, upcoming, mrfOptions,
+    recruiterBreakdown, loading: statsLoading,
+  } = useDashboardData({ rangeDays, mrfId });
+  const { events: liveEvents, reviewCount } = useLiveActivity();
 
   // ── ⌘K command palette ──
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -117,113 +112,57 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // The dashboard's own paginated candidate fetch is gone: it duplicated
-  // /candidates (worse — no search, no filters) and ran a second query on every
-  // visit for decoration. LatestUploads now shows five rows from the purpose-built
-  // /dashboard/recent-uploads endpoint and links to the real records surface.
-
   // Module permission check (admins bypass)
   const isModuleEnabled = (moduleKey) => {
     if ((user?.role || '').toLowerCase() === 'admin') return true;
     return (user?.permissions || []).includes(moduleKey);
   };
 
-  // ── Normalize the aggregation batch (tolerate mapped OR raw DB field names) ──
-  const normCandidates = useMemo(
-    () => aggCandidates.map((c) => ({
-      position: c.position || c.PositionApplied || '',
-      skills: c.skills ?? c.Top5KeySkills ?? [],
-      createdAt: c.createdAt || c.created_at || c.CreatedAt,
-    })),
-    [aggCandidates],
-  );
+  // The MRF picked in the filter, for wording. `stats.mrf` echoes what the
+  // server actually applied; the option list has the reference and date.
+  const selectedMrf = mrfOptions.find((r) => String(r.id) === String(mrfId || '')) || null;
+  const mrfName = selectedMrf ? `${selectedMrf.role} (${selectedMrf.ref})` : (stats.mrf ? `${stats.mrf.role} (MRF-${stats.mrf.id})` : '');
 
-  // Apply the role filter for the trend & talent widgets
-  const filteredCandidates = useMemo(() => {
-    if (!role) return normCandidates;
-    const r = role.toLowerCase();
-    return normCandidates.filter((c) => (c.position || '').toLowerCase() === r);
-  }, [normCandidates, role]);
-
-  // Daily series over the SELECTED window, from the role-filtered set — see the KPI
-  // note below for why both of those matter.
-  const addedPoints = useMemo(
-    () => sparkPoints(filteredCandidates, rangeDays),
-    [filteredCandidates, rangeDays],
-  );
-  const addedInRange = useMemo(
-    () => addedPoints.reduce((a, p) => a + p.value, 0),
-    [addedPoints],
-  );
-  const wow = useMemo(
-    () => periodOverPeriod(filteredCandidates, rangeDays),
-    [filteredCandidates, rangeDays],
-  );
+  // Daily series over the SELECTED window, counted on the server (N36) — every
+  // candidate, not a 200-row sample.
+  const addedPoints = useMemo(() => toPoints(trends.added?.daily), [trends]);
+  const addedInRange = trends.added?.total || 0;
+  const mrfPoints = useMemo(() => toPoints(trends.mrfsRaised?.daily), [trends]);
+  const shortlistPoints = useMemo(() => toPoints(trends.enteredPipeline?.daily), [trends]);
 
   // Action-center derived counts
   const awaitingScreening = Math.max(0, (funnel.sourced || 0) - (funnel.aiScreened || 0));
-  const interviewsToday = useMemo(() => {
-    const tk = dayjs().format('YYYY-MM-DD');
-    return (pipeline || []).filter(
-      (r) => r.interview_start_at && dayjs(r.interview_start_at).format('YYYY-MM-DD') === tk,
-    ).length;
-  }, [pipeline]);
+  const interviewsToday = useMemo(() => (upcoming || []).filter((r) => isTodayIst(r.startAt)).length, [upcoming]);
 
   /** KPI cards — UNIFORM anatomy: icon, delta chip, label, value, footnote, sparkline.
    *
-   *  Every card carries a REAL series over the SELECTED window, derived from a batch
-   *  this page already fetches. Two things about that are load-bearing:
+   *  Every card carries a REAL series over the SELECTED window. Two things about
+   *  that are load-bearing:
    *
-   *  1. THE GRAPHS FOLLOW THE FILTERS. They used to be pinned to `sparkSeries(…, 7)`
-   *     on the unfiltered candidate list, so moving the range control between 7d/30d/
-   *     90d or picking a role changed the chart below and left all four card graphs
-   *     sitting there identical. A control that visibly does nothing reads as a broken
-   *     page. Range and role now flow into every series, delta and footnote here.
-   *  2. NO TWO CARDS DRAW THE SAME LINE. Total Candidates and Today's Uploads were
-   *     handed the same array — literally the same variable — so half the row was a
-   *     duplicate. Total Candidates now plots the running TOTAL (the headline number's
-   *     own history), which is what that card's line should have been all along.
+   *  1. THE GRAPHS FOLLOW THE FILTERS. Range and MRF flow into every series,
+   *     delta and footnote here.
+   *  2. NO TWO CARDS DRAW THE SAME LINE. Total Candidates plots the running TOTAL
+   *     (the headline number's own history); Today's Uploads plots the daily rate.
    *
-   *  That running total is only truthful when the sample reaches back past the start
-   *  of the window and no role filter is narrowing it against an all-roles total, so
-   *  it falls back to the per-day rate when either fails. Whichever it is, the card's
-   *  `chart` sentence says so in words rather than leaving the reader to guess. */
-  const mrfPoints = useMemo(() => {
-    const rows = (pendingMrfs || [])
-      .filter((m) => !role || (m.role || '').toLowerCase() === role.toLowerCase())
-      .map((m) => ({ createdAt: m.created_at || m.createdAt }));
-    return sparkPoints(rows, rangeDays);
-  }, [pendingMrfs, rangeDays, role]);
-
-  const shortlistPoints = useMemo(() => {
-    const rows = (pipeline || [])
-      .filter((p) => !role || (p.job_title || p.role || '').toLowerCase() === role.toLowerCase())
-      .map((p) => ({ createdAt: p.created_at || p.createdAt || p.modified_at }));
-    return sparkPoints(rows, rangeDays);
-  }, [pipeline, rangeDays, role]);
-
-  // Running total for the Total Candidates card — see the note above for the guards.
-  const totalIsCumulative = !role && sampleCoversWindow(normCandidates, rangeDays);
+   *  The running total is only truthful when no MRF is narrowing the daily counts
+   *  against an all-roles total, so it falls back to the per-day rate then. The
+   *  card's `chart` sentence says which it is. */
+  const totalIsCumulative = !mrfId;
   const totalPoints = useMemo(
-    () => (totalIsCumulative
-      ? cumulativePoints(normCandidates, rangeDays, stats.totalCandidates)
-      : addedPoints),
-    [totalIsCumulative, normCandidates, rangeDays, stats.totalCandidates, addedPoints],
+    () => (totalIsCumulative ? runningTotal(trends.added?.daily, stats.totalCandidates) : addedPoints),
+    [totalIsCumulative, trends, stats.totalCandidates, addedPoints],
   );
 
-  const shortlistRate = funnel.sourced
-    ? Math.round((stats.shortlisted / funnel.sourced) * 100)
-    : null;
+  const shortlistRate = stats.period?.shortlistRate ?? null;
 
   /** One phrasing of the selected period, so every footnote and hover on the row
    *  describes it in the same words. */
   const rangeLabel = `the last ${rangeDays} days`;
-  /** Appended ONLY to figures that are genuinely role-filtered. The counts that come
-   *  from the server (open requisitions, shortlist rate) cover all roles whatever the
-   *  picker says, and labelling them "Java Developer only" would be a plain untruth —
-   *  they carry "all roles" instead so the difference is visible rather than implied. */
-  const roleSuffix = role ? ` · ${role} only` : '';
-  const allRolesSuffix = role ? ' · all roles' : '';
+  /** Appended ONLY to figures the MRF filter actually narrows. Lifetime totals
+   *  cover everything whatever the picker says, and carry "all MRFs" instead. */
+  const mrfSuffix = mrfName ? ` · ${mrfName}` : '';
+  const allSuffix = mrfName ? ' · all MRFs' : '';
+  const roleMatchNote = mrfName ? ' (matched on the role candidates applied for)' : '';
 
   const kpiCards = [
     {
@@ -232,18 +171,18 @@ export default function Dashboard() {
       value: stats.totalCandidates,
       icon: <TeamOutlined />,
       color: '#7a922e',
-      delta: wow.deltaPct !== null
+      delta: trends.added?.deltaPct !== null && trends.added?.deltaPct !== undefined
         ? {
-          value: wow.deltaPct,
-          label: `${wow.current} added in ${rangeLabel}, against ${wow.previous} in the ${rangeDays} days before that`,
+          value: trends.added.deltaPct,
+          label: `${addedInRange} added in ${rangeLabel}, against ${trends.added.previousTotal} in the ${rangeDays} days before that${roleMatchNote}`,
         }
         : null,
-      footnote: `${addedInRange.toLocaleString()} added in ${rangeLabel}${roleSuffix}`,
+      footnote: `${addedInRange.toLocaleString()} added in ${rangeLabel}${mrfSuffix}`,
       sparklineData: totalPoints,
       sparklineUnit: totalIsCumulative ? 'candidates in total' : 'added',
       chart: totalIsCumulative
         ? `How the total has grown day by day over ${rangeLabel}.`
-        : `New candidates added per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above covers all roles and all time.`,
+        : `New candidates added per day over ${rangeLabel}, for ${mrfName}${roleMatchNote}. The number above covers everything.`,
     },
     {
       metric: 'activeMRFs',
@@ -251,10 +190,10 @@ export default function Dashboard() {
       value: stats.activeMRFs,
       icon: <FileTextOutlined />,
       color: '#2563eb',
-      footnote: `${stats.pendingApprovalMRFs} awaiting approval${allRolesSuffix}`,
+      footnote: `${stats.pendingApprovalMRFs} awaiting approval${allSuffix}`,
       sparklineData: mrfPoints,
       sparklineUnit: 'raised',
-      chart: `New requisitions raised per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above is every open requisition, however old.`,
+      chart: `New requisitions raised per day over ${rangeLabel}${mrfName ? `, with the same role name as ${mrfName}` : ''}. The number above is every open requisition, however old.`,
     },
     {
       metric: 'todayUploads',
@@ -262,10 +201,10 @@ export default function Dashboard() {
       value: stats.todayUploads,
       icon: <CalendarOutlined />,
       color: '#d97706',
-      footnote: `${addedInRange.toLocaleString()} in ${rangeLabel}${roleSuffix}`,
+      footnote: `${addedInRange.toLocaleString()} in ${rangeLabel}${mrfSuffix}`,
       sparklineData: addedPoints,
       sparklineUnit: 'uploaded',
-      chart: `Uploads per day over ${rangeLabel}${role ? `, for ${role}` : ''}, so today reads in context.`,
+      chart: `Uploads per day over ${rangeLabel}${mrfName ? `, for ${mrfName}${roleMatchNote}` : ''}, so today reads in context.`,
     },
     {
       metric: 'shortlisted',
@@ -273,10 +212,12 @@ export default function Dashboard() {
       value: stats.shortlisted,
       icon: <CheckCircleOutlined />,
       color: '#16a34a',
-      footnote: shortlistRate !== null ? `${shortlistRate}% of sourced${allRolesSuffix}` : 'of all sourced candidates',
+      footnote: shortlistRate !== null
+        ? `In the pipeline now${mrfSuffix} · ${shortlistRate}% shortlist rate, ${rangeLabel}`
+        : `In the pipeline now${mrfSuffix}`,
       sparklineData: shortlistPoints,
       sparklineUnit: 'entered the pipeline',
-      chart: `Candidates entering the interview pipeline per day over ${rangeLabel}${role ? `, for ${role}` : ''}. The number above is everyone currently shortlisted.`,
+      chart: `Candidates entering the interview pipeline per day over ${rangeLabel}${mrfName ? `, for ${mrfName}` : ''}. The number above is everyone in the pipeline right now (not yet closed).`,
     },
   ];
 
@@ -320,11 +261,13 @@ export default function Dashboard() {
         onScreen={() => navigate('/filtering')}
         rangeDays={rangeDays}
         onRangeChange={setRangeDays}
-        role={role}
-        onRoleChange={setRole}
-        roles={roles}
+        mrfId={mrfId}
+        onMrfChange={setMrfId}
+        mrfOptions={mrfOptions}
         onOpenCommand={() => setCmdOpen(true)}
       />
+
+      <DefinitionsUpdatedNote />
 
       {/* ---- SIGNAL BAND: four KPIs, identical anatomy ---- */}
       <Row gutter={[20, 20]} className="dash-band">
@@ -359,7 +302,7 @@ export default function Dashboard() {
            their own empty states. */}
       <Row gutter={[20, 20]} className="dash-band">
         <Col xs={24} xl={16}>
-          <HiringTrendsCard candidates={filteredCandidates} rangeDays={rangeDays} role={role} loading={statsLoading} />
+          <HiringTrendsCard daily={trends.added?.daily || []} rangeDays={rangeDays} role={mrfName} loading={statsLoading} />
         </Col>
         <Col xs={24} xl={8}>
           <ActionCenterCard
@@ -374,13 +317,13 @@ export default function Dashboard() {
 
       <Row gutter={[20, 20]} className="dash-band">
         <Col xs={24} lg={12} xl={8}>
-          <ConversionFunnelCard funnel={funnel} pipeline={pipeline} loading={statsLoading} />
+          <ConversionFunnelCard funnel={funnel} timeToHireDays={stats.timeToHireDays} loading={statsLoading} />
         </Col>
         <Col xs={24} lg={12} xl={8}>
-          <TopRolesSkillsCard candidates={filteredCandidates} />
+          <TopRolesSkillsCard roles={trends.topRoles || []} skills={trends.topSkills || []} rangeDays={rangeDays} />
         </Col>
         <Col xs={24} xl={8}>
-          <UpcomingInterviews pipeline={pipeline} onNavigate={navigate} />
+          <UpcomingInterviews items={upcoming} onNavigate={navigate} />
         </Col>
       </Row>
 

@@ -21,6 +21,7 @@ import { emailMatchesSql } from '../utils/emailMatch.js';
 import { matchesQualification, getCandidateEducationCategories } from '../utils/educationCategories.js';
 // Shared with screeningV2.service.js (Phase 3 N01); identical to the local copy it replaced.
 import { splitSkillPhrases, parseScreeningFilters } from '../utils/screeningFilters.js';
+import { roleCacheKey, isCacheableRecency } from '../utils/screeningCacheKeys.js';
 import { firstValidPhone, toIndianE164, maskPhone } from '../utils/phone.js';
 import { companyBlockHtml, jdLinkHtml, phoneConfirmHtml, appendToBody } from '../utils/candidateEmailBlocks.js';
 import { getMrfJdAttachment } from './jdAttachment.service.js';
@@ -458,11 +459,13 @@ export function resolveProfile(insights, candidate) {
 }
 
 export function mapStars(score) {
-  if (score >= 9) return { stars: 5, label: 'Excellent Fit' };
-  if (score >= 7) return { stars: 4, label: 'Strong Candidate' };
-  if (score >= 5) return { stars: 3, label: 'Moderate Fit' };
-  if (score >= 3) return { stars: 2, label: 'Weak Fit' };
-  return { stars: 1, label: 'Poor Fit' };
+  // N35: one wording for both tabs, matching the Strong / Moderate / Weak
+  // chips (Strong = 4–5★, Moderate = 3★, Weak = 1–2★).
+  if (score >= 9) return { stars: 5, label: 'Excellent match' };
+  if (score >= 7) return { stars: 4, label: 'Strong match' };
+  if (score >= 5) return { stars: 3, label: 'Moderate match' };
+  if (score >= 3) return { stars: 2, label: 'Weak match' };
+  return { stars: 1, label: 'Poor match' };
 }
 
 /**
@@ -591,10 +594,13 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
 /**
  * POST /api/screening/roles/:id/search
  */
-export async function searchRoleCandidates(mrfId, force = false) {
+export async function searchRoleCandidates(mrfId, force = false, { addedWithinDays = null } = {}) {
+  // N38 "Added within": validated by the shared parser (whole days, 1–3650).
+  const recencyDays = parseScreeningFilters({ addedWithinDays }).addedWithinDays;
+  const cacheable = isCacheableRecency(recencyDays);
   // Check cache first (skipped on an explicit refresh so fresh results are recomputed)
-  const cacheKey = `screening:role:${mrfId}`;
-  if (!force) {
+  const cacheKey = roleCacheKey(mrfId, recencyDays);
+  if (!force && cacheable) {
     try {
       const cachedData = await redis.get(cacheKey);
       if (cachedData) {
@@ -779,12 +785,15 @@ export async function searchRoleCandidates(mrfId, force = false) {
              WHERE rsc.cv_id = c.id AND rsc.mrf_id = $4::bigint AND rsc.pipeline_status = 'rejected'
                AND rsc.modified_at > $5::timestamp
          )
+         -- N38 "Added within": NULL = no filter; undated rows drop out when set.
+         AND ($6::int IS NULL OR c."createdAt" >= now() - make_interval(days => $6::int))
      ORDER BY distance ASC`,
     vectorStr,
     roleTotalYearsVal,
     budgetMax,
     BigInt(mrfId),
-    rejectionCutoff
+    rejectionCutoff,
+    recencyDays
   );
 
   // Rerank the full candidate pool using Cohere (batched under the hood if needed).
@@ -1022,9 +1031,9 @@ export async function searchRoleCandidates(mrfId, force = false) {
     summary,
   };
 
-  // Cache in Redis
+  // Cache in Redis (only the offered "Added within" values — see screeningCacheKeys.js)
   try {
-    await redis.set(
+    if (cacheable) await redis.set(
       cacheKey,
       JSON.stringify(responsePayload, (k, v) => typeof v === 'bigint' ? Number(v) : v),
       'EX',
@@ -1601,14 +1610,7 @@ export async function searchKeywordCandidates(filters) {
     const avgScore = scores.length > 0 ? parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)) : 6.0;
     const scorePct = Math.round(avgScore * 10);
 
-    let stars;
-    if (avgScore >= 9) stars = 5;
-    else if (avgScore >= 7) stars = 4;
-    else if (avgScore >= 5) stars = 3;
-    else if (avgScore >= 3) stars = 2;
-    else stars = 1;
-
-    const labelMap = { 5: 'Excellent Match', 4: 'Strong Match', 3: 'Moderate Match', 2: 'Weak Fit', 1: 'Poor Fit' };
+    const { stars, label: starLabel } = mapStars(avgScore);
 
     const educationContext = {
       candidate_graduation_degree: c.graduationdegree || null,
@@ -1638,7 +1640,7 @@ export async function searchKeywordCandidates(filters) {
       relevanceScore: {
         scorePct,
         stars,
-        label: labelMap[stars],
+        label: starLabel,
         avgScore,
         filtersApplied: scores.length,
         breakdown,
@@ -1669,10 +1671,11 @@ export async function searchKeywordCandidates(filters) {
       return (b.relevanceScore.evidence || 0) - (a.relevanceScore.evidence || 0);
     });
 
-  // Compute stats
-  const high = filtered.filter((c) => c.relevanceScore.scorePct >= 75).length;
-  const medium = filtered.filter((c) => c.relevanceScore.scorePct >= 50 && c.relevanceScore.scorePct < 75).length;
-  const low = filtered.filter((c) => c.relevanceScore.scorePct < 50).length;
+  // Chip buckets follow the star thresholds, as in screeningV2 (N35): a
+  // 4-star card used to count as "Moderate" here (avg 7.0-7.4).
+  const high = filtered.filter((c) => c.relevanceScore.stars >= 4).length;
+  const medium = filtered.filter((c) => c.relevanceScore.stars === 3).length;
+  const low = filtered.length - high - medium;
 
   const scoreFilteredOut = scoredCandidates.length - filtered.length;
 
@@ -1683,7 +1686,7 @@ export async function searchKeywordCandidates(filters) {
     high,
     medium,
     low,
-    summaryText: `${filtered.length} matched (${scoreFilteredOut} hidden by low score) · ★★★★★ ${high} strong · ★★★ ${medium} moderate · ★ ${low} low`,
+    summaryText: `${filtered.length} matched (${scoreFilteredOut} hidden by low score) · ★★★★ ${high} strong · ★★★ ${medium} moderate · ★ ${low} weak`,
     degraded: keywordDegraded,
     degradedReason: keywordDegradedReason,
   };

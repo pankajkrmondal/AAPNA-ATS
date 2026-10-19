@@ -26,6 +26,20 @@ const pipelineService = {
     return api.get('/pipeline/analytics', { params });
   },
 
+  /** Analytics "Positions" tab: one row per requisition (N39). */
+  getPositionsAnalytics() {
+    return api.get('/pipeline/analytics/positions');
+  },
+
+  /**
+   * The Positions tab as CSV, one column per stage (N39).
+   * @param {'open'|'closed'|'all'} status - the tab's status filter, so the file matches the screen
+   * @param {Object} [config] - blob/timeout config from downloadFile
+   */
+  exportPositionsAnalytics(status = 'all', config = {}) {
+    return api.get('/pipeline/analytics/positions/export', { params: { status }, ...config });
+  },
+
   /**
    * CSV of every journey matching the board filters (no pagination).
    * @param {Object} [filters] - the same params listPipeline takes

@@ -48,29 +48,13 @@ import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
 import { fmtDateTime } from '../utils/dateFormat';
+import { UPLOAD_STATUS_FILTERS, uploadStatusMeta } from '../constants/uploadStatus';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
 
 const PAGE_SIZE = 10; // upload-status jobs table
 
-/** Map a stored status (underscored) to a user-friendly label + AntD tag colour/icon. */
-const STATUS_META = {
-  Uploaded: { label: 'Received', color: 'default', hint: 'Received and queued — parsing hasn’t started yet.' },
-  Queued: { label: 'Waiting in Queue', color: 'blue', icon: <SyncOutlined />, hint: 'Waiting for the background worker to pick it up.' },
-  Processing: { label: 'Processing', color: 'processing', icon: <SyncOutlined spin />, hint: 'Extracting text and parsing the resume with AI.' },
-  Duplicate_Pending_Review: { label: 'Pending Recruiter Review', color: 'warning', icon: <WarningOutlined />, hint: 'Candidate already exists — a recruiter must merge or reject it.' },
-  Missing_Information: { label: 'Awaiting Candidate Details', color: 'orange', icon: <ExclamationCircleOutlined />, hint: 'Saved, but waiting on mandatory candidate details.' },
-  Completed: { label: 'Saved to Database', color: 'success', icon: <CheckCircleOutlined />, hint: 'Saved to the candidate database.' },
-  Failed: { label: 'Processing Failed', color: 'error', icon: <CloseCircleOutlined />, hint: 'Processing failed — you can reprocess it.' },
-  Rejected_By_System: { label: 'Rejected by System', color: 'volcano', icon: <CloseCircleOutlined />, hint: 'No valid email or phone on the resume — rejected; re-upload with at least one.' },
-  Cancelled: { label: 'Rejected by Recruiter', color: 'default', icon: <CloseCircleOutlined />, hint: 'A recruiter rejected this duplicate.' },
-};
-
-const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
-  value: s,
-  label: STATUS_META[s].label,
-}));
 
 /**
  * Statuses a row can still move on from. While any row is in one of these the table
@@ -384,7 +368,7 @@ export default function HRUpload() {
       title: 'Status',
       key: 'status',
       render: (_, r) => {
-        const meta = STATUS_META[r.status] || { label: r.status, color: 'default' };
+        const meta = uploadStatusMeta(r.status);
         return (
           <Tooltip title={meta.hint}>
             <Tag icon={meta.icon} color={meta.color} className={r.action_required ? 'tag-attention' : undefined} style={{ cursor: 'default' }}>{meta.label}</Tag>
@@ -543,7 +527,7 @@ export default function HRUpload() {
         <Space style={{ marginBottom: 16 }} wrap>
           <Select
             allowClear placeholder="Filter by status" style={{ minWidth: 220 }}
-            value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={STATUS_FILTERS}
+            value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={UPLOAD_STATUS_FILTERS}
           />
           <Button
             type={onlyActionRequired ? 'primary' : 'default'}

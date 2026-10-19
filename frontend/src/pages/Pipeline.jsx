@@ -45,6 +45,8 @@ import EmptyState from '../components/common/EmptyState';
 import ErrorState from '../components/common/ErrorState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import { fmtDate, fmtRelative } from '../utils/dateFormat';
+import { cardStatus, progressTooltip, STAGE_DESCRIPTIONS } from '../constants/pipelineLabels';
+import BoardLegend from '../components/pipeline/BoardLegend';
 
 const { Text, Title } = Typography;
 
@@ -82,32 +84,6 @@ const AVATAR_PALETTE = [
 ];
 const initials = (name) => (name || '?').split(' ').filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 const avatarColor = (name) => AVATAR_PALETTE[[...(name || '?')].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVATAR_PALETTE.length];
-
-/**
- * Real card status chip + left-border accent, derived only from fields the
- * backend actually returns — current_stage_status, final_outcome, and (for
- * Zeko stages only) whether a score has synced yet (ready_for_decision).
- * Deliberately a smaller state set than the prototype's 5-chip mock model
- * (pending/invited/await/feedback/hold) since Modules 2/3 (scheduling,
- * scorecards) don't exist yet to honestly support those extra states for
- * non-Zeko stages.
- */
-function cardStatus(card) {
-  if (card.final_outcome) return { label: card.final_outcome.replace(/_/g, ' '), color: 'default', accent: 'var(--status-closed)' };
-  if (card.current_stage_status === 'rejected') return { label: 'Rejected', color: 'red', accent: 'var(--status-rejected)' };
-  if (card.current_stage_status === 'hold') return { label: 'On Hold', color: 'gold', accent: 'var(--status-hold)' };
-  if (card.current_stage_status === 'approved') return { label: 'Approved', color: 'green', accent: 'var(--status-approved)' };
-  if (card.ready_for_decision) return { label: 'Ready for decision', color: 'green', accent: 'var(--status-approved)' };
-  // Technical rounds: a booked interview reads as "Scheduled" (distinct from the
-  // Zeko "Invited"). Both use the same blue accent as the active-but-not-done look.
-  if (card.scheduled) return { label: 'Scheduled', color: 'blue', accent: 'var(--status-active)' };
-  if (card.invited) return { label: 'Invited', color: 'blue', accent: 'var(--status-active)' };
-  // Phase 3 M2 — Evalground bulk-CSV import: no result has landed for this
-  // journey yet. Never expires/clears itself; only an import (or a decision)
-  // moves the card past this state (RT: "test pending" is shown indefinitely).
-  if (card.assessment_pending) return { label: 'Evalground test pending', color: 'gold', accent: 'var(--status-hold)' };
-  return { label: 'In progress', color: 'blue', accent: 'var(--status-active)' };
-}
 
 /**
  * Compact 3-segment progress bar under each card — Invite/Entry, Awaiting
@@ -213,7 +189,7 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
 function CandidateCard({ card, onOpen, flexible = false, stages = [], onMoveRequest }) {
   const status = cardStatus(card);
   const segs = cardProgressSegments(card);
-  const segTooltip = `Invite: ${segs[0].state} · Awaiting: ${segs[1].state} · Results: ${segs[2].state} · Decision: ${segs[3].state}`;
+  const segTooltip = progressTooltip(segs);
   return (
     <Card
       size="small"
@@ -251,7 +227,9 @@ function CandidateCard({ card, onOpen, flexible = false, stages = [], onMoveRequ
             {card.position || 'No position on file'} · {sourceLabel(card)}{card.owner ? ` · ${card.owner}` : ''}
           </Text>
           <Space size={4} wrap style={{ marginBottom: 7 }}>
-            <Tag color={status.color} style={{ fontSize: 11, marginInlineEnd: 0 }}>{status.label}</Tag>
+            <Tooltip title={status.meaning}>
+              <Tag color={status.color} style={{ fontSize: 11, marginInlineEnd: 0 }} data-testid={`card-status-${card.id}`}>{status.label}</Tag>
+            </Tooltip>
             {card.concurrent_journeys > 1 && (
               <Tooltip title="Active on more than one MRF at once (Q13)">
                 <Tag color="purple" icon={<TeamOutlined />} style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.concurrent_journeys} MRFs</Tag>
@@ -562,6 +540,9 @@ function moveCardInBoard(board, cardId, toKey) {
     scheduled: false,
     ready_for_decision: false,
     assessment_pending: toKey === 'assessment',
+    assessment_invite_sent_at: null,
+    assessment_due_at: null,
+    assessment_overdue: false,
   };
   return { ...board, columns: columns.map((c) => (c.stage_key === toKey ? { ...c, cards: [updated, ...c.cards] } : c)) };
 }
@@ -850,6 +831,7 @@ export default function Pipeline() {
         </div>
         <Space size={10}>
           <LastUpdated at={dataUpdatedAt} refreshing={isFetching} />
+          <BoardLegend stages={columns} />
           <Tooltip title="Refresh the board">
             <Button icon={<ReloadOutlined spin={isFetching} />} onClick={refreshBoard} disabled={isFetching}>
               Refresh
@@ -1019,7 +1001,9 @@ export default function Pipeline() {
               size="small"
               title={(
                 <Space size={6}>
-                  <Text style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }} strong>{col.label}</Text>
+                  <Tooltip title={STAGE_DESCRIPTIONS[col.stage_key]}>
+                    <Text style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }} strong>{col.label}</Text>
+                  </Tooltip>
                   {col.is_optional && <Tag style={{ fontSize: 10 }}>optional</Tag>}
                 </Space>
               )}

@@ -48,9 +48,11 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   }
 
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
+  // N38 "Added within" (days); validated by parseScreeningFilters in the service.
+  const opts = { addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null };
   const result = config.screening.v2
-    ? await screeningV2.searchRoleCandidatesV2(mrfId, force)
-    : await screeningService.searchRoleCandidates(mrfId, force);
+    ? await screeningV2.searchRoleCandidatesV2(mrfId, force, opts)
+    : await screeningService.searchRoleCandidates(mrfId, force, opts);
   return success(res, result, 'Role-matched candidates retrieved successfully');
 });
 
@@ -76,7 +78,9 @@ export const exportRoleCandidates = catchAsync(async (req, res) => {
   if (isNaN(mrfId)) {
     throw new AppError('Invalid MRF ID provided.', 400);
   }
-  return runExport(req, res, screeningExport.roleSpec(mrfId));
+  return runExport(req, res, screeningExport.roleSpec(mrfId, {
+    addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
+  }));
 });
 
 /**

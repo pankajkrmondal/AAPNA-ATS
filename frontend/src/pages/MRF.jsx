@@ -169,6 +169,43 @@ const OTHER_DEPENDENTS = {
   good_to_have_skills_other: 'good_to_have_skills',
 };
 
+/**
+ * MRF "raise" status (rpa_mrf_request.mrfstatus) in words, with hover text
+ * (Phase 3 "Do Now", N35). One function for the list column and the drawer,
+ * which used to call the same state "MANAGER SUBMITTED" and "COMPLETED".
+ */
+function mrfRaiseStatus(status) {
+  const s = (status || '').trim().toLowerCase();
+  if (s === 'closed') return { label: 'CLOSED', color: 'default', hint: 'Every opening on this requisition has been filled.' };
+  if (s === 'managersubmitted' || s === 'manager submitted') {
+    return { label: 'MANAGER SUBMITTED', color: 'success', hint: 'The hiring manager has filled in and submitted the full MRF form.' };
+  }
+  if (!s || s === 'pending' || s === 'pendingfromleader') {
+    return { label: 'PENDING', color: 'gold', hint: 'Waiting for the hiring manager to fill in and submit the MRF form.' };
+  }
+  const label = s.toUpperCase();
+  const color = label.includes('MANAGER') || label.includes('COMPLETED') || label.includes('APPROV') ? 'success' : label.includes('REJECT') ? 'error' : 'gold';
+  return { label, color, hint: null };
+}
+
+/** MRF approval status (rpa_mrf.approval_status) in words, with hover text (N35). */
+function mrfApprovalStatus(status) {
+  const s = (status || '').trim().toLowerCase();
+  if (s === 'closed') {
+    // LEGACY only — rows closed before fill state moved to its own column.
+    // Their real approval status was destroyed at closure time and cannot be
+    // recovered; see prisma/ddl/2026-08-11-mrf-filled-at.README.md.
+    return { label: 'CLOSED (legacy)', color: 'default', hint: 'Closed before approval and filling were tracked separately; the original approval result is not known.' };
+  }
+  if (s === 'approved' || s === 'completed') return { label: 'APPROVED', color: 'success', hint: 'Approved. The role appears in JD screening and the pipeline.' };
+  if (s === 'rejected') return { label: 'REJECTED', color: 'error', hint: 'Rejected by an approver. The role is not open for hiring.' };
+  if (!s || s === 'pending' || s === 'waiting') {
+    return { label: s === 'waiting' ? 'WAITING' : 'PENDING', color: 'gold', hint: 'Waiting for an approver’s decision. The approval email has been sent.' };
+  }
+  const label = s.toUpperCase();
+  return { label, color: label.includes('COMPLETE') || label.includes('APPROV') ? 'success' : 'gold', hint: null };
+}
+
 export default function MRF() {
   const { user } = useAuth();
   const isAdminTierUser = ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
@@ -204,61 +241,10 @@ export default function MRF() {
   const [mainMrf, setMainMrf] = useState(null);
   const [mainMrfLoading, setMainMrfLoading] = useState(false);
 
-  const getWorkflowSummaryTags = (record) => {
-    if (!record) return { raise: { label: 'PENDING', color: 'gold' }, approval: { label: 'PENDING', color: 'gold' } };
-    
-    const mrfStatusStr = (record.mrfstatus || '').trim().toLowerCase();
-    let raiseLabel = 'PENDING';
-    let raiseColor = 'gold';
-    if (mrfStatusStr === 'closed') {
-      // Set automatically once every opening on the requisition is filled.
-      raiseLabel = 'CLOSED';
-      raiseColor = 'default';
-    } else if (mrfStatusStr === 'managersubmitted' || mrfStatusStr === 'manager submitted') {
-      raiseLabel = 'COMPLETED';
-      raiseColor = 'success';
-    } else if (mrfStatusStr === 'pending' || mrfStatusStr === 'pendingfromleader') {
-      raiseLabel = 'PENDING';
-      raiseColor = 'gold';
-    } else {
-      raiseLabel = mrfStatusStr.toUpperCase();
-      if (raiseLabel.includes('COMPLETED') || raiseLabel.includes('APPROV')) {
-        raiseColor = 'success';
-      } else if (raiseLabel.includes('REJECT')) {
-        raiseColor = 'error';
-      } else {
-        raiseColor = 'gold';
-      }
-    }
-
-    const approvalStatusStr = (record.approval_status || '').trim().toLowerCase();
-    let approvalLabel = 'PENDING';
-    let approvalColor = 'gold';
-    if (approvalStatusStr === 'closed') {
-      // LEGACY only — rows closed before fill state moved to its own column.
-      // Their real approval status was destroyed at closure time and cannot be
-      // recovered; see prisma/ddl/2026-08-11-mrf-filled-at.README.md.
-      approvalLabel = 'CLOSED (legacy)';
-      approvalColor = 'default';
-    } else if (approvalStatusStr === 'approved' || approvalStatusStr === 'completed') {
-      approvalLabel = 'APPROVED';
-      approvalColor = 'success';
-    } else if (approvalStatusStr === 'rejected') {
-      approvalLabel = 'REJECTED';
-      approvalColor = 'error';
-    } else if (approvalStatusStr === 'waiting') {
-      approvalLabel = 'WAITING';
-      approvalColor = 'gold';
-    } else {
-      approvalLabel = approvalStatusStr ? approvalStatusStr.toUpperCase() : 'PENDING';
-      approvalColor = approvalLabel.includes('COMPLETE') || approvalLabel.includes('APPROV') ? 'success' : 'gold';
-    }
-
-    return {
-      raise: { label: raiseLabel, color: raiseColor },
-      approval: { label: approvalLabel, color: approvalColor }
-    };
-  };
+  const getWorkflowSummaryTags = (record) => ({
+    raise: mrfRaiseStatus(record?.mrfstatus),
+    approval: mrfApprovalStatus(record?.approval_status),
+  });
 
   // Seeds the "New MRF Request" form from a record snapshot — used both on open and on Cancel.
   const seedEditForm = (record) => {
@@ -599,31 +585,13 @@ export default function MRF() {
       dataIndex: 'mrfstatus',
       key: 'mrfstatus',
       render: (status) => {
-        const statusStr = (status || '').trim().toLowerCase();
-        let displayStatus = 'PENDING';
-        let color = 'gold';
-
-        if (statusStr === 'managersubmitted' || statusStr === 'manager submitted') {
-          displayStatus = 'MANAGER SUBMITTED';
-          color = 'success';
-        } else if (statusStr === 'pending' || statusStr === 'pendingfromleader') {
-          displayStatus = 'PENDING';
-          color = 'gold';
-        } else {
-          displayStatus = (status || '').toUpperCase();
-          if (displayStatus.includes('MANAGER') || displayStatus.includes('APPROV')) {
-            color = 'success';
-          } else if (displayStatus.includes('REJECT')) {
-            color = 'error';
-          } else {
-            color = 'gold';
-          }
-        }
-
+        const st = mrfRaiseStatus(status);
         return (
-          <Tag color={color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
-            {displayStatus}
-          </Tag>
+          <Tooltip title={st.hint}>
+            <Tag color={st.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
+              {st.label}
+            </Tag>
+          </Tooltip>
         );
       },
     },
@@ -933,17 +901,21 @@ export default function MRF() {
                 <Col span={12}>
                   <Space>
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Raise Status:</span>
-                    <Tag color={getWorkflowSummaryTags(selectedRecord).raise.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
-                      {getWorkflowSummaryTags(selectedRecord).raise.label}
-                    </Tag>
+                    <Tooltip title={getWorkflowSummaryTags(selectedRecord).raise.hint}>
+                      <Tag color={getWorkflowSummaryTags(selectedRecord).raise.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                        {getWorkflowSummaryTags(selectedRecord).raise.label}
+                      </Tag>
+                    </Tooltip>
                   </Space>
                 </Col>
                 <Col span={12} style={{ textAlign: 'right' }}>
                   <Space>
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' }}>MRF Approval Status:</span>
-                    <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
-                      {getWorkflowSummaryTags(selectedRecord).approval.label}
-                    </Tag>
+                    <Tooltip title={getWorkflowSummaryTags(selectedRecord).approval.hint}>
+                      <Tag color={getWorkflowSummaryTags(selectedRecord).approval.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px' }}>
+                        {getWorkflowSummaryTags(selectedRecord).approval.label}
+                      </Tag>
+                    </Tooltip>
                     {/* Independent of approval status — a requisition can be
                         approved/completed AND have all its openings filled.
                         Shown alongside rather than replacing it, because the

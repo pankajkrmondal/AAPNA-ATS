@@ -33,11 +33,12 @@ const screeningService = {
   /**
    * Match and rank candidates against selected MRF role.
    * @param {number} mrfId
-   * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh).
+   * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh);
+   *   { addedWithinDays } limits to candidates added in the last N days (N38).
    * @returns {Promise<{ data: { role: Object, candidates: Array, summary: Object } }>}
    */
-  searchRoleCandidates(mrfId, { force = false } = {}) {
-    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`);
+  searchRoleCandidates(mrfId, { force = false, addedWithinDays = null } = {}) {
+    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`, addedWithinDays ? { addedWithinDays } : {});
   },
 
   /**
@@ -55,9 +56,10 @@ const screeningService = {
    * client-supplied candidate list.
    * @param {number} mrfId
    * @param {Object} [config] - blob/timeout config from downloadFile
+   * @param {number|null} [addedWithinDays] - the screen's "Added within" filter (N38), so the file matches
    */
-  exportRoleCandidates(mrfId, config = {}) {
-    return api.post(`/screening/roles/${mrfId}/export`, {}, config);
+  exportRoleCandidates(mrfId, config = {}, addedWithinDays = null) {
+    return api.post(`/screening/roles/${mrfId}/export`, addedWithinDays ? { addedWithinDays } : {}, config);
   },
 
   /**

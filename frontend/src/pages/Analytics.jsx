@@ -24,6 +24,7 @@ import {
   SendOutlined,
   MailOutlined,
   ApartmentOutlined,
+  ProfileOutlined,
   RiseOutlined,
   SolutionOutlined,
   FileDoneOutlined
@@ -32,6 +33,7 @@ import screeningService from '../services/screeningService';
 import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 import ExportButton from '../components/common/ExportButton';
+import PositionsTab from '../components/analytics/PositionsTab';
 import KpiCard from '../components/common/KpiCard';
 import MetricInfo from '../components/common/MetricInfo';
 import LoadingOverlay from '../components/common/LoadingOverlay';
@@ -1028,6 +1030,29 @@ export default function Analytics() {
                   errored={pipelineAnalytics.errored}
                   params={analyticsParams}
                   onParamsChange={handleParamsChange}
+                />
+              )
+            },
+            {
+              // N39 — every requisition on one screen. A row click opens its funnel.
+              key: 'positions',
+              label: (
+                <span>
+                  <ProfileOutlined className="tab-ico" />
+                  Positions
+                </span>
+              ),
+              children: (
+                <PositionsTab
+                  title={(
+                    <SectionTitle accent={ACCENT.progress} hint="every requisition: journey, offers and joiners">
+                      Positions
+                    </SectionTitle>
+                  )}
+                  onOpenFunnel={(mrfId) => {
+                    handleParamsChange({ mrf_id: mrfId });
+                    setActiveTab('pipeline');
+                  }}
                 />
               )
             },

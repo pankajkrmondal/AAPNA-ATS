@@ -1,11 +1,11 @@
 /**
  * TopRolesSkillsCard — two compact horizontal bar charts: top applied roles and most
- * in-demand skills, aggregated client-side from the candidate batch. Toggle between them.
+ * in-demand skills among candidates added in the selected period, counted on the server (N36).
+ * Toggle between them.
  */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Card, Typography, Segmented, Empty, Tooltip } from 'antd';
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts';
-import { topByField, topSkills } from '../../utils/dashboardAggregations';
 import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
@@ -33,10 +33,8 @@ function BarTip({ active, payload, mode }) {
   );
 }
 
-export default function TopRolesSkillsCard({ candidates = [] }) {
+export default function TopRolesSkillsCard({ roles = [], skills = [], rangeDays = 30 }) {
   const [mode, setMode] = useState('roles');
-  const roles = useMemo(() => topByField(candidates, 'position', 7), [candidates]);
-  const skills = useMemo(() => topSkills(candidates, 8), [candidates]);
 
   const data = mode === 'roles' ? roles : skills;
 
@@ -48,7 +46,7 @@ export default function TopRolesSkillsCard({ candidates = [] }) {
             Talent Insights <MetricInfo metric="talentInsights" size={12} />
           </Title>
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'}
+            {mode === 'roles' ? 'Top applied roles' : 'Most in-demand skills'} · added in the last {rangeDays} days
           </Text>
         </div>
         <Segmented

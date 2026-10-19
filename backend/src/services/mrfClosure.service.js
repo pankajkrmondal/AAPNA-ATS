@@ -31,6 +31,7 @@
  * Approved and Filled are independent facts. Consumers ask isMrfFilled()
  * (config/pipelineStages.js) rather than inspecting a status string.
  */
+import { allRoleCacheKeys } from '../utils/screeningCacheKeys.js';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
@@ -173,7 +174,7 @@ export async function closeMrfIfFilled(mrfId) {
     // Drop this role's cached candidate search (same key screening.service.js
     // writes) so a stale entry can't resurrect the closed requisition.
     try {
-      await redis.del(`screening:role:${mrf.id}`, `screening:role:v2:${mrf.id}`);
+      await redis.del(...allRoleCacheKeys(mrf.id));
     } catch (err) {
       logger.warn(`MRF ${mrf.id} closed but its Redis role cache was not cleared: ${err.message}`);
     }
@@ -302,7 +303,7 @@ export async function reopenMrfIfUnfilled(mrfId) {
     // Same cache + broadcast hygiene as the closing path, so the role comes back
     // into the JD dropdowns without anyone reloading.
     try {
-      await redis.del(`screening:role:${mrf.id}`, `screening:role:v2:${mrf.id}`);
+      await redis.del(...allRoleCacheKeys(mrf.id));
     } catch (err) {
       logger.warn(`MRF ${mrf.id} re-opened but its Redis role cache was not cleared: ${err.message}`);
     }
@@ -395,7 +396,7 @@ export async function closeMrfManually(mrfId, { reason, note = null, actedBy }) 
   // Same cache + broadcast hygiene as the automatic path, so the role leaves
   // the JD dropdowns without anyone reloading.
   try {
-    await redis.del(`screening:role:${mrf.id}`, `screening:role:v2:${mrf.id}`);
+    await redis.del(...allRoleCacheKeys(mrf.id));
   } catch (err) {
     logger.warn(`MRF ${mrf.id} closed manually but its Redis role cache was not cleared: ${err.message}`);
   }
@@ -455,7 +456,7 @@ export async function reopenMrfManually(mrfId, { actedBy }) {
   if (claim.count !== 1) throw new AppError('This requisition is not closed.', 400);
 
   try {
-    await redis.del(`screening:role:${mrf.id}`, `screening:role:v2:${mrf.id}`);
+    await redis.del(...allRoleCacheKeys(mrf.id));
   } catch (err) {
     logger.warn(`MRF ${mrf.id} re-opened but its Redis role cache was not cleared: ${err.message}`);
   }

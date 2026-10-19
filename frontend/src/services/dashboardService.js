@@ -9,8 +9,26 @@ const dashboardService = {
    * Get dashboard summary statistics.
    * @returns {Promise<{ data: { totalCandidates: number, activeMRFs: number, todayUploads: number, shortlisted: number } }>}
    */
-  getStats() {
-    return api.get('/dashboard/stats');
+  getStats({ rangeDays, mrfId } = {}) {
+    return api.get('/dashboard/stats', { params: { range: rangeDays, mrfId: mrfId || undefined } });
+  },
+
+  /**
+   * Daily series + top roles / skills for the selected period, counted server-side (N36).
+   * @param {{ rangeDays?: number, mrfId?: number|string }} [filters]
+   */
+  getTrends({ rangeDays, mrfId } = {}) {
+    return api.get('/dashboard/trends', { params: { range: rangeDays, mrfId: mrfId || undefined } });
+  },
+
+  /** Zeko + Teams interviews in the next `days` days, each with its pipeline id (N36). */
+  getUpcomingInterviews(days = 7) {
+    return api.get('/dashboard/upcoming-interviews', { params: { days } });
+  },
+
+  /** Open MRFs for the dashboard's MRF filter (same list and labels as Screening, N19). */
+  getMrfOptions() {
+    return api.get('/dashboard/mrf-options');
   },
 
   /**

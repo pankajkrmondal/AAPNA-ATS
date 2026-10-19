@@ -367,13 +367,15 @@ export default function CandidateDetail() {
         onClick={() => {
           if (fromPage === 'analytics') {
             navigate('/analytics');
+          } else if (fromPage === 'dashboard') {
+            navigate('/dashboard');
           } else {
             navigate('/candidates');
           }
         }}
         style={{ marginBottom: 16, borderRadius: 8, fontWeight: 500 }}
       >
-        {fromPage === 'analytics' ? 'Back to Analytics' : 'Back to Candidates'}
+        {fromPage === 'analytics' ? 'Back to Analytics' : fromPage === 'dashboard' ? 'Back to Dashboard' : 'Back to Candidates'}
       </Button>
 
       {/* Header card — this page's hero-analog, so it carries the cursor
