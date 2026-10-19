@@ -17,6 +17,8 @@
  * Source: docs/phase3/CANDIDATE-COMPLETE-DOWNLOAD-PLAN.md §6.5, §10.2a.
  */
 
+import { fmtDate, IST } from './dateFormat.js';
+
 /** The states a link can be in, in the order the checks run. */
 export const SHARE_STATES = Object.freeze({
   MISSING: 'missing',
@@ -129,9 +131,7 @@ export function shareDate(value, timeZone = undefined) {
   if (value === null || value === undefined || value === '') return '';
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', ...(timeZone ? { timeZone } : {}),
-  });
+  return fmtDate(d, { timeZone: timeZone || IST });
 }
 
 /**

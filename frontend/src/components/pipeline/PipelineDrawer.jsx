@@ -58,6 +58,7 @@ import { MODAL_WIDTH } from './modalWidths';
 import DateTimeField from './DateTimeField';
 import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConfig';
 import { firstValidPhone } from '../../constants/candidateFields';
+import { fmtDate, fmtDateTime, fmtTime } from '../../utils/dateFormat';
 
 /**
  * The email_error the server records when the recruiter unticks "Send email
@@ -276,7 +277,24 @@ function assessmentScoreSegment(result) {
       : chips.length > 0 ? chips.map((c) => `${c.label} ${c.value}`).join(' · ') : 'Result imported — no numeric scores returned'
     ) + (result.overall_marks_scored != null ? ` · Marks Scored: ${result.overall_marks_scored}` : '')
       + (effort ? ` · ${effort}` : ''),
+    // Evalground's public report (N28), so the round can be read in full once
+    // it has passed, as the Zeko rounds can.
+    reportUrl: result.public_report_url || null,
   };
+}
+
+/**
+ * One line per submitted scorecard for an interview round (N28): who scored,
+ * their average out of 5, and their verdict — so a finished round keeps its
+ * scores in the round itself, not only in the Scorecard report pop-up.
+ */
+function scorecardScoreLines(rounds = []) {
+  return rounds.map((r) => ({
+    key: r.scorecard_id,
+    who: r.recipient_email || r.recipient_role || 'Interviewer',
+    avg: r.avg_score,
+    recommendation: r.recommendation,
+  }));
 }
 
 /** Same 4-stage wording per stage kind as the prototype's PIPELINE_LABELS.
@@ -321,10 +339,6 @@ function shortStageLabel(label) {
 
 const ZEKO_HR_STATUS_WORD = { pending: 'assigned, not yet invited', sent: 'invited', completed: 'interview completed', cancelled: 'cancelled' };
 
-function fmtDateTime(d) {
-  return d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : null;
-}
-
 /**
  * Derives the real 4-stage pipeline for one stage, from whatever real data
  * exists — stage events, (for zeko_hr) the real Zeko job-assignment/schedule
@@ -343,7 +357,7 @@ function fmtDateTime(d) {
  * fields the backend actually persisted (rpa_zeko_candidate_pipeline.link_sent_at,
  * or the stage's own outcome-email dispatch flag) — never invented text.
  */
-function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOutcome, zekoScores, zekoHrPipeline, zekoReportLink, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, assessmentResult, assessmentInvite, offer, documents }) {
+function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOutcome, zekoScores, zekoHrPipeline, zekoReportLink, screening, interviewSchedule, mrfInterviewHints, scorecardSubmitted, scorecardRounds, assessmentResult, assessmentInvite, offer, documents }) {
   const labels = stage.stage_key === 'client'
     ? CLIENT_ROUND_LABELS
     : (PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual);
@@ -384,7 +398,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
                   : 'no outcome email recorded'
           }`,
         }
-      : { state: 'done', detail: `Candidate entered this stage ${new Date(enteredEvent.created_at).toLocaleDateString()}` };
+      : { state: 'done', detail: `Candidate entered this stage ${fmtDate(enteredEvent.created_at)}` };
   }
 
   if (stage.stage_key === 'zeko_hr') {
@@ -408,7 +422,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       if (zekoHrPipeline.interview_start_at) {
         s2 = {
           state: zekoScores ? 'done' : 'active',
-          detail: `Scheduled window · ${fmtDateTime(zekoHrPipeline.interview_start_at)}–${fmtDateTime(zekoHrPipeline.interview_end_at)?.split(', ')[1] || ''}`,
+          detail: `Scheduled window · ${fmtDateTime(zekoHrPipeline.interview_start_at)}–${fmtTime(zekoHrPipeline.interview_end_at)}`,
         };
         emails.push(`Zeko HR screening invite → candidate · ${fmtDateTime(zekoHrPipeline.link_sent_at)}`);
       } else if (zekoHrPipeline.link_sent_at) {
@@ -447,7 +461,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       if (zekoHrPipeline.interview_start_at) {
         s2 = {
           state: zekoScores ? 'done' : 'active',
-          detail: `Scheduled window · ${fmtDateTime(zekoHrPipeline.interview_start_at)}–${fmtDateTime(zekoHrPipeline.interview_end_at)?.split(', ')[1] || ''}`,
+          detail: `Scheduled window · ${fmtDateTime(zekoHrPipeline.interview_start_at)}–${fmtTime(zekoHrPipeline.interview_end_at)}`,
         };
         emails.push(`Zeko functional screening invite → candidate · ${fmtDateTime(zekoHrPipeline.link_sent_at)}`);
       } else if (zekoHrPipeline.link_sent_at) {
@@ -494,7 +508,11 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       if (interviewSchedule.occurrence_status === 'no_show') {
         s3 = { state: 'rejected', detail: `No-show${interviewSchedule.no_show_party ? ` (${interviewSchedule.no_show_party})` : ''} — reschedule or reject` };
       } else if (scorecardSubmitted) {
-        s3 = { state: 'done', detail: 'Feedback received — interviewer submitted the scorecard' };
+        s3 = {
+          state: 'done',
+          detail: 'Feedback received — interviewer submitted the scorecard',
+          scoreLines: scorecardScoreLines(scorecardRounds),
+        };
       } else if (interviewSchedule.occurrence_status === 'held') {
         s3 = { state: 'active', detail: 'Interview held — scorecard link sent, awaiting the interviewer’s feedback' };
       } else if (interviewSchedule.occurrence_status === 'unconfirmed') {
@@ -609,7 +627,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     if (offer?.shared_at) {
       s2 = {
         state: 'done',
-        detail: `Shared ${fmtDateTime(offer.shared_at)}${offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}`,
+        detail: `Shared ${fmtDateTime(offer.shared_at)}${offer.joining_date ? ` · proposed joining ${fmtDate(offer.joining_date)}` : ''}`,
       };
     } else if (enteredEvent) {
       s2 = { state: 'active', detail: 'Not recorded yet — use “Record offer shared” below once HR has sent it' };
@@ -635,7 +653,7 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
       s4 = offer.candidate_decision === 'accepted'
         ? {
           state: 'done',
-          detail: `Accepted${offer.joining_date ? ` · joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}`,
+          detail: `Accepted${offer.joining_date ? ` · joining ${fmtDate(offer.joining_date)}` : ''}`,
         }
         : { state: 'rejected', detail: `Declined by the candidate${offer.decision_at ? ` · ${fmtDateTime(offer.decision_at)}` : ''}` };
     } else if (offer?.shared_at) {
@@ -689,15 +707,15 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   if (outcomeEvent) {
     const tag = OUTCOME_TAG[outcomeEvent.outcome];
     if (outcomeEvent.outcome === 'approved') {
-      s4 = { state: 'done', detail: `Approved${outcomeEvent.rpa_users?.username ? ` by ${outcomeEvent.rpa_users.username}` : ''} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
+      s4 = { state: 'done', detail: `Approved${outcomeEvent.rpa_users?.username ? ` by ${outcomeEvent.rpa_users.username}` : ''} · ${fmtDate(outcomeEvent.created_at)}` };
     } else if (outcomeEvent.outcome === 'rejected') {
-      s4 = { state: 'rejected', detail: `${outcomeEvent.reason_text || tag?.label || 'Rejected'} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
+      s4 = { state: 'rejected', detail: `${outcomeEvent.reason_text || tag?.label || 'Rejected'} · ${fmtDate(outcomeEvent.created_at)}` };
     } else if (outcomeEvent.outcome === 'hold') {
-      s4 = { state: 'hold', detail: `${outcomeEvent.reason_text || 'On Hold'} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
+      s4 = { state: 'hold', detail: `${outcomeEvent.reason_text || 'On Hold'} · ${fmtDate(outcomeEvent.created_at)}` };
     } else {
-      s4 = { state: 'done', detail: `${tag?.label || outcomeEvent.outcome} · ${new Date(outcomeEvent.created_at).toLocaleDateString()}` };
+      s4 = { state: 'done', detail: `${tag?.label || outcomeEvent.outcome} · ${fmtDate(outcomeEvent.created_at)}` };
     }
-    emails.push(`Outcome email → candidate · ${new Date(outcomeEvent.created_at).toLocaleDateString()} · ${outcomeEvent.email_sent ? 'delivered' : outcomeEvent.email_error === OUTCOME_EMAIL_NOT_SENT ? 'Email not sent' : (outcomeEvent.email_error ? 'failed' : 'not sent')}`);
+    emails.push(`Outcome email → candidate · ${fmtDate(outcomeEvent.created_at)} · ${outcomeEvent.email_sent ? 'delivered' : outcomeEvent.email_error === OUTCOME_EMAIL_NOT_SENT ? 'Email not sent' : (outcomeEvent.email_error ? 'failed' : 'not sent')}`);
   } else if (stage.stage_key === 'offer') {
     // Already set by the offer branch above, in the offer's own vocabulary.
     // The two fallbacks below are written for interview rounds — they talk
@@ -1683,6 +1701,10 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // Null until someone has opened this round's report at least once; when set,
   // the button skips the mint and opens straight away.
   const zekoSharedReportLink = data?.zekoSharedReportLink;
+  // Every Zeko round's own scores and report link, keyed by stage (N28).
+  const zekoRounds = data?.zekoRounds;
+  // The candidate record's score columns (Excel upload / Search Candidate).
+  const uploadedScores = data?.uploadedScores || [];
   const mrfInterviewHints = data?.mrfInterviewHints;
   // Interviewee details and interviewer pre-fill for the Schedule dialog (N23).
   const interviewParties = data?.interviewParties;
@@ -2004,16 +2026,28 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       interviewSchedules?.[stage.stage_key] ||
       (stage.stage_key === pipeline.current_stage_key ? interviewSchedule : null);
 
+    // Each Zeko round reads its OWN round from `zekoRounds` (N28), so a passed
+    // round keeps its scores and report link and can never show the other
+    // round's. Before N28 `zekoScores` was the current round's and went to
+    // every Zeko card, so on Functional the HR card showed Functional's
+    // numbers. A payload without `zekoRounds` (older backend) falls back to
+    // the current round only.
+    const zekoRound = isZekoStageKey(stage.stage_key) ? zekoRounds?.[stage.stage_key] : null;
+    const zekoOfStage = zekoRounds
+      ? { scores: zekoRound?.scores || null, round: zekoRound?.round || null, reportLink: zekoRound?.reportLink || null, sharedLink: zekoRound?.sharedReportLink || null }
+      : isCurrent && isZekoStageKey(stage.stage_key)
+        ? { scores: zekoScores, round: zekoHrPipeline, reportLink: zekoReportLink, sharedLink: zekoSharedReportLink }
+        : { scores: null, round: null, reportLink: null, sharedLink: null };
+    const stageScorecards = (scorecardReport?.rounds || []).filter((r) => r.stage_key === stage.stage_key);
+
     const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions, showClientRoundActions } = buildPipelineSegments({
       stage,
       stageEvents,
       isCurrent,
       previousStageOutcome,
-      zekoScores: isZekoStageKey(stage.stage_key) ? zekoScores : null,
-      // The backend returns the row for the CURRENT stage's round only, so it
-      // must not leak onto the other Zeko stage's card when browsing history.
-      zekoHrPipeline: stage.stage_key === pipeline.current_stage_key ? zekoHrPipeline : null,
-      zekoReportLink: stage.stage_key === pipeline.current_stage_key ? zekoReportLink : null,
+      zekoScores: zekoOfStage.scores,
+      zekoHrPipeline: zekoOfStage.round,
+      zekoReportLink: zekoOfStage.reportLink,
       screening,
       // Each round gets its OWN booking, so a finished tech1 keeps showing when
       // the candidate has moved to tech2. Falls back to the current-stage row
@@ -2024,7 +2058,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       mrfInterviewHints: stage.stage_key === pipeline.current_stage_key ? mrfInterviewHints : null,
       // Whether an interviewer has submitted a scorecard for THIS stage — flips
       // the "Awaiting Results" line to "Feedback received".
-      scorecardSubmitted: (scorecardReport?.rounds || []).some((r) => r.stage_key === stage.stage_key),
+      scorecardSubmitted: stageScorecards.length > 0,
+      scorecardRounds: stageScorecards,
       assessmentResult: stage.stage_key === 'assessment' ? assessmentResultData?.result : null,
       assessmentInvite: stage.stage_key === 'assessment' ? assessmentInviteData : null,
       offer: stage.stage_key === 'offer' ? data?.offer : null,
@@ -2040,7 +2075,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         </Space>
         {lastStageEvent && (
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Updated {new Date(lastStageEvent.created_at).toLocaleString()}
+            Updated {fmtDateTime(lastStageEvent.created_at)}
           </Text>
         )}
       </div>
@@ -2078,13 +2113,38 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 {/* Only the two Zeko rounds ever set `link` (see
                     buildPipelineSegments), and both go through the no-login
                     route now — see ZekoReportLink. */}
+                {s.scoreLines?.length > 0 && (
+                  <div className="cp-pipeline-step__extra">
+                    {s.scoreLines.map((l) => (
+                      <div key={l.key} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+                        <Text type="secondary" style={{ fontSize: 12.5 }}>{l.who}</Text>
+                        <Text strong style={{ fontSize: 12.5 }}>{l.avg != null ? `${l.avg} / 5` : 'No average'}</Text>
+                        {l.recommendation && (
+                          <Tag
+                            color={l.recommendation === 'approve' ? 'green' : l.recommendation === 'reject' ? 'red' : 'orange'}
+                            style={{ margin: 0, fontSize: 11.5 }}
+                          >
+                            {l.recommendation}
+                          </Tag>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {s.link && (
                   <ZekoReportLink
                     pipelineId={pipelineId}
                     stageKey={stage.stage_key}
                     recruiterLink={s.link}
-                    sharedLink={stage.stage_key === pipeline.current_stage_key ? zekoSharedReportLink : null}
+                    sharedLink={zekoOfStage.sharedLink}
                   />
+                )}
+                {s.reportUrl && (
+                  <div className="cp-pipeline-step__extra">
+                    <a href={s.reportUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
+                      <LinkOutlined /> View the Evalground report
+                    </a>
+                  </div>
                 )}
                 {i === 0 && showInviteButton && stage.stage_key === 'assessment' && (
                   <div className="cp-pipeline-step__extra">
@@ -2446,7 +2506,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
             >
               <Text style={{ fontSize: 12.5 }}>
                 <Text type="secondary">Shortlisted from Candidate Screening</Text>
-                {screening.shortlistedAt && <> · {new Date(screening.shortlistedAt).toLocaleDateString()}</>}
+                {screening.shortlistedAt && <> · {fmtDate(screening.shortlistedAt)}</>}
                 {screening.shortlistedBy && <> · by {screening.shortlistedBy}</>}
               </Text>
               {cvFileUrl
@@ -2500,6 +2560,38 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
 
           {screening?.notes && (
             <Alert type="info" showIcon message={screening.notes} style={{ marginBottom: 10, fontSize: 12.5 }} />
+          )}
+
+          {/* Scores on the candidate record (Excel upload / Search Candidate),
+              read-only (N28). Kept apart from the rounds on purpose: these
+              columns are one set per candidate, with no record of which round
+              produced them, so they must never be shown under a round. */}
+          {uploadedScores.length > 0 && (
+            <Collapse
+              size="small"
+              style={{ marginBottom: 10 }}
+              items={[{
+                key: 'uploaded',
+                label: (
+                  <Space size={8} wrap>
+                    <Text style={{ fontSize: 12.5 }}>Uploaded scores (from Excel)</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {uploadedScores.length} {uploadedScores.length === 1 ? 'value' : 'values'} · editable in Search Candidate
+                    </Text>
+                  </Space>
+                ),
+                children: (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, max-content) 1fr', gap: '4px 16px', fontSize: 12.5 }}>
+                    {uploadedScores.map((f) => (
+                      <Fragment key={f.key}>
+                        <Text type="secondary" style={{ fontSize: 12.5 }}>{f.label}</Text>
+                        <Text style={{ fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{f.value}</Text>
+                      </Fragment>
+                    ))}
+                  </div>
+                ),
+              }]}
+            />
           )}
 
           {allStages.length > 0 && (
@@ -2569,7 +2661,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                               {m.direction === 'outbound' ? 'Sent' : 'Received'}
                             </Tag>
                             <Text type="secondary" style={{ fontSize: 11 }}>
-                              {m.sent_at ? dayjs(m.sent_at).format('DD MMM, hh:mm a') : ''}
+                              {m.sent_at ? fmtDateTime(m.sent_at) : ''}
                             </Text>
                           </Space>
                           {m.subject && <div style={{ fontSize: 12.5, fontWeight: 600 }}>{m.subject}</div>}
@@ -3716,14 +3808,14 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
         )}
         {approved && !shared && (
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            Approved internally{offer.approved_at ? ` · ${new Date(offer.approved_at).toLocaleDateString()}` : ''} — not yet shared with the candidate.
+            Approved internally{offer.approved_at ? ` · ${fmtDate(offer.approved_at)}` : ''} — not yet shared with the candidate.
           </Text>
         )}
         */}
         {shared && (
           <Text type="secondary" style={{ fontSize: 12.5 }}>
-            Shared {new Date(offer.shared_at).toLocaleDateString()}
-            {offer.joining_date ? ` · proposed joining ${new Date(offer.joining_date).toLocaleDateString()}` : ''}
+            Shared {fmtDate(offer.shared_at)}
+            {offer.joining_date ? ` · proposed joining ${fmtDate(offer.joining_date)}` : ''}
             {decided ? ` · candidate ${offer.candidate_decision}` : ' · awaiting the candidate’s decision'}
           </Text>
         )}

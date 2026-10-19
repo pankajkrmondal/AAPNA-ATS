@@ -20,7 +20,7 @@ import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } f
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, getInterviewParties, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
-import { SCORECARD_STATUS } from './interviewScorecard.service.js';
+import { SCORECARD_STATUS, getCandidateScorecardReport } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
 import {
@@ -39,6 +39,7 @@ import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
 import { withDeadline } from '../utils/withDeadline.js';
 import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stageSkip.js';
 import { scoreSourceFor, noScoreNoteError } from '../utils/stageScore.js';
+import { buildZekoRounds, zekoScoresFromResult, uploadedScoresFromCv, UPLOADED_SCORE_FIELDS } from '../utils/roundScores.js';
 import { firstValidPhone, maskPhone } from '../utils/phone.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
@@ -762,6 +763,9 @@ export async function getPipelineDetail(pipelineId) {
   // router is requireStaff, and the interviewer-facing scorecard builds its own
   // payload from a named whitelist.
   let referral = null;
+  // The candidate record's score columns (Excel upload / Search Candidate),
+  // shown read-only in their own card — never under a round (N28).
+  let uploadedScores = [];
   if (pipeline.cv_id) {
     const cv = await prisma.rpa_cv.findUnique({
       where: { id: pipeline.cv_id },
@@ -772,9 +776,11 @@ export async function getPipelineDetail(pipelineId) {
         referral_note: true,
         referral_set_by: true,
         referral_set_at: true,
+        ...Object.fromEntries(UPLOADED_SCORE_FIELDS.map((f) => [f.key, true])),
       },
     });
     cvFileUrl = cv?.cvFileUrl || null;
+    uploadedScores = uploadedScoresFromCv(cv);
     referral = cv
       ? {
           is_referral: !!cv.is_referral,
@@ -826,14 +832,15 @@ export async function getPipelineDetail(pipelineId) {
     // interview id, so it can't be clobbered by the other Zeko round syncing
     // later. A round with no result row here reports no score at all rather
     // than borrowing the candidate-level one (see the rpa_cv note above).
-    if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
-      zekoScores = {
-        ZekoInterviewScore: zekoResult.scores_overallscore,
-        ZekoCodingScore: zekoResult.scores_technicalscore,
-        ZekoCommunicationScore: zekoResult.scores_communicationscore,
-      };
-    }
+    zekoScores = zekoScoresFromResult(zekoResult);
   }
+
+  // Both Zeko rounds, each from its own round-scoped lookup, so a round that
+  // has passed keeps its scores and report link (N28). The current-round
+  // fields above stay for compatibility.
+  const zekoRounds = pipeline.shortlist_id
+    ? await buildZekoRounds((stageKey) => findZekoRoundResult(pipeline, stageKey))
+    : {};
 
   // Scheduled interview rounds: the MRF names who interviews and their
   // preferred window — free text shown to the recruiter as hints — plus the
@@ -875,12 +882,109 @@ export async function getPipelineDetail(pipelineId) {
     zekoHrPipeline,
     zekoReportLink,
     zekoSharedReportLink,
+    zekoRounds,
+    uploadedScores,
     interviewSchedule,
     interviewSchedules,
     mrfInterviewHints,
     interviewParties,
     offer,
   });
+}
+
+/**
+ * Every score the pipeline holds for one candidate, per journey (MRF) and per
+ * round, for Search Candidate's read-only "Pipeline scores" section (N29). The
+ * same sources the drawer reads, so the two can never disagree: each Zeko
+ * round's own result (round-scoped, as in getPipelineDetail), the Evalground
+ * import, and the submitted interview scorecards. Rounds with nothing on file
+ * are left out.
+ *
+ * @param {number|string} cvId
+ * @returns {Promise<Array<{ pipeline_id: string, mrf_id: string|null, role: string, current_stage_label: string,
+ *   final_outcome: string|null, rounds: Array<object> }>>}
+ */
+export async function getCandidatePipelineScores(cvId) {
+  if (!/^\d+$/.test(String(cvId))) throw new AppError('Invalid candidate id.', 400);
+  const journeys = await prisma.rpa_candidate_pipeline.findMany({
+    where: { cv_id: BigInt(cvId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: { select: { id: true, position_hiring_for: true } } } } },
+    orderBy: { created_at: 'desc' },
+  });
+  if (journeys.length === 0) return [];
+
+  const stageRows = await prisma.rpa_pipeline_stages.findMany({
+    select: { stage_key: true, label: true, sort_order: true },
+    orderBy: { sort_order: 'asc' },
+  });
+  const labelOf = (key) => stageRows.find((s) => s.stage_key === key)?.label || key;
+  const orderOf = (key) => stageRows.find((s) => s.stage_key === key)?.sort_order ?? 999;
+
+  return Promise.all(journeys.map(async (journey) => {
+    const [zekoRounds, assessment, report] = await Promise.all([
+      journey.shortlist_id ? buildZekoRounds((stageKey) => findZekoRoundResult(journey, stageKey)) : {},
+      prisma.rpa_assessment_results.findFirst({
+        where: { pipeline_id: journey.id, status: { in: ['matched', 'score_overwritten'] } },
+        orderBy: { modified_at: 'desc' },
+      }),
+      getCandidateScorecardReport(journey.id),
+    ]);
+
+    const rounds = [];
+    for (const [stageKey, zr] of Object.entries(zekoRounds)) {
+      if (!zr?.scores) continue;
+      rounds.push({
+        stage_key: stageKey,
+        label: labelOf(stageKey),
+        kind: 'zeko',
+        scores: {
+          interview: zr.scores.ZekoInterviewScore,
+          coding: zr.scores.ZekoCodingScore,
+          communication: zr.scores.ZekoCommunicationScore,
+        },
+        report_link: zr.reportLink,
+      });
+    }
+    if (assessment) {
+      rounds.push({
+        stage_key: 'assessment',
+        label: labelOf('assessment'),
+        kind: 'assessment',
+        result: assessment.overall_result || null,
+        percentage: assessment.overall_percentage != null ? Number(assessment.overall_percentage) : null,
+        marks: assessment.overall_marks_scored != null ? Number(assessment.overall_marks_scored) : null,
+        report_link: assessment.public_report_url || null,
+      });
+    }
+    const cardsByStage = new Map();
+    for (const card of report?.rounds || []) {
+      if (!cardsByStage.has(card.stage_key)) cardsByStage.set(card.stage_key, []);
+      cardsByStage.get(card.stage_key).push({
+        interviewer: card.recipient_email || card.recipient_role || null,
+        avg_score: card.avg_score,
+        recommendation: card.recommendation,
+        submitted_at: card.submitted_at,
+      });
+    }
+    for (const [stageKey, cards] of cardsByStage) {
+      rounds.push({ stage_key: stageKey, label: labelOf(stageKey), kind: 'scorecard', cards });
+    }
+    rounds.sort((a, b) => orderOf(a.stage_key) - orderOf(b.stage_key));
+
+    const mrf = journey.rpa_shortlisted_candidates?.mrf;
+    return serializeBigInts({
+      pipeline_id: journey.id,
+      mrf_id: mrf?.id ?? journey.mrf_id ?? null,
+      role: mrf?.position_hiring_for || journey.rpa_shortlisted_candidates?.position_applied || 'Role not recorded',
+      current_stage_label: labelOf(journey.current_stage_key),
+      final_outcome: journey.final_outcome || null,
+      // Dates for Candidate Detail's timeline (N29: it showed mock events).
+      shortlisted_at: journey.rpa_shortlisted_candidates?.shortlisted_at || journey.created_at,
+      shortlisted_by: journey.rpa_shortlisted_candidates?.shortlisted_by || null,
+      closed_at: journey.closed_at || null,
+      rounds,
+    });
+  }));
 }
 
 /**

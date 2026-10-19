@@ -30,6 +30,7 @@ import { setJobStatus, updateJob, JOB_STATUS, updateJobByCvTmpId, jobsModelReady
 import { activeVendorFor, vendorLockExpiry } from '../utils/vendorLock.js';
 import { findRecentRejection } from './pipeline.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
+import { syncShortlistIdentity, syncShortlistIdentitySafe, clearScreeningRoleCache } from './candidateSync.service.js';
 
 // Marker stamped on candidates who applied themselves (website or direct email),
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
@@ -660,6 +661,12 @@ export async function mergeDuplicates(ids, token, user = {}) {
             where: { id: existingCandidate.id },
             data: updateData
           });
+          // The merge can bring a new name or an extra address: the pipeline's
+          // copy of them follows, in the same transaction (N29).
+          await syncShortlistIdentity(existingCandidate.id, {
+            previousEmails: [existingCandidate.EmailID].filter(Boolean),
+            db: tx,
+          });
           logger.info(`Candidate "${tempCandidate.Name || tempCandidate.EmailID}" merged: updated existing candidate ID ${existingCandidate.id}`);
           
           postMergeTasks.push({
@@ -713,6 +720,10 @@ export async function mergeDuplicates(ids, token, user = {}) {
         results.push(tempId.toString());
       }
     });
+
+    // Merged records may have new names or addresses that cached screening
+    // lists still show (N29).
+    if (postMergeTasks.length) await clearScreeningRoleCache();
 
     // Run post-merge tasks outside transaction to prevent holding locks during Gemini API calls
     for (const task of postMergeTasks) {
@@ -1529,6 +1540,11 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                   where: { id: existingCandidate.id },
                   data: updateData
                 });
+                // A resubmitted resume can carry a new name or address: the
+                // pipeline's copy follows (N29). Best-effort, never fails intake.
+                if (await syncShortlistIdentitySafe(existingCandidate.id, { previousEmails: [existingCandidate.EmailID].filter(Boolean) })) {
+                  await clearScreeningRoleCache();
+                }
 
                 successCount++;
                 jobInfo.candidate_name = parsed.Name || updatedCv.Name || 'Candidate';

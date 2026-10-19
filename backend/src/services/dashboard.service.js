@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { fmtRelative } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import { mapCandidate } from './candidate.service.js';
 import { Prisma } from '@prisma/client';
@@ -264,17 +265,5 @@ function startOfToday() {
  * @returns {string}
  */
 function formatTimeAgo(date) {
-  if (!date) return '';
-  const now = new Date();
-  const diffMs = now - new Date(date);
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDays = Math.floor(diffHr / 24);
-
-  if (diffSec < 60) return 'Just now';
-  if (diffMin < 60) return `${diffMin} min ago`;
-  if (diffHr < 24) return `${diffHr} hour${diffHr > 1 ? 's' : ''} ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return fmtRelative(date);
 }

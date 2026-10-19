@@ -44,6 +44,7 @@ import adminService from '../services/adminService';
 import ExportButton from '../components/common/ExportButton';
 import ReferralLogPanel from '../components/admin/ReferralLogPanel';
 import useAuth from '../hooks/useAuth';
+import { fmtDate } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 
@@ -546,7 +547,7 @@ export default function AdminDashboard() {
       title: 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date) => <Text type="secondary" style={{ fontSize: 12 }}>{date ? date.split('T')[0] : '—'}</Text>,
+      render: (date) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(date)}</Text>,
     },
     {
       title: 'Actions',

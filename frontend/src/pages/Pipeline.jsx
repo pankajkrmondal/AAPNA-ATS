@@ -38,7 +38,7 @@ import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import ErrorState from '../components/common/ErrorState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
-import { fmtDate } from '../utils/dateFormat';
+import { fmtDate, fmtRelative } from '../utils/dateFormat';
 
 const { Text, Title } = Typography;
 
@@ -264,13 +264,7 @@ function LastUpdated({ at, refreshing }) {
   if (refreshing) return <Text type="secondary" style={{ fontSize: 12 }}>Refreshing…</Text>;
   if (!at) return null;
 
-  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
-  const label = secs < 45
-    ? 'just now'
-    : secs < 3600
-      ? `${Math.round(secs / 60)} min ago`
-      : `${Math.round(secs / 3600)} hr ago`;
-  return <Text type="secondary" style={{ fontSize: 12 }}>Updated {label}</Text>;
+  return <Text type="secondary" style={{ fontSize: 12 }}>Updated {fmtRelative(at)}</Text>;
 }
 
 function BoardScroller({ children }) {
@@ -750,8 +744,8 @@ export default function Pipeline() {
                         {iv.interviewer_name ? ` · ${iv.interviewer_name}` : ''}
                         {' · ended '}
                         {iv.hours_overdue < 24
-                          ? `${iv.hours_overdue}h ago`
-                          : `${Math.floor(iv.hours_overdue / 24)}d ago`}
+                          ? `${iv.hours_overdue} h ago`
+                          : `${Math.floor(iv.hours_overdue / 24)} d ago`}
                       </Text>
                       {iv.occurrence_status === 'unconfirmed' && (
                         <Tag color="default" style={{ marginInlineStart: 0 }}>never confirmed</Tag>

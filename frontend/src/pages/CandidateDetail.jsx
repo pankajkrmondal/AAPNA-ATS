@@ -1,6 +1,6 @@
 /**
  * CandidateDetail Page — Tabbed detail view for a single candidate.
- * Placeholder tabs: Profile, Resume, AI Insights, Emails, Timeline.
+ * Tabs: Profile, Resume, AI Insights, Emails, Timeline (real history since N29).
  */
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, Tabs, Typography, Button, Avatar, Space, Tag, Row, Col, Descriptions, Empty, Timeline, Form, Input, Modal, message } from 'antd';
@@ -24,27 +24,35 @@ import StatusBadge from '../components/common/StatusBadge';
 import SkillTags from '../components/common/SkillTags';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
+import { invalidateCandidateCopies } from '../utils/candidateCache';
+import { fmtDateTime } from '../utils/dateFormat';
 
 const { Title, Text, Paragraph } = Typography;
 
-/** Mock candidate for demo. */
-const MOCK_CANDIDATE = {
-  id: '1',
-  name: 'Priya Sharma',
-  email: 'priya.sharma@email.com',
-  phone: '+91 98765 43210',
-  location: 'Mumbai, India',
-  position: 'Senior React Developer',
-  experience: '6 years',
-  status: 'shortlisted',
-  score: 92,
-  skills: ['React', 'TypeScript', 'Node.js', 'GraphQL', 'AWS', 'Docker', 'Jest'],
-  summary: 'Experienced frontend engineer with 6+ years building scalable web applications using React and TypeScript. Strong background in performance optimization and design systems.',
-  education: 'B.Tech in Computer Science — IIT Bombay, 2018',
-  currentCompany: { Name: 'TechCorp Solutions', Website: '' },
-  noticePeriod: '30 days',
-  expectedCTC: '₹28 LPA',
-};
+/**
+ * The candidate's real history, oldest first (N29). This tab used to show a
+ * hard-coded demo timeline ("Resume uploaded · Jun 4, 2026", "Score: 92%") for
+ * every candidate. Built from the record's own dates and, for staff, each
+ * pipeline journey (one per MRF); events with no date are left out.
+ */
+function buildTimeline(c, journeys = []) {
+  const events = [
+    { at: c.createdAt, color: '#7a922e', title: 'Added to the ATS', note: c.jobSource ? `Source: ${c.jobSource}` : null },
+    { at: c.detailsRequestedAt, color: '#d4a017', title: 'Missing details requested' },
+    { at: c.detailsCompletedAt, color: '#4a7c59', title: 'Missing details completed' },
+  ];
+  for (const j of journeys) {
+    const role = `${j.role}${j.mrf_id ? ` · MRF-${j.mrf_id}` : ''}`;
+    events.push({ at: j.shortlisted_at, color: '#2980b9', title: `Shortlisted for ${role}`, note: j.shortlisted_by ? `by ${j.shortlisted_by}` : null });
+    if (j.final_outcome) {
+      events.push({ at: j.closed_at, color: 'gray', title: `Closed for ${role}: ${String(j.final_outcome).replace(/_/g, ' ')}` });
+    } else {
+      events.push({ at: null, color: 'blue', title: `Now at ${j.current_stage_label} for ${role}`, current: true });
+    }
+  }
+  const dated = events.filter((e) => e.at).sort((a, b) => new Date(a.at) - new Date(b.at));
+  return [...dated, ...events.filter((e) => e.current)];
+}
 
 export default function CandidateDetail() {
   const { id } = useParams();
@@ -63,7 +71,19 @@ export default function CandidateDetail() {
     retry: false,
   });
 
-  const data = candidate || MOCK_CANDIDATE;
+  // Never a stand-in: a candidate that fails to load shows "not found" below,
+  // not a demo profile.
+  const data = candidate || {};
+
+  // Pipeline journeys for the timeline. Staff only (the API refuses vendors);
+  // a refusal just leaves the journeys out.
+  const { data: journeys = [] } = useQuery({
+    queryKey: ['candidate-pipeline-scores', String(id)],
+    queryFn: () => candidateService.getPipelineScores(id).then((r) => r.data?.data || []),
+    enabled: !!candidate,
+    retry: false,
+  });
+  const timeline = buildTimeline(data, journeys);
 
   /** Cursor-tracked spotlight for this page's `.spotlight` surface (the header
    *  card), same delegated listener the dashboard uses.
@@ -183,6 +203,7 @@ export default function CandidateDetail() {
       message.success('Candidate details updated successfully.');
       setEditOpen(false);
       queryClient.invalidateQueries({ queryKey: ['candidate', id] });
+      invalidateCandidateCopies(queryClient);
     } catch (err) {
       message.error(err.response?.data?.message || err?.message || 'Failed to update candidate details.');
     } finally {
@@ -293,14 +314,23 @@ export default function CandidateDetail() {
       ),
       children: (
         <div className="animate-fade-in" style={{ padding: '24px 0' }}>
-          <Timeline
-            items={[
-              { color: '#7a922e', children: <><Text strong>Resume uploaded</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:30 PM</Text></> },
-              { color: '#92a63c', children: <><Text strong>AI screening completed</Text> — Score: {data.score || 92}%<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 2:31 PM</Text></> },
-              { color: '#2980b9', children: <><Text strong>Shortlisted</Text> by HR Admin<br /><Text type="secondary" style={{ fontSize: 12 }}>Jun 4, 2026 · 3:15 PM</Text></> },
-              { color: 'gray', children: <><Text type="secondary">Awaiting interview scheduling</Text></> },
-            ]}
-          />
+          {timeline.length === 0 ? (
+            <Empty description="No history recorded for this candidate" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          ) : (
+            <Timeline
+              items={timeline.map((e) => ({
+                color: e.color,
+                children: (
+                  <>
+                    <Text strong>{e.title}</Text>
+                    {e.note && <Text type="secondary"> {e.note}</Text>}
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>{e.at ? fmtDateTime(e.at) : 'Current stage'}</Text>
+                  </>
+                ),
+              }))}
+            />
+          )}
         </div>
       ),
     },
@@ -311,6 +341,19 @@ export default function CandidateDetail() {
     return (
       <div className="stagger-children" ref={rootRef}>
         <LoadingSkeleton type="detail" />
+      </div>
+    );
+  }
+
+  if (!candidate) {
+    // Same root again (rootRef note above). This used to render a demo
+    // candidate, "Priya Sharma", in place of the one that failed to load.
+    return (
+      <div className="stagger-children" ref={rootRef}>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/candidates')} style={{ marginBottom: 16 }}>
+          Back to Candidates
+        </Button>
+        <Empty description="Candidate not found" />
       </div>
     );
   }
@@ -357,6 +400,7 @@ export default function CandidateDetail() {
               <Space size={12} align="center">
                 <Title level={3} style={{ margin: 0, fontWeight: 700 }}>{data.name}</Title>
                 <StatusBadge status={data.status} />
+                {data.score > 0 && (
                 <Tag
                   style={{
                     borderRadius: 6,
@@ -370,6 +414,7 @@ export default function CandidateDetail() {
                 >
                   {data.score}% Match
                 </Tag>
+                )}
               </Space>
               <Text type="secondary" style={{ fontSize: 15 }}>{data.position}</Text>
               <Space size={16} style={{ marginTop: 4 }}>

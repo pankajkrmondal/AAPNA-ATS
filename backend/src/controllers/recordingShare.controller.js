@@ -19,6 +19,7 @@
  * Plan: docs/phase3/CANDIDATE-COMPLETE-DOWNLOAD-PLAN.md §6.5, §10.2a.
  */
 import catchAsync from '../utils/catchAsync.js';
+import { fmtDateTime } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { getAccessToken } from '../services/onedrive.service.js';
@@ -108,14 +109,7 @@ export const getSharedRecordingPage = catchAsync(async (req, res) => {
   // 17th is not a rounding difference to whoever is trying to watch a round
   // before it closes.
   const when = recording.recorded_start_at
-    ? new Date(recording.recorded_start_at).toLocaleString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: EXPORT_TIMEZONE,
-    })
+    ? fmtDateTime(recording.recorded_start_at, { timeZone: EXPORT_TIMEZONE })
     : null;
   const until = shareDate(link.expires_at, EXPORT_TIMEZONE);
 

@@ -68,9 +68,9 @@ const RECIPIENTS = {
     resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '' },
     missingEmailAlert:  { to: 'hmopuri@aapnainfotech.com', cc: '' },
     duplicateAlert:     { to: 'pkmondal@aapnainfotech.com', cc: '' },
-    mrfApproval:        { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '' },
-    mrfSubmitHrNotify:  { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com', cc: '' },
-    mrfOutcome:         { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com', cc: '' },
+    mrfApproval:        { to: 'hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '' },
+    mrfSubmitHrNotify:  { to: 'hmopuri@aapnainfotech.com', cc: '' },
+    mrfOutcome:         { to: 'hmopuri@aapnainfotech.com', cc: '' },
     shortlistCc:        { to: '', cc: 'pkmondal@aapnainfotech.com' },
   },
   production: {
@@ -106,7 +106,7 @@ const RECIPIENTS = {
 const MRF_APPROVERS = {
   staging: [
     { email: 'hmopuri@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },
-    { email: 'saukumar@aapnainfotech.com', name: 'Sanghamitra Roy', title: 'CHRO' },
+    { email: 'pkmondal@aapnainfotech.com', name: 'Sanghamitra Roy', title: 'CHRO' },
   ],
   production: [
     { email: 'aroy@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },

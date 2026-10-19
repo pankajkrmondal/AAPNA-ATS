@@ -6,6 +6,8 @@
  * Plan: docs/phase3/New MRF Request - Approval Request/MRF-Approval-Unified-Fix-Plan.md §6
  */
 
+import { fmtDateTimeIst } from './dateFormat.js';
+
 /** `typ` claim of a personal approval JWT. Stops any other JWT signed with the same secret (e.g. a login token) being accepted as an approval link. */
 export const APPROVAL_TOKEN_TYP = 'mrf_approval';
 
@@ -116,6 +118,26 @@ export function titleForApprover(approvers = [], deciderEmail) {
 }
 
 /**
+ * Current roster name for an approver, looked up by email; the stored name
+ * otherwise. Names are copied onto the tokens, the audit events and the MRF
+ * when a request goes out, so without this an MRF sent before a roster change
+ * keeps the old names on screen for good (N32 reopened 16 Oct: "Staging
+ * Approver A/B" on the MRF page). A fallback roster uses the email as the
+ * name, which never beats a stored name.
+ * @param {{ email: string, name?: string }[]} approvers
+ * @param {string|null} email
+ * @param {string|null} storedName
+ * @returns {string|null}
+ */
+export function nameForApprover(approvers = [], email, storedName) {
+  if (email) {
+    const hit = approvers.find((a) => a.email.toLowerCase() === String(email).toLowerCase());
+    if (hit?.name && hit.name.toLowerCase() !== hit.email.toLowerCase()) return hit.name;
+  }
+  return storedName || null;
+}
+
+/**
  * Normalise a client IP for storage in an INET column: strips the IPv4-mapped
  * IPv6 prefix and returns null for anything that is not a plain IPv4/IPv6
  * address, so a malformed header can never fail the request.
@@ -214,21 +236,7 @@ export function clampText(value, max) {
  * @param {Date|string|null} value
  */
 export function formatIst(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  // Numeric parts only: ICU versions disagree on short month names ("Sep" vs
-  // "Sept") and on the AM/PM marker, so both are formatted here instead.
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'numeric', year: 'numeric',
-    hour: 'numeric', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(d);
-  const get = (t) => Number(parts.find((p) => p.type === t)?.value);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const h24 = get('hour');
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  const mm = String(get('minute')).padStart(2, '0');
-  return `${get('day')} ${months[get('month') - 1]} ${get('year')}, ${h12}:${mm} ${h24 < 12 ? 'AM' : 'PM'} IST`;
+  return fmtDateTimeIst(value);
 }
 
 /** "approved" / "declined" (the word the outcome email uses for a rejection). */

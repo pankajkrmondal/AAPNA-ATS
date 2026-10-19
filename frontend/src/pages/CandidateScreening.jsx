@@ -53,7 +53,6 @@ import {
   FileTextOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useQueryClient } from '@tanstack/react-query';
 import useAuth from '../hooks/useAuth';
 import screeningService from '../services/screeningService';
@@ -66,7 +65,7 @@ import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
-import { fmtDate } from '../utils/dateFormat';
+import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { mrfOptionLabel, closureReasonLabel } from '../utils/mrfLabel';
 
 const { Title, Text, Paragraph } = Typography;
@@ -1803,12 +1802,12 @@ export default function CandidateScreening() {
                           {/* Shortlisted/Rejected by/on — plainly visible, no hover required */}
                           {c.shortlisted_by && (
                             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                              Shortlisted by <strong style={{ color: 'var(--text-2)' }}>{c.shortlisted_by}</strong> on {dayjs(c.shortlisted_at).format('DD MMM YYYY')}
+                              Shortlisted by <strong style={{ color: 'var(--text-2)' }}>{c.shortlisted_by}</strong> on {fmtDate(c.shortlisted_at)}
                             </div>
                           )}
                           {c.rejected_by && (
                             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                              Rejected by <strong style={{ color: 'var(--text-2)' }}>{c.rejected_by}</strong> on {dayjs(c.rejected_at).format('DD MMM YYYY')}
+                              Rejected by <strong style={{ color: 'var(--text-2)' }}>{c.rejected_by}</strong> on {fmtDate(c.rejected_at)}
                             </div>
                           )}
 
@@ -1828,7 +1827,7 @@ export default function CandidateScreening() {
                                       <div style={{ fontWeight: 700, marginBottom: 4 }}>{j.position || 'Role not recorded'}</div>
                                       {j.events.length > 0 ? j.events.map((e, i) => (
                                         <div key={i}>
-                                          {dayjs(e.at).format('DD MMM YY')} · {e.status_label || `${e.stage_label} ${e.event_type}`}
+                                          {fmtDate(e.at)} · {e.status_label || `${e.stage_label} ${e.event_type}`}
                                         </div>
                                       )) : <div>No recorded events yet.</div>}
                                     </div>
@@ -2745,7 +2744,7 @@ export default function CandidateScreening() {
                                 </Col>
                                 <Col span={12}>
                                   <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Shortlisted On</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.shortlisted_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{fmtDateTime(selectedCandidate.shortlisted_at)}</Text>
                                 </Col>
                               </>
                             )}
@@ -2757,7 +2756,7 @@ export default function CandidateScreening() {
                                 </Col>
                                 <Col span={12}>
                                   <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase' }}>Rejected On</Text>
-                                  <Text strong style={{ fontSize: 13 }}>{dayjs(selectedCandidate.rejected_at).format('DD MMM YYYY, hh:mm a')}</Text>
+                                  <Text strong style={{ fontSize: 13 }}>{fmtDateTime(selectedCandidate.rejected_at)}</Text>
                                 </Col>
                               </>
                             )}
@@ -2844,7 +2843,7 @@ export default function CandidateScreening() {
             convMessages.map((msg, index) => {
               const isOut = msg.direction === 'outbound';
               const timeStr = msg.sent_at
-                ? dayjs(msg.sent_at).format('DD MMM, hh:mm a')
+                ? fmtDateTime(msg.sent_at)
                 : '';
               const showBadge = isOut && msg.tracking;
               const cleanBodyText = cleanMsgBody(msg.body_preview || msg.body_html);

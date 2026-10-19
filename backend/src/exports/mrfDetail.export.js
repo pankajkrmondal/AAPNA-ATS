@@ -28,6 +28,8 @@ import prisma from '../config/database.js';
 import AppError from '../utils/AppError.js';
 import { isMrfFilled } from '../config/pipelineStages.js';
 import { formatDate, formatDateTime } from '../utils/csvExport.js';
+import { nameForApprover } from '../utils/mrfApprovalRules.js';
+import { getApproverRoster } from '../services/mrfApproval.service.js';
 
 /**
  * Workflow tag labels, mirroring getWorkflowSummaryTags() in MRF.jsx.
@@ -299,6 +301,12 @@ export async function fetch({ filters }) {
   const mainMrf = jdSend.mrf_id
     ? await prisma.rpa_mrf.findUnique({ where: { id: BigInt(jdSend.mrf_id) } })
     : null;
+
+  // The decider's name as the approver roster has it today, as on screen (N32).
+  if (mainMrf?.decided_by_email) {
+    const roster = await getApproverRoster().catch(() => []);
+    mainMrf.decided_by_name = nameForApprover(roster, mainMrf.decided_by_email, mainMrf.decided_by_name);
+  }
 
   return buildDetailRows(jdSend, mainMrf);
 }

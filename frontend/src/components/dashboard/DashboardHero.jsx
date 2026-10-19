@@ -82,9 +82,9 @@ export default function DashboardHero({
           </Title>
           <Text className="dash-hero__subtitle">
             Here's what's happening across your recruitment pipeline ·{' '}
-            <Tooltip title={`Your local time — ${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}. Everything on this page is counted in this timezone.`}>
+            <Tooltip title={`Your local time — ${now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' })}. Everything on this page is counted in this timezone.`}>
               <span className="mono">
-                {now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
               </span>
             </Tooltip>
           </Text>

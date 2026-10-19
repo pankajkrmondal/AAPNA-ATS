@@ -1,8 +1,10 @@
 import prisma from '../config/database.js';
+import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
 import { generateEmbedding, saveCandidateVector, rerankCandidates } from './vectorStore.service.js';
+import { clearScreeningRoleCache } from './candidateSync.service.js';
 import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, logFailedEmail, injectTrackingPixel } from './emailNotification.service.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -1697,9 +1699,11 @@ export async function searchKeywordCandidates(filters) {
 }
 
 /**
- * Helper: Re-sync vector embeddings after status changes
+ * Helper: Re-sync vector embeddings after status changes, and after a
+ * candidate edit that changes a searchable field (N29, candidate.service.js).
+ * Never throws.
  */
-async function refreshCandidateVector(candidateId) {
+export async function refreshCandidateVector(candidateId) {
   try {
     const candidate = await prisma.rpa_cv.findUnique({
       where: { id: BigInt(candidateId) },
@@ -2050,15 +2054,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
   }
 
   // Invalidate Redis caches for MRF roles
-  try {
-    const keys = await redis.keys('screening:role:*');
-    if (keys.length > 0) {
-      await redis.del(keys);
-      logger.info('Screening Redis caches invalidated successfully');
-    }
-  } catch (err) {
-    logger.warn('Failed to invalidate Redis cache:', { error: err.message });
-  }
+  await clearScreeningRoleCache();
 
   return {
     success: true,
@@ -2294,14 +2290,7 @@ export async function rejectCandidates(candidates, mrfId, roleName, user, option
     refreshCandidateVector(c.id);
   }
 
-  try {
-    const keys = await redis.keys('screening:role:*');
-    if (keys.length > 0) {
-      await redis.del(keys);
-    }
-  } catch (err) {
-    logger.warn('Failed to invalidate Redis cache:', { error: err.message });
-  }
+  await clearScreeningRoleCache();
 
   return {
     success: true,
@@ -2712,26 +2701,8 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
   }
 
   const interviewLink = `${config.zeko.interviewLinkBase}/${job.slug}`;
-  const startStr =
-    roundedStart.toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kolkata',
-    }) + ' IST';
-  const endStr =
-    roundedEnd.toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kolkata',
-    }) + ' IST';
+  const startStr = fmtDateTimeIst(roundedStart);
+  const endStr = fmtDateTimeIst(roundedEnd);
 
   const { subject, html: emailHtml } = compileTemplate(template.subject, template.body_html, {
     candidate_name: shortlist.candidate_name,

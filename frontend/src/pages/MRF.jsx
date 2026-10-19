@@ -12,6 +12,7 @@ import ExportButton from '../components/common/ExportButton';
 import ApprovalTrail from '../components/mrf/ApprovalTrail';
 import useAuth from '../hooks/useAuth';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
+import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -202,23 +203,6 @@ export default function MRF() {
   // Submitted main MRF (rpa_mrf) state — loaded when the record has a linked mrf_id
   const [mainMrf, setMainMrf] = useState(null);
   const [mainMrfLoading, setMainMrfLoading] = useState(false);
-
-  const formatSubmittedDate = (val) => {
-    if (!val) return '';
-    const date = new Date(val);
-    const day = date.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
-    
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'pm' : 'am';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    
-    return `${day} ${month} ${year}, ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
-  };
 
   const getWorkflowSummaryTags = (record) => {
     if (!record) return { raise: { label: 'PENDING', color: 'gold' }, approval: { label: 'PENDING', color: 'gold' } };
@@ -649,9 +633,7 @@ export default function MRF() {
       key: 'created_at',
       render: (val) => {
         if (!val) return '—';
-        const date = new Date(val);
-        const options = { day: 'numeric', month: 'short', year: 'numeric' };
-        return <Text style={{ fontSize: 13 }}>{date.toLocaleDateString('en-GB', options)}</Text>;
+        return <Text style={{ fontSize: 13 }}>{fmtDate(val)}</Text>;
       },
     },
   ];
@@ -901,7 +883,7 @@ export default function MRF() {
                 {selectedRecord.first_name} {selectedRecord.last_name} — {selectedRecord.role}
               </div>
               <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-3)', marginTop: 2 }}>
-                Submitted {formatSubmittedDate(selectedRecord.created_at)} &bull; ID #{selectedRecord.id}
+                Submitted {fmtDateTime(selectedRecord.created_at)} &bull; ID #{selectedRecord.id}
               </div>
             </div>
           )
@@ -1167,7 +1149,7 @@ export default function MRF() {
                     label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>Form Submission Date</span>}
                   >
                     <Input
-                      value={selectedRecord.created_at ? new Date(selectedRecord.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                      value={fmtDate(selectedRecord.created_at)}
                       readOnly
                       disabled
                       style={{ borderRadius: 6 }}
@@ -1209,7 +1191,7 @@ export default function MRF() {
                                 // never be touched/submitted (submission dates stay non-editable).
                                 <Form.Item label={<span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>{label}</span>}>
                                   <Input
-                                    value={mainMrf.date_of_request ? new Date(mainMrf.date_of_request).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                                    value={fmtDate(mainMrf.date_of_request)}
                                     readOnly
                                     disabled
                                     style={{ borderRadius: 6 }}

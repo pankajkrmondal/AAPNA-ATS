@@ -79,15 +79,24 @@ router.get('/:id', candidateController.getCandidate);
 
 /**
  * PATCH /api/candidates/:id
- * Update a candidate record (partial update)
+ * Update a candidate record (partial update). Staff only (N29): a vendor's
+ * search is scoped to their own submissions, but this edit was not, so a
+ * vendor login could rewrite any candidate through the API.
  */
-router.patch('/:id', candidateController.updateCandidate);
+router.patch('/:id', requireStaff, candidateController.updateCandidate);
 
 /**
  * GET /api/candidates/:id/emails
  * Retrieve email conversations associated with a candidate
  */
 router.get('/:id/emails', candidateController.getCandidateEmails);
+
+/**
+ * GET /api/candidates/:id/pipeline-scores
+ * Read-only pipeline scores for Search Candidate (N29). Staff only, like the
+ * pipeline it reads from.
+ */
+router.get('/:id/pipeline-scores', requireStaff, candidateController.getCandidatePipelineScores);
 
 // ── Referral candidate (P1) ───────────────────────────────────────────
 //

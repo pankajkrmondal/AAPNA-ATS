@@ -16,21 +16,11 @@ import { Badge, Popover, List, Typography, Button, Empty, Space, Spin } from 'an
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { getSocket } from '../../services/socket';
 import notificationService from '../../services/notificationService';
+import { fmtRelative } from '../../utils/dateFormat';
 
 const { Text } = Typography;
 
 const NOTIFICATIONS_KEY = ['notifications'];
-
-/** Relative age for the list, e.g. "just now" / "12m" / "3h" / "2d". */
-function timeAgo(iso) {
-  if (!iso) return '';
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-}
 
 export default function NotificationBell({ style }) {
   const [open, setOpen] = useState(false);
@@ -157,7 +147,7 @@ export default function NotificationBell({ style }) {
                       )}
                       <br />
                       <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
-                        {timeAgo(item.created_at)}
+                        {fmtRelative(item.created_at)}
                       </Text>
                     </div>
                   }

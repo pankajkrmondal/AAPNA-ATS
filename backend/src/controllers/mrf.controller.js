@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { fmtDate } from '../utils/dateFormat.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -757,7 +758,7 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     submitter_email,
     hiring_manager_name,
     hiring_manager_designation,
-    date_of_request: parsedDate.toLocaleDateString(),
+    date_of_request: fmtDate(parsedDate),
     required_in,
     position_hiring_for,
     number_of_positions: parsedNumPositions,

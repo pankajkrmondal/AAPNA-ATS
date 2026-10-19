@@ -47,6 +47,7 @@ import { getSocket } from '../services/socket';
 import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
+import { fmtDateTime } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -78,17 +79,6 @@ const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
  */
 const NON_TERMINAL_STATUSES = new Set(['Uploaded', 'Queued', 'Processing']);
 const POLL_INTERVAL_MS = 10_000;
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
-  } catch {
-    return '—';
-  }
-}
 
 export default function HRUpload() {
   // ── Upload state ──
@@ -388,7 +378,7 @@ export default function HRUpload() {
     {
       title: 'Uploaded At',
       key: 'created_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.created_at)}</span>,
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{fmtDateTime(r.created_at)}</span>,
     },
     {
       title: 'Status',
@@ -411,7 +401,7 @@ export default function HRUpload() {
     {
       title: 'Last Updated',
       key: 'updated_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.updated_at)}</span>,
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{fmtDateTime(r.updated_at)}</span>,
     },
     {
       title: 'Action',
@@ -730,7 +720,7 @@ export default function HRUpload() {
               </Divider>
               <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                 <Descriptions.Item label="Uploaded By HR">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
-                <Descriptions.Item label="Uploaded At">{formatDate(c.uploadedAt)}</Descriptions.Item>
+                <Descriptions.Item label="Uploaded At">{fmtDateTime(c.uploadedAt)}</Descriptions.Item>
                 <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>
               </Descriptions>
             </>

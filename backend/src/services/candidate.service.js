@@ -6,6 +6,9 @@ import { mapReferralFields } from '../utils/referralView.js';
 import { completedSince } from '../utils/missingDetails.js';
 import { validateCandidateFields, describeFieldErrors } from '../utils/candidateFieldRules.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
+import { refreshCandidateVector } from './screening.service.js';
+import { syncShortlistIdentity, clearScreeningRoleCache, clearCandidateInsightCache } from './candidateSync.service.js';
+import { EMBEDDED_CV_FIELDS, touchesEmbeddedFields } from '../utils/candidateSync.js';
 
 /**
  * Candidate service.
@@ -532,7 +535,9 @@ export async function update(id, data, actor = null) {
     'LastCompanyExperienceYears', 'a10th', 'a12th', 'graduation', 'postGraduation'];
   const existingRow = await prisma.rpa_cv.findUnique({
     where: { id: BigInt(id) },
-    select: Object.fromEntries(ruleFields.map((k) => [k, true])),
+    // The rule fields, plus what decides the sync below: the name and email
+    // the pipeline copied, and the fields the search vector is built from.
+    select: Object.fromEntries([...new Set([...ruleFields, ...EMBEDDED_CV_FIELDS, 'Name'])].map((k) => [k, true])),
   });
   const changed = Object.fromEntries(
     Object.entries(dbData).filter(([k, v]) => ruleFields.includes(k) && String(v ?? '') !== String(existingRow?.[k] ?? '')),
@@ -550,18 +555,36 @@ export async function update(id, data, actor = null) {
     dbData.NoticePeriodDays = parseNoticePeriodDays(dbData.NoticePeriod);
   }
 
-  const updated = await prisma.rpa_cv.update({
-    where: { id: BigInt(id) },
-    data: {
-      ...dbData,
-      modifiedAt: new Date(),
-    },
+  // The record and the pipeline's copy of its name/email change together (N29):
+  // the board, the drawer, Analytics and every pipeline email read the copy.
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.rpa_cv.update({
+      where: { id: BigInt(id) },
+      data: {
+        ...dbData,
+        modifiedAt: new Date(),
+      },
+    });
+    if ('Name' in dbData || 'EmailID' in dbData) {
+      await syncShortlistIdentity(id, { previousEmails: [existingRow?.EmailID].filter(Boolean), db: tx });
+    }
+    return row;
   });
 
   logger.info(`Candidate ${id} updated`, {
     fields: Object.keys(dbData),
     by: actor?.username || actor?.email || 'unknown',
   });
+
+  // Cached screening lists and insight text would keep showing the old record.
+  await Promise.all([clearScreeningRoleCache(), clearCandidateInsightCache(id)]);
+
+  // Search matches on the vector, so rebuild it when a field it is built from
+  // changed (one embedding call; a name or phone fix skips it). In the
+  // background: it never throws, and the save must not wait on it.
+  if (touchesEmbeddedFields(existingRow, dbData)) {
+    setImmediate(() => { refreshCandidateVector(id); });
+  }
 
   // Pre-generate AI insights in the background on update (fire-and-forget)
   setImmediate(async () => {

@@ -18,6 +18,7 @@ import {
 import { ReloadOutlined, ClearOutlined, WarningOutlined } from '@ant-design/icons';
 import adminService from '../../services/adminService';
 import ExportButton from '../common/ExportButton';
+import { fmtDateTime } from '../../utils/dateFormat';
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -27,12 +28,6 @@ const ACTION_META = {
   updated: { label: 'Referrer / note changed', color: 'blue' },
   removed: { label: 'Referral REMOVED', color: 'red' },
 };
-
-const fmt = (v) => (v
-  ? new Date(v).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
-  : '—');
 
 export default function ReferralLogPanel() {
   const [rows, setRows] = useState([]);
@@ -78,7 +73,7 @@ export default function ReferralLogPanel() {
   };
 
   const columns = [
-    { title: 'WHEN', dataIndex: 'acted_at', width: 165, render: (v) => <span style={{ fontSize: 12.5 }}>{fmt(v)}</span> },
+    { title: 'WHEN', dataIndex: 'acted_at', width: 165, render: (v) => <span style={{ fontSize: 12.5 }}>{fmtDateTime(v)}</span> },
     {
       title: 'ACTION',
       dataIndex: 'action',

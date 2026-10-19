@@ -36,7 +36,9 @@ import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
-import { fmtDate } from '../utils/dateFormat';
+import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateCandidateCopies } from '../utils/candidateCache';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import screeningService from '../services/screeningService';
@@ -83,6 +85,11 @@ const dateCell = (value) => (
 export default function Candidates() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  // The values the Edit form opened with, so a save sends only what the user
+  // changed (N29): sending every field let a form opened before a pipeline
+  // update write the old Final Status or Zeko score back over the new one.
+  const editInitialValues = useRef({});
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [total, setTotal] = useState(0);
@@ -125,6 +132,11 @@ export default function Candidates() {
   const userRole = (user?.role || '').toLowerCase();
   const canAddToJd = userRole !== 'vendor'
     && (userRole === 'admin' || userRole === 'superadmin' || (user?.permissions || []).includes('candidate_screening'));
+  // Editing a candidate is staff-only; the API refuses vendors (N29).
+  const canEdit = userRole !== 'vendor';
+  // These three are the candidate-level copy the hourly Zeko sync rewrites,
+  // so an edit here lasts only until the next synced result (N29).
+  const ZEKO_SYNC_HINT = 'Updated automatically by Zeko sync';
   const rolesQuery = useApprovedRoles({ enabled: canAddToJd });
   const openRoles = useMemo(() => (rolesQuery.data || []).filter((r) => !r.closed), [rolesQuery.data]);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -294,6 +306,7 @@ export default function Candidates() {
       ManagerialOrCEOFeedback: record.ManagerialOrCEOFeedback,
       HRInterview: record.HRInterview,
     });
+    editInitialValues.current = editForm.getFieldsValue(true);
     setEditOpen(true);
   };
 
@@ -361,10 +374,30 @@ export default function Candidates() {
         HRInterview: values.HRInterview,
       };
 
-      await candidateService.update(selectedCandidate.id, payload);
+      // Send only the fields the user changed. Two payload keys are built from
+      // differently named form fields; every other key is its form field.
+      const FORM_FIELDS_FOR = {
+        education: ['education', 'educationOther'],
+        employment_history: ['employment_history_companies'],
+      };
+      const before = editInitialValues.current || {};
+      const fieldChanged = (f) => JSON.stringify(values[f] ?? null) !== JSON.stringify(before[f] ?? null);
+      const changes = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => (FORM_FIELDS_FOR[key] || [key]).some(fieldChanged)),
+      );
+      if (Object.keys(changes).length === 0) {
+        message.info('No changes to save.');
+        setEditOpen(false);
+        return;
+      }
+
+      await candidateService.update(selectedCandidate.id, changes);
       message.success('Candidate details updated successfully.');
       setEditOpen(false);
       loadCandidates(searchParams);
+      // The pipeline and screening pages read their own cached copies; the
+      // backend has synced them, so drop the cache to refetch (N29).
+      invalidateCandidateCopies(queryClient);
     } catch (err) {
       message.error(err?.message || 'Failed to update candidate details.');
     } finally {
@@ -580,14 +613,16 @@ export default function Candidates() {
               onClick={() => handleOpenView(record)}
               style={{ borderRadius: 6, background: 'var(--colorBgContainer)', borderColor: 'var(--border)', color: 'var(--text-2)' }}
             />
-            <Button
-              size="small"
-              title="Edit"
-              aria-label="Edit"
-              icon={<EditOutlined />}
-              onClick={() => handleOpenEdit(record)}
-              style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff' }}
-            />
+            {canEdit && (
+              <Button
+                size="small"
+                title="Edit"
+                aria-label="Edit"
+                icon={<EditOutlined />}
+                onClick={() => handleOpenEdit(record)}
+                style={{ borderRadius: 6, background: 'var(--brand-primary)', borderColor: 'var(--brand-primary)', color: '#fff' }}
+              />
+            )}
             <Button
               size="small"
               title="Conversations"
@@ -833,7 +868,7 @@ export default function Candidates() {
         width={750}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
-        <CandidateDetailCard candidate={selectedCandidate} />
+        <CandidateDetailCard candidate={selectedCandidate} showPipelineScores={canEdit} />
       </Modal>
 
       {/* 2) EDIT CANDIDATE DETAILS MODAL. One field per row (N18 review), with
@@ -1135,15 +1170,15 @@ export default function Candidates() {
             <Input style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={fieldLabel('ZEKO INTERVIEW SCORE')} name="ZekoInterviewScore" rules={[{ validator: wholeNumberValidator }]}>
+          <Form.Item label={fieldLabel('ZEKO INTERVIEW SCORE')} name="ZekoInterviewScore" rules={[{ validator: wholeNumberValidator }]} extra={ZEKO_SYNC_HINT}>
             <Input style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={fieldLabel('ZEKO CODING SCORE')} name="ZekoCodingScore" rules={[{ validator: wholeNumberValidator }]}>
+          <Form.Item label={fieldLabel('ZEKO CODING SCORE')} name="ZekoCodingScore" rules={[{ validator: wholeNumberValidator }]} extra={ZEKO_SYNC_HINT}>
             <Input style={{ borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={fieldLabel('ZEKO COMMUNICATION SCORE')} name="ZekoCommunicationScore" rules={[{ validator: wholeNumberValidator }]}>
+          <Form.Item label={fieldLabel('ZEKO COMMUNICATION SCORE')} name="ZekoCommunicationScore" rules={[{ validator: wholeNumberValidator }]} extra={ZEKO_SYNC_HINT}>
             <Input style={{ borderRadius: 6 }} />
           </Form.Item>
 
@@ -1228,7 +1263,7 @@ export default function Candidates() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text strong style={{ fontSize: 13 }}>{email.subject || '(No Subject)'}</Text>
                     <Text type="secondary" style={{ fontSize: 11 }}>
-                      {email.sent_at ? email.sent_at.split('T')[0] : ''}
+                      {email.sent_at ? fmtDateTime(email.sent_at) : ''}
                     </Text>
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>

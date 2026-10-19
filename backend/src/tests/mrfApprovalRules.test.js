@@ -24,6 +24,7 @@ import {
   approverLabel,
   approverNoteHtml,
   titleForApprover,
+  nameForApprover,
 } from '../utils/mrfApprovalRules.js';
 import { reminderSkipReason, MRF_APPROVAL_REQUEST_EMAIL_TYPE } from '../jobs/reminderEligibility.js';
 import { splitSql } from '../utils/splitSql.js';
@@ -71,6 +72,18 @@ test('roster: optional title is carried when set and absent otherwise (N16)', ()
   assert.equal(titleForApprover(r.approvers, 'sroy@aapnainfotech.com'), null);
   assert.equal(titleForApprover(r.approvers, null), null);
   assert.equal(titleForApprover(r.approvers, 'someone@else.com'), null);
+});
+
+test('names shown for an MRF come from the current roster by email, not the copy made at send time (N32)', () => {
+  const roster = [
+    { email: 'hmopuri@aapnainfotech.com', name: 'Abhijit Roy', title: 'CEO' },
+    { email: 'fallback@aapnainfotech.com', name: 'fallback@aapnainfotech.com' },
+  ];
+  assert.equal(nameForApprover(roster, 'HMOPURI@aapnainfotech.com', 'Staging Approver A'), 'Abhijit Roy');
+  assert.equal(nameForApprover(roster, 'gone@aapnainfotech.com', 'Staging Approver B'), 'Staging Approver B', 'not on the roster: stored name kept');
+  assert.equal(nameForApprover(roster, 'fallback@aapnainfotech.com', 'Real Name'), 'Real Name', 'an email-as-name never replaces a stored name');
+  assert.equal(nameForApprover(roster, null, 'Legacy shared link'), 'Legacy shared link');
+  assert.equal(nameForApprover([], null, null), null);
 });
 
 test('approval email note names the other approvers with their titles (N32)', () => {

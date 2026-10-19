@@ -6,6 +6,8 @@
  * Each function is defensive (handles missing/null fields) so a widget never crashes.
  */
 
+import { MONTHS } from './dateFormat';
+
 /** Coerce a candidate's created date (legacy `createdAt` or `created_at`). */
 function candidateDate(c) {
   const raw = c?.createdAt || c?.created_at || c?.CreatedAt || null;
@@ -42,7 +44,8 @@ export function bucketByDay(candidates = [], days = 30) {
     const k = dayKey(d);
     out.push({
       date: k,
-      label: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }),
+      // Same "07 Oct" style as fmtDayMonth, but on the local day this bucket counts.
+      label: `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]}`,
       count: counts.get(k) || 0,
     });
   }

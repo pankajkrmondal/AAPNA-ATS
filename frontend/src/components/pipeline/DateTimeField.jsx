@@ -20,6 +20,7 @@ import { useMemo } from 'react';
 import { DatePicker, Select } from 'antd';
 import { ClockCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { DATE_FORMAT } from './datePickerConfig';
 
 /** Minutes past midnight -> "2:30 PM", the label Outlook shows. */
 const minutesToLabel = (mins) => dayjs().startOf('day').add(mins, 'minute').format('h:mm A');
@@ -91,7 +92,7 @@ export default function DateTimeField({
       <DatePicker
         size="large"
         style={{ flex: '1 1 60%' }}
-        format="ddd, DD MMM YYYY"
+        format={DATE_FORMAT}
         placeholder={datePlaceholder}
         value={value}
         onChange={handleDate}

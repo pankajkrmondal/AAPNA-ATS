@@ -8,6 +8,7 @@ import { Card, Typography, Empty, Tooltip, Avatar } from 'antd';
 import { CalendarOutlined, ClockCircleOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { upcomingInterviews } from '../../utils/dashboardAggregations';
+import { fmtDateTime, fmtTime, istDateParts } from '../../utils/dateFormat';
 
 const { Title, Text } = Typography;
 
@@ -39,6 +40,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
         ) : (
           items.slice(0, 6).map((it) => {
             const when = dayjs(it._when);
+            const badge = istDateParts(it._when);
             const isToday = when.format('YYYY-MM-DD') === todayKey;
             // Days out, without needing dayjs's relativeTime plugin (not registered
             // in this app) — the row already shows the date, this names the distance.
@@ -52,7 +54,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
                 <br />
                 {it.job_title || it.role || it.pipeline_status || 'Role not recorded'}
                 <br />
-                {whenWord} · {when.format('dddd D MMMM, h:mm A')}
+                {whenWord} · {fmtDateTime(it._when)}
                 <br />
                 <em>Click to open Recruitment Analytics</em>
               </span>
@@ -68,8 +70,8 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
                   onClick={() => onNavigate?.('/analytics')}
                 >
                   <div className="dash-agenda__date">
-                    <span className="dash-agenda__day">{when.format('DD')}</span>
-                    <span className="dash-agenda__mon">{when.format('MMM')}</span>
+                    <span className="dash-agenda__day">{badge?.day}</span>
+                    <span className="dash-agenda__mon">{badge?.month}</span>
                   </div>
                   <Avatar size={34} style={{ background: 'linear-gradient(135deg, var(--gold) 0%, var(--green) 100%)', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                     {initials(it.candidate_name)}
@@ -80,7 +82,7 @@ export default function UpcomingInterviews({ pipeline = [], onNavigate }) {
                   </div>
                   <div className="dash-agenda__time">
                     {isToday && <span className="dash-agenda__today">TODAY</span>}
-                    <span className="mono"><ClockCircleOutlined /> {when.format('hh:mm A')}</span>
+                    <span className="mono"><ClockCircleOutlined /> {fmtTime(it._when)}</span>
                   </div>
                 </div>
               </Tooltip>

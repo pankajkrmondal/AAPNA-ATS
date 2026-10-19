@@ -34,6 +34,7 @@ import vendorService from '../services/vendorService';
 import candidateService from '../services/candidateService';
 import ExportButton from '../components/common/ExportButton';
 import KpiCard from '../components/common/KpiCard';
+import { fmtDate } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 
@@ -263,7 +264,7 @@ export default function VendorDashboard() {
       key: 'createdAt',
       render: (v) => (
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {v ? new Date(v).toLocaleDateString() : '—'}
+          {fmtDate(v)}
         </span>
       ),
     },
