@@ -113,3 +113,18 @@ export const getInviteState = catchAsync(async (req, res) => {
   const state = await assessmentInviteService.getInviteState(req.params.pipelineId);
   return success(res, state);
 });
+
+/**
+ * @desc    Withdraw the latest open Evalground invite (flexible stages, C11)
+ * @route   POST /api/pipeline/assessment-import/invite/:pipelineId/withdraw  { reason, notify_candidate }
+ * @access  Private (recruitment_pipeline module)
+ */
+export const withdrawInvite = catchAsync(async (req, res) => {
+  const { reason, notify_candidate } = req.body || {};
+  const state = await assessmentInviteService.withdrawAssessmentInvite(req.params.pipelineId, {
+    reason,
+    notifyCandidate: notify_candidate !== false,
+    actedBy: req.user?.id || null,
+  });
+  return success(res, state, 'Evalground invite withdrawn.');
+});

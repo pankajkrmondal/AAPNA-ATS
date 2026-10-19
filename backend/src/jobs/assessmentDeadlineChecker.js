@@ -64,6 +64,8 @@ export async function checkOverdueAssessmentInvites() {
     FROM latest_invites li
     WHERE li.deadline_at < NOW()
       AND li.reminded_at IS NULL
+      -- A withdrawn invite (flexible stages, C11) is not owed a test.
+      AND li.withdrawn_at IS NULL
       -- Never ring the overdue bell for a journey that has been closed
       -- underneath the invite. The SQL equivalent of the Prisma guard at
       -- documentReminder.js:46 (rpa_candidate_pipeline: final_outcome null),

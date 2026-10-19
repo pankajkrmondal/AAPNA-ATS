@@ -843,6 +843,21 @@ const TEMPLATES = [
       is_active: true,
     },
   },
+  // Flexible stages (C11) — Withdraw Evalground invite. The inline copy in
+  // assessmentInvite.service.js is used until this row exists.
+  {
+    find: { name: 'Evalground Test Cancelled' },
+    data: {
+      name: 'Evalground Test Cancelled',
+      category: 'interview',
+      subject: 'Your assessment for {{position}} has been cancelled',
+      body_html: `<p>Dear {{candidate_name}},</p>
+<p>The online assessment we sent you for <strong>{{position}}</strong> has been cancelled, so you do not need to take it. Please ignore the earlier test link.</p>
+<p>The recruitment team will be in touch about the next step.</p>`,
+      placeholders: ['candidate_name', 'position'],
+      is_active: true,
+    },
+  },
   {
     find: { name: 'MRF Approval Request' },
     data: {

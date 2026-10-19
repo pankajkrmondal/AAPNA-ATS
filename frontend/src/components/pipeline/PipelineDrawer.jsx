@@ -33,12 +33,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Empty, Input, Modal, Popconfirm, Radio, Row, Col, Select, Space, Spin, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Row, Col, Select, Space, Spin, Tag, Timeline, Tooltip, Typography,
 } from 'antd';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
-  ExclamationCircleOutlined, FileTextOutlined, LinkOutlined, MailOutlined, PauseCircleOutlined,
-  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, UndoOutlined, UserOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, HistoryOutlined, LinkOutlined, LockOutlined, MailOutlined, PauseCircleOutlined,
+  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, SwapOutlined, UndoOutlined, UserOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -70,6 +70,22 @@ const OUTCOME_EMAIL_NOT_SENT = 'Not sent: the recruiter chose not to email the c
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
+
+/**
+ * One line of the drawer's Stage history (flexible stages, C12).
+ * @param {object} ev - rpa_pipeline_stage_events row
+ * @param {{stage_key: string, label: string}[]} stages
+ */
+function stageHistoryText(ev, stages) {
+  const label = (key) => stages.find((s) => s.stage_key === key)?.label || key;
+  switch (ev.event_type) {
+    case 'moved': return ev.notes || `Moved from ${label(ev.from_stage_key)} to ${label(ev.stage_key)}`;
+    case 'entered': return ev.notes && !/^Entered pipeline/.test(ev.notes) ? ev.notes : `Entered ${label(ev.stage_key)}`;
+    case 'skip': return ev.notes || `Arrived in ${label(ev.stage_key)}`;
+    case 'outcome': return `${label(ev.stage_key)}: ${ev.status_label || ev.outcome}${ev.reason_text ? ` — ${ev.reason_text}` : ''}`;
+    default: return `${label(ev.stage_key)}: ${ev.notes || ev.event_type}`;
+  }
+}
 
 /**
  * Two collapsible editable emails (candidate + panel) for the Schedule/Cancel
@@ -361,7 +377,9 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   const labels = stage.stage_key === 'client'
     ? CLIENT_ROUND_LABELS
     : (PIPELINE_LABELS[stage.stage_type] || PIPELINE_LABELS.manual);
-  const enteredEvent = stageEvents.find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip');
+  // The LATEST arrival: under flexible stages a candidate can be moved into a
+  // stage, out of it and back again, and this visit is the one that matters.
+  const enteredEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip' || ev.event_type === 'moved');
   const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
   const emails = [];
   let showScheduleButton = false;
@@ -385,7 +403,9 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     // shortlist notice, offer's approval chain, etc.) overwrite s1 again
     // further down, so this is only ever the final answer where nothing
     // more specific applies.
-    s1 = previousStageOutcome
+    s1 = enteredEvent.event_type === 'moved'
+      ? { state: 'done', detail: `${enteredEvent.notes || 'Moved here'}${enteredEvent.rpa_users?.username ? ` by ${enteredEvent.rpa_users.username}` : ''} · ${new Date(enteredEvent.created_at).toLocaleDateString()}` }
+      : previousStageOutcome
       ? {
           state: 'done',
           detail: `Approved from ${previousStageOutcome.stageLabel} — ${
@@ -575,8 +595,15 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     // for this stage type, results just arrive via import). "Invite Sent" is
     // a real recruiter action (send email / mark sent manually), with a
     // deadline that starts the moment an invite is recorded.
-    const invite = assessmentInvite?.invite;
-    if (assessmentResult) {
+    // A withdrawn invite (flexible stages) is history, not a test in flight:
+    // the round reads as "not sent" again and offers a fresh invite.
+    const invite = assessmentInvite?.isWithdrawn ? null : assessmentInvite?.invite;
+    if (assessmentInvite?.isWithdrawn && !assessmentResult) {
+      s1 = { state: 'active', detail: `Invite withdrawn ${fmtDateTime(assessmentInvite.invite.withdrawn_at)}${assessmentInvite.invite.withdraw_reason ? ` — ${assessmentInvite.invite.withdraw_reason}` : ''}` };
+      s2 = { state: 'pending', detail: 'Send a new Evalground invite to start the test window' };
+      s3 = { state: 'pending', detail: 'Awaiting an Evalground result import' };
+      showInviteButton = isCurrent && !outcomeEvent;
+    } else if (assessmentResult) {
       // Result landed — invite history shown matter-of-factly, no action needed.
       if (invite) {
         s1 = { state: 'done', detail: `Invite ${invite.method === 'email' ? 'emailed' : 'marked sent manually'} · ${fmtDateTime(invite.sent_at)}` };
@@ -668,7 +695,10 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
     const verified = docs.filter((d) => d.status === 'verified').length;
     const rejected = docs.filter((d) => d.status === 'rejected').length;
 
-    if (req) {
+    const linkClosed = req?.token_status === 'closed' && !(docs.length > 0 && verified === docs.length);
+    if (req && linkClosed) {
+      s1 = { state: 'active', detail: `Request cancelled — the upload link is closed · ${fmtDateTime(req.modified_at)}` };
+    } else if (req) {
       s1 = { state: 'done', detail: `Request emailed to the candidate · ${fmtDateTime(req.requested_at)} (vendor not copied — PII)` };
       if (req.last_reminded_at) {
         emails.push(`Document reminder → candidate · ${fmtDateTime(req.last_reminded_at)}${req.reminder_count > 1 ? ` (${req.reminder_count} sent)` : ''}`);
@@ -837,7 +867,7 @@ function ZekoReportLink({ pipelineId, stageKey, recruiterLink, sharedLink }) {
   );
 }
 
-export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClose, onClose, onChanged, onStaleConflict, focusRecordingId }) {
+export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClose, onClose, onChanged, onStaleConflict, focusRecordingId, onRequestMove }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -953,6 +983,12 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   const [closureNotes, setClosureNotes] = useState('');
   const [reopenOpen, setReopenOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
+  // Flexible stages (C11) — the two new undo dialogs.
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const [withdrawNotify, setWithdrawNotify] = useState(true);
+  const [docCancelOpen, setDocCancelOpen] = useState(false);
+  const [docCancelReason, setDocCancelReason] = useState('');
   // How the picked status reads, for the modal's per-outcome email warning.
   const closureLabel = CLOSURE_OPTIONS.find((o) => o.value === closureOutcome)?.label || 'This status';
 
@@ -1290,17 +1326,34 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     mutationFn: ({ action, docId, reason }) => {
       if (action === 'request') return pipelineService.requestDocuments(pipelineId);
       if (action === 'remind') return pipelineService.remindDocuments(pipelineId);
+      if (action === 'cancel') return pipelineService.cancelDocumentRequest(pipelineId, reason);
       if (action === 'verify') return pipelineService.verifyDocument(docId);
       return pipelineService.rejectDocument(docId, reason);
     },
-    onSuccess: (_res, { successMessage }) => {
+    onSuccess: (_res, { action, successMessage }) => {
       queryClient.invalidateQueries({ queryKey: ['pipeline-documents', pipelineId] });
       queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      if (action === 'cancel') setDocCancelOpen(false);
       onChanged?.();
       message.success(successMessage);
     },
     onError: (err) => {
       message.error(err?.message || 'Failed to update documents.');
+    },
+  });
+
+  // Withdraw Evalground invite (flexible stages, C11).
+  const withdrawMutation = useMutation({
+    mutationFn: () => assessmentImportService.withdrawInvite(pipelineId, { reason: withdrawReason.trim(), notify_candidate: withdrawNotify }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assessment-invite', pipelineId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+      setWithdrawOpen(false);
+      onChanged?.();
+      message.success('Evalground invite withdrawn. The candidate can be moved again.');
+    },
+    onError: (err) => {
+      message.error(err?.message || 'Failed to withdraw the invite.');
     },
   });
 
@@ -1482,6 +1535,9 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     mutationFn: (payload) => assessmentImportService.sendInvite({ pipeline_id: pipelineId, ...payload }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assessment-invite', pipelineId] });
+      // An invite starts the stage, which locks the candidate (flexible
+      // stages): the detail carries the lock, so it must reload too.
+      queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
       onChanged?.();
       message.success('Invite recorded.');
       setInviteModalOpen(false);
@@ -1729,6 +1785,12 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   const allStages = (stagesData || []).filter((s) => s.is_active).sort((a, b) => a.sort_order - b.sort_order);
   const currentIdx = allStages.findIndex((s) => s.stage_key === pipeline?.current_stage_key);
   const selectedIdx = allStages.findIndex((s) => s.stage_key === selectedStageKey);
+  // Flexible stages: each stage's real state (passed / skipped / current / not
+  // visited) and whether the candidate can be moved right now.
+  const flexibleStages = !!data?.flexibleStages;
+  const stageStates = data?.stageStates || {};
+  const stageLock = data?.stageLock || null;
+  const passedStageKeys = Object.keys(stageStates).filter((k) => stageStates[k] === 'completed');
   const isCurrentStageSelected = selectedStageKey === pipeline?.current_stage_key;
   const isReadyForDecision = !!zekoScores
     && isZekoStageKey(pipeline?.current_stage_key)
@@ -1869,14 +1931,24 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // When that next stage is optional (Tech 3, Client Interview), the modal offers a choice
   // instead of silently walking onto it — send the candidate there, or skip straight to
   // the stage after it (allStages[currentIdx + 2]).
-  const nextStageIfApproved = allStages[currentIdx + 1];
+  // Flexible stages (C4): Approve lands on the next stage not yet passed, and
+  // the recruiter may pick any other stage not yet passed, backward included.
+  const notPassed = (st) => stageStates[st.stage_key] !== 'completed' && st.stage_key !== pipeline?.current_stage_key;
+  const nextStageIfApproved = flexibleStages
+    ? allStages.slice(currentIdx + 1).find(notPassed)
+    : allStages[currentIdx + 1];
   // Every stage an approval can land on: the next one, and past each
   // consecutive OPTIONAL stage the one after it. The server enforces the same
   // rule (utils/stageSkip.js) — a mandatory stage is never offered as skippable.
   const landingStages = [];
-  for (let i = currentIdx + 1; i < allStages.length; i += 1) {
-    landingStages.push(allStages[i]);
-    if (!allStages[i].is_optional) break;
+  if (flexibleStages) {
+    if (nextStageIfApproved) landingStages.push(nextStageIfApproved);
+    allStages.filter(notPassed).forEach((st) => { if (st !== nextStageIfApproved) landingStages.push(st); });
+  } else {
+    for (let i = currentIdx + 1; i < allStages.length; i += 1) {
+      landingStages.push(allStages[i]);
+      if (!allStages[i].is_optional) break;
+    }
   }
   const showOptionalNextChoice = decisionOutcome === 'approved' && landingStages.length > 1;
   // The MRF already says whether there is a CEO and a Client round; pre-select
@@ -1886,8 +1958,10 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     (stageKey === 'ceo' && String(landingMrf?.ceo_management_round || '').trim().toLowerCase() === 'no')
     || (stageKey === 'client' && String(landingMrf?.client_round || '').trim().toLowerCase() === 'no')
   );
-  const suggestedLanding = landingStages.find((st) => !(st.is_optional && mrfSaysNo(st.stage_key)))
-    || landingStages[landingStages.length - 1];
+  const suggestedLanding = flexibleStages
+    ? (allStages.slice(currentIdx + 1).filter(notPassed).find((st) => !(st.is_optional && mrfSaysNo(st.stage_key))) || nextStageIfApproved)
+    : (landingStages.find((st) => !(st.is_optional && mrfSaysNo(st.stage_key)))
+      || landingStages[landingStages.length - 1]);
   const landingReason = landingStages
     .filter((st) => st.is_optional && mrfSaysNo(st.stage_key))
     .map((st) => (st.stage_key === 'ceo' ? 'CEO round "No"' : 'Client round "No"'))
@@ -2158,8 +2232,20 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                     )}
                     <Space size={8} wrap>
                       <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setInviteModalOpen(true)}>
-                        {assessmentInviteData?.invite ? 'Re-invite' : 'Send Evalground Invite'}
+                        {assessmentInviteData?.invite && !assessmentInviteData?.isWithdrawn ? 'Re-invite' : 'Send Evalground Invite'}
                       </Button>
+                      {/* Flexible stages (C11): the undo that unlocks an Assessment card. */}
+                      {flexibleStages && assessmentInviteData?.invite && !assessmentInviteData.isWithdrawn && !assessmentInviteData.hasResult && (
+                        <Button
+                          size="small"
+                          danger
+                          icon={<CloseOutlined />}
+                          onClick={() => { setWithdrawReason(''); setWithdrawNotify(true); setWithdrawOpen(true); }}
+                          data-testid="withdraw-evalground-invite"
+                        >
+                          Withdraw invite
+                        </Button>
+                      )}
                       <Popconfirm
                         title="Mark as sent manually?"
                         description="Use this only if you already emailed the Evalground link outside the app."
@@ -2208,7 +2294,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                     </Button>
                   </div>
                 )}
-                {i === 0 && showDocumentActions && !documentsData?.request && (
+                {i === 0 && showDocumentActions && (!documentsData?.request || documentsData.request.token_status === 'closed') && (
                   <div className="cp-pipeline-step__extra">
                     <Button
                       size="small"
@@ -2220,7 +2306,15 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                         successMessage: 'Document request sent — a secure upload link was emailed to the candidate.',
                       })}
                     >
-                      Send document request
+                      {documentsData?.request ? 'Send document request again' : 'Send document request'}
+                    </Button>
+                  </div>
+                )}
+                {/* Flexible stages (C11): the undo that unlocks a Documents card. */}
+                {i === 0 && showDocumentActions && flexibleStages && documentsData?.request && documentsData.request.token_status !== 'closed' && (
+                  <div className="cp-pipeline-step__extra">
+                    <Button size="small" danger icon={<CloseOutlined />} onClick={() => { setDocCancelReason(''); setDocCancelOpen(true); }} data-testid="cancel-document-request">
+                      Cancel document request
                     </Button>
                   </div>
                 )}
@@ -2476,6 +2570,55 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 {pipeline.is_paused ? 'Resume journey' : 'Pause journey'}
               </Button>
             )}
+            {/* Flexible stages (C8): "Move to…" — the same popup as dragging a
+                card on the board. Locked while the current stage has started. */}
+            {flexibleStages && !pipeline.final_outcome && onRequestMove && (
+              stageLock?.locked ? (
+                // The span carries the hover: a disabled button fires no mouse
+                // events, so the reason never showed (found in the T4 run).
+                <Tooltip title={stageLock.reason}>
+                  <span style={{ display: 'inline-block', cursor: 'not-allowed' }} data-testid="drawer-move-locked-wrap">
+                    <Button size="small" type="link" icon={<LockOutlined />} disabled style={{ paddingLeft: 0, pointerEvents: 'none' }} data-testid="drawer-move-locked">
+                      Move to…
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : (
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: allStages.filter((s) => s.stage_key !== pipeline.current_stage_key).map((s) => {
+                      const passed = stageStates[s.stage_key] === 'completed';
+                      return {
+                        key: s.stage_key,
+                        disabled: passed,
+                        label: (
+                          <span data-testid={`drawer-move-to-${s.stage_key}`}>
+                            {s.label}
+                            {passed ? ' — passed' : stageStates[s.stage_key] === 'skipped' ? ' — skipped' : ''}
+                          </span>
+                        ),
+                      };
+                    }),
+                    onClick: ({ key }) => onRequestMove({
+                      card: {
+                        id: Number(pipeline.id),
+                        candidate_name: pipeline.rpa_shortlisted_candidates?.candidate_name,
+                        position: pipeline.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline.rpa_shortlisted_candidates?.position_applied,
+                        current_stage_key: pipeline.current_stage_key,
+                        passed_stage_keys: passedStageKeys,
+                        lock: stageLock,
+                      },
+                      toStageKey: key,
+                    }),
+                  }}
+                >
+                  <Button size="small" type="link" icon={<SwapOutlined />} style={{ paddingLeft: 0 }} data-testid="drawer-move-to">
+                    Move to…
+                  </Button>
+                </Dropdown>
+              )
+            )}
             {/* Re-open (audit §2.6). Sits beside the Closed tag because it is
                 the only action a closed journey has — every other affordance in
                 the drawer is suppressed once an outcome event exists. Until
@@ -2597,16 +2740,30 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
           {allStages.length > 0 && (
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 4 }}>
               {allStages.map((s, i) => {
-                const past = i < currentIdx;
                 const isCurrentStage = i === currentIdx;
-                const disabled = i > currentIdx;
-                const kind = past ? 'done' : isCurrentStage ? 'current' : 'future';
+                let kind;
+                let disabled;
+                let title = s.label;
+                if (flexibleStages) {
+                  // Real per-stage state (C9): the order is free, so "left of
+                  // the current stage" no longer means done.
+                  const st = stageStates[s.stage_key];
+                  const visited = (pipeline.rpa_pipeline_stage_events || []).some((ev) => ev.stage_key === s.stage_key);
+                  kind = isCurrentStage ? 'current' : st === 'completed' ? 'done' : st === 'skipped' ? 'skipped' : 'future';
+                  disabled = !isCurrentStage && !visited;
+                  title = `${s.label} — ${isCurrentStage ? 'Current' : st === 'completed' ? 'Passed' : st === 'skipped' ? 'Skipped' : 'Not visited'}`;
+                } else {
+                  kind = i < currentIdx ? 'done' : isCurrentStage ? 'current' : 'future';
+                  disabled = i > currentIdx;
+                }
                 return (
                   <button
                     key={s.stage_key}
                     type="button"
                     disabled={disabled}
-                    title={s.label}
+                    title={title}
+                    data-stage-key={s.stage_key}
+                    data-stage-state={kind}
                     onClick={() => setSelectedStageKey(s.stage_key)}
                     className={`cp-stage-pill cp-stage-pill--${kind}${selectedIdx === i ? ' cp-stage-pill--selected' : ''}`}
                   >
@@ -2616,9 +2773,14 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
               })}
             </div>
           )}
-          {allStages[currentIdx] && (
+          {allStages[currentIdx] && !flexibleStages && (
             <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 8 }}>
               Click a stage to see its details — stages after <Text strong style={{ fontSize: 11.5 }}>{allStages[currentIdx].label}</Text> are locked until the candidate gets there.
+            </Text>
+          )}
+          {allStages[currentIdx] && flexibleStages && (
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginBottom: 8 }} data-testid="stage-strip-legend">
+              Click a stage to see its details. Green = passed, dashed = skipped (can be visited later), grey = not visited.
             </Text>
           )}
 
@@ -2634,7 +2796,39 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
           <Collapse
             size="small"
             style={{ marginTop: 12 }}
+            defaultActiveKey={flexibleStages ? ['stage-history'] : []}
             items={[
+              // Flexible stages (C12): every move, outcome and note in one story,
+              // oldest first — who did what, when, from which stage to which.
+              ...(flexibleStages ? [{
+                key: 'stage-history',
+                label: (
+                  <Space size={8}>
+                    <HistoryOutlined />
+                    <span>Stage history</span>
+                    <Tag style={{ marginInlineEnd: 0 }}>{(pipeline.rpa_pipeline_stage_events || []).length}</Tag>
+                  </Space>
+                ),
+                children: (
+                  <div style={{ maxHeight: 320, overflowY: 'auto', paddingTop: 6 }} data-testid="stage-history">
+                    <Timeline
+                      items={(pipeline.rpa_pipeline_stage_events || []).map((ev) => ({
+                        key: ev.id,
+                        color: ev.event_type === 'moved' ? 'blue' : ev.event_type === 'outcome' ? (ev.outcome === 'rejected' ? 'red' : ev.outcome === 'hold' ? 'gold' : 'green') : 'gray',
+                        children: (
+                          <div data-testid={`stage-history-${ev.event_type}`}>
+                            <Text type="secondary" style={{ fontSize: 11.5 }}>
+                              {dayjs(ev.created_at).format('DD MMM YYYY, h:mm a')}
+                              {ev.rpa_users?.username ? ` · ${ev.rpa_users.username}` : ''}
+                            </Text>
+                            <div style={{ fontSize: 12.5 }}>{stageHistoryText(ev, allStages)}</div>
+                          </div>
+                        ),
+                      }))}
+                    />
+                  </div>
+                ),
+              }] : []),
               {
                 key: 'conversation',
                 label: (
@@ -2837,6 +3031,17 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
               >
                 <Space direction="vertical">
                   {landingStages.map((st, i) => {
+                    if (flexibleStages) {
+                      const backward = allStages.indexOf(st) < currentIdx;
+                      return (
+                        <Radio key={st.stage_key} value={st.stage_key}>
+                          {st.label}
+                          {st === nextStageIfApproved ? ' (next stage not yet passed)' : ''}
+                          {backward ? ' (backward)' : ''}
+                          {stageStates[st.stage_key] === 'skipped' ? ' · skipped earlier' : ''}
+                        </Radio>
+                      );
+                    }
                     const skipped = landingStages.slice(0, i).map((x) => x.label);
                     return (
                       <Radio key={st.stage_key} value={st.stage_key}>
@@ -3638,6 +3843,71 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
             value={reopenReason}
             onChange={(e) => setReopenReason(e.target.value)}
           />
+        </div>
+      </Space>
+    </Modal>
+
+    {/* Withdraw Evalground invite — flexible stages, C11. */}
+    <Modal
+      open={withdrawOpen}
+      onCancel={() => setWithdrawOpen(false)}
+      title="Withdraw Evalground invite"
+      width={MODAL_WIDTH.CONFIRM}
+      okText="Withdraw invite"
+      okButtonProps={{ danger: true, disabled: !withdrawReason.trim(), 'data-testid': 'withdraw-confirm' }}
+      confirmLoading={withdrawMutation.isPending}
+      onOk={() => withdrawMutation.mutate()}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="withdraw-modal">
+        <Alert
+          type="warning"
+          showIcon
+          message="Also disable this candidate's link in the Evalground dashboard. We cannot do it for you."
+          description="The invite stays in the history. The deadline reminder stops, and the candidate can then be moved to another stage."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Reason <Text type="danger">*</Text></Text>
+          <TextArea
+            rows={2}
+            style={{ marginTop: 4 }}
+            placeholder="e.g. plan changed — candidate goes to Technical Round 1 first"
+            value={withdrawReason}
+            onChange={(e) => setWithdrawReason(e.target.value)}
+            data-testid="withdraw-reason"
+          />
+        </div>
+        <Checkbox checked={withdrawNotify} onChange={(e) => setWithdrawNotify(e.target.checked)} data-testid="withdraw-notify">
+          Email the candidate that the test is cancelled
+        </Checkbox>
+      </Space>
+    </Modal>
+
+    {/* Cancel document request — flexible stages, C11. */}
+    <Modal
+      open={docCancelOpen}
+      onCancel={() => setDocCancelOpen(false)}
+      title="Cancel document request"
+      width={MODAL_WIDTH.CONFIRM}
+      okText="Cancel the request"
+      cancelText="Keep it"
+      okButtonProps={{ danger: true, 'data-testid': 'doc-cancel-confirm' }}
+      confirmLoading={documentMutation.isPending}
+      onOk={() => documentMutation.mutate({
+        action: 'cancel',
+        reason: docCancelReason.trim() || null,
+        successMessage: 'Document request cancelled. The upload link is closed.',
+      })}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="doc-cancel-modal">
+        <Alert
+          type="info"
+          showIcon
+          message="The candidate's upload link closes. Uploaded files are kept."
+          description="No email is sent. You can send the request again later; it reopens the same link."
+        />
+        <div>
+          <Text strong style={{ fontSize: 12.5 }}>Reason (optional)</Text>
+          <TextArea rows={2} style={{ marginTop: 4 }} value={docCancelReason} onChange={(e) => setDocCancelReason(e.target.value)} data-testid="doc-cancel-reason" />
         </div>
       </Space>
     </Modal>
