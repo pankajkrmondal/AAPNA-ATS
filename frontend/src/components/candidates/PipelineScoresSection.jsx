@@ -6,12 +6,14 @@
  * pipeline drawer, so the two always agree.
  *
  * Staff only: the endpoint refuses vendors, so the parent renders this only
- * for staff.
+ * for staff. With canChangeJd, each open JD card offers Change JD (G3).
  */
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Space, Spin, Tag, Typography } from 'antd';
+import { Button, Card, Space, Spin, Tag, Typography } from 'antd';
 import { LinkOutlined } from '@ant-design/icons';
 import candidateService from '../../services/candidateService';
+import ChangeJdModal from '../screening/ChangeJdModal';
 
 const { Text } = Typography;
 
@@ -69,7 +71,9 @@ function RoundLine({ round }) {
   );
 }
 
-export default function PipelineScoresSection({ cvId }) {
+export default function PipelineScoresSection({ cvId, canChangeJd = false }) {
+  // G3: the JD card whose JD is being changed.
+  const [changeJdShortlistId, setChangeJdShortlistId] = useState(null);
   const { data: journeys = [], isLoading, isError } = useQuery({
     queryKey: ['candidate-pipeline-scores', String(cvId)],
     queryFn: async () => {
@@ -90,7 +94,16 @@ export default function PipelineScoresSection({ cvId }) {
           key={j.pipeline_id}
           size="small"
           title={<Text style={{ fontSize: 13 }}>{j.role}{j.mrf_id ? ` · MRF-${j.mrf_id}` : ''}</Text>}
-          extra={<Text type="secondary" style={{ fontSize: 12 }}>{j.final_outcome ? `Closed: ${j.final_outcome}` : `At ${j.current_stage_label}`}</Text>}
+          extra={(
+            <Space size={8}>
+              <Text type="secondary" style={{ fontSize: 12 }}>{j.final_outcome ? `Closed: ${j.final_outcome}` : `At ${j.current_stage_label}`}</Text>
+              {canChangeJd && j.shortlist_id && !j.final_outcome && (
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setChangeJdShortlistId(j.shortlist_id)} data-testid="change-jd-link">
+                  {j.mrf_id ? 'Change JD' : 'Set JD'}
+                </Button>
+              )}
+            </Space>
+          )}
         >
           {j.rounds.length === 0 ? (
             <Text type="secondary" style={{ fontSize: 13 }}>No scores recorded yet.</Text>
@@ -106,6 +119,13 @@ export default function PipelineScoresSection({ cvId }) {
           )}
         </Card>
       ))}
+      {canChangeJd && (
+        <ChangeJdModal
+          open={Boolean(changeJdShortlistId)}
+          shortlistId={changeJdShortlistId}
+          onClose={() => setChangeJdShortlistId(null)}
+        />
+      )}
     </Space>
   );
 }

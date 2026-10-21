@@ -82,6 +82,9 @@ router.get('/candidates', vendorController.getVendorCandidates);
 /** Upload resumes */
 router.post('/upload', upload.array('resumes', 100), vendorController.uploadResumes);
 
+/** Open JDs for the upload's "Uploading for JD" picker (N14). */
+router.get('/mrfs', vendorController.listUploadMrfs);
+
 /** Get recent upload batches for this vendor */
 router.get('/batches', vendorController.getUploadBatches);
 

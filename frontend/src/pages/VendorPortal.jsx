@@ -51,6 +51,10 @@ import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
 import { fmtDateTime } from '../utils/dateFormat';
 import { UPLOAD_STATUS_FILTERS, uploadStatusMeta } from '../constants/uploadStatus';
+import UploadJdPicker, { jobJdText } from '../components/common/UploadJdPicker';
+
+/** Open JDs for the "Uploading for JD" picker (N14); module-level so the picker loads once. */
+const loadJdOptions = () => vendorService.getUploadMrfs();
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -77,6 +81,8 @@ export default function VendorPortal() {
 
   // ── Upload state ──
   const [fileList, setFileList] = useState([]);
+  // The JD this upload is made for (N14); null = no tagging.
+  const [uploadMrfId, setUploadMrfId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
 
@@ -229,6 +235,7 @@ export default function VendorPortal() {
     const formData = new FormData();
     fileList.forEach((file) => formData.append('resumes', file.originFileObj || file));
     if (isStaff && selectedVendor) formData.append('vendorEmail', selectedVendor);
+    if (uploadMrfId) formData.append('mrfId', String(uploadMrfId));
 
     try {
       await vendorService.uploadResumes(formData, (e) => {
@@ -236,6 +243,8 @@ export default function VendorPortal() {
       });
       setUploadMsg({ type: 'success', text: '✅ Uploaded. Track processing status in the dashboard below.' });
       setFileList([]);
+      // Never carry a JD over to the next upload by accident.
+      setUploadMrfId(null);
       setStatusFilter(null);
       setOnlyActionRequired(false);
       setCelebrate(true);
@@ -382,6 +391,12 @@ export default function VendorPortal() {
       title: 'Candidate Name',
       key: 'candidate_name',
       render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
+    },
+    {
+      title: 'JD',
+      key: 'jd',
+      // The JD the upload was made for (N14).
+      render: (_, r) => <span style={{ fontSize: 12 }}>{jobJdText(r)}</span>,
     },
     {
       title: 'Uploaded By',
@@ -560,6 +575,7 @@ export default function VendorPortal() {
             </div>
           )}
 
+          <UploadJdPicker value={uploadMrfId} onChange={setUploadMrfId} loadOptions={loadJdOptions} disabled={uploading} />
           {/* Compact dropzone — single row, doesn't dominate the page. */}
           <Dragger
             multiple

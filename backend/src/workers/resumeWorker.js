@@ -19,7 +19,7 @@ import { recordError } from '../services/errorLog.service.js';
  * @returns {Promise<Object>} Processing result
  */
 async function processResume(job) {
-  const { executionId, file, user, source, attribution } = job.data;
+  const { executionId, file, user, source, attribution, mrfId = null } = job.data;
 
   logger.info(`📄 Processing resume: ${file?.originalname}`, {
     jobId: job.id,
@@ -31,7 +31,7 @@ async function processResume(job) {
   try {
     await job.updateProgress(10);
     // Reuses the full extract → AI parse → dedup → DB write pipeline for one file.
-    await runBatchParsing(executionId, [file], user, source, attribution);
+    await runBatchParsing(executionId, [file], user, source, attribution, { mrfId });
     await job.updateProgress(100);
 
     logger.info(`✅ Resume processed: ${file?.originalname}`, { jobId: job.id, batchId: executionId });

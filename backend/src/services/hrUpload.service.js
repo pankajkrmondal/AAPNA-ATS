@@ -32,6 +32,8 @@ import { findRecentRejection } from './pipeline.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
 import { syncShortlistIdentity, syncShortlistIdentitySafe, clearScreeningRoleCache } from './candidateSync.service.js';
 import { tracedFetch } from '../utils/externalCall.js';
+import { tagCandidatesSafe } from './candidateTag.service.js';
+import { parseMrfId, tagSourceForUpload, TAG_SOURCES } from '../utils/candidateTag.js';
 
 // Marker stamped on candidates who applied themselves (website or direct email),
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
@@ -544,6 +546,18 @@ function isJsonEmpty(val) {
   return false;
 }
 
+/**
+ * The JD tag a merged duplicate carries over (N14): the JD its upload was made
+ * for, with the upload's source. Null when it was uploaded without a JD.
+ */
+function mergeTagFor(tempCandidate) {
+  if (!tempCandidate?.mrf_id) return null;
+  const source = tagSourceForUpload(tempCandidate.source)
+    || tagSourceForUpload(tempCandidate.last_action_context)
+    || TAG_SOURCES.HR_UPLOAD;
+  return { mrfId: tempCandidate.mrf_id, source };
+}
+
 export async function mergeDuplicates(ids, token, user = {}) {
   const hrEmail = user.email || 'unknown@hr.com';
   if (!Array.isArray(ids) || ids.length === 0) {
@@ -673,7 +687,8 @@ export async function mergeDuplicates(ids, token, user = {}) {
           postMergeTasks.push({
             id: existingCandidate.id,
             tempId,
-            data: updateData
+            data: updateData,
+            tag: mergeTagFor(tempCandidate),
           });
         } else {
           // No match found - insert new candidate
@@ -697,7 +712,8 @@ export async function mergeDuplicates(ids, token, user = {}) {
           postMergeTasks.push({
             id: newCv.id,
             tempId,
-            data: insertData
+            data: insertData,
+            tag: mergeTagFor(tempCandidate),
           });
         }
 
@@ -722,8 +738,19 @@ export async function mergeDuplicates(ids, token, user = {}) {
       }
     });
 
+    // A duplicate uploaded for a JD tags the candidate it resolved to (N14).
+    // After the commit, not inside it: a failed statement aborts a Postgres
+    // transaction, and a tag must never undo a merge. Tagging is idempotent.
+    for (const task of postMergeTasks) {
+      if (!task.tag) continue;
+      await tagCandidatesSafe(
+        { cvIds: [task.id], mrfId: task.tag.mrfId, source: task.tag.source, actor: user },
+        { clearCache: false },
+      );
+    }
+
     // Merged records may have new names or addresses that cached screening
-    // lists still show (N29).
+    // lists still show (N29); new tags change "Tagged to this JD only" lists.
     if (postMergeTasks.length) await clearScreeningRoleCache();
 
     // Run post-merge tasks outside transaction to prevent holding locks during Gemini API calls
@@ -1051,9 +1078,15 @@ Return ONLY a valid JSON object in this exact structure - no markdown, no explan
  * Background parsing worker.
  * Extracts text, calls Gemini API, handles fallback, updates DB.
  */
-export async function runBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
+export async function runBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null, { mrfId = null } = {}) {
   const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'User';
   const email = user.email || 'unknown@user.com';
+
+  // JD tagging (N14): the JD this upload was made for. Kept apart from
+  // `attribution`, whose presence changes the vendor fallback below. Only HR
+  // and vendor uploads tag; Outlook intake has no JD picker.
+  const uploadTagSource = tagSourceForUpload(source);
+  const uploadMrfId = uploadTagSource ? parseMrfId(mrfId) : null;
 
   // Vendor attribution for the candidates in this batch. An explicit attribution
   // (e.g. staff uploading on behalf of a vendor) wins; otherwise vendor self-uploads
@@ -1372,6 +1405,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                     resume_term_updated_at: resume_term_updated_at,
                     createdAt: new Date(),
                     modifiedAt: new Date(),
+                    // The merge tags the candidate it resolves to (N14).
+                    ...(uploadMrfId ? { mrf_id: uploadMrfId } : {}),
                   }
                 });
 
@@ -1628,6 +1663,13 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
               jobInfo.cv_id = newCv.id;
               jobInfo.missingInfo = Object.keys(missingFields).length > 0;
 
+              // Uploaded for a JD: tagged now (N14). Best-effort, never fails the row.
+              if (uploadMrfId) {
+                await tagCandidatesSafe({
+                  cvIds: [newCv.id], mrfId: uploadMrfId, source: uploadTagSource, actor: user, executionId,
+                });
+              }
+
               // Persist the candidate link the moment it exists, for the same reason
               // file_url is persisted above: cv_id / candidate_email are the keys every
               // recovery path matches on (the dashboard self-heal, updateJobByCvId), and
@@ -1788,9 +1830,9 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
  * is disabled (USE_RESUME_QUEUE !== 'true'); otherwise controllers enqueue jobs and
  * the resumeWorker calls runBatchParsing per file.
  */
-export function startBackgroundParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
+export function startBackgroundParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null, options = {}) {
   setImmediate(() => {
-    runBatchParsing(executionId, files, user, source, attribution).catch((err) => {
+    runBatchParsing(executionId, files, user, source, attribution, options).catch((err) => {
       logger.error(`Background parsing failed for batch ${executionId}: ${err.message}`);
     });
   });
@@ -1801,7 +1843,10 @@ export function startBackgroundParsing(executionId, files, user, source = 'hr_ma
  * (USE_RESUME_QUEUE === 'true') each file is enqueued as a BullMQ job (durable,
  * concurrent, retried); otherwise it runs in-process via startBackgroundParsing.
  */
-export async function dispatchBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null) {
+export async function dispatchBatchParsing(executionId, files, user, source = 'hr_manual_upload', attribution = null, options = {}) {
+  // { mrfId }: the JD the upload was made for (N14). A string in the queue
+  // payload, because BullMQ stores jobs as JSON and JSON has no BigInt.
+  const mrfId = options.mrfId != null ? String(options.mrfId) : null;
   if (process.env.USE_RESUME_QUEUE === 'true') {
     // Lazy-import so Redis/BullMQ is only touched when the queue is enabled.
     const { addResumeJob } = await import('../queues/resumeQueue.js');
@@ -1814,12 +1859,12 @@ export async function dispatchBatchParsing(executionId, files, user, source = 'h
       role: user.role,
     };
     for (const file of files) {
-      await addResumeJob({ executionId, file, user: slimUser, source, attribution });
+      await addResumeJob({ executionId, file, user: slimUser, source, attribution, mrfId });
       await setJobStatus(executionId, file.originalname, JOB_STATUS.QUEUED).catch(() => {});
     }
     logger.info(`Enqueued ${files.length} resume job(s) for batch ${executionId} (durable queue).`);
   } else {
-    startBackgroundParsing(executionId, files, user, source, attribution);
+    startBackgroundParsing(executionId, files, user, source, attribution, { mrfId });
   }
 }
 

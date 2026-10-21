@@ -13,6 +13,7 @@ import * as uploadJobService from '../services/uploadJob.service.js';
 import { partitionBySignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
 import uploadJobsExport from '../exports/uploadJobs.export.js';
+import { resolveUploadMrf } from '../services/candidateTag.service.js';
 
 /**
  * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
@@ -44,6 +45,16 @@ export const uploadResumes = catchAsync(async (req, res) => {
   const files = req.files || [];
   if (files.length === 0) {
     throw new AppError('No files uploaded.', 400);
+  }
+
+  // JD the upload is made for (N14, optional). Checked before anything is
+  // saved; on a refusal the just-received files are removed again.
+  let mrfId;
+  try {
+    mrfId = await resolveUploadMrf(req.body?.mrfId);
+  } catch (err) {
+    files.forEach((f) => { if (f?.path) fs.unlink(f.path, () => {}); });
+    throw err;
   }
 
   const hrEmail = req.user.email || 'unknown@hr.com';
@@ -140,6 +151,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
       details: {
         hr_email: hrEmail,
         hr_name: hrFullName,
+        mrf_id: mrfId ? String(mrfId) : null,
         files: accepted.map((f) => ({ name: f.originalname, size: f.size })),
         rejected_files: rejected,
       },
@@ -168,10 +180,11 @@ export const uploadResumes = catchAsync(async (req, res) => {
     uploadedBy: username,
     uploadedById: req.user.id,
     source: 'hr_manual_upload',
+    mrfId,
   });
 
   // 3) Dispatch parsing (durable queue when enabled, else in-process background)
-  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'hr_manual_upload');
+  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'hr_manual_upload', null, { mrfId });
 
   return success(
     res,
@@ -236,6 +249,7 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   const [rows, filteredTotal, baseTotal, actionCount, grouped] = await Promise.all([
     prisma.rpa_upload_jobs.findMany({
       where,
+      include: uploadJobService.JOB_MRF_INCLUDE,
       orderBy: { updated_at: 'desc' },
       skip: (pageNum - 1) * limitNum,
       take: limitNum,
@@ -333,6 +347,8 @@ export const reprocessJob = catchAsync(async (req, res) => {
     req.user,
     job.source || 'hr_manual_upload',
     null,
+    // The re-run tags the same JD as the original upload (N14).
+    { mrfId: job.mrf_id },
   );
 
   return success(res, { id }, 'Resume reprocessing started.');

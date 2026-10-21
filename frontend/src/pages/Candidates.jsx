@@ -26,7 +26,7 @@
  *     lists and rules (constants/candidateFields.js).
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin, AutoComplete } from 'antd';
+import { Form, Input, Button, Card, Table, Space, Tag, Modal, Row, Col, Typography, message, Select, Spin, AutoComplete, Tooltip } from 'antd';
 import { SearchOutlined, EyeOutlined, EditOutlined, MessageOutlined, FileTextOutlined, HistoryOutlined, CloseOutlined, PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
@@ -60,6 +60,8 @@ const { Title, Text, Paragraph } = Typography;
 const HEADER_CELL_STYLE = { whiteSpace: 'nowrap', fontSize: 11.5, letterSpacing: '0.03em', color: 'var(--text-2)', padding: '10px 8px' };
 /** Body cells: the design's 8px side padding (the theme's ~20px made 11 columns ~440px wider). */
 const BODY_CELL_STYLE = { padding: '10px 8px' };
+/** Most candidates one "Add to JD" takes (server: MAX_ADD_TO_JD_BATCH, N21 hardening). */
+const MAX_ADD_TO_JD = 50;
 
 /** "Details completed in" choices (N44). Values match the API's completedWithin. */
 const COMPLETED_IN_OPTIONS = [
@@ -461,7 +463,9 @@ export default function Candidates() {
     setAddingToJd(true);
     try {
       const res = await screeningService.shortlistCandidates({
-        candidates: selectedRows.map((r) => ({ id: r.id, Name: r.name, EmailID: r.email })),
+        // The server reads name and email from the record (N21 hardening);
+        // the name here only labels a candidate it can no longer find.
+        candidates: selectedRows.map((r) => ({ id: r.id, Name: r.name })),
         mrf_id: mrfId,
         role_name: roleName,
         send_email: sendEmail,
@@ -471,7 +475,8 @@ export default function Candidates() {
       const result = res.data?.data || res.data || {};
       const skipped = result.skipped_candidates || [];
       // Compared as strings: row ids and the server's cv_id differ in type.
-      const skippedIds = new Set(skipped.map((x) => String(x.cv_id)));
+      const failed = result.failed_candidates || [];
+      const skippedIds = new Set([...skipped, ...failed].map((x) => String(x.cv_id)));
       const failures = result.email_failures || [];
       const role = openRoles.find((r) => r.id === mrfId);
       setAddResult({
@@ -479,6 +484,7 @@ export default function Candidates() {
         added: selectedRows.filter((r) => !skippedIds.has(String(r.id))).map((r) => r.name || 'Candidate'),
         emailed: sendEmail && failures.length === 0,
         skipped,
+        failed,
         failures,
       });
       setAddToJdOpen(false);
@@ -773,7 +779,10 @@ export default function Candidates() {
             {canAddToJd && selectedRowKeys.length > 0 && (
               <Space size={8} data-testid="selection-bar">
                 <Text strong style={{ fontSize: 12.5 }}>{selectedRowKeys.length} selected</Text>
-                <Button type="primary" size="small" onClick={() => setAddToJdOpen(true)}>Add to JD</Button>
+                {/* The server takes up to MAX_ADD_TO_JD per request (N21 hardening). */}
+                <Tooltip title={selectedRowKeys.length > MAX_ADD_TO_JD ? `Add up to ${MAX_ADD_TO_JD} at a time. Clear some ticks first.` : ''}>
+                  <Button type="primary" size="small" disabled={selectedRowKeys.length > MAX_ADD_TO_JD} onClick={() => setAddToJdOpen(true)}>Add to JD</Button>
+                </Tooltip>
                 <Button size="small" onClick={() => { setSelectedRowKeys([]); setSelectedRows([]); }}>Clear selection</Button>
               </Space>
             )}
@@ -868,7 +877,8 @@ export default function Candidates() {
         width={750}
         styles={{ body: { maxHeight: '70vh', overflowY: 'auto', paddingRight: 12 } }}
       >
-        <CandidateDetailCard candidate={selectedCandidate} showPipelineScores={canEdit} />
+        {/* Change JD (G3) on each JD card, for those who may Add to JD. */}
+        <CandidateDetailCard candidate={selectedCandidate} showPipelineScores={canEdit} canChangeJd={canAddToJd} />
       </Modal>
 
       {/* 2) EDIT CANDIDATE DETAILS MODAL. One field per row (N18 review), with
@@ -1312,6 +1322,7 @@ export default function Candidates() {
             added={addResult?.added}
             emailed={addResult?.emailed}
             skipped={addResult?.skipped}
+            failed={addResult?.failed}
             emailFailures={addResult?.failures}
             onClose={() => setAddResult(null)}
           />

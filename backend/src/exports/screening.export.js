@@ -126,19 +126,20 @@ export const columns = [
 /**
  * JD-filtering tab: re-run the role search for one MRF.
  * @param {number} mrfId
- * @param {{ addedWithinDays?: number|null }} [opts] the screen's "Added within" filter (N38)
+ * @param {{ addedWithinDays?: number|null, taggedOnly?: boolean }} [opts] the screen's
+ *   "Added within" filter (N38) and "Tagged to this JD only" switch (N15)
  */
-export function roleSpec(mrfId, { addedWithinDays = null } = {}) {
+export function roleSpec(mrfId, { addedWithinDays = null, taggedOnly = false } = {}) {
   return {
     key: 'screening_jd',
     label: `Screening-MRF-${mrfId}`,
     columns,
-    filters: { mrfId, addedWithinDays },
+    filters: { mrfId, addedWithinDays, taggedOnly },
     fetch: async ({ max }) => {
       // force=false: read the cache the on-screen search just populated so the
       // CSV matches what the recruiter is looking at — the same "Added within"
       // value picks the same cache entry.
-      const opts = { addedWithinDays };
+      const opts = { addedWithinDays, taggedOnly };
       const result = config.screening.v2
         ? await screeningV2.searchRoleCandidatesV2(mrfId, false, opts)
         : await screeningService.searchRoleCandidates(mrfId, false, opts);

@@ -44,7 +44,7 @@ function Field({ label, children, span = 12 }) {
  *   showPipelineScores - add the read-only pipeline scores (staff only: the
  *   endpoint refuses vendors)
  */
-export default function CandidateDetailCard({ candidate, showPipelineScores = false }) {
+export default function CandidateDetailCard({ candidate, showPipelineScores = false, canChangeJd = false }) {
   if (!candidate) return null;
   const c = candidate;
 
@@ -218,7 +218,7 @@ export default function CandidateDetailCard({ candidate, showPipelineScores = fa
       {showPipelineScores && c.id && (
         <>
           <SectionHeader title="Pipeline scores" />
-          <PipelineScoresSection cvId={c.id} />
+          <PipelineScoresSection cvId={c.id} canChangeJd={canChangeJd} />
         </>
       )}
     </div>

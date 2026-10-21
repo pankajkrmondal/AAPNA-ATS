@@ -63,6 +63,8 @@ import ExportButton from '../components/common/ExportButton';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 import ShortlistResultModal from '../components/screening/ShortlistResultModal';
+import JdTagChip from '../components/screening/JdTagChip';
+import ChangeJdModal from '../components/screening/ChangeJdModal';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
@@ -415,8 +417,10 @@ export default function CandidateScreening() {
 
   // N38: "Added within" on the JD tab — only candidates added in the last N days.
   const [jdAddedWithin, setJdAddedWithin] = useState(null);
-  // Per-role candidates (JD tab) — cached per role (and window) so revisiting the page keeps results.
-  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd', jdAddedWithin);
+  // N15: "Tagged to this JD only" — candidates uploaded for, or shortlisted to, this JD.
+  const [jdTaggedOnly, setJdTaggedOnly] = useState(false);
+  // Per-role candidates (JD tab) — cached per role (and filters) so revisiting the page keeps results.
+  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd', jdAddedWithin, jdTaggedOnly);
 
   // ── Candidates List State ──
   const [candidates, setCandidates] = useState([]);
@@ -641,8 +645,8 @@ export default function CandidateScreening() {
   // and write the fresh result into the query cache so the UI updates.
   const forceReloadRoleCandidates = async () => {
     if (!selectedRoleId) return;
-    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true, addedWithinDays: jdAddedWithin });
-    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin), res);
+    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true, addedWithinDays: jdAddedWithin, taggedOnly: jdTaggedOnly });
+    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly), res);
   };
 
   /* ═══════ REFRESH (roles + current candidates) ═══════ */
@@ -752,7 +756,7 @@ export default function CandidateScreening() {
       // The JD list is sourced from the react-query cache (sync effect
       // above), so patch the cached axios envelope; the effect then
       // refreshes the local render state.
-      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin), (prev) => {
+      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly), (prev) => {
         const payload = prev?.data?.data ?? prev?.data;
         if (!payload?.candidates) return prev;
         const updated = { ...payload, candidates: updater(payload.candidates) };
@@ -767,6 +771,23 @@ export default function CandidateScreening() {
 
   // N21: who a shortlist left out, and why — shown after the request returns.
   const [shortlistResult, setShortlistResult] = useState(null);
+  // G3: the journey chip whose JD is being changed ({ shortlistId, candidateName }).
+  const [changeJdTarget, setChangeJdTarget] = useState(null);
+
+  /** After Change JD: the chip shows the new JD without a new search. */
+  const handleJdChanged = (result) => {
+    if (!result) return;
+    patchCandidateLists((list) => list.map((cand) => (
+      cand.pipelineHistory?.some((j) => j.shortlist_id === result.shortlist_id)
+        ? {
+          ...cand,
+          pipelineHistory: cand.pipelineHistory.map((j) => (j.shortlist_id === result.shortlist_id
+            ? { ...j, mrf_id: result.to_mrf_id, position: result.role }
+            : j)),
+        }
+        : cand
+    )));
+  };
 
   const handleDecisionConfirm = async ({ mrfId, roleName, reason, sendEmail, emailOverride }) => {
     const decision = decisionModalOpen;
@@ -797,21 +818,25 @@ export default function CandidateScreening() {
         : (result.shortlisted ?? selectedList.length);
       const skippedCount = result.skipped ?? 0;
       const skippedList = decision === 'shortlist' ? (result.skipped_candidates || []) : [];
+      // N21 hardening: candidates the server could not add (an error, or no
+      // longer on record); listed in the result dialog with the reason.
+      const failedList = decision === 'shortlist' ? (result.failed_candidates || []) : [];
       const skippedNote = skippedCount > 0 && skippedList.length === 0
         ? ` ${skippedCount} already had a record for this role and ${skippedCount === 1 ? 'was' : 'were'} left unchanged.`
         : '';
       const failures = result.email_failures || [];
       const verb = decision === 'reject' ? 'Rejected' : 'Shortlisted';
 
-      if (skippedList.length > 0) {
+      if (skippedList.length > 0 || failedList.length > 0) {
         // N21: name each one left out and why, instead of a bare count.
-        const skippedIds = new Set(skippedList.map((x) => String(x.cv_id)));
+        const skippedIds = new Set([...skippedList, ...failedList].map((x) => String(x.cv_id)));
         const selectedRole = roles.find((r) => r.id === mrfId);
         setShortlistResult({
           roleLabel: selectedRole ? mrfOptionLabel(selectedRole) : roleName,
           added: selectedList.filter((c) => !skippedIds.has(String(c.id))).map((c) => c.Name || 'Candidate'),
           emailed: sendEmail && failures.length === 0,
           skipped: skippedList,
+          failed: failedList,
         });
       }
 
@@ -832,7 +857,7 @@ export default function CandidateScreening() {
           ),
           duration: 0,
         });
-      } else if (skippedList.length > 0) {
+      } else if (skippedList.length > 0 || failedList.length > 0) {
         // The result dialog says it all.
       } else {
         const emailNote = sendEmail
@@ -875,7 +900,7 @@ export default function CandidateScreening() {
       setSelectedCandidateKeys([]);
       setDecisionModalOpen(null);
 
-      const leftOut = new Set(skippedList.map((x) => String(x.cv_id)));
+      const leftOut = new Set([...skippedList, ...failedList].map((x) => String(x.cv_id)));
       const decidedIds = new Set(selectedList.map((c) => c.id).filter((id) => !leftOut.has(String(id))));
       if (decision === 'reject') {
         // A rejected candidate should no longer sit in this role's current result
@@ -1215,6 +1240,15 @@ export default function CandidateScreening() {
                           >
                             Include closed MRFs
                           </Checkbox>
+                          <Tooltip title="Only candidates uploaded for this JD, or already shortlisted to it.">
+                            <Checkbox
+                              checked={jdTaggedOnly}
+                              onChange={(e) => { setJdTaggedOnly(e.target.checked); setCurrentPage(1); setSelectedCandidateKeys([]); }}
+                              data-testid="jd-tagged-only"
+                            >
+                              Tagged to this JD only
+                            </Checkbox>
+                          </Tooltip>
                           <Tooltip title="Only candidates added to the database in this period. Candidates with no added date are left out while this is set.">
                             <Space size={6}>
                               <Text type="secondary" style={{ fontSize: 13 }}>Added within</Text>
@@ -1631,7 +1665,7 @@ export default function CandidateScreening() {
                       cards have no room for. The server re-runs the search. */}
                   <ExportButton
                     request={(cfg) => (activeTab === 'jd'
-                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg, jdAddedWithin)
+                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg, jdAddedWithin, jdTaggedOnly)
                       : screeningService.exportKeywordCandidates(lastKeywordPayload || {}, cfg))}
                     fallbackName={activeTab === 'jd'
                       ? 'AAPNA-ATS_Screening-Results.csv'
@@ -1791,6 +1825,8 @@ export default function CandidateScreening() {
                                 whether to shortlist, not after. No referrer name
                                 in a results list — the detail panel names them. */}
                             {c.is_referral ? <ReferralChip compact /> : null}
+                            {/* N15: uploaded for / shortlisted to this JD. */}
+                            {activeTab === 'jd' ? <JdTagChip tag={c.jd_tag} /> : null}
                             <StatusBadge status={
                               c.FinalStatus === 'Rejected' ? 'rejected'
                                 : c.FinalStatus ? 'shortlisted'
@@ -1865,6 +1901,19 @@ export default function CandidateScreening() {
                                   >
                                     {j.is_closed ? `Closed — ${j.final_outcome.replace(/_/g, ' ')}` : j.current_stage_label}
                                     {j.position ? ` · ${j.position}` : ''}
+                                    {/* G3: shortlisted to the wrong JD from a keyword search?
+                                        Fix it here. The dialog says if it is no longer allowed. */}
+                                    {activeTab === 'keyword' && j.shortlist_id && !j.is_closed && (
+                                      <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ fontSize: 10, height: 'auto', padding: '0 0 0 6px' }}
+                                        onClick={(e) => { e.stopPropagation(); setChangeJdTarget({ shortlistId: j.shortlist_id, candidateName: c.Name }); }}
+                                        data-testid="change-jd-link"
+                                      >
+                                        {j.mrf_id ? 'Change JD' : 'Set JD'}
+                                      </Button>
+                                    )}
                                   </Tag>
                                 </Tooltip>
                               ))}
@@ -2136,12 +2185,20 @@ export default function CandidateScreening() {
         onConfirm={handleDecisionConfirm}
       />
 
+      <ChangeJdModal
+        open={Boolean(changeJdTarget)}
+        shortlistId={changeJdTarget?.shortlistId ?? null}
+        candidateName={changeJdTarget?.candidateName}
+        onClose={() => setChangeJdTarget(null)}
+        onChanged={handleJdChanged}
+      />
       <ShortlistResultModal
         open={Boolean(shortlistResult)}
         roleLabel={shortlistResult?.roleLabel || ''}
         added={shortlistResult?.added}
         emailed={shortlistResult?.emailed}
         skipped={shortlistResult?.skipped}
+        failed={shortlistResult?.failed}
         onClose={() => setShortlistResult(null)}
       />
 

@@ -33,8 +33,16 @@ const cvCreatedBetween = (from, to) => Prisma.sql`("createdAt" AT TIME ZONE 'UTC
 const CV_IST_DAY = Prisma.sql`(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${IST})::date`;
 /** A text column lower-cased and single-spaced, to match normaliseLabel(). */
 const normalisedSql = (column) => Prisma.sql`lower(regexp_replace(btrim(${Prisma.raw(column)}), '\\s+', ' ', 'g'))`;
-/** Candidates whose typed "Position Applied" matches a role (interim MRF link until JD tagging, N13). */
+/** Candidates whose typed "Position Applied" matches a role (the MRF link before JD tagging, N13). */
 const positionMatches = (roleKey) => Prisma.sql`${normalisedSql('"PositionApplied"')} = ${roleKey}`;
+/**
+ * An rpa_cv row linked to the MRF: tagged to it (uploaded for / shortlisted
+ * to it, N13) or, for candidates from before tagging, a matching "Position
+ * Applied". Used inside a query FROM rpa_cv.
+ */
+const cvLinkedToMrf = (mrf) => Prisma.sql`(EXISTS (
+  SELECT 1 FROM rpa_candidate_mrf_tags t WHERE t.cv_id = rpa_cv.id AND t.mrf_id = ${mrf.id}
+) OR ${positionMatches(mrf.roleKey)})`;
 /** A moment just past now, so rows written this second are inside [from, until). */
 const justAfter = (now) => new Date(now.getTime() + 60_000);
 
@@ -49,9 +57,9 @@ async function resolveMrfFilter(mrfId) {
   return { id: mrf.id, role: mrf.position_hiring_for || '', roleKey: normaliseLabel(mrf.position_hiring_for) };
 }
 
-/** Candidates added in [from, to), optionally only those whose Position Applied matches the MRF's role. */
+/** Candidates added in [from, to), optionally only those linked to the MRF (cvLinkedToMrf). */
 async function countCvAdded(from, to, mrf) {
-  const roleCond = mrf ? Prisma.sql`AND ${positionMatches(mrf.roleKey)}` : Prisma.empty;
+  const roleCond = mrf ? Prisma.sql`AND ${cvLinkedToMrf(mrf)}` : Prisma.empty;
   const [row] = await prisma.$queryRaw`SELECT COUNT(*)::int AS n FROM rpa_cv WHERE ${cvCreatedBetween(from, to)} ${roleCond}`;
   return row?.n || 0;
 }
@@ -61,8 +69,8 @@ async function countCvAdded(from, to, mrf) {
  *
  * Headline numbers are lifetime figures; `period` holds the figures for the
  * selected range. An MRF narrows the pipeline figures (Shortlisted, entered in
- * the period) by MRF id, and the "added" figure by the candidate's Position
- * Applied text until JD tagging (N13) links uploads to MRFs. The funnel stays
+ * the period) by MRF id, and the "added" figure to candidates tagged to it (N13)
+ * or, from before tagging, whose Position Applied matches. The funnel stays
  * all-roles so its stages are one population.
  *
  * @param {{ rangeDays?: number, mrfId?: bigint|null }} [params]
@@ -209,7 +217,8 @@ export async function getStats({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null } 
  *   - topRoles / topSkills: over candidates added in the period
  *
  * With an MRF picked, journeys are matched by MRF id; candidates and MRFs by
- * role text (the interim rule until JD tagging, N13) — `matchedBy` says so.
+ * JD tag or, before tagging, role text (cvLinkedToMrf); MRFs by role text —
+ * `matchedBy` says so.
  *
  * @param {{ rangeDays?: number, mrfId?: bigint|null }} [params]
  */
@@ -218,7 +227,7 @@ export async function getTrends({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null }
   const { start, previousStart } = periodBounds(rangeDays, now);
   const until = justAfter(now);
   const mrf = await resolveMrfFilter(mrfId);
-  const roleCond = mrf ? Prisma.sql`AND ${positionMatches(mrf.roleKey)}` : Prisma.empty;
+  const roleCond = mrf ? Prisma.sql`AND ${cvLinkedToMrf(mrf)}` : Prisma.empty;
   const journeyMrfCond = mrf ? Prisma.sql`AND mrf_id = ${mrf.id}` : Prisma.empty;
   const mrfRoleCond = mrf ? Prisma.sql`AND ${normalisedSql('position_hiring_for')} = ${mrf.roleKey}` : Prisma.empty;
 
@@ -251,7 +260,7 @@ export async function getTrends({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null }
     rangeDays,
     from: start,
     mrf: mrf ? { id: Number(mrf.id), role: mrf.role } : null,
-    matchedBy: mrf ? 'position_applied' : null,
+    matchedBy: mrf ? 'jd_tag_or_position_applied' : null,
     added: {
       daily: added,
       total: addedTotal,

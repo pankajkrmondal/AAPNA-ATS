@@ -3,7 +3,8 @@
  * (Phase 3 "Do Now", N21): who was added, and who was not and why
  * ("Rejected on … Can be added again after …", "Already shortlisted for this
  * MRF", …). Used by Candidate Screening and by Search Candidate's "Add to JD".
- * Skipped candidates get no email.
+ * Skipped candidates get no email. Failed ones (an error while adding them)
+ * are listed apart, with the server's reason.
  */
 import { Modal, Button, Typography } from 'antd';
 
@@ -16,11 +17,12 @@ const { Text } = Typography;
  *   added: string[],                 names added to the MRF
  *   emailed: boolean,                whether the added ones were emailed
  *   skipped: Array<{ cv_id: number, name: string, message: string }>,
+ *   failed?: Array<{ cv_id: number|null, name: string, message: string }>,  could not be added (error)
  *   emailFailures?: Array<{ name: string, reason: string }>,
  *   onClose: () => void,
  * }} props
  */
-export default function ShortlistResultModal({ open, roleLabel, added = [], emailed, skipped = [], emailFailures = [], onClose }) {
+export default function ShortlistResultModal({ open, roleLabel, added = [], emailed, skipped = [], failed = [], emailFailures = [], onClose }) {
   return (
     <Modal
       open={open}
@@ -45,6 +47,22 @@ export default function ShortlistResultModal({ open, roleLabel, added = [], emai
           <Text type="warning">
             Email not sent to {emailFailures.map((x) => x.name).join(', ')}: {[...new Set(emailFailures.map((x) => x.reason))].join(' ')}
           </Text>
+        )}
+
+        {failed.length > 0 && (
+          <div data-testid="shortlist-result-failed">
+            <Text strong type="danger" style={{ display: 'block', marginBottom: 4 }}>{failed.length} failed</Text>
+            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+              {failed.map((f, i) => (
+                <li key={f.cv_id ?? `failed-${i}`} style={{ marginBottom: 4 }}>
+                  <Text strong>{f.name}</Text>: {f.message}
+                </li>
+              ))}
+            </ul>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
+              You can add these again; anyone already added is skipped, never emailed twice.
+            </Text>
+          </div>
         )}
 
         {skipped.length > 0 && (

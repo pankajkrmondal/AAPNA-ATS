@@ -49,6 +49,11 @@ import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
 import { fmtDateTime } from '../utils/dateFormat';
 import { UPLOAD_STATUS_FILTERS, uploadStatusMeta } from '../constants/uploadStatus';
+import dashboardService from '../services/dashboardService';
+import UploadJdPicker, { jobJdText } from '../components/common/UploadJdPicker';
+
+/** Open JDs for the "Uploading for JD" picker (N14); module-level so the picker loads once. */
+const loadJdOptions = () => dashboardService.getMrfOptions();
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
@@ -67,6 +72,8 @@ const POLL_INTERVAL_MS = 10_000;
 export default function HRUpload() {
   // ── Upload state ──
   const [fileList, setFileList] = useState([]);
+  // The JD this upload is made for (N14); null = no tagging.
+  const [uploadMrfId, setUploadMrfId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
 
@@ -200,6 +207,7 @@ export default function HRUpload() {
 
     const formData = new FormData();
     fileList.forEach((file) => formData.append('resumes', file.originFileObj || file));
+    if (uploadMrfId) formData.append('mrfId', String(uploadMrfId));
 
     try {
       await hrUploadService.uploadResumes(formData, (e) => {
@@ -207,6 +215,8 @@ export default function HRUpload() {
       });
       setUploadMsg({ type: 'success', text: '✅ Uploaded. Track processing status in the dashboard below.' });
       setFileList([]);
+      // Never carry a JD over to the next upload by accident.
+      setUploadMrfId(null);
       setStatusFilter(null);
       setOnlyActionRequired(false);
       setCelebrate(true);
@@ -355,6 +365,12 @@ export default function HRUpload() {
       render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
     },
     {
+      title: 'JD',
+      key: 'jd',
+      // The JD the upload was made for (N14).
+      render: (_, r) => <span style={{ fontSize: 12 }}>{jobJdText(r)}</span>,
+    },
+    {
       title: 'Uploaded By',
       key: 'uploaded_by',
       render: (_, r) => <span style={{ fontSize: 12 }}>{r.uploaded_by || '—'}</span>,
@@ -434,6 +450,7 @@ export default function HRUpload() {
         styles={{ body: { padding: 0 } }}>
         <div style={{ padding: '20px 28px 24px', position: 'relative' }}>
           <UploadCelebration show={celebrate} />
+          <UploadJdPicker value={uploadMrfId} onChange={setUploadMrfId} loadOptions={loadJdOptions} disabled={uploading} />
           {/* Compact dropzone — single row, doesn't dominate the page. */}
           <Dragger
             multiple

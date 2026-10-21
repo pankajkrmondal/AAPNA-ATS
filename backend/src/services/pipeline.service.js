@@ -1043,6 +1043,8 @@ export async function getCandidatePipelineScores(cvId) {
     const mrf = journey.rpa_shortlisted_candidates?.mrf;
     return serializeBigInts({
       pipeline_id: journey.id,
+      // The shortlist row Change JD (G3) acts on.
+      shortlist_id: journey.shortlist_id ?? null,
       mrf_id: mrf?.id ?? journey.mrf_id ?? null,
       role: mrf?.position_hiring_for || journey.rpa_shortlisted_candidates?.position_applied || 'Role not recorded',
       current_stage_label: labelOf(journey.current_stage_key),

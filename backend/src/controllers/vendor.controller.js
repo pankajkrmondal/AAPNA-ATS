@@ -14,6 +14,8 @@ import config from '../config/index.js';
 import runExport from '../exports/runExport.js';
 import uploadJobsExport from '../exports/uploadJobs.export.js';
 import { partitionBySignature } from '../utils/fileSignature.js';
+import { resolveUploadMrf } from '../services/candidateTag.service.js';
+import { getApprovedRoles } from '../services/screening.service.js';
 
 /**
  * What may survive zip expansion (defect D7). `.zip` is absent deliberately —
@@ -197,6 +199,22 @@ export const listVendors = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Open JDs a vendor upload can be tagged to (N14). Vendors cannot reach
+ *          the staff JD list (/screening/roles), so this returns only what the
+ *          picker shows: id, MRF ref, role, date and the "Latest" flag. All open JDs
+ *          until per-vendor JD sharing (C2C) exists.
+ * @route   GET /api/vendor/mrfs
+ * @access  Private (Vendor, HR, Admin; vendor_upload module)
+ */
+export const listUploadMrfs = catchAsync(async (req, res) => {
+  const roles = await getApprovedRoles({ includeClosed: false });
+  const data = roles
+    .filter((r) => !r.closed)
+    .map(({ id, ref, role, created_at, isLatest }) => ({ id, ref, role, created_at, isLatest }));
+  return success(res, data, 'Open JDs retrieved');
+});
+
+/**
  * @desc    Handle resume uploads from vendor, unzip packages, and log batch details
  * @route   POST /api/vendor/upload
  * @access  Private (Vendor, HR, Admin)
@@ -205,6 +223,16 @@ export const uploadResumes = catchAsync(async (req, res) => {
   const files = req.files || [];
   if (files.length === 0) {
     throw new AppError('No files uploaded.', 400);
+  }
+
+  // JD the upload is made for (N14, optional). Checked before anything is
+  // saved; on a refusal the just-received files are removed again.
+  let mrfId;
+  try {
+    mrfId = await resolveUploadMrf(req.body?.mrfId);
+  } catch (err) {
+    files.forEach((f) => { if (f?.path) fs.unlink(f.path, () => {}); });
+    throw err;
   }
 
   const username = req.user.username || 'vendor';
@@ -328,6 +356,7 @@ export const uploadResumes = catchAsync(async (req, res) => {
       details: {
         vendor_email: vendorEmail,
         vendor_name: vendorFullName,
+        mrf_id: mrfId ? String(mrfId) : null,
         files: accepted.map(f => ({ name: f.originalname, size: f.size })),
         rejected_files: rejected,
       },
@@ -358,10 +387,11 @@ export const uploadResumes = catchAsync(async (req, res) => {
     vendorEmail: attribution.vendorEmail,
     vendorName: attribution.vendorName,
     source: 'vendor_portal',
+    mrfId,
   });
 
   // 3) Dispatch parsing (durable queue when enabled, else in-process background)
-  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'vendor_portal', attribution);
+  await hrUploadService.dispatchBatchParsing(executionId, accepted, req.user, 'vendor_portal', attribution, { mrfId });
 
   return success(
     res,
@@ -476,6 +506,7 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   const [rows, filteredTotal, baseTotal, actionCount, grouped] = await Promise.all([
     prisma.rpa_upload_jobs.findMany({
       where,
+      include: uploadJobService.JOB_MRF_INCLUDE,
       orderBy: { updated_at: 'desc' },
       skip: (pageNum - 1) * limitNum,
       take: limitNum,
@@ -578,6 +609,8 @@ export const reprocessJob = catchAsync(async (req, res) => {
     req.user,
     job.source || 'vendor_portal',
     attribution,
+    // The re-run tags the same JD as the original upload (N14).
+    { mrfId: job.mrf_id },
   );
 
   return success(res, { id }, 'Resume reprocessing started.');

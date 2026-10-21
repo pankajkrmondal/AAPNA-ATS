@@ -94,8 +94,8 @@ export const METRICS = {
     formula: 'Each point is the number of candidates added on that day (India time), counted over '
       + 'the whole database.',
     source: 'Your candidate database.', // dev: GET /dashboard/trends (N36)
-    caveat: 'With an MRF picked, candidates are matched on the "Position Applied" they gave, because '
-      + 'uploads are not yet linked to an MRF. That link comes with JD tagging.',
+    caveat: 'With an MRF picked, a candidate counts when uploaded for or shortlisted to that MRF (JD tagging), '
+      + 'or, for candidates added before tagging existed, when the "Position Applied" they gave matches its role.',
   },
   conversionFunnel: {
     label: 'Conversion Funnel',

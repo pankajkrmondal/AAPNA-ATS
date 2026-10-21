@@ -38,6 +38,7 @@ const resumeQueue = new Queue('resume-processing', {
  * @param {Object} payload.user - Slim uploader identity (id, email, names, role)
  * @param {string} payload.source - 'vendor_portal' | 'hr_manual_upload'
  * @param {Object|null} [payload.attribution] - { vendorEmail, vendorName }
+ * @param {string|null} [payload.mrfId] - JD the upload was made for (N14), as a string
  * @param {Object} [opts] - BullMQ JobsOptions overrides
  * @returns {Promise<import('bullmq').Job>}
  */

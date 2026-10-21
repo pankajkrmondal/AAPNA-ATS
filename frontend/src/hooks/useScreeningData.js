@@ -15,11 +15,14 @@ export const screeningKeys = {
   roles: ['screening', 'roles'],
   // Under the roles key on purpose: invalidating `roles` refreshes both lists.
   rolesWithClosed: ['screening', 'roles', 'withClosed'],
-  // "Added within" (N38) is the last part, so the bare role key still matches
-  // every variant when a role's results are removed or invalidated.
-  roleCandidates: (roleId, addedWithinDays = null) => (addedWithinDays
-    ? ['screening', 'roleCandidates', roleId, addedWithinDays]
-    : ['screening', 'roleCandidates', roleId]),
+  // "Added within" (N38) and "Tagged to this JD only" (N15) come after the
+  // role, so the bare role key still matches every variant when a role's
+  // results are removed or invalidated.
+  roleCandidates: (roleId, addedWithinDays = null, taggedOnly = false) => [
+    'screening', 'roleCandidates', roleId,
+    ...(addedWithinDays ? [addedWithinDays] : []),
+    ...(taggedOnly ? ['tagged'] : []),
+  ],
 };
 
 // Normalize the axios envelope ({ data: { data } } | { data }) to the useful payload.
@@ -72,10 +75,10 @@ export function useApprovedRoles({ includeClosed = false, enabled = true } = {})
  * Candidates matched to a selected role. Cached per role and "Added within"
  * value (N38); only fires when a role is selected.
  */
-export function useRoleCandidates(roleId, enabled = true, addedWithinDays = null) {
+export function useRoleCandidates(roleId, enabled = true, addedWithinDays = null, taggedOnly = false) {
   return useQuery({
-    queryKey: screeningKeys.roleCandidates(roleId, addedWithinDays),
-    queryFn: () => screeningService.searchRoleCandidates(roleId, { addedWithinDays }),
+    queryKey: screeningKeys.roleCandidates(roleId, addedWithinDays, taggedOnly),
+    queryFn: () => screeningService.searchRoleCandidates(roleId, { addedWithinDays, taggedOnly }),
     select: (res) => unwrap(res),
     enabled: Boolean(roleId) && enabled,
     staleTime: Infinity,

@@ -54,6 +54,7 @@ import {
 } from '../utils/jdScreeningRules.js';
 import {
   attachStageHistory,
+  attachTagInfo,
   generateProfileInsights,
   getRejectionCooldownExcludedCvIds,
   mapStars,
@@ -113,6 +114,7 @@ const PROVENANCE_COLUMNS = Prisma.raw('sl.shortlisted_by, sl.shortlisted_at, rj.
 
 /** Labels for the removed-by summary, in funnel order. */
 const REMOVED_LABELS = {
+  tagged: 'not tagged to this JD',
   recentlyRejected: 'recently rejected',
   location: 'location',
   gender: 'gender',
@@ -649,13 +651,16 @@ async function insightsForTop(mrfId, roleContext, top) {
  * @param {number} mrfId
  * @param {boolean} [force=false] - skip the cache
  */
-export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null } = {}) {
+export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null, taggedOnly = false } = {}) {
   const t0 = Date.now();
   // N38 "Added within": same parser and SQL as keyword search. Each offered
   // value has its own cache entry; any other value is computed fresh.
   const recencyDays = parseScreeningFilters({ addedWithinDays }).addedWithinDays;
   const cacheable = isCacheableRecency(recencyDays);
-  const cacheKey = roleCacheKeyV2(mrfId, recencyDays);
+  // N15 "Tagged to this JD only": just the candidates uploaded for or
+  // shortlisted to this MRF; its own cache entry.
+  const tagged = taggedOnly === true;
+  const cacheKey = roleCacheKeyV2(mrfId, recencyDays, tagged);
   if (!force && cacheable) {
     try {
       const cached = await redis.get(cacheKey);
@@ -766,6 +771,13 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   const byKey = Object.fromEntries(buildFilterConditions(f, 'c').map((cond) => [cond.key, cond]));
   const eduSql = educationGateSql(eduReq, 'c');
   const cheapConds = [
+    // First, so the funnel reads "of N tagged to this JD" (N15).
+    tagged ? {
+      key: 'tagged',
+      sql: Prisma.sql`EXISTS (
+        SELECT 1 FROM public.rpa_candidate_mrf_tags t
+        WHERE t.cv_id = c.id AND t.mrf_id = ${BigInt(mrfId)})`,
+    } : null,
     {
       key: 'recentlyRejected',
       sql: Prisma.sql`NOT EXISTS (
@@ -926,6 +938,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   const gates = [eduReq && 'education', budgetMax != null && 'budget', 'experience'].filter(Boolean);
   const gateList = gates.length > 1 ? `${gates.slice(0, -1).join(', ')} and ${gates[gates.length - 1]}` : gates[0];
   const detail = [`of ${fmt(total)}`];
+  if (tagged) detail.push(`${fmt(total - (removedBy.tagged || 0))} tagged to this JD`);
   if (removedBy.recentlyRejected > 0) detail.push(`${fmt(removedBy.recentlyRejected)} recently rejected for this role`);
   detail.push(`${fmt(passedOtherGates)} meet ${gateList}`);
   detail.push(`of those, ${fmt(passedSkillGate)} have all ${mandatory.skills.length} mandatory skill${mandatory.skills.length === 1 ? '' : 's'}`);
@@ -940,10 +953,11 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
 
   const payload = {
     role: roleContext,
-    candidates: await attachStageHistory(candidates),
+    candidates: await attachTagInfo(await attachStageHistory(candidates), mrfId),
     summary: {
       ...baseSummary,
       noMandatorySkills: false,
+      taggedOnly: tagged,
       total,
       shown: candidates.length,
       removedBy,
