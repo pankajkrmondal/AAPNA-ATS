@@ -1,0 +1,54 @@
+- generic [ref=e4]:
+  - complementary [aria-hidden] [ref=e5]:
+    - generic [ref=e8]:
+      - generic [ref=e9]: PEA
+      - generic [ref=e10]:
+        - generic [ref=e11]: AAPNA
+        - generic [ref=e12]: Evaluation Platform
+    - generic [ref=e13]:
+      - heading [level=1] [ref=e14]:
+        - text: Probation reviews,
+        - emphasis [ref=e15]: on autopilot.
+      - paragraph [ref=e16]: Schedules built from the joining date, manager emails sent on time, reminders handled — and every decision in one place.
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - generic [ref=e20]: Fresher track
+            - generic [ref=e21]: Evaluation 3 of 6
+          - generic [ref=e22]:
+            - generic [ref=e31]: "3"
+            - generic [ref=e32]: "4"
+            - generic [ref=e33]: "5"
+            - generic [ref=e34]: "6"
+          - generic [ref=e35]: Sent to the reporting manager · reminder in 2 days
+        - generic [ref=e45]:
+          - strong [ref=e46]: Daily sweep · 11:00 IST
+          - text: Nothing due is left unsent
+        - generic [ref=e51]:
+          - strong [ref=e52]: 4.2 / 5
+          - text: Average rating
+    - generic [ref=e53]: © 2026 AAPNA Infotech · All rights reserved
+  - main [ref=e54]:
+    - button "Toggle theme" [ref=e56] [cursor=pointer]
+    - generic [ref=e67]:
+      - generic [ref=e68]: HR workspace
+      - heading "Welcome back" [level=2] [ref=e70]
+      - paragraph [ref=e71]: Sign in to manage probation evaluations
+      - generic [ref=e72]:
+        - generic [ref=e74]:
+          - generic "Username or email" [ref=e76]
+          - generic [ref=e80]:
+            - img "user" [ref=e82]
+            - textbox "Username or email" [ref=e85]
+        - generic [ref=e87]:
+          - generic "Password" [ref=e89]
+          - generic [ref=e93]:
+            - img "lock" [ref=e95]
+            - textbox "Password" [ref=e98]
+            - img "eye-invisible" [ref=e100] [cursor=pointer]
+        - link "Forgot password?" [ref=e105] [cursor=pointer]:
+          - /url: /forgot-password
+        - button "Sign in" [disabled] [ref=e106]
+      - paragraph [ref=e107]:
+        - img "safety-certificate" [ref=e108]
+        - text: For HR staff only. Reporting managers use the personal link in their evaluation email — no sign-in needed.

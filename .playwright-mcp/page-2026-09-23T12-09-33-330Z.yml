@@ -1,0 +1,2046 @@
+- generic [ref=f4e1]:
+  - generic [ref=f4e12]:
+    - complementary [ref=f4e13]:
+      - generic [ref=f4e14]:
+        - generic [ref=f4e15] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f4e17]
+          - generic [ref=f4e18]: ATS Platform
+        - menu [ref=f4e19]:
+          - menuitem "dashboard Dashboard" [ref=f4e20] [cursor=pointer]:
+            - img "dashboard" [ref=f4e21]
+            - generic [ref=f4e24]: Dashboard
+          - menuitem "file-text MRF" [ref=f4e25] [cursor=pointer]:
+            - img "file-text" [ref=f4e26]
+            - generic [ref=f4e29]: MRF
+          - menuitem "solution Search Candidate" [ref=f4e30] [cursor=pointer]:
+            - img "solution" [ref=f4e31]
+            - generic [ref=f4e34]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f4e35] [cursor=pointer]:
+            - img "upload" [ref=f4e36]
+            - generic [ref=f4e39]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f4e40] [cursor=pointer]:
+            - img "shop" [ref=f4e41]
+            - generic [ref=f4e44]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f4e45] [cursor=pointer]:
+            - img "audit" [ref=f4e46]
+            - generic [ref=f4e49]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f4e50] [cursor=pointer]:
+            - img "filter" [ref=f4e51]
+            - generic [ref=f4e54]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f4e55] [cursor=pointer]:
+            - img "apartment" [ref=f4e56]
+            - generic [ref=f4e59]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f4e60] [cursor=pointer]:
+            - img "bar-chart" [ref=f4e61]
+            - generic [ref=f4e64]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=f4e65] [cursor=pointer]:
+            - img "mail" [ref=f4e66]
+            - generic [ref=f4e69]: Email Templates
+          - menuitem "setting Settings" [ref=f4e70] [cursor=pointer]:
+            - img "setting" [ref=f4e71]
+            - generic [ref=f4e74]: Settings
+    - generic [ref=f4e75]:
+      - banner [ref=f4e76]:
+        - generic [ref=f4e77]:
+          - button [ref=f4e79] [cursor=pointer]:
+            - img "menu-fold" [ref=f4e81]
+          - generic [ref=f4e84]: Candidate Pipeline
+        - generic [ref=f4e85]:
+          - button [ref=f4e88] [cursor=pointer]:
+            - img "bell" [ref=f4e90]
+          - button "Toggle theme" [ref=f4e94] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f4e106] [cursor=pointer]:
+            - generic [ref=f4e108]:
+              - img "user" [ref=f4e109]
+              - img "setting" [ref=f4e112]
+            - generic [ref=f4e115]: Admin Portal
+          - img "user" [ref=f4e120] [cursor=pointer]
+      - main [ref=f4e123]:
+        - generic [ref=f4e125]:
+          - generic [ref=f4e127]:
+            - generic [ref=f4e128]:
+              - generic [ref=f4e129]:
+                - heading "Candidate Pipeline" [level=3] [ref=f4e130]
+                - text: Candidates enter here when shortlisted from Candidate Screening.
+              - generic [ref=f4e131]:
+                - generic [ref=f4e132]: Updated just now
+                - button "reload Refresh" [ref=f4e135] [cursor=pointer]:
+                  - img "reload" [ref=f4e137]
+                  - generic [ref=f4e140]: Refresh
+                - button "file-excel Export CSV" [ref=f4e143] [cursor=pointer]:
+                  - img "file-excel" [ref=f4e145]
+                  - generic [ref=f4e148]: Export CSV
+            - generic [ref=f4e150]:
+              - generic [ref=f4e151]:
+                - img "robot" [ref=f4e153]
+                - searchbox "Ask the board — e.g. \"vendor candidates stuck on hold\"" [ref=f4e156]
+              - button [ref=f4e159] [cursor=pointer]:
+                - img "search" [ref=f4e160]
+            - generic [ref=f4e163]:
+              - generic [ref=f4e167] [cursor=pointer]:
+                - combobox [ref=f4e169]
+                - generic: Position
+              - generic [ref=f4e173] [cursor=pointer]:
+                - combobox [ref=f4e175]
+                - generic: Source
+              - generic [ref=f4e177] [cursor=pointer]:
+                - checkbox "On Hold only" [ref=f4e179]
+                - generic [ref=f4e181]: On Hold only
+              - generic [ref=f4e183] [cursor=pointer]:
+                - checkbox "Rejected only" [ref=f4e185]
+                - generic [ref=f4e187]: Rejected only
+              - generic [ref=f4e189] [cursor=pointer]:
+                - checkbox "Stuck > 10 days" [ref=f4e191]
+                - generic [ref=f4e193]: Stuck > 10 days
+              - generic [ref=f4e195] [cursor=pointer]:
+                - checkbox "My candidates" [ref=f4e197]
+                - generic [ref=f4e199]: My candidates
+              - generic [ref=f4e201] [cursor=pointer]:
+                - checkbox "Show closed (92)" [ref=f4e203]
+                - generic [ref=f4e205]: Show closed (92)
+              - generic [ref=f4e206]: 166 candidates
+          - alert [ref=f4e208]:
+            - img "warning" [ref=f4e209]
+            - generic [ref=f4e212]:
+              - generic [ref=f4e213]: 8 interviews awaiting confirmation
+              - generic [ref=f4e215]:
+                - text: These rounds ended without anyone recording whether they happened. No scorecard is requested until one is marked held.
+                - generic [ref=f4e216]:
+                  - generic [ref=f4e217]:
+                    - button "SCHED03 1788422888641-35" [ref=f4e218] [cursor=pointer]
+                    - generic [ref=f4e220]: Technical Round 1 · saroj · ended 16d ago
+                    - generic [ref=f4e221]: never confirmed
+                  - generic [ref=f4e222]:
+                    - button "SCHED05 1788503070130-34" [ref=f4e223] [cursor=pointer]
+                    - generic [ref=f4e225]: CEO / Final Round · ended 17d ago
+                    - generic [ref=f4e226]: never confirmed
+                  - generic [ref=f4e227]:
+                    - button "SCHED05 1788414135325-295" [ref=f4e228] [cursor=pointer]
+                    - generic [ref=f4e230]: CEO / Final Round · ended 18d ago
+                    - generic [ref=f4e231]: never confirmed
+                  - generic [ref=f4e232]:
+                    - button "SCHED16 1788503335094-504" [ref=f4e233] [cursor=pointer]
+                    - generic [ref=f4e235]: CEO / Final Round · ended 19d ago
+                    - generic [ref=f4e236]: never confirmed
+                  - generic [ref=f4e237]:
+                    - button "KUPPALA NATESH" [ref=f4e238] [cursor=pointer]
+                    - generic [ref=f4e240]: CEO / Final Round · Chhaya · ended 21d ago
+                    - generic [ref=f4e241]: never confirmed
+                  - generic [ref=f4e242]:
+                    - button "KUPPALA NATESH" [ref=f4e243] [cursor=pointer]
+                    - generic [ref=f4e245]: Technical Round 2 · chhaya verma · ended 21d ago
+                    - generic [ref=f4e246]: never confirmed
+                  - generic [ref=f4e247]:
+                    - button "SCHED06 1788011772813-349" [ref=f4e248] [cursor=pointer]
+                    - generic [ref=f4e250]: Technical Round 1 · Phase3 Test Interviewer · ended 21d ago
+                    - generic [ref=f4e251]: never confirmed
+                  - generic [ref=f4e252]:
+                    - button "SCHED04b 1787562595419-855" [ref=f4e253] [cursor=pointer]
+                    - generic [ref=f4e255]: Technical Round 1 · Harish · ended 26d ago
+                    - generic [ref=f4e256]: never confirmed
+          - generic [ref=f4e258]:
+            - generic [ref=f4e260]:
+              - generic [ref=f4e262]:
+                - strong [ref=f4e267]: HR Screening (Zeko)
+                - superscript [ref=f4e272]:
+                  - generic [ref=f4e273]:
+                    - generic [ref=f4e274]: "7"
+                    - generic [ref=f4e275]: "2"
+              - generic [ref=f4e276]:
+                - generic [ref=f4e280] [cursor=pointer]:
+                  - generic [ref=f4e281]: P1
+                  - generic [ref=f4e282]:
+                    - generic [ref=f4e283]:
+                      - strong [ref=f4e285]: PIPE17 1788422979024-346
+                      - generic [ref=f4e286]: 20d
+                    - generic [ref=f4e287]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e288]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e291]'
+                - generic [ref=f4e298] [cursor=pointer]:
+                  - generic [ref=f4e299]: P1
+                  - generic [ref=f4e300]:
+                    - generic [ref=f4e301]:
+                      - strong [ref=f4e303]: PIPE14-plain 1788422933541-340
+                      - generic [ref=f4e304]: 20d
+                    - generic [ref=f4e305]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e306]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e309]'
+                - generic [ref=f4e316] [cursor=pointer]:
+                  - generic [ref=f4e317]: P1
+                  - generic [ref=f4e318]:
+                    - generic [ref=f4e319]:
+                      - strong [ref=f4e321]: PIPE14-vendor 1788422932263-264
+                      - generic [ref=f4e322]: 20d
+                    - generic [ref=f4e323]: E2E 1-opening 1788422847967-660 · genaiuserpankajmondal@gmail.com · phase3-testpass
+                    - generic [ref=f4e324]:
+                      - generic [ref=f4e325]: Invited
+                      - img "shop" [ref=f4e328]
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e331]'
+                - generic [ref=f4e338] [cursor=pointer]:
+                  - generic [ref=f4e339]: P1
+                  - generic [ref=f4e340]:
+                    - generic [ref=f4e341]:
+                      - strong [ref=f4e343]: PIPE12b 1788422916542-26
+                      - generic [ref=f4e344]: 20d
+                    - generic [ref=f4e345]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e346]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e349]'
+                - generic [ref=f4e356] [cursor=pointer]:
+                  - generic [ref=f4e357]: "?"
+                  - generic [ref=f4e358]:
+                    - generic [ref=f4e359]:
+                      - strong [ref=f4e361]: Unnamed candidate
+                      - generic [ref=f4e362]: 20d
+                    - generic [ref=f4e363]: No position on file · Screening Shortlist
+                    - generic [ref=f4e364]:
+                      - generic [ref=f4e365]: In progress
+                      - generic [ref=f4e368]:
+                        - img "team" [ref=f4e369]
+                        - generic [ref=f4e372]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e373]'
+                - generic [ref=f4e380] [cursor=pointer]:
+                  - generic [ref=f4e381]: P1
+                  - generic [ref=f4e382]:
+                    - generic [ref=f4e383]:
+                      - strong [ref=f4e385]: PIPE12 1788422914987-186
+                      - generic [ref=f4e386]: 20d
+                    - generic [ref=f4e387]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e388]:
+                      - generic [ref=f4e389]: In progress
+                      - generic [ref=f4e392]:
+                        - img "team" [ref=f4e393]
+                        - generic [ref=f4e396]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e397]'
+                - generic [ref=f4e404] [cursor=pointer]:
+                  - generic [ref=f4e405]: N1
+                  - generic [ref=f4e406]:
+                    - generic [ref=f4e407]:
+                      - strong [ref=f4e409]: N1 1788422898528-645
+                      - generic [ref=f4e410]: 20d
+                    - generic [ref=f4e411]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e412]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e415]'
+                - generic [ref=f4e422] [cursor=pointer]:
+                  - generic [ref=f4e423]: P1
+                  - generic [ref=f4e424]:
+                    - generic [ref=f4e425]:
+                      - strong [ref=f4e427]: PIPE14-plain 1788012950202-57
+                      - generic [ref=f4e428]: 24d
+                    - generic [ref=f4e429]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e430]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e433]'
+                - generic [ref=f4e440] [cursor=pointer]:
+                  - generic [ref=f4e441]: P1
+                  - generic [ref=f4e442]:
+                    - generic [ref=f4e443]:
+                      - strong [ref=f4e445]: PIPE14-vendor 1788012949850-944
+                      - generic [ref=f4e446]: 19d
+                    - generic [ref=f4e447]: E2E 1-opening 1788011608867-263 · genaiuserpankajmondal@gmail.com · phase3-testpass
+                    - generic [ref=f4e448]:
+                      - generic [ref=f4e449]: In progress
+                      - img "shop" [ref=f4e452]
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e455]'
+                - generic [ref=f4e462] [cursor=pointer]:
+                  - generic [ref=f4e463]: P1
+                  - generic [ref=f4e464]:
+                    - generic [ref=f4e465]:
+                      - strong [ref=f4e467]: PIPE12b 1788012945290-62
+                      - generic [ref=f4e468]: 24d
+                    - generic [ref=f4e469]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e470]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e473]'
+                - generic [ref=f4e480] [cursor=pointer]:
+                  - generic [ref=f4e481]: "?"
+                  - generic [ref=f4e482]:
+                    - generic [ref=f4e483]:
+                      - strong [ref=f4e485]: Unnamed candidate
+                      - generic [ref=f4e486]: 24d
+                    - generic [ref=f4e487]: No position on file · Screening Shortlist
+                    - generic [ref=f4e488]:
+                      - generic [ref=f4e489]: In progress
+                      - generic [ref=f4e492]:
+                        - img "team" [ref=f4e493]
+                        - generic [ref=f4e496]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e497]'
+                - generic [ref=f4e504] [cursor=pointer]:
+                  - generic [ref=f4e505]: P1
+                  - generic [ref=f4e506]:
+                    - generic [ref=f4e507]:
+                      - strong [ref=f4e509]: PIPE12 1788012944711-159
+                      - generic [ref=f4e510]: 24d
+                    - generic [ref=f4e511]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e512]:
+                      - generic [ref=f4e513]: In progress
+                      - generic [ref=f4e516]:
+                        - img "team" [ref=f4e517]
+                        - generic [ref=f4e520]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e521]'
+                - generic [ref=f4e528] [cursor=pointer]:
+                  - generic [ref=f4e529]: N1
+                  - generic [ref=f4e530]:
+                    - generic [ref=f4e531]:
+                      - strong [ref=f4e533]: N1 1788012938136-789
+                      - generic [ref=f4e534]: 24d
+                    - generic [ref=f4e535]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e536]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e539]'
+                - generic [ref=f4e546] [cursor=pointer]:
+                  - generic [ref=f4e547]: P1
+                  - generic [ref=f4e548]:
+                    - generic [ref=f4e549]:
+                      - strong [ref=f4e551]: PIPE12b 1788012624880-982
+                      - generic [ref=f4e552]: 24d
+                    - generic [ref=f4e553]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e554]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e557]'
+                - generic [ref=f4e564] [cursor=pointer]:
+                  - generic [ref=f4e565]: "?"
+                  - generic [ref=f4e566]:
+                    - generic [ref=f4e567]:
+                      - strong [ref=f4e569]: Unnamed candidate
+                      - generic [ref=f4e570]: 24d
+                    - generic [ref=f4e571]: No position on file · Screening Shortlist
+                    - generic [ref=f4e572]:
+                      - generic [ref=f4e573]: In progress
+                      - generic [ref=f4e576]:
+                        - img "team" [ref=f4e577]
+                        - generic [ref=f4e580]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e581]'
+                - generic [ref=f4e588] [cursor=pointer]:
+                  - generic [ref=f4e589]: P1
+                  - generic [ref=f4e590]:
+                    - generic [ref=f4e591]:
+                      - strong [ref=f4e593]: PIPE12 1788012623480-358
+                      - generic [ref=f4e594]: 24d
+                    - generic [ref=f4e595]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e596]:
+                      - generic [ref=f4e597]: In progress
+                      - generic [ref=f4e600]:
+                        - img "team" [ref=f4e601]
+                        - generic [ref=f4e604]: 2 MRFs
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e605]'
+                - generic [ref=f4e612] [cursor=pointer]:
+                  - generic [ref=f4e613]: N1
+                  - generic [ref=f4e614]:
+                    - generic [ref=f4e615]:
+                      - strong [ref=f4e617]: N1 1788012611094-988
+                      - generic [ref=f4e618]: 24d
+                    - generic [ref=f4e619]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e620]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e623]'
+                - generic [ref=f4e630] [cursor=pointer]:
+                  - generic [ref=f4e631]: O1
+                  - generic [ref=f4e632]:
+                    - generic [ref=f4e633]:
+                      - strong [ref=f4e635]: OFFER11 1788012562939-372
+                      - generic [ref=f4e636]: 24d
+                    - generic [ref=f4e637]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e638]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e641]'
+                - generic [ref=f4e648] [cursor=pointer]:
+                  - generic [ref=f4e649]: O1
+                  - generic [ref=f4e650]:
+                    - generic [ref=f4e651]:
+                      - strong [ref=f4e653]: OFFER10b 1788012558524-538
+                      - generic [ref=f4e654]: 24d
+                    - generic [ref=f4e655]: Phase3 2-opening 1788012557591-149 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e656]:
+                      - generic [ref=f4e657]: In progress
+                      - generic [ref=f4e660]:
+                        - img "warning" [ref=f4e661]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e664]'
+                - generic [ref=f4e671] [cursor=pointer]:
+                  - generic [ref=f4e672]: O1
+                  - generic [ref=f4e673]:
+                    - generic [ref=f4e674]:
+                      - strong [ref=f4e676]: OFFER10a 1788012557704-191
+                      - generic [ref=f4e677]: 24d
+                    - generic [ref=f4e678]: Phase3 2-opening 1788012557591-149 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e679]:
+                      - generic [ref=f4e680]: In progress
+                      - generic [ref=f4e683]:
+                        - img "warning" [ref=f4e684]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e687]'
+                - generic [ref=f4e694] [cursor=pointer]:
+                  - generic [ref=f4e695]: O1
+                  - generic [ref=f4e696]:
+                    - generic [ref=f4e697]:
+                      - strong [ref=f4e699]: OFFER09b 1788012554123-235
+                      - generic [ref=f4e700]: 24d
+                    - generic [ref=f4e701]: Phase3 2-opening 1788012552973-366 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e702]:
+                      - generic [ref=f4e703]: In progress
+                      - generic [ref=f4e706]:
+                        - img "warning" [ref=f4e707]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e710]'
+                - generic [ref=f4e717] [cursor=pointer]:
+                  - generic [ref=f4e718]: O1
+                  - generic [ref=f4e719]:
+                    - generic [ref=f4e720]:
+                      - strong [ref=f4e722]: OFFER09a 1788012553013-522
+                      - generic [ref=f4e723]: 24d
+                    - generic [ref=f4e724]: Phase3 2-opening 1788012552973-366 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e725]:
+                      - generic [ref=f4e726]: In progress
+                      - generic [ref=f4e729]:
+                        - img "warning" [ref=f4e730]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e733]'
+                - generic [ref=f4e740] [cursor=pointer]:
+                  - generic [ref=f4e741]: O1
+                  - generic [ref=f4e742]:
+                    - generic [ref=f4e743]:
+                      - strong [ref=f4e745]: OFFER08 1788012550126-350
+                      - generic [ref=f4e746]: 24d
+                    - generic [ref=f4e747]: Phase3 1-opening 1788012549922-425 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e748]:
+                      - generic [ref=f4e749]: In progress
+                      - generic [ref=f4e752]:
+                        - img "warning" [ref=f4e753]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e756]'
+                - generic [ref=f4e763] [cursor=pointer]:
+                  - generic [ref=f4e764]: O1
+                  - generic [ref=f4e765]:
+                    - generic [ref=f4e766]:
+                      - strong [ref=f4e768]: OFFER07 1788012549063-342
+                      - generic [ref=f4e769]: 24d
+                    - generic [ref=f4e770]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e771]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e774]'
+                - generic [ref=f4e781] [cursor=pointer]:
+                  - generic [ref=f4e782]: O1
+                  - generic [ref=f4e783]:
+                    - generic [ref=f4e784]:
+                      - strong [ref=f4e786]: OFFER05 1788012544086-140
+                      - generic [ref=f4e787]: 24d
+                    - generic [ref=f4e788]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e789]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e792]'
+                - generic [ref=f4e799] [cursor=pointer]:
+                  - generic [ref=f4e800]: O1
+                  - generic [ref=f4e801]:
+                    - generic [ref=f4e802]:
+                      - strong [ref=f4e804]: OFFER04b 1788012543094-216
+                      - generic [ref=f4e805]: 24d
+                    - generic [ref=f4e806]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e807]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e810]'
+                - generic [ref=f4e817] [cursor=pointer]:
+                  - generic [ref=f4e818]: O1
+                  - generic [ref=f4e819]:
+                    - generic [ref=f4e820]:
+                      - strong [ref=f4e822]: OFFER04 1788012541225-449
+                      - generic [ref=f4e823]: 24d
+                    - generic [ref=f4e824]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e825]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e828]'
+                - generic [ref=f4e835] [cursor=pointer]:
+                  - generic [ref=f4e836]: D1
+                  - generic [ref=f4e837]:
+                    - generic [ref=f4e838]:
+                      - strong [ref=f4e840]: DOC10 1788012537226-326
+                      - generic [ref=f4e841]: 22d
+                    - generic [ref=f4e842]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e843]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e846]'
+                - generic [ref=f4e853] [cursor=pointer]:
+                  - generic [ref=f4e854]: D1
+                  - generic [ref=f4e855]:
+                    - generic [ref=f4e856]:
+                      - strong [ref=f4e858]: DOC09b 1788012534356-448
+                      - generic [ref=f4e859]: 19d
+                    - generic [ref=f4e860]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e861]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e864]'
+                - generic [ref=f4e871] [cursor=pointer]:
+                  - generic [ref=f4e872]: D1
+                  - generic [ref=f4e873]:
+                    - generic [ref=f4e874]:
+                      - strong [ref=f4e876]: DOC09 1788012528275-516
+                      - generic [ref=f4e877]: 22d
+                    - generic [ref=f4e878]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e879]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e882]'
+                - generic [ref=f4e889] [cursor=pointer]:
+                  - generic [ref=f4e890]: D1
+                  - generic [ref=f4e891]:
+                    - generic [ref=f4e892]:
+                      - strong [ref=f4e894]: DOC07 1788012521388-683
+                      - generic [ref=f4e895]: 24d
+                    - generic [ref=f4e896]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e897]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e900]'
+                - generic [ref=f4e907] [cursor=pointer]:
+                  - generic [ref=f4e908]: D1
+                  - generic [ref=f4e909]:
+                    - generic [ref=f4e910]:
+                      - strong [ref=f4e912]: DOC02 1788012516953-527
+                      - generic [ref=f4e913]: 19d
+                    - generic [ref=f4e914]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e915]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e918]'
+                - generic [ref=f4e925] [cursor=pointer]:
+                  - generic [ref=f4e926]: D1
+                  - generic [ref=f4e927]:
+                    - generic [ref=f4e928]:
+                      - strong [ref=f4e930]: DOC01 1788012510911-438
+                      - generic [ref=f4e931]: 19d
+                    - generic [ref=f4e932]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e933]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e936]'
+                - generic [ref=f4e943] [cursor=pointer]:
+                  - generic [ref=f4e944]: N1
+                  - generic [ref=f4e945]:
+                    - generic [ref=f4e946]:
+                      - strong [ref=f4e948]: N1 1788012134375-678
+                      - generic [ref=f4e949]: 24d
+                    - generic [ref=f4e950]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e951]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e954]'
+                - generic [ref=f4e961] [cursor=pointer]:
+                  - generic [ref=f4e962]: O1
+                  - generic [ref=f4e963]:
+                    - generic [ref=f4e964]:
+                      - strong [ref=f4e966]: OFFER10b 1788012079084-684
+                      - generic [ref=f4e967]: 24d
+                    - generic [ref=f4e968]: Phase3 2-opening 1788012078263-686 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e969]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e972]'
+                - generic [ref=f4e979] [cursor=pointer]:
+                  - generic [ref=f4e980]: O1
+                  - generic [ref=f4e981]:
+                    - generic [ref=f4e982]:
+                      - strong [ref=f4e984]: OFFER10a 1788012078364-380
+                      - generic [ref=f4e985]: 24d
+                    - generic [ref=f4e986]: Phase3 2-opening 1788012078263-686 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e987]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e990]'
+                - generic [ref=f4e997] [cursor=pointer]:
+                  - generic [ref=f4e998]: O1
+                  - generic [ref=f4e999]:
+                    - generic [ref=f4e1000]:
+                      - strong [ref=f4e1002]: OFFER09b 1788012074461-506
+                      - generic [ref=f4e1003]: 24d
+                    - generic [ref=f4e1004]: Phase3 2-opening 1788012071811-462 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1005]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1008]'
+                - generic [ref=f4e1015] [cursor=pointer]:
+                  - generic [ref=f4e1016]: O1
+                  - generic [ref=f4e1017]:
+                    - generic [ref=f4e1018]:
+                      - strong [ref=f4e1020]: OFFER09a 1788012071913-104
+                      - generic [ref=f4e1021]: 24d
+                    - generic [ref=f4e1022]: Phase3 2-opening 1788012071811-462 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1023]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1026]'
+                - generic [ref=f4e1033] [cursor=pointer]:
+                  - generic [ref=f4e1034]: O1
+                  - generic [ref=f4e1035]:
+                    - generic [ref=f4e1036]:
+                      - strong [ref=f4e1038]: OFFER08 1788012068113-567
+                      - generic [ref=f4e1039]: 24d
+                    - generic [ref=f4e1040]: Phase3 1-opening 1788012068012-32 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1041]:
+                      - generic [ref=f4e1042]: In progress
+                      - generic [ref=f4e1045]:
+                        - img "warning" [ref=f4e1046]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1049]'
+                - generic [ref=f4e1056] [cursor=pointer]:
+                  - generic [ref=f4e1057]: O1
+                  - generic [ref=f4e1058]:
+                    - generic [ref=f4e1059]:
+                      - strong [ref=f4e1061]: OFFER07 1788012067103-218
+                      - generic [ref=f4e1062]: 24d
+                    - generic [ref=f4e1063]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1064]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1067]'
+                - generic [ref=f4e1074] [cursor=pointer]:
+                  - generic [ref=f4e1075]: O1
+                  - generic [ref=f4e1076]:
+                    - generic [ref=f4e1077]:
+                      - strong [ref=f4e1079]: OFFER05 1788012062394-838
+                      - generic [ref=f4e1080]: 24d
+                    - generic [ref=f4e1081]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1082]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1085]'
+                - generic [ref=f4e1092] [cursor=pointer]:
+                  - generic [ref=f4e1093]: O1
+                  - generic [ref=f4e1094]:
+                    - generic [ref=f4e1095]:
+                      - strong [ref=f4e1097]: OFFER04b 1788012061061-727
+                      - generic [ref=f4e1098]: 24d
+                    - generic [ref=f4e1099]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1100]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1103]'
+                - generic [ref=f4e1110] [cursor=pointer]:
+                  - generic [ref=f4e1111]: O1
+                  - generic [ref=f4e1112]:
+                    - generic [ref=f4e1113]:
+                      - strong [ref=f4e1115]: OFFER04 1788012059017-357
+                      - generic [ref=f4e1116]: 24d
+                    - generic [ref=f4e1117]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1118]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1121]'
+                - generic [ref=f4e1128] [cursor=pointer]:
+                  - generic [ref=f4e1129]: D1
+                  - generic [ref=f4e1130]:
+                    - generic [ref=f4e1131]:
+                      - strong [ref=f4e1133]: DOC10 1788012054418-430
+                      - generic [ref=f4e1134]: 22d
+                    - generic [ref=f4e1135]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1136]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1139]'
+                - generic [ref=f4e1146] [cursor=pointer]:
+                  - generic [ref=f4e1147]: D1
+                  - generic [ref=f4e1148]:
+                    - generic [ref=f4e1149]:
+                      - strong [ref=f4e1151]: DOC09b 1788012050926-255
+                      - generic [ref=f4e1152]: 19d
+                    - generic [ref=f4e1153]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1154]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1157]'
+                - generic [ref=f4e1164] [cursor=pointer]:
+                  - generic [ref=f4e1165]: D1
+                  - generic [ref=f4e1166]:
+                    - generic [ref=f4e1167]:
+                      - strong [ref=f4e1169]: DOC09 1788012045025-703
+                      - generic [ref=f4e1170]: 22d
+                    - generic [ref=f4e1171]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1172]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1175]'
+                - generic [ref=f4e1182] [cursor=pointer]:
+                  - generic [ref=f4e1183]: D1
+                  - generic [ref=f4e1184]:
+                    - generic [ref=f4e1185]:
+                      - strong [ref=f4e1187]: DOC07 1788012037347-922
+                      - generic [ref=f4e1188]: 24d
+                    - generic [ref=f4e1189]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1190]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1193]'
+                - generic [ref=f4e1200] [cursor=pointer]:
+                  - generic [ref=f4e1201]: D1
+                  - generic [ref=f4e1202]:
+                    - generic [ref=f4e1203]:
+                      - strong [ref=f4e1205]: DOC02 1788012032734-51
+                      - generic [ref=f4e1206]: 19d
+                    - generic [ref=f4e1207]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1208]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1211]'
+                - generic [ref=f4e1218] [cursor=pointer]:
+                  - generic [ref=f4e1219]: D1
+                  - generic [ref=f4e1220]:
+                    - generic [ref=f4e1221]:
+                      - strong [ref=f4e1223]: DOC01 1788012026346-683
+                      - generic [ref=f4e1224]: 19d
+                    - generic [ref=f4e1225]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1226]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1229]'
+                - generic [ref=f4e1236] [cursor=pointer]:
+                  - generic [ref=f4e1237]: S1
+                  - generic [ref=f4e1238]:
+                    - generic [ref=f4e1239]:
+                      - strong [ref=f4e1241]: SCHED03 1788011848311-469
+                      - generic [ref=f4e1242]: 24d
+                    - generic [ref=f4e1243]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1244]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1247]'
+                - generic [ref=f4e1254] [cursor=pointer]:
+                  - generic [ref=f4e1255]: P1
+                  - generic [ref=f4e1256]:
+                    - generic [ref=f4e1257]:
+                      - strong [ref=f4e1259]: PIPE02c 1788011739857
+                      - generic [ref=f4e1260]: 24d
+                    - generic [ref=f4e1261]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1262]: Rejected
+                    - 'generic "Invite: done · Awaiting: done · Results: done · Decision: rejected" [ref=f4e1265]'
+                - generic [ref=f4e1272] [cursor=pointer]:
+                  - generic [ref=f4e1273]: P1
+                  - generic [ref=f4e1274]:
+                    - generic [ref=f4e1275]:
+                      - strong [ref=f4e1277]: PIPE02b 1788011738826
+                      - generic [ref=f4e1278]: 24d
+                    - generic [ref=f4e1279]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1280]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1283]'
+                - generic [ref=f4e1290] [cursor=pointer]:
+                  - generic [ref=f4e1291]: P1
+                  - generic [ref=f4e1292]:
+                    - generic [ref=f4e1293]:
+                      - strong [ref=f4e1295]: PIPE02a 1788011737784
+                      - generic [ref=f4e1296]: 24d
+                    - generic [ref=f4e1297]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1298]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1301]'
+                - generic [ref=f4e1308] [cursor=pointer]:
+                  - generic [ref=f4e1309]: N1
+                  - generic [ref=f4e1310]:
+                    - generic [ref=f4e1311]:
+                      - strong [ref=f4e1313]: N1 1788011728972-97
+                      - generic [ref=f4e1314]: 24d
+                    - generic [ref=f4e1315]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1316]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1319]'
+                - generic [ref=f4e1326] [cursor=pointer]:
+                  - generic [ref=f4e1327]: O1
+                  - generic [ref=f4e1328]:
+                    - generic [ref=f4e1329]:
+                      - strong [ref=f4e1331]: OFFER05 1788011684321-470
+                      - generic [ref=f4e1332]: 24d
+                    - generic [ref=f4e1333]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1334]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1337]'
+                - generic [ref=f4e1344] [cursor=pointer]:
+                  - generic [ref=f4e1345]: O1
+                  - generic [ref=f4e1346]:
+                    - generic [ref=f4e1347]:
+                      - strong [ref=f4e1349]: OFFER04b 1788011683643-844
+                      - generic [ref=f4e1350]: 24d
+                    - generic [ref=f4e1351]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1352]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1355]'
+                - generic [ref=f4e1362] [cursor=pointer]:
+                  - generic [ref=f4e1363]: O1
+                  - generic [ref=f4e1364]:
+                    - generic [ref=f4e1365]:
+                      - strong [ref=f4e1367]: OFFER04 1788011681673-620
+                      - generic [ref=f4e1368]: 24d
+                    - generic [ref=f4e1369]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1370]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1373]'
+                - generic [ref=f4e1380] [cursor=pointer]:
+                  - generic [ref=f4e1381]: D1
+                  - generic [ref=f4e1382]:
+                    - generic [ref=f4e1383]:
+                      - strong [ref=f4e1385]: DOC10 1788011677875-818
+                      - generic [ref=f4e1386]: 22d
+                    - generic [ref=f4e1387]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1388]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1391]'
+                - generic [ref=f4e1398] [cursor=pointer]:
+                  - generic [ref=f4e1399]: D1
+                  - generic [ref=f4e1400]:
+                    - generic [ref=f4e1401]:
+                      - strong [ref=f4e1403]: DOC09b 1788011675826-514
+                      - generic [ref=f4e1404]: 19d
+                    - generic [ref=f4e1405]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1406]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1409]'
+                - generic [ref=f4e1416] [cursor=pointer]:
+                  - generic [ref=f4e1417]: D1
+                  - generic [ref=f4e1418]:
+                    - generic [ref=f4e1419]:
+                      - strong [ref=f4e1421]: DOC09 1788011669993-751
+                      - generic [ref=f4e1422]: 22d
+                    - generic [ref=f4e1423]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1424]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1427]'
+                - generic [ref=f4e1434] [cursor=pointer]:
+                  - generic [ref=f4e1435]: D1
+                  - generic [ref=f4e1436]:
+                    - generic [ref=f4e1437]:
+                      - strong [ref=f4e1439]: DOC07 1788011662515-647
+                      - generic [ref=f4e1440]: 24d
+                    - generic [ref=f4e1441]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1442]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1445]'
+                - generic [ref=f4e1452] [cursor=pointer]:
+                  - generic [ref=f4e1453]: D1
+                  - generic [ref=f4e1454]:
+                    - generic [ref=f4e1455]:
+                      - strong [ref=f4e1457]: DOC02 1788011657479-6
+                      - generic [ref=f4e1458]: 19d
+                    - generic [ref=f4e1459]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1460]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1463]'
+                - generic [ref=f4e1470] [cursor=pointer]:
+                  - generic [ref=f4e1471]: D1
+                  - generic [ref=f4e1472]:
+                    - generic [ref=f4e1473]:
+                      - strong [ref=f4e1475]: DOC01 1788011651864-451
+                      - generic [ref=f4e1476]: 19d
+                    - generic [ref=f4e1477]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1478]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1481]'
+                - generic [ref=f4e1488] [cursor=pointer]:
+                  - generic [ref=f4e1489]: AJ
+                  - generic [ref=f4e1490]:
+                    - generic [ref=f4e1491]:
+                      - strong [ref=f4e1493]: Asha Jyothi Chekuri
+                      - generic [ref=f4e1494]: 27d
+                    - generic [ref=f4e1495]: AI Senior Developer · Screening Shortlist · admin
+                    - generic [ref=f4e1496]:
+                      - generic [ref=f4e1497]: In progress
+                      - generic [ref=f4e1500]:
+                        - img "pause-circle" [ref=f4e1501]
+                        - text: Paused
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1504]'
+                - generic [ref=f4e1511] [cursor=pointer]:
+                  - generic [ref=f4e1512]: P
+                  - generic [ref=f4e1513]:
+                    - generic [ref=f4e1514]:
+                      - strong [ref=f4e1516]: Panmon
+                      - generic [ref=f4e1517]: 19d
+                    - generic [ref=f4e1518]: QA Automation Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e1519]:
+                      - generic [ref=f4e1520]: Ready for decision
+                      - generic [ref=f4e1523]:
+                        - img "warning" [ref=f4e1524]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: active · Results: active · Decision: pending" [ref=f4e1527]'
+                - generic [ref=f4e1534] [cursor=pointer]:
+                  - generic [ref=f4e1535]: HM
+                  - generic [ref=f4e1536]:
+                    - generic [ref=f4e1537]:
+                      - strong [ref=f4e1539]: Haris M
+                      - generic [ref=f4e1540]: 30d
+                    - generic [ref=f4e1541]: QA Automation Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e1542]:
+                      - generic [ref=f4e1543]: In progress
+                      - generic [ref=f4e1546]:
+                        - img "warning" [ref=f4e1547]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1550]'
+                - generic [ref=f4e1557] [cursor=pointer]:
+                  - generic [ref=f4e1558]: SP
+                  - generic [ref=f4e1559]:
+                    - generic [ref=f4e1560]:
+                      - strong [ref=f4e1562]: SRAVANI PYAPILY
+                      - generic [ref=f4e1563]: 33d
+                    - generic [ref=f4e1564]: QA Automation Engineer · genaiuserpankajmondal@gmail.com · saukumar
+                    - generic [ref=f4e1565]:
+                      - generic [ref=f4e1566]: In progress
+                      - generic [ref=f4e1569]:
+                        - img "warning" [ref=f4e1570]
+                        - text: Role filled
+                      - img "shop" [ref=f4e1574]
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1577]'
+                - generic [ref=f4e1584] [cursor=pointer]:
+                  - generic [ref=f4e1585]: NR
+                  - generic [ref=f4e1586]:
+                    - generic [ref=f4e1587]:
+                      - strong [ref=f4e1589]: Nihar Ranjan Nayak
+                      - generic [ref=f4e1590]: 33d
+                    - generic [ref=f4e1591]: QA Automation Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e1592]:
+                      - generic [ref=f4e1593]: In progress
+                      - generic [ref=f4e1596]:
+                        - img "warning" [ref=f4e1597]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1600]'
+                - generic [ref=f4e1607] [cursor=pointer]:
+                  - generic [ref=f4e1608]: DC
+                  - generic [ref=f4e1609]:
+                    - generic [ref=f4e1610]:
+                      - strong [ref=f4e1612]: DARSHAN C R
+                      - generic [ref=f4e1613]: 33d
+                    - generic [ref=f4e1614]: QA Automation Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e1615]:
+                      - generic [ref=f4e1616]: In progress
+                      - generic [ref=f4e1619]:
+                        - img "warning" [ref=f4e1620]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1623]'
+                - generic [ref=f4e1630] [cursor=pointer]:
+                  - generic [ref=f4e1631]: DR
+                  - generic [ref=f4e1632]:
+                    - generic [ref=f4e1633]:
+                      - strong [ref=f4e1635]: Dhanalakshmi Ramachandran
+                      - generic [ref=f4e1636]: 33d
+                    - generic [ref=f4e1637]: QA Automation Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e1638]:
+                      - generic [ref=f4e1639]: Invited
+                      - generic [ref=f4e1642]:
+                        - img "warning" [ref=f4e1643]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e1646]'
+                - generic [ref=f4e1653] [cursor=pointer]:
+                  - generic [ref=f4e1654]: PK
+                  - generic [ref=f4e1655]:
+                    - generic [ref=f4e1656]:
+                      - strong [ref=f4e1658]: Pawan Kumar J S
+                      - generic [ref=f4e1659]: 47d
+                    - generic [ref=f4e1660]: AI Senior Developer · Screening Shortlist · harish.mopuri
+                    - generic [ref=f4e1661]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1664]'
+                - generic [ref=f4e1671] [cursor=pointer]:
+                  - generic [ref=f4e1672]: SK
+                  - generic [ref=f4e1673]:
+                    - generic [ref=f4e1674]:
+                      - strong [ref=f4e1676]: Sumit Kumar Kamti
+                      - generic [ref=f4e1677]: 62d
+                    - generic [ref=f4e1678]: .NET · Screening Shortlist · admin
+                    - generic [ref=f4e1679]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1682]'
+            - generic [ref=f4e1688]:
+              - generic [ref=f4e1690]:
+                - strong [ref=f4e1695]: IQ / Tech Assessment
+                - generic [ref=f4e1697]:
+                  - button [ref=f4e1699] [cursor=pointer]:
+                    - img "import" [ref=f4e1701]
+                  - superscript [ref=f4e1706]:
+                    - generic [ref=f4e1707]:
+                      - generic [ref=f4e1708]: "1"
+                      - generic [ref=f4e1709]: "2"
+              - generic [ref=f4e1710]:
+                - generic [ref=f4e1714] [cursor=pointer]:
+                  - generic [ref=f4e1715]: S1
+                  - generic [ref=f4e1716]:
+                    - generic [ref=f4e1717]:
+                      - strong [ref=f4e1719]: SCHED04a 1788503372257-66
+                      - generic [ref=f4e1720]: 19d
+                    - generic [ref=f4e1721]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1722]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1725]'
+                - generic [ref=f4e1732] [cursor=pointer]:
+                  - generic [ref=f4e1733]: P1
+                  - generic [ref=f4e1734]:
+                    - generic [ref=f4e1735]:
+                      - strong [ref=f4e1737]: PIPE15 1788422935853-180
+                      - generic [ref=f4e1738]: 20d
+                    - generic [ref=f4e1739]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1740]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1743]'
+                - generic [ref=f4e1750] [cursor=pointer]:
+                  - generic [ref=f4e1751]: N1
+                  - generic [ref=f4e1752]:
+                    - generic [ref=f4e1753]:
+                      - strong [ref=f4e1755]: N2 1788012982489-256
+                      - generic [ref=f4e1756]: 24d
+                    - generic [ref=f4e1757]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1758]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1761]'
+                - generic [ref=f4e1768] [cursor=pointer]:
+                  - generic [ref=f4e1769]: P1
+                  - generic [ref=f4e1770]:
+                    - generic [ref=f4e1771]:
+                      - strong [ref=f4e1773]: PIPE15 1788012951440-344
+                      - generic [ref=f4e1774]: 24d
+                    - generic [ref=f4e1775]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1776]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1779]'
+                - generic [ref=f4e1786] [cursor=pointer]:
+                  - generic [ref=f4e1787]: P1
+                  - generic [ref=f4e1788]:
+                    - generic [ref=f4e1789]:
+                      - strong [ref=f4e1791]: PIPE06 1788011762858
+                      - generic [ref=f4e1792]: 24d
+                    - generic [ref=f4e1793]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1794]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1797]'
+                - generic [ref=f4e1804] [cursor=pointer]:
+                  - generic [ref=f4e1805]: D1
+                  - generic [ref=f4e1806]:
+                    - generic [ref=f4e1807]:
+                      - strong [ref=f4e1809]: D3d 1788011758308
+                      - generic [ref=f4e1810]: 24d
+                    - generic [ref=f4e1811]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1812]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1815]'
+                - generic [ref=f4e1822] [cursor=pointer]:
+                  - generic [ref=f4e1823]: D1
+                  - generic [ref=f4e1824]:
+                    - generic [ref=f4e1825]:
+                      - strong [ref=f4e1827]: D3c 1788011754976
+                      - generic [ref=f4e1828]: 24d
+                    - generic [ref=f4e1829]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1830]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1833]'
+                - generic [ref=f4e1840] [cursor=pointer]:
+                  - generic [ref=f4e1841]: D1
+                  - generic [ref=f4e1842]:
+                    - generic [ref=f4e1843]:
+                      - strong [ref=f4e1845]: D3b 1788011752196
+                      - generic [ref=f4e1846]: 24d
+                    - generic [ref=f4e1847]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1848]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1851]'
+                - generic [ref=f4e1858] [cursor=pointer]:
+                  - generic [ref=f4e1859]: D1
+                  - generic [ref=f4e1860]:
+                    - generic [ref=f4e1861]:
+                      - strong [ref=f4e1863]: D3a 1788011748423
+                      - generic [ref=f4e1864]: 24d
+                    - generic [ref=f4e1865]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1866]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1869]'
+                - generic [ref=f4e1876] [cursor=pointer]:
+                  - generic [ref=f4e1877]: P1
+                  - generic [ref=f4e1878]:
+                    - generic [ref=f4e1879]:
+                      - strong [ref=f4e1881]: PIPE03 1788011743101
+                      - generic [ref=f4e1882]: 24d
+                    - generic [ref=f4e1883]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1884]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1887]'
+                - generic [ref=f4e1894] [cursor=pointer]:
+                  - generic [ref=f4e1895]: P1
+                  - generic [ref=f4e1896]:
+                    - generic [ref=f4e1897]:
+                      - strong [ref=f4e1899]: PIPE01 1788011732656
+                      - generic [ref=f4e1900]: 24d
+                    - generic [ref=f4e1901]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1902]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1905]'
+                - generic [ref=f4e1912] [cursor=pointer]:
+                  - generic [ref=f4e1913]: PS
+                  - generic [ref=f4e1914]:
+                    - generic [ref=f4e1915]:
+                      - strong [ref=f4e1917]: Prashant Salgar
+                      - generic [ref=f4e1918]: 20d
+                    - generic [ref=f4e1919]: AI Engineer · Screening Shortlist · admin
+                    - generic [ref=f4e1920]: Evalground test pending
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1923]'
+            - generic [ref=f4e1929]:
+              - generic [ref=f4e1931]:
+                - strong [ref=f4e1936]: Functional Screening (Zeko)
+                - superscript [ref=f4e1941]:
+                  - generic [ref=f4e1942]: "4"
+              - generic [ref=f4e1944]:
+                - generic [ref=f4e1948] [cursor=pointer]:
+                  - generic [ref=f4e1949]: S
+                  - generic [ref=f4e1950]:
+                    - generic [ref=f4e1951]:
+                      - strong [ref=f4e1953]: Shashank
+                      - generic [ref=f4e1954]: 15d
+                    - generic [ref=f4e1955]: Phase3 Test Role (1 opening) · Screening Shortlist · chhaya.verma598
+                    - generic [ref=f4e1956]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1959]'
+                - generic [ref=f4e1966] [cursor=pointer]:
+                  - generic [ref=f4e1967]: S1
+                  - generic [ref=f4e1968]:
+                    - generic [ref=f4e1969]:
+                      - strong [ref=f4e1971]: SCHED14 1788414355215-481
+                      - generic [ref=f4e1972]: 20d
+                    - generic [ref=f4e1973]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e1974]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1977]'
+                - generic [ref=f4e1984] [cursor=pointer]:
+                  - generic [ref=f4e1985]: MP
+                  - generic [ref=f4e1986]:
+                    - generic [ref=f4e1987]:
+                      - strong [ref=f4e1989]: MAK PATEL
+                      - generic [ref=f4e1990]: 20d
+                    - generic [ref=f4e1991]: .NET · Screening Shortlist · admin
+                    - generic [ref=f4e1992]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e1995]'
+                - generic [ref=f4e2002] [cursor=pointer]:
+                  - generic [ref=f4e2003]: AR
+                  - generic [ref=f4e2004]:
+                    - generic [ref=f4e2005]:
+                      - strong [ref=f4e2007]: Abhay Ranjan Singh
+                      - generic [ref=f4e2008]: 62d
+                    - generic [ref=f4e2009]: AI Engineer · Screening Shortlist · admin
+                    - generic [ref=f4e2010]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2013]'
+            - generic [ref=f4e2019]:
+              - generic [ref=f4e2021]:
+                - strong [ref=f4e2026]: Technical Round 1
+                - superscript [ref=f4e2031]:
+                  - generic [ref=f4e2032]:
+                    - generic [ref=f4e2033]: "3"
+                    - generic [ref=f4e2034]: "2"
+              - generic [ref=f4e2035]:
+                - generic [ref=f4e2039] [cursor=pointer]:
+                  - generic [ref=f4e2040]: S1
+                  - generic [ref=f4e2041]:
+                    - generic [ref=f4e2042]:
+                      - strong [ref=f4e2044]: SCHED03 1788503007803-972
+                      - generic [ref=f4e2045]: 19d
+                    - generic [ref=f4e2046]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2047]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2050]'
+                - generic [ref=f4e2057] [cursor=pointer]:
+                  - generic [ref=f4e2058]: S1
+                  - generic [ref=f4e2059]:
+                    - generic [ref=f4e2060]:
+                      - strong [ref=f4e2062]: SCHED04c 1788502997350-437
+                      - generic [ref=f4e2063]: 19d
+                    - generic [ref=f4e2064]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2065]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2068]'
+                - generic [ref=f4e2075] [cursor=pointer]:
+                  - generic [ref=f4e2076]: S1
+                  - generic [ref=f4e2077]:
+                    - generic [ref=f4e2078]:
+                      - strong [ref=f4e2080]: SCHED04b 1788502986611-990
+                      - generic [ref=f4e2081]: 19d
+                    - generic [ref=f4e2082]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2083]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2086]'
+                - generic [ref=f4e2093] [cursor=pointer]:
+                  - generic [ref=f4e2094]: S1
+                  - generic [ref=f4e2095]:
+                    - generic [ref=f4e2096]:
+                      - strong [ref=f4e2098]: SCHED04a 1788502971782-972
+                      - generic [ref=f4e2099]: 19d
+                    - generic [ref=f4e2100]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2101]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2104]'
+                - generic [ref=f4e2111] [cursor=pointer]:
+                  - generic [ref=f4e2112]: E1
+                  - generic [ref=f4e2113]:
+                    - generic [ref=f4e2114]:
+                      - strong [ref=f4e2116]: E2E03 1788422968270-250
+                      - generic [ref=f4e2117]: 20d
+                    - generic [ref=f4e2118]: E2E 1-opening 1788422968168-558 · genaiuserpankajmondal@gmail.com · phase3-testpass
+                    - generic [ref=f4e2119]:
+                      - generic [ref=f4e2120]: In progress
+                      - img "shop" [ref=f4e2123]
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2126]'
+                - generic [ref=f4e2133] [cursor=pointer]:
+                  - generic [ref=f4e2134]: S1
+                  - generic [ref=f4e2135]:
+                    - generic [ref=f4e2136]:
+                      - strong [ref=f4e2138]: SCHED03 1788422888641-35
+                      - generic [ref=f4e2139]: 16d
+                    - generic [ref=f4e2140]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2141]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2144]'
+                - generic [ref=f4e2151] [cursor=pointer]:
+                  - generic [ref=f4e2152]: S1
+                  - generic [ref=f4e2153]:
+                    - generic [ref=f4e2154]:
+                      - strong [ref=f4e2156]: SCHED04c 1788422878382-350
+                      - generic [ref=f4e2157]: 20d
+                    - generic [ref=f4e2158]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2159]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2162]'
+                - generic [ref=f4e2169] [cursor=pointer]:
+                  - generic [ref=f4e2170]: S1
+                  - generic [ref=f4e2171]:
+                    - generic [ref=f4e2172]:
+                      - strong [ref=f4e2174]: SCHED04b 1788422866719-844
+                      - generic [ref=f4e2175]: 20d
+                    - generic [ref=f4e2176]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2177]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2180]'
+                - generic [ref=f4e2187] [cursor=pointer]:
+                  - generic [ref=f4e2188]: S1
+                  - generic [ref=f4e2189]:
+                    - generic [ref=f4e2190]:
+                      - strong [ref=f4e2192]: SCHED04a 1788422849735-991
+                      - generic [ref=f4e2193]: 20d
+                    - generic [ref=f4e2194]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2195]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2198]'
+                - generic [ref=f4e2205] [cursor=pointer]:
+                  - generic [ref=f4e2206]: S1
+                  - generic [ref=f4e2207]:
+                    - generic [ref=f4e2208]:
+                      - strong [ref=f4e2210]: SCHED03 1788414074846-893
+                      - generic [ref=f4e2211]: 20d
+                    - generic [ref=f4e2212]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2213]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2216]'
+                - generic [ref=f4e2223] [cursor=pointer]:
+                  - generic [ref=f4e2224]: S1
+                  - generic [ref=f4e2225]:
+                    - generic [ref=f4e2226]:
+                      - strong [ref=f4e2228]: SCHED04c 1788414064510-717
+                      - generic [ref=f4e2229]: 20d
+                    - generic [ref=f4e2230]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2231]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2234]'
+                - generic [ref=f4e2241] [cursor=pointer]:
+                  - generic [ref=f4e2242]: S1
+                  - generic [ref=f4e2243]:
+                    - generic [ref=f4e2244]:
+                      - strong [ref=f4e2246]: SCHED04b 1788414054826-604
+                      - generic [ref=f4e2247]: 20d
+                    - generic [ref=f4e2248]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2249]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2252]'
+                - generic [ref=f4e2259] [cursor=pointer]:
+                  - generic [ref=f4e2260]: S1
+                  - generic [ref=f4e2261]:
+                    - generic [ref=f4e2262]:
+                      - strong [ref=f4e2264]: SCHED04a 1788414041147-452
+                      - generic [ref=f4e2265]: 20d
+                    - generic [ref=f4e2266]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2267]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2270]'
+                - generic [ref=f4e2277] [cursor=pointer]:
+                  - generic [ref=f4e2278]: S1
+                  - generic [ref=f4e2279]:
+                    - generic [ref=f4e2280]:
+                      - strong [ref=f4e2282]: SCHED03 1788012754407-639
+                      - generic [ref=f4e2283]: 21d
+                    - generic [ref=f4e2284]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2285]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2288]'
+                - generic [ref=f4e2295] [cursor=pointer]:
+                  - generic [ref=f4e2296]: S1
+                  - generic [ref=f4e2297]:
+                    - generic [ref=f4e2298]:
+                      - strong [ref=f4e2300]: SCHED04b 1788012729945-917
+                      - generic [ref=f4e2301]: 24d
+                    - generic [ref=f4e2302]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2303]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2306]'
+                - generic [ref=f4e2313] [cursor=pointer]:
+                  - generic [ref=f4e2314]: S1
+                  - generic [ref=f4e2315]:
+                    - generic [ref=f4e2316]:
+                      - strong [ref=f4e2318]: SCHED04a 1788012718585-370
+                      - generic [ref=f4e2319]: 24d
+                    - generic [ref=f4e2320]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2321]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2324]'
+                - generic [ref=f4e2331] [cursor=pointer]:
+                  - generic [ref=f4e2332]: S1
+                  - generic [ref=f4e2333]:
+                    - generic [ref=f4e2334]:
+                      - strong [ref=f4e2336]: SCHED03 1788012264943-385
+                      - generic [ref=f4e2337]: 24d
+                    - generic [ref=f4e2338]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2339]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2342]'
+                - generic [ref=f4e2349] [cursor=pointer]:
+                  - generic [ref=f4e2350]: S1
+                  - generic [ref=f4e2351]:
+                    - generic [ref=f4e2352]:
+                      - strong [ref=f4e2354]: SCHED04c 1788012254949-817
+                      - generic [ref=f4e2355]: 24d
+                    - generic [ref=f4e2356]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2357]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2360]'
+                - generic [ref=f4e2367] [cursor=pointer]:
+                  - generic [ref=f4e2368]: S1
+                  - generic [ref=f4e2369]:
+                    - generic [ref=f4e2370]:
+                      - strong [ref=f4e2372]: SCHED04b 1788012246811-25
+                      - generic [ref=f4e2373]: 24d
+                    - generic [ref=f4e2374]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2375]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2378]'
+                - generic [ref=f4e2385] [cursor=pointer]:
+                  - generic [ref=f4e2386]: S1
+                  - generic [ref=f4e2387]:
+                    - generic [ref=f4e2388]:
+                      - strong [ref=f4e2390]: SCHED04a 1788012234022-370
+                      - generic [ref=f4e2391]: 24d
+                    - generic [ref=f4e2392]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2393]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2396]'
+                - generic [ref=f4e2403] [cursor=pointer]:
+                  - generic [ref=f4e2404]: E1
+                  - generic [ref=f4e2405]:
+                    - generic [ref=f4e2406]:
+                      - strong [ref=f4e2408]: E2E06 1788012014565-126
+                      - generic [ref=f4e2409]: 24d
+                    - generic [ref=f4e2410]: E2E 1-opening 1788012014458-539 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2411]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2414]'
+                - generic [ref=f4e2421] [cursor=pointer]:
+                  - generic [ref=f4e2422]: S1
+                  - generic [ref=f4e2423]:
+                    - generic [ref=f4e2424]:
+                      - strong [ref=f4e2426]: SCHED04c 1788011836285-363
+                      - generic [ref=f4e2427]: 24d
+                    - generic [ref=f4e2428]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2429]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2432]'
+                - generic [ref=f4e2439] [cursor=pointer]:
+                  - generic [ref=f4e2440]: S1
+                  - generic [ref=f4e2441]:
+                    - generic [ref=f4e2442]:
+                      - strong [ref=f4e2444]: SCHED04b 1788011825125-274
+                      - generic [ref=f4e2445]: 24d
+                    - generic [ref=f4e2446]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2447]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2450]'
+                - generic [ref=f4e2457] [cursor=pointer]:
+                  - generic [ref=f4e2458]: S1
+                  - generic [ref=f4e2459]:
+                    - generic [ref=f4e2460]:
+                      - strong [ref=f4e2462]: SCHED04a 1788011811647-272
+                      - generic [ref=f4e2463]: 24d
+                    - generic [ref=f4e2464]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2465]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2468]'
+                - generic [ref=f4e2475] [cursor=pointer]:
+                  - generic [ref=f4e2476]: D1
+                  - generic [ref=f4e2477]:
+                    - generic [ref=f4e2478]:
+                      - strong [ref=f4e2480]: D4 1788011797277-1
+                      - generic [ref=f4e2481]: 24d
+                    - generic [ref=f4e2482]: Phase3 resched 1788011797177-310 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2483]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2486]'
+                - generic [ref=f4e2493] [cursor=pointer]:
+                  - generic [ref=f4e2494]: S1
+                  - generic [ref=f4e2495]:
+                    - generic [ref=f4e2496]:
+                      - strong [ref=f4e2498]: SCHED06 1788011772813-349
+                      - generic [ref=f4e2499]: 24d
+                    - generic [ref=f4e2500]: Phase3 resched 1788011770787-972 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2501]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2504]'
+                - generic [ref=f4e2511] [cursor=pointer]:
+                  - generic [ref=f4e2512]: S1
+                  - generic [ref=f4e2513]:
+                    - generic [ref=f4e2514]:
+                      - strong [ref=f4e2516]: SCHED03 1787562619596-977
+                      - generic [ref=f4e2517]: 27d
+                    - generic [ref=f4e2518]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2519]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2522]'
+                - generic [ref=f4e2529] [cursor=pointer]:
+                  - generic [ref=f4e2530]: S1
+                  - generic [ref=f4e2531]:
+                    - generic [ref=f4e2532]:
+                      - strong [ref=f4e2534]: SCHED04c 1787562607676-36
+                      - generic [ref=f4e2535]: 30d
+                    - generic [ref=f4e2536]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2537]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2540]'
+                - generic [ref=f4e2547] [cursor=pointer]:
+                  - generic [ref=f4e2548]: S1
+                  - generic [ref=f4e2549]:
+                    - generic [ref=f4e2550]:
+                      - strong [ref=f4e2552]: SCHED04b 1787562595419-855
+                      - generic [ref=f4e2553]: 26d
+                    - generic [ref=f4e2554]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2555]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2558]'
+                - generic [ref=f4e2565] [cursor=pointer]:
+                  - generic [ref=f4e2566]: AS
+                  - generic [ref=f4e2567]:
+                    - generic [ref=f4e2568]:
+                      - strong [ref=f4e2570]: Abhishek Singh
+                      - generic [ref=f4e2571]: 30d
+                    - generic [ref=f4e2572]: QA Automation Engineer · harishmopuri97@gmail.com · saukumar
+                    - generic [ref=f4e2573]:
+                      - generic [ref=f4e2574]: Scheduled
+                      - generic [ref=f4e2577]:
+                        - img "warning" [ref=f4e2578]
+                        - text: Role filled
+                      - img "shop" [ref=f4e2582]
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2585]'
+                - generic [ref=f4e2592] [cursor=pointer]:
+                  - generic [ref=f4e2593]: SY
+                  - generic [ref=f4e2594]:
+                    - generic [ref=f4e2595]:
+                      - strong [ref=f4e2597]: SAURABH YADAV
+                      - generic [ref=f4e2598]: 34d
+                    - generic [ref=f4e2599]: AI Engineer · Screening Shortlist · saukumar
+                    - generic [ref=f4e2600]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2603]'
+                - generic [ref=f4e2610] [cursor=pointer]:
+                  - generic [ref=f4e2611]: AV
+                  - generic [ref=f4e2612]:
+                    - generic [ref=f4e2613]:
+                      - strong [ref=f4e2615]: Ankit Verma
+                      - generic [ref=f4e2616]: 47d
+                    - generic [ref=f4e2617]: Decisions Developer · Recruiter · recruiter
+                    - generic [ref=f4e2618]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2621]'
+            - generic [ref=f4e2627]:
+              - generic [ref=f4e2629]:
+                - strong [ref=f4e2634]: Technical Round 2
+                - superscript [ref=f4e2639]:
+                  - generic [ref=f4e2640]: "3"
+              - generic [ref=f4e2642]:
+                - generic [ref=f4e2646] [cursor=pointer]:
+                  - generic [ref=f4e2647]: E1
+                  - generic [ref=f4e2648]:
+                    - generic [ref=f4e2649]:
+                      - strong [ref=f4e2651]: E2E02 1788422948172-664
+                      - generic [ref=f4e2652]: 20d
+                    - generic [ref=f4e2653]: E2E 1-opening 1788422948059-912 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2654]: Rejected
+                    - 'generic "Invite: done · Awaiting: done · Results: done · Decision: rejected" [ref=f4e2657]'
+                - generic [ref=f4e2664] [cursor=pointer]:
+                  - generic [ref=f4e2665]: S1
+                  - generic [ref=f4e2666]:
+                    - generic [ref=f4e2667]:
+                      - strong [ref=f4e2669]: SCHED04c 1788012738681-456
+                      - generic [ref=f4e2670]: 8d
+                    - generic [ref=f4e2671]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2672]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2675]'
+                - generic [ref=f4e2682] [cursor=pointer]:
+                  - generic [ref=f4e2683]: E1
+                  - generic [ref=f4e2684]:
+                    - generic [ref=f4e2685]:
+                      - strong [ref=f4e2687]: E2E06 1788012496815-246
+                      - generic [ref=f4e2688]: 24d
+                    - generic [ref=f4e2689]: E2E 1-opening 1788012496774-905 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2690]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2693]'
+            - generic [ref=f4e2699]:
+              - generic [ref=f4e2701]:
+                - generic [ref=f4e2703]:
+                  - strong [ref=f4e2706]: Technical Round 3
+                  - generic [ref=f4e2707]: optional
+                - superscript [ref=f4e2713]:
+                  - generic [ref=f4e2714]: "1"
+              - generic [ref=f4e2720] [cursor=pointer]:
+                - generic [ref=f4e2721]: S1
+                - generic [ref=f4e2722]:
+                  - generic [ref=f4e2723]:
+                    - strong [ref=f4e2725]: SCHED05 1788422960858-899
+                    - generic [ref=f4e2726]: 20d
+                  - generic [ref=f4e2727]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                  - generic [ref=f4e2728]: In progress
+                  - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2731]'
+            - generic [ref=f4e2737]:
+              - generic [ref=f4e2739]:
+                - strong [ref=f4e2744]: HR Round
+                - superscript [ref=f4e2749]:
+                  - generic [ref=f4e2750]: "2"
+              - generic [ref=f4e2752]:
+                - generic [ref=f4e2756] [cursor=pointer]:
+                  - generic [ref=f4e2757]: S1
+                  - generic [ref=f4e2758]:
+                    - generic [ref=f4e2759]:
+                      - strong [ref=f4e2761]: SCHED02 1788012274975-227
+                      - generic [ref=f4e2762]: 24d
+                    - generic [ref=f4e2763]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2764]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2767]'
+                - generic [ref=f4e2774] [cursor=pointer]:
+                  - generic [ref=f4e2775]: S1
+                  - generic [ref=f4e2776]:
+                    - generic [ref=f4e2777]:
+                      - strong [ref=f4e2779]: SCHED15 1787562874337-431
+                      - generic [ref=f4e2780]: 27d
+                    - generic [ref=f4e2781]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2782]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e2785]'
+            - generic [ref=f4e2791]:
+              - generic [ref=f4e2793]:
+                - strong [ref=f4e2798]: CEO / Final Round
+                - superscript [ref=f4e2803]:
+                  - generic [ref=f4e2804]:
+                    - generic [ref=f4e2805]: "1"
+                    - generic [ref=f4e2806]: "7"
+              - generic [ref=f4e2807]:
+                - generic [ref=f4e2811] [cursor=pointer]:
+                  - generic [ref=f4e2812]: S1
+                  - generic [ref=f4e2813]:
+                    - generic [ref=f4e2814]:
+                      - strong [ref=f4e2816]: SCHED16 1788503335094-504
+                      - generic [ref=f4e2817]: 19d
+                    - generic [ref=f4e2818]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2819]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2822]'
+                - generic [ref=f4e2829] [cursor=pointer]:
+                  - generic [ref=f4e2830]: S1
+                  - generic [ref=f4e2831]:
+                    - generic [ref=f4e2832]:
+                      - strong [ref=f4e2834]: SCHED15 1788503303733-965
+                      - generic [ref=f4e2835]: 19d
+                    - generic [ref=f4e2836]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2837]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2840]'
+                - generic [ref=f4e2847] [cursor=pointer]:
+                  - generic [ref=f4e2848]: S1
+                  - generic [ref=f4e2849]:
+                    - generic [ref=f4e2850]:
+                      - strong [ref=f4e2852]: SCHED14 1788503268257-953
+                      - generic [ref=f4e2853]: 19d
+                    - generic [ref=f4e2854]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2855]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2858]'
+                - generic [ref=f4e2865] [cursor=pointer]:
+                  - generic [ref=f4e2866]: S1
+                  - generic [ref=f4e2867]:
+                    - generic [ref=f4e2868]:
+                      - strong [ref=f4e2870]: SCHED13 1788503236046-559
+                      - generic [ref=f4e2871]: 19d
+                    - generic [ref=f4e2872]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2873]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2876]'
+                - generic [ref=f4e2883] [cursor=pointer]:
+                  - generic [ref=f4e2884]: S1
+                  - generic [ref=f4e2885]:
+                    - generic [ref=f4e2886]:
+                      - strong [ref=f4e2888]: SCHED12 1788503203789-883
+                      - generic [ref=f4e2889]: 19d
+                    - generic [ref=f4e2890]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2891]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2894]'
+                - generic [ref=f4e2901] [cursor=pointer]:
+                  - generic [ref=f4e2902]: S1
+                  - generic [ref=f4e2903]:
+                    - generic [ref=f4e2904]:
+                      - strong [ref=f4e2906]: SCHED10 1788503171348-381
+                      - generic [ref=f4e2907]: 19d
+                    - generic [ref=f4e2908]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2909]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2912]'
+                - generic [ref=f4e2919] [cursor=pointer]:
+                  - generic [ref=f4e2920]: S1
+                  - generic [ref=f4e2921]:
+                    - generic [ref=f4e2922]:
+                      - strong [ref=f4e2924]: SCHED09 1788503139425-176
+                      - generic [ref=f4e2925]: 19d
+                    - generic [ref=f4e2926]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2927]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2930]'
+                - generic [ref=f4e2937] [cursor=pointer]:
+                  - generic [ref=f4e2938]: S1
+                  - generic [ref=f4e2939]:
+                    - generic [ref=f4e2940]:
+                      - strong [ref=f4e2942]: SCHED08 1788503102228-374
+                      - generic [ref=f4e2943]: 19d
+                    - generic [ref=f4e2944]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2945]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2948]'
+                - generic [ref=f4e2955] [cursor=pointer]:
+                  - generic [ref=f4e2956]: S1
+                  - generic [ref=f4e2957]:
+                    - generic [ref=f4e2958]:
+                      - strong [ref=f4e2960]: SCHED05 1788503070130-34
+                      - generic [ref=f4e2961]: 19d
+                    - generic [ref=f4e2962]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2963]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2966]'
+                - generic [ref=f4e2973] [cursor=pointer]:
+                  - generic [ref=f4e2974]: S1
+                  - generic [ref=f4e2975]:
+                    - generic [ref=f4e2976]:
+                      - strong [ref=f4e2978]: SCHED13 1788414314641-654
+                      - generic [ref=f4e2979]: 20d
+                    - generic [ref=f4e2980]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2981]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e2984]'
+                - generic [ref=f4e2991] [cursor=pointer]:
+                  - generic [ref=f4e2992]: S1
+                  - generic [ref=f4e2993]:
+                    - generic [ref=f4e2994]:
+                      - strong [ref=f4e2996]: SCHED12 1788414277119-93
+                      - generic [ref=f4e2997]: 20d
+                    - generic [ref=f4e2998]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e2999]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3002]'
+                - generic [ref=f4e3009] [cursor=pointer]:
+                  - generic [ref=f4e3010]: S1
+                  - generic [ref=f4e3011]:
+                    - generic [ref=f4e3012]:
+                      - strong [ref=f4e3014]: SCHED10 1788414239563-683
+                      - generic [ref=f4e3015]: 20d
+                    - generic [ref=f4e3016]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3017]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3020]'
+                - generic [ref=f4e3027] [cursor=pointer]:
+                  - generic [ref=f4e3028]: S1
+                  - generic [ref=f4e3029]:
+                    - generic [ref=f4e3030]:
+                      - strong [ref=f4e3032]: SCHED09 1788414205327-436
+                      - generic [ref=f4e3033]: 20d
+                    - generic [ref=f4e3034]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3035]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3038]'
+                - generic [ref=f4e3045] [cursor=pointer]:
+                  - generic [ref=f4e3046]: S1
+                  - generic [ref=f4e3047]:
+                    - generic [ref=f4e3048]:
+                      - strong [ref=f4e3050]: SCHED08 1788414167463-31
+                      - generic [ref=f4e3051]: 20d
+                    - generic [ref=f4e3052]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3053]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3056]'
+                - generic [ref=f4e3063] [cursor=pointer]:
+                  - generic [ref=f4e3064]: S1
+                  - generic [ref=f4e3065]:
+                    - generic [ref=f4e3066]:
+                      - strong [ref=f4e3068]: SCHED05 1788414135325-295
+                      - generic [ref=f4e3069]: 20d
+                    - generic [ref=f4e3070]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3071]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3074]'
+                - generic [ref=f4e3081] [cursor=pointer]:
+                  - generic [ref=f4e3082]: S1
+                  - generic [ref=f4e3083]:
+                    - generic [ref=f4e3084]:
+                      - strong [ref=f4e3086]: SCHED02 1788012763326-85
+                      - generic [ref=f4e3087]: 24d
+                    - generic [ref=f4e3088]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3089]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3092]'
+                - generic [ref=f4e3099] [cursor=pointer]:
+                  - generic [ref=f4e3100]: S1
+                  - generic [ref=f4e3101]:
+                    - generic [ref=f4e3102]:
+                      - strong [ref=f4e3104]: SCHED04a 1787562577675-382
+                      - generic [ref=f4e3105]: 27d
+                    - generic [ref=f4e3106]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3107]: Scheduled
+                    - 'generic "Invite: done · Awaiting: active · Results: pending · Decision: pending" [ref=f4e3110]'
+            - generic [ref=f4e3116]:
+              - generic [ref=f4e3118]:
+                - generic [ref=f4e3120]:
+                  - strong [ref=f4e3123]: Client Interview
+                  - generic [ref=f4e3124]: optional
+                - superscript [ref=f4e3130]:
+                  - generic [ref=f4e3131]: "9"
+              - generic [ref=f4e3133]:
+                - generic [ref=f4e3137] [cursor=pointer]:
+                  - generic [ref=f4e3138]: S1
+                  - generic [ref=f4e3139]:
+                    - generic [ref=f4e3140]:
+                      - strong [ref=f4e3142]: SCHED02L 1788503043711-231
+                      - generic [ref=f4e3143]: 19d
+                    - generic [ref=f4e3144]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3145]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3148]'
+                - generic [ref=f4e3155] [cursor=pointer]:
+                  - generic [ref=f4e3156]: S1
+                  - generic [ref=f4e3157]:
+                    - generic [ref=f4e3158]:
+                      - strong [ref=f4e3160]: SCHED02 1788503018863-170
+                      - generic [ref=f4e3161]: 19d
+                    - generic [ref=f4e3162]: E2E 1-opening 1788422945637-997 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3163]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3166]'
+                - generic [ref=f4e3173] [cursor=pointer]:
+                  - generic [ref=f4e3174]: S1
+                  - generic [ref=f4e3175]:
+                    - generic [ref=f4e3176]:
+                      - strong [ref=f4e3178]: SCHED02L 1788422927880-225
+                      - generic [ref=f4e3179]: 20d
+                    - generic [ref=f4e3180]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3181]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3184]'
+                - generic [ref=f4e3191] [cursor=pointer]:
+                  - generic [ref=f4e3192]: S1
+                  - generic [ref=f4e3193]:
+                    - generic [ref=f4e3194]:
+                      - strong [ref=f4e3196]: SCHED02 1788422899140-354
+                      - generic [ref=f4e3197]: 20d
+                    - generic [ref=f4e3198]: E2E 1-opening 1788422847967-660 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3199]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3202]'
+                - generic [ref=f4e3209] [cursor=pointer]:
+                  - generic [ref=f4e3210]: S1
+                  - generic [ref=f4e3211]:
+                    - generic [ref=f4e3212]:
+                      - strong [ref=f4e3214]: SCHED02L 1788414109886-405
+                      - generic [ref=f4e3215]: 20d
+                    - generic [ref=f4e3216]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3217]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3220]'
+                - generic [ref=f4e3227] [cursor=pointer]:
+                  - generic [ref=f4e3228]: S1
+                  - generic [ref=f4e3229]:
+                    - generic [ref=f4e3230]:
+                      - strong [ref=f4e3232]: SCHED02 1788414085208-429
+                      - generic [ref=f4e3233]: 20d
+                    - generic [ref=f4e3234]: E2E 1-opening 1788011608867-263 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3235]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3238]'
+                - generic [ref=f4e3245] [cursor=pointer]:
+                  - generic [ref=f4e3246]: S1
+                  - generic [ref=f4e3247]:
+                    - generic [ref=f4e3248]:
+                      - strong [ref=f4e3250]: SCHED10 1787562747658-716
+                      - generic [ref=f4e3251]: 28d
+                    - generic [ref=f4e3252]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3253]: Rejected
+                    - 'generic "Invite: done · Awaiting: done · Results: done · Decision: rejected" [ref=f4e3256]'
+                - generic [ref=f4e3263] [cursor=pointer]:
+                  - generic [ref=f4e3264]: S1
+                  - generic [ref=f4e3265]:
+                    - generic [ref=f4e3266]:
+                      - strong [ref=f4e3268]: SCHED08 1787562690487-87
+                      - generic [ref=f4e3269]: 30d
+                    - generic [ref=f4e3270]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3271]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3274]'
+                - generic [ref=f4e3281] [cursor=pointer]:
+                  - generic [ref=f4e3282]: S1
+                  - generic [ref=f4e3283]:
+                    - generic [ref=f4e3284]:
+                      - strong [ref=f4e3286]: SCHED05 1787562660722-866
+                      - generic [ref=f4e3287]: 30d
+                    - generic [ref=f4e3288]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3289]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3292]'
+            - generic [ref=f4e3298]:
+              - generic [ref=f4e3300]:
+                - strong [ref=f4e3305]: Documents
+                - superscript [ref=f4e3310]:
+                  - generic [ref=f4e3311]: "9"
+              - generic [ref=f4e3313]:
+                - generic [ref=f4e3317] [cursor=pointer]:
+                  - generic [ref=f4e3318]: D1
+                  - generic [ref=f4e3319]:
+                    - generic [ref=f4e3320]:
+                      - strong [ref=f4e3322]: DOC11d 1788011871252-843
+                      - generic [ref=f4e3323]: 24d
+                    - generic [ref=f4e3324]: Phase3 sweep 1788011870901-260 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3325]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3328]'
+                - generic [ref=f4e3335] [cursor=pointer]:
+                  - generic [ref=f4e3336]: D1
+                  - generic [ref=f4e3337]:
+                    - generic [ref=f4e3338]:
+                      - strong [ref=f4e3340]: DOC11c 1788011865980-316
+                      - generic [ref=f4e3341]: 24d
+                    - generic [ref=f4e3342]: Phase3 sweep 1788011865778-284 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3343]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3346]'
+                - generic [ref=f4e3353] [cursor=pointer]:
+                  - generic [ref=f4e3354]: D1
+                  - generic [ref=f4e3355]:
+                    - generic [ref=f4e3356]:
+                      - strong [ref=f4e3358]: DOC11b 1788011862298-891
+                      - generic [ref=f4e3359]: 19d
+                    - generic [ref=f4e3360]: Phase3 sweep 1788011862167-278 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3361]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3364]'
+                - generic [ref=f4e3371] [cursor=pointer]:
+                  - generic [ref=f4e3372]: D1
+                  - generic [ref=f4e3373]:
+                    - generic [ref=f4e3374]:
+                      - strong [ref=f4e3376]: DOC11a 1788011852465-854
+                      - generic [ref=f4e3377]: 22d
+                    - generic [ref=f4e3378]: Phase3 sweep 1788011851232-835 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3379]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3382]'
+                - generic [ref=f4e3389] [cursor=pointer]:
+                  - generic [ref=f4e3390]: E1
+                  - generic [ref=f4e3391]:
+                    - generic [ref=f4e3392]:
+                      - strong [ref=f4e3394]: E2E01 1788011609705-906
+                      - generic [ref=f4e3395]: 19d
+                    - generic [ref=f4e3396]: E2E 1-opening 1788011608867-263 · genaiuserpankajmondal@gmail.com · phase3-testpass
+                    - generic [ref=f4e3397]:
+                      - generic [ref=f4e3398]: In progress
+                      - img "shop" [ref=f4e3401]
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3404]'
+                - generic [ref=f4e3411] [cursor=pointer]:
+                  - generic [ref=f4e3412]: S1
+                  - generic [ref=f4e3413]:
+                    - generic [ref=f4e3414]:
+                      - strong [ref=f4e3416]: SCHED13 1787562810378-203
+                      - generic [ref=f4e3417]: 23d
+                    - generic [ref=f4e3418]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3419]: Rejected
+                    - 'generic "Invite: done · Awaiting: done · Results: done · Decision: rejected" [ref=f4e3422]'
+                - generic [ref=f4e3429] [cursor=pointer]:
+                  - generic [ref=f4e3430]: S1
+                  - generic [ref=f4e3431]:
+                    - generic [ref=f4e3432]:
+                      - strong [ref=f4e3434]: SCHED02 1787562632099-894
+                      - generic [ref=f4e3435]: 22d
+                    - generic [ref=f4e3436]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3437]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3440]'
+                - generic [ref=f4e3447] [cursor=pointer]:
+                  - generic [ref=f4e3448]: S1
+                  - generic [ref=f4e3449]:
+                    - generic [ref=f4e3450]:
+                      - strong [ref=f4e3452]: SCHED12 1787562777127-787
+                      - generic [ref=f4e3453]: 28d
+                    - generic [ref=f4e3454]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3455]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3458]'
+                - generic [ref=f4e3465] [cursor=pointer]:
+                  - generic [ref=f4e3466]: SS
+                  - generic [ref=f4e3467]:
+                    - generic [ref=f4e3468]:
+                      - strong [ref=f4e3470]: SAHIL SARMA
+                      - generic [ref=f4e3471]: 31d
+                    - generic [ref=f4e3472]: Dot Net · Recruiter · recruiter
+                    - generic [ref=f4e3473]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3476]'
+            - generic [ref=f4e3482]:
+              - generic [ref=f4e3484]:
+                - strong [ref=f4e3489]: Offer
+                - superscript [ref=f4e3494]:
+                  - generic [ref=f4e3495]: "5"
+              - generic [ref=f4e3497]:
+                - generic [ref=f4e3501] [cursor=pointer]:
+                  - generic [ref=f4e3502]: KN
+                  - generic [ref=f4e3503]:
+                    - generic [ref=f4e3504]:
+                      - strong [ref=f4e3506]: KUPPALA NATESH
+                      - generic [ref=f4e3507]: 16d
+                    - generic [ref=f4e3508]: Senior Python · Screening Shortlist · naveen.satywali568
+                    - generic [ref=f4e3509]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3512]'
+                - generic [ref=f4e3519] [cursor=pointer]:
+                  - generic [ref=f4e3520]: O1
+                  - generic [ref=f4e3521]:
+                    - generic [ref=f4e3522]:
+                      - strong [ref=f4e3524]: OFFER15c 1788011889943-513
+                      - generic [ref=f4e3525]: 24d
+                    - generic [ref=f4e3526]: Phase3 sweep 1788011889813-433 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3527]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3530]'
+                - generic [ref=f4e3537] [cursor=pointer]:
+                  - generic [ref=f4e3538]: O1
+                  - generic [ref=f4e3539]:
+                    - generic [ref=f4e3540]:
+                      - strong [ref=f4e3542]: OFFER15b 1788011886704-498
+                      - generic [ref=f4e3543]: 24d
+                    - generic [ref=f4e3544]: Phase3 sweep 1788011886643-663 · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3545]:
+                      - generic [ref=f4e3546]: In progress
+                      - generic [ref=f4e3549]:
+                        - img "warning" [ref=f4e3550]
+                        - text: Role filled
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3553]'
+                - generic [ref=f4e3560] [cursor=pointer]:
+                  - generic [ref=f4e3561]: PM
+                  - generic [ref=f4e3562]:
+                    - generic [ref=f4e3563]:
+                      - strong [ref=f4e3565]: PANKAJ MONDAL
+                      - generic [ref=f4e3566]: 19d
+                    - generic [ref=f4e3567]: QA Automation Engineer · Screening Shortlist · pankaj
+                    - generic [ref=f4e3568]:
+                      - generic [ref=f4e3569]: In progress
+                      - generic [ref=f4e3572]:
+                        - img "warning" [ref=f4e3573]
+                        - text: Role filled
+                      - generic [ref=f4e3576]: Referral
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3578]'
+                - generic [ref=f4e3585] [cursor=pointer]:
+                  - generic [ref=f4e3586]: S1
+                  - generic [ref=f4e3587]:
+                    - generic [ref=f4e3588]:
+                      - strong [ref=f4e3590]: SCHED09 1787562720461-78
+                      - generic [ref=f4e3591]: 28d
+                    - generic [ref=f4e3592]: Phase3 Test Role (1 opening) · Screening Shortlist · phase3-testpass
+                    - generic [ref=f4e3593]: In progress
+                    - 'generic "Invite: done · Awaiting: pending · Results: pending · Decision: pending" [ref=f4e3596]'
+  - button "Scroll pipeline stages right" [ref=f4e3601] [cursor=pointer]:
+    - img "right" [ref=f4e3602]
+  - dialog "user SCHED03 1788503007803-972 E2E 1-opening 1788422945637-997 · claudepankajmondal@gmail.com" [ref=f4e3606]:
+    - generic [ref=f4e3608]:
+      - button "Close" [ref=f4e3609] [cursor=pointer]:
+        - img "close" [ref=f4e3610]
+      - generic [ref=f4e3614]:
+        - generic [ref=f4e3616]:
+          - img "user" [ref=f4e3618]
+          - strong [ref=f4e3623]: SCHED03 1788503007803-972
+        - generic [ref=f4e3624]: E2E 1-opening 1788422945637-997 · claudepankajmondal@gmail.com
+    - generic [ref=f4e3626]:
+      - generic [ref=f4e3627]:
+        - generic [ref=f4e3628]: screening_shortlist
+        - generic [ref=f4e3630]: in_progress
+        - button "pause-circle Pause journey" [ref=f4e3633] [cursor=pointer]:
+          - img "pause-circle" [ref=f4e3635]
+          - generic [ref=f4e3638]: Pause journey
+      - generic [ref=f4e3639]:
+        - generic [ref=f4e3640]: Shortlisted from Candidate Screening · 9/4/2026 · by phase3-testpass
+        - generic [ref=f4e3641]: No resume on file
+      - button "download Download dossier" [ref=f4e3644] [cursor=pointer]:
+        - img "download" [ref=f4e3646]
+        - generic [ref=f4e3649]: Download dossier
+      - alert [ref=f4e3650]:
+        - img "info-circle" [ref=f4e3651]
+        - generic [ref=f4e3654]: PHASE3-TESTPASS-FIXTURE
+      - generic [ref=f4e3656]:
+        - button "HR (Zeko)" [ref=f4e3657] [cursor=pointer]
+        - button "Assessment" [ref=f4e3658] [cursor=pointer]
+        - button "Functional (Zeko)" [ref=f4e3659] [cursor=pointer]
+        - button "Tech 1" [ref=f4e3660] [cursor=pointer]
+        - button "Tech 2" [disabled] [ref=f4e3661]
+        - button "Tech 3" [disabled] [ref=f4e3662]
+        - button "HR Round" [disabled] [ref=f4e3663]
+        - button "CEO" [disabled] [ref=f4e3664]
+        - button "Client" [disabled] [ref=f4e3665]
+        - button "Documents" [disabled] [ref=f4e3666]
+        - button "Offer" [disabled] [ref=f4e3667]
+      - generic [ref=f4e3668]:
+        - text: Click a stage to see its details — stages after
+        - strong [ref=f4e3670]: Technical Round 1
+        - text: are locked until the candidate gets there.
+      - generic [ref=f4e3671]:
+        - generic [ref=f4e3675]:
+          - strong [ref=f4e3679]: Technical Round 1
+          - generic [ref=f4e3680]: Updated 9/4/2026, 11:53:35 AM
+        - generic [ref=f4e3682]:
+          - generic [ref=f4e3683]:
+            - img "check" [ref=f4e3686]
+            - generic [ref=f4e3690]:
+              - generic [ref=f4e3691]:
+                - generic [ref=f4e3692]: Stage Entry
+                - generic [ref=f4e3693]: Done
+              - generic [ref=f4e3694]: Approved from Functional Screening (Zeko) — outcome email sent 04 Sept, 11:53 am
+          - generic [ref=f4e3699]:
+            - generic [ref=f4e3700]:
+              - generic [ref=f4e3701]: Schedule Interview
+              - generic [ref=f4e3702]: In progress
+            - generic [ref=f4e3703]: Not scheduled yet — no interviewer named on the MRF for this round
+            - button "calendar Schedule Interview" [ref=f4e3705] [cursor=pointer]:
+              - img "calendar" [ref=f4e3707]
+              - generic [ref=f4e3710]: Schedule Interview
+          - generic [ref=f4e3715]:
+            - generic [ref=f4e3716]:
+              - generic [ref=f4e3717]: Awaiting Results
+              - generic [ref=f4e3718]: Not started yet
+            - generic [ref=f4e3719]: Awaiting the interview, once scheduled
+          - generic [ref=f4e3723]:
+            - generic [ref=f4e3724]:
+              - generic [ref=f4e3725]: Approve / Reject
+              - generic [ref=f4e3726]: Not started yet
+            - generic [ref=f4e3727]: Awaiting your decision once results are in
+      - button "collapsed mail Conversation with candidate 500" [ref=f4e3730] [cursor=pointer]:
+        - img "collapsed" [ref=f4e3732]
+        - generic [ref=f4e3736]:
+          - img "mail" [ref=f4e3738]
+          - generic [ref=f4e3741]: Conversation with candidate
+          - generic [ref=f4e3742]: "500"
+      - generic [ref=f4e3744]:
+        - heading "Record outcome — current stage" [level=5] [ref=f4e3745]
+        - generic [ref=f4e3746]:
+          - button "check Approve" [ref=f4e3748] [cursor=pointer]:
+            - img "check" [ref=f4e3750]
+            - generic [ref=f4e3753]: Approve
+          - button "pause-circle Hold" [ref=f4e3755] [cursor=pointer]:
+            - img "pause-circle" [ref=f4e3757]
+            - generic [ref=f4e3760]: Hold
+          - button "close Reject" [ref=f4e3762] [cursor=pointer]:
+            - img "close" [ref=f4e3764]
+            - generic [ref=f4e3767]: Reject
+        - generic [ref=f4e3768]:
+          - button "stop Close this candidate's record" [ref=f4e3769] [cursor=pointer]:
+            - img "stop" [ref=f4e3771]
+            - generic [ref=f4e3774]: Close this candidate's record
+          - generic [ref=f4e3775]: For an exit that is not a stage decision — withdrew, backed out, joined, or never joined.
+        - alert [ref=f4e3776]:
+          - img "mail" [ref=f4e3777]
+          - generic [ref=f4e3780]: Outcome emails go to the candidate automatically, from the recruitment mailbox.
+  - generic [ref=f4e3782]:
+    - dialog "Schedule interview":
+      - generic [ref=f4e3783]:
+        - button "Close" [ref=f4e3784] [cursor=pointer]:
+          - generic "Close" [ref=f4e3785]:
+            - img "close" [ref=f4e3786]
+        - generic [ref=f4e3789]: Schedule interview
+        - generic [ref=f4e3792]:
+          - generic [ref=f4e3793]: SCHED03 1788503007803-972 · Technical Round 1 · 60-minute interview
+          - generic [ref=f4e3796]:
+            - text: FROM THE MRF
+            - generic [ref=f4e3797]:
+              - generic [ref=f4e3798]:
+                - text: "Interviewer:"
+                - strong [ref=f4e3800]: not specified
+              - generic [ref=f4e3801]:
+                - text: "Preferred slot:"
+                - strong [ref=f4e3803]: not specified
+          - generic [ref=f4e3805]:
+            - strong [ref=f4e3807]: Start time (IST) *
+            - generic [ref=f4e3808]:
+              - generic [ref=f4e3810]:
+                - textbox "Select a date" [active] [ref=f4e3811]
+                - generic:
+                  - img "calendar"
+              - generic [ref=f4e3814]:
+                - combobox [ref=f4e3816]
+                - generic: Time
+          - generic [ref=f4e3822]:
+            - strong [ref=f4e3824]: Duration
+            - generic [ref=f4e3827] [cursor=pointer]:
+              - combobox [ref=f4e3829]
+              - generic "1 hour" [ref=f4e3830]
+          - generic [ref=f4e3832]:
+            - strong [ref=f4e3834]: Interviewer name
+            - textbox "Who is taking this round?" [ref=f4e3836]
+            - generic [ref=f4e3838]: Used to address the interviewer’s invitation email.
+          - generic [ref=f4e3840]:
+            - strong [ref=f4e3842]: Interviewer email(s) *
+            - textbox "name@aapnainfotech.com, second@aapnainfotech.com" [ref=f4e3843]
+            - generic [ref=f4e3844]: The MRF stores the interviewer’s name only, so enter their mailbox. Separate multiple interviewers with commas.
+          - generic [ref=f4e3846]:
+            - strong [ref=f4e3848]: Emails to send (edit before sending)
+            - generic [ref=f4e3849]:
+              - button [ref=f4e3851] [cursor=pointer]:
+                - img "collapsed" [ref=f4e3853]
+                - generic [ref=f4e3857]:
+                  - img "mail" [ref=f4e3858]
+                  - text: Invitation → candidate
+              - button [ref=f4e3862] [cursor=pointer]:
+                - img "collapsed" [ref=f4e3864]
+                - generic [ref=f4e3868]:
+                  - img "mail" [ref=f4e3869]
+                  - text: Invitation → interviewer(s)
+          - alert [ref=f4e3873]:
+            - img "mail" [ref=f4e3874]
+            - generic [ref=f4e3877]: Both emails are sent from the recruitment mailbox when you create the invite.
+        - generic [ref=f4e3879]:
+          - button "Cancel" [ref=f4e3880] [cursor=pointer]
+          - button "calendar Create invite" [ref=f4e3882] [cursor=pointer]:
+            - img "calendar" [ref=f4e3884]
+            - generic [ref=f4e3887]: Create invite
+  - generic [ref=f4e3890]:
+    - generic [ref=f4e3892]:
+      - generic [ref=f4e3893]:
+        - button "Last year (Control + left)" [ref=f4e3894] [cursor=pointer]
+        - button "Previous month (PageUp)" [ref=f4e3896] [cursor=pointer]
+        - generic [ref=f4e3898]:
+          - button "Choose a month" [ref=f4e3899] [cursor=pointer]: Sep
+          - button "Choose a year" [ref=f4e3900] [cursor=pointer]: "2026"
+        - button "Next month (PageDown)" [ref=f4e3901] [cursor=pointer]
+        - button "Next year (Control + right)" [ref=f4e3903] [cursor=pointer]
+      - table [ref=f4e3906]:
+        - rowgroup [ref=f4e3907]:
+          - row [ref=f4e3908]:
+            - columnheader "Su" [ref=f4e3909]
+            - columnheader "Mo" [ref=f4e3910]
+            - columnheader "Tu" [ref=f4e3911]
+            - columnheader "We" [ref=f4e3912]
+            - columnheader "Th" [ref=f4e3913]
+            - columnheader "Fr" [ref=f4e3914]
+            - columnheader "Sa" [ref=f4e3915]
+        - rowgroup [ref=f4e3916]:
+          - row [ref=f4e3917]:
+            - cell "30" [ref=f4e3918]
+            - cell "31" [ref=f4e3920]
+            - cell "1" [ref=f4e3922]
+            - cell "2" [ref=f4e3924]
+            - cell "3" [ref=f4e3926]
+            - cell "4" [ref=f4e3928]
+            - cell "5" [ref=f4e3930]
+          - row [ref=f4e3932]:
+            - cell "6" [ref=f4e3933]
+            - cell "7" [ref=f4e3935]
+            - cell "8" [ref=f4e3937]
+            - cell "9" [ref=f4e3939]
+            - cell "10" [ref=f4e3941]
+            - cell "11" [ref=f4e3943]
+            - cell "12" [ref=f4e3945]
+          - row [ref=f4e3947]:
+            - cell "13" [ref=f4e3948]
+            - cell "14" [ref=f4e3950]
+            - cell "15" [ref=f4e3952]
+            - cell "16" [ref=f4e3954]
+            - cell "17" [ref=f4e3956]
+            - cell "18" [ref=f4e3958]
+            - cell "19" [ref=f4e3960]
+          - row [ref=f4e3962]:
+            - cell "20" [ref=f4e3963]
+            - cell "21" [ref=f4e3965]
+            - cell "22" [ref=f4e3967]
+            - cell "23" [ref=f4e3969] [cursor=pointer]
+            - cell "24" [ref=f4e3971] [cursor=pointer]
+            - cell "25" [ref=f4e3973] [cursor=pointer]
+            - cell "26" [ref=f4e3975] [cursor=pointer]
+          - row [ref=f4e3977]:
+            - cell "27" [ref=f4e3978] [cursor=pointer]
+            - cell "28" [ref=f4e3980] [cursor=pointer]
+            - cell "29" [ref=f4e3982] [cursor=pointer]
+            - cell "30" [ref=f4e3984] [cursor=pointer]
+            - cell "1" [ref=f4e3986] [cursor=pointer]
+            - cell "2" [ref=f4e3988] [cursor=pointer]
+            - cell "3" [ref=f4e3990] [cursor=pointer]
+          - row [ref=f4e3992]:
+            - cell "4" [ref=f4e3993] [cursor=pointer]
+            - cell "5" [ref=f4e3995] [cursor=pointer]
+            - cell "6" [ref=f4e3997] [cursor=pointer]
+            - cell "7" [ref=f4e3999] [cursor=pointer]
+            - cell "8" [ref=f4e4001] [cursor=pointer]
+            - cell "9" [ref=f4e4003] [cursor=pointer]
+            - cell "10" [ref=f4e4005] [cursor=pointer]
+    - list [ref=f4e4008]:
+      - listitem [ref=f4e4009]: Today

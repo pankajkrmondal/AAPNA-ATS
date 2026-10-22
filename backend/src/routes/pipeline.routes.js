@@ -1,0 +1,176 @@
+import { Router } from 'express';
+import * as pipelineController from '../controllers/pipeline.controller.js';
+import { authenticate, checkModuleAccess, requireAdmin, requireStaff } from '../middleware/auth.js';
+import { exportLimiter } from '../middleware/exportRateLimit.js';
+import assessmentImportRoutes from './assessmentImport.routes.js';
+
+const router = Router();
+
+// Phase 3 Module 1 — Stage Engine + Pipeline Tracker.
+router.use(authenticate);
+// Role floor before the module check (M6): this board carries every candidate
+// and every MRF, so a vendor must be refused by role and not merely by whether
+// someone remembered to leave their recruitment_pipeline toggle off.
+router.use(requireStaff);
+router.use(checkModuleAccess('recruitment_pipeline'));
+
+// Stage/outcome/reason config CRUD is admin-only (RT ask 2026-07-13); the gate
+// itself now lives in middleware/auth.js so the templates routes share it.
+
+/** GET /api/pipeline — board data (columns + cards), filterable. */
+router.get('/', pipelineController.listPipeline);
+
+/** GET /api/pipeline/analytics — real funnel/stuck/rejection/time-to-hire/vendor/source data.
+ * Registered before "/:id" so "analytics" is never captured as a pipeline id. */
+router.get('/analytics', pipelineController.getPipelineAnalytics);
+
+/** GET /api/pipeline/export — CSV of every journey matching the board filters.
+ * Registered before "/:id" for the same reason as "analytics" above. */
+router.get('/export', exportLimiter, pipelineController.exportPipeline);
+/** GET /api/pipeline/move-history/export — CSV of every stage move (flexible stages, C12). */
+router.get('/move-history/export', exportLimiter, pipelineController.exportMoveHistory);
+/** GET /api/pipeline/move-history/users — the report's "Moved by" filter options. */
+router.get('/move-history/users', pipelineController.listMoveHistoryUsers);
+/** GET /api/pipeline/analytics/export?table=… — CSV of one analytics table. */
+router.get('/analytics/export', exportLimiter, pipelineController.exportPipelineAnalytics);
+
+/** GET /api/pipeline/analytics/positions — one row per requisition (N39). Before "/:id". */
+router.get('/analytics/positions', pipelineController.getPositionsOverview);
+
+/** GET /api/pipeline/analytics/positions/export?status= — the Positions tab as CSV (N39). */
+router.get('/analytics/positions/export', exportLimiter, pipelineController.exportPositionsOverview);
+
+/** GET /api/pipeline/stages — admin-configurable stage list. */
+router.get('/stages', pipelineController.listStages);
+/** POST /api/pipeline/stages — create a stage (admin only). */
+router.post('/stages', requireAdmin, pipelineController.createStage);
+/** PUT /api/pipeline/stages/:key — edit a stage (admin only). */
+router.put('/stages/:key', requireAdmin, pipelineController.updateStage);
+/** POST /api/pipeline/stages/:key/outcomes — add an outcome to a stage (admin only). */
+router.post('/stages/:key/outcomes', requireAdmin, pipelineController.createStageOutcome);
+/** PUT /api/pipeline/stages/:key/outcomes/:outcomeKey — edit an outcome (admin only). */
+router.put('/stages/:key/outcomes/:outcomeKey', requireAdmin, pipelineController.updateStageOutcome);
+
+/** GET /api/pipeline/stage-templates — stage×outcome → email template mappings. */
+router.get('/stage-templates', pipelineController.listStageTemplates);
+/** PUT /api/pipeline/stage-templates — set or clear one mapping (admin only). */
+router.put('/stage-templates', requireAdmin, pipelineController.setStageTemplate);
+
+/** GET /api/pipeline/reasons — full reason taxonomy. */
+router.get('/reasons', pipelineController.listReasons);
+/** POST /api/pipeline/reasons — add a reason (admin only). */
+router.post('/reasons', requireAdmin, pipelineController.createReason);
+/** PUT /api/pipeline/reasons/:id — edit a reason (admin only). */
+router.put('/reasons/:id', requireAdmin, pipelineController.updateReason);
+
+/** Interview cancel + its email preview. Registered before "/:id" so
+ * "interview" is never captured as a pipeline id. */
+router.post('/interview/:scheduleId/cancel', pipelineController.cancelScheduledInterview);
+router.get('/interview/:scheduleId/cancel-preview', pipelineController.getCancelPreview);
+/** Record whether the interview happened (held/no_show) — the scorecard gate. */
+router.post('/interview/:scheduleId/occurrence', pipelineController.recordInterviewOccurrence);
+/** Manually send the scorecard link (idempotent; only after 'held'). */
+router.post('/interview/:scheduleId/send-scorecard', pipelineController.sendScorecard);
+/** GET /api/pipeline/interviews/unresolved — ended interviews still awaiting a
+ * held/no_show verdict. Registered before "/:id" for the same reason as above. */
+router.get('/interviews/unresolved', pipelineController.listUnresolvedInterviews);
+/** Per-document verify/reject. Registered before "/:id" so "documents" is
+ * never captured as a pipeline id. */
+router.post('/documents/:docId/verify', pipelineController.verifyDocument);
+router.post('/documents/:docId/reject', pipelineController.rejectDocument);
+/** /api/pipeline/assessment-import/* — Phase 3 M2, Evalground bulk-CSV import.
+ * Registered before "/:id" so "assessment-import" is never captured as a pipeline id. */
+router.use('/assessment-import', assessmentImportRoutes);
+
+/** GET /api/pipeline/:id — full journey detail (feeds the per-round drawer). */
+router.get('/:id', pipelineController.getPipelineDetail);
+/** GET /api/pipeline/:id/conversations — real Outlook thread (G4), not the
+ * synthetic pipeline-event email log. Nested under "/:id/", so — unlike
+ * "/analytics" and "/export" above — it cannot be captured by the bare
+ * "/:id" route regardless of registration order. */
+router.get('/:id/conversations', pipelineController.getPipelineConversations);
+/** GET /api/pipeline/:id/scorecard-report — per-round scores + overall avg/sum. */
+router.get('/:id/scorecard-report', pipelineController.getScorecardReport);
+
+/** GET /api/pipeline/:id/dossier — JSON preview of exactly what the downloadable
+ *  pack will contain, POST-redaction. Feeds the "what will be shared" modal so
+ *  the recruiter sees the redaction before the file leaves the building. */
+router.get('/:id/dossier', pipelineController.getCandidateDossier);
+/** GET /api/pipeline/:id/dossier/download?format=zip|html|xlsx
+ *  The pack itself — the file a recruiter emails to an external interviewer.
+ *  Rate-limited with the CSV exports: it is bulk PII leaving the building by
+ *  design, so a bulk sweep must be both limited and visible in the audit log.
+ *  Both routes inherit the router-wide authenticate -> requireStaff ->
+ *  checkModuleAccess chain above, which is the whole of the access decision — a
+ *  vendor is refused by rank before the module toggle is even consulted. */
+router.get('/:id/dossier/download', exportLimiter, pipelineController.downloadCandidateDossier);
+
+/** GET /api/pipeline/:id/recordings — Teams recordings linked to this journey.
+ *  Gated by the router-wide requireStaff (rank >= recruiter, so never a vendor)
+ *  and re-asserted in the controller. Metadata only. */
+router.get('/:id/recordings', pipelineController.getPipelineRecordings);
+/** GET /api/pipeline/:id/recordings/:recordingId/stream — proxied playback.
+ *  Every open is written to the journey's stage timeline; see
+ *  interviewRecording.service.js for why that audit is load-bearing. */
+router.get('/:id/recordings/:recordingId/stream', pipelineController.streamPipelineRecording);
+/** GET /api/pipeline/:id/share-links — every recording share link ever minted for
+ *  this journey, live or not. Dead ones are included on purpose: the list has to
+ *  answer "what did we send out?", not only "what is open right now". */
+router.get('/:id/share-links', pipelineController.getRecordingShareLinks);
+/** POST /api/pipeline/:id/share-links/:linkId/revoke — withdraw one link, now.
+ *  Decision #7 (recordings travel as no-login links) has no undo without this,
+ *  which is why it is a button in the drawer and not an API call for support. */
+router.post('/:id/share-links/:linkId/revoke', pipelineController.revokeRecordingShareLink);
+
+/** POST /api/pipeline/:id/interview — book the interview for a schedulable round. */
+router.post('/:id/interview', pipelineController.scheduleInterview);
+/** GET /api/pipeline/:id/interview-preview — editable invite email preview. */
+router.get('/:id/interview-preview', pipelineController.getSchedulePreview);
+/** POST /api/pipeline/:id/interview/reschedule — cancel current booking + rebook. */
+router.post('/:id/interview/reschedule', pipelineController.rescheduleInterview);
+/** GET /api/pipeline/:id/interview/reschedule-preview — editable reschedule email preview. */
+router.get('/:id/interview/reschedule-preview', pipelineController.getReschedulePreview);
+/** GET /api/pipeline/:id/outcome-preview?outcome_key=X — compiled email preview, no send. */
+router.get('/:id/outcome-preview', pipelineController.getOutcomePreview);
+/** POST /api/pipeline/:id/outcome — record Approve/Reject/Hold (reason mandatory); Approve auto-advances. */
+router.post('/:id/outcome', pipelineController.setStageOutcome);
+/** POST /api/pipeline/:id/advance — move to the next stage (or explicitly skip an optional one). */
+router.post('/:id/advance', pipelineController.advanceStage);
+/** POST /api/pipeline/:id/move — move to any stage not yet passed (flexible stages, C3). */
+router.post('/:id/move', pipelineController.moveToStage);
+/** POST /api/pipeline/:id/closure — set the final/closure outcome (Q12). */
+router.post('/:id/closure', pipelineController.setFinalOutcome);
+/** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
+ * action assertJourneyOpen has named since Module 1 without it existing. */
+router.post('/:id/reopen', pipelineController.reopenJourney);
+/** POST /api/pipeline/:id/pause — pause/resume a journey (Q33). The manual
+ * lever RT asked for when a role fills under a candidate still in flight. */
+router.post('/:id/pause', pipelineController.setJourneyPaused);
+
+/** Documents round (Module 4) — recruiter-facing half; the candidate uploads
+ * through the public token route in document.routes.js. */
+router.get('/:id/documents', pipelineController.getDocumentStatus);
+router.post('/:id/documents/request', pipelineController.requestDocuments);
+router.post('/:id/documents/remind', pipelineController.remindDocuments);
+/** Cancel the open request: closes the upload link and unlocks the card (C11). */
+router.post('/:id/documents/cancel', pipelineController.cancelDocumentRequest);
+
+/** Offer round (Module 5) — record-only; the letter itself never enters the ATS. */
+/** Client round — marked, never booked. Nothing here reaches the client (Q14). */
+router.post('/:id/client-round/arranged', pipelineController.recordClientRoundArranged);
+router.post('/:id/client-round/feedback', pipelineController.recordClientRoundFeedback);
+
+// Disabled 2026-08-25 — internal offer approval. RT: the offer is handled
+// offline and the app marks the round only. Reverses Q3/Q26.
+// router.post('/:id/offer/request-approval', pipelineController.requestOfferApproval);
+// router.post('/:id/offer/approve', pipelineController.approveOffer);
+router.post('/:id/offer/share', pipelineController.recordOfferShared);
+router.post('/:id/offer/decision', pipelineController.recordOfferDecision);
+/** POST /api/pipeline/:id/email — ad-hoc per-candidate email override (RT ask 2026-07-14). */
+router.post('/:id/email', pipelineController.sendAdHocEmail);
+/** POST /api/pipeline/:id/zeko-report-link — the AI screening report's NO-LOGIN url,
+ * minted on first use and cached. POST because that first call publishes a public
+ * Zeko link; see the controller. */
+router.post('/:id/zeko-report-link', pipelineController.getZekoSharedReportLink);
+
+export default router;

@@ -1,0 +1,79 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>409 conflict-copy spot-check</title>
+<style>
+body{font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;max-width:960px;margin:2rem auto;padding:0 1.2rem;color:#1c1f23}
+h1{font-size:1.5rem;margin-bottom:.2rem}h2{font-size:1.08rem;margin-top:1.9rem;border-bottom:1px solid #e5e7eb;padding-bottom:.3rem}
+.sub{color:#6b7280;margin-top:0}
+table{border-collapse:collapse;width:100%;margin:.6rem 0;font-size:.94em}
+td,th{border:1px solid #e5e7eb;padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#f6f8fa;font-weight:600}
+code{background:#f3f4f6;padding:.1rem .3rem;border-radius:3px;font-size:.88em;word-break:break-word}
+.bad{color:#b91c1c;font-weight:600}.warn{color:#b45309;font-weight:600}
+.box{background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.8rem 1rem;margin:.8rem 0}
+</style></head><body>
+<h1>Concurrent stage decision — 409 conflict-copy spot-check</h1>
+<p class="sub">20 Aug 2026 · http://localhost:5173 · fixture journey 40 “Phase3 Midflow Candidate” (PHASE3-TESTPASS-FIXTURE)</p>
+
+<div class="box"><b>Headline:</b> no 409 was produced by any screen. The premise of the test does not hold —
+the app has no conflict detection at all, so the losing tab does not get an error message; it gets
+<code>200 OK</code> and its write wins.</div>
+
+<h2>Static facts (whole frontend, 117 loaded modules)</h2>
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>String “Someone else moved this candidate while you were deciding…”</td><td class="bad">0 occurrences anywhere</td></tr>
+<tr><td>Any HTTP-409 branch in app code</td><td class="bad">0. The four files that literally contain “409” contain it as <code>lineNumber: 409</code> from the JSX dev transform (Dashboard, VendorDashboard, HRUpload, PipelineConfigPanel).</td></tr>
+<tr><td><code>AnalyticsLegacy</code> screen</td><td class="bad">Does not exist. <code>/src/pages/AnalyticsLegacy.jsx</code> returns 200 only because Vite falls back to <code>index.html</code> — byte-identical to the response for a nonsense path.</td></tr>
+</table>
+
+<h2>Live results — 3 screens</h2>
+<table>
+<tr><th>Screen</th><th>Concurrency test</th><th>Losing tab: HTTP</th><th>Raw response body</th><th>UI text rendered</th><th>Match?</th></tr>
+<tr>
+<td><b>PipelineDrawer</b></td>
+<td>Two tabs, same journey 40, both at <code>zeko_hr</code>, Approve → “Save &amp; send email”</td>
+<td class="bad">200 (no 409)</td>
+<td><code>{"status":"success","message":"Stage outcome recorded successfully","data":{"pipeline":{"id":40,…,"current_stage_key":"zeko_fn"}}}</code></td>
+<td><code>Pipeline updated.</code> (success toast)</td>
+<td class="bad">N/A — no error path taken. Drawer’s only failure copy is <code>Failed to record outcome.</code></td>
+</tr>
+<tr>
+<td><b>PipelineConfigPanel</b><br>(rendered inside Settings)</td>
+<td>Two tabs, same stage <code>tech3</code> edit modal; A saves “EDIT-A”, stale B saves “EDIT-B”</td>
+<td class="bad">200 (no 409)</td>
+<td><code>{"status":"success","message":"Stage updated successfully","data":{"stage_key":"tech3","label":"Technical Round 3 EDIT-B",…}}</code></td>
+<td><code>Stage updated.</code> (success toast)</td>
+<td class="bad">N/A — A’s write silently clobbered. Panel’s only failure copy is <code>That change could not be saved.</code></td>
+</tr>
+<tr>
+<td><b>CandidateDetail</b></td>
+<td>Two tabs, candidate 292 edit modal; A saves location “Pune EDIT-A”, stale B saves “Chennai EDIT-B”</td>
+<td class="bad">200 (no 409)</td>
+<td><code>{"status":"success","message":"Candidate updated","data":{"id":"292",…,"location":"Chennai EDIT-B"}}</code></td>
+<td><code>Candidate details updated successfully.</code></td>
+<td class="bad">N/A — A’s write silently clobbered. Page’s only failure copy is <code>Failed to update candidate details.</code></td>
+</tr>
+</table>
+<p><b>Settings</b> (4th screen, static only): failure copy is <code>Failed to update settings.</code> /
+<code>Failed to update interview reminders.</code> — likewise no conflict branch.</p>
+
+<h2 class="bad">Bug found: double-advance, not a missing error string</h2>
+<p>On PipelineDrawer the stale second approval was <b>accepted</b> and advanced the candidate a second time:</p>
+<table>
+<tr><th>Before</th><td>journey 40 @ <code>zeko_hr</code> (HR Screening)</td></tr>
+<tr><th>Tab A approve</th><td>200 → <code>assessment</code> (IQ / Tech Assessment)</td></tr>
+<tr><th>Tab B approve (stale UI, still showing HR Screening)</th><td>200 → <code>zeko_fn</code> (Functional Screening)</td></tr>
+<tr><th>Net effect</th><td class="bad">IQ / Tech Assessment skipped entirely; two outcome emails dispatched to the candidate; stage history records an HR-Screening decision that advanced past a stage the candidate never entered.</td></tr>
+</table>
+<p>The same last-write-wins hole exists on the config and candidate screens, but there it only loses an edit —
+here it corrupts pipeline state.</p>
+
+<h2>What would need to change</h2>
+<p>The expected sentence cannot appear until (a) the backend rejects a decision whose <code>current_stage_key</code>
+no longer matches what the client saw, with 409, and (b) each screen adds a 409 branch. Today neither exists,
+so this is a feature to build, not a copy bug to fix.</p>
+
+<h2>Method note</h2>
+<p>Raw bodies were captured with an in-page <code>XMLHttpRequest</code>/<code>fetch</code> interceptor installed before
+each trigger, which records the unparsed <code>responseText</code> — the same bytes DevTools’ Network tab shows.
+DevTools itself cannot be driven from this session.</p>
+</body></html>

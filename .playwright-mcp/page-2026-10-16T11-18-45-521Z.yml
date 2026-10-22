@@ -1,0 +1,298 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e95]:
+    - complementary [ref=e96]:
+      - generic [ref=e97]:
+        - generic [ref=e98] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=e100]
+          - generic [ref=e101]: ATS Platform
+        - menu [ref=e102]:
+          - menuitem "dashboard Dashboard" [ref=e103] [cursor=pointer]:
+            - img "dashboard" [ref=e104]
+            - generic [ref=e107]: Dashboard
+          - menuitem "file-text MRF" [ref=e108] [cursor=pointer]:
+            - img "file-text" [ref=e109]
+            - generic [ref=e112]: MRF
+          - menuitem "solution Search Candidate" [ref=e113] [cursor=pointer]:
+            - img "solution" [ref=e114]
+            - generic [ref=e117]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=e118] [cursor=pointer]:
+            - img "upload" [ref=e119]
+            - generic [ref=e122]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=e123] [cursor=pointer]:
+            - img "shop" [ref=e124]
+            - generic [ref=e127]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=e128] [cursor=pointer]:
+            - img "audit" [ref=e129]
+            - generic [ref=e132]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=e133] [cursor=pointer]:
+            - img "filter" [ref=e134]
+            - generic [ref=e137]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=e138] [cursor=pointer]:
+            - img "apartment" [ref=e139]
+            - generic [ref=e142]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=e143] [cursor=pointer]:
+            - img "bar-chart" [ref=e144]
+            - generic [ref=e147]: Recruitment Analytics
+          - menuitem "mail Email Templates" [ref=e148] [cursor=pointer]:
+            - img "mail" [ref=e149]
+            - generic [ref=e152]: Email Templates
+          - menuitem "setting Settings" [ref=e153] [cursor=pointer]:
+            - img "setting" [ref=e154]
+            - generic [ref=e157]: Settings
+    - generic [ref=e158]:
+      - banner [ref=e159]:
+        - generic [ref=e160]:
+          - button [ref=e162] [cursor=pointer]:
+            - img "menu-fold" [ref=e164]
+          - generic [ref=e167]: Dashboard
+        - generic [ref=e168]:
+          - button [ref=e171] [cursor=pointer]:
+            - img "bell" [ref=e173]
+          - button "Toggle theme" [ref=e177] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=e189] [cursor=pointer]:
+            - generic [ref=e191]:
+              - img "user" [ref=e192]
+              - img "setting" [ref=e195]
+            - generic [ref=e198]: Admin Portal
+          - img "user" [ref=e203] [cursor=pointer]
+      - main [ref=e206]:
+        - generic [ref=e208]:
+          - generic [ref=e210]:
+            - generic [ref=e211]:
+              - generic [ref=e212]: AAPNA ATS Platform
+              - heading "Good afternoon, Pan mondal 👋" [level=2] [ref=e214]:
+                - generic [ref=e215]: Good afternoon, Pan mondal
+                - text: 👋
+              - generic [ref=e216]: Here's what's happening across your recruitment pipeline · 04:48:44 PM
+            - generic [ref=e217]:
+              - generic [ref=e218]:
+                - button "search Search… ⌘K" [ref=e220] [cursor=pointer]:
+                  - img "search" [ref=e222]
+                  - generic [ref=e225]: Search…
+                  - generic [ref=e226]: ⌘K
+                - button "plus New MRF Request" [ref=e228] [cursor=pointer]:
+                  - img "plus" [ref=e230]
+                  - generic [ref=e234]: New MRF Request
+              - generic [ref=e235]:
+                - generic [ref=e237]:
+                  - text: Period
+                  - button "About Date range" [ref=e238]:
+                    - img "info-circle" [ref=e239]
+                - radiogroup "segmented control" [ref=e244]:
+                  - generic [ref=e245]:
+                    - generic [ref=e246] [cursor=pointer]:
+                      - radio "7d"
+                      - generic [ref=e247]: 7d
+                    - generic [ref=e248] [cursor=pointer]:
+                      - radio "30d" [checked]
+                      - generic [ref=e249]: 30d
+                    - generic [ref=e250] [cursor=pointer]:
+                      - radio "90d"
+                      - generic [ref=e251]: 90d
+                - generic "Filter the dashboard graphs by role" [ref=e253] [cursor=pointer]:
+                  - generic [ref=e255]:
+                    - combobox "Filter the dashboard graphs by role" [ref=e257]
+                    - generic "All roles" [ref=e258]
+          - generic [ref=e262]:
+            - list [ref=e269]:
+              - listitem [ref=e270]
+              - listitem [ref=e271]
+              - listitem [ref=e272]
+              - listitem [ref=e273]
+            - list [ref=e280]:
+              - listitem [ref=e281]
+              - listitem [ref=e282]
+              - listitem [ref=e283]
+              - listitem [ref=e284]
+            - list [ref=e291]:
+              - listitem [ref=e292]
+              - listitem [ref=e293]
+              - listitem [ref=e294]
+              - listitem [ref=e295]
+            - list [ref=e302]:
+              - listitem [ref=e303]
+              - listitem [ref=e304]
+              - listitem [ref=e305]
+              - listitem [ref=e306]
+          - generic [ref=e307]:
+            - generic [ref=e310]:
+              - generic [ref=e311]:
+                - generic [ref=e312]:
+                  - heading [level=5] [ref=e313]:
+                    - text: Hiring Trends
+                    - button "About Hiring Trends" [ref=e314]:
+                      - img "info-circle" [ref=e315]
+                  - generic [ref=e319]: New candidates added · last 30 days
+                - generic [ref=e320]:
+                  - generic [ref=e321]: "0"
+                  - generic [ref=e322]:
+                    - text: total
+                    - img "info-circle" [ref=e323]
+              - img [ref=e330]:
+                - generic [ref=e334]:
+                  - generic [ref=e335]: Sep 17
+                  - generic [ref=e337]: Sep 21
+                  - generic [ref=e339]: Sep 25
+                  - generic [ref=e341]: Sep 29
+                  - generic [ref=e343]: Oct 03
+                  - generic [ref=e345]: Oct 07
+                  - generic [ref=e347]: Oct 11
+                  - generic [ref=e349]: Oct 15
+                - generic [ref=e352]:
+                  - generic [ref=e353]: "0"
+                  - generic [ref=e355]: "1"
+                  - generic [ref=e357]: "2"
+                  - generic [ref=e359]: "3"
+                  - generic [ref=e361]: "4"
+            - generic [ref=e365]:
+              - generic [ref=e367]:
+                - heading [level=5] [ref=e368]:
+                  - text: Needs Your Attention
+                  - button "About Needs Your Attention" [ref=e369]:
+                    - img "info-circle" [ref=e370]
+                - text: Your actionable queue
+              - generic [ref=e375]:
+                - img "check-circle" [ref=e376]
+                - generic [ref=e380]: All clear — nothing needs your attention right now.
+          - generic [ref=e381]:
+            - generic [ref=e384]:
+              - generic [ref=e385]:
+                - generic [ref=e386]:
+                  - heading [level=5] [ref=e387]:
+                    - text: Conversion Funnel
+                    - button "About Conversion Funnel" [ref=e388]:
+                      - img "info-circle" [ref=e389]
+                  - text: Sourced → hired conversion
+                - generic [ref=e394]:
+                  - generic [ref=e395]: 0%
+                  - text: overall
+              - generic [ref=e396]:
+                - generic [ref=e397]:
+                  - generic [ref=e399]:
+                    - generic [ref=e400]: Sourced
+                    - generic [ref=e401]: "0"
+                  - generic [ref=e403]:
+                    - img "arrow-down" [ref=e404]
+                    - generic [ref=e407]: 0% advance
+                - generic [ref=e408]:
+                  - generic [ref=e410]:
+                    - generic [ref=e411]: AI Screened
+                    - generic [ref=e412]: "0"
+                  - generic [ref=e414]:
+                    - img "arrow-down" [ref=e415]
+                    - generic [ref=e418]: 0% advance
+                - generic [ref=e419]:
+                  - generic [ref=e421]:
+                    - generic [ref=e422]: Shortlisted
+                    - generic [ref=e423]: "0"
+                  - generic [ref=e425]:
+                    - img "arrow-down" [ref=e426]
+                    - generic [ref=e429]: 0% advance
+                - generic [ref=e432]:
+                  - generic [ref=e433]: Hired
+                  - generic [ref=e434]: "0"
+            - generic [ref=e438]:
+              - generic [ref=e439]:
+                - generic [ref=e440]:
+                  - heading [level=5] [ref=e441]:
+                    - text: Talent Insights
+                    - button "About Talent Insights" [ref=e442]:
+                      - img "info-circle" [ref=e443]
+                  - text: Top applied roles
+                - radiogroup "segmented control" [ref=e447]:
+                  - generic [ref=e448]:
+                    - generic [ref=e449] [cursor=pointer]:
+                      - radio "Roles" [checked]
+                      - generic [ref=e450]: Roles
+                    - generic [ref=e451] [cursor=pointer]:
+                      - radio "Skills"
+                      - generic [ref=e452]: Skills
+              - generic [ref=e454]:
+                - img "No data" [ref=e456]
+                - generic [ref=e462]: No roles data
+            - generic [ref=e465]:
+              - generic [ref=e466]:
+                - generic [ref=e467]:
+                  - heading [level=5] [ref=e468]:
+                    - text: Upcoming Interviews
+                    - button "About Upcoming Interviews" [ref=e469]:
+                      - img "info-circle" [ref=e470]
+                  - text: Next 7 days
+                - generic [ref=e474] [cursor=pointer]:
+                  - text: View all
+                  - img "arrow-right" [ref=e475]
+              - generic [ref=e479]:
+                - img "No data" [ref=e481]
+                - generic [ref=e487]: No interviews scheduled
+          - generic [ref=e488]:
+            - generic [ref=e491]:
+              - generic [ref=e493]:
+                - heading [level=5] [ref=e494]:
+                  - text: Recruiter Activity
+                  - button "About Recruiter Activity" [ref=e495]:
+                    - img "info-circle" [ref=e496]
+                - text: Candidates added vs. shortlisted per recruiter
+              - generic [ref=e501]:
+                - img "No data" [ref=e503]
+                - generic [ref=e509]: No recruiter activity yet
+            - generic [ref=e512]:
+              - generic [ref=e513]:
+                - generic [ref=e514]:
+                  - heading [level=5] [ref=e515]:
+                    - text: Live Activity
+                    - button "About Live Activity" [ref=e516]:
+                      - img "info-circle" [ref=e517]
+                  - text: Real-time pipeline events
+                - generic [ref=e521]: LIVE
+              - generic [ref=e523]: Listening for new uploads & reviews…
+          - generic [ref=e527]:
+            - generic [ref=e530]:
+              - generic [ref=e531]:
+                - generic [ref=e532]:
+                  - heading [level=5] [ref=e533]:
+                    - text: Latest uploads
+                    - button "About Latest uploads" [ref=e534]:
+                      - img "info-circle" [ref=e535]
+                  - text: The five most recent candidates
+                - button [ref=e539] [cursor=pointer]:
+                  - text: Search all candidates
+                  - img "arrow-right" [ref=e540]
+              - list [ref=e545]:
+                - listitem [ref=e546]
+                - listitem [ref=e547]
+                - listitem [ref=e548]
+                - listitem [ref=e549]
+            - generic [ref=e552]:
+              - generic [ref=e554]:
+                - heading "Quick Actions" [level=5] [ref=e555]
+                - text: Jump into your modules
+              - generic [ref=e556]:
+                - button "filter Candidate Screening lock" [disabled] [ref=e557]:
+                  - img "filter" [ref=e559]
+                  - generic [ref=e562]: Candidate Screening
+                  - img "lock" [ref=e563]
+                - button "bar-chart Recruitment Analytics lock" [disabled] [ref=e566]:
+                  - img "bar-chart" [ref=e568]
+                  - generic [ref=e571]: Recruitment Analytics
+                  - img "lock" [ref=e572]
+                - button "plus New MRF Request arrow-right" [ref=e575] [cursor=pointer]:
+                  - img "plus" [ref=e577]
+                  - generic [ref=e581]: New MRF Request
+                  - img "arrow-right" [ref=e582]
+                - button "search Search & Edit Candidates lock" [disabled] [ref=e585]:
+                  - img "search" [ref=e587]
+                  - generic [ref=e590]: Search & Edit Candidates
+                  - img "lock" [ref=e591]
+                - button "upload HR Manual Upload arrow-right" [ref=e594] [cursor=pointer]:
+                  - img "upload" [ref=e596]
+                  - generic [ref=e599]: HR Manual Upload
+                  - img "arrow-right" [ref=e600]
+                - button "cloud-upload Vendor Upload lock" [disabled] [ref=e603]:
+                  - img "cloud-upload" [ref=e605]
+                  - generic [ref=e609]: Vendor Upload
+                  - img "lock" [ref=e610]
+                - button "setting System Configuration arrow-right" [ref=e613] [cursor=pointer]:
+                  - img "setting" [ref=e615]
+                  - generic [ref=e618]: System Configuration
+                  - img "arrow-right" [ref=e619]
+  - generic [aria-hidden] [ref=e622]: "0"

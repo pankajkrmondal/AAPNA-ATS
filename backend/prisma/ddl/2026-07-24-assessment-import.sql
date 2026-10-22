@@ -1,0 +1,101 @@
+-- ============================================================================
+-- Phase 3 — Module 2: Evalground Bulk-CSV Import
+-- Manual DDL — apply directly to PostgreSQL, then run:
+--   cd backend && npx prisma db pull && npx prisma generate
+-- Per docs/reference/VENDOR_PROCESS.md §13 / the 2026-07-21 DDL precedent:
+-- schema.prisma is NEVER hand-edited; it is introspected from the live DB.
+--
+-- Scope: bulk-CSV import only (Phase 3 M2 decision, 2026-07-24). The
+-- `mechanism` column below is kept for forward-compat with the deferred
+-- single-result Outlook-mailbox path (see docs/phase3/07-EVALGROUND-IMPORT-PLAN.md
+-- §3) but only 'bulk_csv' is ever written by this build.
+--
+-- Idempotent, additive, non-destructive — safe to run multiple times.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 1) rpa_assessment_imports — one row per import batch/event
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rpa_assessment_imports (
+  id                      BIGSERIAL PRIMARY KEY,
+  mechanism               VARCHAR(20) NOT NULL DEFAULT 'bulk_csv', -- bulk_csv | single_outlook (latter unused this pass)
+  source_message_id       VARCHAR(255), -- Graph message id; NULL for bulk_csv, reserved for the deferred mailbox path
+  file_name               VARCHAR(500),
+  raw_file_url            TEXT, -- OneDrive URL (falls back to local /uploads path, mirrors hrUpload.service.js's onedriveUrl fallback)
+  uploaded_by             VARCHAR(255), -- username, mirrors rpa_upload_batch_summary.uploaded_by
+  uploaded_by_id          INTEGER REFERENCES rpa_users (id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  uploaded_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  total_rows              INTEGER NOT NULL DEFAULT 0,
+  matched_count           INTEGER NOT NULL DEFAULT 0,
+  unmatched_count         INTEGER NOT NULL DEFAULT 0,
+  duplicate_skipped_count INTEGER NOT NULL DEFAULT 0,
+  error_count             INTEGER NOT NULL DEFAULT 0,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  modified_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_imports_msg
+  ON rpa_assessment_imports (source_message_id) WHERE source_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_assessment_imports_uploaded_at ON rpa_assessment_imports (uploaded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assessment_imports_mechanism ON rpa_assessment_imports (mechanism);
+
+-- ----------------------------------------------------------------------------
+-- 2) rpa_assessment_test_mappings — remembered section→skill mapping, keyed by
+--    exact test name (derived from the uploaded file name — the real sample
+--    file has no per-row "Test Name" column, see docs/phase3/07-EVALGROUND-IMPORT-PLAN.md
+--    §2 vs. the actual verified format). Without this table, "remembered by
+--    exact test name" (doc 07 §2) has nowhere to live.
+--
+--    No company_id: no candidate-domain table in this schema (rpa_cv,
+--    rpa_mrf, rpa_shortlisted_candidates, rpa_candidate_pipeline) carries
+--    tenant scoping today — only rpa_users/rpa_sessions do.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rpa_assessment_test_mappings (
+  id                BIGSERIAL PRIMARY KEY,
+  test_name         TEXT NOT NULL, -- derived from the uploaded file name, trimmed
+  section_label_map JSONB NOT NULL, -- { "section_1": {"skill_label": "...", "legacy_field": "IQScore"|"TechScore"|null}, "section_2": {...}, "section_3": {...} }
+  confirmed_by      VARCHAR(255),
+  confirmed_by_id   INTEGER REFERENCES rpa_users (id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  confirmed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  first_import_id   BIGINT REFERENCES rpa_assessment_imports (id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  modified_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_test_mappings_name ON rpa_assessment_test_mappings (test_name);
+
+-- ----------------------------------------------------------------------------
+-- 3) rpa_assessment_results — one row per candidate-per-test-cycle result
+--
+--    pipeline_id is NULLABLE — required to durably record a genuinely
+--    unmatched row, or a multi-open-journey row nobody manually picked,
+--    instead of silently dropping it.
+--
+--    Deliberately NO unique constraint on (email_matched, test_name): a
+--    candidate can legitimately have more than one historical result for the
+--    same email+test across separate hiring cycles years apart (rejection +
+--    6-month cooling-off + reapply). Retake/skip-unless-changed dedup is
+--    scoped to (pipeline_id, test_name) at the service layer instead.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rpa_assessment_results (
+  id                 BIGSERIAL PRIMARY KEY,
+  import_id          BIGINT NOT NULL REFERENCES rpa_assessment_imports (id) ON UPDATE NO ACTION ON DELETE CASCADE,
+  pipeline_id        BIGINT REFERENCES rpa_candidate_pipeline (id) ON UPDATE NO ACTION ON DELETE SET NULL,
+  cv_id              BIGINT,
+  test_name          TEXT NOT NULL,
+  section_label_map  JSONB NOT NULL, -- confirmed mapping ACTUALLY APPLIED to this row (frozen copy, not a live FK)
+  section_1_score    NUMERIC(8,2), -- raw marks, not a percentage (verified against the real sample file)
+  section_2_score    NUMERIC(8,2),
+  section_3_score    NUMERIC(8,2),
+  overall_percentage NUMERIC(6,2), -- Evalground's own overall Percentage column
+  overall_result     VARCHAR(30), -- Evalground's own overall Result column (e.g. 'Passed') — drives the suggested outcome
+  email_matched      VARCHAR(255) NOT NULL,
+  match_note         TEXT, -- e.g. why a multi-journey candidate was auto-matched to this pipeline_id, or why unmatched
+  source_row_number  INTEGER,
+  status             VARCHAR(30) NOT NULL DEFAULT 'matched', -- matched | unmatched | duplicate_skipped | score_overwritten | error
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  modified_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_assessment_results_import    ON rpa_assessment_results (import_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_results_pipeline  ON rpa_assessment_results (pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_results_email     ON rpa_assessment_results (email_matched);
+CREATE INDEX IF NOT EXISTS idx_assessment_results_pipe_test ON rpa_assessment_results (pipeline_id, test_name);
+CREATE INDEX IF NOT EXISTS idx_assessment_results_status    ON rpa_assessment_results (status);

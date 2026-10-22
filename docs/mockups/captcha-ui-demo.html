@@ -1,0 +1,1058 @@
+<title>CAPTCHA Integration Preview — ATS Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ============ demo chrome tokens (theme-aware) ============ */
+  :root {
+    --gold: #7a922e;
+    --gold-light: #92a63c;
+    --gold-dark: #5f7424;
+    --gold-bg: #eef3da;
+
+    --bg: #f2f4ea;
+    --card: #ffffff;
+    --ink: #2b2b2b;
+    --ink-2: #5f6664;
+    --line: #dde1df;
+    --code-bg: #eef1e0;
+    --shadow: 0 18px 44px rgba(65, 78, 25, 0.12);
+
+    --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-heading: 'Sora', 'Inter', 'Segoe UI', system-ui, sans-serif;
+    --mono: 'DM Mono', Consolas, 'Courier New', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181a10;
+      --card: #212516;
+      --ink: #eceadd;
+      --ink-2: #a9ac9a;
+      --line: #3a3e2b;
+      --gold-bg: #2d331a;
+      --code-bg: #2a2e1b;
+      --shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f2f4ea; --card: #ffffff; --ink: #2b2b2b; --ink-2: #5f6664;
+    --line: #dde1df; --gold-bg: #eef3da; --code-bg: #eef1e0;
+    --shadow: 0 18px 44px rgba(65, 78, 25, 0.12);
+  }
+  :root[data-theme="dark"] {
+    --bg: #181a10; --card: #212516; --ink: #eceadd; --ink-2: #a9ac9a;
+    --line: #3a3e2b; --gold-bg: #2d331a; --code-bg: #2a2e1b;
+    --shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--font-heading);
+    font-size: clamp(26px, 4vw, 36px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .lede { color: var(--ink-2); max-width: 62ch; margin: 0 0 28px; font-size: 15.5px; }
+
+  h2 {
+    font-family: var(--font-heading);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 48px 0 14px;
+  }
+
+  /* ============ provider tabs ============ */
+  .tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+  .tab {
+    appearance: none;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-family: var(--font);
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  }
+  .tab:hover { border-color: var(--gold-light); transform: translateY(-1px); }
+  .tab:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .tab .t-name { display: block; font-weight: 700; font-size: 14px; }
+  .tab .t-meta { display: block; font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+  .tab[aria-selected="true"] {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(122, 146, 46, 0.35);
+  }
+  .tab[aria-selected="true"] .t-meta { color: rgba(255, 255, 255, 0.85); }
+  .tab .t-star { color: #f4c542; }
+
+  /* ============ browser frame around the mockup ============ */
+  .browser {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    background: var(--card);
+  }
+  .browser-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ee6a5f; } .dot.y { background: #f5bd4f; } .dot.g { background: #61c454; }
+  .url {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 6px 12px;
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+  }
+  .url svg { flex: 0 0 auto; }
+  .url span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hint {
+    font-size: 12px; color: var(--ink-2);
+    margin: 10px 4px 0;
+  }
+  .hint b { color: var(--gold); }
+
+  /* ============ the login mockup (forced light — recreates the real site) ============ */
+  .auth-split {
+    display: flex;
+    min-height: 640px;
+    background: #ffffff;
+    position: relative;
+  }
+  .brand-panel {
+    flex: 1 1 52%;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 44px 48px 36px;
+    color: #fff;
+    background: linear-gradient(150deg, #5f7424 0%, #7a922e 48%, #92a63c 100%);
+  }
+  .brand-panel::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
+    background-size: 22px 22px;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .brand-panel::after {
+    content: '';
+    position: absolute; top: -15%; right: -10%;
+    width: 420px; height: 420px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .brand-panel > * { position: relative; z-index: 1; }
+  .logo-chip {
+    display: inline-flex; align-items: center;
+    background: #fff;
+    border-radius: 12px;
+    padding: 8px 14px;
+    width: fit-content;
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 17px;
+    color: #7a922e;
+    letter-spacing: -0.02em;
+  }
+  .logo-chip small {
+    font-size: 8px; font-weight: 700; color: #b23b3b;
+    margin-left: 6px; letter-spacing: 0.05em; line-height: 1.2; text-align: left;
+  }
+  .brand-mid h1 {
+    font-family: var(--font-heading);
+    font-size: clamp(26px, 3.4vw, 40px);
+    font-weight: 800;
+    line-height: 1.16;
+    letter-spacing: -0.02em;
+    margin: 0 0 18px;
+    color: #fff;
+    max-width: 15ch;
+  }
+  .brand-mid p {
+    font-size: 14.5px;
+    color: rgba(255, 255, 255, 0.92);
+    max-width: 46ch;
+    margin: 0 0 26px;
+  }
+  .brand-checks { display: flex; flex-direction: column; gap: 14px; }
+  .brand-check { display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 600; }
+  .brand-check svg { flex: 0 0 auto; }
+  .brand-foot { font-size: 12px; color: rgba(255, 255, 255, 0.8); }
+
+  .form-panel {
+    flex: 1 1 48%;
+    display: flex; align-items: center; justify-content: center;
+    padding: 44px 28px;
+    background: #ffffff;
+  }
+  .form-inner { width: 100%; max-width: 380px; }
+  .portal-pill {
+    display: inline-block;
+    background: #eef3da;
+    color: #7a922e;
+    border: 1px solid #dde1df;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  .form-inner h2 {
+    font-family: var(--font-heading);
+    font-size: 26px; font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #2b2b2b;
+    margin: 0 0 6px;
+  }
+  .form-sub { color: #5f6664; font-size: 14px; margin: 0 0 26px; }
+
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block;
+    font-size: 13px; font-weight: 600;
+    letter-spacing: 0.4px; text-transform: uppercase;
+    color: #2b2b2b; opacity: 0.9;
+    margin-bottom: 7px;
+  }
+  .input-wrap { position: relative; }
+  .input-wrap svg.lead {
+    position: absolute; left: 13px; top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .input-wrap input {
+    width: 100%;
+    height: 46px;
+    border: 1px solid #dde1df;
+    border-radius: 10px;
+    padding: 0 40px 0 40px;
+    font-family: var(--font);
+    font-size: 14px;
+    color: #2b2b2b;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input-wrap input::placeholder { color: #b7bcb9; }
+  .input-wrap input:focus {
+    border-color: #7a922e;
+    box-shadow: 0 0 0 3px rgba(122, 146, 46, 0.14);
+  }
+  .eye-btn {
+    position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; padding: 4px;
+    color: #9aa09d;
+    display: flex;
+  }
+
+  /* the slot where each captcha widget is injected */
+  .captcha-slot { margin: 20px 0 20px; min-height: 70px; }
+  .slot-flag {
+    position: absolute;
+    top: -11px; left: 12px;
+    background: #7a922e;
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 9px;
+    border-radius: 999px;
+    z-index: 2;
+  }
+  .slot-outline { position: relative; border-radius: 12px; }
+  .slot-outline.marked {
+    outline: 2px dashed rgba(122, 146, 46, 0.5);
+    outline-offset: 7px;
+  }
+
+  .signin-btn {
+    width: 100%;
+    height: 48px;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--font);
+    font-weight: 700;
+    font-size: 14px;
+    color: #fff;
+    background: linear-gradient(135deg, #7a922e 0%, #92a63c 50%, #869c34 100%);
+    box-shadow: 0 4px 14px rgba(122, 146, 46, 0.30);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
+  }
+  .signin-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(122, 146, 46, 0.42);
+  }
+  .signin-btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+  .signin-btn:disabled {
+    opacity: 0.5;
+    filter: saturate(0.6);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .gate-note {
+    font-size: 12px; color: #8a9186;
+    text-align: center;
+    margin: 9px 0 0;
+    min-height: 18px;
+  }
+  .gate-note.ok { color: #418a34; font-weight: 600; }
+  .forgot { text-align: center; margin-top: 16px; }
+  .forgot a { color: #7a922e; font-size: 13.5px; font-weight: 600; text-decoration: none; }
+  .forgot a:hover { color: #92a63c; }
+
+  /* ============ simulated captcha widgets ============ */
+  .spinner {
+    width: 22px; height: 22px;
+    border: 3px solid rgba(122, 146, 46, 0.25);
+    border-top-color: #7a922e;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex: 0 0 auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pop { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .pop { animation: pop 0.25s ease-out; }
+
+  /* Cloudflare Turnstile lookalike */
+  .ts-box {
+    width: 300px; max-width: 100%;
+    height: 66px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background: #fafafa;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px;
+    font-family: var(--font);
+  }
+  .ts-left { display: flex; align-items: center; gap: 12px; }
+  .ts-status { font-size: 13.5px; color: #232323; font-weight: 500; }
+  .ts-brand { text-align: right; line-height: 1.25; }
+  .ts-brand .ts-logo { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+  .ts-brand b { font-size: 9.5px; letter-spacing: 0.04em; color: #404041; }
+  .ts-brand small { font-size: 8.5px; color: #9b9b9b; display: block; }
+  .ts-replay {
+    background: none; border: none;
+    font-size: 11.5px; color: #7a922e; font-weight: 600;
+    cursor: pointer; padding: 6px 0 0; font-family: var(--font);
+  }
+
+  /* reCAPTCHA v2 lookalike */
+  .rc-box {
+    width: 302px; max-width: 100%;
+    height: 76px;
+    border: 1px solid #d3d3d3;
+    border-radius: 3px;
+    background: #f9f9f9;
+    box-shadow: 0 0 4px 1px rgba(0, 0, 0, 0.05);
+    display: flex; align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+    font-family: Roboto, var(--font);
+  }
+  .rc-check {
+    width: 28px; height: 28px;
+    border: 2px solid #c1c1c1;
+    border-radius: 2px;
+    background: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto;
+    transition: border-color 0.15s;
+  }
+  .rc-check:hover { border-color: #b2b2b2; }
+  .rc-check:focus-visible { outline: 2px solid #4285f4; outline-offset: 2px; }
+  .rc-label { font-size: 14px; color: #282727; flex: 1; }
+  .rc-brand { text-align: center; line-height: 1.2; }
+  .rc-brand small { font-size: 10px; color: #555; display: block; margin-top: 3px; }
+  .rc-brand .tiny { font-size: 8px; color: #9b9b9b; }
+
+  /* hCaptcha lookalike */
+  .hc-box {
+    width: 300px; max-width: 100%;
+    height: 74px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background: #fafafa;
+    display: flex; align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+    font-family: var(--font);
+  }
+  .hc-check {
+    width: 28px; height: 28px;
+    border: 2px solid #c8c8c8;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto;
+  }
+  .hc-check:focus-visible { outline: 2px solid #00838f; outline-offset: 2px; }
+  .hc-label { font-size: 14px; color: #282727; flex: 1; }
+  .hc-brand { text-align: center; line-height: 1.2; }
+  .hc-logo {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: #00838f;
+    color: #fff;
+    font-weight: 800;
+    font-size: 17px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto;
+    font-family: var(--font-heading);
+  }
+  .hc-brand small { font-size: 8.5px; color: #9b9b9b; display: block; margin-top: 3px; }
+
+  /* reCAPTCHA v3 — invisible: placeholder note in the slot + floating badge */
+  .v3-note {
+    border: 1.5px dashed #c9d3a8;
+    border-radius: 10px;
+    background: #f7f9ee;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: #5f6664;
+    line-height: 1.5;
+  }
+  .v3-note b { color: #5f7424; }
+  .v3-badge {
+    position: absolute;
+    right: 0; bottom: 26px;
+    width: 256px;
+    height: 60px;
+    background: linear-gradient(180deg, #4a8cf7 0%, #1b66c9 100%);
+    border-radius: 4px 0 0 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 14px;
+    color: #fff;
+    z-index: 5;
+    transition: transform 0.35s ease;
+  }
+  .v3-badge .b-txt { font-size: 11px; line-height: 1.45; }
+  .v3-badge .b-txt b { display: block; font-size: 12px; }
+  .v3-badge .b-txt small { opacity: 0.85; font-size: 9.5px; }
+  .v3-badge.hidden { transform: translateX(110%); }
+
+  /* toast after sign-in */
+  .toast {
+    position: absolute;
+    left: 50%; bottom: 20px;
+    transform: translate(-50%, 8px);
+    background: #2b2f1c;
+    color: #f0f3e2;
+    border-radius: 10px;
+    padding: 11px 18px;
+    font-size: 13px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 6;
+    max-width: 90%;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast code { font-family: var(--mono); font-size: 12px; color: #cfe08d; }
+
+  /* ============ annotation card ============ */
+  .annotation {
+    margin-top: 26px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+  .annotation .a-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .annotation h3 {
+    font-family: var(--font-heading);
+    font-size: 17px; font-weight: 700;
+    margin: 0;
+  }
+  .badge-rec {
+    background: var(--gold-bg);
+    color: var(--gold);
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+  .annotation .a-what { color: var(--ink-2); font-size: 14px; margin: 0 0 16px; max-width: 75ch; }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 10px 13px;
+  }
+  .stat .s-k {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    display: block;
+    margin-bottom: 3px;
+  }
+  .stat .s-v { font-size: 13px; font-weight: 600; }
+  .a-stack {
+    font-size: 13px;
+    color: var(--ink-2);
+    border-left: 3px solid var(--gold);
+    padding: 2px 0 2px 12px;
+    margin: 0;
+  }
+  .a-stack code { font-family: var(--mono); font-size: 12px; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+
+  /* ============ comparison table ============ */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-weight: 500;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.row-k { font-weight: 600; white-space: nowrap; }
+  col.hl-col {}
+  td.hl, th.hl { background: color-mix(in srgb, var(--gold-bg) 55%, transparent); }
+  th.hl { color: var(--gold); font-weight: 700; }
+
+  .verdict {
+    margin-top: 18px;
+    background: var(--gold-bg);
+    border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+    border-radius: 14px;
+    padding: 18px 22px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .verdict svg { flex: 0 0 auto; margin-top: 2px; }
+  .verdict p { margin: 0; font-size: 14px; max-width: 85ch; }
+  .verdict b { color: var(--gold-dark); }
+  :root[data-theme="dark"] .verdict b { color: var(--gold-light); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .verdict b { color: var(--gold-light); } }
+
+  /* ============ integration cards ============ */
+  .next-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .next-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .next-card .n-step {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 8px;
+  }
+  .next-card h3 { font-family: var(--font-heading); font-size: 15px; margin: 0 0 8px; font-weight: 700; }
+  .next-card p { font-size: 13px; color: var(--ink-2); margin: 0; }
+  .next-card code { font-family: var(--mono); font-size: 11.5px; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+
+  .demo-foot {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    max-width: 80ch;
+  }
+
+  @media (max-width: 900px) {
+    .brand-panel { display: none; }
+    .form-panel { flex: 1 1 100%; }
+    .auth-split { min-height: 560px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">ATS-Migration &middot; Login bot protection &middot; UI preview</p>
+    <h1>CAPTCHA Integration Preview</h1>
+    <p class="lede">
+      Your admin login, recreated pixel-for-pixel below, with four modern CAPTCHA options you can try
+      in place. Pick a tab, interact with the widget, then hit Sign In to see the full flow.
+      Every widget here is a hand-built simulation &mdash; no external scripts, no keys, and
+      <strong>none of your project code was changed</strong>.
+    </p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="CAPTCHA provider">
+    <button class="tab" role="tab" id="tab-turnstile" aria-selected="true" data-mode="turnstile">
+      <span class="t-name"><span class="t-star">&#9733;</span> Cloudflare Turnstile</span>
+      <span class="t-meta">Invisible &middot; Free unlimited &middot; Recommended</span>
+    </button>
+    <button class="tab" role="tab" id="tab-v2" aria-selected="false" data-mode="v2">
+      <span class="t-name">reCAPTCHA v2</span>
+      <span class="t-meta">&ldquo;I'm not a robot&rdquo; checkbox</span>
+    </button>
+    <button class="tab" role="tab" id="tab-v3" aria-selected="false" data-mode="v3">
+      <span class="t-name">reCAPTCHA v3</span>
+      <span class="t-meta">Fully invisible &middot; risk score</span>
+    </button>
+    <button class="tab" role="tab" id="tab-hcaptcha" aria-selected="false" data-mode="hcaptcha">
+      <span class="t-name">hCaptcha</span>
+      <span class="t-meta">Privacy-first checkbox</span>
+    </button>
+  </nav>
+
+  <!-- ================= browser-framed login mockup ================= -->
+  <div class="browser">
+    <div class="browser-bar">
+      <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+      <div class="url">
+        <svg width="11" height="13" viewBox="0 0 11 13" fill="none" aria-hidden="true"><rect x="0.75" y="5" width="9.5" height="7.25" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2.75 5V3.75a2.75 2.75 0 1 1 5.5 0V5" stroke="currentColor" stroke-width="1.2"/></svg>
+        <span>ats-staging.aapnainfotech.com/admin/login</span>
+      </div>
+    </div>
+
+    <div class="auth-split" id="frame">
+      <!-- left brand panel -->
+      <div class="brand-panel">
+        <div class="logo-chip">aapna<small>GREAT<br>PLACE<br>TO WORK</small></div>
+        <div class="brand-mid">
+          <h1>Recruitment, reimagined for speed and precision.</h1>
+          <p>AAPNA's intelligent ATS streamlines every step &mdash; from sourcing and AI screening to requisitions, approvals, and analytics.</p>
+          <div class="brand-checks">
+            <div class="brand-check">
+              <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.22)"/><path d="M6 10.2l2.6 2.6L14 7.4" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              AI-powered candidate screening &amp; profiling
+            </div>
+            <div class="brand-check">
+              <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.22)"/><path d="M6 10.2l2.6 2.6L14 7.4" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Automated requisition &amp; approval workflows
+            </div>
+            <div class="brand-check">
+              <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.22)"/><path d="M6 10.2l2.6 2.6L14 7.4" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Real-time pipeline metrics &amp; analytics
+            </div>
+          </div>
+        </div>
+        <div class="brand-foot">&copy; 2026 AAPNA Infotech &middot; All rights reserved</div>
+      </div>
+
+      <!-- right form panel -->
+      <div class="form-panel">
+        <div class="form-inner">
+          <span class="portal-pill">HR Admin Portal</span>
+          <h2>Welcome back</h2>
+          <p class="form-sub">Sign in to manage users and system access</p>
+
+          <div class="field">
+            <label for="u">Username or Email</label>
+            <div class="input-wrap">
+              <svg class="lead" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="5" r="3.1" stroke="rgba(122,146,46,0.55)" stroke-width="1.4"/><path d="M2.5 14c.7-2.6 2.9-4 5.5-4s4.8 1.4 5.5 4" stroke="rgba(122,146,46,0.55)" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <input id="u" type="text" placeholder="Enter your username or email" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="p">Password</label>
+            <div class="input-wrap">
+              <svg class="lead" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.6" y="6.8" width="10.8" height="7" rx="1.6" stroke="rgba(122,146,46,0.55)" stroke-width="1.4"/><path d="M5 6.8V5a3 3 0 1 1 6 0v1.8" stroke="rgba(122,146,46,0.55)" stroke-width="1.4"/></svg>
+              <input id="p" type="password" placeholder="Enter your password">
+              <button class="eye-btn" id="eye" type="button" aria-label="Show password">
+                <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true"><path d="M1.5 8.5S4 3.9 8.5 3.9 15.5 8.5 15.5 8.5 13 13.1 8.5 13.1 1.5 8.5 1.5 8.5Z" stroke="currentColor" stroke-width="1.3"/><circle cx="8.5" cy="8.5" r="2.1" stroke="currentColor" stroke-width="1.3"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- >>> the CAPTCHA lands here, between Password and Sign In <<< -->
+          <div class="captcha-slot">
+            <div class="slot-outline marked" id="slotOutline">
+              <span class="slot-flag">New &middot; CAPTCHA</span>
+              <div id="captchaSlot"></div>
+            </div>
+          </div>
+
+          <button class="signin-btn" id="signin" type="button" disabled>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 3.5H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 12.5h2.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M9 5l3 3-3 3M12 8H6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Sign In
+          </button>
+          <p class="gate-note" id="gateNote"></p>
+
+          <div class="forgot"><a href="#" onclick="return false">Forgot password?</a></div>
+        </div>
+      </div>
+
+      <!-- reCAPTCHA v3 floating badge (only in v3 mode) -->
+      <div class="v3-badge hidden" id="v3badge" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <circle cx="20" cy="20" r="15" stroke="#fff" stroke-width="4.5" stroke-dasharray="24 71" stroke-linecap="round" transform="rotate(-45 20 20)"/>
+          <circle cx="20" cy="20" r="15" stroke="rgba(255,255,255,0.65)" stroke-width="4.5" stroke-dasharray="24 71" stroke-linecap="round" transform="rotate(75 20 20)"/>
+          <circle cx="20" cy="20" r="15" stroke="rgba(255,255,255,0.35)" stroke-width="4.5" stroke-dasharray="24 71" stroke-linecap="round" transform="rotate(195 20 20)"/>
+        </svg>
+        <div class="b-txt"><b>protected by reCAPTCHA</b>Runs silently on every page<br><small>Privacy &ndash; Terms</small></div>
+      </div>
+
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </div>
+  <p class="hint">Interactive &mdash; complete the widget, then <b>Sign In</b>. The dashed outline marks the only visual change to your existing page.</p>
+
+  <!-- ================= per-provider annotation ================= -->
+  <section class="annotation" id="annotation" aria-live="polite"></section>
+
+  <!-- ================= comparison ================= -->
+  <h2>Side by side</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th class="hl">Cloudflare Turnstile &#9733;</th>
+          <th>reCAPTCHA v2</th>
+          <th>reCAPTCHA v3</th>
+          <th>hCaptcha</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="row-k">Cost</td>
+          <td class="hl">Free, unlimited</td>
+          <td>Free to 10,000/mo</td>
+          <td>Free to 10,000/mo</td>
+          <td>Free tier</td>
+        </tr>
+        <tr>
+          <td class="row-k">User friction</td>
+          <td class="hl">Near zero &mdash; auto-verifies, no puzzles</td>
+          <td>One click; sometimes image puzzles</td>
+          <td>Zero UI (badge only)</td>
+          <td>One click; puzzles more often</td>
+        </tr>
+        <tr>
+          <td class="row-k">Privacy / GDPR</td>
+          <td class="hl">No cookies, GDPR-friendly</td>
+          <td>Google cookies &amp; tracking</td>
+          <td>Google cookies &amp; tracking</td>
+          <td>Privacy-focused</td>
+        </tr>
+        <tr>
+          <td class="row-k">Backend work</td>
+          <td class="hl">One <span style="font-family:var(--mono);font-size:12px">siteverify</span> call</td>
+          <td>One siteverify call</td>
+          <td>siteverify + score-threshold logic</td>
+          <td>One siteverify call</td>
+        </tr>
+        <tr>
+          <td class="row-k">Best for</td>
+          <td class="hl">Login forms where UX matters most</td>
+          <td>Maximum familiarity</td>
+          <td>Zero-friction, score-based control</td>
+          <td>EU data residency needs</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="verdict">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l2.7 5.9 6.3.7-4.7 4.3 1.3 6.2L12 16l-5.6 3.1 1.3-6.2L3 8.6l6.3-.7L12 2z" fill="#7a922e"/></svg>
+    <p><b>Recommendation: Cloudflare Turnstile.</b> It's free with unlimited requests, invisible for nearly all real users (no puzzles to annoy your HR team), GDPR-friendly, and it layers cleanly on top of the rate limiting you already have &mdash; the captcha stops bots before they burn login attempts, and <b>express-rate-limit</b> stays as the safety net behind it.</p>
+  </div>
+
+  <!-- ================= what real integration touches ================= -->
+  <h2>What the real integration will touch (later, once you pick)</h2>
+  <div class="next-grid">
+    <div class="next-card">
+      <span class="n-step">Step 1 &middot; Frontend</span>
+      <h3>Render the widget</h3>
+      <p>Add the provider's script and widget to <code>AdminLogin.jsx</code> and <code>Login.jsx</code>, exactly where the dashed outline sits above. The widget hands back a one-time token; the Sign In button stays disabled until it arrives.</p>
+    </div>
+    <div class="next-card">
+      <span class="n-step">Step 2 &middot; Backend</span>
+      <h3>Verify the token</h3>
+      <p>In <code>auth.controller.js</code>, before checking the password, POST the token to the provider's <code>siteverify</code> endpoint. Invalid or missing token &rarr; reject the login as a bot attempt.</p>
+    </div>
+    <div class="next-card">
+      <span class="n-step">Step 3 &middot; Config</span>
+      <h3>Keys &amp; rollout</h3>
+      <p>Two keys from the provider dashboard: a public <code>site key</code> (frontend) and a <code>secret key</code> (backend <code>.env</code>). Free to create; staging and production get separate key pairs.</p>
+    </div>
+  </div>
+
+  <p class="demo-foot">
+    Demo note: the widgets on this page are visual simulations built to match each provider's real
+    appearance, so you can judge the UI without creating accounts or keys. Colors, fonts, spacing, and the
+    split-screen layout are taken directly from your live theme (<span style="font-family:var(--mono)">frontend/src/theme/index.css</span>).
+    Nothing in the project source was modified.
+  </p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var slot = document.getElementById('captchaSlot');
+  var signin = document.getElementById('signin');
+  var gateNote = document.getElementById('gateNote');
+  var annotation = document.getElementById('annotation');
+  var v3badge = document.getElementById('v3badge');
+  var toast = document.getElementById('toast');
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+
+  var timers = [];
+  var verified = false;
+  var mode = 'turnstile';
+
+  var INFO = {
+    turnstile: {
+      name: 'Cloudflare Turnstile',
+      rec: true,
+      what: 'Cloudflare’s modern, invisible challenge. It runs browser signals in the background — real users just see a brief “Verifying…” that resolves itself. No image puzzles, no clicking fire hydrants.',
+      stats: [
+        ['Cost', 'Free · unlimited'],
+        ['User friction', 'Near zero'],
+        ['Privacy', 'No cookies · GDPR-friendly'],
+        ['Effort', '~half a day'],
+        ['Puzzle risk', 'Almost never']
+      ],
+      stack: 'In your stack: widget in <code>AdminLogin.jsx</code> / <code>Login.jsx</code>, one token-verify call in <code>auth.controller.js</code>. Pairs with your existing express-rate-limit throttle.'
+    },
+    v2: {
+      name: 'Google reCAPTCHA v2 — “I’m not a robot”',
+      rec: false,
+      what: 'The classic checkbox everyone recognizes. Most users pass with one click; suspicious traffic gets an image-grid puzzle (“select all traffic lights”).',
+      stats: [
+        ['Cost', 'Free to 10,000/mo'],
+        ['User friction', 'Low–medium'],
+        ['Privacy', 'Google cookies'],
+        ['Effort', '~half a day'],
+        ['Puzzle risk', 'Sometimes']
+      ],
+      stack: 'Same integration shape: checkbox widget in the login pages, token verified against Google’s <code>siteverify</code> in <code>auth.controller.js</code>.'
+    },
+    v3: {
+      name: 'Google reCAPTCHA v3 — invisible scoring',
+      rec: false,
+      what: 'Completely invisible — no widget at all. Every login attempt gets a bot-likelihood score from 0.0 to 1.0, and your backend decides the cutoff (e.g. block below 0.5). The only visible change is the small floating badge in the corner.',
+      stats: [
+        ['Cost', 'Free to 10,000/mo'],
+        ['User friction', 'Zero UI'],
+        ['Privacy', 'Google cookies'],
+        ['Effort', '~1 day (score logic)'],
+        ['Puzzle risk', 'Never']
+      ],
+      stack: 'Extra backend decision: <code>auth.controller.js</code> must map low scores to an action — block, or fall back to a visible challenge.'
+    },
+    hcaptcha: {
+      name: 'hCaptcha',
+      rec: false,
+      what: 'A privacy-first, drop-in alternative to Google. Checkbox flow like reCAPTCHA v2, but with stronger data-protection posture and EU residency options — challenges do appear more often than Turnstile.',
+      stats: [
+        ['Cost', 'Free tier'],
+        ['User friction', 'Medium'],
+        ['Privacy', 'Privacy-focused'],
+        ['Effort', '~half a day'],
+        ['Puzzle risk', 'More often']
+      ],
+      stack: 'Identical shape: widget in the login pages, token verified against hCaptcha’s <code>siteverify</code> in <code>auth.controller.js</code>.'
+    }
+  };
+
+  function clearTimers() {
+    timers.forEach(function (t) { clearTimeout(t); });
+    timers = [];
+  }
+  function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+
+  function setVerified(ok, note) {
+    verified = ok;
+    signin.disabled = !ok;
+    gateNote.textContent = note || '';
+    gateNote.className = 'gate-note' + (ok ? ' ok' : '');
+  }
+
+  var CHECK_GREEN = '<svg class="pop" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#28a745"/><path d="M7 12.4l3.2 3.2L17 9" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var RC_LOGO = '<svg width="30" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true">' +
+    '<circle cx="20" cy="20" r="14" stroke="#1c3aa9" stroke-width="5" stroke-dasharray="29 59" stroke-linecap="butt" transform="rotate(-90 20 20)"/>' +
+    '<circle cx="20" cy="20" r="14" stroke="#4285f4" stroke-width="5" stroke-dasharray="29 59" stroke-linecap="butt" transform="rotate(30 20 20)"/>' +
+    '<circle cx="20" cy="20" r="14" stroke="#ababab" stroke-width="5" stroke-dasharray="29 59" stroke-linecap="butt" transform="rotate(150 20 20)"/></svg>';
+  var CF_LOGO = '<svg width="26" height="14" viewBox="0 0 26 14" fill="none" aria-hidden="true"><path d="M18.2 12.5H4.6a3.6 3.6 0 0 1-.3-7.2A6.2 6.2 0 0 1 16.3 3l.3.9a4.4 4.4 0 0 1 5.6 4.2c0 .3 0 .6-.1.9" fill="#f6821f"/><path d="M20 12.5h-3l1.6-5.4a3.3 3.3 0 0 1 3.2-2.3c1.5 0 2.7 1 3.1 2.3.1.5.1 1 0 1.5a4.1 4.1 0 0 1-4 3.9h-.9z" fill="#fbad41"/></svg>';
+
+  /* ---------- widget renderers ---------- */
+
+  function renderTurnstile(replay) {
+    slot.innerHTML =
+      '<div class="ts-box">' +
+      '  <div class="ts-left" id="tsLeft"><div class="spinner" role="img" aria-label="Verifying"></div><span class="ts-status">Verifying&hellip;</span></div>' +
+      '  <div class="ts-brand"><span class="ts-logo">' + CF_LOGO + '<b>CLOUDFLARE</b></span><small>Privacy &bull; Terms</small></div>' +
+      '</div>' +
+      '<button class="ts-replay" id="tsReplay" type="button" style="visibility:hidden">&#8635; Replay verification</button>';
+    setVerified(false, 'Turnstile is verifying you automatically — no clicks needed…');
+    later(function () {
+      var left = document.getElementById('tsLeft');
+      if (!left) return;
+      left.innerHTML = CHECK_GREEN + '<span class="ts-status" style="font-weight:600">Success!</span>';
+      setVerified(true, '✓ Verified invisibly — Sign In is unlocked. Most users never notice this step.');
+      var rp = document.getElementById('tsReplay');
+      if (rp) {
+        rp.style.visibility = 'visible';
+        rp.addEventListener('click', function () { clearTimers(); renderTurnstile(true); });
+      }
+    }, replay ? 1400 : 1800);
+  }
+
+  function renderCheckboxWidget(kind) {
+    var isRC = kind === 'v2';
+    var boxCls = isRC ? 'rc-box' : 'hc-box';
+    var chkCls = isRC ? 'rc-check' : 'hc-check';
+    var label = isRC ? 'I’m not a robot' : 'I am human';
+    var brand = isRC
+      ? '<div class="rc-brand">' + RC_LOGO + '<small>reCAPTCHA</small><span class="tiny">Privacy - Terms</span></div>'
+      : '<div class="hc-brand"><div class="hc-logo">h</div><small>hCaptcha<br>Privacy &bull; Terms</small></div>';
+
+    slot.innerHTML =
+      '<div class="' + boxCls + '">' +
+      '  <div class="' + chkCls + '" id="chk" role="checkbox" aria-checked="false" tabindex="0" aria-label="' + label + '"></div>' +
+      '  <span class="' + (isRC ? 'rc-label' : 'hc-label') + '">' + label + '</span>' + brand +
+      '</div>';
+    setVerified(false, 'Click the checkbox to verify — then Sign In unlocks.');
+
+    var chk = document.getElementById('chk');
+    function run() {
+      if (chk.getAttribute('data-busy')) return;
+      chk.setAttribute('data-busy', '1');
+      chk.style.border = 'none';
+      chk.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:2.5px;' + (isRC ? 'border-top-color:#4285f4;border-color:rgba(66,133,244,0.25);border-top-color:#4285f4' : 'border-top-color:#00838f;border-color:rgba(0,131,143,0.25);border-top-color:#00838f') + '"></div>';
+      later(function () {
+        chk.innerHTML = CHECK_GREEN;
+        chk.setAttribute('aria-checked', 'true');
+        setVerified(true, '✓ Human verified — Sign In is unlocked.');
+      }, 1100);
+    }
+    chk.addEventListener('click', run);
+    chk.addEventListener('keydown', function (e) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); run(); }
+    });
+  }
+
+  function renderV3() {
+    slot.innerHTML =
+      '<div class="v3-note"><b>No widget here at all.</b> reCAPTCHA v3 scores every visitor silently in the ' +
+      'background — the only visible change is the floating badge in the corner &rarr;. ' +
+      'Your backend receives a score (0.0–1.0) with each login and decides whether to allow it.</div>';
+    setVerified(true, 'Nothing to click — a token is generated silently when you press Sign In.');
+  }
+
+  /* ---------- annotation card ---------- */
+
+  function renderAnnotation(m) {
+    var d = INFO[m];
+    var stats = d.stats.map(function (s) {
+      return '<div class="stat"><span class="s-k">' + s[0] + '</span><span class="s-v">' + s[1] + '</span></div>';
+    }).join('');
+    annotation.innerHTML =
+      '<div class="a-head"><h3>' + d.name + '</h3>' + (d.rec ? '<span class="badge-rec">&#9733; Recommended</span>' : '') + '</div>' +
+      '<p class="a-what">' + d.what + '</p>' +
+      '<div class="stat-grid">' + stats + '</div>' +
+      '<p class="a-stack">' + d.stack + '</p>';
+  }
+
+  /* ---------- mode switching ---------- */
+
+  function select(m) {
+    mode = m;
+    clearTimers();
+    toast.classList.remove('show');
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.mode === m)); });
+    v3badge.classList.toggle('hidden', m !== 'v3');
+    document.getElementById('slotOutline').classList.toggle('marked', true);
+
+    if (m === 'turnstile') renderTurnstile(false);
+    else if (m === 'v2') renderCheckboxWidget('v2');
+    else if (m === 'hcaptcha') renderCheckboxWidget('hc');
+    else renderV3();
+
+    renderAnnotation(m);
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { select(t.dataset.mode); });
+  });
+
+  /* ---------- sign-in + toast ---------- */
+
+  signin.addEventListener('click', function () {
+    if (!verified) return;
+    var msg = mode === 'v3'
+      ? 'Token generated silently &rarr; sent with <code>POST /api/auth/login</code> &rarr; backend checks the risk score before the password.'
+      : 'Captcha token attached &rarr; <code>POST /api/auth/login</code> &rarr; backend verifies it with the provider before checking the password.';
+    toast.innerHTML = '&#10003; ' + msg;
+    toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { toast.classList.remove('show'); }, 4200);
+  });
+
+  /* ---------- password eye toggle ---------- */
+
+  var eye = document.getElementById('eye');
+  var pwd = document.getElementById('p');
+  eye.addEventListener('click', function () {
+    var showing = pwd.type === 'text';
+    pwd.type = showing ? 'password' : 'text';
+    eye.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
+  /* ---------- init ---------- */
+  select('turnstile');
+})();
+</script>
