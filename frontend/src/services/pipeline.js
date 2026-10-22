@@ -26,9 +26,28 @@ const pipelineService = {
     return api.get('/pipeline/analytics', { params });
   },
 
-  /** Analytics "Positions" tab: one row per requisition (N39). */
-  getPositionsAnalytics() {
-    return api.get('/pipeline/analytics/positions');
+  /**
+   * Analytics "Open Positions" board (N39, L06): one row per requisition with
+   * the range's numbers, since-opened totals and health.
+   * @param {{ from?: string, to?: string }} [range] YYYY-MM-DD; none = All time
+   */
+  getPositionsAnalytics(range = {}) {
+    return api.get('/pipeline/analytics/positions', { params: range });
+  },
+
+  /** L06 role view for one requisition. */
+  getPositionDetail(mrfId, range = {}) {
+    return api.get(`/pipeline/analytics/positions/${mrfId}`, { params: range });
+  },
+
+  /** L06 (W1): the candidates behind one number. */
+  getPositionCandidates(mrfId, metric, range = {}) {
+    return api.get(`/pipeline/analytics/positions/${mrfId}/candidates`, { params: { metric, ...range } });
+  },
+
+  /** L06: the role report CSV (the daily hiring-manager update). */
+  exportPositionReport(mrfId, range = {}, config = {}) {
+    return api.get(`/pipeline/analytics/positions/${mrfId}/export`, { params: range, ...config });
   },
 
   /**
@@ -36,8 +55,8 @@ const pipelineService = {
    * @param {'open'|'closed'|'all'} status - the tab's status filter, so the file matches the screen
    * @param {Object} [config] - blob/timeout config from downloadFile
    */
-  exportPositionsAnalytics(status = 'all', config = {}) {
-    return api.get('/pipeline/analytics/positions/export', { params: { status }, ...config });
+  exportPositionsAnalytics(status = 'all', config = {}, range = {}) {
+    return api.get('/pipeline/analytics/positions/export', { params: { status, ...range }, ...config });
   },
 
   /**

@@ -56,6 +56,10 @@ import pipelineExport from '../exports/pipeline.export.js';
 import moveHistoryExport from '../exports/moveHistory.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 import positionsExport from '../exports/positions.export.js';
+import roleReportExport from '../exports/roleReport.export.js';
+import * as openPositionsService from '../services/openPositions.service.js';
+import { parseAnalyticsRange, rangeFileTag } from '../utils/analyticsRange.js';
+import { DEFAULT_STUCK_DAYS } from '../services/openPositions.helpers.js';
 import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
 import * as journeyMoveService from '../services/journeyMove.service.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
@@ -107,29 +111,87 @@ export const getPipelineAnalytics = catchAsync(async (req, res) => {
   return success(res, result, 'Pipeline analytics retrieved successfully');
 });
 
+/** Range + stuck threshold for the Open Positions endpoints (L06). */
+function openPositionsParams(query = {}) {
+  const stuck = Number.parseInt(query.stuck_threshold_days, 10);
+  return {
+    range: parseAnalyticsRange(query),
+    stuckDays: Number.isFinite(stuck) && stuck > 0 && stuck <= 365 ? stuck : DEFAULT_STUCK_DAYS,
+  };
+}
+
+const mrfIdParam = (raw) => {
+  if (!/^\d{1,18}$/.test(String(raw || '')) || String(raw) === '0') throw new AppError('Invalid MRF id.', 400);
+  return String(raw);
+};
+
 /**
- * GET /api/pipeline/analytics/positions
- * Analytics "Positions" tab (N39): one row per requisition.
+ * GET /api/pipeline/analytics/positions?from&to&stuck_threshold_days
+ * Analytics "Open Positions" board (N39, reworked for L06): one row per
+ * requisition with the range's numbers, since-opened totals and health.
  */
-export const getPositionsOverview = catchAsync(async (_req, res) => {
-  const result = await pipelineService.getPositionsOverview();
-  return success(res, result, 'Positions overview retrieved successfully');
+export const getPositionsOverview = catchAsync(async (req, res) => {
+  const result = await openPositionsService.getOpenPositions(openPositionsParams(req.query));
+  return success(res, result, 'Open positions retrieved successfully');
 });
 
 /**
- * GET /api/pipeline/analytics/positions/export?status=open|closed|all
- * The Positions tab as CSV, one column per stage (N39). The stage list decides
- * the columns, so the overview is loaded before runExport is handed them.
+ * GET /api/pipeline/analytics/positions/export?status=open|closed|all&from&to
+ * The board as CSV, one column per stage. The stage list decides the
+ * columns, so the board is loaded before runExport is handed them.
  */
 export const exportPositionsOverview = catchAsync(async (req, res) => {
-  const { stages, rows } = await pipelineService.getPositionsOverview();
+  const params = openPositionsParams(req.query);
+  const { stages, rows } = await openPositionsService.getOpenPositions(params);
   const status = ['open', 'closed'].includes(req.query.status) ? req.query.status : 'all';
   return runExport(req, res, {
     key: 'pipeline_analytics_positions',
-    label: 'Pipeline-Positions',
+    label: `Open-Positions${rangeFileTag(params.range)}`,
     columns: positionsExport.positionsColumns(stages),
-    filters: { status },
+    filters: { status, from: params.range?.fromDay, to: params.range?.toDay },
     fetch: async () => positionsExport.positionsCsvRows(positionsExport.filterPositions(rows, status)),
+  });
+});
+
+/**
+ * GET /api/pipeline/analytics/positions/:mrfId?from&to
+ * The role view (L06): KPIs against the previous period, "This week",
+ * needs attention, daily series, funnel, activity, upcoming, journey.
+ */
+export const getPositionDetail = catchAsync(async (req, res) => {
+  const result = await openPositionsService.getRoleDetail(mrfIdParam(req.params.mrfId), openPositionsParams(req.query));
+  return success(res, result, 'Position retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/analytics/positions/:mrfId/candidates?metric=&from&to
+ * The candidates behind one number (W1).
+ */
+export const getPositionMetricCandidates = catchAsync(async (req, res) => {
+  const result = await openPositionsService.getMetricCandidates(
+    mrfIdParam(req.params.mrfId),
+    String(req.query.metric || ''),
+    openPositionsParams(req.query),
+  );
+  return success(res, result, 'Candidates retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/analytics/positions/:mrfId/export?from&to
+ * The role report (L06) as CSV: the daily hiring-manager update in one file.
+ */
+export const exportPositionReport = catchAsync(async (req, res) => {
+  const mrfId = mrfIdParam(req.params.mrfId);
+  const params = openPositionsParams(req.query);
+  const detail = await openPositionsService.getRoleDetail(mrfId, params);
+  return runExport(req, res, {
+    key: 'pipeline_analytics_role_report',
+    label: `Role-Report_MRF-${mrfId}${rangeFileTag(params.range)}`,
+    columns: roleReportExport.columns,
+    filters: { mrf_id: mrfId, from: params.range?.fromDay, to: params.range?.toDay },
+    fetch: async () => roleReportExport.roleReportRows(detail),
+    // A row is a line of the report, not a record.
+    headers: { 'X-Export-Row-Count': null },
   });
 });
 
@@ -178,11 +240,13 @@ export const exportPipelineAnalytics = catchAsync(async (req, res) => {
   }
   // Only the recognised params are echoed into the audit line — spreading raw
   // req.query would log arbitrary caller-supplied keys.
-  const { mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days } = req.query;
+  const {
+    mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days, from, to, preset,
+  } = req.query;
   return runExport(req, res, {
     ...spec,
     filters: {
-      table: req.query.table, mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days,
+      table: req.query.table, mrf_id, rejection_window_days, stuck_threshold_days, hold_threshold_days, from, to, preset,
     },
   });
 });

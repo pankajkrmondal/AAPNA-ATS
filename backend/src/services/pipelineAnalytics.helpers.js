@@ -29,6 +29,7 @@ import {
   isMrfFilled,
   MRF_CLOSURE_REASONS,
 } from '../config/pipelineStages.js';
+import { parseAnalyticsRange } from '../utils/analyticsRange.js';
 
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -52,8 +53,11 @@ function intParam(raw) {
  * yield `undefined` rather than NaN — a NaN threshold would make every
  * comparison false and silently empty the list.
  *
+ * `range` (L06) is the page's date range: `from` / `to` (YYYY-MM-DD) or
+ * `preset`. Null means "All time" — the behaviour of every call before L06.
+ *
  * @param {object} [query] - req.query
- * @returns {{mrfId: number|null, rejectionWindowDays?: number, stuckThresholdDays?: number, holdThresholdDays?: number}}
+ * @returns {{mrfId: number|null, rejectionWindowDays?: number, stuckThresholdDays?: number, holdThresholdDays?: number, range: object|null}}
  */
 export function parseAnalyticsParams(query = {}) {
   return {
@@ -61,6 +65,7 @@ export function parseAnalyticsParams(query = {}) {
     rejectionWindowDays: intParam(query.rejection_window_days),
     stuckThresholdDays: intParam(query.stuck_threshold_days),
     holdThresholdDays: intParam(query.hold_threshold_days),
+    range: parseAnalyticsRange(query),
   };
 }
 

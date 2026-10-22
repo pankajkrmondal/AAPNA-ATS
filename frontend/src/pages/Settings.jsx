@@ -12,6 +12,7 @@ import useAuth from '../hooks/useAuth';
 import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
 import CompanyProfileCard from '../components/settings/CompanyProfileCard';
 import CandidateActivityCard from '../components/settings/CandidateActivityCard';
+import PositionTargetCard from '../components/settings/PositionTargetCard';
 
 const { Title, Text } = Typography;
 
@@ -459,6 +460,7 @@ export default function Settings() {
 
       {/* How recent a response must be to count as Active in screening (L01). Admin only. */}
       {isAdmin && <CandidateActivityCard />}
+      {isAdmin && <PositionTargetCard />}
 
       {/* Recruiters added to every booked round's Teams meeting. First in the
           interview chain (book → remind → confirm held → capture recording),

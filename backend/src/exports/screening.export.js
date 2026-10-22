@@ -18,6 +18,9 @@
  * slightly — unavoidable without accepting client state, and preferable to the
  * alternative.
  */
+import { groupByMrf } from '../utils/roleSummary.js';
+import { parseAnalyticsRange, rangeFileTag } from '../utils/analyticsRange.js';
+import { getRoleSummary } from '../services/openPositions.service.js';
 import * as screeningService from '../services/screening.service.js';
 import * as screeningV2 from '../services/screeningV2.service.js';
 import config from '../config/index.js';
@@ -186,64 +189,35 @@ export function keywordSpec(filters) {
 export const roleSummaryColumns = [
   { header: 'Role', key: 'role' },
   { header: 'MRF ID', key: 'mrf_id' },
+  { header: 'Status', key: 'status' },
+  { header: 'Total Applied', key: 'total_applied', numeric: true },
   { header: 'Shortlisted', key: 'shortlisted', numeric: true },
   { header: 'Rejected', key: 'rejected', numeric: true },
   { header: 'On Hold', key: 'on_hold', numeric: true },
   { header: 'Future Prospect', key: 'future_prospect', numeric: true },
   { header: 'Closed', key: 'closed', numeric: true },
-  { header: 'Total', key: 'total', numeric: true },
+  { header: 'Total Screened', key: 'total', numeric: true },
+  { header: 'Moved Forward', key: 'moved_forward', numeric: true },
+  { header: 'Shortlist Rate (%)', key: 'shortlist_pct', numeric: true },
 ];
 
 /**
- * Group shortlisted candidates by role.
- * Mirrors the `roleStats` memo in frontend/src/pages/Analytics.jsx — same
- * source data (getZekoPipeline), same buckets, so the CSV matches the table.
+ * Group shortlisted candidates per requisition — the shared classifier in
+ * utils/roleSummary.js (L06: one row per MRF, no longer per role name, and no
+ * longer repeated here and in the browser).
  */
-export function groupByRole(candidates = []) {
-  const groups = new Map();
+export const groupByRole = (candidates = []) => groupByMrf(candidates);
 
-  for (const c of candidates) {
-    const role = c.mrf?.position_hiring_for || c.position_applied || 'Unknown Role';
-    const status = String(c.pipeline_status || 'shortlisted').toLowerCase();
-
-    if (!groups.has(role)) {
-      groups.set(role, {
-        role,
-        mrf_id: c.mrf_id || (c.mrf ? Number(c.mrf.id) : null),
-        shortlisted: 0,
-        rejected: 0,
-        on_hold: 0,
-        future_prospect: 0,
-        closed: 0,
-        total: 0,
-      });
-    }
-
-    const entry = groups.get(role);
-    entry.total += 1;
-    if (status === 'shortlisted') entry.shortlisted += 1;
-    else if (status === 'rejected') entry.rejected += 1;
-    else if (status === 'on_hold' || status === 'on hold') entry.on_hold += 1;
-    else if (status === 'future_prospect') entry.future_prospect += 1;
-    // Final else, not another named branch: the seven closure statuses
-    // setFinalOutcome writes from 2026-08-26 (audit §2.4) all roll up here, and
-    // so does anything added later. A bucketless value used to sum into `total`
-    // alone and the columns quietly stopped adding up — see the note in
-    // screening.service.js's candidateCounts.
-    else entry.closed += 1;
-  }
-
-  return [...groups.values()];
+/** The Role Summary CSV for the page's date range (L06). */
+export function roleSummarySpec(query = {}) {
+  const range = parseAnalyticsRange(query);
+  return {
+    key: 'screening_role_summary',
+    label: `Screening-Role-Summary${rangeFileTag(range)}`,
+    columns: roleSummaryColumns,
+    filters: { from: range?.fromDay, to: range?.toDay },
+    fetch: async () => (await getRoleSummary({ range })).rows,
+  };
 }
-
-export const roleSummarySpec = {
-  key: 'screening_role_summary',
-  label: 'Screening-Role-Summary',
-  columns: roleSummaryColumns,
-  fetch: async () => {
-    const data = await screeningService.getZekoPipeline();
-    return groupByRole(data.candidates || []);
-  },
-};
 
 export default { columns, roleSpec, keywordSpec, roleSummarySpec, groupByRole };

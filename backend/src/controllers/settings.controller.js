@@ -38,6 +38,13 @@ import {
   saveAssessmentAutomationSettings,
 } from '../services/assessmentSettings.service.js';
 import { getActiveWindowDays, saveActiveWindowDays } from '../services/candidateActivitySettings.service.js';
+import { getPositionTargetDays, savePositionTargetDays } from '../services/openPositions.service.js';
+import {
+  DEFAULT_POSITION_TARGET_DAYS,
+  MIN_POSITION_TARGET_DAYS,
+  MAX_POSITION_TARGET_DAYS,
+  parsePositionTargetDays,
+} from '../services/openPositions.helpers.js';
 import {
   DEFAULT_ACTIVE_WINDOW_DAYS,
   MIN_ACTIVE_WINDOW_DAYS,
@@ -595,4 +602,32 @@ export const saveCandidateActivitySetting = catchAsync(async (req, res) => {
   }
   const saved = await saveActiveWindowDays(days, req.user?.email || req.user?.name || String(req.user?.id ?? 'unknown'));
   return success(res, saved, `Active window set to ${days} day${days === 1 ? '' : 's'}`);
+});
+
+/**
+ * @desc    Target days for an open position's health dot (L06, D9)
+ * @route   GET /api/settings/position-target
+ * @access  Private
+ */
+export const getPositionTargetSetting = catchAsync(async (req, res) => {
+  return success(res, {
+    targetDays: await getPositionTargetDays(),
+    defaultTargetDays: DEFAULT_POSITION_TARGET_DAYS,
+    min: MIN_POSITION_TARGET_DAYS,
+    max: MAX_POSITION_TARGET_DAYS,
+  }, 'Position target setting retrieved');
+});
+
+/**
+ * @desc    Change the target days
+ * @route   POST /api/settings/position-target
+ * @access  Admin (requireAdmin on the route)
+ */
+export const savePositionTargetSetting = catchAsync(async (req, res) => {
+  const days = parsePositionTargetDays(req.body?.targetDays);
+  if (days == null) {
+    throw new AppError(`The target must be a whole number of days from ${MIN_POSITION_TARGET_DAYS} to ${MAX_POSITION_TARGET_DAYS}.`, 400);
+  }
+  const saved = await savePositionTargetDays(days, req.user?.email || req.user?.name || String(req.user?.id ?? 'unknown'));
+  return success(res, saved, `Position target set to ${days} day${days === 1 ? '' : 's'}`);
 });

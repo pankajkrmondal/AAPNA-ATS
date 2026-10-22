@@ -31,6 +31,11 @@ const dashboardService = {
     return api.get('/dashboard/mrf-options');
   },
 
+  /** L06: the open-positions strip (health, last 7 days, attention per open MRF). */
+  getOpenPositionsPulse() {
+    return api.get('/dashboard/open-positions');
+  },
+
   /**
    * Get recent resume uploads / candidate activity.
    * @param {number} [limit=10] — number of recent items to fetch

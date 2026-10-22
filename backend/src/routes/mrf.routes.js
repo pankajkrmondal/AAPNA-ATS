@@ -99,6 +99,9 @@ router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reope
 // are further restricted to admin tier in the controller.
 router.get('/:id/approval-trail', restrictTo(...MRF_EXPORT_ROLES), mrfController.getApprovalTrail);
 router.post('/:id/approval-links/reissue', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reissueApprovalLinks);
+// L07: label + JD date for a JD sent without an MRF. Registered before the
+// bare /:id routes.
+router.patch('/:id/version-label', restrictTo(...MRF_CLOSURE_ROLES), mrfController.updateJdVersionLabel);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

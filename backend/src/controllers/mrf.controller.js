@@ -34,6 +34,35 @@ import {
 import { MAX_COMMENT_LENGTH } from '../utils/mrfApprovalRules.js';
 import { isAdminTier } from '../config/roles.js';
 import { broadcast } from '../socket/index.js';
+import { latestJdSendIds, isLabelEditable, parseVersionLabelInput, jdSendDay } from '../utils/jdSendLabel.js';
+
+/**
+ * Ids of the JDs-without-MRF marked "Latest" (L07). Computed over every such
+ * row, not one page, so "Latest" doesn't move as the recruiter pages through.
+ * The table holds one row per JD sent (hundreds), so a narrow full read is fine.
+ * @returns {Promise<Set<string>>}
+ */
+async function loadLatestJdSendIds() {
+  const rows = await prisma.rpa_mrf_jd_send.findMany({
+    where: { mrf_id: null },
+    select: { id: true, role: true, mrf_id: true, version_date: true, created_at: true },
+  });
+  return latestJdSendIds(rows);
+}
+
+/**
+ * The L07 fields on an rpa_mrf_jd_send response. version_date goes out as a
+ * plain YYYY-MM-DD so no timezone can shift the day; jd_day is the day the row
+ * counts as dated (JD date, else created date).
+ */
+function jdLabelFields(row, latestIds) {
+  return {
+    version_date: row.version_date ? row.version_date.toISOString().slice(0, 10) : null,
+    jd_day: jdSendDay(row),
+    label_editable: isLabelEditable(row),
+    is_latest: latestIds.has(row.id.toString()),
+  };
+}
 
 /**
  * @desc    Submit a new MRF Request (creates a record in rpa_mrf_jd_send)
@@ -161,11 +190,12 @@ export const listMrfRequests = catchAsync(async (req, res) => {
     prisma.rpa_mrf_jd_send.count({ where }),
   ]);
 
-  const withApproval = await attachApprovalStatus(records);
+  const [withApproval, latestIds] = await Promise.all([attachApprovalStatus(records), loadLatestJdSendIds()]);
 
   // Safe BigInt serialization
   const serializedRecords = withApproval.map((record) => ({
     ...record,
+    ...jdLabelFields(record, latestIds),
     id: record.id.toString(),
     mrf_id: record.mrf_id ? record.mrf_id.toString() : null,
   }));
@@ -261,6 +291,7 @@ export const getMrfRequest = catchAsync(async (req, res) => {
 
   const responseData = {
     ...mrfSend,
+    ...jdLabelFields(mrfSend, await loadLatestJdSendIds()),
     id: mrfSend.id.toString(),
     mrf_id: mrfSend.mrf_id ? mrfSend.mrf_id.toString() : null,
     approval_status,
@@ -269,6 +300,54 @@ export const getMrfRequest = catchAsync(async (req, res) => {
   };
 
   return success(res, responseData, 'MRF Request retrieved successfully');
+});
+
+/**
+ * @desc    Set the label and JD date of a JD sent without an MRF (L07)
+ * @route   PATCH /api/mrf/:id/version-label
+ * @access  Private — admin, superadmin, recruiter, hr
+ * @body    { version_label?: string|null, version_date?: 'YYYY-MM-DD'|null } — empty or null clears
+ */
+export const updateJdVersionLabel = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d{1,18}$/.test(String(id))) throw new AppError('Invalid MRF request id.', 400);
+
+  const parsed = parseVersionLabelInput(req.body || {});
+  if (parsed.error) throw new AppError(parsed.error, 400);
+
+  const row = await prisma.rpa_mrf_jd_send.findUnique({
+    where: { id: BigInt(id) },
+    select: { id: true, role: true, mrf_id: true, version_label: true, version_date: true },
+  });
+  if (!row) throw new AppError('MRF Request not found.', 404);
+  // Once the hiring manager submits the MRF, the MRF's reference and date name
+  // this JD everywhere (N19); a second, editable name would contradict it.
+  if (!isLabelEditable(row)) {
+    throw new AppError('This JD is linked to an MRF, so it is named by the MRF and its label cannot be changed.', 409);
+  }
+
+  const updated = await prisma.rpa_mrf_jd_send.update({ where: { id: row.id }, data: parsed.data });
+
+  const day = (d) => (d ? d.toISOString().slice(0, 10) : 'none');
+  prisma.rpa_processing_log.create({
+    data: {
+      source: 'JD_LABEL',
+      status: 'UPDATED',
+      logMessage: `JD label for request #${row.id} (${row.role}): "${row.version_label || ''}" / ${day(row.version_date)} -> "${updated.version_label || ''}" / ${day(updated.version_date)}`.slice(0, 2000),
+      actor_email: req.user?.email || null,
+      actor_context: `${req.user?.role || 'unknown'} (${req.user?.username || req.user?.id || 'unknown'})`,
+      createdAt: new Date(),
+    },
+  }).catch((err) => logger.warn(`[jd label] audit write failed: ${err.message}`));
+
+  const responseData = {
+    id: updated.id.toString(),
+    role: updated.role,
+    version_label: updated.version_label,
+    ...jdLabelFields(updated, await loadLatestJdSendIds()),
+    mrf_id: null,
+  };
+  return success(res, responseData, 'JD label saved');
 });
 
 /**

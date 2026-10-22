@@ -52,7 +52,15 @@ function PanelTitle({ children, accent }) {
  * Stat tiles carry meaning via icon + label (not color alone); detail lives in
  * the two tables.
  */
-export default function DeliveryMonitoring() {
+/**
+ * @param {{ range?: { from?: string, to?: string }|null, rangeLabel?: string|null }} [props]
+ *   range: the Analytics page's date range (L06, decision D7). When given, it
+ *   replaces this tab's own window select; {} means All time, which this tab
+ *   shows as its longest window (365 days).
+ */
+export default function DeliveryMonitoring({ range = null, rangeLabel = null } = {}) {
+  const followsPage = range !== null;
+  const rangeKey = JSON.stringify(range);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [days, setDays] = useState(30);
@@ -62,7 +70,7 @@ export default function DeliveryMonitoring() {
     setLoading(true);
     setErrored(false);
     try {
-      const res = await emailTemplateService.getEmailMonitoring(windowDays);
+      const res = await emailTemplateService.getEmailMonitoring(followsPage && !range?.from ? 365 : windowDays, range || {});
       setData(res.data?.data || res.data || null);
     } catch {
       // A swallowed failure here rendered every tile as 0, which reads as a
@@ -73,7 +81,8 @@ export default function DeliveryMonitoring() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
 
   useEffect(() => {
     load(days);
@@ -160,6 +169,11 @@ export default function DeliveryMonitoring() {
         <Col>{pollerSummary}</Col>
         <Col>
           <Space>
+            {followsPage ? (
+              <Tooltip title="Follows the date range at the top of the page. All time shows the last 365 days, the longest this tab keeps.">
+                <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{range?.from ? rangeLabel : 'Last 365 days'}</span>
+              </Tooltip>
+            ) : (
             <Tooltip title="How far back these email figures look. Every count and both tables below cover only this period — widen it to see older sends and failures.">
               <Select
                 size="small"
@@ -173,6 +187,7 @@ export default function DeliveryMonitoring() {
                 style={{ cursor: 'help' }}
               />
             </Tooltip>
+            )}
             <Tooltip title="Re-checks the mail records now. Email figures are not live — use this after a send to see whether it went out or failed.">
               <Button size="small" icon={<ReloadOutlined />} onClick={() => load(days)} loading={loading}>
                 Refresh
@@ -238,7 +253,7 @@ export default function DeliveryMonitoring() {
             extra={(
               <ExportButton
                 tooltip="Downloads sent and failed counts for every kind of email in this period — useful for spotting one template failing while the rest are fine."
-                request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', days, cfg)}
+                request={(cfg) => emailTemplateService.exportEmailMonitoring('by_type', followsPage && !range?.from ? 365 : days, cfg, range || {})}
                 fallbackName="AAPNA-ATS_Email-Delivery-By-Type.csv"
                 rowCount={data?.by_type?.length ?? null}
                 label="Export"
@@ -266,7 +281,7 @@ export default function DeliveryMonitoring() {
             extra={(
               <ExportButton
                 tooltip="Downloads every failed send in this period with its recipient and the full error message — the file to attach when reporting an email problem."
-                request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', days, cfg)}
+                request={(cfg) => emailTemplateService.exportEmailMonitoring('failures', followsPage && !range?.from ? 365 : days, cfg, range || {})}
                 fallbackName="AAPNA-ATS_Email-Delivery-Failures.csv"
                 rowCount={data?.recent_failures?.length ?? null}
                 fullSetNote="This is every failure in the window — the table above shows only the 20 most recent."

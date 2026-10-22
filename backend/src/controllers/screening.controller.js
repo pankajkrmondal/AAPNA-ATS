@@ -1,3 +1,5 @@
+import { parseAnalyticsRange } from '../utils/analyticsRange.js';
+import { getRoleSummary as getRoleSummaryData } from '../services/openPositions.service.js';
 import * as screeningService from '../services/screening.service.js';
 import * as screeningV2 from '../services/screeningV2.service.js';
 import config from '../config/index.js';
@@ -113,8 +115,17 @@ export const exportKeywordCandidates = catchAsync(async (req, res) => runExport(
 export const exportRoleSummary = catchAsync(async (req, res) => runExport(
   req,
   res,
-  screeningExport.roleSummarySpec,
+  screeningExport.roleSummarySpec(req.query),
 ));
+
+/**
+ * GET /api/screening/analytics/role-summary?from&to
+ * Analytics "Role Summary" (L06): one row per MRF with Total applied.
+ */
+export const getRoleSummary = catchAsync(async (req, res) => {
+  const result = await getRoleSummaryData({ range: parseAnalyticsRange(req.query) });
+  return success(res, result, 'Role summary retrieved successfully');
+});
 
 /**
  * POST /api/screening/shortlist
@@ -196,7 +207,8 @@ export const getZekoJobs = catchAsync(async (req, res) => {
  * GET /api/screening/analytics/pipeline
  */
 export const getZekoPipeline = catchAsync(async (req, res) => {
-  const pipeline = await screeningService.getZekoPipeline();
+  // L06: Analytics sends its date range; Candidate Screening sends none (All time).
+  const pipeline = await screeningService.getZekoPipeline({ range: parseAnalyticsRange(req.query) });
   return success(res, pipeline, 'Zeko interview pipeline retrieved successfully');
 });
 

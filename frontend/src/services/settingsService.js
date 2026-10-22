@@ -161,6 +161,16 @@ const settingsService = {
   saveCandidateActivity(payload) {
     return api.post('/settings/candidate-activity', payload);
   },
+
+  /** L06: target days for an open position's health dot (admins change it). */
+  getPositionTarget() {
+    return api.get('/settings/position-target');
+  },
+
+  /** @param {{ targetDays: number }} payload */
+  savePositionTarget(payload) {
+    return api.post('/settings/position-target', payload);
+  },
 };
 
 export default settingsService;

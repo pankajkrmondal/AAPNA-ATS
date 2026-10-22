@@ -5,6 +5,36 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-10-23: L06 open-position analytics and L07 JD label
+
+Agreed on the "ATS L06 & L07 designs" canvas first. Write-ups: [L06](../docs/changelog/CHANGES-2026-10-23-L06-open-position-analytics.md), [L07](../docs/changelog/CHANGES-2026-10-22-L07-jd-label.md).
+
+- **Analytics:**
+  - a range bar in the page header (`AnalyticsRangeBar`);
+  - **Open Positions** is the first tab (`PositionsTab`, reworked), with summary tiles, health dots and flag chips, underlined numbers, and an Applied tooltip with sources;
+  - a role view drawer (`RoleDetailDrawer`) and a candidates drawer (`MetricCandidatesDrawer`);
+  - Role Summary gains Total applied, Moved fwd and Shortlist %;
+  - the Pipeline Insights tiles are marked "now", and the rejection-window select is removed;
+  - Email Delivery follows the page range;
+  - deep link: `/analytics?tab=open&mrf=<id>`.
+- **Dashboard:**
+  - an "Open positions · last 7 days" strip (`OpenPositionsPulse`) replaces "Top Roles & Skills" for staff;
+  - Action Center adds "Roles needing attention".
+- **Pipeline:** `PipelineRoleHeader` when a requisition is filtered; `?mrf=<id>`.
+- **MRF:**
+  - JD label · date plus Latest under the role, with a pencil popover (`JdLabelEditor`);
+  - "JD Label & Date" and "View analytics" in details.
+- **Settings:** "Open position target" card (admins).
+- **Theme:** `--op-*` tokens now map to the app's KPI tokens (health) and avatar colours (sources).
+- **Restyle (23 Oct):**
+  - board tiles and role KPIs use `KpiCard`;
+  - role-view panels are `.panel-shell` cards with the shared `SectionTitle`;
+  - the funnel matches Pipeline Insights;
+  - the chart is Recharts with the dashboard tooltip;
+  - the journey uses antd Steps;
+  - drawer headers match PipelineDrawer;
+  - pulse cards use `.panel-shell`.
+
 ## 2026-10-15: Phase 3 section C screens
 
 Backend write-up: [CHANGES-2026-10-15-phase3-section-c.md](../docs/changelog/CHANGES-2026-10-15-phase3-section-c.md).

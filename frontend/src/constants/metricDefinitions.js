@@ -172,6 +172,104 @@ export const METRICS = {
       + 'are linked to an MRF (JD tagging).',
   },
 
+  // ── Analytics › Open Positions board and role view (L06) ─────────────────
+  // dev: GET /api/pipeline/analytics/positions(/:mrfId) · openPositions.service.js,
+  // rules in openPositions.helpers.js, applicants in mrfApplicants.service.js.
+  analyticsRange: {
+    label: 'Date range',
+    short: 'Every number on this page follows this range, except the ones marked NOW, which show today.',
+    formula: 'Whole days in India time, both ends included. The arrow figures compare with the same '
+      + 'number of days just before the range.',
+  },
+  opApplied: {
+    label: 'Applied',
+    short: 'Candidates who came in for this role in the range.',
+    formula: 'Tagged to the requisition (uploaded, shortlisted or added to it) on that day, or — for '
+      + 'mailbox and website applicants — a "Position Applied" that matches the role, counted on the '
+      + 'day the candidate was added.',
+    caveat: 'Where several requisitions share a role name, an untagged candidate counts once, under '
+      + 'the newest one raised before they arrived. JD tags started on 21 Oct 2026.',
+  },
+  opResponded: {
+    label: 'Responded',
+    short: 'Applicants who sent back the candidate details form in the range — the "qualified" number.',
+    formula: 'Counted on the day the form came back. A profile that was complete on arrival counts on '
+      + 'the day it was added. Forms returned before 14 Oct 2026 count on the day they were requested.',
+  },
+  opShortlisted: {
+    label: 'Shortlisted',
+    short: 'Candidates moved into the pipeline for this role in the range.',
+  },
+  opRejected: {
+    label: 'Rejected',
+    short: 'Candidates rejected in the range — at screening or at any pipeline stage.',
+  },
+  opMovedForward: {
+    label: 'Moved forward',
+    short: 'Candidates who reached a stage after HR screening in the range.',
+  },
+  opInterviews: {
+    label: 'Interviews',
+    short: 'Interviews held in the range: Teams rounds marked as held, and Zeko rounds completed.',
+  },
+  opOffers: {
+    label: 'Offers',
+    short: 'Offers raised for approval in the range.',
+  },
+  opJoined: {
+    label: 'Joined',
+    short: 'Candidates who joined in the range.',
+  },
+  opInPipeline: {
+    label: 'In pipeline',
+    short: 'Candidates in the pipeline for this role right now.',
+    caveat: 'NOW: a snapshot of today. It does not follow the date range.',
+  },
+  opOnHold: {
+    label: 'On hold',
+    short: 'Candidates on hold for this role right now.',
+    caveat: 'NOW: a snapshot of today. It does not follow the date range.',
+  },
+  opStuck: {
+    label: 'Stuck',
+    short: 'Candidates who have sat in the same stage for 10 days or more.',
+    caveat: 'NOW: a snapshot of today. Notes and emails do not reset the clock; only a stage move does.',
+  },
+  opAwaitingFeedback: {
+    label: 'Awaiting feedback',
+    short: 'Interviews that happened but whose scorecard has not come back yet.',
+    caveat: 'NOW: a snapshot of today.',
+  },
+  opShortlistPct: {
+    label: 'Shortlist %',
+    short: 'Of the applicants in the range, the share moved into the pipeline.',
+    formula: 'Shortlisted ÷ Applied, both in the range.',
+  },
+  opResponsePct: {
+    label: 'Response rate',
+    short: 'Of the applicants in the range, the share who sent back the details form.',
+    formula: 'Responded ÷ Applied, both in the range.',
+  },
+  opHealth: {
+    label: 'Health',
+    short: 'How this open role is doing this week.',
+    formula: 'At risk: open longer than the target, or no applicants in 7 days with fewer than 3 in '
+      + 'the pipeline. Watch: anyone stuck, feedback overdue, no applicants in 7 days, or applicants '
+      + 'down by more than half on the week before. On track: none of these.',
+    caveat: 'Always judged on the last 7 days, whatever range the page shows. The target is set in '
+      + 'Settings (45 days unless changed).',
+  },
+  roleSummaryTotalApplied: {
+    label: 'Total applied',
+    short: 'Candidates who came in for this requisition in the range — the same number as "Applied" '
+      + 'on Open Positions.',
+  },
+  roleSummaryTotalScreened: {
+    label: 'Total screened',
+    short: 'Shortlisted + Rejected + On hold + Future prospect + Closed: every screening decision for '
+      + 'this requisition in the range.',
+  },
+
   // ── Analytics › Positions tab (N39) ──────────────────────────────────────
   // dev: GET /api/pipeline/analytics/positions · positionsOverview() in
   // backend/src/services/pipelineAnalytics.helpers.js.
@@ -296,13 +394,13 @@ export const METRICS = {
     formula: 'Counts candidates marked shortlisted, whether or not they have since '
       + 'moved further along or been closed out.',
     source: 'Your screening decisions.', // dev: GET /screening/analytics · tiles.shortlisted
-    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+    caveat: 'Follows the date range at the top of the page: decisions made in it.',
   },
   analyticsRejected: {
     label: 'Rejected',
-    short: 'Candidates rejected at any stage, all time.',
+    short: 'Candidates rejected at any stage.',
     source: 'Your screening and pipeline decisions.',
-    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+    caveat: 'Follows the date range at the top of the page: decisions made in it.',
   },
   analyticsOnHold: {
     label: 'On Hold',
@@ -314,12 +412,12 @@ export const METRICS = {
   },
   analyticsTotal: {
     label: 'Total',
-    short: 'Every candidate that has entered screening, all time.',
+    short: 'Every candidate that has entered screening.',
     formula: 'The denominator for the role breakdown: shortlisted, rejected, on-hold and '
       + 'future prospect are all subsets of this, and together they account for '
       + 'every candidate counted here.',
     source: 'Your candidate database.',
-    caveat: 'Lifetime total. It does not follow the date controls on this page.',
+    caveat: 'Follows the date range at the top of the page: decisions made in it.',
   },
   analyticsZekoSent: {
     label: 'Zeko Sent',

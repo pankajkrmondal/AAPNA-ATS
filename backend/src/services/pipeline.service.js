@@ -67,6 +67,7 @@ import { firstValidPhone, maskPhone } from '../utils/phone.js';
 import { assessmentInviteState, latestInviteByPipeline } from '../utils/assessmentInviteState.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
+import { inRange, rangeForResponse } from '../utils/analyticsRange.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -2478,6 +2479,7 @@ export async function getPipelineAnalytics({
   stuckThresholdDays = 10,
   holdThresholdDays = 30,
   topN = 10,
+  range = null,
 } = {}) {
   /** Apply the ranked-table cap, or keep everything when topN is null. */
   const capped = (rows) => (topN == null ? rows : rows.slice(0, topN));
@@ -2495,6 +2497,12 @@ export async function getPipelineAnalytics({
 
   const now = Date.now();
   const daysSince = (d) => Math.floor((now - new Date(d).getTime()) / MS_PER_DAY);
+
+  // L06 date range. The tiles and the stuck list are a live snapshot ("Now",
+  // decision D6) and ignore it. Everything else counts journeys that STARTED
+  // in the range (the funnel, vendors, sources), rejections made in it, and
+  // hires closed in it. No range = All time, the behaviour before L06.
+  const cohort = range ? allJourneys.filter((j) => inRange(j.created_at, range)) : allJourneys;
 
   // ── Top tiles: active in pipeline, awaiting feedback, on-hold > N days, offers pending ──
   const activeInPipeline = allJourneys.filter((j) => !j.final_outcome).length;
@@ -2538,7 +2546,7 @@ export async function getPipelineAnalytics({
   // populates the selector so the user can see the funnel is a choice among
   // several rather than the whole picture.
   const mrfJourneyCounts = new Map();
-  for (const j of allJourneys) {
+  for (const j of cohort) {
     if (!j.mrf_id) continue;
     const key = String(j.mrf_id);
     mrfJourneyCounts.set(key, (mrfJourneyCounts.get(key) || 0) + 1);
@@ -2586,7 +2594,7 @@ export async function getPipelineAnalytics({
   if (funnelMrfId) {
     funnelMrfLabel = mrfLabelFor(funnelMrfId);
 
-    const mrfJourneys = allJourneys.filter((j) => j.mrf_id && Number(j.mrf_id) === funnelMrfId);
+    const mrfJourneys = cohort.filter((j) => j.mrf_id && Number(j.mrf_id) === funnelMrfId);
     funnel = stages.map((s) => ({
       stage_key: s.stage_key,
       label: s.label,
@@ -2637,7 +2645,11 @@ export async function getPipelineAnalytics({
   // ── Rejection reasons — last N days ──
   const rejectionCutoff = new Date(now - rejectionWindowDays * 24 * 60 * 60 * 1000);
   const rejectionEvents = await prisma.rpa_pipeline_stage_events.findMany({
-    where: { outcome: STAGE_OUTCOMES.REJECTED, created_at: { gt: rejectionCutoff } },
+    where: {
+      outcome: STAGE_OUTCOMES.REJECTED,
+      // With a page range the rejections made in it; without, the old rolling window.
+      created_at: range ? { gte: range.from, lt: range.to } : { gt: rejectionCutoff },
+    },
     include: { rpa_outcome_reasons: true },
   });
   const reasonCounts = new Map();
@@ -2673,7 +2685,10 @@ export async function getPipelineAnalytics({
   // figure no candidate's journey ever matched. It is now the MEDIAN end-to-end
   // duration of hired journeys, with the sample size carried alongside so a
   // median of two is not read as a settled benchmark.
-  const timeToHire = timeToHireFor(allJourneys, stages);
+  const timeToHire = timeToHireFor(
+    range ? allJourneys.filter((j) => j.final_outcome && inRange(j.closed_at || j.modified_at, range)) : allJourneys,
+    stages,
+  );
 
   // ── Vendor performance: how many of a vendor's candidates are in the pipeline ──
   //
@@ -2687,7 +2702,7 @@ export async function getPipelineAnalytics({
   // built on 23% coverage would invent a number, so the column is dropped
   // rather than relabelled — the figure was the problem, not its name.
   // Revisit if cv_id backfill lands; the query is in docs/Recruitment-Analytics.md.
-  const vendorJourneys = allJourneys.filter((j) => j.source === 'vendor' && j.vendor_email);
+  const vendorJourneys = cohort.filter((j) => j.source === 'vendor' && j.vendor_email);
   const vendorCounts = new Map();
   for (const j of vendorJourneys) {
     const key = String(j.vendor_email).trim().toLowerCase();
@@ -2713,7 +2728,7 @@ export async function getPipelineAnalytics({
   // Buckets are mutually exclusive (see bucketFor) and therefore sum to
   // `submitted` — the invariant that makes the rate below a real rate.
   const sourceGroups = new Map();
-  for (const j of allJourneys) {
+  for (const j of cohort) {
     const key = j.source;
     if (!sourceGroups.has(key)) {
       sourceGroups.set(key, {
@@ -2753,6 +2768,8 @@ export async function getPipelineAnalytics({
     stuckCandidates: stuckCandidatesTop,
     rejectionReasons: rejectionReasonsTop,
     rejectionWindowDays,
+    // The page range these numbers follow (L06); "All time" when none was sent.
+    range: rangeForResponse(range),
     // `median_days` is null, never 0, when nothing has been hired — the screen
     // renders an em-dash for it rather than a confident zero.
     timeToHire,

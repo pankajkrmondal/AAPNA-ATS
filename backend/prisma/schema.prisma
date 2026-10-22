@@ -609,6 +609,10 @@ model rpa_mrf_jd_send {
   budget_min         Decimal?  @db.Decimal(12, 2)
   budget_max         Decimal?  @db.Decimal(12, 2)
   mrf_id             Int?
+  /// L07: recruiter-set JD label while no MRF is linked
+  version_label      String?   @db.VarChar(60)
+  /// L07: recruiter-set JD date while no MRF is linked
+  version_date       DateTime? @db.Date
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

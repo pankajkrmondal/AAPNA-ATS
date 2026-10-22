@@ -13,6 +13,40 @@ data was entered, not on this page.
 
 ---
 
+## The date range (top right, L06)
+
+Every tab follows one date range: **7, 30, 60, 90 or 365 days, All**, or your own
+dates. It opens on the **last 7 days**. Days are India-time calendar days, both ends
+included. Under the bar you can see exactly what is shown and what the arrows (▲ ▼)
+compare with — the same number of days just before.
+
+Numbers marked **NOW** (or "· now") are a snapshot of today and do not follow the
+range: who is in the pipeline, on hold, stuck, waiting for feedback, offers pending.
+
+## Tab 1 — Open Positions (L06)
+
+One row per requisition; **Open** is the default filter (Closed and All are there too).
+
+- **Health** — *At risk*, *Watch* or *On track*, always judged on the last 7 days.
+  At risk: open longer than the target (45 days, set in Settings) or no applicants
+  in 7 days with fewer than 3 in the pipeline. Watch: anyone stuck 10+ days, feedback
+  overdue, no applicants in 7 days, or applicants down by more than half on the week
+  before. Hover the dot for the reasons; they also show as chips under the role.
+- **Applied** — candidates who came in for the role in the range: uploaded or tagged
+  to it, or (for mailbox and website applicants) whose Position Applied matches.
+  Hover it for the split by source and the total since the role opened.
+- **Responded** — applicants who sent back the details form in the range (the
+  "qualified" number). **Shortlist %** and **Response %** divide by Applied.
+- Every **underlined number** opens the list of candidates behind it; each one opens
+  their Pipeline drawer (or their profile).
+- Click a **role** for its view: the "This week" sentence (Copy it for the hiring
+  manager), seven numbers against the previous period, Needs attention, applications
+  per day by source (Chart or Table), the funnel since opening, upcoming interviews,
+  what happened, the journey from request to filled — and **Download role report**.
+
+The Dashboard shows the same roles in its "Open positions · last 7 days" strip, and
+the Candidate Pipeline shows a role's health above the board when you filter by it.
+
 ## The headline strip (always visible)
 
 Six counts across the top, above the tabs.
@@ -49,7 +83,11 @@ below breaks all four out per role.
 
 ---
 
-## Tab 1 — Role Summary
+## Tab 2 — Role Summary
+
+One row per requisition (two MRFs with the same name are two rows). **Total applied**
+is the same number as Applied on Open Positions; **Total screened** is every screening
+decision made in the range; **Moved fwd** and **Shortlist %** match Open Positions.
 
 **Question it answers:** how is each open role performing?
 
@@ -71,7 +109,7 @@ Total candidates, with the MRF number beside each role.
 
 ---
 
-## Tab 2 — Pipeline Insights
+## Tab 3 — Pipeline Insights
 
 **Question it answers:** where are candidates right now, and who is stuck?
 
@@ -132,7 +170,7 @@ first, with the stage each reason most often occurs at.
 
 ---
 
-## Tab 3 — Recruiter Insights
+## Tab 4 — Recruiter Insights
 
 **Question it answers:** how long does hiring take, and which sources work?
 
@@ -185,7 +223,7 @@ until candidates actually join.
 
 ---
 
-## Tab 4 — Email Delivery
+## Tab 5 — Email Delivery
 
 **Question it answers:** are our emails to candidates arriving?
 
@@ -220,12 +258,14 @@ If the data cannot be loaded you will see a red error box. **Tiles showing a das
 
 ## Filters, exports and refreshing
 
-- **Filters:** requisition, stuck threshold, on-hold threshold and rejection
-  window. Changing any shows a brief "Updating analytics…" overlay. Re-selecting
-  the value you already have does nothing.
+- **Filters:** the date range (every tab), plus the requisition, stuck threshold and
+  on-hold threshold on Pipeline Insights. Rejection reasons and Email Delivery follow
+  the date range (All shows all rejections, and the last 365 days of email). Changing
+  a filter shows a brief "Updating analytics…" overlay.
 - **Exports:** every Export button downloads a CSV of the **complete** list, even
   where the screen shows only the top 10 — and it respects the filters you have
-  set. The button is disabled when there is nothing to export.
+  set, including the date range, which is in the file name. The button is disabled
+  when there is nothing to export.
 - **Refreshing:** the page reloads data whenever you change a filter. To get the
   very latest figures, reload the browser page (the Email Delivery tab has its own
   Refresh button).

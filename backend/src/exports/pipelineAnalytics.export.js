@@ -11,6 +11,7 @@
  * getPipelineAnalytics() already loads every journey to compute all of these,
  * so serving one table per request adds no new query load.
  */
+import { rangeFileTag } from '../utils/analyticsRange.js';
 import * as pipelineService from '../services/pipeline.service.js';
 // Query parsing lives in the dependency-free helpers module so it stays
 // unit-testable — importing anything that reaches pipeline.service.js opens a
@@ -114,9 +115,11 @@ export function specFor(tableKey, query = {}) {
   const table = TABLES[tableKey];
   if (!table) return null;
 
+  const { range } = parseAnalyticsParams(query);
   return {
     key: `pipeline_analytics_${tableKey}`,
-    label: table.label,
+    // L06: the file name says which dates it covers.
+    label: `${table.label}${rangeFileTag(range)}`,
     columns: table.columns,
     fetch: async () => {
       const analytics = await pipelineService.getPipelineAnalytics({

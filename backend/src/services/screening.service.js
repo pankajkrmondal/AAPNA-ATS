@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { rangeForResponse } from '../utils/analyticsRange.js';
 import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
@@ -2558,7 +2559,12 @@ export async function getZekoJobs() {
 /**
  * GET /api/screening/analytics/pipeline
  */
-export async function getZekoPipeline() {
+export async function getZekoPipeline({ range = null } = {}) {
+  // L06: with a date range (Analytics), the Zeko tiles count invitations sent
+  // in it (scores received in it, for "Zeko Score Received") and the shortlist
+  // tiles count decisions made in it (shortlisted_at, which a rejection also
+  // stamps). No range = All time; Candidate Screening never sends one.
+  const [rangeFrom, rangeTo] = range ? [range.from, range.to] : [new Date('1970-01-01T00:00:00Z'), new Date('2999-01-01T00:00:00Z')];
   // Load pipeline candidates combined with shortlist name
   const rows = await prisma.$queryRaw`
     SELECT 
@@ -2596,9 +2602,9 @@ export async function getZekoPipeline() {
   // them in the same strip, which made the ratio between them meaningless.
   const stats = await prisma.$queryRaw`
     SELECT
-      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed')) AS zeko_sent,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed') AND COALESCE(link_sent_at, created_at) >= ${rangeFrom} AND COALESCE(link_sent_at, created_at) < ${rangeTo}) AS zeko_sent,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('in_progress')) AS zeko_in_progress,
-      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('completed','passed','failed')) AS zeko_completed,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('completed','passed','failed') AND COALESCE(completed_at, created_at) >= ${rangeFrom} AND COALESCE(completed_at, created_at) < ${rangeTo}) AS zeko_completed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('passed')) AS zeko_passed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('failed')) AS zeko_failed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('cancelled')) AS zeko_cancelled
@@ -2616,6 +2622,7 @@ export async function getZekoPipeline() {
 
   // Fetch all shortlisted candidates to display in the All Candidates tab and role stats in the Analytics tab
   const candidates = await prisma.rpa_shortlisted_candidates.findMany({
+    where: range ? { shortlisted_at: { gte: range.from, lt: range.to } } : undefined,
     include: {
       mrf: true,
       rpa_zeko_candidate_pipeline: true,
@@ -2700,6 +2707,7 @@ export async function getZekoPipeline() {
       future_prospect: candidateCounts.future_prospect,
       total: candidateCounts.total,
     },
+    range: rangeForResponse(range),
   };
 }
 

@@ -37,8 +37,12 @@ router.get('/analytics/export', exportLimiter, pipelineController.exportPipeline
 /** GET /api/pipeline/analytics/positions — one row per requisition (N39). Before "/:id". */
 router.get('/analytics/positions', pipelineController.getPositionsOverview);
 
-/** GET /api/pipeline/analytics/positions/export?status= — the Positions tab as CSV (N39). */
+/** GET /api/pipeline/analytics/positions/export?status=&from&to — the Open Positions board as CSV (N39, L06). */
 router.get('/analytics/positions/export', exportLimiter, pipelineController.exportPositionsOverview);
+/** L06 role view: GET …/positions/:mrfId, the candidates behind a number, and the role report CSV. */
+router.get('/analytics/positions/:mrfId', pipelineController.getPositionDetail);
+router.get('/analytics/positions/:mrfId/candidates', pipelineController.getPositionMetricCandidates);
+router.get('/analytics/positions/:mrfId/export', exportLimiter, pipelineController.exportPositionReport);
 
 /** GET /api/pipeline/stages — admin-configurable stage list. */
 router.get('/stages', pipelineController.listStages);

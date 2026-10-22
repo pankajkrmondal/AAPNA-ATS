@@ -35,6 +35,7 @@ import {
 } from '@dnd-kit/core';
 import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
+import PipelineRoleHeader from '../components/pipeline/PipelineRoleHeader';
 import MoveStageModal from '../components/pipeline/MoveStageModal';
 import MoveHistoryExport from '../components/pipeline/MoveHistoryExport';
 import { canMoveCard, moveBlockReason, isRedoMove } from '../components/pipeline/stageMove';
@@ -594,6 +595,12 @@ export default function Pipeline() {
   // can email a round to whoever decides — the recipient signs in and their
   // view is audited, which a raw stream URL would defeat.
   const recordingParam = searchParams.get('recording');
+  // L06: /pipeline?mrf=<id> (from the role view in Analytics) opens the board
+  // filtered to that requisition.
+  const mrfParam = searchParams.get('mrf');
+  useEffect(() => {
+    if (/^\d+$/.test(String(mrfParam || ''))) setPosition(`mrf:${mrfParam}`);
+  }, [mrfParam]);
   useEffect(() => {
     const id = Number(candidateParam);
     if (Number.isFinite(id) && id > 0) openDrawer(id);
@@ -943,6 +950,14 @@ export default function Pipeline() {
         </Text>
       </Space>
       </Card>
+
+      {/* L06: the chosen requisition's health and last 7 days, with a link to its view in Analytics. */}
+      {position?.startsWith('mrf:') && (
+        <>
+          <div style={{ height: 12 }} />
+          <PipelineRoleHeader mrfId={position.slice(4)} />
+        </>
+      )}
 
       {/* Interviews that ended with no verdict. Deliberately a banner rather
           than a column on the board: these are not a pipeline stage, they are a

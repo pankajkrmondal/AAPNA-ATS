@@ -89,8 +89,13 @@ const screeningService = {
   },
 
   /** CSV of the Analytics "Role Summary" table. */
-  exportRoleSummary(config = {}) {
-    return api.get('/screening/analytics/pipeline/export', config);
+  exportRoleSummary(config = {}, range = {}) {
+    return api.get('/screening/analytics/pipeline/export', { params: range, ...config });
+  },
+
+  /** Analytics "Role Summary" (L06): one row per MRF, with Total applied. */
+  getRoleSummary(range = {}) {
+    return api.get('/screening/analytics/role-summary', { params: range });
   },
 
   /**
@@ -145,8 +150,8 @@ const screeningService = {
    * Get Zeko pipeline candidates and analytics tiles counts.
    * @returns {Promise<{ data: { pipeline: Array, tiles: Object } }>}
    */
-  getZekoPipeline() {
-    return api.get('/screening/analytics/pipeline');
+  getZekoPipeline(range = {}) {
+    return api.get('/screening/analytics/pipeline', { params: range });
   },
 
   /**
