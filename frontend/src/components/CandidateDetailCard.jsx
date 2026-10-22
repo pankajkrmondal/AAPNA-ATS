@@ -7,6 +7,7 @@
  */
 import { Row, Col, Typography, Tag, Avatar, Space } from 'antd';
 import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
+import PipelineScoresSection from './candidates/PipelineScoresSection';
 
 const { Text, Paragraph } = Typography;
 
@@ -38,7 +39,12 @@ function Field({ label, children, span = 12 }) {
   );
 }
 
-export default function CandidateDetailCard({ candidate }) {
+/**
+ * @param {{ candidate: object, showPipelineScores?: boolean }} props
+ *   showPipelineScores - add the read-only pipeline scores (staff only: the
+ *   endpoint refuses vendors)
+ */
+export default function CandidateDetailCard({ candidate, showPipelineScores = false, canChangeJd = false }) {
   if (!candidate) return null;
   const c = candidate;
 
@@ -206,6 +212,15 @@ export default function CandidateDetailCard({ candidate }) {
           <Paragraph style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{c.HRInterview || '—'}</Paragraph>
         </Col>
       </Row>
+
+      {/* What the pipeline scored, per MRF and round. The fields above are
+          the candidate record's own columns (Excel upload / edits). */}
+      {showPipelineScores && c.id && (
+        <>
+          <SectionHeader title="Pipeline scores" />
+          <PipelineScoresSection cvId={c.id} canChangeJd={canChangeJd} />
+        </>
+      )}
     </div>
   );
 }

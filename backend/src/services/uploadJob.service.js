@@ -58,16 +58,26 @@ export function jobsModelReady() {
   return true;
 }
 
-/** Convert BigInt ids to strings so the record is JSON/serialisable. */
+/**
+ * Convert BigInt ids to strings so the record is JSON/serialisable. A row
+ * loaded with JOB_MRF_INCLUDE also gets `jd_label` ("Role (MRF-12)") for the
+ * job list's JD column (N14); without it the screen falls back to the id.
+ */
 export function serializeJob(job) {
   if (!job) return null;
+  const { mrf, ...rest } = job;
   return {
-    ...job,
+    ...rest,
     id: job.id != null ? job.id.toString() : null,
     cv_id: job.cv_id != null ? job.cv_id.toString() : null,
     cv_tmp_id: job.cv_tmp_id != null ? job.cv_tmp_id.toString() : null,
+    mrf_id: job.mrf_id != null ? job.mrf_id.toString() : null,
+    jd_label: job.mrf_id != null && mrf ? `${mrf.position_hiring_for || 'Untitled role'} (MRF-${job.mrf_id})` : null,
   };
 }
+
+/** Prisma `include` that gives serializeJob the JD's title. */
+export const JOB_MRF_INCLUDE = Object.freeze({ mrf: { select: { position_hiring_for: true } } });
 
 /** Emit a job update to its uploader and (when review is required) to staff. */
 function emitJob(job) {
@@ -105,7 +115,7 @@ function emitJob(job) {
  * Create one job row per uploaded file for a batch. Returns the created rows.
  * @param {string} executionId
  * @param {Array<{ originalname: string }>} files
- * @param {Object} ctx - { uploadedBy, uploadedById, vendorEmail, vendorName, source }
+ * @param {Object} ctx - { uploadedBy, uploadedById, vendorEmail, vendorName, source, mrfId }
  */
 export async function createJobsForBatch(executionId, files, ctx = {}) {
   if (!jobsModelReady()) return [];
@@ -121,6 +131,8 @@ export async function createJobsForBatch(executionId, files, ctx = {}) {
         vendor_email: ctx.vendorEmail || null,
         vendor_name: ctx.vendorName || null,
         source: ctx.source || 'vendor_portal',
+        // JD the upload was made for (N14); reprocess reads it back.
+        mrf_id: ctx.mrfId || null,
       },
     });
     created.push(job);

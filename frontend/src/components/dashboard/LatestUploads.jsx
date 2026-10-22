@@ -27,6 +27,9 @@ function initials(name) {
   return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
 }
 
+/** The candidate's own page when the row has an id, else the searchable list. */
+const candidateUrl = (r) => (r.key ? `/candidates/${r.key}` : '/candidates');
+
 export default function LatestUploads({ onNavigate }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +89,7 @@ export default function LatestUploads({ onNavigate }) {
                   {r.email ? <><br />{r.email}</> : null}
                   {r.uploadedAt ? <><br />Added {r.uploadedAt}</> : null}
                   <br />
-                  <em>Click to open Search Candidates</em>
+                  <em>{r.key ? 'Click to open this candidate' : 'Click to open Search Candidates'}</em>
                 </span>
               )}
             >
@@ -94,8 +97,10 @@ export default function LatestUploads({ onNavigate }) {
                 className="dash-uploads__row"
                 role="button"
                 tabIndex={0}
-                onClick={() => onNavigate('/candidates')}
-                onKeyDown={(e) => { if (e.key === 'Enter') onNavigate('/candidates'); }}
+                // N36: open the candidate itself (CandidateDetail), not the whole list.
+                onClick={() => onNavigate(candidateUrl(r), { state: { from: 'dashboard' } })}
+                onKeyDown={(e) => { if (e.key === 'Enter') onNavigate(candidateUrl(r), { state: { from: 'dashboard' } }); }}
+                data-testid={`latest-upload-${r.key}`}
               >
                 <span className="dash-uploads__avatar">{initials(r.name)}</span>
                 <span className="dash-uploads__body">

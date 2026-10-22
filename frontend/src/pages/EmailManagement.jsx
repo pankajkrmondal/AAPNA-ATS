@@ -24,8 +24,7 @@ import {
   CopyOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
+import { fmtRelative } from '../utils/dateFormat';
 import EmptyState from '../components/common/EmptyState';
 import PageHeader from '../components/common/PageHeader';
 import emailTemplateService from '../services/emailTemplateService';
@@ -34,7 +33,6 @@ import useAuth from '../hooks/useAuth';
 import EmailBodyEditor, { EmailEditorTabs, FULL_TOOLBAR, sanitizeDoc } from '../components/common/EmailBodyEditor';
 import { isFullHtmlDocument, brandedPreviewParts } from '../utils/emailPreview';
 
-dayjs.extend(relativeTime);
 
 const { Title, Text } = Typography;
 
@@ -489,7 +487,7 @@ export default function EmailManagement() {
             {isDirty
               ? 'Unsaved changes'
               : selectedTemplate.modified_at
-                ? `Saved ${dayjs(selectedTemplate.modified_at).fromNow()}`
+                ? `Saved ${fmtRelative(selectedTemplate.modified_at)}`
                 : ''}
           </Text>
         )}

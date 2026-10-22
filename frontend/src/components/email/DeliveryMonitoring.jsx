@@ -22,12 +22,10 @@ import {
   ReloadOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
+import { fmtDateTime, fmtRelative } from '../../utils/dateFormat';
 import emailTemplateService from '../../services/emailTemplateService';
 import ExportButton from '../common/ExportButton';
 
-dayjs.extend(relativeTime);
 
 const { Text } = Typography;
 
@@ -135,7 +133,7 @@ export default function DeliveryMonitoring() {
       dataIndex: 'sent_at',
       key: 'sent_at',
       width: 150,
-      render: (v) => (v ? dayjs(v).format('DD MMM, HH:mm') : '—'),
+      render: (v) => fmtDateTime(v),
     },
     { title: 'Type', dataIndex: 'email_type', key: 'email_type', width: 150 },
     { title: 'Recipient', dataIndex: 'recipient_email', key: 'recipient_email', ellipsis: true },
@@ -151,7 +149,7 @@ export default function DeliveryMonitoring() {
         Resume intake: {poller.intake_enabled ? 'on' : 'off'}
       </Tag>
       {poller.last_sync_at && (
-        <Text type="secondary">last sync {dayjs(poller.last_sync_at).fromNow()}</Text>
+        <Text type="secondary">last sync {fmtRelative(poller.last_sync_at)}</Text>
       )}
     </Space>
   );

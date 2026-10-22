@@ -60,6 +60,14 @@ router.post('/keyword-export', exportLimiter, screeningController.exportKeywordC
 router.post('/shortlist', screeningController.shortlistCandidates);
 
 /**
+ * GET  /api/screening/shortlist/:shortlistId/change-jd — may the JD be changed, and to what
+ * POST /api/screening/shortlist/:shortlistId/change-jd — replace it { newMrfId, reason, notifyCandidate }
+ * Change JD (G3): a candidate shortlisted to the wrong JD gets the right one in place.
+ */
+router.get('/shortlist/:shortlistId/change-jd', screeningController.getChangeJdStatus);
+router.post('/shortlist/:shortlistId/change-jd', screeningController.changeShortlistJd);
+
+/**
  * POST /api/screening/reject
  * Reject candidates directly from screening results, update status, notify (optional)
  */

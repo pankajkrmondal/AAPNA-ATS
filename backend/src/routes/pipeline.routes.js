@@ -34,6 +34,12 @@ router.get('/move-history/users', pipelineController.listMoveHistoryUsers);
 /** GET /api/pipeline/analytics/export?table=… — CSV of one analytics table. */
 router.get('/analytics/export', exportLimiter, pipelineController.exportPipelineAnalytics);
 
+/** GET /api/pipeline/analytics/positions — one row per requisition (N39). Before "/:id". */
+router.get('/analytics/positions', pipelineController.getPositionsOverview);
+
+/** GET /api/pipeline/analytics/positions/export?status= — the Positions tab as CSV (N39). */
+router.get('/analytics/positions/export', exportLimiter, pipelineController.exportPositionsOverview);
+
 /** GET /api/pipeline/stages — admin-configurable stage list. */
 router.get('/stages', pipelineController.listStages);
 /** POST /api/pipeline/stages — create a stage (admin only). */

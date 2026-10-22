@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import logger from '../config/logger.js';
 import { cleanupExpiredSessions } from '../services/auth.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 /**
  * Session cleanup cron job.
@@ -14,15 +15,11 @@ import { cleanupExpiredSessions } from '../services/auth.service.js';
 let job;
 
 export function startSessionCleanupJob() {
-  job = cron.schedule('0 */2 * * *', async () => {
+  job = cron.schedule('0 */2 * * *', () => runJob('sessionCleanup', async () => {
     logger.info('⏰ Running session cleanup job…');
-    try {
-      const count = await cleanupExpiredSessions();
-      logger.info(`Session cleanup complete — removed ${count} expired session(s)`);
-    } catch (error) {
-      logger.error('Session cleanup failed', { error: error.message });
-    }
-  });
+    const count = await cleanupExpiredSessions();
+    logger.info(`Session cleanup complete — removed ${count} expired session(s)`);
+  }));
 
   logger.info('📅 Session cleanup cron scheduled (every 2 hours)');
 }

@@ -1,12 +1,12 @@
 /**
  * ConversionFunnelCard — the pipeline funnel upgraded with stage-to-stage conversion %,
- * a headline sourced→hired rate, and time-to-hire when derivable from the Zeko pipeline.
+ * a headline sourced→hired rate, and the median time-to-hire (shortlist → hire, from the server).
  * Keeps the gradient-bar look the dashboard already used.
  */
 import { useMemo } from 'react';
 import { Card, Typography, Tooltip } from 'antd';
 import { ArrowDownOutlined, ClockCircleOutlined } from '@ant-design/icons';
-import { conversionStages, medianTimeToHire } from '../../utils/dashboardAggregations';
+import { conversionStages } from '../../utils/dashboardAggregations';
 import MetricInfo from '../common/MetricInfo';
 
 const { Title, Text } = Typography;
@@ -21,14 +21,17 @@ const STAGE_GRADIENTS = {
 const STAGE_DESC = {
   sourced: 'Every candidate sourced into the system.',
   aiScreened: 'Profiles analysed and scored by the AI screening engine.',
-  shortlisted: 'Advanced to the shortlist / interview pipeline.',
-  hired: 'Accepted an offer or joined.',
+  shortlisted: 'Shortlisted for a role at some point (open or closed journeys).',
+  hired: 'Closed as approved or joined, the same rule as Recruitment Analytics.',
 };
 
-export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loading = false }) {
+export default function ConversionFunnelCard({ funnel = {}, timeToHireDays = null, loading = false }) {
   const stages = useMemo(() => conversionStages(funnel), [funnel]);
   const overall = stages.length ? stages[stages.length - 1].ofTop : 0;
-  const tth = useMemo(() => medianTimeToHire(pipeline), [pipeline]);
+  const tth = timeToHireDays === null || timeToHireDays === undefined ? null : Number(timeToHireDays);
+  // Under a day reads "<1d", not a rounded "0d" (staging's median was 0.1 days).
+  const tthText = tth === null ? '' : tth < 1 ? '<1' : String(Math.round(tth));
+  const tthDays = tth === null ? '' : tth < 1 ? 'less than a day' : `${Math.round(tth)} day${Math.round(tth) === 1 ? '' : 's'}`;
   const maxVal = Math.max(1, ...stages.map((s) => s.value));
 
   return (
@@ -51,9 +54,9 @@ export default function ConversionFunnelCard({ funnel = {}, pipeline = [], loadi
             </div>
           </Tooltip>
           {tth !== null && (
-            <Tooltip title={`Half of your hires took less than ${tth} day${tth === 1 ? '' : 's'} from being shortlisted to joining, and half took longer. Measured only on candidates who have completed the journey.`}>
+            <Tooltip title={`The median time from shortlist to hire is ${tthDays}: half of your hires were quicker, half took longer. Measured only on candidates who have completed the journey.`}>
               <div className="dash-card-metric">
-                <span className="dash-card-metric__num"><ClockCircleOutlined /> {tth}d</span>
+                <span className="dash-card-metric__num"><ClockCircleOutlined /> {tthText}d</span>
                 <span className="dash-card-metric__cap">time-to-hire</span>
               </div>
             </Tooltip>

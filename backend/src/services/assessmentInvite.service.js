@@ -17,6 +17,7 @@ import { sendAdHocCandidateEmail } from './stageNotification.service.js';
 import { compileTemplate } from './emailNotification.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
+import { assessmentInviteState } from '../utils/assessmentInviteState.js';
 
 const serializeBigInts = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? Number(v) : v)));
 
@@ -147,8 +148,7 @@ export async function getInviteState(pipelineId) {
   const result = await prisma.rpa_assessment_results.findFirst({
     where: { pipeline_id: BigInt(pipelineId), status: { in: ['matched', 'score_overwritten'] } },
   });
-  const isWithdrawn = !!latest.withdrawn_at;
-  const isOverdue = !result && !isWithdrawn && new Date(latest.deadline_at) < new Date();
+  const { isOverdue, isWithdrawn } = assessmentInviteState(latest, !!result);
 
   return serializeBigInts({ invite: latest, isOverdue, hasResult: !!result, isWithdrawn });
 }

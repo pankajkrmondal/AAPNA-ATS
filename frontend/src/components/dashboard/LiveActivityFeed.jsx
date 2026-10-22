@@ -1,4 +1,5 @@
 import MetricInfo from '../common/MetricInfo';
+import { fmtDateTime, fmtRelative } from '../../utils/dateFormat';
 /**
  * LiveActivityFeed — presentational real-time feed. Receives events from useLiveActivity
  * (socket). Shows a live pulse and a graceful "listening" state before anything arrives.
@@ -12,15 +13,6 @@ import {
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
-
-function timeAgo(ts) {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
-}
 
 const ICON = {
   upload: <CloudUploadOutlined />,
@@ -60,9 +52,7 @@ export default function LiveActivityFeed({ events = [] }) {
                   <strong>{e.title}</strong>
                   {e.detail ? <><br />{e.detail}</> : null}
                   <br />
-                  {new Date(e.at).toLocaleString(undefined, {
-                    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                  })}
+                  {fmtDateTime(e.at)}
                 </span>
               )}
             >
@@ -74,7 +64,7 @@ export default function LiveActivityFeed({ events = [] }) {
                   <Text className="dash-feed__title" ellipsis>{e.title}</Text>
                   <Text type="secondary" className="dash-feed__detail">{e.detail}</Text>
                 </div>
-                <Text type="secondary" className="dash-feed__time">{timeAgo(e.at)}</Text>
+                <Text type="secondary" className="dash-feed__time">{fmtRelative(e.at)}</Text>
               </div>
             </Tooltip>
           ))

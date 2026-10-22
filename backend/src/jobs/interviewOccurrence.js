@@ -17,6 +17,7 @@
  * *_reminded_at columns. See docs/phase3/INTERVIEWER-SCORECARD-PLAN.md.
  */
 import cron from 'node-cron';
+import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
@@ -31,6 +32,7 @@ import {
 } from '../services/interviewSchedule.service.js';
 import { getAttendanceOutcome, isAttendanceEnabled } from '../services/graphAttendance.service.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 let job = null;
 
@@ -115,11 +117,8 @@ export async function getInterviewOccurrenceSettings() {
 /** Builds the node-cron expression for an every-N-minutes poll. */
 const cronForInterval = (minutes) => (minutes >= 60 ? '0 * * * *' : `*/${minutes} * * * *`);
 
-const fmtIst = (d) =>
-  `${new Date(d).toLocaleString('en-IN', {
-    day: '2-digit', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
-  })} IST`;
+// "07 Oct 2026, 4:30 PM IST" (N34: one format for every email).
+const fmtIst = (d) => fmtDateTimeIst(d);
 
 /** Loads an active template row by name, or null. */
 async function getTemplate(name) {
@@ -148,9 +147,7 @@ export async function startInterviewOccurrenceJob() {
       }
       sweeping = true;
       try {
-        await sweepInterviewOccurrence();
-      } catch (err) {
-        logger.error(`Interview occurrence sweep failed: ${err.message}`);
+        await runJob('interviewOccurrence', () => sweepInterviewOccurrence());
       } finally {
         sweeping = false;
       }

@@ -23,6 +23,7 @@ export const columns = [
   { header: 'Vendor Name', key: 'vendor_name' },
   { header: 'Vendor Email', key: 'vendor_email' },
   { header: 'Source', key: 'source' },
+  { header: 'JD', key: 'jd' },
   { header: 'Reviewed By', key: 'reviewed_by' },
   { header: 'Review Action', key: 'review_action' },
   { header: 'Error Message', key: 'error_message' },
@@ -54,6 +55,8 @@ const EXPORT_SELECT = {
   file_url: true,
   created_at: true,
   updated_at: true,
+  mrf_id: true,
+  mrf: { select: { position_hiring_for: true } },
 };
 
 /**
@@ -65,12 +68,17 @@ const tableMissing = () => !prisma.rpa_upload_jobs;
 
 async function runQuery(where, max) {
   if (tableMissing()) return [];
-  return prisma.rpa_upload_jobs.findMany({
+  const rows = await prisma.rpa_upload_jobs.findMany({
     where,
     select: EXPORT_SELECT,
     orderBy: { updated_at: 'desc' },
     take: max,
   });
+  // The JD the upload was made for (N14), as the screen shows it.
+  return rows.map(({ mrf, mrf_id, ...row }) => ({
+    ...row,
+    jd: mrf_id != null ? `${mrf?.position_hiring_for || 'Untitled role'} (MRF-${mrf_id})` : '',
+  }));
 }
 
 // ── HR Manual Upload ──────────────────────────────────────────────────

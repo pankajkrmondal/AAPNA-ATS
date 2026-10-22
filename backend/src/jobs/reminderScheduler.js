@@ -4,6 +4,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendGraphEmail, injectTrackingPixel } from '../services/emailNotification.service.js';
 import { v4 as uuidv4 } from 'uuid';
+import { runJob } from '../utils/jobRunner.js';
 import {
   CANDIDATE_DATA_EMAIL_TYPE,
   MRF_HM_EMAIL_TYPE,
@@ -35,14 +36,10 @@ export async function startReminderSchedulerJob() {
       currentSchedule = '0 9 * * *';
     }
 
-    job = cron.schedule(currentSchedule, async () => {
+    job = cron.schedule(currentSchedule, () => runJob('reminderScheduler', async () => {
       logger.info('⏰ Running automated reminder scheduler job…');
-      try {
-        await sendPendingReminders();
-      } catch (error) {
-        logger.error('Reminder scheduler job execution failed:', { error: error.message });
-      }
-    });
+      await sendPendingReminders();
+    }));
 
     logger.info(`📅 Reminder scheduler cron scheduled with expression: "${currentSchedule}"`);
   } catch (error) {
@@ -302,6 +299,7 @@ export async function sendPendingReminders() {
     }
   } catch (err) {
     logger.error('[Reminder Scheduler] Failed to send pending reminders:', err);
+    throw err; // reported by runJob (N42)
   } finally {
     running = false;
   }

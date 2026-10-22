@@ -7,7 +7,11 @@
  * decided used to see "Link inactive or invalid". They now see who decided,
  * with the decider's title from the roster. Only a link we signed for that
  * MRF gets this; a forged or foreign token keeps today's error and reveals
- * nothing. Fixture rows are torn down by explicit id.
+ * nothing.
+ *
+ * It swaps the SHARED approver list (rpa_settings.mrf_approvers) for its own
+ * and puts it back first thing in clean-up. The audit events it causes cannot
+ * be deleted (append-only trigger), so its two labelled MRFs stay behind.
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,6 +44,12 @@ function expiredToken(mrfId, jti, secret = config.jwt.secret) {
 describe('N16 expired link on a decided MRF', () => {
   before(async () => {
     savedRoster = await prisma.rpa_settings.findUnique({ where: { key: 'mrf_approvers' } });
+    // A roster that is already this fixture was left by an earlier run whose
+    // clean-up never restored it (16 Oct). "Restoring" that would keep the
+    // shared approver list pointing at example.invalid, so stop instead.
+    if (savedRoster?.value?.includes('n16.ceo@example.invalid')) {
+      throw new Error('mrf_approvers already holds this test\'s fixture (an earlier run did not restore it). Restore the real approver list first.');
+    }
     await prisma.rpa_settings.upsert({
       where: { key: 'mrf_approvers' },
       update: { value: JSON.stringify(ROSTER) },
@@ -66,17 +76,32 @@ describe('N16 expired link on a decided MRF', () => {
   });
 
   after(async () => {
-    const mrfIds = [decidedMrf?.id, pendingMrf?.id].filter(Boolean);
-    await prisma.rpa_mrf_approval_events.deleteMany({ where: { mrf_id: { in: mrfIds } } }).catch(() => {});
-    await prisma.rpa_mrf_approval_tokens.deleteMany({ where: { mrf_id: { in: mrfIds } } });
-    await prisma.rpa_mrf.deleteMany({ where: { id: { in: mrfIds } } });
-    if (savedRoster) {
-      await prisma.rpa_settings.update({ where: { key: 'mrf_approvers' }, data: { value: savedRoster.value } });
-    } else {
-      await prisma.rpa_settings.delete({ where: { key: 'mrf_approvers' } }).catch(() => {});
+    try {
+      // The shared approver list goes back FIRST, whatever happens next. It used
+      // to come last, after deletes that throw (below), so it never ran and left
+      // staging's approval links going to example.invalid (DB-CHANGE-LOG #10).
+      if (savedRoster) {
+        await prisma.rpa_settings.update({ where: { key: 'mrf_approvers' }, data: { value: savedRoster.value } });
+      } else {
+        await prisma.rpa_settings.delete({ where: { key: 'mrf_approvers' } }).catch(() => {});
+      }
+    } finally {
+      // The tests record audit events (bad-link attempts), and the append-only
+      // trigger refuses to delete them, so their tokens and MRFs cannot go
+      // either (both are referenced). Rows that can go are removed; the rest
+      // stay, labelled with TAG, like the other test MRFs in DB-CHANGE-LOG.
+      const mrfIds = [decidedMrf?.id, pendingMrf?.id].filter(Boolean);
+      const kept = await prisma.rpa_mrf_approval_events.count({ where: { mrf_id: { in: mrfIds } } }).catch(() => 0);
+      if (kept === 0) {
+        await prisma.rpa_mrf_approval_tokens.deleteMany({ where: { mrf_id: { in: mrfIds } } }).catch(() => {});
+        await prisma.rpa_mrf.deleteMany({ where: { id: { in: mrfIds } } }).catch(() => {});
+      } else if (pendingMrf) {
+        // Close the still-open fixture MRF so nothing treats it as awaiting approval.
+        await prisma.rpa_mrf.update({ where: { id: pendingMrf.id }, data: { approval_status: 'rejected' } }).catch(() => {});
+      }
+      await prisma.$disconnect();
+      await disconnectRedis().catch(() => {});
     }
-    await prisma.$disconnect();
-    await disconnectRedis().catch(() => {});
   });
 
   test('expired personal link → the decision, with the decider\'s title', async () => {

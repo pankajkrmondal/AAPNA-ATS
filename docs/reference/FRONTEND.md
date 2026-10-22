@@ -1,5 +1,8 @@
 # Frontend Client Documentation
 
+> **Superseded (20 Oct 2026):** the routes and components listed here are from June. Use [docs/system/02-MODULES.md](../system/02-MODULES.md) for current screens and files. Kept for history.
+
+
 The frontend of the AAPNA ATS is a modern, responsive Single Page Application (SPA). It is built using **React (v18)**, bundled via **Vite**, and styled with **Ant Design (antd v5)** alongside a custom vanilla CSS variables design system.
 
 ---

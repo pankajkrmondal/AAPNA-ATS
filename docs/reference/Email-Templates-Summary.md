@@ -1,5 +1,8 @@
 # n8n Email Templates — Content Summary
 
+> **Superseded (20 Oct 2026):** this summary lists the n8n-era emails by workflow node. The live templates are on the Email Templates screen (`/email`) and in `backend/prisma/seed-email-templates.js`; routing is in [docs/system/05-CONFIGURATION.md](../system/05-CONFIGURATION.md) §3. Kept for history.
+
+
 This document catalogs **every email template defined inside the n8n workflow exports** under `AAPNA-ATS/n8n flows/`. It is sourced **only from the n8n flow JSONs** (not the application code). For each template the **verbatim subject** and the **full body (HTML or plain text, exactly as stored in the flow)** are included.
 
 **Infrastructure notes**

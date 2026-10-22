@@ -18,6 +18,7 @@
  * grants Calendars.ReadWrite.
  */
 import prisma from '../config/database.js';
+import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
@@ -579,12 +580,8 @@ export async function listUnresolvedInterviews({ graceMin = 15 } = {}) {
   });
 }
 
-const IST = 'Asia/Kolkata';
-const fmtIst = (d) =>
-  `${new Date(d).toLocaleString('en-IN', {
-    day: '2-digit', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST,
-  })} IST`;
+// "07 Oct 2026, 4:30 PM IST" (N34: one format for every email).
+const fmtIst = (d) => fmtDateTimeIst(d);
 
 /** Loads an active template row by name, or null. */
 async function getTemplate(name) {

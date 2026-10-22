@@ -1,4 +1,6 @@
+import { allRoleCacheKeys } from '../utils/screeningCacheKeys.js';
 import prisma from '../config/database.js';
+import { fmtDate } from '../utils/dateFormat.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import AppError from '../utils/AppError.js';
@@ -239,9 +241,6 @@ export const getMrfRequest = catchAsync(async (req, res) => {
   // approval_status and fill state are independent facts — see
   // attachApprovalStatus() in exports/mrf.export.js for why they are carried
   // separately rather than one overwriting the other.
-  // The budget lives here, so the linked MRF's JD screening must recompute.
-  if (updated.mrf_id) await clearScreeningCache(updated.mrf_id);
-
   let approval_status = 'pending';
   let mrf_filled = false;
   let mrf_closed = false;
@@ -284,7 +283,7 @@ export const getMrfRequest = catchAsync(async (req, res) => {
  */
 async function clearScreeningCache(mrfId, { insights = false } = {}) {
   try {
-    await redis.del(`screening:role:${mrfId}`, `screening:role:v2:${mrfId}`);
+    await redis.del(...allRoleCacheKeys(mrfId));
     if (insights) {
       const keys = await redis.keys(`insight:mrf:${mrfId}:cv:*`);
       if (keys.length > 0) await redis.del(keys);
@@ -333,6 +332,10 @@ export const updateMrfRequest = catchAsync(async (req, res) => {
     where: { id: BigInt(id) },
     data: dataToUpdate,
   });
+  // The budget lives here, so the linked MRF's JD screening must recompute.
+  // (This line sat in getMrfRequest, where `updated` does not exist, so every
+  // GET /api/mrf/:id threw and an edited budget never cleared the cache.)
+  if (updated.mrf_id) await clearScreeningCache(updated.mrf_id);
 
   let approval_status = 'pending';
   let mrf_filled = false;
@@ -757,7 +760,7 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     submitter_email,
     hiring_manager_name,
     hiring_manager_designation,
-    date_of_request: parsedDate.toLocaleDateString(),
+    date_of_request: fmtDate(parsedDate),
     required_in,
     position_hiring_for,
     number_of_positions: parsedNumPositions,

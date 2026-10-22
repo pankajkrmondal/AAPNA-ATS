@@ -68,12 +68,12 @@ const DEFAULTS = {
   // dynamic-in-prod / redirect-in-nonprod rule.
   mrfRequest: { to: '', cc: '', dynamic: true },
   // MRF approval request to the approvers ("Send message and wait for response").
-  mrfApproval: { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '', dynamic: false },
+  mrfApproval: { to: 'hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com', cc: '', dynamic: false },
   // HR-team notification sent AT submission time (n8n "Send a message To HR").
-  mrfSubmitHrNotify: { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com', cc: '', dynamic: false },
+  mrfSubmitHrNotify: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // MRF approved/declined outcome notification to HR. Prod CCs leaders + HM
   // (HM email is appended dynamically by the caller).
-  mrfOutcome: { to: 'hmopuri@aapnainfotech.com, saukumar@aapnainfotech.com', cc: '', dynamic: false },
+  mrfOutcome: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Shortlist initiation (2.4). to = candidate (dynamic), cc = internal.
   shortlistCc: { to: '', cc: 'pkmondal@aapnainfotech.com', dynamic: true },
   // Interview scheduled notification to candidate. Prod -> candidate.

@@ -49,29 +49,18 @@ import { getSocket } from '../services/socket';
 import KpiCard from '../components/common/KpiCard';
 import UploadCelebration from '../components/common/UploadCelebration';
 import ExportButton from '../components/common/ExportButton';
+import { fmtDateTime } from '../utils/dateFormat';
+import { UPLOAD_STATUS_FILTERS, uploadStatusMeta } from '../constants/uploadStatus';
+import UploadJdPicker, { jobJdText } from '../components/common/UploadJdPicker';
+
+/** Open JDs for the "Uploading for JD" picker (N14); module-level so the picker loads once. */
+const loadJdOptions = () => vendorService.getUploadMrfs();
 
 const { Title, Text } = Typography;
 const { Dragger } = Upload;
 
 const PAGE_SIZE = 10;
 
-/** Map a stored status (underscored) to a user-friendly label + AntD tag colour/icon. */
-const STATUS_META = {
-  Uploaded: { label: 'Received', color: 'default', hint: 'Received and queued — parsing hasn’t started yet.' },
-  Queued: { label: 'Waiting in Queue', color: 'blue', icon: <SyncOutlined />, hint: 'Waiting for the background worker to pick it up.' },
-  Processing: { label: 'Processing', color: 'processing', icon: <SyncOutlined spin />, hint: 'Extracting text and parsing the resume with AI.' },
-  Duplicate_Pending_Review: { label: 'Pending Recruiter Review', color: 'warning', icon: <WarningOutlined />, hint: 'Candidate already exists — a recruiter must merge or reject it.' },
-  Missing_Information: { label: 'Awaiting Candidate Details', color: 'orange', icon: <ExclamationCircleOutlined />, hint: 'Saved, but waiting on mandatory candidate details.' },
-  Completed: { label: 'Saved to Database', color: 'success', icon: <CheckCircleOutlined />, hint: 'Saved to the candidate database.' },
-  Failed: { label: 'Processing Failed', color: 'error', icon: <CloseCircleOutlined />, hint: 'Processing failed — you can reprocess it.' },
-  Rejected_By_System: { label: 'Rejected by System', color: 'volcano', icon: <CloseCircleOutlined />, hint: 'No valid email or phone on the resume — rejected; re-upload with at least one.' },
-  Cancelled: { label: 'Rejected by Recruiter', color: 'default', icon: <CloseCircleOutlined />, hint: 'A recruiter rejected this duplicate.' },
-};
-
-const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
-  value: s,
-  label: STATUS_META[s].label,
-}));
 
 /**
  * Statuses a row can still move on from. While any row is in one of these the table
@@ -80,17 +69,6 @@ const STATUS_FILTERS = Object.keys(STATUS_META).map((s) => ({
  */
 const NON_TERMINAL_STATUSES = new Set(['Uploaded', 'Queued', 'Processing']);
 const POLL_INTERVAL_MS = 10_000;
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
-  } catch {
-    return '—';
-  }
-}
 
 export default function VendorPortal() {
   const { user } = useAuth();
@@ -103,6 +81,8 @@ export default function VendorPortal() {
 
   // ── Upload state ──
   const [fileList, setFileList] = useState([]);
+  // The JD this upload is made for (N14); null = no tagging.
+  const [uploadMrfId, setUploadMrfId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState(null);
 
@@ -255,6 +235,7 @@ export default function VendorPortal() {
     const formData = new FormData();
     fileList.forEach((file) => formData.append('resumes', file.originFileObj || file));
     if (isStaff && selectedVendor) formData.append('vendorEmail', selectedVendor);
+    if (uploadMrfId) formData.append('mrfId', String(uploadMrfId));
 
     try {
       await vendorService.uploadResumes(formData, (e) => {
@@ -262,6 +243,8 @@ export default function VendorPortal() {
       });
       setUploadMsg({ type: 'success', text: '✅ Uploaded. Track processing status in the dashboard below.' });
       setFileList([]);
+      // Never carry a JD over to the next upload by accident.
+      setUploadMrfId(null);
       setStatusFilter(null);
       setOnlyActionRequired(false);
       setCelebrate(true);
@@ -410,6 +393,12 @@ export default function VendorPortal() {
       render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
     },
     {
+      title: 'JD',
+      key: 'jd',
+      // The JD the upload was made for (N14).
+      render: (_, r) => <span style={{ fontSize: 12 }}>{jobJdText(r)}</span>,
+    },
+    {
       title: 'Uploaded By',
       key: 'uploaded_by',
       render: (_, r) => <span style={{ fontSize: 12 }}>{r.uploaded_by || '—'}</span>,
@@ -422,13 +411,13 @@ export default function VendorPortal() {
     {
       title: 'Uploaded At',
       key: 'created_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.created_at)}</span>,
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{fmtDateTime(r.created_at)}</span>,
     },
     {
       title: 'Status',
       key: 'status',
       render: (_, r) => {
-        const meta = STATUS_META[r.status] || { label: r.status, color: 'default' };
+        const meta = uploadStatusMeta(r.status);
         return (
           <Space size={4}>
             <Tooltip title={meta.hint}>
@@ -461,7 +450,7 @@ export default function VendorPortal() {
     {
       title: 'Last Updated',
       key: 'updated_at',
-      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(r.updated_at)}</span>,
+      render: (_, r) => <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{fmtDateTime(r.updated_at)}</span>,
     },
     {
       title: 'Action',
@@ -586,6 +575,7 @@ export default function VendorPortal() {
             </div>
           )}
 
+          <UploadJdPicker value={uploadMrfId} onChange={setUploadMrfId} loadOptions={loadJdOptions} disabled={uploading} />
           {/* Compact dropzone — single row, doesn't dominate the page. */}
           <Dragger
             multiple
@@ -696,7 +686,7 @@ export default function VendorPortal() {
           )}
           <Select
             allowClear placeholder="Filter by status" style={{ minWidth: 220 }}
-            value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={STATUS_FILTERS}
+            value={statusFilter} onChange={(v) => setStatusFilter(v || null)} options={UPLOAD_STATUS_FILTERS}
           />
           {isStaff && (
             <Button
@@ -874,7 +864,7 @@ export default function VendorPortal() {
               </Divider>
               <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
                 <Descriptions.Item label="Uploaded By">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
-                <Descriptions.Item label="Uploaded At">{formatDate(c.uploadedAt)}</Descriptions.Item>
+                <Descriptions.Item label="Uploaded At">{fmtDateTime(c.uploadedAt)}</Descriptions.Item>
                 <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>
                 <Descriptions.Item label="Vendor">{displayVal(c.vendorName || c.VendorEmail)}</Descriptions.Item>
               </Descriptions>

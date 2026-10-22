@@ -21,6 +21,10 @@ import runExport from '../exports/runExport.js';
 import candidatesExport from '../exports/candidates.export.js';
 import { notify, NOTIFICATION_TYPES, pipelineLink } from '../services/notification.service.js';
 import { describeDetailsCompletion } from '../utils/missingDetails.js';
+import { syncShortlistIdentitySafe, clearScreeningRoleCache } from '../services/candidateSync.service.js';
+import * as pipelineService from '../services/pipeline.service.js';
+import { Prisma } from '@prisma/client';
+import { emailMatchesSql } from '../utils/emailMatch.js';
 
 /**
  * @desc    Search candidates with pagination and filters
@@ -174,6 +178,16 @@ export const removeCandidateReferral = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    Every score the pipeline holds for a candidate, per MRF and round (N29)
+ * @route   GET /api/candidates/:id/pipeline-scores
+ * @access  Staff
+ */
+export const getCandidatePipelineScores = catchAsync(async (req, res) => {
+  const journeys = await pipelineService.getCandidatePipelineScores(req.params.id);
+  return success(res, journeys, 'Pipeline scores retrieved');
+});
+
+/**
  * @desc    Get email conversations associated with a candidate
  * @route   GET /api/candidates/:id/emails
  * @access  Private
@@ -237,6 +251,36 @@ export const getPublicRoles = catchAsync(async (req, res) => {
 });
 
 /**
+ * The candidate a missing-details link belongs to.
+ *
+ * The link's token is the base64 of the candidate's EmailID at the time the
+ * email went out, and the lookup used to demand that exact address. Once the
+ * email was edited in Search Candidate, or an upload merge appended a second
+ * address, every link already sent answered "Candidate not found" (N29).
+ *
+ * In order: the token stored on the record when the link was sent
+ * (cvMissingToken: survives any later edit), then the exact address (links
+ * from before tokens were stored), then a record holding that address among
+ * others, only when exactly one does, so a shared address never opens
+ * someone else's form.
+ *
+ * @param {string} token - as received in the link
+ * @param {string} email - the token decoded
+ * @returns {Promise<object|null>} the rpa_cv row
+ */
+async function findCandidateByDetailsToken(token, email) {
+  const byToken = await prisma.rpa_cv.findFirst({ where: { cvMissingToken: token }, orderBy: { id: 'desc' } });
+  if (byToken) return byToken;
+
+  const byExact = await prisma.rpa_cv.findFirst({ where: { EmailID: { equals: email, mode: 'insensitive' } } });
+  if (byExact) return byExact;
+
+  const ids = await prisma.$queryRaw`
+    SELECT id FROM rpa_cv WHERE ${emailMatchesSql(Prisma.sql`"EmailID"`, email)} LIMIT 2`;
+  return ids.length === 1 ? prisma.rpa_cv.findUnique({ where: { id: ids[0].id } }) : null;
+}
+
+/**
  * @desc    Get candidate's missing data fields via public token
  * @route   GET /api/candidates/public/missing-data
  * @access  Public
@@ -259,12 +303,7 @@ export const getPublicMissingData = catchAsync(async (req, res) => {
     throw new AppError('Invalid token content.', 400);
   }
 
-  // Find candidate by EmailID
-  const candidate = await prisma.rpa_cv.findFirst({
-    where: {
-      EmailID: { equals: email, mode: 'insensitive' }
-    }
-  });
+  const candidate = await findCandidateByDetailsToken(token, email);
 
   if (!candidate) {
     throw new AppError('Candidate not found.', 404);
@@ -374,12 +413,7 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     throw new AppError('Invalid token format.', 400);
   }
 
-  // Find candidate by EmailID
-  const candidate = await prisma.rpa_cv.findFirst({
-    where: {
-      EmailID: { equals: email, mode: 'insensitive' }
-    }
-  });
+  const candidate = await findCandidateByDetailsToken(token, email);
 
   if (!candidate) {
     throw new AppError('Candidate not found.', 404);
@@ -630,6 +664,13 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     where: { id: candidate.id },
     data: finalUpdateData
   });
+
+  // The form can change the name, and a resume upload can change the email:
+  // the pipeline's copy follows (N29). Best-effort, never fails the submit.
+  if ('Name' in finalUpdateData || 'EmailID' in finalUpdateData) {
+    await syncShortlistIdentitySafe(candidate.id, { previousEmails: [candidate.EmailID].filter(Boolean) });
+    await clearScreeningRoleCache();
+  }
 
   // If the candidate has now supplied all missing details, advance the originating
   // upload job from "Awaiting Candidate Details" to "Saved to Database". Matched by

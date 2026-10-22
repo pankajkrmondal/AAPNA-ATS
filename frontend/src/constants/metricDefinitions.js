@@ -53,51 +53,66 @@ export const METRICS = {
   activeMRFs: {
     label: 'Active MRFs',
     short: 'Manpower Requisition Forms still open — pending, awaiting approval, or approved but not yet filled.',
-    formula: 'Requisitions that have not been filled and have not been rejected or withdrawn. '
+    formula: 'Requisitions that have not been filled, closed, rejected or withdrawn. '
       + 'The "awaiting approval" figure below it counts the ones still waiting on an approver.',
-    // dev: approval_status in (pending, waiting, approved) AND filled_at IS NULL,
+    // dev: approval_status in (pending, waiting, approved) AND filled_at IS NULL AND closed_at IS NULL,
     // counted server-side in dashboard.service.js getStats() · rpa_mrf.
     source: 'Your requisition records.',
-    caveat: 'The graph is drawn from the most recent batch of open requisitions, so in a very '
-      + 'busy period it can under-count the earliest days shown. The headline number and the '
-      + '"awaiting approval" figure are full counts and are never affected.',
   },
   todayUploads: {
     label: "Today's Uploads",
-    short: 'Candidate CVs added since midnight today.',
-    formula: 'A count of candidates added at or after 00:00 today, in your local time.',
+    short: 'Candidate CVs added since midnight today (India time).',
+    formula: 'A count of candidates added at or after 00:00 IST today.',
     source: 'Your candidate database.', // dev: GET /dashboard/stats · rpa_cv
   },
   shortlisted: {
     label: 'Shortlisted',
-    short: 'Candidates moved to a shortlisted or selected stage of the pipeline.',
-    formula: 'A count of shortlist entries currently sitting at shortlisted or selected.',
-    source: 'Your shortlist and interview pipeline.', // dev: rpa_shortlisted_candidates
+    short: 'Candidates in the interview pipeline right now: shortlisted for a role and not yet closed.',
+    formula: 'Every open pipeline journey — same count as the Candidate Pipeline board. A candidate '
+      + 'shortlisted for two roles counts twice. With an MRF picked, only that MRF.',
+    source: 'Your interview pipeline.', // dev: rpa_candidate_pipeline WHERE final_outcome IS NULL (N36)
+  },
+  shortlistRate: {
+    label: 'Shortlist rate',
+    short: 'Of the candidates added in the selected period, how many were shortlisted in it.',
+    formula: 'Candidates who entered the pipeline in the period ÷ candidates added in the period.',
+    source: 'Your candidate database and interview pipeline.',
+    caveat: 'Someone added near the end of the period may be shortlisted after it, so the latest '
+      + 'days read a little low.',
+  },
+  hired: {
+    label: 'Hired',
+    short: 'Candidates whose journey was closed as approved or joined.',
+    formula: 'The same rule Recruitment Analytics uses, so the two screens agree.',
+    source: 'Your interview pipeline.', // dev: final_outcome IN HIRED_OUTCOMES (N36)
   },
 
   // ── Widgets ──────────────────────────────────────────────────────────────
   hiringTrends: {
     label: 'Hiring Trends',
-    short: 'Candidates added per day over the period you have selected, for the role you have selected.',
-    formula: 'Each bar in the line is the number of candidates added on that day.',
-    source: 'Your candidate database.',
-    caveat: 'Based on the 200 most recently added candidates, so a long period reaching further '
-      + 'back than those 200 cover may under-count its earliest days.',
+    short: 'Candidates added per day over the period you have selected.',
+    formula: 'Each point is the number of candidates added on that day (India time), counted over '
+      + 'the whole database.',
+    source: 'Your candidate database.', // dev: GET /dashboard/trends (N36)
+    caveat: 'With an MRF picked, a candidate counts when uploaded for or shortlisted to that MRF (JD tagging), '
+      + 'or, for candidates added before tagging existed, when the "Position Applied" they gave matches its role.',
   },
   conversionFunnel: {
     label: 'Conversion Funnel',
     short: 'How many candidates survive each stage, from sourced through to hired.',
-    formula: 'Sourced is every CV; AI Screened is those the AI has profiled; Shortlisted is those '
-      + 'on a shortlist and not rejected; Hired is those who joined or accepted an offer.',
-    source: 'Your candidate database and shortlist records.',
-    // dev: GET /dashboard/stats · rpa_cv + rpa_shortlisted_candidates
+    formula: 'Sourced is every CV; AI Screened is those the AI has profiled; Entered pipeline is every '
+      + 'candidate ever shortlisted for a role; Hired is those closed as approved or joined. '
+      + 'Time-to-hire is the median days from shortlist to hire.',
+    source: 'Your candidate database and interview pipeline. Always all roles.',
+    // dev: GET /dashboard/stats · rpa_cv + rpa_candidate_pipeline (N36)
   },
   talentInsights: {
     label: 'Talent Insights',
-    short: 'The roles candidates apply for most often, and the skills that come up most often across their profiles.',
-    source: 'Your candidate profiles.',
-    caveat: 'Based on the 200 most recently added candidates rather than the whole database, so it '
-      + 'describes what is arriving now rather than everything you have ever received.',
+    short: 'The roles candidates applied for most often, and the skills that come up most often, '
+      + 'among candidates added in the selected period.',
+    source: 'Your candidate profiles.', // dev: GET /dashboard/trends (N36)
+    caveat: 'Roles are the "Position Applied" each candidate gave; spelling variants of one role are '
+      + 'counted together.',
   },
   recruiterActivity: {
     label: 'Recruiter Activity',
@@ -122,8 +137,8 @@ export const METRICS = {
   },
   interviewsToday: {
     label: 'Interviews today',
-    short: 'Interviews with a start time falling today.',
-    source: 'Your interview schedule.', // dev: GET /screening/analytics/pipeline
+    short: 'Zeko and Teams interviews with a start time falling today.',
+    source: 'Your interview schedule.', // dev: GET /dashboard/upcoming-interviews (N36)
   },
   liveActivity: {
     label: 'Live Activity',
@@ -134,25 +149,59 @@ export const METRICS = {
   },
   upcomingInterviews: {
     label: 'Upcoming Interviews',
-    short: 'Interviews scheduled over the next seven days, soonest first.',
-    source: 'Your interview schedule.', // dev: GET /screening/analytics/pipeline
+    short: 'Zeko interviews and Teams interviews over the next seven days, soonest first. Click one '
+      + 'to open that candidate on the pipeline board.',
+    source: 'Your interview schedule.', // dev: GET /dashboard/upcoming-interviews (N36)
   },
   latestUploads: {
     label: 'Latest uploads',
-    short: 'The five most recently added candidates. Open Search Candidates for the full, searchable list.',
+    short: 'The five most recently added candidates. Click one to open the candidate.',
     source: 'Your candidate database.', // dev: GET /dashboard/recent-uploads
   },
   dateRange: {
     label: 'Date range',
-    short: 'Sets the period every graph on this page covers — the four card graphs and Hiring Trends.',
+    short: 'Sets the period the graphs, Hiring Trends, Talent Insights and the shortlist rate cover.',
     caveat: 'The big numbers on the cards are lifetime totals and stay the same whichever period '
-      + 'you pick. Only the graphs and the wording beneath them follow this control.',
+      + 'you pick.',
   },
   roleFilter: {
-    label: 'Role filter',
-    short: 'Narrows the graphs to one role, so you can see how a single position is tracking.',
-    caveat: 'The big numbers on the cards cover all roles and do not change. The card graphs, '
-      + 'Hiring Trends and Talent Insights all follow this filter.',
+    label: 'MRF filter',
+    short: 'Narrows the page to one requisition, so you can see how a single position is tracking.',
+    caveat: 'Shortlisted and the pipeline graph follow the MRF exactly. Candidates added, Hiring '
+      + 'Trends and Talent Insights match on the role name the candidate applied for, until uploads '
+      + 'are linked to an MRF (JD tagging).',
+  },
+
+  // ── Analytics › Positions tab (N39) ──────────────────────────────────────
+  // dev: GET /api/pipeline/analytics/positions · positionsOverview() in
+  // backend/src/services/pipelineAnalytics.helpers.js.
+  positionsOpened: {
+    label: 'Opened',
+    short: 'The day the requisition was approved (or raised, for older ones with no approval date).',
+  },
+  positionsDaysOpen: {
+    label: 'Days open',
+    short: 'Days from opening until today — or until it was filled or closed, for a closed one.',
+  },
+  positionsShortlisted: {
+    label: 'Shortlisted',
+    short: 'Every candidate shortlisted for this requisition, whatever happened to them since.',
+  },
+  positionsMovedForward: {
+    label: 'Moved forward',
+    short: 'Candidates who got past the first pipeline stage (HR screening) for this requisition.',
+  },
+  positionsStageReach: {
+    label: 'Reached each stage',
+    short: 'How many candidates reached each stage. A candidate who reached Tech 2 also counts under '
+      + 'the stages before it that they went through.',
+    caveat: 'An optional stage that was skipped is not counted as reached.',
+  },
+  positionsJoiningRatio: {
+    label: 'Joining ratio',
+    short: 'Of the candidates who accepted an offer, how many actually joined.',
+    formula: 'Joined ÷ offers accepted. Shown as "–" until someone has accepted an offer.',
+    caveat: 'Someone who accepted recently may simply not have reached their joining date yet.',
   },
 
   // ── Analytics page (/analytics) ──────────────────────────────────────────

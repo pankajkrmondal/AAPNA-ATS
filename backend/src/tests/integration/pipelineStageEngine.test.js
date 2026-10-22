@@ -42,6 +42,8 @@ const ACTED_BY = 2;
 /** Journeys created by this file, deleted in after(). */
 const createdJourneys = [];
 const createdCvs = [];
+/** MRFs a test had to create itself (PIPE-13), deleted in after(). */
+const createdMrfs = [];
 let mrfSingleId;
 
 /** Creates a throwaway candidate + journey for one test. */
@@ -111,6 +113,9 @@ after(async () => {
   if (createdCvs.length) {
     await prisma.rpa_shortlisted_candidates.deleteMany({ where: { cv_id: { in: createdCvs } } });
     await prisma.rpa_cv.deleteMany({ where: { id: { in: createdCvs } } });
+  }
+  if (createdMrfs.length) {
+    await prisma.rpa_mrf.deleteMany({ where: { id: { in: createdMrfs } } });
   }
   await prisma.$disconnect();
   try { await disconnectRedis(); } catch { /* already closed */ }
@@ -348,11 +353,26 @@ describe('PIPE-13 — 6-month re-application cooling-off', () => {
     });
 
     // A DIFFERENT MRF, so this is a genuinely new journey rather than the
-    // idempotent same-MRF return path.
-    const otherMrf = await prisma.rpa_mrf.findFirst({
+    // idempotent same-MRF return path. The fixture's 2-opening MRF went missing
+    // from staging (16 Oct), and this read null; any other open MRF does, so
+    // the test makes its own when the fixture one is gone.
+    let otherMrf = await prisma.rpa_mrf.findFirst({
       where: { additional_information: { contains: FIXTURE_TAG }, number_of_positions: 2 },
       select: { id: true },
     });
+    if (!otherMrf) {
+      otherMrf = await prisma.rpa_mrf.create({
+        data: {
+          position_hiring_for: 'PIPE-13 second role (test)',
+          number_of_positions: 2,
+          additional_information: `${FIXTURE_TAG} PIPE-13`,
+          approval_status: 'approved',
+          date_of_request: new Date(),
+        },
+        select: { id: true },
+      });
+      createdMrfs.push(otherMrf.id);
+    }
 
     await assert.rejects(
       () => createPipelineJourney({ cvId: cv.id, mrfId: otherMrf.id, source: 'screening_shortlist' }),

@@ -25,6 +25,7 @@ import cron from 'node-cron';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { maskIp, summarizeUserAgent } from '../utils/mrfApprovalRules.js';
+import { runJob } from '../utils/jobRunner.js';
 
 const RETENTION_KEY = 'mrf_audit_client_data_retention_days';
 const DEFAULT_RETENTION_DAYS = 365;
@@ -111,7 +112,7 @@ export async function runMrfAuditRetentionSweep({ batchSize = 500, maxBatches = 
     return totals;
   } catch (err) {
     logger.error(`[MRF Audit Retention] sweep failed: ${err.message}`);
-    return totals;
+    throw err; // reported by runJob (N42)
   } finally {
     running = false;
   }
@@ -120,7 +121,7 @@ export async function runMrfAuditRetentionSweep({ batchSize = 500, maxBatches = 
 /** Nightly at 02:30 IST (off-peak). */
 export function startMrfAuditRetentionJob() {
   if (task) return;
-  task = cron.schedule('30 2 * * *', () => { runMrfAuditRetentionSweep(); }, { timezone: 'Asia/Kolkata' });
+  task = cron.schedule('30 2 * * *', () => runJob('mrfAuditRetention', () => runMrfAuditRetentionSweep()), { timezone: 'Asia/Kolkata' });
   logger.info('🧹 MRF approval audit retention sweep scheduled (02:30 IST daily)');
 }
 

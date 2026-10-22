@@ -35,6 +35,14 @@ const vendorService = {
   },
 
   /**
+   * Open JDs for the upload's "Uploading for JD" picker (N14).
+   * @returns {Promise} [{ id, ref, role, created_at, isLatest }]
+   */
+  getUploadMrfs() {
+    return api.get('/vendor/mrfs');
+  },
+
+  /**
    * Upload resumes to the parsing system.
    * @param {FormData} formData — Multi-part form data containing 'resumes' array
    * @param {function} onUploadProgress — Callback for upload progress bar

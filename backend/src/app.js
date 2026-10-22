@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import config from './config/index.js';
 import logger, { morganStream } from './config/logger.js';
 import errorHandler from './middleware/errorHandler.js';
+import { requestContext } from './middleware/requestContext.js';
 import AppError from './utils/AppError.js';
 import friendlyRateLimitHandler from './utils/rateLimitHandler.js';
 import apiRouter from './routes/index.js';
@@ -28,6 +29,9 @@ app.set('json replacer', (key, value) => {
   return value;
 });
 
+// ── Request reference (N42) — first, so every later log line carries it ──
+app.use(requestContext);
+
 // ── Security headers ──────────────────────────────────────────────────
 app.use(helmet());
 
@@ -37,7 +41,7 @@ app.use(
     origin: config.cors.frontendUrl,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id'],
     // CSV exports read these client-side. Without exposedHeaders the browser
     // hides them on cross-origin responses, so staging/production (where
     // VITE_API_URL points at another origin) would name every download
@@ -52,13 +56,18 @@ app.use(
       // fires on staging and production, which are cross-origin — exactly the
       // failure this list's comment above was written about.
       'X-Dossier-Oversize',
+      // The request's reference (N42); error bodies carry it too as `ref`.
+      'X-Request-Id',
     ],
   }),
 );
 
 // ── Request logging ───────────────────────────────────────────────────
+// ref= is written explicitly: morgan logs on response finish, where the async
+// context may already be gone. Logs & errors finds a request by this text.
+morgan.token('req-id', (req) => req.requestId || '-');
 app.use(
-  morgan(':method :url :status :res[content-length] - :response-time ms', {
+  morgan(':method :url :status :res[content-length] - :response-time ms ref=:req-id', {
     stream: morganStream,
   }),
 );

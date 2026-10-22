@@ -78,9 +78,9 @@ Company-scoped working role. No user-management rights at all.
 
 **Cannot**
 - Access the **Admin Portal** (`hr_admin` module is never granted by default).
-- Create, edit, delete, or (de)activate **any** user — including changing **their own**
-  profile details or password (there is no self-service password change; an admin or superadmin
-  resets it for them, and the new credentials are emailed to them).
+- Create, edit, delete, or (de)activate **any** user, or change their **own** profile details.
+  (Since 10 Jul 2026 every role can change their **own password** from the user menu → Change
+  Password, or reset it with "Forgot password?" on the login page. An admin can still reset it for them.)
 - Use any module an admin has toggled off for them.
 
 ---
@@ -96,8 +96,8 @@ Company-scoped external role — the most restricted account type.
 **Cannot**
 - Access the Admin Portal or any recruiter module (MRF, screening, search, …) unless an admin
   explicitly grants it.
-- Create, edit, delete, or (de)activate any user — including their own details/password
-  (same as recruiters: resets are done by an admin and emailed to them).
+- Create, edit, delete, or (de)activate any user, or change their own details. They can change their
+  own password (user menu → Change Password, or "Forgot password?"), as every role can.
 
 ---
 
@@ -110,7 +110,7 @@ Company-scoped external role — the most restricted account type.
 | Delete users | ✅ (not self) | ❌ | ❌ | ❌ |
 | Edit details — lower roles | ✅ | ✅ (recruiter/vendor) | ❌ | ❌ |
 | Edit details — same rank | ✅ (peer superadmins) | ❌ (co-admins blocked) | ❌ | ❌ |
-| Change password — self | ✅ | ✅ | ❌ (admin resets) | ❌ (admin resets) |
+| Change password — self | ✅ | ✅ | ✅ (Change Password / Forgot password) | ✅ (Change Password / Forgot password) |
 | Change password — others | admin, recruiter, vendor | recruiter, vendor | ❌ | ❌ |
 | (De)activate users | anyone except self | recruiter/vendor only | ❌ | ❌ |
 | Change own role / status, delete self | ❌ | ❌ | ❌ | ❌ |

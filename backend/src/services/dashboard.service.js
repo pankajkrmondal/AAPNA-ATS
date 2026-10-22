@@ -1,7 +1,13 @@
 import prisma from '../config/database.js';
+import { fmtRelative } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import { mapCandidate } from './candidate.service.js';
 import { Prisma } from '@prisma/client';
+import { HIRED_OUTCOMES } from '../config/pipelineStages.js';
+import { timeToHireFor } from './pipelineAnalytics.helpers.js';
+import {
+  DEFAULT_RANGE_DAYS, IST, changePct, fillDaily, istMidnight, mergeUpcoming, normaliseLabel, percentOf, periodBounds, talentTallies,
+} from '../utils/dashboardMetrics.js';
 
 /**
  * Dashboard service.
@@ -10,11 +16,73 @@ import { Prisma } from '@prisma/client';
  */
 
 /**
+ * Who counts as what (N36) — one rule shared with Recruitment Analytics:
+ *   - Shortlisted (KPI) = journeys still open in the pipeline (no final outcome).
+ *   - Entered pipeline (funnel) = every journey ever started.
+ *   - Hired = journeys closed with an outcome in HIRED_OUTCOMES (approved / joined),
+ *     the same rule as Analytics' bucketFor().
+ * The old counts read rpa_shortlisted_candidates.pipeline_status and offer
+ * dates, so the dashboard and Analytics disagreed on the same word.
+ */
+const OPEN_JOURNEY = { final_outcome: null };
+const HIRED_JOURNEY = { final_outcome: { in: [...HIRED_OUTCOMES] } };
+
+/** "Created inside [from, to)" for rpa_cv."createdAt" (a UTC timestamp without zone). */
+const cvCreatedBetween = (from, to) => Prisma.sql`("createdAt" AT TIME ZONE 'UTC') >= ${from}::timestamptz AND ("createdAt" AT TIME ZONE 'UTC') < ${to}::timestamptz`;
+/** rpa_cv."createdAt" as an India-time calendar day. */
+const CV_IST_DAY = Prisma.sql`(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${IST})::date`;
+/** A text column lower-cased and single-spaced, to match normaliseLabel(). */
+const normalisedSql = (column) => Prisma.sql`lower(regexp_replace(btrim(${Prisma.raw(column)}), '\\s+', ' ', 'g'))`;
+/** Candidates whose typed "Position Applied" matches a role (the MRF link before JD tagging, N13). */
+const positionMatches = (roleKey) => Prisma.sql`${normalisedSql('"PositionApplied"')} = ${roleKey}`;
+/**
+ * An rpa_cv row linked to the MRF: tagged to it (uploaded for / shortlisted
+ * to it, N13) or, for candidates from before tagging, a matching "Position
+ * Applied". Used inside a query FROM rpa_cv.
+ */
+const cvLinkedToMrf = (mrf) => Prisma.sql`(EXISTS (
+  SELECT 1 FROM rpa_candidate_mrf_tags t WHERE t.cv_id = rpa_cv.id AND t.mrf_id = ${mrf.id}
+) OR ${positionMatches(mrf.roleKey)})`;
+/** A moment just past now, so rows written this second are inside [from, until). */
+const justAfter = (now) => new Date(now.getTime() + 60_000);
+
+/**
+ * The MRF picked in the dashboard filter, with its role normalised for the
+ * interim "Position Applied" match. Null when none is picked or it doesn't exist.
+ */
+async function resolveMrfFilter(mrfId) {
+  if (!mrfId) return null;
+  const mrf = await prisma.rpa_mrf.findUnique({ where: { id: mrfId }, select: { id: true, position_hiring_for: true } });
+  if (!mrf) return null;
+  return { id: mrf.id, role: mrf.position_hiring_for || '', roleKey: normaliseLabel(mrf.position_hiring_for) };
+}
+
+/** Candidates added in [from, to), optionally only those linked to the MRF (cvLinkedToMrf). */
+async function countCvAdded(from, to, mrf) {
+  const roleCond = mrf ? Prisma.sql`AND ${cvLinkedToMrf(mrf)}` : Prisma.empty;
+  const [row] = await prisma.$queryRaw`SELECT COUNT(*)::int AS n FROM rpa_cv WHERE ${cvCreatedBetween(from, to)} ${roleCond}`;
+  return row?.n || 0;
+}
+
+/**
  * Get summary statistics for the dashboard.
+ *
+ * Headline numbers are lifetime figures; `period` holds the figures for the
+ * selected range. An MRF narrows the pipeline figures (Shortlisted, entered in
+ * the period) by MRF id, and the "added" figure to candidates tagged to it (N13)
+ * or, from before tagging, whose Position Applied matches. The funnel stays
+ * all-roles so its stages are one population.
+ *
+ * @param {{ rangeDays?: number, mrfId?: bigint|null }} [params]
  * @returns {Promise<Object>} Stats object
  */
-export async function getStats() {
+export async function getStats({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null } = {}) {
   try {
+    const now = new Date();
+    const { start } = periodBounds(rangeDays, now);
+    const mrf = await resolveMrfFilter(mrfId);
+    const mrfWhere = mrf ? { mrf_id: mrf.id } : {};
+
     const [
       totalCandidates,
       activeMRFs,
@@ -23,19 +91,25 @@ export async function getStats() {
       shortlistedCount,
       aiScreenedCount,
       hiredCount,
+      enteredPipelineCount,
+      addedInRange,
+      enteredInRange,
+      hiredJourneys,
     ] = await Promise.all([
       // Total candidates in rpa_cv
       prisma.rpa_cv.count(),
 
       // Active MRFs (approval_status is 'pending', 'waiting', or 'approved',
-      // and the openings are not all filled). The filled_at test used to be
+      // and the requisition is still hiring). The filled_at test used to be
       // implicit — closure overwrote approval_status to 'closed', which fell
       // out of this list for free. That write was lossy, so fill state now has
-      // its own column and must be excluded explicitly.
+      // its own column and must be excluded explicitly. closed_at (Q34, closed
+      // by the business) is excluded too, as the JD dropdown does (N36).
       prisma.rpa_mrf.count({
         where: {
           approval_status: { in: ['pending', 'waiting', 'approved'] },
           filled_at: null,
+          closed_at: null,
         },
       }),
 
@@ -46,38 +120,22 @@ export async function getStats() {
       // wrong twice over:
       //   1. WRONG COLUMN. buildMrfWhere() maps `status=pending` onto `mrfstatus`
       //      (the manager's *submission* state: pending / pendingfromleader), not
-      //      `approval_status`. So a row labelled "pending approval" was counting
-      //      requisitions that had not yet been submitted. That is why the dashboard
-      //      could show "Active MRFs 21" beside "50 pending approval" — the two
-      //      numbers were reading different columns.
-      //   2. TRUNCATED. `.length` of a page capped at limit=50 can never exceed 50,
-      //      so the figure silently plateaus once there are 50+ matches.
-      // Counting it here, next to activeMRFs and with the same filled_at exclusion,
+      //      `approval_status`.
+      //   2. TRUNCATED. `.length` of a page capped at limit=50 can never exceed 50.
+      // Counting it here, next to activeMRFs and with the same exclusions,
       // keeps the two consistent by construction.
       prisma.rpa_mrf.count({
         where: {
           approval_status: 'pending',
           filled_at: null,
+          closed_at: null,
         },
       }),
 
-      // CVs uploaded today
-      prisma.rpa_cv.count({
-        where: {
-          createdAt: {
-            gte: startOfToday(),
-          },
-        },
-      }),
+      // CVs uploaded since India-time midnight (was the server's local midnight).
+      countCvAdded(istMidnight(now), justAfter(now), null),
 
-      // Total shortlisted candidates (pipeline_status matches shortlisted/selected)
-      prisma.rpa_shortlisted_candidates.count({
-        where: {
-          pipeline_status: { 
-            in: ['shortlisted', 'Shortlisted', 'selected', 'Selected'] 
-          },
-        },
-      }),
+      prisma.rpa_candidate_pipeline.count({ where: { ...OPEN_JOURNEY, ...mrfWhere } }),
 
       // AI Screened: candidates with AI profile insights
       prisma.rpa_cv.count({
@@ -88,15 +146,16 @@ export async function getStats() {
         },
       }),
 
-      // Hired: candidates with joined_at, offer_accepted_at or hired/joined status
-      prisma.rpa_shortlisted_candidates.count({
-        where: {
-          OR: [
-            { joined_at: { not: null } },
-            { offer_accepted_at: { not: null } },
-            { pipeline_status: { in: ['hired', 'Hired', 'joined', 'Joined', 'selected', 'Selected'] } }
-          ],
-        },
+      prisma.rpa_candidate_pipeline.count({ where: HIRED_JOURNEY }),
+      prisma.rpa_candidate_pipeline.count(),
+
+      countCvAdded(start, justAfter(now), mrf),
+      prisma.rpa_candidate_pipeline.count({ where: { created_at: { gte: start }, ...mrfWhere } }),
+
+      // Median time-to-hire, measured as Analytics does (timeToHireFor).
+      prisma.rpa_candidate_pipeline.findMany({
+        where: HIRED_JOURNEY,
+        select: { created_at: true, closed_at: true, modified_at: true, final_outcome: true, current_stage_status: true },
       }),
     ]);
 
@@ -105,19 +164,24 @@ export async function getStats() {
       activeMRFs,
       pendingApprovalMRFs,
       todayUploads,
-      shortlisted: shortlistedCount, // Map to frontend expected key: 'shortlisted'
+      shortlisted: shortlistedCount,
+      hired: hiredCount,
+      mrf: mrf ? { id: Number(mrf.id), role: mrf.role } : null,
+      period: {
+        rangeDays,
+        from: start,
+        added: addedInRange,
+        enteredPipeline: enteredInRange,
+        // Shortlist rate = entered the pipeline in the period ÷ added in the period.
+        shortlistRate: percentOf(enteredInRange, addedInRange),
+      },
+      timeToHireDays: timeToHireFor(hiredJourneys, []).median_days,
       funnel: {
         sourced: totalCandidates,
         aiScreened: aiScreenedCount,
-        // ONE definition of "shortlisted" per screen.
-        //
-        // The funnel used to count "every shortlist row not explicitly rejected",
-        // while the KPI card counted "pipeline_status is shortlisted/selected". Both
-        // were labelled "Shortlisted" and rendered on the same dashboard, so the page
-        // showed two different numbers for the same word (e.g. 74 in the KPI, 78 in
-        // the funnel). The looser predicate also counted on-hold and in-progress rows
-        // as shortlisted, which overstated the funnel.
-        shortlisted: shortlistedCount,
+        // Every journey ever started: open ones alone would leave Hired
+        // outside its own parent stage.
+        shortlisted: enteredPipelineCount,
         hired: hiredCount,
       },
     };
@@ -129,6 +193,10 @@ export async function getStats() {
       pendingApprovalMRFs: 0,
       todayUploads: 0,
       shortlisted: 0,
+      hired: 0,
+      mrf: null,
+      period: { rangeDays, from: null, added: 0, enteredPipeline: 0, shortlistRate: null },
+      timeToHireDays: null,
       funnel: {
         sourced: 0,
         aiScreened: 0,
@@ -140,6 +208,157 @@ export async function getStats() {
 }
 
 /**
+ * Daily series and talent tallies for the selected period (N36), counted in
+ * SQL over every candidate — the browser used to aggregate only the newest 200.
+ *
+ *   - added: candidates added per India-time day (+ the period before, for the delta)
+ *   - enteredPipeline: journeys started per day
+ *   - mrfsRaised: requisitions raised per day
+ *   - topRoles / topSkills: over candidates added in the period
+ *
+ * With an MRF picked, journeys are matched by MRF id; candidates and MRFs by
+ * JD tag or, before tagging, role text (cvLinkedToMrf); MRFs by role text —
+ * `matchedBy` says so.
+ *
+ * @param {{ rangeDays?: number, mrfId?: bigint|null }} [params]
+ */
+export async function getTrends({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null } = {}) {
+  const now = new Date();
+  const { start, previousStart } = periodBounds(rangeDays, now);
+  const until = justAfter(now);
+  const mrf = await resolveMrfFilter(mrfId);
+  const roleCond = mrf ? Prisma.sql`AND ${cvLinkedToMrf(mrf)}` : Prisma.empty;
+  const journeyMrfCond = mrf ? Prisma.sql`AND mrf_id = ${mrf.id}` : Prisma.empty;
+  const mrfRoleCond = mrf ? Prisma.sql`AND ${normalisedSql('position_hiring_for')} = ${mrf.roleKey}` : Prisma.empty;
+
+  const [addedRows, previousAdded, journeyRows, mrfRows, talentRows] = await Promise.all([
+    prisma.$queryRaw`
+      SELECT ${CV_IST_DAY}::text AS day, COUNT(*)::int AS count
+      FROM rpa_cv WHERE ${cvCreatedBetween(start, until)} ${roleCond}
+      GROUP BY 1`,
+    countCvAdded(previousStart, start, mrf),
+    prisma.$queryRaw`
+      SELECT (created_at AT TIME ZONE ${IST})::date::text AS day, COUNT(*)::int AS count
+      FROM rpa_candidate_pipeline WHERE created_at >= ${start}::timestamptz ${journeyMrfCond}
+      GROUP BY 1`,
+    prisma.$queryRaw`
+      SELECT ((created_at AT TIME ZONE 'UTC') AT TIME ZONE ${IST})::date::text AS day, COUNT(*)::int AS count
+      FROM rpa_mrf WHERE (created_at AT TIME ZONE 'UTC') >= ${start}::timestamptz ${mrfRoleCond}
+      GROUP BY 1`,
+    prisma.$queryRaw`
+      SELECT "PositionApplied", "Top5KeySkills"
+      FROM rpa_cv WHERE ${cvCreatedBetween(start, until)} ${roleCond}`,
+  ]);
+
+  const added = fillDaily(addedRows, rangeDays, now);
+  const enteredPipeline = fillDaily(journeyRows, rangeDays, now);
+  const mrfsRaised = fillDaily(mrfRows, rangeDays, now);
+  const sum = (series) => series.reduce((a, d) => a + d.count, 0);
+  const addedTotal = sum(added);
+
+  return {
+    rangeDays,
+    from: start,
+    mrf: mrf ? { id: Number(mrf.id), role: mrf.role } : null,
+    matchedBy: mrf ? 'jd_tag_or_position_applied' : null,
+    added: {
+      daily: added,
+      total: addedTotal,
+      previousTotal: previousAdded,
+      deltaPct: changePct(addedTotal, previousAdded),
+    },
+    enteredPipeline: { daily: enteredPipeline, total: sum(enteredPipeline) },
+    mrfsRaised: { daily: mrfsRaised, total: sum(mrfsRaised) },
+    ...talentTallies(talentRows),
+  };
+}
+
+/**
+ * Zeko interview windows and Teams interviews in the next `days` days (N36).
+ * The widget used to show Zeko only and opened Analytics; each row now carries
+ * the ATS pipeline id so it can open that candidate on the board.
+ */
+export async function getUpcomingInterviews({ days = 7, limit = 20 } = {}) {
+  const now = new Date();
+  const horizon = new Date(now.getTime() + Math.min(Math.max(days, 1), 31) * 24 * 60 * 60 * 1000);
+  const candidateSelect = { candidate_name: true, position_applied: true, mrf: { select: { position_hiring_for: true } } };
+
+  const [zekoRows, teamsRows] = await Promise.all([
+    prisma.rpa_zeko_candidate_pipeline.findMany({
+      where: {
+        interview_start_at: { gte: now, lte: horizon },
+        status: { not: 'cancelled' },
+        cancelled_at: null,
+      },
+      select: {
+        id: true,
+        stage: true,
+        interview_start_at: true,
+        candidate_id: true,
+        rpa_shortlisted_candidates: { select: candidateSelect },
+      },
+      orderBy: { interview_start_at: 'asc' },
+      take: limit,
+    }),
+    prisma.rpa_interview_schedule.findMany({
+      where: {
+        scheduled_start_at: { gte: now, lte: horizon },
+        status: { not: 'cancelled' },
+        cancelled_at: null,
+      },
+      select: {
+        id: true,
+        pipeline_id: true,
+        scheduled_start_at: true,
+        rpa_pipeline_stages: { select: { label: true } },
+        rpa_candidate_pipeline: { select: { rpa_shortlisted_candidates: { select: candidateSelect } } },
+      },
+      orderBy: { scheduled_start_at: 'asc' },
+      take: limit,
+    }),
+  ]);
+
+  // Zeko rows are keyed by shortlist id; find each one's ATS journey (open first, then newest).
+  const shortlistIds = [...new Set(zekoRows.map((z) => z.candidate_id))];
+  const journeys = shortlistIds.length
+    ? await prisma.rpa_candidate_pipeline.findMany({
+        where: { shortlist_id: { in: shortlistIds } },
+        select: { id: true, shortlist_id: true, final_outcome: true },
+        orderBy: { created_at: 'desc' },
+      })
+    : [];
+  const journeyByShortlist = new Map();
+  for (const j of journeys) {
+    const key = String(j.shortlist_id);
+    const seen = journeyByShortlist.get(key);
+    if (!seen || (seen.final_outcome && !j.final_outcome)) journeyByShortlist.set(key, j);
+  }
+
+  const roleOf = (sc) => sc?.mrf?.position_hiring_for || sc?.position_applied || null;
+  return mergeUpcoming({
+    zeko: zekoRows.map((z) => {
+      const journey = journeyByShortlist.get(String(z.candidate_id));
+      return {
+        id: z.id,
+        stage: z.stage,
+        startAt: z.interview_start_at,
+        pipelineId: journey ? Number(journey.id) : null,
+        candidateName: z.rpa_shortlisted_candidates?.candidate_name,
+        role: roleOf(z.rpa_shortlisted_candidates),
+      };
+    }),
+    teams: teamsRows.map((t) => ({
+      id: t.id,
+      startAt: t.scheduled_start_at,
+      pipelineId: Number(t.pipeline_id),
+      round: t.rpa_pipeline_stages?.label,
+      candidateName: t.rpa_candidate_pipeline?.rpa_shortlisted_candidates?.candidate_name,
+      role: roleOf(t.rpa_candidate_pipeline?.rpa_shortlisted_candidates),
+    })),
+  }).slice(0, limit);
+}
+
+/**
  * Get the most recently uploaded candidates (mapped to recent uploads table).
  * @param {number} [limit=10] - Number of records to return
  * @returns {Promise<Array>} Mapped candidates
@@ -147,7 +366,9 @@ export async function getStats() {
 export async function getRecentUploads(limit = 10) {
   try {
     const recentCandidates = await prisma.rpa_cv.findMany({
-      orderBy: { createdAt: 'desc' },
+      // Undated legacy rows sort FIRST under a plain DESC in Postgres, which
+      // listed them as the newest uploads (N36).
+      orderBy: [{ createdAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
       take: limit,
     });
 
@@ -251,30 +472,10 @@ export async function getRecruiterBreakdown(limit = 10) {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 /**
- * @returns {Date} Start of the current day (00:00:00.000)
- */
-function startOfToday() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-/**
  * Format date to simple relative time.
  * @param {Date|string} date 
  * @returns {string}
  */
 function formatTimeAgo(date) {
-  if (!date) return '';
-  const now = new Date();
-  const diffMs = now - new Date(date);
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDays = Math.floor(diffHr / 24);
-
-  if (diffSec < 60) return 'Just now';
-  if (diffMin < 60) return `${diffMin} min ago`;
-  if (diffHr < 24) return `${diffHr} hour${diffHr > 1 ? 's' : ''} ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return fmtRelative(date);
 }

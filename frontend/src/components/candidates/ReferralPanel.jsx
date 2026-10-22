@@ -26,6 +26,7 @@ import {
 import { DeleteOutlined, HistoryOutlined } from '@ant-design/icons';
 import candidateService from '../../services/candidateService';
 import useAuth from '../../hooks/useAuth';
+import { fmtDateTime } from '../../utils/dateFormat';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -34,14 +35,6 @@ const LABEL = { fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTrans
 
 /** Same idiom the router guards and MainLayout use. */
 const isAdminTier = (role) => ['admin', 'superadmin'].includes((role || '').toLowerCase());
-
-/** "4 Sep 2026, 12:30" — no dependency on a date library. */
-function when(value) {
-  if (!value) return '';
-  return new Date(value).toLocaleString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
 
 /** One audit row as a sentence. The verb carries the meaning, so it leads. */
 function describe(row) {
@@ -280,7 +273,7 @@ export default function ReferralPanel({ candidateId, onChanged }) {
               {' · '}
               {h.acted_by_name}
               {' · '}
-              {when(h.acted_at)}
+              {fmtDateTime(h.acted_at)}
               {h.reason ? (
                 <div style={{ paddingLeft: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>
                   Reason: {h.reason}

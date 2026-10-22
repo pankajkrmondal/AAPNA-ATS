@@ -47,6 +47,7 @@ model rpa_users {
   rpa_outlook_accounts                         rpa_outlook_accounts[]
   rpa_pipeline_stage_events                    rpa_pipeline_stage_events[]
   rpa_pipeline_stage_state                     rpa_pipeline_stage_state[]
+  rpa_candidate_mrf_tags                       rpa_candidate_mrf_tags[]
   rpa_referral_audit                           rpa_referral_audit[]
   sessions                                     rpa_sessions[]
   company                                      rpa_companies?                 @relation(fields: [company_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -160,6 +161,7 @@ model rpa_cv {
   emails                       rpa_email_messages[]
   rpa_referral_audit           rpa_referral_audit[]
   shortlisted                  rpa_shortlisted_candidates[]
+  mrf_tags                     rpa_candidate_mrf_tags[]
 
   @@index([resume_tsvector], map: "idx_rpa_cv_resume_tsvector", type: Gin)
   @@index([TotalExperienceYearsNumeric], map: "idx_rpa_cv_total_exp_num")
@@ -231,19 +233,19 @@ model rpa_mrf {
   paused_reason                 String?
   paused_by                     Int?
   resume_on                     DateTime?                    @db.Date
-  // Decision summary (MRF approval audit trail, prisma/ddl/2026-09-25-mrf-approval-audit.sql).
-  // rpa_mrf_approval_events is the source of truth; these are for lists/exports.
   decided_by_email              String?                      @db.VarChar(255)
   decided_by_name               String?                      @db.VarChar(255)
   decided_at                    DateTime?                    @db.Timestamptz(6)
   decided_ip                    String?                      @db.Inet
   decision_comments             String?                      @db.VarChar(2000)
   decision_event_id             BigInt?
-  jd_item_id                    String?                      @db.VarChar(512)
   emails                        rpa_email_messages[]
-  shortlisted                   rpa_shortlisted_candidates[]
-  approval_tokens               rpa_mrf_approval_tokens[]
   approval_events               rpa_mrf_approval_events[]
+  approval_tokens               rpa_mrf_approval_tokens[]
+  shortlisted                   rpa_shortlisted_candidates[]
+  candidate_tags                rpa_candidate_mrf_tags[]
+  cv_tmp_rows                   rpa_cv_tmp[]
+  upload_jobs                   rpa_upload_jobs[]
 
   @@map("rpa_mrf")
 }
@@ -266,8 +268,8 @@ model rpa_mrf_approval_tokens {
   used_at         DateTime?                 @db.Timestamptz(6)
   revoked_at      DateTime?                 @db.Timestamptz(6)
   revoked_reason  String?                   @db.VarChar(50)
-  mrf             rpa_mrf                   @relation(fields: [mrf_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_mrf_approval_tokens_mrf")
   events          rpa_mrf_approval_events[]
+  mrf             rpa_mrf                   @relation(fields: [mrf_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_mrf_approval_tokens_mrf")
 
   @@index([mrf_id], map: "idx_mrf_approval_tokens_mrf")
   @@index([approver_email], map: "idx_mrf_approval_tokens_email")
@@ -508,6 +510,9 @@ model rpa_cv_tmp {
   last_action_by               String?
   last_action_context          String?
   cv_file_item_id              String?                  @db.VarChar(512)
+  /// JD of the upload this duplicate came from; the merge tags it (N14).
+  mrf_id                       BigInt?
+  mrf                          rpa_mrf?                 @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
 
   @@index([resume_tsvector], map: "idx_rpa_cv_tmp_resume_tsvector", type: Gin)
   @@index([reviewStatus], map: "idx_rpa_cv_tmp_review_status")
@@ -527,6 +532,27 @@ model rpa_email_log {
   last_reminder_at DateTime? @db.Timestamp(6)
   status           String    @default("sent")
   error_message    String?
+}
+
+/// Errors from the backend, scheduled jobs and browsers, one row per occurrence (N42). Kept 30 days.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rpa_error_log {
+  id          BigInt   @id @default(autoincrement())
+  source      String   @db.VarChar(20)
+  env         String   @db.VarChar(20)
+  level       String   @default("error") @db.VarChar(10)
+  message     String
+  stack       String?
+  request_id  String?  @db.VarChar(80)
+  route       String?  @db.VarChar(300)
+  user_id     Int?
+  meta        Json?
+  fingerprint String   @db.VarChar(40)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([request_id], map: "idx_error_log_request_id")
+  @@index([fingerprint, created_at(sort: Desc)], map: "idx_error_log_fingerprint")
+  @@index([created_at(sort: Desc)], map: "idx_error_log_created_at")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -750,6 +776,9 @@ model rpa_upload_jobs {
   reviewed_by     String?
   review_action   String?
   advisory        String?
+  /// JD the upload was made for (N14); null = not tagged.
+  mrf_id          BigInt?
+  mrf             rpa_mrf? @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
 
   @@index([action_required], map: "idx_upload_jobs_action")
   @@index([execution_id], map: "idx_upload_jobs_exec")
@@ -834,6 +863,26 @@ model rpa_pipeline_stage_events {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// Which JD (MRF) a candidate was uploaded for or shortlisted to (JD tagging, N13).
+/// DDL: prisma/ddl/2026-10-21-candidate-mrf-tags.sql
+model rpa_candidate_mrf_tags {
+  id                  BigInt     @id @default(autoincrement())
+  cv_id               BigInt
+  mrf_id              BigInt
+  source              String     @db.VarChar(30)
+  upload_execution_id String?    @db.VarChar(100)
+  tagged_by           String?    @db.VarChar(255)
+  tagged_by_id        Int?
+  tagged_at           DateTime   @default(now()) @db.Timestamptz(6)
+  cv                  rpa_cv     @relation(fields: [cv_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_candidate_mrf_tag_cv")
+  mrf                 rpa_mrf    @relation(fields: [mrf_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_candidate_mrf_tag_mrf")
+  user                rpa_users? @relation(fields: [tagged_by_id], references: [id], onUpdate: NoAction, map: "fk_candidate_mrf_tag_user")
+
+  @@unique([cv_id, mrf_id], map: "uq_candidate_mrf_tag")
+  @@index([mrf_id], map: "idx_candidate_mrf_tags_mrf")
+  @@index([cv_id], map: "idx_candidate_mrf_tags_cv")
+}
+
 model rpa_pipeline_stage_state {
   id                     BigInt                 @id @default(autoincrement())
   pipeline_id            BigInt

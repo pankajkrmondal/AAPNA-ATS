@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller.js';
 import { authenticate, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
+import * as systemLogs from '../controllers/systemLogs.controller.js';
 
 const router = Router();
 
@@ -32,5 +33,12 @@ router.post('/modules/set-access', adminController.setModulesAccess);
 // or read the record of who did (docs/REFERRAL-CANDIDATE-PLAN.md section 6.4).
 router.get('/referral-log', adminController.listReferralAudit);
 router.get('/referral-log/export', exportLimiter, adminController.exportReferralAudit);
+
+// Logs & errors (N42). Super Admin only, narrower than the router-wide rule
+// above: the errors and log lines cover every company.
+router.get('/errors', restrictTo('superadmin'), systemLogs.listErrors);
+router.get('/logs', restrictTo('superadmin'), systemLogs.findByRef);
+router.get('/jobs', restrictTo('superadmin'), systemLogs.listJobs);
+router.get('/health/deep', restrictTo('superadmin'), systemLogs.deepHealth);
 
 export default router;

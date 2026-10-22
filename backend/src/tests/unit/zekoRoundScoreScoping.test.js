@@ -22,6 +22,7 @@ import assert from 'node:assert/strict';
 
 import { emailCandidates } from '../../utils/emailMatch.js';
 import { normalizeZekoRoundStage } from '../../config/pipelineStages.js';
+import { buildZekoRounds, zekoScoresFromResult, uploadedScoresFromCv } from '../../utils/roundScores.js';
 
 /**
  * The predicate both fixed call sites encode: this journey's round has a
@@ -115,5 +116,45 @@ describe('Zeko per-round score scoping', () => {
   test('no address on file means no guess', () => {
     const noEmail = { ...HR_BOOKING, candidate_email: null };
     assert.equal(readyForDecision(JOURNEY_HR, [noEmail], [HR_RESULT]), false);
+  });
+});
+
+// N28: the drawer keeps every round's scores after it has passed. Each round is
+// still looked up on its own, so passing the HR round must never put its score
+// under Functional, and vice versa.
+describe('drawer zekoRounds (N28): every round keeps its own score', () => {
+  const HR = { round: { id: 1, stage: 'hr' }, result: { scores_overallscore: 95, scores_communicationscore: 80, reportlink: 'https://zeko/hr' } };
+  const FN = { round: { id: 2, stage: 'functional' }, result: { scores_overallscore: 61, scores_technicalscore: 70, reportlink: 'https://zeko/fn' } };
+
+  test('on zeko_fn, the HR round still shows the HR result and only it', async () => {
+    const rounds = await buildZekoRounds(async (key) => (key === 'zeko_hr' ? HR : FN));
+    assert.equal(rounds.zeko_hr.scores.ZekoInterviewScore, 95);
+    assert.equal(rounds.zeko_hr.reportLink, 'https://zeko/hr');
+    assert.equal(rounds.zeko_fn.scores.ZekoInterviewScore, 61);
+    assert.equal(rounds.zeko_fn.reportLink, 'https://zeko/fn');
+  });
+
+  test('a round never booked is null; a booked round with no result shows no score', async () => {
+    const rounds = await buildZekoRounds(async (key) => (key === 'zeko_hr' ? HR : { round: { id: 2 }, result: null }));
+    assert.equal(rounds.zeko_fn.scores, null, 'never borrows the HR score');
+    const onlyHr = await buildZekoRounds(async (key) => (key === 'zeko_hr' ? HR : { round: null, result: null }));
+    assert.equal(onlyHr.zeko_fn, null);
+  });
+
+  test('a result row with no numbers is no score', () => {
+    assert.equal(zekoScoresFromResult({ reportlink: 'x' }), null);
+    assert.equal(zekoScoresFromResult(null), null);
+  });
+});
+
+describe('drawer uploadedScores (N28): the candidate record, blanks left out', () => {
+  test('only filled columns, in display order, values as text', () => {
+    const cv = { IQScore: '72', TechScore: '', ZekoInterviewScore: { toString: () => '88.5' }, TechRoundOne: 'Good', HRInterview: null, FinalStatus: 'Tech 1 Approved' };
+    assert.deepEqual(uploadedScoresFromCv(cv), [
+      { key: 'IQScore', label: 'IQ score', value: '72' },
+      { key: 'ZekoInterviewScore', label: 'Zeko interview', value: '88.5' },
+      { key: 'TechRoundOne', label: 'Tech round 1', value: 'Good' },
+    ]);
+    assert.deepEqual(uploadedScoresFromCv(null), []);
   });
 });

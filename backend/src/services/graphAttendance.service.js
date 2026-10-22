@@ -28,6 +28,7 @@ import { parseInterviewerEmails } from './interviewSchedule.service.js';
 import { resolveUserId } from './graphCalendar.service.js';
 import { decideOccurrence, pickAttendanceReport } from './graphAttendance.helpers.js';
 import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
@@ -57,7 +58,7 @@ export async function resolveOnlineMeetingId(joinUrl) {
     // JoinWebUrl must be single-quoted in the OData filter; the value is a
     // Graph-issued URL with no quotes of its own, so no extra escaping needed.
     const url = `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings?$filter=JoinWebUrl eq '${joinUrl}'`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await tracedFetch('graph', url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       logger.warn(`Graph attendance: onlineMeeting lookup failed (${res.status}) — ${body?.error?.message || res.statusText}.`);
@@ -95,7 +96,7 @@ async function fetchAttendanceRecords(onlineMeetingId, window = {}) {
     if (!userId) return null;
     const base = `${GRAPH_BASE}/users/${encodeURIComponent(userId)}/onlineMeetings/${encodeURIComponent(onlineMeetingId)}/attendanceReports`;
 
-    const listRes = await fetch(base, { headers: { Authorization: `Bearer ${token}` } });
+    const listRes = await tracedFetch('graph', base, { headers: { Authorization: `Bearer ${token}` } });
     if (!listRes.ok) {
       const body = await listRes.json().catch(() => ({}));
       // 403 here almost always means OnlineMeetingArtifact.Read.All or the
@@ -117,7 +118,7 @@ async function fetchAttendanceRecords(onlineMeetingId, window = {}) {
       return [];
     }
     const reportId = report.id;
-    const detailRes = await fetch(`${base}/${encodeURIComponent(reportId)}?$expand=attendanceRecords`, {
+    const detailRes = await tracedFetch('graph', `${base}/${encodeURIComponent(reportId)}?$expand=attendanceRecords`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!detailRes.ok) {

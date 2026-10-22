@@ -16,6 +16,7 @@ import {
   isStageArrival,
   stagePendingLabelFor,
   EVENT_TYPES,
+  LEGACY_MRF_CLOSED_STATUS,
 } from '../config/pipelineStages.js';
 import {
   STAGE_STATES,
@@ -36,7 +37,7 @@ import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } f
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
 import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, getInterviewParties, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
-import { SCORECARD_STATUS } from './interviewScorecard.service.js';
+import { SCORECARD_STATUS, getCandidateScorecardReport } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
 import {
@@ -44,6 +45,7 @@ import {
   stageClockStart,
   bucketFor,
   timeToHireFor,
+  positionsOverview,
 } from './pipelineAnalytics.helpers.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
 import { reopenMrfIfUnfilled, closeMrfIfFilled } from './mrfClosure.service.js';
@@ -55,7 +57,9 @@ import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
 import { withDeadline } from '../utils/withDeadline.js';
 import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stageSkip.js';
 import { scoreSourceFor, noScoreNoteError } from '../utils/stageScore.js';
+import { buildZekoRounds, zekoScoresFromResult, uploadedScoresFromCv, UPLOADED_SCORE_FIELDS } from '../utils/roundScores.js';
 import { firstValidPhone, maskPhone } from '../utils/phone.js';
+import { assessmentInviteState, latestInviteByPipeline } from '../utils/assessmentInviteState.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
 
@@ -385,6 +389,16 @@ export async function listPipeline(filters = {}) {
     });
     results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
   }
+  // N35: was the Evalground test actually sent, and is it late? One batched
+  // read (newest first, first row per journey wins) instead of getInviteState
+  // per card; the overdue rule is the drawer's own (assessmentInviteState).
+  const latestInvites = assessmentPipelineIds.length > 0
+    ? latestInviteByPipeline(await prisma.rpa_assessment_invites.findMany({
+        where: { pipeline_id: { in: assessmentPipelineIds } },
+        orderBy: { sent_at: 'desc' },
+        select: { pipeline_id: true, sent_at: true, deadline_at: true, withdrawn_at: true },
+      }))
+    : new Map();
 
   // Referral flags for the board chip, one lookup keyed by cv_id.
   //
@@ -447,6 +461,9 @@ export async function listPipeline(filters = {}) {
       && j.current_stage_status === 'in_progress'
       && scheduledKeys.has(`${j.id}:${j.current_stage_key}`);
     const assessmentPending = j.current_stage_key === 'assessment' && j.current_stage_status === 'in_progress' && !assessmentResultPipelineIds.has(String(j.id));
+    const invite = assessmentPending
+      ? assessmentInviteState(latestInvites.get(String(j.id)) || null, false, new Date(now))
+      : null;
 
     return {
       id: Number(j.id),
@@ -463,6 +480,11 @@ export async function listPipeline(filters = {}) {
       invited,
       scheduled,
       assessment_pending: assessmentPending,
+      // N35 — only set while assessment_pending: "Test not sent" /
+      // "Test sent · due <date>" / "Test overdue" on the card.
+      assessment_invite_sent_at: invite?.sent ? invite.sentAt : null,
+      assessment_due_at: invite?.sent ? invite.dueAt : null,
+      assessment_overdue: invite?.isOverdue || false,
       final_outcome: j.final_outcome,
       // The requisition this candidate is running against has already been
       // filled. Free to compute — the MRF is loaded with the journey above —
@@ -801,6 +823,9 @@ export async function getPipelineDetail(pipelineId) {
   // router is requireStaff, and the interviewer-facing scorecard builds its own
   // payload from a named whitelist.
   let referral = null;
+  // The candidate record's score columns (Excel upload / Search Candidate),
+  // shown read-only in their own card — never under a round (N28).
+  let uploadedScores = [];
   if (pipeline.cv_id) {
     const cv = await prisma.rpa_cv.findUnique({
       where: { id: pipeline.cv_id },
@@ -811,9 +836,11 @@ export async function getPipelineDetail(pipelineId) {
         referral_note: true,
         referral_set_by: true,
         referral_set_at: true,
+        ...Object.fromEntries(UPLOADED_SCORE_FIELDS.map((f) => [f.key, true])),
       },
     });
     cvFileUrl = cv?.cvFileUrl || null;
+    uploadedScores = uploadedScoresFromCv(cv);
     referral = cv
       ? {
           is_referral: !!cv.is_referral,
@@ -865,14 +892,15 @@ export async function getPipelineDetail(pipelineId) {
     // interview id, so it can't be clobbered by the other Zeko round syncing
     // later. A round with no result row here reports no score at all rather
     // than borrowing the candidate-level one (see the rpa_cv note above).
-    if (zekoResult && (zekoResult.scores_overallscore != null || zekoResult.scores_technicalscore != null || zekoResult.scores_communicationscore != null)) {
-      zekoScores = {
-        ZekoInterviewScore: zekoResult.scores_overallscore,
-        ZekoCodingScore: zekoResult.scores_technicalscore,
-        ZekoCommunicationScore: zekoResult.scores_communicationscore,
-      };
-    }
+    zekoScores = zekoScoresFromResult(zekoResult);
   }
+
+  // Both Zeko rounds, each from its own round-scoped lookup, so a round that
+  // has passed keeps its scores and report link (N28). The current-round
+  // fields above stay for compatibility.
+  const zekoRounds = pipeline.shortlist_id
+    ? await buildZekoRounds((stageKey) => findZekoRoundResult(pipeline, stageKey))
+    : {};
 
   // Scheduled interview rounds: the MRF names who interviews and their
   // preferred window — free text shown to the recruiter as hints — plus the
@@ -923,12 +951,111 @@ export async function getPipelineDetail(pipelineId) {
     zekoHrPipeline,
     zekoReportLink,
     zekoSharedReportLink,
+    zekoRounds,
+    uploadedScores,
     interviewSchedule,
     interviewSchedules,
     mrfInterviewHints,
     interviewParties,
     offer,
   });
+}
+
+/**
+ * Every score the pipeline holds for one candidate, per journey (MRF) and per
+ * round, for Search Candidate's read-only "Pipeline scores" section (N29). The
+ * same sources the drawer reads, so the two can never disagree: each Zeko
+ * round's own result (round-scoped, as in getPipelineDetail), the Evalground
+ * import, and the submitted interview scorecards. Rounds with nothing on file
+ * are left out.
+ *
+ * @param {number|string} cvId
+ * @returns {Promise<Array<{ pipeline_id: string, mrf_id: string|null, role: string, current_stage_label: string,
+ *   final_outcome: string|null, rounds: Array<object> }>>}
+ */
+export async function getCandidatePipelineScores(cvId) {
+  if (!/^\d+$/.test(String(cvId))) throw new AppError('Invalid candidate id.', 400);
+  const journeys = await prisma.rpa_candidate_pipeline.findMany({
+    where: { cv_id: BigInt(cvId) },
+    include: { rpa_shortlisted_candidates: { include: { mrf: { select: { id: true, position_hiring_for: true } } } } },
+    orderBy: { created_at: 'desc' },
+  });
+  if (journeys.length === 0) return [];
+
+  const stageRows = await prisma.rpa_pipeline_stages.findMany({
+    select: { stage_key: true, label: true, sort_order: true },
+    orderBy: { sort_order: 'asc' },
+  });
+  const labelOf = (key) => stageRows.find((s) => s.stage_key === key)?.label || key;
+  const orderOf = (key) => stageRows.find((s) => s.stage_key === key)?.sort_order ?? 999;
+
+  return Promise.all(journeys.map(async (journey) => {
+    const [zekoRounds, assessment, report] = await Promise.all([
+      journey.shortlist_id ? buildZekoRounds((stageKey) => findZekoRoundResult(journey, stageKey)) : {},
+      prisma.rpa_assessment_results.findFirst({
+        where: { pipeline_id: journey.id, status: { in: ['matched', 'score_overwritten'] } },
+        orderBy: { modified_at: 'desc' },
+      }),
+      getCandidateScorecardReport(journey.id),
+    ]);
+
+    const rounds = [];
+    for (const [stageKey, zr] of Object.entries(zekoRounds)) {
+      if (!zr?.scores) continue;
+      rounds.push({
+        stage_key: stageKey,
+        label: labelOf(stageKey),
+        kind: 'zeko',
+        scores: {
+          interview: zr.scores.ZekoInterviewScore,
+          coding: zr.scores.ZekoCodingScore,
+          communication: zr.scores.ZekoCommunicationScore,
+        },
+        report_link: zr.reportLink,
+      });
+    }
+    if (assessment) {
+      rounds.push({
+        stage_key: 'assessment',
+        label: labelOf('assessment'),
+        kind: 'assessment',
+        result: assessment.overall_result || null,
+        percentage: assessment.overall_percentage != null ? Number(assessment.overall_percentage) : null,
+        marks: assessment.overall_marks_scored != null ? Number(assessment.overall_marks_scored) : null,
+        report_link: assessment.public_report_url || null,
+      });
+    }
+    const cardsByStage = new Map();
+    for (const card of report?.rounds || []) {
+      if (!cardsByStage.has(card.stage_key)) cardsByStage.set(card.stage_key, []);
+      cardsByStage.get(card.stage_key).push({
+        interviewer: card.recipient_email || card.recipient_role || null,
+        avg_score: card.avg_score,
+        recommendation: card.recommendation,
+        submitted_at: card.submitted_at,
+      });
+    }
+    for (const [stageKey, cards] of cardsByStage) {
+      rounds.push({ stage_key: stageKey, label: labelOf(stageKey), kind: 'scorecard', cards });
+    }
+    rounds.sort((a, b) => orderOf(a.stage_key) - orderOf(b.stage_key));
+
+    const mrf = journey.rpa_shortlisted_candidates?.mrf;
+    return serializeBigInts({
+      pipeline_id: journey.id,
+      // The shortlist row Change JD (G3) acts on.
+      shortlist_id: journey.shortlist_id ?? null,
+      mrf_id: mrf?.id ?? journey.mrf_id ?? null,
+      role: mrf?.position_hiring_for || journey.rpa_shortlisted_candidates?.position_applied || 'Role not recorded',
+      current_stage_label: labelOf(journey.current_stage_key),
+      final_outcome: journey.final_outcome || null,
+      // Dates for Candidate Detail's timeline (N29: it showed mock events).
+      shortlisted_at: journey.rpa_shortlisted_candidates?.shortlisted_at || journey.created_at,
+      shortlisted_by: journey.rpa_shortlisted_candidates?.shortlisted_by || null,
+      closed_at: journey.closed_at || null,
+      rounds,
+    });
+  }));
 }
 
 /**
@@ -2449,6 +2576,53 @@ export async function getPipelineAnalytics({
     timeToHire,
     vendorPerformance: vendorPerformanceTop,
     sourceOfHire,
+  };
+}
+
+/**
+ * Analytics "Positions" tab (N39): one row per requisition — opened, days
+ * open, candidates at each stage, offers, joined, joining ratio, closure.
+ *
+ * Lists every MRF that was approved (open or closed) plus any other MRF that
+ * has candidates in the pipeline, so nothing with a journey is hidden. The
+ * counting is positionsOverview() (pipelineAnalytics.helpers.js), kept pure so
+ * it is unit-tested.
+ *
+ * @returns {Promise<{ stages: Array<{ stage_key: string, label: string }>, rows: Array }>}
+ */
+export async function getPositionsOverview() {
+  const [stages, journeys] = await Promise.all([
+    prisma.rpa_pipeline_stages.findMany({ where: { is_active: true }, orderBy: { sort_order: 'asc' } }),
+    prisma.rpa_candidate_pipeline.findMany({
+      where: { mrf_id: { not: null } },
+      select: {
+        id: true,
+        mrf_id: true,
+        current_stage_key: true,
+        current_stage_status: true,
+        final_outcome: true,
+        rpa_offers: { select: { candidate_decision: true } },
+        rpa_pipeline_stage_events: { select: { event_type: true, stage_key: true }, orderBy: { created_at: 'asc' } },
+      },
+    }),
+  ]);
+  const journeyMrfIds = [...new Set(journeys.map((j) => String(j.mrf_id)))].map((k) => BigInt(k));
+  const mrfs = await prisma.rpa_mrf.findMany({
+    where: {
+      OR: [
+        { approval_status: { in: ['approved', 'completed', LEGACY_MRF_CLOSED_STATUS] } },
+        ...(journeyMrfIds.length ? [{ id: { in: journeyMrfIds } }] : []),
+      ],
+    },
+    select: {
+      id: true, position_hiring_for: true, number_of_positions: true, created_at: true, decided_at: true,
+      filled_at: true, closed_at: true, closure_reason: true, paused_at: true, approval_status: true,
+    },
+    orderBy: { id: 'desc' },
+  });
+  return {
+    stages: stages.map((s) => ({ stage_key: s.stage_key, label: s.label })),
+    rows: positionsOverview(journeys, mrfs, stages),
   };
 }
 

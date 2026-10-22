@@ -260,7 +260,7 @@ const config = {
       return env('NODE_ENV', 'development') !== 'production';
     })(),
     /** Fixed inbox that receives all mail in non-production environments. */
-    testRecipients: env('EMAIL_STAGING_RECIPIENTS', 'saukumar@aapnainfotech.com, hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com'),
+    testRecipients: env('EMAIL_STAGING_RECIPIENTS', 'hmopuri@aapnainfotech.com, pkmondal@aapnainfotech.com'),
 
     /**
      * Recipients for the "Resume Processing Failed" internal alert

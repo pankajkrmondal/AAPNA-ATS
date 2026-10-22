@@ -228,3 +228,47 @@ describe('MRF lookup', () => {
     await assert.rejects(searchRoleCandidatesV2(999999999, true), (err) => err.statusCode === 404);
   });
 });
+
+describe('N38 — "Added within" on JD search', () => {
+  test('a 15-day window keeps the recent passer and drops the one added 20 days ago', async () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    await prisma.rpa_cv.update({ where: { id: cvId.Q }, data: { createdAt: twentyDaysAgo } });
+    try {
+      const all = await searchRoleCandidatesV2(Number(mrfId.main), true);
+      assert.equal(sorted(letters(all)), 'PQ', 'no window: both passers');
+
+      const recent = await searchRoleCandidatesV2(Number(mrfId.main), true, { addedWithinDays: 15 });
+      assert.equal(sorted(letters(recent)), 'P');
+      assert.equal(recent.summary.addedWithinDays, 15);
+      assert.match(recent.summary.summaryText, /added in the last 15 days/);
+
+      const wide = await searchRoleCandidatesV2(Number(mrfId.main), true, { addedWithinDays: 30 });
+      assert.equal(sorted(letters(wide)), 'PQ', '30 days reaches back past Q');
+    } finally {
+      await prisma.rpa_cv.update({ where: { id: cvId.Q }, data: { createdAt: new Date() } });
+    }
+  });
+});
+
+describe('N15 — "Tagged to this JD only"', () => {
+  test('only candidates tagged to the JD are searched, and each card carries its tag', async () => {
+    // P is tagged (an HR upload for this JD); Q passes every gate but is not.
+    await prisma.rpa_candidate_mrf_tags.create({
+      data: { cv_id: cvId.P, mrf_id: mrfId.main, source: 'hr_manual_upload', tagged_by: 'jd-gates-test' },
+    });
+    try {
+      const all = await searchRoleCandidatesV2(Number(mrfId.main), true);
+      assert.equal(sorted(letters(all)), 'PQ', 'the switch off changes nothing');
+      const byLetter = Object.fromEntries(all.candidates.filter((c) => letterOf.has(String(c.id))).map((c) => [letterOf.get(String(c.id)), c]));
+      assert.equal(byLetter.P.jd_tag?.source, 'hr_manual_upload');
+      assert.equal(byLetter.Q.jd_tag, null);
+
+      const tagged = await searchRoleCandidatesV2(Number(mrfId.main), true, { taggedOnly: true });
+      assert.equal(letters(tagged), 'P');
+      assert.equal(tagged.summary.taggedOnly, true);
+      assert.match(tagged.summary.summaryText, /1 tagged to this JD/);
+    } finally {
+      await prisma.rpa_candidate_mrf_tags.deleteMany({ where: { cv_id: cvId.P, mrf_id: mrfId.main } });
+    }
+  });
+});

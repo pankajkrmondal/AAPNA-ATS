@@ -7,6 +7,7 @@ import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import screeningExport from '../exports/screening.export.js';
 import { getMrfJdAttachment } from '../services/jdAttachment.service.js';
+import * as changeJdService from '../services/changeJd.service.js';
 
 /**
  * GET /api/screening/roles[?includeClosed=1]
@@ -37,6 +38,9 @@ export const getRoleJdAttachment = catchAsync(async (req, res) => {
   }, 'JD attachment details');
 });
 
+/** A boolean flag from a JSON body (true) or a query string ('1' / 'true'). */
+const isTrue = (v) => v === true || v === 'true' || v === '1';
+
 /**
  * POST /api/screening/roles/:id/search
  */
@@ -48,9 +52,15 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   }
 
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
+  // N38 "Added within" (days); validated by parseScreeningFilters in the service.
+  // N15 "Tagged to this JD only".
+  const opts = {
+    addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
+    taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+  };
   const result = config.screening.v2
-    ? await screeningV2.searchRoleCandidatesV2(mrfId, force)
-    : await screeningService.searchRoleCandidates(mrfId, force);
+    ? await screeningV2.searchRoleCandidatesV2(mrfId, force, opts)
+    : await screeningService.searchRoleCandidates(mrfId, force, opts);
   return success(res, result, 'Role-matched candidates retrieved successfully');
 });
 
@@ -76,7 +86,10 @@ export const exportRoleCandidates = catchAsync(async (req, res) => {
   if (isNaN(mrfId)) {
     throw new AppError('Invalid MRF ID provided.', 400);
   }
-  return runExport(req, res, screeningExport.roleSpec(mrfId));
+  return runExport(req, res, screeningExport.roleSpec(mrfId, {
+    addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
+    taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+  }));
 });
 
 /**
@@ -119,6 +132,31 @@ export const shortlistCandidates = catchAsync(async (req, res) => {
     source: ['jd', 'keyword', 'search_candidate'].includes(source) ? source : null,
   });
   return success(res, result, 'Candidates shortlisted successfully');
+});
+
+/**
+ * GET /api/screening/shortlist/:shortlistId/change-jd
+ * Whether this shortlist's JD can be changed, why not, and which JDs to leave out (G3).
+ */
+export const getChangeJdStatus = catchAsync(async (req, res) => {
+  const status = await changeJdService.getChangeJdStatus(req.params.shortlistId);
+  return success(res, status, 'Change JD status retrieved');
+});
+
+/**
+ * POST /api/screening/shortlist/:shortlistId/change-jd
+ * Body: { newMrfId, reason, notifyCandidate } (G3).
+ */
+export const changeShortlistJd = catchAsync(async (req, res) => {
+  const { newMrfId, reason, notifyCandidate } = req.body || {};
+  const result = await changeJdService.changeShortlistJd({
+    shortlistId: req.params.shortlistId,
+    newMrfId,
+    reason,
+    notifyCandidate: notifyCandidate === true,
+    user: req.user,
+  });
+  return success(res, result, 'JD changed');
 });
 
 /**

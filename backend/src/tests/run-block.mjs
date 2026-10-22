@@ -14,7 +14,7 @@
  *     so a hung process shows NO output at all.
  *
  * This runs the file as a child process, streams a filtered live view to the
- * console, writes the FULL untouched log to test-results/<name>.log, prints the
+ * console, writes the FULL untouched log to test-results/[<folder>-]<name>.log, prints the
  * node:test summary, and exits with the child's real code.
  */
 import { spawn } from 'node:child_process';
@@ -36,19 +36,31 @@ const NOISE = /Prisma query|Redis (shared )?connect|MS Graph Email|resolveRecipi
 let failed = 0;
 
 for (const file of files) {
-  const name = path.basename(file).replace(/\.test\.js$/, '');
+  // Prefixed with the folder under src/tests ("unit-sectionC", "integration-
+  // sectionC") so two files with one name no longer overwrite one log.
+  const folder = path.basename(path.dirname(path.resolve(file)));
+  const base = path.basename(file).replace(/\.test\.js$/, '');
+  const name = folder === 'tests' ? base : `${folder}-${base}`;
   const logPath = path.join(outDir, `${name}.log`);
   const log = createWriteStream(logPath);
 
   console.log(`\n${'='.repeat(70)}\nRUNNING ${file}\n  full log -> ${logPath}\n${'='.repeat(70)}`);
 
   const code = await new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--test', '--test-reporter=spec', file], {
+    // --test-force-exit: node:test prints its summary only once the test file's
+    // process exits, and open Redis/queue handles kept it alive, so the
+    // summary never came and every run sat until the hard ceiling.
+    const child = spawn(process.execPath, ['--test', '--test-force-exit', '--test-reporter=spec', file], {
       env: { ...process.env, NODE_ENV: process.env.NODE_ENV || 'staging' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let buf = '';
+    // Set once node:test prints its closing summary: "ℹ duration_ms …" with the
+    // spec reporter this runner uses, "# duration_ms …" with TAP. Checked per
+    // complete line — `buf` only ever holds the unfinished tail, so looking
+    // there missed the summary and every run waited for the hard ceiling.
+    let summarySeen = false;
     const handle = (chunk) => {
       const text = chunk.toString();
       log.write(text);
@@ -56,6 +68,7 @@ for (const file of files) {
       const lines = buf.split('\n');
       buf = lines.pop();
       for (const line of lines) {
+        if (/^[ℹ#] duration_ms /.test(line.trim())) summarySeen = true;
         if (!NOISE.test(line)) console.log(line);
       }
     };
@@ -69,7 +82,7 @@ for (const file of files) {
     child.on('exit', (c) => finish(c ?? 0));
 
     const watchdog = setInterval(() => {
-      if (/# (fail|pass) \d+/.test(buf) || /^# duration_ms/m.test(buf)) {
+      if (summarySeen || /^[ℹ#] duration_ms /m.test(buf)) {
         clearInterval(watchdog);
         setTimeout(() => { child.kill(); finish(0); }, 1500);
       }

@@ -1,5 +1,8 @@
 # Backend API & Worker Documentation
 
+> **Superseded (20 Oct 2026):** this June-era overview is out of date (jobs, routes, error handling). Use [docs/system/02-MODULES.md](../system/02-MODULES.md) and [04-JOBS-AND-INTEGRATIONS.md](../system/04-JOBS-AND-INTEGRATIONS.md). Kept for history.
+
+
 The backend of the AAPNA ATS is a modern, stateless REST API server and an event-driven background job worker. It is built using **Node.js**, **Express**, **Prisma ORM**, **BullMQ (Redis)**, and **Socket.io**.
 
 ---

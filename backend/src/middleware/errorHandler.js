@@ -2,6 +2,7 @@ import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendBackendErrorAlert } from '../services/emailNotification.service.js';
+import { recordError } from '../services/errorLog.service.js';
 
 // ── Prisma error mappers ──────────────────────────────────────────────
 
@@ -104,21 +105,26 @@ function handleMulterError(err) {
 
 // ── Response builders ─────────────────────────────────────────────────
 
-function sendDevError(err, res) {
+// Every error body carries `ref` (N42): the request's reference, which the
+// frontend shows on 5xx messages and which Logs & errors searches by.
+
+function sendDevError(err, res, ref) {
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
+    ref,
     error: err,
     stack: err.stack,
   });
 }
 
-function sendProdError(err, res) {
+function sendProdError(err, res, ref) {
   if (err.isOperational) {
     // Trusted, operational error → send meaningful message
     res.status(err.statusCode).json({
       status: err.status,
       message: err.message,
+      ref,
     });
   } else {
     // Programming / unknown error → don't leak details
@@ -126,6 +132,7 @@ function sendProdError(err, res) {
     res.status(500).json({
       status: 'error',
       message: 'Something went wrong. Please try again later.',
+      ref,
     });
   }
 }
@@ -167,19 +174,29 @@ const errorHandler = (err, req, res, _next) => {
   // the response, and never allowed to throw into this middleware.
   if (finalErr.status === 'error') {
     sendBackendErrorAlert({ err, finalErr, req }).catch(() => {});
+    // Stored with the ORIGINAL error (real message and stack) for Logs & errors.
+    recordError({
+      source: 'backend',
+      err,
+      route: `${req.method} ${req.baseUrl || ''}${req.route?.path || req.path || ''}`,
+      requestId: req.requestId,
+      userId: req.user?.id,
+      meta: { statusCode: finalErr.statusCode, code: err.code, method: req.method },
+    });
   }
 
   return sendResponse(finalErr, req, res);
 };
 
-function sendResponse(err, _req, res) {
+function sendResponse(err, req, res) {
+  const ref = req.requestId;
   // Verbose (raw error + stack) output requires an explicit NODE_ENV=development
   // opt-in; every other environment — staging, production, anything else —
   // defaults to the sanitized response.
   if (!config.isDevelopment) {
-    sendProdError(err, res);
+    sendProdError(err, res, ref);
   } else {
-    sendDevError(err, res);
+    sendDevError(err, res, ref);
   }
 }
 

@@ -39,11 +39,14 @@ import {
   BankOutlined,
   TeamOutlined,
   AuditOutlined,
+  BugOutlined,
 } from '@ant-design/icons';
 import adminService from '../services/adminService';
 import ExportButton from '../components/common/ExportButton';
 import ReferralLogPanel from '../components/admin/ReferralLogPanel';
+import SystemLogsPanel from '../components/admin/SystemLogsPanel';
 import useAuth from '../hooks/useAuth';
+import { fmtDate } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 
@@ -546,7 +549,7 @@ export default function AdminDashboard() {
       title: 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date) => <Text type="secondary" style={{ fontSize: 12 }}>{date ? date.split('T')[0] : '—'}</Text>,
+      render: (date) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(date)}</Text>,
     },
     {
       title: 'Actions',
@@ -654,11 +657,22 @@ export default function AdminDashboard() {
               Companies
             </Button>
           )}
+          {/* Logs & errors (N42): errors cover every company, so Super Admin only. */}
+          {isSuper && (
+            <Button
+              type="text"
+              className={`admin-tab ${activeTab === 'logs' ? 'admin-tab--active' : ''}`}
+              onClick={() => setActiveTab('logs')}
+              icon={<BugOutlined />}
+            >
+              Logs &amp; errors
+            </Button>
+          )}
         </div>
         {/* The Referral Log owns its own Refresh (it has its own filters and
             pagination), so this shared one would either do nothing useful or
             reload the wrong list. Hidden there rather than left as a dead icon. */}
-        {activeTab !== 'referrals' && (
+        {activeTab !== 'referrals' && activeTab !== 'logs' && (
           <ReloadOutlined
             style={{ color: 'var(--gold)', cursor: 'pointer', fontSize: 16 }}
             onClick={activeTab === 'companies' ? loadCompanies : loadUsers}
@@ -1034,6 +1048,8 @@ export default function AdminDashboard() {
           Owns its own loading, filters and refresh, so nothing above needs to
           know about it. */}
       {activeTab === 'referrals' && <ReferralLogPanel />}
+
+      {activeTab === 'logs' && isSuper && <SystemLogsPanel />}
 
       {/* Tab Content 4: Companies (superadmin only) */}
       {activeTab === 'companies' && isSuper && (

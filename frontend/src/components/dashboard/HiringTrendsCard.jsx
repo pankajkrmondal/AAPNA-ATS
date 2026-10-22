@@ -1,8 +1,8 @@
 import MetricInfo from '../common/MetricInfo';
 /**
  * HiringTrendsCard — animated gradient area chart of new candidates added per day over the
- * selected date-range (client-bucketed from the candidate batch). Honest label: it reflects
- * candidates entering the system, the one time-series we can derive frontend-only.
+ * selected date-range, counted on the server over every candidate (N36 — it used to bucket
+ * only the newest 200 in the browser). It reflects candidates entering the system.
  */
 import { useMemo } from 'react';
 import { Card, Typography, Tooltip, Empty } from 'antd';
@@ -16,7 +16,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { bucketByDay } from '../../utils/dashboardAggregations';
 
 const { Title, Text } = Typography;
 
@@ -38,8 +37,8 @@ function ChartTip({ active, payload, label }) {
   );
 }
 
-export default function HiringTrendsCard({ candidates = [], rangeDays = 30, role = '', loading = false }) {
-  const data = useMemo(() => bucketByDay(candidates, rangeDays), [candidates, rangeDays]);
+export default function HiringTrendsCard({ daily = [], rangeDays = 30, role = '', loading = false }) {
+  const data = daily;
   const total = useMemo(() => data.reduce((s, d) => s + d.count, 0), [data]);
   const peak = useMemo(() => data.reduce((m, d) => Math.max(m, d.count), 0), [data]);
 

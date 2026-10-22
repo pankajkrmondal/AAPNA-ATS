@@ -394,7 +394,7 @@ export default function MrfSubmit() {
       case 'email':
         return <Input type="email" placeholder="Enter your answer" />;
       case 'date':
-        return <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />;
+        return <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />;
       case 'number':
         return <InputNumber min={0} max={60} step={1} style={{ width: '100%' }} placeholder="Enter your answer" />;
       case 'select':

@@ -38,6 +38,7 @@ import {
   publicDecision,
   summarizeUserAgent,
   titleForApprover,
+  nameForApprover,
 } from '../utils/mrfApprovalRules.js';
 import {
   sendMrfPersonalApprovalEmail,
@@ -82,6 +83,20 @@ export async function getApproverRoster() {
     logger.warn(`[MRF approval] "${ROSTER_SETTING_KEY}" not set — using the mrfApproval recipients with emails as names.`);
   }
   return approvers;
+}
+
+/** The roster for display lookups only (names, titles): [] on any error. Never throws. */
+async function rosterForDisplay() {
+  try {
+    return await getApproverRoster();
+  } catch {
+    return [];
+  }
+}
+
+/** The MRF with its decider's name as the roster has it today (N32). */
+function withRosterDeciderName(mrf, roster) {
+  return mrf ? { ...mrf, decided_by_name: nameForApprover(roster, mrf.decided_by_email, mrf.decided_by_name) } : mrf;
 }
 
 // ── Issuing personal links ─────────────────────────────────────────────
@@ -218,13 +233,14 @@ async function decidedMrfBehindExpiredLink(id, verdict) {
 }
 
 /** Title (e.g. "CEO") of whoever decided, from the approver roster. Never throws. */
-async function decidedByTitleFor(mrf) {
-  if (!mrf?.decided_by_email) return null;
-  try {
-    return titleForApprover(await getApproverRoster(), mrf.decided_by_email);
-  } catch {
-    return null;
-  }
+function decidedByTitleFor(mrf, roster) {
+  return mrf?.decided_by_email ? titleForApprover(roster, mrf.decided_by_email) : null;
+}
+
+/** "Already decided" message with the decider's current roster name and title. Never throws. */
+async function alreadyDecidedMessageFor(mrf) {
+  const roster = await rosterForDisplay();
+  return alreadyDecidedMessage(withRosterDeciderName(mrf, roster), decidedByTitleFor(mrf, roster));
 }
 
 /** "This MRF has already been approved by the CEO Abhijit Roy on 9 Oct 2026, 10:43 AM IST." */
@@ -319,17 +335,21 @@ export async function getPublicDetails(id, token, client) {
   const tokenRow = expiredButDecided ? verdict.expiredTokenRow : verdict.tokenRow;
   if (tokenRow && !expiredButDecided) await trackLinkOpen(tokenRow, mrf, client);
 
+  const roster = await rosterForDisplay();
+  const shown = withRosterDeciderName(mrf, roster);
   const {
     decided_ip: _ip, decided_by_email: _email, decision_event_id: _ev, decision_comments: comments, ...safe
-  } = mrf;
-  const decision = publicDecision(mrf, tokenRow?.approver_email);
+  } = shown;
+  const decision = publicDecision(shown, tokenRow?.approver_email);
   return {
     ...safe,
     id: mrf.id.toString(),
-    approver: tokenRow ? { name: tokenRow.approver_name || tokenRow.approver_email } : null,
+    approver: tokenRow
+      ? { name: nameForApprover(roster, tokenRow.approver_email, tokenRow.approver_name) || tokenRow.approver_email }
+      : null,
     link_state: expiredButDecided ? 'expired' : linkState(tokenRow, mrf),
     decision: decision
-      ? { ...decision, decidedByTitle: await decidedByTitleFor(mrf), comments: comments || null }
+      ? { ...decision, decidedByTitle: decidedByTitleFor(mrf, roster), comments: comments || null }
       : null,
   };
 }
@@ -350,7 +370,7 @@ export async function decide(id, { token, action, comments }, client) {
     const decided = await decidedMrfBehindExpiredLink(id, verdict);
     if (decided) {
       await recordBadLink(id, verdict, client);
-      throw new AppError(alreadyDecidedMessage(decided, await decidedByTitleFor(decided)), 409);
+      throw new AppError(await alreadyDecidedMessageFor(decided), 409);
     }
     await rejectBadLink(id, verdict, client);
   }
@@ -359,8 +379,14 @@ export async function decide(id, { token, action, comments }, client) {
   if (!mrf) throw new AppError('Requisition request not found.', 404);
 
   const { tokenRow } = verdict;
+  // The decider is recorded under today's roster name, not the copy on a link
+  // issued before the roster changed (N32).
   const actor = tokenRow
-    ? { email: tokenRow.approver_email, name: tokenRow.approver_name || tokenRow.approver_email, source: 'personal_link' }
+    ? {
+      email: tokenRow.approver_email,
+      name: nameForApprover(await rosterForDisplay(), tokenRow.approver_email, tokenRow.approver_name) || tokenRow.approver_email,
+      source: 'personal_link',
+    }
     : { email: null, name: LEGACY_ACTOR_NAME, source: 'legacy_shared_link' };
   const comment = clampText(comments, MAX_COMMENT_LENGTH);
   const newStatus = action === 'approve' ? 'approved' : 'rejected';
@@ -436,7 +462,7 @@ export async function decide(id, { token, action, comments }, client) {
       where: { id: mrf.id },
       select: { approval_status: true, decided_by_name: true, decided_by_email: true, decided_at: true },
     });
-    throw new AppError(alreadyDecidedMessage(current, await decidedByTitleFor(current)), 409);
+    throw new AppError(await alreadyDecidedMessageFor(current), 409);
   }
 
   // No token, ever. IP and browser are here too, so evidence also exists in
@@ -552,16 +578,20 @@ export async function getApprovalTrail(mrfId, { includeClientData = false } = {}
   });
   if (!mrf) throw new AppError('Requisition request not found.', 404);
 
-  const [tokens, events] = await Promise.all([
+  const [tokens, events, roster] = await Promise.all([
     prisma.rpa_mrf_approval_tokens.findMany({ where: { mrf_id: id }, orderBy: { id: 'asc' } }),
     prisma.rpa_mrf_approval_events.findMany({ where: { mrf_id: id }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] }),
+    rosterForDisplay(),
   ]);
+  // Names were copied when the request went out; show today's roster names
+  // (N32). The stored rows, and the append-only events, stay as recorded.
+  const nameFor = (email, stored) => nameForApprover(roster, email, stored);
 
   return {
     mrf_id: mrf.id.toString(),
     approval_status: mrf.approval_status,
     decision: mrf.decided_at ? {
-      decided_by_name: mrf.decided_by_name,
+      decided_by_name: nameFor(mrf.decided_by_email, mrf.decided_by_name),
       decided_by_email: mrf.decided_by_email,
       decided_at: mrf.decided_at,
       decided_at_ist: formatIst(mrf.decided_at),
@@ -570,7 +600,7 @@ export async function getApprovalTrail(mrfId, { includeClientData = false } = {}
     } : null,
     approvers: tokens.map((t) => ({
       id: t.id.toString(),
-      name: t.approver_name,
+      name: nameFor(t.approver_email, t.approver_name),
       email: t.approver_email,
       issued_at: t.issued_at,
       expires_at: t.expires_at,
@@ -585,7 +615,7 @@ export async function getApprovalTrail(mrfId, { includeClientData = false } = {}
       type: e.event_type,
       at: e.created_at,
       at_ist: formatIst(e.created_at),
-      actor_name: e.actor_name,
+      actor_name: nameFor(e.actor_email, e.actor_name),
       actor_email: e.actor_email,
       identity_source: e.identity_source,
       prior_status: e.prior_status,

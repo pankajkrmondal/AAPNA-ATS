@@ -365,3 +365,103 @@ test('an open journey contributes no stage durations', () => {
   }], stages);
   assert.deepEqual(result.stages, []);
 });
+
+// ── Positions tab (N39) ─────────────────────────────────────────────────────
+
+const POS_STAGES = [
+  { stage_key: 'zeko_hr', label: 'HR Screening', sort_order: 20 },
+  { stage_key: 'assessment', label: 'Assessment', sort_order: 30 },
+  { stage_key: 'tech1', label: 'Tech 1', sort_order: 50 },
+];
+const posMrf = (id, over = {}) => ({
+  id: BigInt(id), position_hiring_for: `Role ${id}`, number_of_positions: 2,
+  created_at: new Date(T0), decided_at: new Date(T0 + 2 * DAY),
+  filled_at: null, closed_at: null, closure_reason: null, paused_at: null, approval_status: 'approved',
+  ...over,
+});
+const posJourney = (mrfId, arrivals, over = {}) => ({
+  mrf_id: BigInt(mrfId),
+  current_stage_key: arrivals[arrivals.length - 1] || 'zeko_hr',
+  current_stage_status: 'in_progress',
+  final_outcome: null,
+  rpa_offers: null,
+  rpa_pipeline_stage_events: arrivals.map((k, i) => at(i, EVENT_TYPES.ENTERED, k)),
+  ...over,
+});
+
+test('positionsOverview groups journeys by MRF and counts stage arrivals', async () => {
+  const { positionsOverview } = await import('../services/pipelineAnalytics.helpers.js');
+  const rows = positionsOverview([
+    posJourney(1, ['zeko_hr']),
+    posJourney(1, ['zeko_hr', 'assessment', 'tech1']),
+    posJourney(2, ['zeko_hr', 'assessment']),
+  ], [posMrf(1), posMrf(2)], POS_STAGES, T0 + 12 * DAY);
+  const [one, two] = rows;
+  assert.equal(one.shortlisted, 2);
+  assert.deepEqual(one.stage_counts, { zeko_hr: 2, assessment: 1, tech1: 1 });
+  assert.equal(one.moved_forward, 1, 'only the journey that got past the first stage');
+  assert.equal(one.days_open, 10, 'from decided_at, not created_at');
+  assert.equal(one.ref, 'MRF-1');
+  assert.equal(two.shortlisted, 1);
+  assert.equal(two.moved_forward, 1);
+});
+
+test('positionsOverview: joining ratio is joined ÷ accepted, null with no acceptances', async () => {
+  const { positionsOverview } = await import('../services/pipelineAnalytics.helpers.js');
+  const accepted = { candidate_decision: 'accepted' };
+  const [row] = positionsOverview([
+    posJourney(1, ['zeko_hr'], { rpa_offers: accepted, final_outcome: FINAL_OUTCOMES.JOINED }),
+    posJourney(1, ['zeko_hr'], { rpa_offers: accepted, final_outcome: FINAL_OUTCOMES.DID_NOT_JOIN }),
+    posJourney(1, ['zeko_hr'], { rpa_offers: { candidate_decision: 'rejected' } }),
+  ], [posMrf(1)], POS_STAGES);
+  assert.equal(row.offers_made, 3);
+  assert.equal(row.offers_accepted, 2);
+  assert.equal(row.joined, 1);
+  assert.equal(row.joining_ratio, 50);
+  assert.equal(row.in_pipeline, 1);
+
+  const [none] = positionsOverview([posJourney(1, ['zeko_hr'])], [posMrf(1)], POS_STAGES);
+  assert.equal(none.joining_ratio, null, 'no acceptances is "no ratio", never 0%');
+});
+
+test('positionsOverview: a journey with no arrival events falls back to its current stage', async () => {
+  const { positionsOverview } = await import('../services/pipelineAnalytics.helpers.js');
+  const [row] = positionsOverview([
+    posJourney(1, [], { current_stage_key: 'assessment', rpa_pipeline_stage_events: [] }),
+  ], [posMrf(1)], POS_STAGES);
+  assert.deepEqual(row.stage_counts, { zeko_hr: 1, assessment: 1, tech1: 0 });
+  assert.equal(row.moved_forward, 1);
+});
+
+test('positionsOverview: an MRF with no candidates still gets a row of zeros', async () => {
+  const { positionsOverview } = await import('../services/pipelineAnalytics.helpers.js');
+  const [row] = positionsOverview([], [posMrf(9)], POS_STAGES);
+  assert.equal(row.shortlisted, 0);
+  assert.equal(row.joining_ratio, null);
+  assert.deepEqual(row.stage_counts, { zeko_hr: 0, assessment: 0, tech1: 0 });
+});
+
+test('positionStatus: Filled, Closed, Paused, Open; days open stop at closure', async () => {
+  const { positionStatus, positionsOverview } = await import('../services/pipelineAnalytics.helpers.js');
+  assert.equal(positionStatus(posMrf(1)), 'Open');
+  assert.equal(positionStatus(posMrf(1, { paused_at: new Date() })), 'Paused');
+  assert.equal(positionStatus(posMrf(1, { filled_at: new Date() })), 'Filled');
+  assert.equal(positionStatus(posMrf(1, { closed_at: new Date(), closure_reason: 'all_openings_filled' })), 'Filled');
+  assert.equal(positionStatus(posMrf(1, { closed_at: new Date(), closure_reason: 'budget_withdrawn' })), 'Closed');
+  const [row] = positionsOverview([], [posMrf(1, { closed_at: new Date(T0 + 7 * DAY), closure_reason: 'budget_withdrawn' })], POS_STAGES, T0 + 100 * DAY);
+  assert.equal(row.days_open, 5);
+  assert.equal(row.closure_reason, 'budget_withdrawn');
+});
+
+test('positions CSV: one column per stage, status filter matches the tab', async () => {
+  const { positionsColumns, positionsCsvRows, filterPositions } = await import('../exports/positions.export.js');
+  const cols = positionsColumns(POS_STAGES);
+  assert.ok(cols.some((c) => c.key === 'stage_tech1' && c.header === 'Reached: Tech 1'));
+  const [flat] = positionsCsvRows([{ ref: 'MRF-1', stage_counts: { tech1: 3 }, opened_at: new Date('2026-10-07T10:00:00Z'), closed_at: null }]);
+  assert.equal(flat.stage_tech1, 3);
+  assert.equal(flat.opened_at, '2026-10-07');
+  const rows = [{ status: 'Open' }, { status: 'Paused' }, { status: 'Filled' }, { status: 'Closed' }];
+  assert.equal(filterPositions(rows, 'open').length, 2);
+  assert.equal(filterPositions(rows, 'closed').length, 2);
+  assert.equal(filterPositions(rows, 'all').length, 4);
+});

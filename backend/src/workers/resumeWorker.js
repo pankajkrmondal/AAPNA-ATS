@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis.js';
 import logger from '../config/logger.js';
 import { runBatchParsing } from '../services/hrUpload.service.js';
+import { recordError } from '../services/errorLog.service.js';
 
 /**
  * BullMQ worker for the 'resume-processing' queue.
@@ -18,7 +19,7 @@ import { runBatchParsing } from '../services/hrUpload.service.js';
  * @returns {Promise<Object>} Processing result
  */
 async function processResume(job) {
-  const { executionId, file, user, source, attribution } = job.data;
+  const { executionId, file, user, source, attribution, mrfId = null } = job.data;
 
   logger.info(`📄 Processing resume: ${file?.originalname}`, {
     jobId: job.id,
@@ -30,7 +31,7 @@ async function processResume(job) {
   try {
     await job.updateProgress(10);
     // Reuses the full extract → AI parse → dedup → DB write pipeline for one file.
-    await runBatchParsing(executionId, [file], user, source, attribution);
+    await runBatchParsing(executionId, [file], user, source, attribution, { mrfId });
     await job.updateProgress(100);
 
     logger.info(`✅ Resume processed: ${file?.originalname}`, { jobId: job.id, batchId: executionId });
@@ -66,6 +67,14 @@ resumeWorker.on('failed', (job, err) => {
   logger.error(`Job ${job?.id} failed`, {
     error: err.message,
     attemptsMade: job?.attemptsMade,
+  });
+  // Shown on Logs & errors (N42); one row per failed attempt.
+  recordError({
+    source: 'job',
+    err,
+    route: 'job:resumeWorker',
+    requestId: `job-resumeWorker-${job?.id ?? 'unknown'}`,
+    meta: { job: 'resumeWorker', kind: `attempt ${job?.attemptsMade ?? '?'}` },
   });
 });
 

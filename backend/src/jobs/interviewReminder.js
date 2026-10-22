@@ -15,6 +15,7 @@
  *   interview_reminder_lead_min      how far ahead to remind (default 30)
  */
 import cron from 'node-cron';
+import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
@@ -22,6 +23,7 @@ import { resolveRecipients } from '../config/emailRecipients.js';
 import { sendGraphEmail, compileTemplate } from '../services/emailNotification.service.js';
 import { wrapBrandedEmail } from '../services/emailLayout.service.js';
 import { SCHEDULABLE_STAGES, buildTeamsBlock, stageSendsInvites } from '../services/interviewSchedule.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 /**
  * Template names for the two reminder emails (seeded by
@@ -76,11 +78,8 @@ export async function getInterviewReminderSettings() {
 /** Builds the node-cron expression for an every-N-minutes poll. */
 const cronForInterval = (minutes) => (minutes >= 60 ? '0 * * * *' : `*/${minutes} * * * *`);
 
-const fmtIst = (d) =>
-  `${new Date(d).toLocaleString('en-IN', {
-    day: '2-digit', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
-  })} IST`;
+// "07 Oct 2026, 4:30 PM IST" (N34: one format for every email).
+const fmtIst = (d) => fmtDateTimeIst(d);
 
 /**
  * Starts (or restarts) the reminder cron from the current settings.
@@ -101,13 +100,7 @@ export async function startInterviewReminderJob() {
     }
 
     const expression = cronForInterval(intervalMin);
-    job = cron.schedule(expression, async () => {
-      try {
-        await sendInterviewReminders();
-      } catch (err) {
-        logger.error(`Interview reminder job execution failed: ${err.message}`);
-      }
-    });
+    job = cron.schedule(expression, () => runJob('interviewReminder', () => sendInterviewReminders()));
 
     logger.info(`📅 Interview reminder scheduler running every ${intervalMin} min ("${expression}").`);
   } catch (err) {

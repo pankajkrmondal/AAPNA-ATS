@@ -57,6 +57,16 @@ const candidateService = {
     return api.get(`/candidates/${id}/emails`);
   },
 
+  /**
+   * Every score the pipeline holds for a candidate, per MRF and round (N29).
+   * Staff only.
+   * @param {string|number} id
+   * @returns {Promise}
+   */
+  getPipelineScores(id) {
+    return api.get(`/candidates/${id}/pipeline-scores`);
+  },
+
   // ── Referral candidate ──────────────────────────────────────────────
   // Separate from update() on purpose: the flag is audited, and setting it and
   // removing it carry different permissions server-side (any recruiter may set;

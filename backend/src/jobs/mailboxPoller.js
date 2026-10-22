@@ -19,6 +19,7 @@ import logger from '../config/logger.js';
 import { fetchMessagesDelta } from '../services/outlookReader.service.js';
 import { processIntakeMessages } from './emailResumeIntake.js';
 import { processInboundMessages } from './inboundEmailSync.js';
+import { runJob } from '../utils/jobRunner.js';
 
 const DELTA_KEY = 'mailbox_delta_link';
 
@@ -92,6 +93,7 @@ export async function runMailboxPoll() {
     }
   } catch (err) {
     logger.error(`[Mailbox Poller] Poll cycle failed: ${err.message}`);
+    throw err; // reported by runJob (N42)
   } finally {
     running = false;
   }
@@ -103,11 +105,7 @@ export function startMailboxPollerJob() {
     logger.info('📪 Mailbox poller DISABLED (set EMAIL_INTAKE_ENABLED and/or INBOUND_SYNC_ENABLED to true to enable).');
     return;
   }
-  job = cron.schedule(mailboxSync.cron, () => {
-    runMailboxPoll().catch((err) =>
-      logger.error(`[Mailbox Poller] Unhandled error: ${err.message}`)
-    );
-  });
+  job = cron.schedule(mailboxSync.cron, () => runJob('mailboxPoller', () => runMailboxPoll()));
   logger.info(`📬 Mailbox poller scheduled (${mailboxSync.cron}; intake=${intake.enabled}, inboundSync=${inboundSync.enabled}).`);
 }
 

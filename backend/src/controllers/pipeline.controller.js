@@ -55,6 +55,7 @@ import { buildPack, sendPack } from '../exports/candidateDossier.export.js';
 import pipelineExport from '../exports/pipeline.export.js';
 import moveHistoryExport from '../exports/moveHistory.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
+import positionsExport from '../exports/positions.export.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
 // this controller's — listStageTemplates reads them so the admin screen shows
 // what actually sends. See stageNotification.service.js's resolveTemplate().
@@ -102,6 +103,32 @@ export const getPipelineAnalytics = catchAsync(async (req, res) => {
     pipelineAnalyticsExport.parseAnalyticsParams(req.query),
   );
   return success(res, result, 'Pipeline analytics retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/analytics/positions
+ * Analytics "Positions" tab (N39): one row per requisition.
+ */
+export const getPositionsOverview = catchAsync(async (_req, res) => {
+  const result = await pipelineService.getPositionsOverview();
+  return success(res, result, 'Positions overview retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/analytics/positions/export?status=open|closed|all
+ * The Positions tab as CSV, one column per stage (N39). The stage list decides
+ * the columns, so the overview is loaded before runExport is handed them.
+ */
+export const exportPositionsOverview = catchAsync(async (req, res) => {
+  const { stages, rows } = await pipelineService.getPositionsOverview();
+  const status = ['open', 'closed'].includes(req.query.status) ? req.query.status : 'all';
+  return runExport(req, res, {
+    key: 'pipeline_analytics_positions',
+    label: 'Pipeline-Positions',
+    columns: positionsExport.positionsColumns(stages),
+    filters: { status },
+    fetch: async () => positionsExport.positionsCsvRows(positionsExport.filterPositions(rows, status)),
+  });
 });
 
 /**

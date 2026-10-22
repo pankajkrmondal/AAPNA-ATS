@@ -9,6 +9,7 @@ import { buildZekoReportSection } from '../utils/zekoReportModel.js';
 import { deriveZekoInterviewType } from '../utils/zekoJobType.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
+import { tracedFetch } from '../utils/externalCall.js';
 
 /**
  * Zeko background sync service.
@@ -90,7 +91,7 @@ export async function ensureZekoToken() {
   }
 
   const url = `${config.zeko.scheduleApiBase}/auth/token`;
-  const res = await fetch(url, {
+  const res = await tracedFetch('zeko', url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
@@ -212,7 +213,7 @@ async function isCookieLive(cookieHeader) {
     const url =
       `${config.zeko.dashboardApiBase}/workflow/${config.zeko.companyId}` +
       `?limit=1&page=1&published=true&notPublished=true&archived=true`;
-    const res = await fetch(url, {
+    const res = await tracedFetch('zeko', url, {
       headers: {
         Cookie: cookieHeader,
         Accept: 'application/json',
@@ -250,7 +251,7 @@ export async function refreshZekoCookie() {
   const sinceIso = new Date(Date.now() - 60 * 1000).toISOString();
 
   // 1) Request the OTP.
-  const checkRes = await fetch(`${config.zeko.loginApiBase}/auth/check`, {
+  const checkRes = await tracedFetch('zeko', `${config.zeko.loginApiBase}/auth/check`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -291,7 +292,7 @@ export async function refreshZekoCookie() {
   }
 
   // 3) Verify the OTP; capture the set-cookie.
-  const verifyRes = await fetch(`${config.zeko.loginApiBase}/auth/verifyOtp`, {
+  const verifyRes = await tracedFetch('zeko', `${config.zeko.loginApiBase}/auth/verifyOtp`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -460,7 +461,7 @@ export async function syncZekoJobs() {
       archived: 'true',
     });
     const url = `${config.zeko.dashboardApiBase}/workflow/${config.zeko.companyId}?${qs}`;
-    const res = await fetch(url, {
+    const res = await tracedFetch('zeko', url, {
       headers: {
         Cookie: cookieHeader,
         Accept: 'application/json',
@@ -569,7 +570,7 @@ async function fetchInterviewResponses(cookieHeader, jobId, interviewId) {
   const MAX_PAGES = 50; // hard stop, same guard as the job-catalog sync
 
   while (page <= MAX_PAGES) {
-    const res = await fetch(url, {
+    const res = await tracedFetch('zeko', url, {
       method: 'POST',
       headers: {
         Cookie: cookieHeader,
@@ -630,7 +631,7 @@ async function fetchInterviewResponses(cookieHeader, jobId, interviewId) {
 async function fetchCandidateReport(cookieHeader, candidateId, jobId, { timeoutMs } = {}) {
   const qs = new URLSearchParams({ candidateId: String(candidateId), jobId: String(jobId) });
   const url = `${config.zeko.reportApiBase}/interview-report?${qs}`;
-  const res = await fetch(url, {
+  const res = await tracedFetch('zeko', url, {
     headers: {
       Cookie: cookieHeader,
       Accept: 'application/json',
@@ -796,7 +797,7 @@ export async function generateZekoShareLink({
   /** One call to Zeko's Share endpoint. Returns the link id, or null. */
   const mint = async (cookieHeader, params) => {
     const qs = new URLSearchParams(params);
-    const res = await fetch(`${config.zeko.reportApiBase}/report/generate-link?${qs}`, {
+    const res = await tracedFetch('zeko', `${config.zeko.reportApiBase}/report/generate-link?${qs}`, {
       headers: {
         Cookie: cookieHeader,
         Accept: 'application/json',

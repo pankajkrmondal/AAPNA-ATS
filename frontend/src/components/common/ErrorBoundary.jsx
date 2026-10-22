@@ -1,6 +1,7 @@
 import { Component } from 'react';
 import { Button } from 'antd';
 import ErrorState from './ErrorState';
+import { reportError } from '../../services/errorReporter';
 
 /**
  * ErrorBoundary — keeps a render error from blanking the whole page (N30).
@@ -16,7 +17,7 @@ import ErrorState from './ErrorState';
  *
  * `resetKey` clears the error when it changes (e.g. another candidate is
  * opened), so one failure does not stick to every later render. The error is
- * logged to the console; reporting is N42.
+ * logged to the console and reported to Logs & errors (N42).
  *
  * @param {object} props
  * @param {'page'|'panel'} [props.variant]
@@ -38,6 +39,7 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info?.componentStack);
+    reportError({ kind: 'render', error, componentStack: info?.componentStack, component: this.props.variant || 'page' });
   }
 
   componentDidUpdate(prevProps) {

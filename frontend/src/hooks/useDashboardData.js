@@ -1,127 +1,105 @@
 /**
  * useDashboardData — single orchestration hook for the advanced dashboard.
  *
- * Fetches everything the widgets need IN PARALLEL from the EXISTING endpoints (no backend
- * changes). Each source has its own try/catch so one failing endpoint never blanks the
- * whole dashboard — the corresponding widget just renders an empty/error state.
+ * Fetches everything the widgets need IN PARALLEL. Each source has its own
+ * catch so one failing endpoint never blanks the whole dashboard — the
+ * corresponding widget just renders an empty/error state.
  *
- * Returns raw data; widgets/the page derive series via utils/dashboardAggregations.
+ * N36: the numbers are counted on the server. The hook used to pull the newest
+ * 200 candidates and aggregate them here, so any period with more than 200
+ * arrivals was quietly under-counted; it also read interviews from the Zeko
+ * list only. Stats and trends now follow the period and MRF filters; the
+ * other lists load once.
  */
 import { useEffect, useState, useCallback } from 'react';
 import dashboardService from '../services/dashboardService';
-import candidateService from '../services/candidateService';
-import mrfService from '../services/mrfService';
-import screeningService from '../services/screeningService';
-
-/** How many candidates to pull for client-side trend/role/skill aggregation. */
-const AGG_BATCH = 200;
 
 const EMPTY_STATS = {
-  totalCandidates: 0, activeMRFs: 0, pendingApprovalMRFs: 0, todayUploads: 0, shortlisted: 0,
+  totalCandidates: 0, activeMRFs: 0, pendingApprovalMRFs: 0, todayUploads: 0, shortlisted: 0, hired: 0,
+  mrf: null, period: null, timeToHireDays: null,
 };
 const EMPTY_FUNNEL = { sourced: 0, aiScreened: 0, shortlisted: 0, hired: 0 };
+const EMPTY_SERIES = { daily: [], total: 0 };
+const EMPTY_TRENDS = {
+  added: { ...EMPTY_SERIES, previousTotal: 0, deltaPct: null },
+  enteredPipeline: EMPTY_SERIES,
+  mrfsRaised: EMPTY_SERIES,
+  topRoles: [],
+  topSkills: [],
+  matchedBy: null,
+};
 
-export default function useDashboardData() {
+const unwrap = (res) => res?.data?.data ?? res?.data ?? null;
+const asList = (res) => {
+  const d = unwrap(res);
+  return Array.isArray(d) ? d : [];
+};
+
+/**
+ * @param {{ rangeDays: number, mrfId: number|string|null }} filters
+ */
+export default function useDashboardData({ rangeDays = 30, mrfId = null } = {}) {
   const [stats, setStats] = useState(EMPTY_STATS);
   const [funnel, setFunnel] = useState(EMPTY_FUNNEL);
-  const [candidates, setCandidates] = useState([]); // large batch for aggregation
-  const [pendingMrfs, setPendingMrfs] = useState([]);
-  const [pipeline, setPipeline] = useState([]);
-  const [pipelineTiles, setPipelineTiles] = useState({});
-  const [roles, setRoles] = useState([]);
-  const [recruiterBreakdown, setRecruiterBreakdown] = useState([]); // [{ recruiter, added, tagged }]
+  const [trends, setTrends] = useState(EMPTY_TRENDS);
+  const [upcoming, setUpcoming] = useState([]);
+  const [mrfOptions, setMrfOptions] = useState([]);
+  const [recruiterBreakdown, setRecruiterBreakdown] = useState([]); // [{ recruiter, added, shortlisted }]
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
-  const load = useCallback(async () => {
+  // Follows the filters: KPIs, funnel, daily series, talent tallies.
+  const loadFiltered = useCallback(async () => {
     setLoading(true);
     const errs = {};
-
-    const tasks = [
-      // KPIs + funnel
-      dashboardService.getStats()
+    await Promise.allSettled([
+      dashboardService.getStats({ rangeDays, mrfId })
         .then((res) => {
-          const d = res.data?.data || res.data || {};
-          setStats({
-            totalCandidates: d.totalCandidates || 0,
-            activeMRFs: d.activeMRFs || 0,
-            // Counted server-side alongside activeMRFs. It used to be derived from
-            // pendingMrfs.length, which read the wrong column (mrfstatus, not
-            // approval_status) AND capped at the list's limit of 50 — see the note in
-            // dashboard.service.js getStats().
-            pendingApprovalMRFs: d.pendingApprovalMRFs || 0,
-            todayUploads: d.todayUploads || 0,
-            shortlisted: d.shortlisted || 0,
-          });
+          const d = unwrap(res) || {};
+          setStats({ ...EMPTY_STATS, ...d });
           if (d.funnel) setFunnel(d.funnel);
         })
         .catch((e) => { errs.stats = e?.message || 'failed'; }),
-
-      // Candidate batch for trends / top roles / skills (sorted newest first)
-      candidateService.search({ sort: 'createdAt', order: 'desc' }, 1, AGG_BATCH)
-        .then((res) => {
-          const list = Array.isArray(res.data?.data)
-            ? res.data.data
-            : (res.data?.data?.data || res.data?.data?.candidates || res.data?.candidates || res.data || []);
-          setCandidates(Array.isArray(list) ? list : []);
-        })
-        .catch((e) => { errs.candidates = e?.message || 'failed'; }),
-
-      // Pending MRF approvals (for the action center)
-      mrfService.list({ status: 'pending', limit: 50 })
-        .then((res) => {
-          const list = res.data?.data || res.data?.data?.data || res.data || [];
-          setPendingMrfs(Array.isArray(list) ? list : (list?.data || []));
-        })
-        .catch((e) => { errs.mrfs = e?.message || 'failed'; }),
-
-      // Zeko pipeline (interviews + status tiles)
-      screeningService.getZekoPipeline()
-        .then((res) => {
-          const d = res.data?.data || res.data || {};
-          setPipeline(Array.isArray(d.pipeline) ? d.pipeline : []);
-          setPipelineTiles(d.tiles || {});
-        })
-        .catch((e) => { errs.pipeline = e?.message || 'failed'; }),
-
-      // Approved roles (for the global role filter)
-      screeningService.getRoles()
-        .then((res) => {
-          const list = res.data?.data || res.data || [];
-          // The roles API lists every MRF since N19. This filter still matches
-          // by role NAME, so keep one entry per name (the latest open MRF)
-          // until N36 moves it to MRF ids.
-          setRoles(Array.isArray(list) ? list.filter((r) => r.isLatest !== false) : []);
-        })
-        .catch((e) => { errs.roles = e?.message || 'failed'; }),
-
-      // Per-recruiter Added + Tagged breakdown (one row per recruiter, both counts)
-      dashboardService.getRecruiterBreakdown()
-        .then((res) => {
-          const list = res.data?.data || res.data || [];
-          setRecruiterBreakdown(Array.isArray(list) ? list : []);
-        })
-        .catch((e) => { errs.recruiterBreakdown = e?.message || 'failed'; }),
-    ];
-
-    await Promise.allSettled(tasks);
-    setErrors(errs);
+      dashboardService.getTrends({ rangeDays, mrfId })
+        .then((res) => setTrends({ ...EMPTY_TRENDS, ...(unwrap(res) || {}) }))
+        .catch((e) => { errs.trends = e?.message || 'failed'; }),
+    ]);
+    setErrors((prev) => ({ ...prev, stats: errs.stats, trends: errs.trends }));
     setLoading(false);
+  }, [rangeDays, mrfId]);
+
+  // Independent of the filters.
+  const loadStatic = useCallback(async () => {
+    const errs = {};
+    await Promise.allSettled([
+      dashboardService.getUpcomingInterviews(7)
+        .then((res) => setUpcoming(asList(res)))
+        .catch((e) => { errs.upcoming = e?.message || 'failed'; }),
+      dashboardService.getMrfOptions()
+        .then((res) => setMrfOptions(asList(res)))
+        .catch((e) => { errs.mrfOptions = e?.message || 'failed'; }),
+      // Per-recruiter Added + Shortlisted breakdown (one row per recruiter, both counts)
+      dashboardService.getRecruiterBreakdown()
+        .then((res) => setRecruiterBreakdown(asList(res)))
+        .catch((e) => { errs.recruiterBreakdown = e?.message || 'failed'; }),
+    ]);
+    setErrors((prev) => ({ ...prev, ...errs }));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadFiltered(); }, [loadFiltered]);
+  useEffect(() => { loadStatic(); }, [loadStatic]);
+
+  const reload = useCallback(() => Promise.all([loadFiltered(), loadStatic()]), [loadFiltered, loadStatic]);
 
   return {
     stats,
     funnel,
-    candidates,
-    pendingMrfs,
-    pipeline,
-    pipelineTiles,
-    roles,
+    trends,
+    upcoming,
+    mrfOptions,
     recruiterBreakdown,
     loading,
     errors,
-    reload: load,
+    reload,
   };
 }

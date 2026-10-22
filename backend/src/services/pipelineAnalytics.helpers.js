@@ -26,6 +26,8 @@ import {
   HIRED_OUTCOMES,
   isTransitionEvent,
   isStageArrival,
+  isMrfFilled,
+  MRF_CLOSURE_REASONS,
 } from '../config/pipelineStages.js';
 
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -248,12 +250,126 @@ export function timeToHireFor(journeys = [], stages = []) {
   };
 }
 
+/** Outcomes that mean the candidate actually started (N39 joining ratio). */
+export const JOINED_OUTCOMES = Object.freeze([FINAL_OUTCOMES.JOINED, FINAL_OUTCOMES.JOINED_AND_LEFT]);
+
+/**
+ * Where a requisition stands, in one word for the Positions tab (N39).
+ * Closed wins over Filled only when the business closed it for another reason.
+ * @returns {'Open'|'Paused'|'Filled'|'Closed'}
+ */
+export function positionStatus(mrf) {
+  if (!mrf) return 'Open';
+  const filled = isMrfFilled(mrf) || mrf.closure_reason === MRF_CLOSURE_REASONS.ALL_OPENINGS_FILLED;
+  if (mrf.closed_at != null && !filled) return 'Closed';
+  if (filled) return 'Filled';
+  if (mrf.paused_at != null) return 'Paused';
+  return 'Open';
+}
+
+/**
+ * The stages a journey reached: its arrival events ('entered' / 'skip'), or —
+ * for a journey with none, predating the event log — every stage up to its
+ * current one. The same rule as the single-MRF funnel in getPipelineAnalytics.
+ * @returns {Set<string>} stage keys
+ */
+export function reachedStages(journey, stages) {
+  const arrivals = (journey.rpa_pipeline_stage_events || []).filter(isStageArrival);
+  if (arrivals.length) return new Set(arrivals.map((ev) => ev.stage_key));
+  const current = stages.find((st) => st.stage_key === journey.current_stage_key);
+  if (!current) return new Set();
+  return new Set(stages.filter((s) => s.sort_order <= current.sort_order).map((s) => s.stage_key));
+}
+
+/**
+ * One row per requisition for Analytics' Positions tab (N39): how long it has
+ * been open, how far its candidates got, and how many offers turned into
+ * joiners. Pure — the service loads the rows.
+ *
+ *   - shortlisted     every journey for the MRF
+ *   - movedForward    journeys that reached any stage after the first board stage
+ *   - stageCounts     journeys that reached each stage (arrival rule above)
+ *   - offersMade      journeys with an offer record; accepted = candidate said yes
+ *   - joined          final outcome joined (or joined and later left)
+ *   - hired           HIRED_OUTCOMES (approved / joined), as Analytics counts hires
+ *   - joiningRatio    joined ÷ accepted, as a whole percent; null with no acceptances
+ *
+ * @param {Array} journeys  rpa_candidate_pipeline rows with rpa_pipeline_stage_events and rpa_offers
+ * @param {Array} mrfs      rpa_mrf rows (id, position_hiring_for, number_of_positions, created_at,
+ *                          decided_at, filled_at, closed_at, closure_reason, paused_at, approval_status)
+ * @param {Array} stages    active rpa_pipeline_stages, in sort order
+ * @param {number} [now]    epoch ms
+ */
+export function positionsOverview(journeys = [], mrfs = [], stages = [], now = Date.now()) {
+  const byMrf = new Map();
+  for (const j of journeys) {
+    if (!j.mrf_id) continue;
+    const key = String(j.mrf_id);
+    if (!byMrf.has(key)) byMrf.set(key, []);
+    byMrf.get(key).push(j);
+  }
+  const firstStageKey = stages[0]?.stage_key;
+
+  return mrfs.map((mrf) => {
+    const list = byMrf.get(String(mrf.id)) || [];
+    const stageCounts = Object.fromEntries(stages.map((s) => [s.stage_key, 0]));
+    let movedForward = 0;
+    let offersMade = 0;
+    let accepted = 0;
+    let joined = 0;
+    let hired = 0;
+    let open = 0;
+    for (const j of list) {
+      const reached = reachedStages(j, stages);
+      for (const key of reached) if (key in stageCounts) stageCounts[key] += 1;
+      if ([...reached].some((key) => key !== firstStageKey && key in stageCounts)) movedForward += 1;
+      if (j.rpa_offers) {
+        offersMade += 1;
+        if (j.rpa_offers.candidate_decision === 'accepted') accepted += 1;
+      }
+      if (JOINED_OUTCOMES.includes(j.final_outcome)) joined += 1;
+      if (bucketFor(j) === 'hired') hired += 1;
+      if (!j.final_outcome) open += 1;
+    }
+
+    const status = positionStatus(mrf);
+    const openedAt = mrf.decided_at || mrf.created_at || null;
+    const endedAt = status === 'Filled' || status === 'Closed' ? (mrf.closed_at || mrf.filled_at || null) : null;
+    const daysOpen = openedAt
+      ? Math.max(0, Math.floor(((endedAt ? new Date(endedAt).getTime() : now) - new Date(openedAt).getTime()) / MS_PER_DAY))
+      : null;
+
+    return {
+      mrf_id: Number(mrf.id),
+      ref: `MRF-${Number(mrf.id)}`,
+      role: mrf.position_hiring_for || 'Role not recorded',
+      status,
+      opened_at: openedAt,
+      closed_at: endedAt,
+      days_open: daysOpen,
+      openings: mrf.number_of_positions == null ? null : Number(mrf.number_of_positions),
+      shortlisted: list.length,
+      in_pipeline: open,
+      moved_forward: movedForward,
+      stage_counts: stageCounts,
+      offers_made: offersMade,
+      offers_accepted: accepted,
+      joined,
+      hired,
+      joining_ratio: accepted > 0 ? Math.round((joined / accepted) * 100) : null,
+      closure_reason: mrf.closure_reason || null,
+    };
+  });
+}
+
 export default {
   lastTransitionOf,
   stageClockStart,
   stageDurations,
   bucketFor,
   timeToHireFor,
+  positionsOverview,
+  positionStatus,
   parseAnalyticsParams,
   MS_PER_DAY,
 };

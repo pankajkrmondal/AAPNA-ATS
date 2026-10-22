@@ -4,14 +4,9 @@
  * Kept free of Prisma so the wording can be unit-tested without a database.
  */
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { fmtDate } from './dateFormat.js';
 
-const IST_DATE = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Kolkata',
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-});
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * "07 Oct 2026" in IST, or null when there is no date.
@@ -19,11 +14,7 @@ const IST_DATE = new Intl.DateTimeFormat('en-GB', {
  * @returns {string|null}
  */
 export function fmtIstDate(d) {
-  if (!d) return null;
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return null;
-  // en-GB writes September as "Sept"; the screens (dayjs "DD MMM YYYY") write "Sep".
-  return IST_DATE.format(date).replace(/\bSept\b/, 'Sep');
+  return fmtDate(d) || null;
 }
 
 /**

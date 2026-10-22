@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { syncZekoJobs, fetchInterviewResults } from '../services/zeko.service.js';
+import { runJob } from '../utils/jobRunner.js';
 
 /**
  * Zeko background scheduler.
@@ -52,14 +53,10 @@ export function startZekoSchedulerJob() {
   if (!cron.validate(jobsCron)) {
     logger.error(`Invalid ZEKO_JOBS_CRON "${jobsCron}" — Zeko job sync not scheduled.`);
   } else {
-    jobsTask = cron.schedule(jobsCron, async () => {
+    jobsTask = cron.schedule(jobsCron, () => runJob('zekoJobs', async () => {
       logger.info('⏰ Running Zeko token refresh + job catalog sync…');
-      try {
-        await syncZekoJobs();
-      } catch (error) {
-        logger.error('Zeko job sync failed:', { error: error.message });
-      }
-    });
+      await syncZekoJobs();
+    }));
     logger.info(`📅 Zeko job sync cron scheduled: "${jobsCron}"`);
   }
 
@@ -74,9 +71,7 @@ export function startZekoSchedulerJob() {
       resultsRunning = true;
       logger.info('⏰ Running Zeko interview-results fetch…');
       try {
-        await fetchInterviewResults();
-      } catch (error) {
-        logger.error('Zeko results fetch failed:', { error: error.message });
+        await runJob('zekoResults', () => fetchInterviewResults());
       } finally {
         // Must release even when the fetch throws, or one failure would wedge
         // the job permanently.

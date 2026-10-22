@@ -4,6 +4,15 @@
  */
 import api from './api';
 
+/** Shortlist requests: up to 10 minutes (a large "Select all" batch). */
+const SHORTLIST_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** JD search / export body: only the filters that are set. */
+const roleSearchBody = (addedWithinDays, taggedOnly) => ({
+  ...(addedWithinDays ? { addedWithinDays } : {}),
+  ...(taggedOnly ? { taggedOnly: true } : {}),
+});
+
 const screeningService = {
   /**
    * Get approved MRF roles list for selection dropdown.
@@ -33,11 +42,13 @@ const screeningService = {
   /**
    * Match and rank candidates against selected MRF role.
    * @param {number} mrfId
-   * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh).
+   * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh);
+   *   { addedWithinDays } limits to candidates added in the last N days (N38);
+   *   { taggedOnly } limits to candidates tagged to this JD (N15).
    * @returns {Promise<{ data: { role: Object, candidates: Array, summary: Object } }>}
    */
-  searchRoleCandidates(mrfId, { force = false } = {}) {
-    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`);
+  searchRoleCandidates(mrfId, { force = false, addedWithinDays = null, taggedOnly = false } = {}) {
+    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`, roleSearchBody(addedWithinDays, taggedOnly));
   },
 
   /**
@@ -55,9 +66,11 @@ const screeningService = {
    * client-supplied candidate list.
    * @param {number} mrfId
    * @param {Object} [config] - blob/timeout config from downloadFile
+   * @param {number|null} [addedWithinDays] - the screen's "Added within" filter (N38), so the file matches
+   * @param {boolean} [taggedOnly] - the screen's "Tagged to this JD only" switch (N15)
    */
-  exportRoleCandidates(mrfId, config = {}) {
-    return api.post(`/screening/roles/${mrfId}/export`, {}, config);
+  exportRoleCandidates(mrfId, config = {}, addedWithinDays = null, taggedOnly = false) {
+    return api.post(`/screening/roles/${mrfId}/export`, roleSearchBody(addedWithinDays, taggedOnly), config);
   },
 
   /**
@@ -77,15 +90,34 @@ const screeningService = {
   },
 
   /**
+   * Change JD (G3): may this shortlist's JD be changed, why not, and which JDs to leave out.
+   * @param {number} shortlistId
+   */
+  getChangeJdStatus(shortlistId) {
+    return api.get(`/screening/shortlist/${shortlistId}/change-jd`);
+  },
+
+  /**
+   * Change JD (G3): replace a shortlist's JD in place.
+   * @param {number} shortlistId
+   * @param {{ newMrfId: number, reason: string, notifyCandidate?: boolean }} body
+   */
+  changeShortlistJd(shortlistId, body) {
+    return api.post(`/screening/shortlist/${shortlistId}/change-jd`, body);
+  },
+
+  /**
    * Shortlist selected candidates (insert records, send notification draft emails, update vectors).
    * Also creates a Candidate Pipeline journey per candidate (best-effort) — the
    * response's `pipeline_entries: [{ cv_id, pipeline_id }]` carries the ids
    * needed to deep-link into /pipeline?candidate=<pipeline_id>.
    * @param {Object} payload - { candidates: Array, mrf_id: number, role_name: string, send_email?: boolean, email_override?: { subject, body } }
-   * @returns {Promise<{ data: { success: boolean, emails_sent: number, pipeline_entries: Array<{cv_id: number, pipeline_id: number}> } }>}
+   * @returns {Promise<{ data: { success: boolean, emails_sent: number, pipeline_entries: Array<{cv_id: number, pipeline_id: number}>, failed_candidates: Array } }>}
    */
   shortlistCandidates(payload) {
-    return api.post('/screening/shortlist', payload);
+    // "Select all N matches" can send hundreds; each one is a journey plus an
+    // email, processed one by one, so allow far more than the 2-minute default.
+    return api.post('/screening/shortlist', payload, { timeout: SHORTLIST_TIMEOUT_MS });
   },
 
   /**

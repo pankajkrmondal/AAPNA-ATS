@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendRerankApiAlert } from './emailNotification.service.js';
+import { tracedFetch, logExternal } from '../utils/externalCall.js';
 
 // Cohere Rerank's documented per-request document ceiling — batch and merge
 // instead of silently truncating the candidate pool before scoring.
@@ -54,7 +55,7 @@ export async function generateEmbedding(text) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.embedContent(text);
+      const result = await logExternal('gemini', `embedContent ${modelName}`, () => model.embedContent(text));
       if (result && result.embedding && result.embedding.values) {
         return result.embedding.values;
       }
@@ -174,7 +175,7 @@ function toDocument(c) {
 async function rerankBatch(query, batch) {
   const documents = batch.map(toDocument);
 
-  const response = await fetch(config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
+  const response = await tracedFetch('cohere', config.cohere.baseUrl || 'https://api.cohere.com/v2/rerank', {
     method: 'POST',
     headers: {
       'accept': 'application/json',

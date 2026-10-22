@@ -1927,7 +1927,7 @@ Status: brainstorm later. No solution is designed here, as agreed.
 5. Run the integration files for the touched areas.
 6. RT UAT on staging.
 7. Production deploy.
-8. Update the affected module page and the development history in `docs/system/` (System documentation & development history (N43)).
+8. Update the affected module page and the development history in `docs/system/`, and the affected user guide in `docs/user-guides/` (System documentation & development history (N43)); refresh changed screenshots with `frontend/e2e/user-guide-screenshots.spec.js`.
 
 **Rollback:** the `.rollback.sql` file for each DDL; the `SCREENING_V2=false` flag for the screening change.
 

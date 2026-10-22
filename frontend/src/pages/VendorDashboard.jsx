@@ -34,6 +34,7 @@ import vendorService from '../services/vendorService';
 import candidateService from '../services/candidateService';
 import ExportButton from '../components/common/ExportButton';
 import KpiCard from '../components/common/KpiCard';
+import { fmtDate } from '../utils/dateFormat';
 
 const { Title, Text } = Typography;
 
@@ -66,6 +67,7 @@ const STAGE_STATUS_COLOR = {
 const KPI_CARDS = [
   {
     key: 'total',
+    metric: 'vendorTotalCandidates',
     label: 'Total Candidates',
     icon: <TeamOutlined />,
     color: 'var(--kpi-a)',
@@ -74,6 +76,7 @@ const KPI_CARDS = [
   },
   {
     key: 'thisMonth',
+    metric: 'vendorAddedThisMonth',
     label: 'Added This Month',
     icon: <RiseOutlined />,
     color: 'var(--kpi-c)',
@@ -82,6 +85,7 @@ const KPI_CARDS = [
   },
   {
     key: 'withPosition',
+    metric: 'vendorWithPosition',
     label: 'With Position Applied',
     icon: <AimOutlined />,
     color: 'var(--kpi-e)',
@@ -93,6 +97,7 @@ const KPI_CARDS = [
 /** Recruiter-only KPI: duplicates awaiting review (from the upload job tracker). */
 const PENDING_REVIEW_CARD = {
   key: 'pendingReview',
+  metric: 'vendorPendingReview',
   label: 'Pending Review',
   icon: <WarningOutlined />,
   color: 'var(--kpi-d)',
@@ -159,6 +164,16 @@ function statusColor(status) {
     default: return 'blue'; // inProcess
   }
 }
+
+/** Hover text for a raw FinalStatus tag (N35): which tile it counts under. */
+const STATUS_BUCKET_HINT = {
+  selected: 'Counted under "Selected / Joined".',
+  inProcess: 'Counted under "In Process": still moving through the hiring stages.',
+  onHold: 'Counted under "On Hold".',
+  rejected: 'Counted under "Rejected / Dropped": rejected by us or the candidate dropped out.',
+  pending: 'Counted under "Awaiting Screening": a recruiter has not screened this resume yet.',
+};
+const statusHint = (status) => `Status recorded on the candidate. ${STATUS_BUCKET_HINT[classifyStatus(status)]}`;
 
 /** Pipeline stage tiles — order, label, colour, icon.
  *  Colours come from the shared `--status-*` palette (theme/index.css), the same
@@ -255,7 +270,11 @@ export default function VendorDashboard() {
       title: 'Status',
       dataIndex: 'finalStatus',
       key: 'finalStatus',
-      render: (v) => <Tag color={statusColor(v)}>{v && v.trim() !== '' ? v : 'Awaiting Screening'}</Tag>,
+      render: (v) => (
+        <Tooltip title={statusHint(v)}>
+          <Tag color={statusColor(v)}>{v && v.trim() !== '' ? v : 'Awaiting Screening'}</Tag>
+        </Tooltip>
+      ),
     },
     {
       title: 'Uploaded At',
@@ -263,7 +282,7 @@ export default function VendorDashboard() {
       key: 'createdAt',
       render: (v) => (
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {v ? new Date(v).toLocaleDateString() : '—'}
+          {fmtDate(v)}
         </span>
       ),
     },
@@ -358,6 +377,7 @@ export default function VendorDashboard() {
                   color={kpi.color}
                   tint={kpi.tint}
                   accent={kpi.accent}
+                  metric={kpi.metric}
                 />
               </Col>
             ))}
@@ -489,13 +509,14 @@ export default function VendorDashboard() {
                   </Text>
                   <Space size={[8, 10]} wrap>
                     {stats.byFinalStatus.map((item) => (
-                      <Tag
-                        key={item.status}
-                        color={statusColor(item.status)}
-                        style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}
-                      >
-                        {item.status}: <strong>{item.count}</strong>
-                      </Tag>
+                      <Tooltip key={item.status} title={statusHint(item.status)}>
+                        <Tag
+                          color={statusColor(item.status)}
+                          style={{ padding: '4px 10px', fontSize: 13, borderRadius: 8 }}
+                        >
+                          {item.status}: <strong>{item.count}</strong>
+                        </Tag>
+                      </Tooltip>
                     ))}
                   </Space>
                 </div>

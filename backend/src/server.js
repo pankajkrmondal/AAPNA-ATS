@@ -16,6 +16,10 @@ import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/as
 import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
 import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
 import { startMrfAuditRetentionJob, stopMrfAuditRetentionJob } from './jobs/mrfAuditRetentionSweep.js';
+import { startErrorLogRetentionJob, stopErrorLogRetentionJob } from './jobs/errorLogRetentionSweep.js';
+import { recordError } from './services/errorLog.service.js';
+import { sendOpsAlert } from './services/emailNotification.service.js';
+import { currentRef } from './middleware/requestContext.js';
 import { loadEmailRecipients } from './config/emailRecipients.js';
 
 // ── Create HTTP server ────────────────────────────────────────────────
@@ -77,6 +81,10 @@ async function startServer() {
     // retention period (default 12 months); pure DB, off-peak, always runs.
     startMrfAuditRetentionJob();
 
+    // Error log retention (N42) — deletes rpa_error_log rows older than 30
+    // days; pure DB, off-peak, always runs.
+    startErrorLogRetentionJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -115,6 +123,7 @@ async function gracefulShutdown(signal) {
   stopOfferSweepJob();
   stopDocumentReminderJob();
   stopMrfAuditRetentionJob();
+  stopErrorLogRetentionJob();
 
   // Stop accepting new connections
   server.close(async () => {
@@ -142,14 +151,39 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ── Unhandled errors ──────────────────────────────────────────────────
+// Before exiting, store the crash and alert developers (N42). Capped at 3 s so
+// a hung mail or database call can never keep a broken process alive.
+const CRASH_REPORT_TIMEOUT_MS = 3000;
+let crashing = false;
+
+async function reportCrashAndExit(kind, err) {
+  if (crashing) return; // a second error while reporting the first
+  crashing = true;
+  const ref = currentRef();
+  const report = Promise.allSettled([
+    recordError({ source: 'backend', err, route: `process:${kind}`, meta: { kind } }),
+    sendOpsAlert({
+      kind: 'crash',
+      title: `Backend crashed (${kind})`,
+      signature: `${kind}:${err?.name || 'Error'}:${String(err?.message || '').slice(0, 80)}`,
+      err,
+      ref,
+      details: [['Event', kind], ['Process', `pid ${process.pid}, up ${Math.round(process.uptime())} s`]],
+    }),
+  ]);
+  await Promise.race([report, new Promise((r) => setTimeout(r, CRASH_REPORT_TIMEOUT_MS))]);
+  process.exit(1);
+}
+
 process.on('uncaughtException', (err) => {
   logger.error('UNCAUGHT EXCEPTION 💥', { error: err.message, stack: err.stack });
-  process.exit(1);
+  reportCrashAndExit('uncaughtException', err);
 });
 
 process.on('unhandledRejection', (reason) => {
-  logger.error('UNHANDLED REJECTION 💥', { reason: reason?.message || reason });
-  process.exit(1);
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error('UNHANDLED REJECTION 💥', { reason: err.message, stack: err.stack });
+  reportCrashAndExit('unhandledRejection', err);
 });
 
 // ── Go! ───────────────────────────────────────────────────────────────
