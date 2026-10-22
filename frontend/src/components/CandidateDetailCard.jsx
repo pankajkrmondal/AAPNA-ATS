@@ -8,6 +8,7 @@
 import { Row, Col, Typography, Tag, Avatar, Space } from 'antd';
 import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import PipelineScoresSection from './candidates/PipelineScoresSection';
+import CandidateTagsSection from './candidates/CandidateTagsSection';
 
 const { Text, Paragraph } = Typography;
 
@@ -215,6 +216,14 @@ export default function CandidateDetailCard({ candidate, showPipelineScores = fa
 
       {/* What the pipeline scored, per MRF and round. The fields above are
           the candidate record's own columns (Excel upload / edits). */}
+      {/* L02-B: the JDs this candidate is tagged to; remove or switch a wrong one. */}
+      {showPipelineScores && c.id && (
+        <>
+          <SectionHeader title="JD tags" />
+          <CandidateTagsSection cvId={c.id} />
+        </>
+      )}
+
       {showPipelineScores && c.id && (
         <>
           <SectionHeader title="Pipeline scores" />

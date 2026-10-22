@@ -24,6 +24,7 @@ import {
   planMove,
   moveNote,
   resolveFlexibleApproveLanding,
+  inVisit,
 } from '../utils/stageState.js';
 import {
   loadStageStates,
@@ -31,12 +32,16 @@ import {
   ensureStageStateRows,
   getStageLock,
   getStageLocks,
+  stageVisitStart,
+  redoVisitStarts,
+  redoVisitsFor,
+  redoReturnStageKey,
 } from './stageState.service.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
 // cancelInterviewRound is also re-exported below for the controller's benefit;
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
-import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, getInterviewParties, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
+import { isSchedulableStage, mrfRoundHints, getLiveSchedule, getSchedulesByStage, getSupersededSchedules, getInterviewParties, OCCURRENCE_STATUS, cancelInterviewRound as cancelRound } from './interviewSchedule.service.js';
 import { SCORECARD_STATUS, getCandidateScorecardReport } from './interviewScorecard.service.js';
 // Pure analytics arithmetic lives in its own dependency-free module so it can
 // be unit-tested — importing this service opens Redis and hangs `node --test`.
@@ -295,16 +300,23 @@ export async function listPipeline(filters = {}) {
   );
   // One read serves both flags, so they can never disagree about which round a
   // card is on.
-  const zekoBookings = zekoJourneys.length > 0
+  // L02-C: on a re-done stage only the current attempt's activity counts.
+  const boardVisitStarts = await redoVisitStarts(journeys);
+  const visitOf = (journeyId) => boardVisitStarts.get(String(journeyId)) || null;
+  const journeyIdByShortlist = new Map(journeys.map((j) => [String(j.shortlist_id), String(j.id)]));
+  const zekoBookingsAll = zekoJourneys.length > 0
     ? await prisma.rpa_zeko_candidate_pipeline.findMany({
         where: {
           candidate_id: { in: zekoJourneys.map((j) => j.shortlist_id) },
           stage: { in: [...new Set(zekoJourneys.map((j) => normalizeZekoRoundStage(j.current_stage_key)))] },
           status: { not: 'cancelled' },
         },
-        select: { candidate_id: true, stage: true, pipeline_id: true, candidate_email: true, link_sent_at: true },
+        select: { candidate_id: true, stage: true, pipeline_id: true, candidate_email: true, link_sent_at: true, created_at: true },
       })
     : [];
+  const zekoBookings = zekoBookingsAll.filter(
+    (b) => inVisit(b.created_at, visitOf(journeyIdByShortlist.get(String(b.candidate_id)))),
+  );
 
   // Set of `${shortlist_id}:${round}` pairs that have a real invite sent.
   const invitedRoundKeys = new Set(
@@ -367,6 +379,7 @@ export async function listPipeline(filters = {}) {
       where: {
         pipeline_id: { in: scheduledJourneys.map((j) => j.id) },
         status: { not: 'cancelled' },
+        superseded_at: null,
       },
       select: { pipeline_id: true, stage_key: true },
     });
@@ -385,19 +398,21 @@ export async function listPipeline(filters = {}) {
   if (assessmentPipelineIds.length > 0) {
     const results = await prisma.rpa_assessment_results.findMany({
       where: { pipeline_id: { in: assessmentPipelineIds }, status: { in: ['matched', 'score_overwritten'] } },
-      select: { pipeline_id: true },
+      select: { pipeline_id: true, created_at: true },
     });
-    results.forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
+    results
+      .filter((r) => inVisit(r.created_at, visitOf(r.pipeline_id)))
+      .forEach((r) => assessmentResultPipelineIds.add(String(r.pipeline_id)));
   }
   // N35: was the Evalground test actually sent, and is it late? One batched
   // read (newest first, first row per journey wins) instead of getInviteState
   // per card; the overdue rule is the drawer's own (assessmentInviteState).
   const latestInvites = assessmentPipelineIds.length > 0
-    ? latestInviteByPipeline(await prisma.rpa_assessment_invites.findMany({
+    ? latestInviteByPipeline((await prisma.rpa_assessment_invites.findMany({
         where: { pipeline_id: { in: assessmentPipelineIds } },
         orderBy: { sent_at: 'desc' },
         select: { pipeline_id: true, sent_at: true, deadline_at: true, withdrawn_at: true },
-      }))
+      })).filter((r) => inVisit(r.sent_at, visitOf(r.pipeline_id))))
     : new Map();
 
   // Referral flags for the board chip, one lookup keyed by cv_id.
@@ -601,7 +616,7 @@ export const OUTCOME_EMAIL_NOT_SENT = 'Not sent: the recruiter chose not to emai
  * @param {string} stageKey - 'zeko_hr' | 'zeko_fn'
  * @returns {Promise<{round: object|null, result: object|null}>}
  */
-async function findZekoRoundResult(pipeline, stageKey) {
+async function findZekoRoundResult(pipeline, stageKey, { since = null } = {}) {
   if (!isZekoStage(stageKey) || !pipeline.shortlist_id) return { round: null, result: null };
 
   const round = await prisma.rpa_zeko_candidate_pipeline.findFirst({
@@ -609,6 +624,9 @@ async function findZekoRoundResult(pipeline, stageKey) {
       candidate_id: pipeline.shortlist_id,
       stage: normalizeZekoRoundStage(stageKey),
       status: { not: 'cancelled' },
+      // L02-C: on a re-done round only the current attempt's row (a different
+      // Zeko job, assigned after the re-do began) counts.
+      ...(since ? { created_at: { gte: since } } : {}),
     },
     orderBy: { created_at: 'desc' },
   });
@@ -641,16 +659,25 @@ async function findZekoRoundResult(pipeline, stageKey) {
  */
 export async function stageHasScore(pipeline, stageKey) {
   const source = scoreSourceFor(stageKey);
+  // L02-C: a re-done stage's earlier attempt is not this attempt's score.
+  const since = source ? await stageVisitStart(pipeline.id, stageKey) : null;
   if (source === 'zeko') {
-    const { result } = await findZekoRoundResult(pipeline, stageKey);
+    const { result } = await findZekoRoundResult(pipeline, stageKey, { since });
     return Boolean(result);
   }
   if (source === 'assessment') {
-    return (await prisma.rpa_assessment_results.count({ where: { pipeline_id: pipeline.id } })) > 0;
+    return (await prisma.rpa_assessment_results.count({
+      where: { pipeline_id: pipeline.id, ...(since ? { created_at: { gte: since } } : {}) },
+    })) > 0;
   }
   if (source === 'scorecard') {
     const submitted = await prisma.rpa_interview_scorecard.count({
-      where: { pipeline_id: pipeline.id, stage_key: stageKey, status: SCORECARD_STATUS.SUBMITTED },
+      where: {
+        pipeline_id: pipeline.id,
+        stage_key: stageKey,
+        status: SCORECARD_STATUS.SUBMITTED,
+        ...(since ? { submitted_at: { gte: since } } : {}),
+      },
     });
     return submitted > 0;
   }
@@ -775,6 +802,45 @@ export async function getZekoSharedReportLink(pipelineId, { stageKey } = {}) {
  * stage, its event timeline, and its emails — feeds the per-round drawer.
  * @param {number} pipelineId
  */
+/**
+ * What earlier attempts of re-done stages left behind (L02-C), per stage:
+ * superseded bookings, Zeko rounds and Evalground results from before the
+ * latest attempt began. Read-only history for the drawer's "Earlier attempt".
+ * @param {object} pipeline the journey row (with rpa_shortlisted_candidates)
+ * @param {Record<string, Date>} redoVisits stage_key -> latest attempt start
+ */
+async function earlierAttemptsFor(pipeline, redoVisits) {
+  const out = {};
+  const superseded = await getSupersededSchedules(pipeline.id);
+  for (const [stageKey, since] of Object.entries(redoVisits)) {
+    const entry = { attempt_started_at: since, bookings: superseded.filter((b) => b.stage_key === stageKey) };
+    if (isZekoStage(stageKey) && pipeline.shortlist_id) {
+      const rows = await prisma.rpa_zeko_candidate_pipeline.findMany({
+        where: {
+          candidate_id: pipeline.shortlist_id,
+          stage: normalizeZekoRoundStage(stageKey),
+          status: { not: 'cancelled' },
+          created_at: { lt: since },
+        },
+        orderBy: { created_at: 'desc' },
+        select: { zeko_job_id: true, status: true, link_sent_at: true, created_at: true },
+      });
+      entry.zeko = rows;
+    }
+    if (stageKey === STAGE_KEYS.ASSESSMENT) {
+      entry.assessment = await prisma.rpa_assessment_results.findMany({
+        where: { pipeline_id: pipeline.id, created_at: { lt: since }, status: { in: ['matched', 'score_overwritten'] } },
+        orderBy: { created_at: 'desc' },
+        select: {
+          test_name: true, overall_result: true, overall_percentage: true, public_report_url: true, created_at: true,
+        },
+      });
+    }
+    out[stageKey] = entry;
+  }
+  return out;
+}
+
 export async function getPipelineDetail(pipelineId) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
@@ -876,10 +942,14 @@ export async function getPipelineDetail(pipelineId) {
   let zekoHrPipeline = null;
   let zekoReportLink = null;
   let zekoSharedReportLink = null;
+  // L02-C: which stages are (or were last) re-done, and when that attempt began.
+  const redoVisits = await redoVisitsFor(pipeline.id);
+  const currentVisitStart = await stageVisitStart(pipeline.id, pipeline.current_stage_key);
   if (isZekoStage(pipeline.current_stage_key) && pipeline.shortlist_id) {
     const { round, result: zekoResult } = await findZekoRoundResult(
       pipeline,
       pipeline.current_stage_key,
+      { since: currentVisitStart },
     );
     zekoHrPipeline = round;
     zekoReportLink = zekoResult?.reportlink || null;
@@ -899,7 +969,11 @@ export async function getPipelineDetail(pipelineId) {
   // has passed keeps its scores and report link (N28). The current-round
   // fields above stay for compatibility.
   const zekoRounds = pipeline.shortlist_id
-    ? await buildZekoRounds((stageKey) => findZekoRoundResult(pipeline, stageKey))
+    ? await buildZekoRounds((stageKey) => findZekoRoundResult(
+      pipeline,
+      stageKey,
+      { since: stageKey === pipeline.current_stage_key ? currentVisitStart : null },
+    ))
     : {};
 
   // Scheduled interview rounds: the MRF names who interviews and their
@@ -936,11 +1010,22 @@ export async function getPipelineDetail(pipelineId) {
   const stageStates = await loadStageStates(pipeline);
   const stageLock = flexibleStages ? await getStageLock(pipeline) : null;
 
+  // L02-C: what earlier attempts of re-done stages left behind, for the
+  // drawer's "Earlier attempt" groups, and where Approve goes back to.
+  const earlierAttempts = Object.keys(redoVisits).length
+    ? await earlierAttemptsFor(pipeline, redoVisits)
+    : {};
+  const redoReturnStage = currentVisitStart ? await redoReturnStageKey(pipeline) : null;
+
   return serializeBigInts({
     pipeline,
     flexibleStages,
     stageStates,
     stageLock,
+    redoVisits,
+    currentStageRedo: Boolean(currentVisitStart),
+    redoReturnStageKey: redoReturnStage,
+    earlierAttempts,
     currentStageHasScore,
     currentStageOutcomes: outcomes,
     reasons,
@@ -969,17 +1054,31 @@ export async function getPipelineDetail(pipelineId) {
  * import, and the submitted interview scorecards. Rounds with nothing on file
  * are left out.
  *
+ * Also the drawer's "Earlier roles for this candidate" (L02-A, via
+ * getRelatedJourneys): every journey also says which journey it was moved from
+ * or to, and with `includeEvents` carries its stage history.
+ *
  * @param {number|string} cvId
+ * @param {{ excludePipelineId?: number|string|bigint|null, includeEvents?: boolean }} [opts]
  * @returns {Promise<Array<{ pipeline_id: string, mrf_id: string|null, role: string, current_stage_label: string,
- *   final_outcome: string|null, rounds: Array<object> }>>}
+ *   final_outcome: string|null, final_outcome_label: string|null, moved_from_pipeline_id: string|null,
+ *   moved_to_pipeline_id: string|null, rounds: Array<object>, events?: Array<object> }>>}
  */
-export async function getCandidatePipelineScores(cvId) {
+export async function getCandidatePipelineScores(cvId, { excludePipelineId = null, includeEvents = false } = {}) {
   if (!/^\d+$/.test(String(cvId))) throw new AppError('Invalid candidate id.', 400);
-  const journeys = await prisma.rpa_candidate_pipeline.findMany({
+  const allJourneys = await prisma.rpa_candidate_pipeline.findMany({
     where: { cv_id: BigInt(cvId) },
     include: { rpa_shortlisted_candidates: { include: { mrf: { select: { id: true, position_hiring_for: true } } } } },
     orderBy: { created_at: 'desc' },
   });
+  // Which journey each one was moved to (L02): the reverse of moved_from_pipeline_id.
+  const movedTo = new Map();
+  for (const j of allJourneys) {
+    if (j.moved_from_pipeline_id != null) movedTo.set(String(j.moved_from_pipeline_id), j.id);
+  }
+  const journeys = excludePipelineId == null
+    ? allJourneys
+    : allJourneys.filter((j) => String(j.id) !== String(excludePipelineId));
   if (journeys.length === 0) return [];
 
   const stageRows = await prisma.rpa_pipeline_stages.findMany({
@@ -990,13 +1089,20 @@ export async function getCandidatePipelineScores(cvId) {
   const orderOf = (key) => stageRows.find((s) => s.stage_key === key)?.sort_order ?? 999;
 
   return Promise.all(journeys.map(async (journey) => {
-    const [zekoRounds, assessment, report] = await Promise.all([
+    const [zekoRounds, assessment, report, events] = await Promise.all([
       journey.shortlist_id ? buildZekoRounds((stageKey) => findZekoRoundResult(journey, stageKey)) : {},
       prisma.rpa_assessment_results.findFirst({
         where: { pipeline_id: journey.id, status: { in: ['matched', 'score_overwritten'] } },
         orderBy: { modified_at: 'desc' },
       }),
       getCandidateScorecardReport(journey.id),
+      includeEvents
+        ? prisma.rpa_pipeline_stage_events.findMany({
+          where: { pipeline_id: journey.id },
+          orderBy: { created_at: 'asc' },
+          select: { stage_key: true, event_type: true, outcome: true, status_label: true, notes: true, created_at: true },
+        })
+        : null,
     ]);
 
     const rounds = [];
@@ -1025,6 +1131,10 @@ export async function getCandidatePipelineScores(cvId) {
         report_link: assessment.public_report_url || null,
       });
     }
+    // Each interview round's recording, for "Earlier roles" (L02-A).
+    const recordingByStage = new Map((report?.rounds || [])
+      .filter((r) => r.recording_url)
+      .map((r) => [r.stage_key, r.recording_url]));
     const cardsByStage = new Map();
     for (const card of report?.rounds || []) {
       if (!cardsByStage.has(card.stage_key)) cardsByStage.set(card.stage_key, []);
@@ -1036,7 +1146,7 @@ export async function getCandidatePipelineScores(cvId) {
       });
     }
     for (const [stageKey, cards] of cardsByStage) {
-      rounds.push({ stage_key: stageKey, label: labelOf(stageKey), kind: 'scorecard', cards });
+      rounds.push({ stage_key: stageKey, label: labelOf(stageKey), kind: 'scorecard', cards, recording_url: recordingByStage.get(stageKey) || null });
     }
     rounds.sort((a, b) => orderOf(a.stage_key) - orderOf(b.stage_key));
 
@@ -1053,9 +1163,42 @@ export async function getCandidatePipelineScores(cvId) {
       shortlisted_at: journey.rpa_shortlisted_candidates?.shortlisted_at || journey.created_at,
       shortlisted_by: journey.rpa_shortlisted_candidates?.shortlisted_by || null,
       closed_at: journey.closed_at || null,
+      final_outcome_label: journey.final_outcome ? finalStatusLabelFor(journey.current_stage_key, journey.final_outcome) : null,
+      moved_from_pipeline_id: journey.moved_from_pipeline_id ?? null,
+      moved_to_pipeline_id: movedTo.get(String(journey.id)) ?? null,
       rounds,
+      ...(events ? {
+        events: events.map((e) => ({
+          stage_key: e.stage_key,
+          stage_label: labelOf(e.stage_key),
+          event_type: e.event_type,
+          outcome: e.outcome,
+          status_label: e.status_label,
+          notes: e.notes,
+          created_at: e.created_at,
+        })),
+      } : {}),
     });
   }));
+}
+
+/**
+ * "Earlier roles for this candidate" in the drawer (L02-A): every OTHER
+ * journey of this journey's candidate, closed ones included, with results and
+ * stage history. Read-only; nothing is copied between journeys.
+ * GET /api/pipeline/:id/related-journeys
+ * @param {number|string} pipelineId
+ */
+export async function getRelatedJourneys(pipelineId) {
+  if (!/^\d+$/.test(String(pipelineId))) throw new AppError('Invalid pipeline id.', 400);
+  const journey = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id: BigInt(pipelineId) },
+    select: { id: true, cv_id: true, moved_from_pipeline_id: true },
+  });
+  if (!journey) throw new AppError('Pipeline journey not found.', 404);
+  if (!journey.cv_id) return { moved_from_pipeline_id: null, journeys: [] };
+  const journeys = await getCandidatePipelineScores(String(journey.cv_id), { excludePipelineId: journey.id, includeEvents: true });
+  return serializeBigInts({ moved_from_pipeline_id: journey.moved_from_pipeline_id ?? null, journeys });
 }
 
 /**
@@ -1241,7 +1384,9 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
       // (D4). A passed stage is never a landing (D2).
       const states = await loadStageStates(pipeline);
       const legacyPick = skipOptionalNext ? stages[currentIdx + 2]?.stage_key || null : null;
-      ({ nextStage, skipped: skippedStages } = resolveFlexibleApproveLanding(stages, currentIdx, states, { skipToStageKey: skipToStageKey || legacyPick }));
+      // L02-C: approving a re-done stage goes back to where the candidate was.
+      const returnToStageKey = await redoReturnStageKey(pipeline);
+      ({ nextStage, skipped: skippedStages } = resolveFlexibleApproveLanding(stages, currentIdx, states, { skipToStageKey: skipToStageKey || legacyPick, returnToStageKey }));
     } else {
       // Only optional stages may be bypassed (N33), and a run of them can be
       // bypassed in one go — HR Round straight to Documents past CEO Round and
@@ -1446,7 +1591,7 @@ export async function advanceStage(pipelineId, { skip = false, actedBy } = {}) {
     const lock = await getStageLock(pipeline);
     if (lock.locked) throw new AppError(lock.reason, 409);
     const states = await loadStageStates(pipeline);
-    ({ nextStage } = resolveFlexibleApproveLanding(stages, currentIdx, states));
+    ({ nextStage } = resolveFlexibleApproveLanding(stages, currentIdx, states, { returnToStageKey: await redoReturnStageKey(pipeline) }));
     if (!nextStage) throw new AppError('No later stage the candidate has not already passed.', 400);
   } else {
     // Moving on without an outcome IS skipping the current stage, whatever the
@@ -1507,7 +1652,7 @@ export const MOVE_STALE_MESSAGE = 'Someone else moved this candidate while you w
  * @param {string|null} [params.fromStageKey] the stage the user's screen showed
  * @param {number} params.actedBy
  */
-export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = null, actedBy }) {
+export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = null, actedBy, reason = null }) {
   if (!config.pipeline.flexibleStagesEnabled) {
     throw new AppError('Moving candidates between stages in any order is not switched on.', 400);
   }
@@ -1524,9 +1669,19 @@ export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = n
 
   const stages = await prisma.rpa_pipeline_stages.findMany({ orderBy: { sort_order: 'asc' } });
   const states = await loadStageStates(pipeline, prisma, stages);
-  const plan = planMove({ stages, states, pipeline, targetStageKey });
+  const plan = planMove({ stages, states, pipeline, targetStageKey, reason });
   const notes = moveNote(plan);
-  const leftStatus = states[pipeline.current_stage_key] === STAGE_STATES.COMPLETED ? STAGE_STATES.COMPLETED : STAGE_STATES.SKIPPED;
+  // Leaving a stage without an outcome marks it skipped — unless it had been
+  // passed before (a re-done stage left mid-attempt keeps its earlier pass,
+  // L02-C): its row still has completed_at.
+  const currentRow = await prisma.rpa_pipeline_stage_state.findUnique({
+    where: { pipeline_id_stage_key: { pipeline_id: pipeline.id, stage_key: pipeline.current_stage_key } },
+    select: { completed_at: true },
+  });
+  const leftStatus = states[pipeline.current_stage_key] === STAGE_STATES.COMPLETED || currentRow?.completed_at
+    ? STAGE_STATES.COMPLETED
+    : STAGE_STATES.SKIPPED;
+  const redoReason = plan.redo ? String(reason).trim().slice(0, 500) : null;
 
   const { updatedPipeline, event } = await prisma.$transaction(async (tx) => {
     // Claim-then-act, as setStageOutcome: a second tab or a second recruiter
@@ -1550,9 +1705,18 @@ export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = n
         from_stage_key: pipeline.current_stage_key,
         event_type: EVENT_TYPES.MOVED,
         notes,
+        reason_text: redoReason,
         acted_by: actedBy || null,
       },
     });
+    if (plan.redo) {
+      // The earlier attempt's bookings stay as history (real status kept) but
+      // are no longer the stage's live booking, so it can be booked again.
+      await tx.rpa_interview_schedule.updateMany({
+        where: { pipeline_id: pipeline.id, stage_key: plan.toStage.stage_key, superseded_at: null },
+        data: { superseded_at: new Date(), modified_at: new Date() },
+      });
+    }
     await ensureStageStateRows(tx, pipeline);
     await writeStageStates(tx, pipeline.id, [
       { stageKey: pipeline.current_stage_key, status: leftStatus },
@@ -1578,7 +1742,7 @@ export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = n
     logger.error(`Legacy write-back failed for moved pipeline ${pipelineId}: ${err.message}`);
   }
 
-  logger.info(`Pipeline ${pipelineId} moved ${plan.direction} ${pipeline.current_stage_key} -> ${plan.toStage.stage_key} by user ${actedBy || 'unknown'}.`);
+  logger.info(`Pipeline ${pipelineId} moved ${plan.direction} ${pipeline.current_stage_key} -> ${plan.toStage.stage_key}${plan.redo ? ' (re-do)' : ''} by user ${actedBy || 'unknown'}.`);
   return serializeBigInts({
     pipeline: updatedPipeline,
     event,
@@ -1587,6 +1751,7 @@ export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = n
       to_stage_key: plan.toStage.stage_key,
       direction: plan.direction,
       skipped_count: plan.skippedCount,
+      redo: plan.redo,
     },
   });
 }
@@ -1604,8 +1769,11 @@ export async function moveToStage(pipelineId, { targetStageKey, fromStageKey = n
  *   closures (jobs/offerSweep.js's 90-day auto-close). A cron tidying up a
  *   record months later must never be the thing that emails a candidate; a
  *   human recording a closure decision still can.
+ * @param {boolean} [params.notifyVendor=true] - false only for Move to another
+ *   JD (L02): the candidate is still in play on the new JD, so a "closed"
+ *   email would tell the vendor something untrue.
  */
-export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = null, actedBy, notifyCandidate = true }) {
+export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = null, actedBy, notifyCandidate = true, notifyVendor: notifyVendorOfClosure = true }) {
   // The key was previously written through unvalidated: finalStatusLabelFor()
   // falls through to `${stageLabel} ${outcomeKey}` for anything it doesn't
   // recognise, so a typo — or a hand-rolled API call — landed arbitrary text in
@@ -1880,15 +2048,17 @@ export async function setFinalOutcome(pipelineId, { finalOutcomeKey, notes = nul
   // who backed out that they don't already know — but their vendor was never in
   // that conversation, and "did this placement land?" is the one question they
   // are actually tracking. Independent of notifyCandidate for the same reason.
-  await notifyVendor({
-    pipelineRow: updatedPipeline,
-    candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
-    eventType: VENDOR_EVENTS.CLOSURE,
-    stageKey: pipeline.current_stage_key,
-    stageLabel: 'Closure',
-    outcomeKey: finalOutcomeKey,
-    positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
-  });
+  if (notifyVendorOfClosure) {
+    await notifyVendor({
+      pipelineRow: updatedPipeline,
+      candidate: { name: pipeline.rpa_shortlisted_candidates?.candidate_name },
+      eventType: VENDOR_EVENTS.CLOSURE,
+      stageKey: pipeline.current_stage_key,
+      stageLabel: 'Closure',
+      outcomeKey: finalOutcomeKey,
+      positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
+    });
+  }
 
   await prisma.rpa_pipeline_stage_events.update({
     where: { id: event.id },
@@ -2180,6 +2350,13 @@ export async function sendAdHocEmail(pipelineId, { subject, body }) {
  * @param {number|null} [params.actedBy] - rpa_users.id of whoever shortlisted;
  *   recorded on the 'entered' event and the first stage-state row. Null for
  *   system intake paths that have no user.
+ * @param {object|null} [params.move] - Move to another JD (L02) only:
+ *   { fromPipelineId, startStageKey, attribution: { source, vendor_email },
+ *   entryNote }. The journey starts at startStageKey (already validated as an
+ *   active board stage), keeps the old journey's vendor attribution instead of
+ *   re-reading the lock, skips the cooling-off check (a recruiter moving a
+ *   candidate between roles is not a re-application) and never reuses an
+ *   existing journey (the caller has made sure there is none for this MRF).
  * @returns {Promise<object>} the created (or existing) pipeline row
  */
 export async function createPipelineJourney({
@@ -2189,6 +2366,7 @@ export async function createPipelineJourney({
   source,
   coolingOffMonths = REAPPLICATION_COOLING_OFF_MONTHS,
   actedBy = null,
+  move = null,
 }) {
   if (!cvId) {
     throw new AppError('cvId is required to create a pipeline journey.', 400);
@@ -2200,7 +2378,7 @@ export async function createPipelineJourney({
   // NEW journey (shortlisting itself happens on Candidate Screening, not in
   // this pipeline, so there's no "Stage 0" exemption anymore — every journey
   // here starts at HR Screening); it never touches an existing active one (Q23).
-  const priorRejection = await findRecentRejection(cvIdBig, coolingOffMonths);
+  const priorRejection = move ? null : await findRecentRejection(cvIdBig, coolingOffMonths);
   if (priorRejection) {
     throw new AppError(
       `Candidate is in a ${coolingOffMonths}-month re-application cooling-off period (rejected at "${priorRejection.current_stage_key}" on ${priorRejection.modified_at.toISOString().slice(0, 10)}).`,
@@ -2208,7 +2386,7 @@ export async function createPipelineJourney({
     );
   }
 
-  const existing = await prisma.rpa_candidate_pipeline.findFirst({
+  const existing = move ? null : await prisma.rpa_candidate_pipeline.findFirst({
     where: mrfIdBig ? { cv_id: cvIdBig, mrf_id: mrfIdBig } : { cv_id: cvIdBig, mrf_id: null },
   });
   if (existing) {
@@ -2240,37 +2418,41 @@ export async function createPipelineJourney({
 
   // Who owns this candidate right now, per the 90-day lock. A live lock
   // overrides the intake source with 'vendor' and pins the vendor onto the row.
-  const vendorAttribution = await vendorAttributionFor(cvIdBig);
+  // A moved journey keeps the attribution of the journey it came from (L02):
+  // the vendor who placed the candidate keeps the credit for the new role.
+  const vendorAttribution = move ? move.attribution || null : await vendorAttributionFor(cvIdBig);
+  const startStageKey = move?.startStageKey || STAGE_KEYS.ZEKO_HR;
 
   const created = await prisma.rpa_candidate_pipeline.create({
     data: {
       cv_id: cvIdBig,
       mrf_id: mrfIdBig,
       shortlist_id: shortlistId || null,
-      current_stage_key: STAGE_KEYS.ZEKO_HR,
+      current_stage_key: startStageKey,
       current_stage_status: 'in_progress',
       source,
       vendor_email: null,
       ...vendorAttribution,
+      ...(move ? { moved_from_pipeline_id: BigInt(move.fromPipelineId) } : {}),
     },
   });
 
-  if (vendorAttribution) {
+  if (vendorAttribution?.vendor_email) {
     logger.info(
-      `Journey ${created.id} attributed to vendor ${vendorAttribution.vendor_email} (90-day lock active on cv ${cvIdBig}).`
+      `Journey ${created.id} attributed to vendor ${vendorAttribution.vendor_email} (${move ? `kept from journey ${move.fromPipelineId}` : `90-day lock active on cv ${cvIdBig}`}).`
     );
   }
 
   await prisma.rpa_pipeline_stage_events.create({
     data: {
       pipeline_id: created.id,
-      stage_key: STAGE_KEYS.ZEKO_HR,
+      stage_key: startStageKey,
       event_type: 'entered',
-      notes: 'Entered pipeline — already shortlisted on Candidate Screening.',
+      notes: move?.entryNote || 'Entered pipeline — already shortlisted on Candidate Screening.',
       acted_by: actedBy || null,
     },
   });
-  await writeStageStates(prisma, created.id, [{ stageKey: STAGE_KEYS.ZEKO_HR, status: STAGE_STATES.ACTIVE }], actedBy);
+  await writeStageStates(prisma, created.id, [{ stageKey: startStageKey, status: STAGE_STATES.ACTIVE }], actedBy);
 
   return serializeBigInts(created);
 }

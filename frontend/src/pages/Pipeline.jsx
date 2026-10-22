@@ -37,7 +37,7 @@ import pipelineService from '../services/pipeline';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import MoveStageModal from '../components/pipeline/MoveStageModal';
 import MoveHistoryExport from '../components/pipeline/MoveHistoryExport';
-import { canMoveCard, moveBlockReason } from '../components/pipeline/stageMove';
+import { canMoveCard, moveBlockReason, isRedoMove } from '../components/pipeline/stageMove';
 import ReferralChip from '../components/candidates/ReferralChip';
 import AssessmentImportModal from '../components/pipeline/AssessmentImportModal';
 import ExportButton from '../components/common/ExportButton';
@@ -136,9 +136,11 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
   const items = stages.map((s, i) => {
     const isCurrent = s.stage_key === card.current_stage_key;
     const blocked = !isCurrent && moveBlockReason(card, s.stage_key);
+    const redo = !isCurrent && isRedoMove(card, s.stage_key);
     let marker;
     if (isCurrent) marker = <span className="cp-move-opt__badge cp-move-opt__badge--current">Current</span>;
     else if (blocked) marker = <span className="cp-move-opt__badge cp-move-opt__badge--passed"><CheckCircleFilled /> Passed</span>;
+    else if (redo) marker = <span className="cp-move-opt__badge cp-move-opt__badge--redo"><CheckCircleFilled /> Passed · re-do</span>;
     else marker = i > currentIdx ? <ArrowRightOutlined className="cp-move-opt__dir cp-move-opt__dir--fwd" /> : <ArrowLeftOutlined className="cp-move-opt__dir cp-move-opt__dir--back" />;
     return {
       key: s.stage_key,
@@ -174,7 +176,7 @@ function CardMoveControl({ card, stages, onMoveRequest }) {
               </div>
             </div>
             {cloneElement(menu, { style: { boxShadow: 'none', background: 'transparent', padding: 6 } })}
-            <div className="cp-move-menu__foot">Passed stages cannot be entered again.</div>
+            <div className="cp-move-menu__foot">A passed stage can be re-done with a reason, except Documents and Offer.</div>
           </div>
         )}
       >
@@ -481,9 +483,11 @@ function DraggableCard({ card, children }) {
  */
 function DroppableColumn({ stageKey, activeCard, children }) {
   const blocked = activeCard ? moveBlockReason(activeCard, stageKey) : null;
+  // L02-C: a passed column takes the drop to re-do the stage (reason asked next).
+  const redo = activeCard ? isRedoMove(activeCard, stageKey) : false;
   const { setNodeRef, isOver } = useDroppable({ id: stageKey, disabled: !activeCard || !!blocked });
   let cls = '';
-  if (activeCard) cls = blocked ? 'cp-column-drop--invalid' : `cp-column-drop--valid${isOver ? ' cp-column-drop--over' : ''}`;
+  if (activeCard) cls = blocked ? 'cp-column-drop--invalid' : `cp-column-drop--valid${redo ? ' cp-column-drop--redo' : ''}${isOver ? ' cp-column-drop--over' : ''}`;
   return (
     <div
       ref={setNodeRef}
@@ -493,8 +497,8 @@ function DroppableColumn({ stageKey, activeCard, children }) {
       // — and COLUMN_STEP scrolls by 260+12. The card text already ellipsizes.
       style={{ flex: '0 0 260px', minWidth: 0, borderRadius: 12 }}
       data-testid={`column-${stageKey}`}
-      data-drop-state={activeCard ? (blocked ? 'invalid' : 'valid') : 'idle'}
-      title={activeCard && blocked ? blocked : undefined}
+      data-drop-state={activeCard ? (blocked ? 'invalid' : redo ? 'redo' : 'valid') : 'idle'}
+      title={activeCard && blocked ? blocked : activeCard && redo ? 'Passed · drop to re-do this stage' : undefined}
     >
       {children}
     </div>
@@ -701,7 +705,7 @@ export default function Pipeline() {
     setPendingMove({ card, toStageKey });
   }, [message]);
 
-  const confirmMove = async () => {
+  const confirmMove = async (reason = null) => {
     if (!pendingMove) return;
     const { card, toStageKey } = pendingMove;
     const boardKey = ['pipeline-board', filters];
@@ -711,8 +715,14 @@ export default function Pipeline() {
     queryClient.setQueryData(boardKey, (b) => moveCardInBoard(b, card.id, toStageKey));
     setPendingMove(null);
     try {
-      await pipelineService.moveToStage(card.id, { target_stage_key: toStageKey, from_stage_key: card.current_stage_key });
-      message.success(`${card.candidate_name || 'Candidate'} moved to ${toLabel}. No email was sent.`);
+      await pipelineService.moveToStage(card.id, {
+        target_stage_key: toStageKey,
+        from_stage_key: card.current_stage_key,
+        ...(reason ? { reason } : {}),
+      });
+      message.success(reason
+        ? `${card.candidate_name || 'Candidate'} moved back to re-do ${toLabel}. No email was sent.`
+        : `${card.candidate_name || 'Candidate'} moved to ${toLabel}. No email was sent.`);
     } catch (err) {
       queryClient.setQueryData(boardKey, before);
       message.error(err?.message || 'The move was refused. The board has been refreshed.', 6);
@@ -989,7 +999,7 @@ export default function Pipeline() {
       {flexible && (
         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }} data-testid="flexible-hint">
           <SwapOutlined style={{ marginInlineEnd: 4 }} />
-          Drag a card to any stage the candidate has not passed, or use its Move to… menu. A card with a lock has started its current stage.
+          Drag a card to any stage, or use its Move to… menu. A passed stage can be re-done with a reason (not Documents or Offer). A card with a lock has started its current stage.
         </Text>
       )}
 
@@ -1099,6 +1109,9 @@ export default function Pipeline() {
         // succeeded, so "Pipeline updated." would contradict the error message.
         onStaleConflict={handleStaleConflict}
         onRequestMove={flexible ? requestMove : undefined}
+        // L02-A: "Moved from / to" links, "Open full record" and a finished
+        // move open another journey in the same drawer.
+        onOpenJourney={openDrawer}
       />
 
       {/* Stale-conflict scrim (defect D3). Same treatment as LoadingOverlay —

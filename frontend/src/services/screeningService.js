@@ -7,10 +7,12 @@ import api from './api';
 /** Shortlist requests: up to 10 minutes (a large "Select all" batch). */
 const SHORTLIST_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** JD search / export body: only the filters that are set. */
-const roleSearchBody = (addedWithinDays, taggedOnly) => ({
+/** JD search / export body: only the filters that are set. "Active
+ *  candidates first" (L01) is on by default server-side, so only `false` is sent. */
+const roleSearchBody = (addedWithinDays, taggedOnly, activeFirst = true) => ({
   ...(addedWithinDays ? { addedWithinDays } : {}),
   ...(taggedOnly ? { taggedOnly: true } : {}),
+  ...(activeFirst === false ? { activeFirst: false } : {}),
 });
 
 const screeningService = {
@@ -44,11 +46,12 @@ const screeningService = {
    * @param {number} mrfId
    * @param {Object} [opts] - { force } when true, bypasses the backend Redis cache (used by Refresh);
    *   { addedWithinDays } limits to candidates added in the last N days (N38);
-   *   { taggedOnly } limits to candidates tagged to this JD (N15).
+   *   { taggedOnly } limits to candidates tagged to this JD (N15);
+   *   { activeFirst } false = order by match score only (L01).
    * @returns {Promise<{ data: { role: Object, candidates: Array, summary: Object } }>}
    */
-  searchRoleCandidates(mrfId, { force = false, addedWithinDays = null, taggedOnly = false } = {}) {
-    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`, roleSearchBody(addedWithinDays, taggedOnly));
+  searchRoleCandidates(mrfId, { force = false, addedWithinDays = null, taggedOnly = false, activeFirst = true } = {}) {
+    return api.post(`/screening/roles/${mrfId}/search${force ? '?force=1' : ''}`, roleSearchBody(addedWithinDays, taggedOnly, activeFirst));
   },
 
   /**
@@ -68,9 +71,10 @@ const screeningService = {
    * @param {Object} [config] - blob/timeout config from downloadFile
    * @param {number|null} [addedWithinDays] - the screen's "Added within" filter (N38), so the file matches
    * @param {boolean} [taggedOnly] - the screen's "Tagged to this JD only" switch (N15)
+   * @param {boolean} [activeFirst] - the screen's "Active candidates first" switch (L01)
    */
-  exportRoleCandidates(mrfId, config = {}, addedWithinDays = null, taggedOnly = false) {
-    return api.post(`/screening/roles/${mrfId}/export`, roleSearchBody(addedWithinDays, taggedOnly), config);
+  exportRoleCandidates(mrfId, config = {}, addedWithinDays = null, taggedOnly = false, activeFirst = true) {
+    return api.post(`/screening/roles/${mrfId}/export`, roleSearchBody(addedWithinDays, taggedOnly, activeFirst), config);
   },
 
   /**

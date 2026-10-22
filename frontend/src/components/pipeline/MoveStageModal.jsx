@@ -5,9 +5,11 @@
  * Shared by the card's "Move to…" menu, the drawer's "Move to…" button and the
  * board's drag and drop, so all three say exactly the same thing. Nothing moves
  * until "Yes, move" is clicked, and Cancel holds the focus, so an Enter pressed
- * by accident cancels rather than confirms (D5). No reason is asked (D6).
+ * by accident cancels rather than confirms (D5). No reason is asked (D6) —
+ * except to RE-DO a passed stage (L02-C), where a reason is required.
  */
-import { Alert, Button, Modal, Space } from 'antd';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Input, Modal, Space } from 'antd';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, AuditOutlined, CheckCircleOutlined, MailOutlined, MinusCircleOutlined, SwapOutlined,
 } from '@ant-design/icons';
@@ -25,10 +27,14 @@ const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((w) => 
  * @param {string[]} [props.passedStageKeys] - stages the candidate already passed
  * @param {boolean} [props.loading]
  * @param {() => void} props.onCancel
- * @param {() => void} props.onConfirm
+ * @param {(reason: string|null) => void} props.onConfirm - reason only for a re-do
  */
 export default function MoveStageModal({ open, candidate, fromStage, toStage, stages, passedStageKeys = [], loading = false, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  useEffect(() => { if (open) setReason(''); }, [open, toStage?.stage_key]);
   if (!fromStage || !toStage) return null;
+  // L02-C: moving into a passed stage re-does it.
+  const redo = passedStageKeys.includes(toStage.stage_key);
   const move = describeMove({ stages, fromKey: fromStage.stage_key, toKey: toStage.stage_key, passedStageKeys });
   const backward = move.direction === 'backward';
   const fromLabel = fromStage.label || fromStage.stage_key;
@@ -45,7 +51,7 @@ export default function MoveStageModal({ open, candidate, fromStage, toStage, st
         <div className="cp-move-modal__head">
           <span className={`cp-move-modal__icon cp-move-modal__icon--${dir}`}><SwapOutlined /></span>
           <div>
-            <div className="cp-move-modal__title">Move candidate?</div>
+            <div className="cp-move-modal__title">{redo ? `Re-do ${toStage.label || toStage.stage_key}?` : 'Move candidate?'}</div>
             <div className="cp-move-modal__sub">Review the change before you confirm.</div>
           </div>
         </div>
@@ -59,8 +65,15 @@ export default function MoveStageModal({ open, candidate, fromStage, toStage, st
         <Space>
           {/* autoFocus: Cancel is the default button (C8). */}
           <Button autoFocus onClick={onCancel} disabled={loading} data-testid="move-cancel">Cancel</Button>
-          <Button type="primary" danger={backward} loading={loading} onClick={onConfirm} data-testid="move-confirm">
-            Yes, move
+          <Button
+            type="primary"
+            danger={backward && !redo}
+            loading={loading}
+            disabled={redo && !reason.trim()}
+            onClick={() => onConfirm(redo ? reason.trim() : null)}
+            data-testid="move-confirm"
+          >
+            {redo ? 'Re-do stage' : 'Yes, move'}
           </Button>
         </Space>
       )}
@@ -100,6 +113,29 @@ export default function MoveStageModal({ open, candidate, fromStage, toStage, st
           <li><MailOutlined className="cp-move-notes__icon" /><span>No email is sent to the candidate or the vendor.</span></li>
           <li><AuditOutlined className="cp-move-notes__icon" /><span>This move is recorded under your name.</span></li>
         </ul>
+
+        {redo && (
+          <div style={{ marginTop: 12 }} data-testid="move-redo">
+            <Alert
+              type="warning"
+              showIcon
+              message={`${candidate?.candidate_name || 'The candidate'} already passed ${toLabel}. Moving back starts it again.`}
+              description="The earlier interview, scorecards and results stay as an earlier attempt and do not count for the new one. Approving it brings the candidate back here."
+            />
+            <div style={{ marginTop: 10, fontWeight: 600, fontSize: 13 }}>
+              Reason <span style={{ color: 'var(--danger, #b42318)' }}>*</span>
+            </div>
+            <Input.TextArea
+              rows={2}
+              maxLength={500}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Interviewer changed; panel wants a second technical round"
+              style={{ marginTop: 4 }}
+              data-testid="move-redo-reason"
+            />
+          </div>
+        )}
 
         {move.bigJump && (
           <Alert

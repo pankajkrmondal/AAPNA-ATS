@@ -143,6 +143,11 @@ router.post('/:id/closure', pipelineController.setFinalOutcome);
 /** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
  * action assertJourneyOpen has named since Module 1 without it existing. */
 router.post('/:id/reopen', pipelineController.reopenJourney);
+/** Move to another JD (L02-A): GET the dialog's data, POST the move. */
+router.get('/:id/move-jd', pipelineController.getMoveJdStatus);
+router.post('/:id/move-jd', pipelineController.moveJourneyToMrf);
+/** GET /api/pipeline/:id/related-journeys — "Earlier roles for this candidate" (L02-A). */
+router.get('/:id/related-journeys', pipelineController.getRelatedJourneys);
 /** POST /api/pipeline/:id/pause — pause/resume a journey (Q33). The manual
  * lever RT asked for when a role fills under a candidate still in flight. */
 router.post('/:id/pause', pipelineController.setJourneyPaused);

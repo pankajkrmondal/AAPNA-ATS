@@ -3718,6 +3718,10 @@ html.theme-transition *::after {
 .cp-column-drop--invalid { opacity: 0.45; filter: grayscale(0.6); transition: opacity 120ms ease; }
 .cp-column-drop--valid { transition: box-shadow 120ms ease; }
 .cp-column-drop--over { box-shadow: 0 0 0 2px var(--brand-primary, #7a922e), var(--shadow-md); }
+/* L02-C: a passed column the dragged card can re-do. */
+.cp-column-drop--redo { outline: 2px dashed var(--warning, #d4a017); outline-offset: -2px; }
+.cp-column-drop--redo.cp-column-drop--over { box-shadow: 0 0 0 2px var(--warning, #d4a017), var(--shadow-md); }
+.cp-move-opt__badge--redo { color: var(--warn-text); background: var(--warn-bg); }
 .cp-card-draggable { touch-action: none; }
 .cp-card-draggable--dragging { opacity: 0.35; }
 /* Card move / lock controls: coloured chips so they stand out on the card at a

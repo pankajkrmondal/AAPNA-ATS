@@ -37,6 +37,13 @@ import {
   getAssessmentAutomationSettings,
   saveAssessmentAutomationSettings,
 } from '../services/assessmentSettings.service.js';
+import { getActiveWindowDays, saveActiveWindowDays } from '../services/candidateActivitySettings.service.js';
+import {
+  DEFAULT_ACTIVE_WINDOW_DAYS,
+  MIN_ACTIVE_WINDOW_DAYS,
+  MAX_ACTIVE_WINDOW_DAYS,
+  parseActiveWindowDays,
+} from '../utils/candidateActivity.js';
 
 /**
  * @desc    Get automated email reminder configuration settings
@@ -560,4 +567,32 @@ export const saveCompanyProfileSetting = catchAsync(async (req, res) => {
   }
   const saved = await saveCompanyProfileText(text || '');
   return success(res, saved, saved.text ? 'About AAPNA saved' : 'About AAPNA cleared');
+});
+
+/**
+ * @desc    Active window for "Active candidates first" screening order (L01)
+ * @route   GET /api/settings/candidate-activity
+ * @access  Private (the screening page shows the window in its summary)
+ */
+export const getCandidateActivitySetting = catchAsync(async (req, res) => {
+  return success(res, {
+    activeWindowDays: await getActiveWindowDays(),
+    defaultActiveWindowDays: DEFAULT_ACTIVE_WINDOW_DAYS,
+    min: MIN_ACTIVE_WINDOW_DAYS,
+    max: MAX_ACTIVE_WINDOW_DAYS,
+  }, 'Candidate activity setting retrieved');
+});
+
+/**
+ * @desc    Change the active window; clears cached JD screening results
+ * @route   POST /api/settings/candidate-activity
+ * @access  Admin (requireAdmin on the route)
+ */
+export const saveCandidateActivitySetting = catchAsync(async (req, res) => {
+  const days = parseActiveWindowDays(req.body?.activeWindowDays);
+  if (days == null) {
+    throw new AppError(`The active window must be a whole number of days from ${MIN_ACTIVE_WINDOW_DAYS} to ${MAX_ACTIVE_WINDOW_DAYS}.`, 400);
+  }
+  const saved = await saveActiveWindowDays(days, req.user?.email || req.user?.name || String(req.user?.id ?? 'unknown'));
+  return success(res, saved, `Active window set to ${days} day${days === 1 ? '' : 's'}`);
 });

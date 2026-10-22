@@ -114,6 +114,12 @@ export const columns = [
     value: (c) => skillsBy(c, (s) => s.status === 'missing'),
   },
 
+  // L01: Active / Pending response / New applicant / Inactive, and why.
+  { header: 'Activity Status', value: (c) => c.activity?.label || '' },
+  { header: 'Activity Detail', value: (c) => c.activity?.detail || '' },
+  { header: 'Details Requested On', key: 'details_requested_at', type: 'date' },
+  { header: 'Details Submitted On', key: 'details_completed_at', type: 'date' },
+
   { header: 'Current Status', key: 'FinalStatus' },
   { header: 'Shortlisted By', key: 'shortlisted_by' },
   { header: 'Shortlisted On', key: 'shortlisted_at', type: 'date' },
@@ -129,17 +135,17 @@ export const columns = [
  * @param {{ addedWithinDays?: number|null, taggedOnly?: boolean }} [opts] the screen's
  *   "Added within" filter (N38) and "Tagged to this JD only" switch (N15)
  */
-export function roleSpec(mrfId, { addedWithinDays = null, taggedOnly = false } = {}) {
+export function roleSpec(mrfId, { addedWithinDays = null, taggedOnly = false, activeFirst = true } = {}) {
   return {
     key: 'screening_jd',
     label: `Screening-MRF-${mrfId}`,
     columns,
-    filters: { mrfId, addedWithinDays, taggedOnly },
+    filters: { mrfId, addedWithinDays, taggedOnly, activeFirst },
     fetch: async ({ max }) => {
       // force=false: read the cache the on-screen search just populated so the
       // CSV matches what the recruiter is looking at — the same "Added within"
-      // value picks the same cache entry.
-      const opts = { addedWithinDays, taggedOnly };
+      // value (and "Active candidates first", L01) picks the same cache entry.
+      const opts = { addedWithinDays, taggedOnly, activeFirst };
       const result = config.screening.v2
         ? await screeningV2.searchRoleCandidatesV2(mrfId, false, opts)
         : await screeningService.searchRoleCandidates(mrfId, false, opts);

@@ -106,3 +106,53 @@ export function mrfCandidateBlock(mrf, mrfId) {
   }
   return null;
 }
+
+/**
+ * Remove or switch one JD tag (L02-B, Harish 22 Oct 2026): a candidate with
+ * one JD can only switch it, never remove it, and a JD the candidate is in
+ * the pipeline for is switched through Move to another JD, never directly.
+ *
+ * @param {{ action: 'remove'|'switch', tags: Array<{ mrf_id: unknown }>,
+ *           mrfId: unknown, openJourneyMrfIds?: Set<string> }} input
+ * @returns {{ code: string, status: number, message: string } | null} null when allowed
+ */
+export function tagChangeBlock({ action, tags, mrfId, openJourneyMrfIds = new Set() }) {
+  const key = String(mrfId);
+  if (!(tags || []).some((t) => String(t.mrf_id) === key)) {
+    return { code: 'not_tagged', status: 404, message: 'The candidate is not tagged to this JD.' };
+  }
+  if (openJourneyMrfIds.has(key)) {
+    return {
+      code: 'in_pipeline',
+      status: 409,
+      message: 'The candidate is in the pipeline for this JD. Use "Move to another JD" on their pipeline record instead.',
+    };
+  }
+  if (action === 'remove' && tags.length <= 1) {
+    return {
+      code: 'only_tag',
+      status: 409,
+      message: 'This is the candidate\'s only JD, so it cannot be removed. Switch it to the right JD instead.',
+    };
+  }
+  return null;
+}
+
+/**
+ * What each tag chip offers: remove (×) while another tag remains and the JD
+ * is not in the pipeline; otherwise switch, directly or through Move.
+ * @param {Array<{ mrf_id: unknown }>} tags
+ * @param {Map<string, unknown>} openJourneyByMrf mrf id -> open pipeline id
+ * @returns {Array<object>} each tag with can_remove, switch_via ('tag'|'move') and open_pipeline_id
+ */
+export function tagActions(tags, openJourneyByMrf = new Map()) {
+  return (tags || []).map((t) => {
+    const openPipelineId = openJourneyByMrf.get(String(t.mrf_id)) ?? null;
+    return {
+      ...t,
+      open_pipeline_id: openPipelineId,
+      can_remove: openPipelineId == null && tags.length > 1,
+      switch_via: openPipelineId == null ? 'tag' : 'move',
+    };
+  });
+}

@@ -92,7 +92,7 @@ test('scenario 7: HR Screening -> Offer in one move is allowed (D4, D7)', () => 
   assert.equal(plan.skippedCount, 9);
 });
 
-test('scenario 6 / D2: a passed stage can never be entered again; a skipped one can', () => {
+test('scenario 6 (D2 as amended by L02-C): a passed stage needs a reason to re-enter; a skipped one does not', () => {
   const states = { zeko_fn: S.COMPLETED, assessment: S.SKIPPED, tech2: S.ACTIVE };
   assert.throws(() => planMove({ stages: ALL, states, pipeline: on('tech2'), targetStageKey: 'zeko_fn' }), is(400, /already passed Functional Screening/));
   assert.doesNotThrow(() => planMove({ stages: ALL, states, pipeline: on('tech2'), targetStageKey: 'assessment' }));
@@ -209,4 +209,55 @@ test('C9: a moved event is an arrival and a transition (funnel, days-in-stage)',
   assert.equal(isStageArrival({ event_type: 'moved' }), true);
   assert.equal(isTransitionEvent({ event_type: 'moved' }), true);
   assert.equal(isTransitionEvent({ event_type: 'note' }), false);
+});
+
+// ── L02-C: re-do a passed stage ───────────────────────────────────────
+import { redoVisitStart, inVisit, isRedoable, REDO_EXCLUDED_STAGE_KEYS } from '../../utils/stageState.js';
+
+test('L02-C: a passed stage can be re-done with a reason; Documents and Offer never', () => {
+  const states = { tech1: S.COMPLETED, tech2: S.COMPLETED, hr_round: S.ACTIVE, documents: S.COMPLETED, offer: S.COMPLETED };
+  const plan = planMove({ stages: ALL, states, pipeline: on('hr_round'), targetStageKey: 'tech1', reason: 'panel wants a second round' });
+  assert.equal(plan.redo, true);
+  assert.equal(plan.direction, 'backward');
+  assert.throws(() => planMove({ stages: ALL, states, pipeline: on('hr_round'), targetStageKey: 'tech1', reason: '  ' }), is(400, /Give a reason/));
+  for (const key of REDO_EXCLUDED_STAGE_KEYS) {
+    assert.equal(isRedoable(key), false);
+    assert.throws(
+      () => planMove({ stages: ALL, states: { ...states, hr_round: S.SKIPPED, ceo: S.ACTIVE }, pipeline: on('ceo'), targetStageKey: key, reason: 'x' }),
+      is(400, /cannot be re-done/),
+    );
+  }
+  assert.equal(planMove({ stages: ALL, states: { tech2: S.ACTIVE }, pipeline: on('tech2'), targetStageKey: 'zeko_hr' }).redo, false);
+});
+
+test('L02-C: the re-do note keeps the parseable "Moved backward" prefix', () => {
+  const plan = planMove({ stages: ALL, states: { tech1: S.COMPLETED, hr_round: S.ACTIVE }, pipeline: on('hr_round'), targetStageKey: 'tech1', reason: 'r' });
+  const note = moveNote(plan);
+  assert.match(note, /^Moved backward from .+ to Technical Round 1 to re-do it$/);
+  assert.equal(parseMoveNote(note).direction, 'backward');
+});
+
+test('L02-C: a visit is a re-do only when entered after it was completed', () => {
+  const t = (s) => new Date(`2026-10-${s}T10:00:00Z`);
+  assert.equal(redoVisitStart(null), null);
+  assert.equal(redoVisitStart({ entered_at: t('01'), completed_at: null }), null, 'first visit, not passed yet');
+  assert.equal(redoVisitStart({ entered_at: t('01'), completed_at: t('05') }), null, 'passed, not re-entered');
+  assert.deepEqual(redoVisitStart({ entered_at: t('10'), completed_at: t('05') }), t('10'));
+  assert.equal(inVisit(t('09'), t('10')), false);
+  assert.equal(inVisit(t('11'), t('10')), true);
+  assert.equal(inVisit(null, t('10')), false);
+  assert.equal(inVisit(t('01'), null), true, 'no re-do = everything counts');
+});
+
+test('L02-C: Approve after a re-do goes back to where the candidate came from', () => {
+  // Tech 1 re-done from HR Round: Tech 2 and HR Round passed earlier? HR Round was left mid-way (skipped).
+  const states = { zeko_hr: S.COMPLETED, tech1: S.ACTIVE, tech2: S.COMPLETED, hr_round: S.SKIPPED };
+  const back = resolveFlexibleApproveLanding(ACTIVE, idx('tech1'), states, { returnToStageKey: 'hr_round' });
+  assert.equal(back.nextStage.stage_key, 'hr_round');
+  // The stage they came from was passed meanwhile: fall back to the next not-passed one.
+  const passedBack = resolveFlexibleApproveLanding(ACTIVE, idx('tech1'), { ...states, hr_round: S.COMPLETED }, { returnToStageKey: 'hr_round' });
+  assert.equal(passedBack.nextStage.stage_key, 'tech3');
+  // An explicit pick still wins.
+  const pick = resolveFlexibleApproveLanding(ACTIVE, idx('tech1'), states, { returnToStageKey: 'hr_round', skipToStageKey: 'ceo' });
+  assert.equal(pick.nextStage.stage_key, 'ceo');
 });

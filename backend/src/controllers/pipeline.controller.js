@@ -56,6 +56,8 @@ import pipelineExport from '../exports/pipeline.export.js';
 import moveHistoryExport from '../exports/moveHistory.export.js';
 import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 import positionsExport from '../exports/positions.export.js';
+import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
+import * as journeyMoveService from '../services/journeyMove.service.js';
 // The generic-fallback chain and the never-email list are the dispatcher's, not
 // this controller's — listStageTemplates reads them so the admin screen shows
 // what actually sends. See stageNotification.service.js's resolveTemplate().
@@ -339,14 +341,16 @@ export const advanceStage = catchAsync(async (req, res) => {
 export const moveToStage = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
-  const { target_stage_key, from_stage_key } = req.body || {};
+  const { target_stage_key, from_stage_key, reason } = req.body || {};
   if (typeof target_stage_key !== 'string' || !target_stage_key) throw new AppError('target_stage_key is required.', 400);
   const result = await pipelineService.moveToStage(id, {
     targetStageKey: target_stage_key,
     fromStageKey: typeof from_stage_key === 'string' && from_stage_key ? from_stage_key : null,
     actedBy: req.user?.id,
+    // Required only to re-do a passed stage (L02-C); planMove checks it.
+    reason: typeof reason === 'string' ? reason : null,
   });
-  return success(res, result, 'Candidate moved');
+  return success(res, result, result?.move?.redo ? 'Candidate moved back to re-do the stage' : 'Candidate moved');
 });
 
 /**
@@ -912,6 +916,11 @@ export const setFinalOutcome = catchAsync(async (req, res) => {
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
   const { final_outcome_key, notes } = req.body;
   if (!final_outcome_key) throw new AppError('final_outcome_key is required.', 400);
+  // Only Move to another JD (L02) may write this outcome: on its own it would
+  // close the record silently with no new journey anywhere.
+  if (final_outcome_key === FINAL_OUTCOMES.MOVED_TO_OTHER_JD) {
+    throw new AppError('Use "Move to another JD" to move a candidate to a different JD.', 400);
+  }
 
   const result = await pipelineService.setFinalOutcome(id, {
     finalOutcomeKey: final_outcome_key,
@@ -938,6 +947,44 @@ export const reopenJourney = catchAsync(async (req, res) => {
     actedBy: req.user?.id,
   });
   return success(res, result, 'Candidate record reopened');
+});
+
+/**
+ * GET /api/pipeline/:id/move-jd
+ * What the "Move to another JD" dialog needs (L02-A): whether a move is
+ * allowed, the stages to land on, and the JDs to leave out.
+ */
+export const getMoveJdStatus = catchAsync(async (req, res) => {
+  const result = await journeyMoveService.getMoveJdStatus(req.params.id);
+  return success(res, result, 'Move status retrieved');
+});
+
+/**
+ * POST /api/pipeline/:id/move-jd
+ * Body: { target_mrf_id, landing_stage_key?, reason, notify_candidate? }.
+ * Closes this journey silently and opens one on the target JD (L02-A).
+ */
+export const moveJourneyToMrf = catchAsync(async (req, res) => {
+  const { target_mrf_id, landing_stage_key, reason, notify_candidate } = req.body || {};
+  const result = await journeyMoveService.moveJourneyToMrf({
+    pipelineId: req.params.id,
+    targetMrfId: target_mrf_id,
+    landingStageKey: landing_stage_key || null,
+    reason,
+    notifyCandidate: notify_candidate === true,
+    user: req.user,
+  });
+  return success(res, result, `Moved to ${result.role}`);
+});
+
+/**
+ * GET /api/pipeline/:id/related-journeys
+ * The candidate's other journeys with results and history, for "Earlier roles
+ * for this candidate" in the drawer (L02-A). Read-only.
+ */
+export const getRelatedJourneys = catchAsync(async (req, res) => {
+  const result = await pipelineService.getRelatedJourneys(req.params.id);
+  return success(res, result, 'Related journeys retrieved');
 });
 
 /**

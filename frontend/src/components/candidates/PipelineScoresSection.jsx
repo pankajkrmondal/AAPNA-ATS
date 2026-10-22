@@ -93,10 +93,23 @@ export default function PipelineScoresSection({ cvId, canChangeJd = false }) {
         <Card
           key={j.pipeline_id}
           size="small"
-          title={<Text style={{ fontSize: 13 }}>{j.role}{j.mrf_id ? ` · MRF-${j.mrf_id}` : ''}</Text>}
+          title={(
+            <Space size={6} wrap>
+              <Text style={{ fontSize: 13 }}>{j.role}{j.mrf_id ? ` · MRF-${j.mrf_id}` : ''}</Text>
+              {/* L02-A: the trail between JDs after Move to another JD. */}
+              {j.moved_to_pipeline_id && (() => {
+                const to = journeys.find((x) => String(x.pipeline_id) === String(j.moved_to_pipeline_id));
+                return <Tag color="blue" style={{ margin: 0 }}>Moved to {to ? `${to.role}${to.mrf_id ? ` · MRF-${to.mrf_id}` : ''}` : 'another JD'}</Tag>;
+              })()}
+              {j.moved_from_pipeline_id && (() => {
+                const from = journeys.find((x) => String(x.pipeline_id) === String(j.moved_from_pipeline_id));
+                return <Tag style={{ margin: 0 }}>Moved from {from ? `${from.role}${from.mrf_id ? ` · MRF-${from.mrf_id}` : ''}` : 'another JD'}</Tag>;
+              })()}
+            </Space>
+          )}
           extra={(
             <Space size={8}>
-              <Text type="secondary" style={{ fontSize: 12 }}>{j.final_outcome ? `Closed: ${j.final_outcome}` : `At ${j.current_stage_label}`}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>{j.final_outcome ? `Closed: ${j.final_outcome_label || j.final_outcome}` : `At ${j.current_stage_label}`}</Text>
               {canChangeJd && j.shortlist_id && !j.final_outcome && (
                 <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setChangeJdShortlistId(j.shortlist_id)} data-testid="change-jd-link">
                   {j.mrf_id ? 'Change JD' : 'Set JD'}

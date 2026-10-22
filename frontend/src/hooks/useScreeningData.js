@@ -18,10 +18,12 @@ export const screeningKeys = {
   // "Added within" (N38) and "Tagged to this JD only" (N15) come after the
   // role, so the bare role key still matches every variant when a role's
   // results are removed or invalidated.
-  roleCandidates: (roleId, addedWithinDays = null, taggedOnly = false) => [
+  roleCandidates: (roleId, addedWithinDays = null, taggedOnly = false, activeFirst = true) => [
     'screening', 'roleCandidates', roleId,
     ...(addedWithinDays ? [addedWithinDays] : []),
     ...(taggedOnly ? ['tagged'] : []),
+    // L01: score-only order is the exception, so the default key is unchanged.
+    ...(activeFirst === false ? ['scoreOnly'] : []),
   ],
 };
 
@@ -73,12 +75,13 @@ export function useApprovedRoles({ includeClosed = false, enabled = true } = {})
 
 /**
  * Candidates matched to a selected role. Cached per role and "Added within"
- * value (N38); only fires when a role is selected.
+ * value (N38), "Tagged to this JD only" (N15) and "Active candidates first"
+ * (L01); only fires when a role is selected.
  */
-export function useRoleCandidates(roleId, enabled = true, addedWithinDays = null, taggedOnly = false) {
+export function useRoleCandidates(roleId, enabled = true, addedWithinDays = null, taggedOnly = false, activeFirst = true) {
   return useQuery({
-    queryKey: screeningKeys.roleCandidates(roleId, addedWithinDays, taggedOnly),
-    queryFn: () => screeningService.searchRoleCandidates(roleId, { addedWithinDays, taggedOnly }),
+    queryKey: screeningKeys.roleCandidates(roleId, addedWithinDays, taggedOnly, activeFirst),
+    queryFn: () => screeningService.searchRoleCandidates(roleId, { addedWithinDays, taggedOnly, activeFirst }),
     select: (res) => unwrap(res),
     enabled: Boolean(roleId) && enabled,
     staleTime: Infinity,

@@ -8,6 +8,7 @@ import runExport from '../exports/runExport.js';
 import screeningExport from '../exports/screening.export.js';
 import { getMrfJdAttachment } from '../services/jdAttachment.service.js';
 import * as changeJdService from '../services/changeJd.service.js';
+import { parseActiveFirst } from '../utils/candidateActivity.js';
 
 /**
  * GET /api/screening/roles[?includeClosed=1]
@@ -57,6 +58,8 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   const opts = {
     addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
     taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+    // L01 "Active candidates first": on unless the screen sends false.
+    activeFirst: parseActiveFirst(req.body?.activeFirst ?? req.query.activeFirst),
   };
   const result = config.screening.v2
     ? await screeningV2.searchRoleCandidatesV2(mrfId, force, opts)
@@ -89,6 +92,7 @@ export const exportRoleCandidates = catchAsync(async (req, res) => {
   return runExport(req, res, screeningExport.roleSpec(mrfId, {
     addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
     taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+    activeFirst: parseActiveFirst(req.body?.activeFirst ?? req.query.activeFirst),
   }));
 });
 

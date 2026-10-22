@@ -360,6 +360,28 @@ const pipelineService = {
   },
 
   /**
+   * Move to another JD (L02-A): what the dialog needs — allowed / block,
+   * landing stages, JDs to leave out.
+   * @param {number|string} id pipeline id
+   */
+  getMoveJdStatus(id) {
+    return api.get(`/pipeline/${id}/move-jd`);
+  },
+
+  /**
+   * Move to another JD (L02-A). Closes this journey silently and opens one on
+   * the target JD. Payload: { target_mrf_id, landing_stage_key?, reason, notify_candidate? }.
+   */
+  moveJourneyToMrf(id, payload) {
+    return api.post(`/pipeline/${id}/move-jd`, payload);
+  },
+
+  /** The candidate's other journeys with results and history ("Earlier roles", L02-A). */
+  getRelatedJourneys(id) {
+    return api.get(`/pipeline/${id}/related-journeys`);
+  },
+
+  /**
    * Pauses or resumes a journey (Q33 — the manual pause/stop lever).
    * @param {number} id
    * @param {Object} payload - { paused: boolean, reason? }

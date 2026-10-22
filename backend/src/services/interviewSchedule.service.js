@@ -460,10 +460,15 @@ function serialize(row) {
   };
 }
 
-/** The single live (non-cancelled) booking for a candidate-round, if any. */
+/**
+ * The single live (non-cancelled) booking for a candidate-round, if any.
+ * A superseded booking belongs to an earlier attempt of a re-done stage
+ * (L02-C) and is history, never the live one — the same rule as
+ * uq_interview_schedule_live.
+ */
 export async function getLiveSchedule(pipelineId, stageKey) {
   const row = await prisma.rpa_interview_schedule.findFirst({
-    where: { pipeline_id: BigInt(pipelineId), stage_key: stageKey, status: { not: 'cancelled' } },
+    where: { pipeline_id: BigInt(pipelineId), stage_key: stageKey, status: { not: 'cancelled' }, superseded_at: null },
     orderBy: { created_at: 'desc' },
   });
   return serialize(row);
@@ -482,7 +487,7 @@ export async function getLiveSchedule(pipelineId, stageKey) {
  */
 export async function getSchedulesByStage(pipelineId) {
   const rows = await prisma.rpa_interview_schedule.findMany({
-    where: { pipeline_id: BigInt(pipelineId), status: { not: 'cancelled' } },
+    where: { pipeline_id: BigInt(pipelineId), status: { not: 'cancelled' }, superseded_at: null },
     orderBy: { created_at: 'asc' },
   });
   // Scorecards that exist but were never actually emailed (sent_at IS NULL).
@@ -508,6 +513,19 @@ export async function getSchedulesByStage(pipelineId) {
     ...serialize(r),
     scorecard_undelivered: undeliveredBySchedule.get(String(r.id)) || 0,
   }]));
+}
+
+/**
+ * Bookings of earlier attempts of re-done stages (L02-C), newest first, for
+ * the drawer's "Earlier attempt" groups. They keep their real status.
+ * @param {number|bigint} pipelineId
+ */
+export async function getSupersededSchedules(pipelineId) {
+  const rows = await prisma.rpa_interview_schedule.findMany({
+    where: { pipeline_id: BigInt(pipelineId), status: { not: 'cancelled' }, superseded_at: { not: null } },
+    orderBy: { scheduled_start_at: 'desc' },
+  });
+  return rows.map(serialize);
 }
 
 /**

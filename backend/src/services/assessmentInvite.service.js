@@ -11,6 +11,7 @@
  * and the deadline checker always keys off the latest one.
  */
 import prisma from '../config/database.js';
+import { stageVisitStart } from './stageState.service.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { sendAdHocCandidateEmail } from './stageNotification.service.js';
@@ -137,8 +138,11 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
  * @param {number|string} pipelineId
  */
 export async function getInviteState(pipelineId) {
+  // L02-C: on a re-done Assessment stage the earlier attempt's invite and
+  // result are history — the drawer offers a fresh invite.
+  const since = await stageVisitStart(pipelineId, 'assessment');
   const latest = await prisma.rpa_assessment_invites.findFirst({
-    where: { pipeline_id: BigInt(pipelineId) },
+    where: { pipeline_id: BigInt(pipelineId), ...(since ? { sent_at: { gte: since } } : {}) },
     orderBy: { sent_at: 'desc' },
   });
   if (!latest) {
@@ -146,7 +150,11 @@ export async function getInviteState(pipelineId) {
   }
 
   const result = await prisma.rpa_assessment_results.findFirst({
-    where: { pipeline_id: BigInt(pipelineId), status: { in: ['matched', 'score_overwritten'] } },
+    where: {
+      pipeline_id: BigInt(pipelineId),
+      status: { in: ['matched', 'score_overwritten'] },
+      ...(since ? { created_at: { gte: since } } : {}),
+    },
   });
   const { isOverdue, isWithdrawn } = assessmentInviteState(latest, !!result);
 
@@ -189,13 +197,18 @@ export async function withdrawAssessmentInvite(pipelineId, { reason, notifyCandi
   if (!pipeline) throw new AppError('Pipeline journey not found.', 404);
   if (pipeline.final_outcome) throw new AppError('This candidate\'s record is closed. Reopen it first.', 409);
 
+  const since = await stageVisitStart(pipeline.id, 'assessment');
   const latest = await prisma.rpa_assessment_invites.findFirst({
-    where: { pipeline_id: pipeline.id },
+    where: { pipeline_id: pipeline.id, ...(since ? { sent_at: { gte: since } } : {}) },
     orderBy: { sent_at: 'desc' },
   });
   if (!latest || latest.withdrawn_at) throw new AppError('There is no open Evalground invite to withdraw.', 400);
   const result = await prisma.rpa_assessment_results.count({
-    where: { pipeline_id: pipeline.id, status: { in: ['matched', 'score_overwritten'] } },
+    where: {
+      pipeline_id: pipeline.id,
+      status: { in: ['matched', 'score_overwritten'] },
+      ...(since ? { created_at: { gte: since } } : {}),
+    },
   });
   if (result > 0) {
     throw new AppError('A result has already arrived for this test. Record the decision instead.', 409);

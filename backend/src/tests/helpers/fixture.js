@@ -286,7 +286,8 @@ export async function teardown() {
     if (shortlists.length) {
       const sIds = shortlists.map((s) => s.id);
       deleted.email_messages = (await prisma.rpa_email_messages.deleteMany({ where: { shortlist_id: { in: sIds } } })).count;
-      deleted.zeko_pipeline = (await prisma.rpa_zeko_candidate_pipeline.deleteMany({ where: { shortlist_id: { in: sIds } } })).count;
+      // The Zeko round row keys the shortlist as candidate_id (schema.prisma).
+      deleted.zeko_pipeline = (await prisma.rpa_zeko_candidate_pipeline.deleteMany({ where: { candidate_id: { in: sIds } } })).count;
       deleted.shortlists = (await prisma.rpa_shortlisted_candidates.deleteMany({ where: { id: { in: sIds } } })).count;
     }
 
