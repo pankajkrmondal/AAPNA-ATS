@@ -133,6 +133,9 @@ describe('source guard — no hand-written staff role list without hr_admin_recr
       for (const m of text.matchAll(LIST_RE)) {
         const list = m[0];
         if (!OTHER_ROLE_RE.test(list)) continue;
+        // Candidate SOURCE keys (open positions board: hr_upload / vendor /
+        // recruiter / other) say where an applicant came from, not who may act.
+        if (/['"]hr_upload['"]/.test(list)) continue;
         if (/hr_admin_recruiter|HR_ADMIN_RECRUITER/.test(list)) continue;
         const line = text.slice(0, m.index).split('\n').length;
         offenders.push(`${path.relative(repoRoot, file)}:${line}  ${list.trim()}`);

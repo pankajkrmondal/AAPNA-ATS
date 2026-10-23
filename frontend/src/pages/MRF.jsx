@@ -16,9 +16,11 @@ import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { jdSendSuffix } from '../utils/mrfLabel';
 import JdLabelEditor from '../components/mrf/JdLabelEditor';
+import { RECRUITER_TIER_ROLES } from '../constants/roles';
 
-// L07: who may set a JD label. Mirrors the PATCH /api/mrf/:id/version-label guard.
-const JD_LABEL_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
+// L07: who may set a JD label. Mirrors the PATCH /api/mrf/:id/version-label
+// guard (MRF_CLOSURE_ROLES = RECRUITER_TIER_ROLES), so HR Admin Recruiters too.
+const JD_LABEL_ROLES = RECRUITER_TIER_ROLES;
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
