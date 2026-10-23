@@ -549,7 +549,7 @@ Read this section first in a new session. Everything needed to continue is here 
 | Prod DB (`recruitmentautomationdbProd`) | **Not touched.** Needs the DDL **before** this code is deployed there |
 | Flags (env files are gitignored; server copies are set by hand) | `.env.development` and `.env.staging`: `MRF_HOLD_ENABLED=true`, `MRF_DELEGATE_DECISION_ENABLED=true`. `.env.production`: both `false` |
 | Settings rows (staging) | Hold rules 30 / 180 / 09:00 IST. Approver absence **off** (last set by Pan mondal) |
-| Not tested in the browser | Plain Recruiter refused from deciding on behalf (H5-05: no plain Recruiter login left on staging; unit-tested). ~~Held MRF absent from the JD screening dropdown (H3-07)~~: **passed in the browser 23 Oct** (H3 run 2, fixture MRF 827). Editable email templates: E1 run 1 PASS 23 Oct. Bell / socket live events for the new role (R1-48/49) |
+| Not tested in the browser | ~~Plain Recruiter refused from deciding on behalf (H5-05)~~: **passed 23 Oct** after the staging deploy (H5 run 2, with hold / approve / reject via links on staging). ~~Held MRF absent from the JD screening dropdown (H3-07)~~: **passed in the browser 23 Oct** (H3 run 2, fixture MRF 827). Editable email templates: E1 run 1 PASS 23 Oct. Bell / socket live events for the new role (R1-48/49) |
 
 ### 16.2 Accounts on staging (checked 22 Oct; credentials are given in chat, never written down)
 

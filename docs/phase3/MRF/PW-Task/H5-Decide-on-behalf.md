@@ -34,3 +34,23 @@
 | H5-05 | NOT RUN (browser) | Staging has no plain Recruiter login left (`admin` was moved to HR Admin Recruiter for these tests). Covered by unit tests (`canDecideAsDelegate` → `role_too_low` for recruiter / hr / vendor). Retest with a Recruiter account when one is available |
 
 **Clean-up after the run.** The absence window was switched **off**. ZZ-TEST MRF 717 was **closed** (reason `budget_withdrawn`, note "ZZ-TEST fixture … closed after the run") so it never appears as an open role. Hold rules are at their defaults (30 / 180 / 09:00).
+
+### Run 2: 23 Oct 2026 (after the staging deploy of PR #105)
+
+Accounts: `biswajit.sur` (Recruiter) and `admin` (HR Admin Recruiter). The staging login page's Cloudflare check needs a human click, so both were signed in on **localhost** (same commit, same staging DB, Turnstile test keys). The email-link decisions below ran on **https://ats-staging.aapnainfotech.com** itself.
+
+Fixtures: ZZ-TEST MRF **828** (held → date changed → released → closed), **829** (approved → closed), **830** (rejected).
+
+| ID | Result | Notes |
+|---|---|---|
+| Staging: hold via link | PASS | 828 held by N16 Chief until 22 Nov; event 148 `held`, 149 `hold_notice_sent` (log 884), 150 confirmation. Staging MRF list › On Hold tab shows 828 and 827 with "ON HOLD until 22 Nov 2026" |
+| Staging: approve via link | PASS | 829 approved by N16 Chief, `decided_via=email_link`; 153 confirmation, 154 other approver told (log 888) |
+| Staging: reject via link | PASS | 830 rejected by N16 People; 157 other approver told (log 890), 158 confirmation |
+| Staging: old link while held | PASS | N16 People's 828 link → "This MRF is on hold … This link can no longer be used", with the note |
+| H5-05 | **PASS** | Recruiter: `POST /:id/decision` 403 "Only an HR Admin Recruiter, Admin or Super Admin can decide on behalf…"; change date / release 403; hold rules 403; absence 403; Settings `can` all false. 828 details show the hold banner only: no Change date, no Release now, no on-behalf panel |
+| H5-01 (repeat) | PASS | HR Admin Recruiter, no absence window: decision 403 "only allowed while they are marked away"; `can` = edit_hold_rules + manage_held, not edit_absence |
+| H4 (repeat) | PASS | HR Admin Recruiter on 828: Change date + Release now shown. Date = today → 400; 01 Dec → 200, email log 898 "…hold date changed to 01 Dec 2026" (editable template #53); Release now → event 161 `hold_released` (manual), 162/163 `request_sent` reason `hold_released`; log 899 has the "Back from hold" banner and Approve / Reject / Hold buttons |
+
+**Seen on staging (not a code bug):** the staging server's hold notice (log 884) went to HR staff mailboxes (cverma@, nsatywali@, sganguly@ …), while the same notice sent from local dev reached only the test inbox. Check the staging server's mail-redirect setting / `mrfOutcome` flow-key recipients if test mail should not reach real people.
+
+**Clean-up:** 828 and 829 closed (`budget_withdrawn`). Absence window still off; hold rules unchanged.

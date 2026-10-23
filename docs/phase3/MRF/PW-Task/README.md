@@ -21,5 +21,5 @@ How these files are used:
 | H3 | [H3-Hold-release-sweep.md](H3-Hold-release-sweep.md) | Hold-until date → Pending → new email to both approvers (**done-when**) | **Run 1 PASS**; run 2 (23 Oct) H3-07 PASS in the browser |
 | E1 | [E1-Editable-hold-email-templates.md](E1-Editable-hold-email-templates.md) | The 4 hold / on-behalf notices editable under Email Templates | **Run 1 PASS (23 Oct)** |
 | H4 | [H4-Settings-card-held-MRFs.md](H4-Settings-card-held-MRFs.md) | List badge/tab, details banner, change date, release now, Settings card | **Run 1 PASS** (1 cosmetic fix) |
-| H5 | [H5-Decide-on-behalf.md](H5-Decide-on-behalf.md) | On-behalf panel: window on/off, per role | **Run 1 PASS**; plain-Recruiter case needs an account |
+| H5 | [H5-Decide-on-behalf.md](H5-Decide-on-behalf.md) | On-behalf panel: window on/off, per role | **Run 1 PASS**; **run 2 (23 Oct, after staging deploy) PASS incl. H5-05** + hold / approve / reject via links on staging |
 | H6 | [H6-Regression-flags-off.md](H6-Regression-flags-off.md) | Both flags off | **Run 1 PASS** |
