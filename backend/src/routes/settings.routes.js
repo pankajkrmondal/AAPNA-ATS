@@ -47,5 +47,14 @@ router.post('/company-profile', requireAdmin, settingsController.saveCompanyProf
 router.get('/mrf-approval', mrfHoldSettingsController.getMrfApprovalSettings);
 router.put('/mrf-approval/hold-rules', mrfHoldSettingsController.saveMrfHoldRules);
 router.put('/mrf-approval/absence', requireAdmin, mrfHoldSettingsController.saveMrfApproverAbsence);
+/** Active window for "Active candidates first" screening order (L01). Anyone
+ *  signed in can read it; only admins can change it. */
+router.get('/candidate-activity', settingsController.getCandidateActivitySetting);
+router.post('/candidate-activity', requireAdmin, settingsController.saveCandidateActivitySetting);
+
+/** Target days for an open position's health (L06, D9): past it, a position is
+ *  "At risk". Anyone signed in can read it; only admins can change it. */
+router.get('/position-target', settingsController.getPositionTargetSetting);
+router.post('/position-target', requireAdmin, settingsController.savePositionTargetSetting);
 
 export default router;

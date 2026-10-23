@@ -61,6 +61,10 @@ import { noPastDates, DATE_FORMAT, JOINING_DATE_PRESETS } from './datePickerConf
 import { firstValidPhone } from '../../constants/candidateFields';
 import { fmtDate, fmtDateTime, fmtTime } from '../../utils/dateFormat';
 import { CARD_STATUSES } from '../../constants/pipelineLabels';
+import MoveJdModal from './MoveJdModal';
+import EarlierAttemptPanel from './EarlierAttemptPanel';
+import { REDO_EXCLUDED_STAGE_KEYS } from './stageMove';
+import EarlierRolesSection, { useRelatedJourneys, roundSummary } from './EarlierRolesSection';
 
 /**
  * The email_error the server records when the recruiter unticks "Send email
@@ -384,7 +388,10 @@ function buildPipelineSegments({ stage, stageEvents, isCurrent, previousStageOut
   // The LATEST arrival: under flexible stages a candidate can be moved into a
   // stage, out of it and back again, and this visit is the one that matters.
   const enteredEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'entered' || ev.event_type === 'skip' || ev.event_type === 'moved');
-  const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome');
+  // Only an outcome recorded on THIS visit counts: a re-done stage (L02-C)
+  // still has the earlier attempt's "Approved", which must not hide its actions.
+  const outcomeEvent = [...stageEvents].reverse().find((ev) => ev.event_type === 'outcome'
+    && (!enteredEvent || new Date(ev.created_at) >= new Date(enteredEvent.created_at)));
   const emails = [];
   let showScheduleButton = false;
   let showInviteButton = false;
@@ -871,7 +878,7 @@ function ZekoReportLink({ pipelineId, stageKey, recruiterLink, sharedLink }) {
   );
 }
 
-export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClose, onClose, onChanged, onStaleConflict, focusRecordingId, onRequestMove }) {
+export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClose, onClose, onChanged, onStaleConflict, focusRecordingId, onRequestMove, onOpenJourney }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [selectedStageKey, setSelectedStageKey] = useState(null);
@@ -880,6 +887,9 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   const [reasonId, setReasonId] = useState(null);
   const [otherText, setOtherText] = useState('');
   const [notes, setNotes] = useState('');
+  // L02-A: Move to another JD, and the candidate's other journeys ("Earlier roles").
+  const [moveJdOpen, setMoveJdOpen] = useState(false);
+  const relatedQuery = useRelatedJourneys(pipelineId);
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   // G2.2 — reject-and-close in one step. Default on for a normal interview
@@ -1193,6 +1203,14 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   }, [previewData]);
 
   const pipeline = data?.pipeline;
+  // L02-A: where this journey came from, or went to, through Move to another JD.
+  const relatedJourneys = relatedQuery.data?.journeys || [];
+  const movedFromJourney = pipeline?.moved_from_pipeline_id
+    ? relatedJourneys.find((j) => String(j.pipeline_id) === String(pipeline.moved_from_pipeline_id)) || null
+    : null;
+  const movedToJourney = pipeline?.final_outcome === 'moved_to_other_jd'
+    ? relatedJourneys.find((j) => String(j.moved_from_pipeline_id) === String(pipeline.id)) || null
+    : null;
   // Live interview booking for the current round (used by the cancel preview
   // query below and the modals); also re-read at the render site further down.
   const interviewSchedule = data?.interviewSchedule;
@@ -1792,6 +1810,11 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // visited) and whether the candidate can be moved right now.
   const flexibleStages = !!data?.flexibleStages;
   const stageStates = data?.stageStates || {};
+  // L02-C: re-done stages — what earlier attempts left, whether the current
+  // stage is a re-do, and the stage its Approve goes back to.
+  const earlierAttempts = data?.earlierAttempts || {};
+  const currentStageRedo = !!data?.currentStageRedo;
+  const redoReturnStage = data?.redoReturnStageKey || null;
   const stageLock = data?.stageLock || null;
   const passedStageKeys = Object.keys(stageStates).filter((k) => stageStates[k] === 'completed');
   const isCurrentStageSelected = selectedStageKey === pipeline?.current_stage_key;
@@ -1937,8 +1960,11 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // Flexible stages (C4): Approve lands on the next stage not yet passed, and
   // the recruiter may pick any other stage not yet passed, backward included.
   const notPassed = (st) => stageStates[st.stage_key] !== 'completed' && st.stage_key !== pipeline?.current_stage_key;
+  const redoReturnTarget = flexibleStages && redoReturnStage
+    ? allStages.find((st) => st.stage_key === redoReturnStage && notPassed(st)) || null
+    : null;
   const nextStageIfApproved = flexibleStages
-    ? allStages.slice(currentIdx + 1).find(notPassed)
+    ? (redoReturnTarget || allStages.slice(currentIdx + 1).find(notPassed))
     : allStages[currentIdx + 1];
   // Every stage an approval can land on: the next one, and past each
   // consecutive OPTIONAL stage the one after it. The server enforces the same
@@ -1962,7 +1988,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     || (stageKey === 'client' && String(landingMrf?.client_round || '').trim().toLowerCase() === 'no')
   );
   const suggestedLanding = flexibleStages
-    ? (allStages.slice(currentIdx + 1).filter(notPassed).find((st) => !(st.is_optional && mrfSaysNo(st.stage_key))) || nextStageIfApproved)
+    ? (redoReturnTarget || allStages.slice(currentIdx + 1).filter(notPassed).find((st) => !(st.is_optional && mrfSaysNo(st.stage_key))) || nextStageIfApproved)
     : (landingStages.find((st) => !(st.is_optional && mrfSaysNo(st.stage_key)))
       || landingStages[landingStages.length - 1]);
   const landingReason = landingStages
@@ -1992,12 +2018,22 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     setDecisionOutcome(outcomeKey);
     setReasonId(null);
     setOtherText('');
-    setNotes('');
+    // L02-A: approving on a moved-in role with no score here yet — start the
+    // required note from the earlier role's result for this stage (editable).
+    const earlierRound = movedFromJourney?.rounds?.find((r) => r.stage_key === selectedStageKey);
+    const movedNote = outcomeKey === 'approved' && movedFromJourney && data?.currentStageHasScore === false
+      && selectedStageKey === pipeline?.current_stage_key
+      ? `Results from earlier role ${movedFromJourney.role}${movedFromJourney.mrf_id ? ` (MRF-${movedFromJourney.mrf_id})` : ''}: `
+        + (earlierRound ? `${earlierRound.label} ${roundSummary(earlierRound)}.` : 'see "Earlier roles for this candidate".')
+      : '';
+    setNotes(movedNote);
     setEmailSubject('');
     setEmailBody('');
     setLandingStageKey(null);
     setCloseAsRejected(outcomeKey === 'rejected' && !isZekoStageKey(selectedStageKey));
-    setOutcomeSendEmail(true);
+    // L02-C: unticked on a re-done stage — the candidate already had this
+    // stage's email the first time round.
+    setOutcomeSendEmail(!(currentStageRedo && selectedStageKey === pipeline?.current_stage_key));
     setOutcomeModalOpen(true);
   };
 
@@ -2115,7 +2151,16 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       : isCurrent && isZekoStageKey(stage.stage_key)
         ? { scores: zekoScores, round: zekoHrPipeline, reportLink: zekoReportLink, sharedLink: zekoSharedReportLink }
         : { scores: null, round: null, reportLink: null, sharedLink: null };
-    const stageScorecards = (scorecardReport?.rounds || []).filter((r) => r.stage_key === stage.stage_key);
+    // L02-C: a re-done stage's cards are split by booking — the earlier
+    // attempt's (superseded bookings) go to "Earlier attempt", never this one.
+    const stageAttempt = earlierAttempts[stage.stage_key] || null;
+    const supersededBookingIds = new Set((stageAttempt?.bookings || []).map((b) => String(b.id)));
+    const allStageScorecards = (scorecardReport?.rounds || []).filter((r) => r.stage_key === stage.stage_key);
+    const stageScorecards = allStageScorecards.filter((r) => !supersededBookingIds.has(String(r.schedule_id)));
+    const earlierScorecards = allStageScorecards.filter((r) => supersededBookingIds.has(String(r.schedule_id)));
+    const redoEvent = stageAttempt
+      ? [...stageEvents].reverse().find((ev) => ev.event_type === 'moved' && / to re-do it$/.test(ev.notes || '')) || null
+      : null;
 
     const { segments: segs, emails, showScheduleButton, showInviteButton, showDocumentActions, showClientRoundActions } = buildPipelineSegments({
       stage,
@@ -2495,6 +2540,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
             </div>
           </>
         )}
+        {/* L02-C: what the earlier attempt of a re-done stage left behind. */}
+        <EarlierAttemptPanel attempt={stageAttempt} scorecards={earlierScorecards} redoEvent={redoEvent} />
       </Card>
     );
   };
@@ -2554,7 +2601,9 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
               ? <Tooltip title={CARD_STATUSES.awaitingDecision.meaning}><Tag color="green">{CARD_STATUSES.awaitingDecision.label}</Tag></Tooltip>
               : <Tag color={pipeline.current_stage_status === 'hold' ? 'gold' : 'blue'}>{STAGE_STATUS_WORD[pipeline.current_stage_status] || pipeline.current_stage_status}</Tag>}
             {pipeline.is_paused && !pipeline.final_outcome && <Tag color="orange">Paused</Tag>}
-            {pipeline.final_outcome && <Tag color="purple">Closed — {pipeline.final_outcome}</Tag>}
+            {pipeline.final_outcome === 'moved_to_other_jd'
+              ? <Tag color="blue">Moved to another JD</Tag>
+              : pipeline.final_outcome && <Tag color="purple">Closed — {pipeline.final_outcome}</Tag>}
             {/* Pause / resume (Q33). Offered only on an OPEN journey — a closed
                 one is already stopped, and two flags meaning "not running"
                 would have to be reconciled. The lever RT asked for on
@@ -2571,6 +2620,19 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 style={{ paddingLeft: 0 }}
               >
                 {pipeline.is_paused ? 'Resume journey' : 'Pause journey'}
+              </Button>
+            )}
+            {/* L02-A: close this record silently and open one on another JD. */}
+            {!pipeline.final_outcome && (
+              <Button
+                size="small"
+                type="link"
+                icon={<SwapOutlined />}
+                onClick={() => setMoveJdOpen(true)}
+                style={{ paddingLeft: 0 }}
+                data-testid="drawer-move-jd"
+              >
+                Move to another JD
               </Button>
             )}
             {/* Flexible stages (C8): "Move to…" — the same popup as dragging a
@@ -2592,13 +2654,16 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                   menu={{
                     items: allStages.filter((s) => s.stage_key !== pipeline.current_stage_key).map((s) => {
                       const passed = stageStates[s.stage_key] === 'completed';
+                      // L02-C: a passed stage can be re-done (reason asked in
+                      // the move popup), except Documents and Offer.
+                      const noRedo = passed && REDO_EXCLUDED_STAGE_KEYS.includes(s.stage_key);
                       return {
                         key: s.stage_key,
-                        disabled: passed,
+                        disabled: noRedo,
                         label: (
                           <span data-testid={`drawer-move-to-${s.stage_key}`}>
                             {s.label}
-                            {passed ? ' — passed' : stageStates[s.stage_key] === 'skipped' ? ' — skipped' : ''}
+                            {noRedo ? ' — passed' : passed ? ' — passed · re-do' : stageStates[s.stage_key] === 'skipped' ? ' — skipped' : ''}
                           </span>
                         ),
                       };
@@ -2639,6 +2704,54 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
               </Button>
             )}
           </Space>
+
+          {/* L02-A: the other end of a Move to another JD. */}
+          {pipeline.moved_from_pipeline_id && (
+            <Alert
+              type="info"
+              style={{ marginBottom: 10 }}
+              data-testid="moved-from-banner"
+              message={(
+                <Space wrap size={6}>
+                  <Text strong>
+                    Moved from {movedFromJourney ? `${movedFromJourney.role}${movedFromJourney.mrf_id ? ` (MRF-${movedFromJourney.mrf_id})` : ''}` : 'another JD'}
+                  </Text>
+                  {movedFromJourney && (
+                    <Text type="secondary" style={{ fontSize: 12.5 }}>
+                      at {movedFromJourney.current_stage_label}{movedFromJourney.closed_at ? ` · ${fmtDate(movedFromJourney.closed_at)}` : ''}
+                    </Text>
+                  )}
+                  {onOpenJourney && (
+                    <Button size="small" type="link" style={{ padding: 0 }} onClick={() => onOpenJourney(Number(pipeline.moved_from_pipeline_id))}>
+                      Open earlier record
+                    </Button>
+                  )}
+                </Space>
+              )}
+            />
+          )}
+          {movedToJourney && (
+            <Alert
+              type="info"
+              style={{ marginBottom: 10 }}
+              data-testid="moved-to-banner"
+              message={(
+                <Space wrap size={6}>
+                  <Text strong>Moved to {movedToJourney.role}{movedToJourney.mrf_id ? ` (MRF-${movedToJourney.mrf_id})` : ''}</Text>
+                  {onOpenJourney && (
+                    <Button size="small" type="link" style={{ padding: 0 }} onClick={() => onOpenJourney(Number(movedToJourney.pipeline_id))}>
+                      Open new record
+                    </Button>
+                  )}
+                </Space>
+              )}
+            />
+          )}
+          <EarlierRolesSection
+            pipelineId={pipelineId}
+            movedFrom={Boolean(pipeline.moved_from_pipeline_id)}
+            onOpenJourney={onOpenJourney}
+          />
 
           {/* Shortlisting happens on Candidate Screening, not as a pipeline
               stage (v8+ direction) — shown as a persistent, read-only line
@@ -3039,7 +3152,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                       return (
                         <Radio key={st.stage_key} value={st.stage_key}>
                           {st.label}
-                          {st === nextStageIfApproved ? ' (next stage not yet passed)' : ''}
+                          {st === redoReturnTarget ? ' (where the candidate came from)' : st === nextStageIfApproved ? ' (next stage not yet passed)' : ''}
                           {backward ? ' (backward)' : ''}
                           {stageStates[st.stage_key] === 'skipped' ? ' · skipped earlier' : ''}
                         </Radio>
@@ -3118,6 +3231,11 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
           >
             Send email notification to candidate
           </Checkbox>
+          {currentStageRedo && selectedStageKey === pipeline?.current_stage_key && (
+            <Text type="secondary" style={{ fontSize: 12.5 }} data-testid="outcome-redo-hint">
+              Unticked because this stage is being re-done: the candidate already had this stage&apos;s email the first time. Tick to send it again.
+            </Text>
+          )}
           {!outcomeSendEmail && (
             <Text type="secondary" style={{ fontSize: 12.5 }}>
               No email will go to the candidate. The outcome is saved and shown on the round as &quot;Email not sent&quot;.
@@ -3818,6 +3936,20 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         <TextArea rows={2} placeholder="Notes (optional)" value={closureNotes} onChange={(e) => setClosureNotes(e.target.value)} />
       </Space>
     </Modal>
+
+    {/* L02-A: Move to another JD. On success the drawer shows the new record. */}
+    <MoveJdModal
+      open={moveJdOpen}
+      pipelineId={pipelineId}
+      onClose={() => setMoveJdOpen(false)}
+      onMoved={(result) => {
+        queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+        queryClient.invalidateQueries({ queryKey: ['pipeline-related'] });
+        onChanged?.();
+        if (onOpenJourney && result?.to_pipeline_id) onOpenJourney(Number(result.to_pipeline_id));
+        else onClose?.();
+      }}
+    />
 
     {/* Re-open — the undo for a closure (audit §2.6). */}
     <Modal

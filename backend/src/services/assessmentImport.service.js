@@ -20,6 +20,7 @@ import XLSX from 'xlsx';
 import { v4 as uuidv4 } from 'uuid';
 import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
+import { stageVisitStart } from './stageState.service.js';
 import logger from '../config/logger.js';
 import redis from '../config/redis.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
@@ -300,8 +301,11 @@ async function matchRowToPipeline(email) {
 async function computeRowStatus(pipelineId, testName, sections) {
   if (!pipelineId) return { status: 'unmatched', existing: null };
 
+  // L02-C: on a re-done Assessment stage an earlier attempt's row is history,
+  // never overwritten or compared — the new attempt gets its own row.
+  const since = await stageVisitStart(pipelineId, 'assessment');
   const existing = await prisma.rpa_assessment_results.findFirst({
-    where: { pipeline_id: BigInt(pipelineId), test_name: testName },
+    where: { pipeline_id: BigInt(pipelineId), test_name: testName, ...(since ? { created_at: { gte: since } } : {}) },
     orderBy: { created_at: 'desc' },
   });
 

@@ -123,6 +123,10 @@ export const columns = [
   { header: 'Email', key: 'email' },
   { header: 'CC Email', key: 'cc_email' },
   { header: 'Role', key: 'role' },
+  // L07: recruiter-set name and date for a JD sent without an MRF. The date is
+  // a DATE column, written as its own day so no timezone shifts it.
+  { header: 'JD Label', key: 'version_label' },
+  { header: 'JD Date', value: (r) => (r.version_date ? new Date(r.version_date).toISOString().slice(0, 10) : '') },
   { header: 'Min Budget (INR)', key: 'budget_min', numeric: true },
   { header: 'Max Budget (INR)', key: 'budget_max', numeric: true },
   { header: 'MRF Status', value: (r) => mrfStatusLabel(r.mrfstatus) },
@@ -163,6 +167,8 @@ const EXPORT_SELECT = {
   jd_doc_link: true,
   mrf_id: true,
   created_at: true,
+  version_label: true,
+  version_date: true,
 };
 
 /** @type {import('./runExport.js').ExportSpec['fetch']} */

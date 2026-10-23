@@ -5,6 +5,7 @@
  *   2) Submitted Records Listing (Search records, Status filter tabs, Export CSV, and paginated table)
  */
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Card, Table, Tag, Row, Col, Space, Typography, message, InputNumber, Radio, Modal, Select, Tooltip } from 'antd';
 import { SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
@@ -13,6 +14,11 @@ import ApprovalTrail from '../components/mrf/ApprovalTrail';
 import useAuth from '../hooks/useAuth';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import { jdSendSuffix } from '../utils/mrfLabel';
+import JdLabelEditor from '../components/mrf/JdLabelEditor';
+
+// L07: who may set a JD label. Mirrors the PATCH /api/mrf/:id/version-label guard.
+const JD_LABEL_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -222,6 +228,8 @@ function mrfApprovalStatus(status) {
 export default function MRF() {
   const { user } = useAuth();
   const isAdminTierUser = ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
+  const canEditJdLabel = JD_LABEL_ROLES.includes(String(user?.role || '').toLowerCase());
+  const navigate = useNavigate();
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [mainForm] = Form.useForm();
@@ -482,6 +490,36 @@ export default function MRF() {
     loadRecords(page, searchQuery, statusTab);
   }, [page]);
 
+  // L07: a saved label can move "Latest" to or from other rows of the same
+  // role, so the page reloads rather than patching one row.
+  const handleJdLabelSaved = (recordId, fields) => {
+    setSelectedRecord((prev) => (prev && prev.id === recordId ? { ...prev, ...fields } : prev));
+    loadRecords(page, searchQuery, statusTab);
+  };
+
+  // Role cell / details line for a JD sent without an MRF: label, JD date,
+  // "Latest". Rows with an MRF are named by the MRF (N19) and show its ref.
+  const renderJdLabel = (record, { editorLabel } = {}) => {
+    if (record.mrf_id) {
+      return <Text type="secondary" style={{ fontSize: 12 }}>MRF-{record.mrf_id}</Text>;
+    }
+    return (
+      <Space size={6} wrap onClick={(e) => e.stopPropagation()}>
+        <Text type="secondary" style={{ fontSize: 12 }}>{jdSendSuffix(record)}</Text>
+        {record.is_latest && (
+          <Tag color="green" style={{ borderRadius: 10, fontSize: 11, fontWeight: 700, marginInlineEnd: 0 }}>Latest</Tag>
+        )}
+        {canEditJdLabel && record.label_editable !== false && (
+          <JdLabelEditor
+            record={record}
+            buttonLabel={editorLabel}
+            onSaved={(fields) => handleJdLabelSaved(record.id, fields)}
+          />
+        )}
+      </Space>
+    );
+  };
+
   // Handle submit new MRF
   const handleSubmit = async (values) => {
     // Budget validation — mirrors the n8n MRF form rules
@@ -579,7 +617,12 @@ export default function MRF() {
       title: 'ROLE',
       dataIndex: 'role',
       key: 'role',
-      render: (text) => <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text}</Text>,
+      render: (text, record) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Text strong style={{ fontSize: 13, color: 'var(--text)' }}>{text}</Text>
+          {renderJdLabel(record)}
+        </div>
+      ),
     },
     {
       title: 'MIN BUDGET',
@@ -1156,7 +1199,33 @@ export default function MRF() {
                   </Form.Item>
                 </Col>
               </Row>
+
             </Form>
+
+            {/* L07: label + JD date for a JD sent without an MRF. Outside the
+                form on purpose: it saves on its own, and the form is disabled
+                until "Edit" is pressed. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+              <span style={{ fontWeight: 600, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-2)' }}>JD Label &amp; Date</span>
+              {selectedRecord.mrf_id ? (
+                <Text style={{ fontSize: 13 }}>
+                  {[selectedRecord.version_label, selectedRecord.version_date && fmtDate(selectedRecord.version_date)].filter(Boolean).join(' · ') || '—'}
+                </Text>
+              ) : renderJdLabel(selectedRecord, { editorLabel: 'Edit' })}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {selectedRecord.mrf_id
+                  ? 'Named by its MRF once the hiring manager submitted it, so the label is read-only.'
+                  : 'Tells this JD apart from other JDs for the same role.'}
+              </Text>
+              {/* L06: the requisition's open-to-close journey and its last 7 days. */}
+              {selectedRecord.mrf_id && (
+                <div style={{ marginTop: 6 }}>
+                  <Button size="small" onClick={() => navigate(`/analytics?tab=open&mrf=${selectedRecord.mrf_id}`)}>
+                    View analytics
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {/* Section 3: Submitted MRF Details (rpa_mrf) — only when HM has submitted */}
             {selectedRecord.mrf_id && (

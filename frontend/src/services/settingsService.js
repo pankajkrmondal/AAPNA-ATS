@@ -144,6 +144,33 @@ const settingsService = {
   saveCompanyProfile(payload) {
     return api.post('/settings/company-profile', payload);
   },
+
+  /**
+   * The active window behind "Active candidates first" in screening (L01).
+   * @returns {Promise} — { activeWindowDays, defaultActiveWindowDays, min, max }
+   */
+  getCandidateActivity() {
+    return api.get('/settings/candidate-activity');
+  },
+
+  /**
+   * Change the active window. Admin only; clears cached JD results.
+   * @param {object} payload — { activeWindowDays }
+   * @returns {Promise}
+   */
+  saveCandidateActivity(payload) {
+    return api.post('/settings/candidate-activity', payload);
+  },
+
+  /** L06: target days for an open position's health dot (admins change it). */
+  getPositionTarget() {
+    return api.get('/settings/position-target');
+  },
+
+  /** @param {{ targetDays: number }} payload */
+  savePositionTarget(payload) {
+    return api.post('/settings/position-target', payload);
+  },
 };
 
 export default settingsService;

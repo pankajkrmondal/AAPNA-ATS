@@ -41,6 +41,13 @@ const createdCvs = [];
 let mrfSingleId;
 let mrfDoubleId;
 
+/**
+ * A vendor lock 30 days ahead of today. It was the fixed date '2026-10-03',
+ * which expired and quietly turned every "vendor" journey here into a plain
+ * one (PIPE-10, PIPE-14 failing from 4 Oct 2026).
+ */
+const LIVE_LOCK = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
 async function makeJourney({ name, vendor = false, mrfId }) {
   const cv = await prisma.rpa_cv.create({
     data: {
@@ -52,7 +59,7 @@ async function makeJourney({ name, vendor = false, mrfId }) {
       createdAt: new Date(),
       modifiedAt: new Date(),
       ...(vendor
-        ? { VendorEmail: VENDOR_EMAIL, vendorName: 'Phase3 Test Vendor', lockForNinetyDays: '2026-10-03' }
+        ? { VendorEmail: VENDOR_EMAIL, vendorName: 'Phase3 Test Vendor', lockForNinetyDays: LIVE_LOCK }
         : {}),
     },
   });
@@ -162,7 +169,9 @@ describe('PIPE-05 â€” double-close race', () => {
 describe('PIPE-09 â€” all 8 closure outcomes', () => {
   test('every FINAL_OUTCOMES value closes a journey', async () => {
     const keys = Object.values(FINAL_OUTCOMES);
-    assert.equal(keys.length, 8, `expected 8 final outcomes, found ${keys.length}: ${keys.join(', ')}`);
+    // The 8 closure outcomes (Q12) plus moved_to_other_jd (L02, 22 Oct 2026),
+    // which only Move to another JD writes; the service still closes with it.
+    assert.equal(keys.length, 9, `expected 9 final outcomes, found ${keys.length}: ${keys.join(', ')}`);
 
     for (const key of keys) {
       const { journey } = await makeJourney({ name: `PIPE09-${key}` });
@@ -206,7 +215,7 @@ describe('PIPE-10 â€” JOINED freezes the vendor lock', () => {
   test('closing joined sets lockForNinetyDays to the frozen sentinel', async () => {
     const { cv, journey } = await makeJourney({ name: 'PIPE10', vendor: true });
     const before = await prisma.rpa_cv.findUnique({ where: { id: cv.id }, select: { lockForNinetyDays: true } });
-    assert.equal(before.lockForNinetyDays, '2026-10-03', 'precondition: a live, non-frozen lock');
+    assert.equal(before.lockForNinetyDays, LIVE_LOCK, 'precondition: a live, non-frozen lock');
 
     await setFinalOutcome(journey.id, { finalOutcomeKey: FINAL_OUTCOMES.JOINED, actedBy: ACTED_BY });
 
@@ -219,7 +228,7 @@ describe('PIPE-10 â€” JOINED freezes the vendor lock', () => {
     const { cv, journey } = await makeJourney({ name: 'PIPE10b', vendor: true });
     await setFinalOutcome(journey.id, { finalOutcomeKey: FINAL_OUTCOMES.REJECTED, actedBy: ACTED_BY });
     const after = await prisma.rpa_cv.findUnique({ where: { id: cv.id }, select: { lockForNinetyDays: true } });
-    assert.equal(after.lockForNinetyDays, '2026-10-03', 'only JOINED freezes; every other closure must not');
+    assert.equal(after.lockForNinetyDays, LIVE_LOCK, 'only JOINED freezes; every other closure must not');
   });
 });
 

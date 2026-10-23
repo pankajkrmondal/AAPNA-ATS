@@ -64,6 +64,7 @@ import LoadingOverlay from '../components/common/LoadingOverlay';
 import DecisionEmailModal from '../components/screening/DecisionEmailModal';
 import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import JdTagChip from '../components/screening/JdTagChip';
+import ActivityChip, { ACTIVITY_STYLES, activityHint } from '../components/screening/ActivityChip';
 import ChangeJdModal from '../components/screening/ChangeJdModal';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
@@ -419,8 +420,10 @@ export default function CandidateScreening() {
   const [jdAddedWithin, setJdAddedWithin] = useState(null);
   // N15: "Tagged to this JD only" — candidates uploaded for, or shortlisted to, this JD.
   const [jdTaggedOnly, setJdTaggedOnly] = useState(false);
+  // L01: "Active candidates first" — on by default; off = match score only.
+  const [jdActiveFirst, setJdActiveFirst] = useState(true);
   // Per-role candidates (JD tab) — cached per role (and filters) so revisiting the page keeps results.
-  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd', jdAddedWithin, jdTaggedOnly);
+  const roleCandidatesQuery = useRoleCandidates(selectedRoleId, activeTab === 'jd', jdAddedWithin, jdTaggedOnly, jdActiveFirst);
 
   // ── Candidates List State ──
   const [candidates, setCandidates] = useState([]);
@@ -645,8 +648,10 @@ export default function CandidateScreening() {
   // and write the fresh result into the query cache so the UI updates.
   const forceReloadRoleCandidates = async () => {
     if (!selectedRoleId) return;
-    const res = await screeningService.searchRoleCandidates(selectedRoleId, { force: true, addedWithinDays: jdAddedWithin, taggedOnly: jdTaggedOnly });
-    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly), res);
+    const res = await screeningService.searchRoleCandidates(selectedRoleId, {
+      force: true, addedWithinDays: jdAddedWithin, taggedOnly: jdTaggedOnly, activeFirst: jdActiveFirst,
+    });
+    queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly, jdActiveFirst), res);
   };
 
   /* ═══════ REFRESH (roles + current candidates) ═══════ */
@@ -694,6 +699,8 @@ export default function CandidateScreening() {
       position: v.position,
       addedWithinDays: v.addedWithinDays,
       education: selectedEduCategories.join(','),
+      // L01: the form's checkbox starts ticked; unticked = match score only.
+      activeFirst: v.activeFirst !== false,
     };
     // Kept so Export can re-run the identical search server-side (the export
     // never sends a candidate list — see screening.export.js).
@@ -756,7 +763,7 @@ export default function CandidateScreening() {
       // The JD list is sourced from the react-query cache (sync effect
       // above), so patch the cached axios envelope; the effect then
       // refreshes the local render state.
-      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly), (prev) => {
+      queryClient.setQueryData(screeningKeys.roleCandidates(selectedRoleId, jdAddedWithin, jdTaggedOnly, jdActiveFirst), (prev) => {
         const payload = prev?.data?.data ?? prev?.data;
         if (!payload?.candidates) return prev;
         const updated = { ...payload, candidates: updater(payload.candidates) };
@@ -1249,6 +1256,15 @@ export default function CandidateScreening() {
                               Tagged to this JD only
                             </Checkbox>
                           </Tooltip>
+                          <Tooltip title="Active candidates (submitted their details recently) first, then pending responses and new applicants, then inactive ones. Untick to order by match score only.">
+                            <Checkbox
+                              checked={jdActiveFirst}
+                              onChange={(e) => { setJdActiveFirst(e.target.checked); setCurrentPage(1); setSelectedCandidateKeys([]); }}
+                              data-testid="jd-active-first"
+                            >
+                              Active candidates first
+                            </Checkbox>
+                          </Tooltip>
                           <Tooltip title="Only candidates added to the database in this period. Candidates with no added date are left out while this is set.">
                             <Space size={6}>
                               <Text type="secondary" style={{ fontSize: 13 }}>Added within</Text>
@@ -1560,6 +1576,16 @@ export default function CandidateScreening() {
                         />
                       </Form.Item>
                     </Col>
+                    <Col xs={24} md={12} lg={6}>
+                      {/* L01: ticked by default; unticked = match score only. */}
+                      <Form.Item label="Order" name="activeFirst" valuePropName="checked" initialValue>
+                        <Checkbox data-testid="kw-active-first">
+                          <Tooltip title="Active candidates (submitted their details recently) first, then pending responses and new applicants, then inactive ones.">
+                            Active candidates first
+                          </Tooltip>
+                        </Checkbox>
+                      </Form.Item>
+                    </Col>
 
                     {/* Education: the same three expandable groups as before. */}
                     <Col xs={24}>
@@ -1665,7 +1691,7 @@ export default function CandidateScreening() {
                       cards have no room for. The server re-runs the search. */}
                   <ExportButton
                     request={(cfg) => (activeTab === 'jd'
-                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg, jdAddedWithin, jdTaggedOnly)
+                      ? screeningService.exportRoleCandidates(selectedRoleId, cfg, jdAddedWithin, jdTaggedOnly, jdActiveFirst)
                       : screeningService.exportKeywordCandidates(lastKeywordPayload || {}, cfg))}
                     fallbackName={activeTab === 'jd'
                       ? 'AAPNA-ATS_Screening-Results.csv'
@@ -1705,6 +1731,18 @@ export default function CandidateScreening() {
                   </span>
                 </Tooltip>
               ))}
+              {/* L01: how many results are Active / Pending response / New applicant / Inactive. */}
+              {summary.mode !== 'lookup' && summary.activityCounts && ['active', 'pending', 'new', 'inactive']
+                .filter((k) => summary.activityCounts[k] > 0)
+                .map((k) => (
+                  <Tooltip key={k} title={activityHint(k, summary.activeWindowDays)}>
+                    <span className="screening-stat-chip" data-testid={`activity-count-${k}`}>
+                      <span className="dot" style={{ background: ACTIVITY_STYLES[k].dot }} />
+                      {ACTIVITY_STYLES[k].label}
+                      <span style={{ color: 'var(--text)', fontWeight: 800 }}>{summary.activityCounts[k]}</span>
+                    </span>
+                  </Tooltip>
+                ))}
             </div>
           </div>
         )}
@@ -1827,6 +1865,8 @@ export default function CandidateScreening() {
                             {c.is_referral ? <ReferralChip compact /> : null}
                             {/* N15: uploaded for / shortlisted to this JD. */}
                             {activeTab === 'jd' ? <JdTagChip tag={c.jd_tag} /> : null}
+                            {/* L01: Active / Pending response / New applicant / Inactive. */}
+                            <ActivityChip activity={c.activity} />
                             <StatusBadge status={
                               c.FinalStatus === 'Rejected' ? 'rejected'
                                 : c.FinalStatus ? 'shortlisted'

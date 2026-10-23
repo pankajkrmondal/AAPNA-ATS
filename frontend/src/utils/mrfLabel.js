@@ -22,10 +22,28 @@ export function mrfOptionLabel(r, { openings = true } = {}) {
   return parts.join(' · ');
 }
 
+/**
+ * What follows the role for a JD sent without an MRF (L07): its label and its
+ * JD date (the created date when none is set). `jd_day` comes from the API as
+ * YYYY-MM-DD.
+ *
+ *   jdSendSuffix(r) -> 'v2 – Oct revision · 18 Oct 2026'
+ *
+ * @param {{ version_label?: string|null, jd_day?: string|null, created_at?: string }} r
+ * @returns {string}
+ */
+export function jdSendSuffix(r) {
+  const parts = [];
+  if (r?.version_label) parts.push(r.version_label);
+  const day = r?.jd_day || r?.created_at;
+  if (day) parts.push(fmtDate(day));
+  return parts.join(' · ');
+}
+
 /** "budget_withdrawn" -> "Budget Withdrawn" (same rule as GET /api/mrf/closure-reasons). */
 export function closureReasonLabel(reason) {
   if (!reason) return '';
   return String(reason).split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-export default { mrfOptionLabel, closureReasonLabel };
+export default { mrfOptionLabel, jdSendSuffix, closureReasonLabel };

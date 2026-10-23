@@ -193,13 +193,14 @@ export const updateEmailTemplate = catchAsync(async (req, res) => {
  * @access  Private (Recruiter/Admin)
  */
 export const getEmailMonitoring = catchAsync(async (req, res) => {
-  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  // L06: the Analytics date range (from / to) when sent, else ?days= as before.
+  const window = emailMonitoringExport.parseWindow(req.query);
+  const { days, since, until } = window;
 
   const [logCounts, trackingRows, byTypeCounts, recentFailures, deltaRow, account] = await Promise.all([
     prisma.rpa_email_log.groupBy({
       by: ['status'],
-      where: { sent_at: { gte: since } },
+      where: { sent_at: { gte: since, lt: until } },
       _count: { _all: true },
     }),
     prisma.$queryRaw`
@@ -210,15 +211,15 @@ export const getEmailMonitoring = catchAsync(async (req, res) => {
         COUNT(*) FILTER (WHERE t.bounced) AS bounced
       FROM rpa_email_tracking t
       JOIN rpa_email_messages m ON m.id = t.message_id
-      WHERE COALESCE(m.sent_at, m.created_at) >= ${since}
+      WHERE COALESCE(m.sent_at, m.created_at) >= ${since} AND COALESCE(m.sent_at, m.created_at) < ${until}
     `,
     prisma.rpa_email_log.groupBy({
       by: ['email_type', 'status'],
-      where: { sent_at: { gte: since } },
+      where: { sent_at: { gte: since, lt: until } },
       _count: { _all: true },
     }),
     prisma.rpa_email_log.findMany({
-      where: { status: 'failed', sent_at: { gte: since } },
+      where: { status: 'failed', sent_at: { gte: since, lt: until } },
       orderBy: { sent_at: 'desc' },
       take: 20,
       select: {
@@ -256,6 +257,7 @@ export const getEmailMonitoring = catchAsync(async (req, res) => {
     res,
     {
       window_days: days,
+      range: emailMonitoringExport.windowForResponse(window).range,
       summary: {
         sent: statusTotal('sent'),
         failed: statusTotal('failed'),
@@ -287,8 +289,7 @@ export const getEmailMonitoring = catchAsync(async (req, res) => {
  * @access  Private
  */
 export const exportEmailMonitoring = catchAsync(async (req, res) => {
-  const days = emailMonitoringExport.parseDays(req.query.days);
-  const spec = emailMonitoringExport.specFor(req.query.table, days);
+  const spec = emailMonitoringExport.specFor(req.query.table, emailMonitoringExport.parseWindow(req.query));
 
   if (!spec) {
     throw new AppError(

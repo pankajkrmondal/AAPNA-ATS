@@ -8,7 +8,8 @@
  * stage the candidate has been in or moved past. NO ROW = not visited.
  *
  *   active     the stage the candidate is on now
- *   completed  passed (Approved). Can never be entered again (D2)
+ *   completed  passed (Approved). Can be RE-DONE with a reason (L02-C, 22 Oct
+ *              2026, lifting D2), except Documents and Offer
  *   skipped    moved past without doing it. Can be visited later (D2)
  *   rejected   rejected here (the journey is over until reopened)
  *   hold       on hold here
@@ -24,8 +25,42 @@ export const STAGE_STATES = Object.freeze({
   HOLD: 'hold',
 });
 
-/** The only states a candidate may be moved INTO (D2, C7). */
+/** The states a candidate may be moved INTO without a reason (D2, C7). */
 export const MOVE_TARGET_STATES = Object.freeze([STAGE_STATES.NOT_VISITED, STAGE_STATES.SKIPPED]);
+
+/**
+ * Passed stages that can never be re-done (L02-C, Harish 22 Oct 2026):
+ * verified documents cannot be un-verified, and a shared offer locks the stage.
+ */
+export const REDO_EXCLUDED_STAGE_KEYS = Object.freeze(['documents', 'offer']);
+
+/** Whether a passed stage may be re-done (with a reason). */
+export function isRedoable(stageKey) {
+  return !REDO_EXCLUDED_STAGE_KEYS.includes(stageKey);
+}
+
+/**
+ * When the current visit to a stage started, if that visit is a RE-DO; null
+ * for a first visit. A re-done stage keeps its old completed_at and gets a
+ * fresh entered_at, so "entered after it was completed" is a re-do (L02-C).
+ * Only re-do visits are time-scoped: a first visit's entered_at can be the
+ * backfill time, later than its real activity, so it must not filter anything.
+ *
+ * @param {{ entered_at?: Date|string|null, completed_at?: Date|string|null } | null | undefined} row
+ *   the rpa_pipeline_stage_state row for (journey, stage)
+ * @returns {Date|null}
+ */
+export function redoVisitStart(row) {
+  if (!row?.entered_at || !row?.completed_at) return null;
+  const entered = new Date(row.entered_at);
+  return entered > new Date(row.completed_at) ? entered : null;
+}
+
+/** True when `at` belongs to the visit that started at `since` (no since = any time). */
+export function inVisit(at, since) {
+  if (!since) return true;
+  return at != null && new Date(at) >= since;
+}
 
 /** Never a board column, so never a move target and never given a state row. */
 export const NON_BOARD_STAGE_KEYS = Object.freeze(['shortlist']);
@@ -137,14 +172,18 @@ export function isMoveTarget(status) {
  * Validates a move and describes it. Throws 400 for a target the candidate may
  * not enter; the lock and the stale-tab checks are the caller's.
  *
+ * A passed stage is a RE-DO (L02-C): allowed with a reason, never for
+ * Documents or Offer.
+ *
  * @param {object} p
  * @param {{stage_key: string, label?: string, sort_order: number, is_active?: boolean}[]} p.stages every stage
  * @param {Record<string, string>} p.states
  * @param {{current_stage_key: string}} p.pipeline
  * @param {string} p.targetStageKey
- * @returns {{ fromStage: object, toStage: object, direction: 'forward'|'backward', between: object[], skippedCount: number }}
+ * @param {string|null} [p.reason] required for a re-do
+ * @returns {{ fromStage: object, toStage: object, direction: 'forward'|'backward', between: object[], skippedCount: number, redo: boolean }}
  */
-export function planMove({ stages, states, pipeline, targetStageKey }) {
+export function planMove({ stages, states, pipeline, targetStageKey, reason = null }) {
   const sorted = [...stages].sort((a, b) => a.sort_order - b.sort_order);
   const toStage = sorted.find((s) => s.stage_key === targetStageKey);
   if (!targetStageKey || !toStage || toStage.is_active === false || NON_BOARD_STAGE_KEYS.includes(targetStageKey)) {
@@ -156,13 +195,14 @@ export function planMove({ stages, states, pipeline, targetStageKey }) {
     throw new AppError(`The candidate is already on ${labelOf(toStage)}.`, 400);
   }
   const targetStatus = stageStatusOf(states, toStage.stage_key);
-  if (targetStatus === STAGE_STATES.COMPLETED) {
-    throw new AppError(
-      `The candidate already passed ${labelOf(toStage)}. A passed stage cannot be entered again.`,
-      400
-    );
+  const redo = targetStatus === STAGE_STATES.COMPLETED;
+  if (redo && !isRedoable(toStage.stage_key)) {
+    throw new AppError(`${labelOf(toStage)} was already passed and cannot be re-done.`, 400);
   }
-  if (!isMoveTarget(targetStatus)) {
+  if (redo && !String(reason || '').trim()) {
+    throw new AppError(`The candidate already passed ${labelOf(toStage)}. Give a reason to re-do it.`, 400);
+  }
+  if (!redo && !isMoveTarget(targetStatus)) {
     throw new AppError(`${labelOf(toStage)} cannot be entered (it is ${targetStatus}).`, 400);
   }
 
@@ -177,13 +217,18 @@ export function planMove({ stages, states, pipeline, targetStageKey }) {
   const skippedCount = direction === 'forward'
     ? between.filter((s) => stageStatusOf(states, s.stage_key) !== STAGE_STATES.COMPLETED).length
     : 0;
-  return { fromStage, toStage, direction, between, skippedCount };
+  return { fromStage, toStage, direction, between, skippedCount, redo };
 }
 
-/** "Moved forward from HR Screening (Zeko) to Technical Round 1 (skipped 2 stages)" */
-export function moveNote({ fromStage, toStage, direction, skippedCount }) {
+/**
+ * "Moved forward from HR Screening (Zeko) to Technical Round 1 (skipped 2 stages)",
+ * or for a re-do "Re-do: moved back from HR Round to Technical Round 1". The
+ * prefixes are what moveHistory.export.js parses; a re-do keeps "Moved".
+ */
+export function moveNote({ fromStage, toStage, direction, skippedCount, redo = false }) {
   const skipped = skippedCount > 0 ? ` (skipped ${skippedCount} stage${skippedCount === 1 ? '' : 's'})` : '';
-  return `Moved ${direction} from ${labelOf(fromStage)} to ${labelOf(toStage)}${skipped}`;
+  const note = `Moved ${direction} from ${labelOf(fromStage)} to ${labelOf(toStage)}${skipped}`;
+  return redo ? `${note} to re-do it` : note;
 }
 
 /**
@@ -194,11 +239,15 @@ export function moveNote({ fromStage, toStage, direction, skippedCount }) {
  * @param {{stage_key: string, label?: string}[]} stages active stages in sort order
  * @param {number} currentIdx index of the stage being approved
  * @param {Record<string, string>} states
- * @param {{ skipToStageKey?: string|null }} [opts]
+ * After a RE-DO (L02-C), Approve goes back to the stage the candidate was moved
+ * from (`returnToStageKey`) when that stage is not passed; later passed stages
+ * stay passed.
+ *
+ * @param {{ skipToStageKey?: string|null, returnToStageKey?: string|null }} [opts]
  * @returns {{ nextStage: object|null, skipped: object[] }} skipped = not-passed
  *   stages the landing jumps over, for the 'skip' arrival note
  */
-export function resolveFlexibleApproveLanding(stages, currentIdx, states, { skipToStageKey = null } = {}) {
+export function resolveFlexibleApproveLanding(stages, currentIdx, states, { skipToStageKey = null, returnToStageKey = null } = {}) {
   const passed = (s) => stageStatusOf(states, s.stage_key) === STAGE_STATES.COMPLETED;
   if (skipToStageKey) {
     const targetIdx = stages.findIndex((s) => s.stage_key === skipToStageKey);
@@ -213,6 +262,12 @@ export function resolveFlexibleApproveLanding(stages, currentIdx, states, { skip
     }
     const skipped = targetIdx > currentIdx ? stages.slice(currentIdx + 1, targetIdx).filter((s) => !passed(s)) : [];
     return { nextStage: stages[targetIdx], skipped };
+  }
+  if (returnToStageKey) {
+    const back = stages.find((s) => s.stage_key === returnToStageKey);
+    if (back && back.stage_key !== stages[currentIdx]?.stage_key && isMoveTarget(stageStatusOf(states, back.stage_key))) {
+      return { nextStage: back, skipped: [] };
+    }
   }
   const next = stages.slice(currentIdx + 1).find((s) => isMoveTarget(stageStatusOf(states, s.stage_key)));
   return { nextStage: next || null, skipped: [] };

@@ -550,7 +550,7 @@ describe('the offer stage keeps its row but loses its prose', () => {
       // What buildDossierModel() must have already stripped. If a future change
       // stops stripping it, the assertions below fail.
       notes: null,
-      decided_by: 'saukumar',
+      decided_by: 'recruiter-a',
       decided_at: new Date('2026-08-27T15:58:00Z'),
     }, {
       stage_label: 'Offer',
@@ -558,7 +558,7 @@ describe('the offer stage keeps its row but loses its prose', () => {
       outcome: 'joined',
       reason: null,
       notes: null,
-      decided_by: 'saukumar',
+      decided_by: 'recruiter-a',
       decided_at: new Date('2026-08-27T15:59:00Z'),
     }],
   });
@@ -569,7 +569,7 @@ describe('the offer stage keeps its row but loses its prose', () => {
     const html = renderDossierHtml(withOfferNote());
     assert.ok(html.includes('Offer'));
     assert.ok(html.includes('joined'));
-    assert.ok(html.includes('saukumar'));
+    assert.ok(html.includes('recruiter-a'));
   });
 
   test('no joining date or offer prose reaches the rendered pack', () => {

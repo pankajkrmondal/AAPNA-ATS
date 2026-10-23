@@ -58,6 +58,8 @@ import LiveActivityFeed from '../components/dashboard/LiveActivityFeed';
 import UpcomingInterviews, { isTodayIst } from '../components/dashboard/UpcomingInterviews';
 import DefinitionsUpdatedNote from '../components/dashboard/DefinitionsUpdatedNote';
 import LatestUploads from '../components/dashboard/LatestUploads';
+import OpenPositionsPulse from '../components/dashboard/OpenPositionsPulse';
+import dashboardService from '../services/dashboardService';
 import CommandPalette from '../components/dashboard/CommandPalette';
 
 const { Title, Text } = Typography;
@@ -80,6 +82,19 @@ const QUICK_ACTIONS = [
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const isVendorUser = (user?.role || '').toLowerCase() === 'vendor';
+  // L06: the open-positions strip and the "Roles needing attention" row. Staff
+  // only (it names roles), always the last 7 days.
+  const [pulse, setPulse] = useState({ data: null, loading: true });
+  useEffect(() => {
+    if (isVendorUser) { setPulse({ data: null, loading: false }); return undefined; }
+    let alive = true;
+    dashboardService.getOpenPositionsPulse()
+      .then((res) => { if (alive) setPulse({ data: res.data?.data || res.data, loading: false }); })
+      .catch(() => { if (alive) setPulse({ data: null, loading: false }); });
+    return () => { alive = false; };
+  }, [isVendorUser]);
+  const rolesNeedingAttention = pulse.data?.summary ? pulse.data.summary.at_risk + pulse.data.summary.watch : null;
   const { brand } = useBrand();
   const navigate = useNavigate();
 
@@ -302,6 +317,15 @@ export default function Dashboard() {
            depending on whether data existed, which is what made the page read as
            assembled rather than composed. Widgets now have fixed homes and render
            their own empty states. */}
+      {/* L06: open positions at a glance, right under the KPI cards. */}
+      {!isVendorUser && (
+        <Row gutter={[20, 20]} className="dash-band">
+          <Col xs={24}>
+            <OpenPositionsPulse data={pulse.data} loading={pulse.loading} onNavigate={navigate} />
+          </Col>
+        </Row>
+      )}
+
       <Row gutter={[20, 20]} className="dash-band">
         <Col xs={24} xl={16}>
           <HiringTrendsCard daily={trends.added?.daily || []} rangeDays={rangeDays} role={mrfName} loading={statsLoading} />
@@ -312,19 +336,24 @@ export default function Dashboard() {
             reviewCount={reviewCount}
             awaitingScreening={awaitingScreening}
             interviewsToday={interviewsToday}
+            rolesNeedingAttention={rolesNeedingAttention}
             onNavigate={navigate}
           />
         </Col>
       </Row>
 
       <Row gutter={[20, 20]} className="dash-band">
-        <Col xs={24} lg={12} xl={8}>
+        {/* "Top Roles & Skills" gave way to the open-positions strip above (L06
+            design); vendors, who do not get the strip, still see it. */}
+        <Col xs={24} lg={12} xl={isVendorUser ? 8 : 12}>
           <ConversionFunnelCard funnel={funnel} timeToHireDays={stats.timeToHireDays} loading={statsLoading} />
         </Col>
-        <Col xs={24} lg={12} xl={8}>
-          <TopRolesSkillsCard roles={trends.topRoles || []} skills={trends.topSkills || []} rangeDays={rangeDays} />
-        </Col>
-        <Col xs={24} xl={8}>
+        {isVendorUser && (
+          <Col xs={24} lg={12} xl={8}>
+            <TopRolesSkillsCard roles={trends.topRoles || []} skills={trends.topSkills || []} rangeDays={rangeDays} />
+          </Col>
+        )}
+        <Col xs={24} xl={isVendorUser ? 8 : 12}>
           <UpcomingInterviews items={upcoming} onNavigate={navigate} />
         </Col>
       </Row>

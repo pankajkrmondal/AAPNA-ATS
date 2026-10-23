@@ -1,3 +1,5 @@
+import { parseAnalyticsRange } from '../utils/analyticsRange.js';
+import { getRoleSummary as getRoleSummaryData } from '../services/openPositions.service.js';
 import * as screeningService from '../services/screening.service.js';
 import * as screeningV2 from '../services/screeningV2.service.js';
 import config from '../config/index.js';
@@ -8,6 +10,7 @@ import runExport from '../exports/runExport.js';
 import screeningExport from '../exports/screening.export.js';
 import { getMrfJdAttachment } from '../services/jdAttachment.service.js';
 import * as changeJdService from '../services/changeJd.service.js';
+import { parseActiveFirst } from '../utils/candidateActivity.js';
 
 /**
  * GET /api/screening/roles[?includeClosed=1]
@@ -57,6 +60,8 @@ export const searchRoleCandidates = catchAsync(async (req, res) => {
   const opts = {
     addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
     taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+    // L01 "Active candidates first": on unless the screen sends false.
+    activeFirst: parseActiveFirst(req.body?.activeFirst ?? req.query.activeFirst),
   };
   const result = config.screening.v2
     ? await screeningV2.searchRoleCandidatesV2(mrfId, force, opts)
@@ -89,6 +94,7 @@ export const exportRoleCandidates = catchAsync(async (req, res) => {
   return runExport(req, res, screeningExport.roleSpec(mrfId, {
     addedWithinDays: req.body?.addedWithinDays ?? req.query.addedWithinDays ?? null,
     taggedOnly: isTrue(req.body?.taggedOnly ?? req.query.taggedOnly),
+    activeFirst: parseActiveFirst(req.body?.activeFirst ?? req.query.activeFirst),
   }));
 });
 
@@ -109,8 +115,17 @@ export const exportKeywordCandidates = catchAsync(async (req, res) => runExport(
 export const exportRoleSummary = catchAsync(async (req, res) => runExport(
   req,
   res,
-  screeningExport.roleSummarySpec,
+  screeningExport.roleSummarySpec(req.query),
 ));
+
+/**
+ * GET /api/screening/analytics/role-summary?from&to
+ * Analytics "Role Summary" (L06): one row per MRF with Total applied.
+ */
+export const getRoleSummary = catchAsync(async (req, res) => {
+  const result = await getRoleSummaryData({ range: parseAnalyticsRange(req.query) });
+  return success(res, result, 'Role summary retrieved successfully');
+});
 
 /**
  * POST /api/screening/shortlist
@@ -192,7 +207,8 @@ export const getZekoJobs = catchAsync(async (req, res) => {
  * GET /api/screening/analytics/pipeline
  */
 export const getZekoPipeline = catchAsync(async (req, res) => {
-  const pipeline = await screeningService.getZekoPipeline();
+  // L06: Analytics sends its date range; Candidate Screening sends none (All time).
+  const pipeline = await screeningService.getZekoPipeline({ range: parseAnalyticsRange(req.query) });
   return success(res, pipeline, 'Zeko interview pipeline retrieved successfully');
 });
 

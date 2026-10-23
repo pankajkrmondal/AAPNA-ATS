@@ -29,9 +29,9 @@ test('only the offered values are cached', () => {
 
 test('allRoleCacheKeys names every variant of both searches, for MRF edit / close', () => {
   const keys = allRoleCacheKeys(41);
-  // 6 "Added within" values x 2 searches x tagged-only on/off (N15).
-  assert.equal(keys.length, 24);
-  assert.equal(new Set(keys).size, 24);
+  // 6 "Added within" values x 2 searches x tagged-only on/off (N15) x active-first on/off (L01).
+  assert.equal(keys.length, 48);
+  assert.equal(new Set(keys).size, 48);
   assert.ok(keys.includes('screening:role:41'));
   assert.ok(keys.includes('screening:role:v2:41'));
   assert.ok(keys.includes('screening:role:v2:41:d90'));
@@ -45,4 +45,12 @@ test('"Tagged to this JD only" has its own key; the untagged keys are unchanged 
   assert.equal(roleCacheKeyV2(41, 15, true), 'screening:role:v2:41:d15:t');
   assert.equal(roleCacheKey(41, null, false), 'screening:role:41');
   assert.notEqual(roleCacheKeyV2(41, null, true), roleCacheKeyV2(41));
+});
+
+test('"Active candidates first" has its own key; score-only keys are unchanged (L01)', () => {
+  assert.equal(roleCacheKeyV2(41, null, false, true), 'screening:role:v2:41:a');
+  assert.equal(roleCacheKeyV2(41, 15, true, true), 'screening:role:v2:41:d15:t:a');
+  assert.equal(roleCacheKey(41, null, false, true), 'screening:role:41:a');
+  assert.equal(roleCacheKeyV2(41, 15, true), 'screening:role:v2:41:d15:t');
+  assert.ok(allRoleCacheKeys(41).includes('screening:role:v2:41:d90:t:a'));
 });

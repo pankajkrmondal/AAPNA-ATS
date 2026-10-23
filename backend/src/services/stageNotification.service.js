@@ -90,6 +90,9 @@ export const SILENT_FINAL_OUTCOMES = new Set([
   'backed_out',
   'did_not_join',
   'candidate_withdrawn',
+  // L02: the candidate is not told their old record closed; Move to another
+  // JD can email them about the NEW role instead, when the recruiter asks.
+  'moved_to_other_jd',
 ]);
 
 /**

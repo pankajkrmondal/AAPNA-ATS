@@ -5,6 +5,7 @@ import { mapCandidate } from './candidate.service.js';
 import { Prisma } from '@prisma/client';
 import { HIRED_OUTCOMES } from '../config/pipelineStages.js';
 import { timeToHireFor } from './pipelineAnalytics.helpers.js';
+import { cvCreatedBetween, CV_IST_DAY, normalisedSql, cvLinkedToMrf } from './mrfApplicants.service.js';
 import {
   DEFAULT_RANGE_DAYS, IST, changePct, fillDaily, istMidnight, mergeUpcoming, normaliseLabel, percentOf, periodBounds, talentTallies,
 } from '../utils/dashboardMetrics.js';
@@ -27,22 +28,9 @@ import {
 const OPEN_JOURNEY = { final_outcome: null };
 const HIRED_JOURNEY = { final_outcome: { in: [...HIRED_OUTCOMES] } };
 
-/** "Created inside [from, to)" for rpa_cv."createdAt" (a UTC timestamp without zone). */
-const cvCreatedBetween = (from, to) => Prisma.sql`("createdAt" AT TIME ZONE 'UTC') >= ${from}::timestamptz AND ("createdAt" AT TIME ZONE 'UTC') < ${to}::timestamptz`;
-/** rpa_cv."createdAt" as an India-time calendar day. */
-const CV_IST_DAY = Prisma.sql`(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${IST})::date`;
-/** A text column lower-cased and single-spaced, to match normaliseLabel(). */
-const normalisedSql = (column) => Prisma.sql`lower(regexp_replace(btrim(${Prisma.raw(column)}), '\\s+', ' ', 'g'))`;
-/** Candidates whose typed "Position Applied" matches a role (the MRF link before JD tagging, N13). */
-const positionMatches = (roleKey) => Prisma.sql`${normalisedSql('"PositionApplied"')} = ${roleKey}`;
-/**
- * An rpa_cv row linked to the MRF: tagged to it (uploaded for / shortlisted
- * to it, N13) or, for candidates from before tagging, a matching "Position
- * Applied". Used inside a query FROM rpa_cv.
- */
-const cvLinkedToMrf = (mrf) => Prisma.sql`(EXISTS (
-  SELECT 1 FROM rpa_candidate_mrf_tags t WHERE t.cv_id = rpa_cv.id AND t.mrf_id = ${mrf.id}
-) OR ${positionMatches(mrf.roleKey)})`;
+// The applicant-matching helpers (cvCreatedBetween, cvLinkedToMrf, …) live in
+// mrfApplicants.service.js, shared with Recruitment Analytics (L06) so the two
+// pages can never count "applied to this role" differently.
 /** A moment just past now, so rows written this second are inside [from, until). */
 const justAfter = (now) => new Date(now.getTime() + 60_000);
 

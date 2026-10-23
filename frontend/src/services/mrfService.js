@@ -72,6 +72,16 @@ const mrfService = {
   },
 
   /**
+   * L07: set the label and JD date of a JD sent without an MRF.
+   * @param {string|number} id — the rpa_mrf_jd_send id
+   * @param {{ version_label?: string|null, version_date?: string|null }} payload — YYYY-MM-DD; empty clears
+   * @returns {Promise}
+   */
+  updateVersionLabel(id, payload) {
+    return api.patch(`/mrf/${id}/version-label`, payload);
+  },
+
+  /**
    * Get the submitted main MRF record (rpa_mrf) by its MRF id.
    * @param {string|number} id — the rpa_mrf id (the linked mrf_id)
    * @returns {Promise}

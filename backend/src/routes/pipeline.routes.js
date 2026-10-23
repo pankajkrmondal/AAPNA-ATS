@@ -37,8 +37,12 @@ router.get('/analytics/export', exportLimiter, pipelineController.exportPipeline
 /** GET /api/pipeline/analytics/positions — one row per requisition (N39). Before "/:id". */
 router.get('/analytics/positions', pipelineController.getPositionsOverview);
 
-/** GET /api/pipeline/analytics/positions/export?status= — the Positions tab as CSV (N39). */
+/** GET /api/pipeline/analytics/positions/export?status=&from&to — the Open Positions board as CSV (N39, L06). */
 router.get('/analytics/positions/export', exportLimiter, pipelineController.exportPositionsOverview);
+/** L06 role view: GET …/positions/:mrfId, the candidates behind a number, and the role report CSV. */
+router.get('/analytics/positions/:mrfId', pipelineController.getPositionDetail);
+router.get('/analytics/positions/:mrfId/candidates', pipelineController.getPositionMetricCandidates);
+router.get('/analytics/positions/:mrfId/export', exportLimiter, pipelineController.exportPositionReport);
 
 /** GET /api/pipeline/stages — admin-configurable stage list. */
 router.get('/stages', pipelineController.listStages);
@@ -143,6 +147,11 @@ router.post('/:id/closure', pipelineController.setFinalOutcome);
 /** POST /api/pipeline/:id/reopen — undo a closure (reason mandatory). The
  * action assertJourneyOpen has named since Module 1 without it existing. */
 router.post('/:id/reopen', pipelineController.reopenJourney);
+/** Move to another JD (L02-A): GET the dialog's data, POST the move. */
+router.get('/:id/move-jd', pipelineController.getMoveJdStatus);
+router.post('/:id/move-jd', pipelineController.moveJourneyToMrf);
+/** GET /api/pipeline/:id/related-journeys — "Earlier roles for this candidate" (L02-A). */
+router.get('/:id/related-journeys', pipelineController.getRelatedJourneys);
 /** POST /api/pipeline/:id/pause — pause/resume a journey (Q33). The manual
  * lever RT asked for when a role fills under a candidate still in flight. */
 router.post('/:id/pause', pipelineController.setJourneyPaused);

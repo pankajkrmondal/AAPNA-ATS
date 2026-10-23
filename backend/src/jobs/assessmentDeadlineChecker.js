@@ -77,9 +77,13 @@ export async function checkOverdueAssessmentInvites() {
           AND p.final_outcome IS NULL
           AND p.is_paused = FALSE
       )
+      -- A result counts only once it arrived after THIS invite: on a re-done
+      -- Assessment stage (L02-C) the earlier attempt's result must not
+      -- silence the new invite's overdue bell.
       AND NOT EXISTS (
         SELECT 1 FROM rpa_assessment_results r
         WHERE r.pipeline_id = li.pipeline_id AND r.status IN ('matched', 'score_overwritten')
+          AND r.created_at >= li.sent_at
       );
   `;
 

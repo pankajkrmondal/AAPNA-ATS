@@ -109,6 +109,9 @@ router.get('/held', restrictTo(...MRF_EXPORT_ROLES), mrfController.listHeldMrfs)
 router.post('/:id/decision', restrictTo(...MRF_EXPORT_ROLES), mrfController.decideOnBehalf);
 router.patch('/:id/hold', restrictTo(...MRF_EXPORT_ROLES), mrfController.changeHoldDate);
 router.post('/:id/hold/release', restrictTo(...MRF_EXPORT_ROLES), mrfController.releaseHold);
+// L07: label + JD date for a JD sent without an MRF. Registered before the
+// bare /:id routes.
+router.patch('/:id/version-label', restrictTo(...MRF_CLOSURE_ROLES), mrfController.updateJdVersionLabel);
 router.get('/:id', mrfController.getMrfRequest);
 router.patch('/:id', mrfController.updateMrfRequest);
 

@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { rangeForResponse } from '../utils/analyticsRange.js';
 import { fmtDateTimeIst } from '../utils/dateFormat.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
@@ -9,7 +10,7 @@ import { compileTemplate, sendGraphEmail, sendGraphReply, describeEmailError, lo
 import { wrapBrandedEmail } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveRecipients, nonProdSafeCandidateEmail } from '../config/emailRecipients.js';
-import { STAGE_KEYS, ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LEGACY_MRF_CLOSED_STATUS } from '../config/pipelineStages.js';
+import { STAGE_KEYS, ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LEGACY_MRF_CLOSED_STATUS, SHORTLIST_STATUSES } from '../config/pipelineStages.js';
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney, findRecentRejection } from './pipeline.service.js';
@@ -22,6 +23,11 @@ import { matchesQualification, getCandidateEducationCategories } from '../utils/
 // Shared with screeningV2.service.js (Phase 3 N01); identical to the local copy it replaced.
 import { splitSkillPhrases, parseScreeningFilters } from '../utils/screeningFilters.js';
 import { roleCacheKey, isCacheableRecency } from '../utils/screeningCacheKeys.js';
+import { activityForSearch } from './candidateActivitySettings.service.js';
+import { stageVisitStart } from './stageState.service.js';
+import {
+  parseActiveFirst, compareActivity, compareResponseSpeed, countActivity, activitySummaryText,
+} from '../utils/candidateActivity.js';
 import { firstValidPhone, toIndianE164, maskPhone } from '../utils/phone.js';
 import { companyBlockHtml, jdLinkHtml, phoneConfirmHtml, appendToBody } from '../utils/candidateEmailBlocks.js';
 import { getMrfJdAttachment } from './jdAttachment.service.js';
@@ -597,15 +603,17 @@ Return ONLY a valid JSON object in this exact structure — no markdown, no expl
 /**
  * POST /api/screening/roles/:id/search
  */
-export async function searchRoleCandidates(mrfId, force = false, { addedWithinDays = null, taggedOnly = false } = {}) {
+export async function searchRoleCandidates(mrfId, force = false, { addedWithinDays = null, taggedOnly = false, activeFirst = true } = {}) {
   // N38 "Added within": validated by the shared parser (whole days, 1–3650).
   const recencyDays = parseScreeningFilters({ addedWithinDays }).addedWithinDays;
   const cacheable = isCacheableRecency(recencyDays);
   // N15 "Tagged to this JD only": just the candidates uploaded for or
   // shortlisted to this MRF (rpa_candidate_mrf_tags).
   const tagged = taggedOnly === true;
+  // L01 "Active candidates first" (default on): its own cache entry.
+  const ordered = parseActiveFirst(activeFirst);
   // Check cache first (skipped on an explicit refresh so fresh results are recomputed)
-  const cacheKey = roleCacheKey(mrfId, recencyDays, tagged);
+  const cacheKey = roleCacheKey(mrfId, recencyDays, tagged, ordered);
   if (!force && cacheable) {
     try {
       const cachedData = await redis.get(cacheKey);
@@ -745,7 +753,7 @@ export async function searchRoleCandidates(mrfId, force = false, { addedWithinDa
         c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange",
         c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage",
         c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken",
-        c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays",
+        c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays", c.details_requested_at, c.details_completed_at,
         c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat",
         c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo",
         c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
@@ -1002,8 +1010,16 @@ export async function searchRoleCandidates(mrfId, force = false, { addedWithinDa
     };
   });
 
-  // Sort by finalScore DESC
-  const sorted = scoredCandidates.sort((a, b) => b.starRating.finalScore - a.starRating.finalScore);
+  // Sort by finalScore DESC. With "Active candidates first" (L01) the activity
+  // status comes first, and among Active candidates with equal scores the
+  // quicker responder. (This older search picks its AI top 10 before this
+  // order, so insights may sit on cards further down; V2 does not.)
+  const activity = await activityForSearch();
+  for (const card of scoredCandidates) card.activity = activity.of(card);
+  const sorted = scoredCandidates.sort((a, b) =>
+    (ordered ? compareActivity(a.activity, b.activity) : 0)
+    || b.starRating.finalScore - a.starRating.finalScore
+    || (ordered ? compareResponseSpeed(a.activity, b.activity) : 0));
 
   // Filter: Hide candidates with score < 5 or jdMatching score < 3 (n8n parity)
   const filtered = sorted.filter(
@@ -1035,6 +1051,10 @@ export async function searchRoleCandidates(mrfId, force = false, { addedWithinDa
     oneStar: countByStars[1],
     summaryText: `${filtered.length} matched (${tagged ? `of ${totalCandidates} tagged to this JD, ` : ''}${hardFilteredOut} removed by exp/CTC filter, ${filteredOutCount} hidden by low score or skill mismatch) · ★★★★★ ${countByStars[5]} · ★★★★ ${countByStars[4]} · ★★★ ${countByStars[3]}`,
     taggedOnly: tagged,
+    activeFirst: ordered,
+    activeWindowDays: activity.windowDays,
+    activityCounts: countActivity(filtered),
+    activityText: activitySummaryText(countActivity(filtered)),
     degraded,
     degradedReason,
   };
@@ -1256,7 +1276,7 @@ export async function searchKeywordCandidates(filters) {
           c."CurrentCompany", c."Gender", c."EnglishCommunicationRating", c."PreferredShift", c."ReasonForJobChange",
           c."WillingToTakeOnlineTest", c."HasLaptopForInitialDays", c."EducationalScoresPercentage",
           c."LinkedInProfile", c."MetaData", c."statusActive", c."missingData", c."cvMissingToken",
-          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays",
+          c."cvMissingTokenStatus", c."createdAt", c."modifiedAt", c."vendorName", c."lockForNinetyDays", c.details_requested_at, c.details_completed_at,
           c."VendorEmail", c."a10th", c."a12th", c."graduation", c."postGraduation", c."Heat",
           c."HRQuickcomments", c."IQScore", c."TechScore", c."FinalStatus", c."TechRoundOne", c."TechRoundTwo",
           c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore", c."ZekoCodingScore",
@@ -1686,6 +1706,11 @@ export async function searchKeywordCandidates(filters) {
     };
   });
 
+  // L01: every card carries its activity status ("Active", "Pending response" …).
+  const activeFirst = parseActiveFirst(filters.activeFirst);
+  const activity = await activityForSearch();
+  for (const card of scoredCandidates) card.activity = activity.of(card);
+
   // Filter out avgScore < 5. When a keyword is present, require at least one typed
   // term to literally match (skill coverage score >= 5), so candidates who don't
   // contain the searched skill(s) are dropped rather than passing through.
@@ -1700,10 +1725,16 @@ export async function searchKeywordCandidates(filters) {
     })
     // Rank by overall score, then break ties by evidence strength (declared
     // key-skills first, then resume term frequency) so a stronger-evidenced
-    // candidate never sits below an equal-coverage but weaker one.
+    // candidate never sits below an equal-coverage but weaker one. With
+    // "Active candidates first" (L01) the activity status comes first, and
+    // among Active candidates with equal scores the quicker responder.
     .sort((a, b) => {
+      const byActivity = activeFirst ? compareActivity(a.activity, b.activity) : 0;
+      if (byActivity !== 0) return byActivity;
       const byScore = b.relevanceScore.scorePct - a.relevanceScore.scorePct;
       if (byScore !== 0) return byScore;
+      const bySpeed = activeFirst ? compareResponseSpeed(a.activity, b.activity) : 0;
+      if (bySpeed !== 0) return bySpeed;
       return (b.relevanceScore.evidence || 0) - (a.relevanceScore.evidence || 0);
     });
 
@@ -1723,6 +1754,10 @@ export async function searchKeywordCandidates(filters) {
     medium,
     low,
     summaryText: `${filtered.length} matched (${scoreFilteredOut} hidden by low score) · ★★★★ ${high} strong · ★★★ ${medium} moderate · ★ ${low} weak`,
+    activeFirst,
+    activeWindowDays: activity.windowDays,
+    activityCounts: countActivity(filtered),
+    activityText: activitySummaryText(countActivity(filtered)),
     degraded: keywordDegraded,
     degradedReason: keywordDegradedReason,
   };
@@ -1921,6 +1956,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
 
       if (exists?.pipeline_status === 'shortlisted') {
         return { skip: { reason: 'already_shortlisted', message: mrfRef ? 'Already shortlisted for this MRF.' : 'Already shortlisted.' }, tag: true };
+      }
+      if (exists?.pipeline_status === SHORTLIST_STATUSES.MOVED) {
+        // L02: the candidate was moved from this JD to another. Its record is
+        // closed but kept; a new shortlist would reuse that closed journey.
+        return {
+          skip: { reason: 'moved_away', message: 'Moved from this JD to another one. Reopen the old record on the Pipeline board instead.' },
+          tag: true,
+        };
       }
       if (exists && exists.pipeline_status !== 'rejected') {
         // Candidate has progressed beyond shortlisting (on_hold, hired, joined,
@@ -2516,7 +2559,12 @@ export async function getZekoJobs() {
 /**
  * GET /api/screening/analytics/pipeline
  */
-export async function getZekoPipeline() {
+export async function getZekoPipeline({ range = null } = {}) {
+  // L06: with a date range (Analytics), the Zeko tiles count invitations sent
+  // in it (scores received in it, for "Zeko Score Received") and the shortlist
+  // tiles count decisions made in it (shortlisted_at, which a rejection also
+  // stamps). No range = All time; Candidate Screening never sends one.
+  const [rangeFrom, rangeTo] = range ? [range.from, range.to] : [new Date('1970-01-01T00:00:00Z'), new Date('2999-01-01T00:00:00Z')];
   // Load pipeline candidates combined with shortlist name
   const rows = await prisma.$queryRaw`
     SELECT 
@@ -2554,9 +2602,9 @@ export async function getZekoPipeline() {
   // them in the same strip, which made the ratio between them meaningless.
   const stats = await prisma.$queryRaw`
     SELECT
-      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed')) AS zeko_sent,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('sent','in_progress','completed','passed','failed') AND COALESCE(link_sent_at, created_at) >= ${rangeFrom} AND COALESCE(link_sent_at, created_at) < ${rangeTo}) AS zeko_sent,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('in_progress')) AS zeko_in_progress,
-      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('completed','passed','failed')) AS zeko_completed,
+      COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('completed','passed','failed') AND COALESCE(completed_at, created_at) >= ${rangeFrom} AND COALESCE(completed_at, created_at) < ${rangeTo}) AS zeko_completed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('passed')) AS zeko_passed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('failed')) AS zeko_failed,
       COUNT(DISTINCT candidate_id) FILTER (WHERE status IN ('cancelled')) AS zeko_cancelled
@@ -2574,6 +2622,7 @@ export async function getZekoPipeline() {
 
   // Fetch all shortlisted candidates to display in the All Candidates tab and role stats in the Analytics tab
   const candidates = await prisma.rpa_shortlisted_candidates.findMany({
+    where: range ? { shortlisted_at: { gte: range.from, lt: range.to } } : undefined,
     include: {
       mrf: true,
       rpa_zeko_candidate_pipeline: true,
@@ -2658,6 +2707,7 @@ export async function getZekoPipeline() {
       future_prospect: candidateCounts.future_prospect,
       total: candidateCounts.total,
     },
+    range: rangeForResponse(range),
   };
 }
 
@@ -2678,6 +2728,27 @@ export async function assignCandidateToZekoJob(candidateId, zekoJobId, stage = Z
   });
   if (!shortlist) {
     throw new AppError('Shortlisted candidate not found.', 404);
+  }
+
+  // L02-C (decision 22 Oct 2026): a re-done Zeko round uses a DIFFERENT Zeko
+  // job. Re-using the earlier attempt's job would overwrite its row (the
+  // unique key is shortlist + job + round) and Zeko may refuse a second invite
+  // for the same address on the same job.
+  const journey = await prisma.rpa_candidate_pipeline.findFirst({
+    where: { shortlist_id: candidateId, final_outcome: null },
+    orderBy: { id: 'desc' },
+    select: { id: true },
+  });
+  const boardKey = roundStage === ZEKO_ROUND_STAGES.FUNCTIONAL ? STAGE_KEYS.ZEKO_FUNCTIONAL : STAGE_KEYS.ZEKO_HR;
+  const redoSince = journey ? await stageVisitStart(journey.id, boardKey) : null;
+  if (redoSince) {
+    const earlier = await prisma.rpa_zeko_candidate_pipeline.findUnique({
+      where: { candidate_id_zeko_job_id_stage: { candidate_id: candidateId, zeko_job_id: String(zekoJobId), stage: roundStage } },
+      select: { created_at: true, status: true },
+    });
+    if (earlier && earlier.status !== 'cancelled' && new Date(earlier.created_at) < redoSince) {
+      throw new AppError('This round is being re-done: pick a different Zeko job from the one used last time.', 409);
+    }
   }
 
   // Compound unique key check

@@ -23,6 +23,7 @@ import { notify, NOTIFICATION_TYPES, pipelineLink } from '../services/notificati
 import { describeDetailsCompletion } from '../utils/missingDetails.js';
 import { syncShortlistIdentitySafe, clearScreeningRoleCache } from '../services/candidateSync.service.js';
 import * as pipelineService from '../services/pipeline.service.js';
+import * as candidateTagService from '../services/candidateTag.service.js';
 import { Prisma } from '@prisma/client';
 import { emailMatchesSql } from '../utils/emailMatch.js';
 
@@ -185,6 +186,39 @@ export const removeCandidateReferral = catchAsync(async (req, res) => {
 export const getCandidatePipelineScores = catchAsync(async (req, res) => {
   const journeys = await pipelineService.getCandidatePipelineScores(req.params.id);
   return success(res, journeys, 'Pipeline scores retrieved');
+});
+
+/**
+ * @desc    The JDs a candidate is tagged to, with what each chip allows (L02-B)
+ * @route   GET /api/candidates/:id/tags
+ * @access  Staff
+ */
+export const getCandidateTags = catchAsync(async (req, res) => {
+  return success(res, await candidateTagService.listCandidateTags(req.params.id), 'JD tags retrieved');
+});
+
+/**
+ * @desc    Remove a wrong JD tag; never the only one, never one in the pipeline (L02-B)
+ * @route   DELETE /api/candidates/:id/tags/:mrfId   body { reason }
+ * @access  Staff
+ */
+export const removeCandidateTag = catchAsync(async (req, res) => {
+  const result = await candidateTagService.untagCandidate({
+    cvId: req.params.id, mrfId: req.params.mrfId, reason: req.body?.reason, user: req.user,
+  });
+  return success(res, result, 'JD tag removed');
+});
+
+/**
+ * @desc    Switch a JD tag to the right JD (L02-B)
+ * @route   POST /api/candidates/:id/tags/:mrfId/switch   body { to_mrf_id, reason }
+ * @access  Staff
+ */
+export const switchCandidateTag = catchAsync(async (req, res) => {
+  const result = await candidateTagService.switchCandidateTag({
+    cvId: req.params.id, fromMrfId: req.params.mrfId, toMrfId: req.body?.to_mrf_id, reason: req.body?.reason, user: req.user,
+  });
+  return success(res, result, 'JD switched');
 });
 
 /**

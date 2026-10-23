@@ -29,6 +29,14 @@ import AppError from '../utils/AppError.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
 import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
 import { generateEmbedding } from './vectorStore.service.js';
+import { activityForSearch as activityFor } from './candidateActivitySettings.service.js';
+import {
+  parseActiveFirst,
+  compareActivity,
+  compareResponseSpeed,
+  countActivity,
+  activitySummaryText,
+} from '../utils/candidateActivity.js';
 import {
   parseScreeningFilters,
   detectLookup,
@@ -81,7 +89,7 @@ const CARD_COLUMNS = Prisma.raw(`
   c."TechRoundOne", c."TechRoundTwo", c."ManagerialOrCEOFeedback", c."HRInterview", c."ZekoInterviewScore",
   c."ZekoCodingScore", c."ZekoCommunicationScore", c."TechRoundThree", c.graduationdegree, c.graduationspecialization,
   c.postgraduationdegree, c.postgraduationspecialization, c.employment_history, c."cvVectorLock", c."cvFileUrl",
-  c.ai_profile_insights, c.resume_technical_terms, c.is_referral`);
+  c.ai_profile_insights, c.resume_technical_terms, c.is_referral, c.details_requested_at, c.details_completed_at`);
 
 /**
  * Most recent shortlist / reject stamp per candidate: any MRF for the keyword
@@ -185,11 +193,13 @@ async function runLookup(lookup) {
     }
   }
 
+  const activity = await activityFor();
   const candidates = rows.map((c) => ({
     ...toPublic(c),
     shortlisted_status: c.FinalStatus === 'Stage 0 - Resume Shortlisted' ? c.FinalStatus : null,
     profile: resolveProfile(null, c),
     relevanceScore: null,
+    activity: activity.of(c),
   }));
 
   const what = { email: 'email', phone: 'phone', name: 'name' }[lookup.type];
@@ -360,6 +370,7 @@ function keywordScore(ev, c) {
 export async function searchKeywordCandidatesV2(body) {
   const t0 = Date.now();
   const f = parseScreeningFilters(body);
+  const activeFirst = parseActiveFirst(body?.activeFirst);
 
   const lookup = detectLookup(f);
   if (lookup) return runLookup(lookup);
@@ -445,7 +456,10 @@ export async function searchKeywordCandidatesV2(body) {
     }
   }
 
-  // Score and order. The score never removes anyone.
+  // Score and order. The score never removes anyone. With "Active candidates
+  // first" (L01) the activity status comes before the score, and among Active
+  // candidates with equal scores the quicker responder goes first.
+  const activity = await activityFor();
   const scored = passing.map((c) => {
     const ev = f.skills.length > 0 ? skillEvidence(f.skills, c) : null;
     return {
@@ -453,10 +467,13 @@ export async function searchKeywordCandidatesV2(body) {
       rating: keywordScore(ev, c),
       signals: ev ? strictSkillSignals(ev) : undefined,
       distance: c.distance == null ? Infinity : Number(c.distance),
+      activity: activity.of(c),
     };
   });
   scored.sort((a, b) =>
-    b.rating.avgScore - a.rating.avgScore
+    (activeFirst ? compareActivity(a.activity, b.activity) : 0)
+    || b.rating.avgScore - a.rating.avgScore
+    || (activeFirst ? compareResponseSpeed(a.activity, b.activity) : 0)
     || b.rating.evidence - a.rating.evidence
     || a.distance - b.distance
     || new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
@@ -497,7 +514,7 @@ export async function searchKeywordCandidatesV2(body) {
   }
   const tAi = Date.now() - tAi0;
 
-  const candidates = scored.map(({ c, rating, signals }) => ({
+  const candidates = scored.map(({ c, rating, signals, activity: act }) => ({
     ...toPublic(c),
     educationContext: {
       candidate_graduation_degree: c.graduationdegree || null,
@@ -509,6 +526,7 @@ export async function searchKeywordCandidatesV2(body) {
     ...(signals ? { jdSkillSignals: signals } : {}),
     profile: resolveProfile(insightsMap[String(c.id)], c),
     relevanceScore: rating,
+    activity: act,
   }));
 
   // Chip buckets follow the star thresholds: Strong = 4–5★, Moderate = 3★, Weak = 1–2★.
@@ -524,6 +542,7 @@ export async function searchKeywordCandidatesV2(body) {
     .join(', ');
   const summaryText = `${candidates.length} matched (${total} searched${removedText ? `; removed by ${removedText}` : ''})`
     + ` · ★★★★ ${high} strong · ★★★ ${medium} moderate · ★ ${low} weak`;
+  const activityCounts = countActivity(candidates);
 
   const tTotal = Date.now() - t0;
   logger.info(`[screening:v2] keyword t_sql=${tSql}ms t_ai=${tAi}ms t_total=${tTotal}ms rows=${rows.length} shown=${candidates.length}`);
@@ -540,6 +559,10 @@ export async function searchKeywordCandidatesV2(body) {
       medium,
       low,
       summaryText,
+      activeFirst,
+      activeWindowDays: activity.windowDays,
+      activityCounts,
+      activityText: activitySummaryText(activityCounts),
       aiUnavailable,
       degraded: false,
       degradedReason: null,
@@ -651,7 +674,7 @@ async function insightsForTop(mrfId, roleContext, top) {
  * @param {number} mrfId
  * @param {boolean} [force=false] - skip the cache
  */
-export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null, taggedOnly = false } = {}) {
+export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null, taggedOnly = false, activeFirst = true } = {}) {
   const t0 = Date.now();
   // N38 "Added within": same parser and SQL as keyword search. Each offered
   // value has its own cache entry; any other value is computed fresh.
@@ -660,7 +683,10 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   // N15 "Tagged to this JD only": just the candidates uploaded for or
   // shortlisted to this MRF; its own cache entry.
   const tagged = taggedOnly === true;
-  const cacheKey = roleCacheKeyV2(mrfId, recencyDays, tagged);
+  // L01 "Active candidates first": its own cache entry, because the order also
+  // picks which top 10 get AI insights.
+  const ordered = parseActiveFirst(activeFirst);
+  const cacheKey = roleCacheKeyV2(mrfId, recencyDays, tagged, ordered);
   if (!force && cacheable) {
     try {
       const cached = await redis.get(cacheKey);
@@ -870,6 +896,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
     }
   }
 
+  const activity = await activityFor();
   const scored = passing.map((c) => {
     const ev = skillEvidence(mandatory.skills, c, 'ev_');
     const goodEv = goodToHave.skills.length ? skillEvidence(goodToHave.skills, c, 'ev_g') : null;
@@ -880,10 +907,13 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
       goodEv,
       rank,
       distance: c.distance == null ? Infinity : Number(c.distance),
+      activity: activity.of(c),
     };
   });
   scored.sort((a, b) =>
-    b.rank.finalScore - a.rank.finalScore
+    (ordered ? compareActivity(a.activity, b.activity) : 0)
+    || b.rank.finalScore - a.rank.finalScore
+    || (ordered ? compareResponseSpeed(a.activity, b.activity) : 0)
     || b.ev.evidence - a.ev.evidence
     || a.distance - b.distance
     || new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
@@ -892,7 +922,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   const { map: insightsMap, aiUnavailable } = await insightsForTop(mrfId, roleContext, scored.slice(0, 10).map((s) => s.c));
   const tAi = Date.now() - tAi0;
 
-  const candidates = scored.map(({ c, ev, goodEv, rank }) => {
+  const candidates = scored.map(({ c, ev, goodEv, rank, activity: act }) => {
     const { stars, label } = mapStars(rank.finalScore);
     return {
       ...toPublic(c),
@@ -913,6 +943,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
         mode: 'JD Strict',
         breakdown: rank.breakdown,
       },
+      activity: act,
     };
   });
 
@@ -947,6 +978,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   if (recencyDays != null) detail.push(`only candidates added in the last ${recencyDays} days`);
   const summaryDetail = detail.join(' · ');
   const summaryText = `${candidates.length} matched (${summaryDetail})`;
+  const activityCounts = countActivity(candidates);
 
   const tTotal = Date.now() - t0;
   logger.info(`[screening:v2] JD mrf=${mrfId} t_embed=${tEmbed}ms t_sql=${tSql}ms t_ai=${tAi}ms t_total=${tTotal}ms rows=${rows.length} shown=${candidates.length}`);
@@ -973,6 +1005,10 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
       summaryText,
       summaryDetail,
       addedWithinDays: recencyDays,
+      activeFirst: ordered,
+      activeWindowDays: activity.windowDays,
+      activityCounts,
+      activityText: activitySummaryText(activityCounts),
       aiUnavailable,
       timings: { t_embed: tEmbed, t_sql: tSql, t_ai: tAi, t_total: tTotal },
     },

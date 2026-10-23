@@ -17,7 +17,9 @@ import { clearScreeningRoleCache } from './candidateSync.service.js';
 import AppError from '../utils/AppError.js';
 import {
   actorColumns, isTagSource, TAG_SOURCES, UPLOAD_TAG_SOURCES, parseMrfId, mrfCandidateBlock, MRF_OPEN_SELECT,
+  tagChangeBlock, tagActions,
 } from '../utils/candidateTag.js';
+import { cleanMoveReason } from '../utils/journeyMove.js';
 
 /**
  * Tag candidates to one JD. Tagging twice is a no-op (unique cv_id + mrf_id),
@@ -106,6 +108,121 @@ export async function tagsForCandidate(cvId) {
     orderBy: { tagged_at: 'desc' },
     select: { mrf_id: true, source: true, tagged_at: true, tagged_by: true },
   });
+}
+
+// ── Remove / switch a wrong tag (L02-B, Harish 22 Oct 2026) ──────────────
+
+function parseCvId(value) {
+  const s = String(value ?? '').trim();
+  if (!/^\d+$/.test(s) || !/[1-9]/.test(s)) throw new AppError('Invalid candidate id.', 400);
+  return BigInt(s);
+}
+
+/** mrf id string -> open pipeline id, for one candidate. */
+async function openJourneysByMrf(cvId, db = prisma) {
+  const rows = await db.rpa_candidate_pipeline.findMany({
+    where: { cv_id: cvId, final_outcome: null, mrf_id: { not: null } },
+    select: { id: true, mrf_id: true },
+  });
+  return new Map(rows.map((r) => [String(r.mrf_id), Number(r.id)]));
+}
+
+/** The audit trail for tag changes: the app's actor-attributed log. Best effort. */
+function auditTagChange(status, message, user) {
+  return prisma.rpa_processing_log.create({
+    data: {
+      source: 'JD_TAG',
+      status,
+      logMessage: message.slice(0, 2000),
+      actor_email: user?.email || null,
+      actor_context: `${user?.role || 'unknown'} (${user?.username || user?.id || 'unknown'})`,
+      createdAt: new Date(),
+    },
+  }).catch((err) => logger.warn(`[jd tag] audit write failed: ${err.message}`));
+}
+
+/**
+ * Every JD a candidate is tagged to, with what each chip allows (L02-B).
+ * GET /api/candidates/:id/tags
+ */
+export async function listCandidateTags(rawCvId) {
+  const cvId = parseCvId(rawCvId);
+  const [rows, open] = await Promise.all([
+    prisma.rpa_candidate_mrf_tags.findMany({
+      where: { cv_id: cvId },
+      orderBy: { tagged_at: 'desc' },
+      select: {
+        mrf_id: true, source: true, tagged_at: true, tagged_by: true,
+        mrf: { select: { position_hiring_for: true, date_of_request: true } },
+      },
+    }),
+    openJourneysByMrf(cvId),
+  ]);
+  const tags = rows.map((r) => ({
+    mrf_id: Number(r.mrf_id),
+    role: r.mrf?.position_hiring_for || `MRF-${r.mrf_id}`,
+    mrf_date: r.mrf?.date_of_request || null,
+    source: r.source,
+    tagged_at: r.tagged_at,
+    tagged_by: r.tagged_by,
+  }));
+  return { cv_id: Number(cvId), tags: tagActions(tags, open) };
+}
+
+/**
+ * Remove one wrong tag. Refused for the candidate's only tag (switch it
+ * instead) and for a JD they are in the pipeline for (Move instead).
+ * DELETE /api/candidates/:id/tags/:mrfId  body { reason }
+ */
+export async function untagCandidate({ cvId: rawCvId, mrfId: rawMrfId, reason: rawReason, user = {} }) {
+  const cvId = parseCvId(rawCvId);
+  const mrfId = parseMrfId(rawMrfId);
+  if (!mrfId) throw new AppError('Invalid JD.', 400);
+  const reason = cleanMoveReason(rawReason);
+  if (!reason) throw new AppError('A reason is required.', 400);
+
+  await prisma.$transaction(async (tx) => {
+    const tags = await tx.rpa_candidate_mrf_tags.findMany({ where: { cv_id: cvId }, select: { mrf_id: true } });
+    const block = tagChangeBlock({ action: 'remove', tags, mrfId, openJourneyMrfIds: new Set((await openJourneysByMrf(cvId, tx)).keys()) });
+    if (block) throw new AppError(block.message, block.status);
+    await tx.rpa_candidate_mrf_tags.deleteMany({ where: { cv_id: cvId, mrf_id: mrfId } });
+  });
+  await clearScreeningRoleCache();
+  await auditTagChange('removed', `cv ${cvId}: tag to MRF-${mrfId} removed. Reason: ${reason}`, user);
+  logger.info(`[jd tag] cv ${cvId}: tag to MRF ${mrfId} removed by ${user?.username || user?.email || 'unknown'}.`);
+  return listCandidateTags(cvId);
+}
+
+/**
+ * Switch one tag to the right JD, whatever made it (upload included). For a
+ * JD the candidate is in the pipeline for, use Move to another JD.
+ * POST /api/candidates/:id/tags/:mrfId/switch  body { to_mrf_id, reason }
+ */
+export async function switchCandidateTag({ cvId: rawCvId, fromMrfId: rawFrom, toMrfId: rawTo, reason: rawReason, user = {} }) {
+  const cvId = parseCvId(rawCvId);
+  const fromMrfId = parseMrfId(rawFrom);
+  const toMrfId = parseMrfId(rawTo);
+  if (!fromMrfId) throw new AppError('Invalid JD.', 400);
+  if (!toMrfId) throw new AppError('Pick the right JD.', 400);
+  if (fromMrfId === toMrfId) throw new AppError('The candidate is already tagged to this JD.', 409);
+  const reason = cleanMoveReason(rawReason);
+  if (!reason) throw new AppError('A reason is required.', 400);
+
+  const target = await prisma.rpa_mrf.findUnique({ where: { id: toMrfId }, select: MRF_OPEN_SELECT });
+  const targetBlock = mrfCandidateBlock(target, toMrfId);
+  if (targetBlock) throw new AppError(targetBlock.message, targetBlock.status);
+
+  await prisma.$transaction(async (tx) => {
+    const tags = await tx.rpa_candidate_mrf_tags.findMany({ where: { cv_id: cvId }, select: { mrf_id: true } });
+    const block = tagChangeBlock({ action: 'switch', tags, mrfId: fromMrfId, openJourneyMrfIds: new Set((await openJourneysByMrf(cvId, tx)).keys()) });
+    if (block) throw new AppError(block.message, block.status);
+    await tx.rpa_candidate_mrf_tags.deleteMany({ where: { cv_id: cvId, mrf_id: fromMrfId } });
+    await tagCandidates({ cvIds: [cvId], mrfId: toMrfId, source: TAG_SOURCES.CHANGE_JD, actor: user }, { db: tx, clearCache: false });
+  });
+  await clearScreeningRoleCache();
+  await auditTagChange('switched', `cv ${cvId}: tag switched from MRF-${fromMrfId} to MRF-${toMrfId}. Reason: ${reason}`, user);
+  logger.info(`[jd tag] cv ${cvId}: tag switched from MRF ${fromMrfId} to MRF ${toMrfId} by ${user?.username || user?.email || 'unknown'}.`);
+  return listCandidateTags(cvId);
 }
 
 /**
