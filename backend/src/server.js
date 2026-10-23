@@ -18,6 +18,7 @@ import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/docume
 import { startMrfAuditRetentionJob, stopMrfAuditRetentionJob } from './jobs/mrfAuditRetentionSweep.js';
 import { startErrorLogRetentionJob, stopErrorLogRetentionJob } from './jobs/errorLogRetentionSweep.js';
 import { startMrfHoldSweepJob, stopMrfHoldSweepJob } from './jobs/mrfHoldSweep.js';
+import { startPipelineAutoPauseJob, stopPipelineAutoPauseJob } from './jobs/pipelineAutoPause.js';
 import { recordError } from './services/errorLog.service.js';
 import { sendOpsAlert } from './services/emailNotification.service.js';
 import { currentRef } from './middleware/requestContext.js';
@@ -91,6 +92,11 @@ async function startServer() {
     // runs (even with MRF_HOLD_ENABLED off, so no MRF is stranded on hold).
     await startMrfHoldSweepJob();
 
+    // Pipeline auto-pause — journeys idle in one stage for N days (Settings)
+    // are paused and leave the default board. Pure DB; self-gated by
+    // pipeline_auto_pause_enabled.
+    startPipelineAutoPauseJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -131,6 +137,7 @@ async function gracefulShutdown(signal) {
   stopMrfAuditRetentionJob();
   stopErrorLogRetentionJob();
   stopMrfHoldSweepJob();
+  stopPipelineAutoPauseJob();
 
   // Stop accepting new connections
   server.close(async () => {

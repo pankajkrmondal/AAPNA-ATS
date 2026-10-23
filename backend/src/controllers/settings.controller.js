@@ -38,6 +38,13 @@ import {
   saveAssessmentAutomationSettings,
 } from '../services/assessmentSettings.service.js';
 import { getActiveWindowDays, saveActiveWindowDays } from '../services/candidateActivitySettings.service.js';
+import { getAutoPauseSettings, saveAutoPauseSettings } from '../services/pipelineAutoPause.service.js';
+import {
+  DEFAULT_AUTO_PAUSE_DAYS,
+  MIN_AUTO_PAUSE_DAYS,
+  MAX_AUTO_PAUSE_DAYS,
+  parseAutoPauseDays,
+} from '../utils/pipelineAutoPause.js';
 import { getPositionTargetDays, savePositionTargetDays } from '../services/openPositions.service.js';
 import {
   DEFAULT_POSITION_TARGET_DAYS,
@@ -602,6 +609,40 @@ export const saveCandidateActivitySetting = catchAsync(async (req, res) => {
   }
   const saved = await saveActiveWindowDays(days, req.user?.email || req.user?.name || String(req.user?.id ?? 'unknown'));
   return success(res, saved, `Active window set to ${days} day${days === 1 ? '' : 's'}`);
+});
+
+/**
+ * @desc    Candidate Pipeline auto-pause: on/off + idle days before a journey is paused
+ * @route   GET /api/settings/pipeline-auto-pause
+ * @access  Private (the board's "Paused journey" tooltip shows the days)
+ */
+export const getPipelineAutoPauseSetting = catchAsync(async (req, res) => {
+  return success(res, {
+    ...(await getAutoPauseSettings()),
+    defaultDays: DEFAULT_AUTO_PAUSE_DAYS,
+    min: MIN_AUTO_PAUSE_DAYS,
+    max: MAX_AUTO_PAUSE_DAYS,
+  }, 'Pipeline auto-pause setting retrieved');
+});
+
+/**
+ * @desc    Change the auto-pause; the hourly sweep reads it on its next run
+ * @route   POST /api/settings/pipeline-auto-pause
+ * @access  Admin (requireAdmin on the route)
+ */
+export const savePipelineAutoPauseSetting = catchAsync(async (req, res) => {
+  const days = parseAutoPauseDays(req.body?.days);
+  if (days == null) {
+    throw new AppError(`Days must be a whole number from ${MIN_AUTO_PAUSE_DAYS} to ${MAX_AUTO_PAUSE_DAYS}.`, 400);
+  }
+  if (typeof req.body?.enabled !== 'boolean') throw new AppError('enabled must be true or false.', 400);
+  const saved = await saveAutoPauseSettings(
+    { enabled: req.body.enabled, days },
+    req.user?.email || req.user?.name || String(req.user?.id ?? 'unknown'),
+  );
+  return success(res, saved, saved.enabled
+    ? `Auto-pause set to ${days} day${days === 1 ? '' : 's'}`
+    : 'Auto-pause turned off');
 });
 
 /**

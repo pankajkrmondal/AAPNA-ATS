@@ -75,7 +75,7 @@ import {
  * Board data for the kanban view: columns (stages) + cards (journeys), filterable.
  */
 export const listPipeline = catchAsync(async (req, res) => {
-  const { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, position_mrf_id, include_closed, owned_by } = req.query;
+  const { source, on_hold_only, rejected_only, mrf_id, stuck_days, position, position_mrf_id, closed_only, paused_only, owned_by } = req.query;
   const result = await pipelineService.listPipeline({
     source: source || undefined,
     onHoldOnly: on_hold_only === '1' || on_hold_only === 'true',
@@ -86,7 +86,8 @@ export const listPipeline = catchAsync(async (req, res) => {
     // The Position filter's per-MRF choice (N19); `position` stays for the
     // keyword shortlists, which have no MRF.
     positionMrfId: position_mrf_id ? parseInt(position_mrf_id, 10) || undefined : undefined,
-    includeClosed: include_closed === '1' || include_closed === 'true',
+    closedOnly: closed_only === '1' || closed_only === 'true',
+    pausedOnly: paused_only === '1' || paused_only === 'true',
     // G6 — "my candidates". Resolved server-side to the caller's own
     // identity; a client-supplied user id/name would let anyone view anyone
     // else's filtered board, which defeats the point of the check being here

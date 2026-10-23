@@ -58,6 +58,7 @@ import { activeVendorFor, VENDOR_LOCK_FROZEN } from '../utils/vendorLock.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { REAPPLICATION_COOLING_OFF_MONTHS, getReapplicationCutoff } from '../utils/rejectionCooldown.js';
 import { emailCandidates } from '../utils/emailMatch.js';
+import { buildBoardViewWhere } from '../utils/pipelineBoardView.js';
 import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
 import { withDeadline } from '../utils/withDeadline.js';
 import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stageSkip.js';
@@ -257,20 +258,21 @@ export async function listPipeline(filters = {}) {
   // is correctly excluded only while this filter is active, same as any
   // other filter here.
   if (filters.ownedByUsername) where.rpa_shortlisted_candidates = { shortlisted_by: filters.ownedByUsername };
-  // A closed journey is finished work. setFinalOutcome's own notification says
-  // "the card is about to leave the board" — it never did, because nothing
-  // filtered on final_outcome, so finished candidates piled up in their last
-  // column forever. Hidden by default; `includeClosed` brings them back for
-  // anyone who wants the history.
-  if (!filters.includeClosed) where.final_outcome = null;
+  // Three views of the board (RT, 23 Oct 2026), applied by buildBoardViewWhere:
+  // live work (default), closed only ("Show closed"), paused only ("Paused
+  // journey"). Closed and paused journeys never mix into live work.
+  Object.assign(where, buildBoardViewWhere(filters));
 
-  // Discoverability for "Show closed" (G2.3): count what's hidden by the
-  // final_outcome exclusion above, scoped to the same position/MRF filters so
-  // the number on the checkbox matches what actually appears when it's ticked.
-  const closedWhere = { final_outcome: { not: null } };
-  if (filters.source) closedWhere.source = filters.source;
-  if (filters.mrfId) closedWhere.mrf_id = BigInt(filters.mrfId);
-  const closedCount = await prisma.rpa_candidate_pipeline.count({ where: closedWhere });
+  // Discoverability for "Show closed" / "Paused journey" (G2.3): count what
+  // each view holds, scoped to the same source/MRF filters so the number on the
+  // checkbox matches what actually appears when it's ticked.
+  const countScope = {};
+  if (filters.source) countScope.source = filters.source;
+  if (filters.mrfId) countScope.mrf_id = BigInt(filters.mrfId);
+  const [closedCount, pausedCount] = await Promise.all([
+    prisma.rpa_candidate_pipeline.count({ where: { ...countScope, ...buildBoardViewWhere({ closedOnly: true }) } }),
+    prisma.rpa_candidate_pipeline.count({ where: { ...countScope, ...buildBoardViewWhere({ pausedOnly: true }) } }),
+  ]);
 
   const journeys = await prisma.rpa_candidate_pipeline.findMany({
     where,
@@ -559,6 +561,7 @@ export async function listPipeline(filters = {}) {
     total: cards.length,
     filteredTotal: filtered.length,
     closedCount,
+    pausedCount,
     flexibleStages,
   };
 }

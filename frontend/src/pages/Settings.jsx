@@ -14,6 +14,7 @@ import CompanyProfileCard from '../components/settings/CompanyProfileCard';
 import MrfApprovalHoldSettings from '../components/settings/MrfApprovalHoldSettings';
 import CandidateActivityCard from '../components/settings/CandidateActivityCard';
 import PositionTargetCard from '../components/settings/PositionTargetCard';
+import PipelineAutoPauseCard from '../components/settings/PipelineAutoPauseCard';
 
 const { Title, Text } = Typography;
 
@@ -462,6 +463,8 @@ export default function Settings() {
       {/* How recent a response must be to count as Active in screening (L01). Admin only. */}
       {isAdmin && <CandidateActivityCard />}
       {isAdmin && <PositionTargetCard />}
+      {/* Idle days before a pipeline journey is paused automatically. Admin only. */}
+      {isAdmin && <PipelineAutoPauseCard />}
 
       {/* Recruiters added to every booked round's Teams meeting. First in the
           interview chain (book → remind → confirm held → capture recording),

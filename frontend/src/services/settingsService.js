@@ -171,6 +171,19 @@ const settingsService = {
   savePositionTarget(payload) {
     return api.post('/settings/position-target', payload);
   },
+
+  /**
+   * Candidate Pipeline auto-pause: journeys idle N days in one stage are paused.
+   * @returns {Promise} — { enabled, days, defaultDays, min, max }
+   */
+  getPipelineAutoPause() {
+    return api.get('/settings/pipeline-auto-pause');
+  },
+
+  /** Admin only. @param {{ enabled: boolean, days: number }} payload */
+  savePipelineAutoPause(payload) {
+    return api.post('/settings/pipeline-auto-pause', payload);
+  },
 };
 
 export default settingsService;

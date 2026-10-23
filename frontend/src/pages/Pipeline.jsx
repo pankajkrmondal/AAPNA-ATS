@@ -29,11 +29,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Badge, Button, Card, Checkbox, Dropdown, Input, Select, Space, Tag, Tooltip, Typography, App as AntApp,
 } from 'antd';
-import { ArrowLeftOutlined, ArrowRightOutlined, CheckCircleFilled, ClearOutlined, ImportOutlined, InboxOutlined, LeftOutlined, LockOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, SwapOutlined, TeamOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, CheckCircleFilled, ClearOutlined, DownOutlined, FilterOutlined, ImportOutlined, InboxOutlined, LeftOutlined, LockOutlined, PauseCircleOutlined, ReloadOutlined, RightOutlined, RobotOutlined, SearchOutlined, ShopOutlined, SwapOutlined, TeamOutlined, UpOutlined, UserOutlined, WarningOutlined } from '@ant-design/icons';
 import {
   DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors,
 } from '@dnd-kit/core';
 import pipelineService from '../services/pipeline';
+import settingsService from '../services/settingsService';
 import PipelineDrawer from '../components/pipeline/PipelineDrawer';
 import PipelineRoleHeader from '../components/pipeline/PipelineRoleHeader';
 import MoveStageModal from '../components/pipeline/MoveStageModal';
@@ -566,7 +567,13 @@ export default function Pipeline() {
   // the caller's own identity, so clearing it always shows the full shared
   // board to any staff user.
   const [myCandidatesOnly, setMyCandidatesOnly] = useState(false);
+  // Board views: live work by default; "Show closed" shows ONLY closed
+  // journeys and "Paused journey" ONLY paused ones (exclusive — ticking one
+  // clears the other).
   const [showClosed, setShowClosed] = useState(false);
+  const [showPaused, setShowPaused] = useState(false);
+  // The "interviews awaiting confirmation" banner starts as one line; Details expands the list.
+  const [unresolvedOpen, setUnresolvedOpen] = useState(false);
   const [openPipelineId, setOpenPipelineId] = useState(null);
   // The candidate the drawer is RENDERING. It outlives openPipelineId by the
   // length of the close animation, so the drawer slides out with its content
@@ -625,7 +632,8 @@ export default function Pipeline() {
     on_hold_only: onHoldOnly ? '1' : undefined,
     rejected_only: rejectedOnly ? '1' : undefined,
     stuck_days: stuckOnly ? 10 : undefined,
-    include_closed: showClosed ? '1' : undefined,
+    closed_only: showClosed ? '1' : undefined,
+    paused_only: showPaused ? '1' : undefined,
     owned_by: myCandidatesOnly ? 'me' : undefined,
   };
 
@@ -657,6 +665,13 @@ export default function Pipeline() {
     },
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  });
+
+  // Only for the "Paused journey" tooltip — how many idle days pause a card.
+  const { data: autoPause } = useQuery({
+    queryKey: ['pipeline-auto-pause-setting'],
+    queryFn: async () => (await settingsService.getPipelineAutoPause()).data?.data,
+    staleTime: 5 * 60_000,
   });
 
   const refreshBoard = () => {
@@ -747,7 +762,7 @@ export default function Pipeline() {
     requestMove({ card, toStageKey: String(over.id) });
   };
 
-  const anyFilterActive = Boolean(position || source || onHoldOnly || rejectedOnly || stuckOnly || showClosed || myCandidatesOnly || nlQuery.trim());
+  const anyFilterActive = Boolean(position || source || onHoldOnly || rejectedOnly || stuckOnly || showClosed || showPaused || myCandidatesOnly || nlQuery.trim());
   const clearFilters = () => {
     setPosition(undefined);
     setSource(undefined);
@@ -755,6 +770,7 @@ export default function Pipeline() {
     setRejectedOnly(false);
     setStuckOnly(false);
     setShowClosed(false);
+    setShowPaused(false);
     setMyCandidatesOnly(false);
     setNlQuery('');
     setNlRead(null);
@@ -829,6 +845,7 @@ export default function Pipeline() {
   const total = data?.total ?? 0;
   const filteredTotal = data?.filteredTotal ?? total;
   const closedCount = data?.closedCount ?? 0;
+  const pausedCount = data?.pausedCount ?? 0;
 
   return (
     <div style={{ padding: 24 }}>
@@ -866,11 +883,15 @@ export default function Pipeline() {
         </Space>
       </div>
 
+      {/* Filters sit on their own tinted strip: white controls on the white
+          toolbar pane had no edge to read against. */}
+      <div className="pipeline-filterbar">
       <Input.Search
         allowClear
+        className="pipeline-ask"
         placeholder='Ask the board — e.g. "vendor candidates stuck on hold"'
         prefix={<RobotOutlined style={{ color: 'var(--gold, #7a922e)' }} />}
-        style={{ maxWidth: 520, marginBottom: 8 }}
+        style={{ maxWidth: 560, marginBottom: 10 }}
         value={nlQuery}
         onChange={(e) => { setNlQuery(e.target.value); if (!e.target.value.trim()) handleNlSearch(''); }}
         onSearch={handleNlSearch}
@@ -884,7 +905,8 @@ export default function Pipeline() {
         </div>
       )}
 
-      <Space wrap>
+      <Space wrap size={[10, 10]}>
+        <span className="pipeline-filterbar__label"><FilterOutlined /> Filters</span>
         <Select
           allowClear
           placeholder="Position"
@@ -914,6 +936,7 @@ export default function Pipeline() {
           options={Object.entries(SOURCE_LABEL).map(([value, label]) => ({ value, label }))}
         />
         <Checkbox
+          className="pipeline-chip"
           checked={onHoldOnly}
           onChange={(e) => {
             setOnHoldOnly(e.target.checked);
@@ -923,6 +946,7 @@ export default function Pipeline() {
           On Hold only
         </Checkbox>
         <Checkbox
+          className="pipeline-chip"
           checked={rejectedOnly}
           onChange={(e) => {
             setRejectedOnly(e.target.checked);
@@ -931,13 +955,37 @@ export default function Pipeline() {
         >
           Rejected only
         </Checkbox>
-        <Checkbox checked={stuckOnly} onChange={(e) => setStuckOnly(e.target.checked)}>Stuck &gt; 10 days</Checkbox>
+        <Checkbox className="pipeline-chip" checked={stuckOnly} onChange={(e) => setStuckOnly(e.target.checked)}>Stuck &gt; 10 days</Checkbox>
         <Tooltip title="Candidates you shortlisted — a view, not a permission. Clearing it always shows the full board.">
-          <Checkbox checked={myCandidatesOnly} onChange={(e) => setMyCandidatesOnly(e.target.checked)}>My candidates</Checkbox>
+          <Checkbox className="pipeline-chip" checked={myCandidatesOnly} onChange={(e) => setMyCandidatesOnly(e.target.checked)}>My candidates</Checkbox>
         </Tooltip>
-        <Tooltip title="Closed candidates are hidden by default — the board is for live work">
-          <Checkbox checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)}>
+        <Tooltip title="Shows only closed candidates. Closed candidates are hidden by default — the board is for live work.">
+          <Checkbox
+            className="pipeline-chip"
+            checked={showClosed}
+            onChange={(e) => {
+              setShowClosed(e.target.checked);
+              if (e.target.checked) setShowPaused(false);
+            }}
+          >
             Show closed{closedCount > 0 ? ` (${closedCount})` : ''}
+          </Checkbox>
+        </Tooltip>
+        <Tooltip
+          title={`Shows only paused journeys — paused by a recruiter${autoPause?.enabled
+            ? `, or automatically after ${autoPause.days} day${autoPause.days === 1 ? '' : 's'} with no activity in a stage`
+            : ''}. Resume one from its drawer to put it back on the board.`}
+        >
+          <Checkbox
+            className="pipeline-chip"
+            checked={showPaused}
+            onChange={(e) => {
+              setShowPaused(e.target.checked);
+              if (e.target.checked) setShowClosed(false);
+            }}
+            data-testid="pipeline-show-paused"
+          >
+            Paused journey{pausedCount > 0 ? ` (${pausedCount})` : ''}
           </Checkbox>
         </Tooltip>
         {anyFilterActive && (
@@ -945,10 +993,11 @@ export default function Pipeline() {
             Clear filters
           </Button>
         )}
-        <Text type="secondary">
+        <span className="pipeline-filterbar__count">
           {anyFilterActive ? `${filteredTotal} of ${total} candidates` : `${total} candidates`}
-        </Text>
+        </span>
       </Space>
+      </div>
       </Card>
 
       {/* L06: the chosen requisition's health and last 7 days, with a link to its view in Analytics. */}
@@ -971,12 +1020,29 @@ export default function Pipeline() {
             type="warning"
             showIcon
             icon={<WarningOutlined />}
-            message={`${unresolvedInterviews.length} interview${unresolvedInterviews.length === 1 ? '' : 's'} awaiting confirmation`}
-            description={
+            message={
+              <span>
+                {`${unresolvedInterviews.length} interview${unresolvedInterviews.length === 1 ? '' : 's'} awaiting confirmation`}
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  {' · No scorecard is requested until one is marked held'}
+                </Text>
+              </span>
+            }
+            action={
+              <Button
+                size="small"
+                type="link"
+                onClick={() => setUnresolvedOpen((v) => !v)}
+                aria-expanded={unresolvedOpen}
+              >
+                {unresolvedOpen ? 'Hide' : 'Details'} {unresolvedOpen ? <UpOutlined /> : <DownOutlined />}
+              </Button>
+            }
+            description={unresolvedOpen && (
               <div>
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  These rounds ended without anyone recording whether they happened. No scorecard
-                  is requested until one is marked held.
+                  These rounds ended without anyone recording whether they happened. Open a
+                  candidate to mark the round Held or No-show.
                 </Text>
                 <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {unresolvedInterviews.map((iv) => (
@@ -1004,7 +1070,7 @@ export default function Pipeline() {
                   ))}
                 </div>
               </div>
-            }
+            )}
           />
         </>
       )}
