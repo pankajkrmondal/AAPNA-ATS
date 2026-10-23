@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Built and tested on staging, 22 Oct 2026**; committed and pushed 23 Oct (branch `pankaj-work-staging-v24`). DDL and the 4 email templates (#52–55) applied to the **staging** DB only. Unit 886/886; Playwright R1 + H1–H6 run 1 passed (see [PW-Task](PW-Task/README.md)). **Rev 2**: decisions D1–D4 answered; new role **HR Admin Recruiter** (§5A). |
+| **Status** | **Deployed to staging 23 Oct 2026** (PR #105 `pankaj-work-staging-v24` → `project-staging`) and rechecked there (§16). **Prod not done yet** (§16.4). DDL and the 4 email templates (#52–55) applied to the **staging** DB only. Unit 939/939 after the merge; Playwright R1 + H1–H6 run 1 passed (see [PW-Task](PW-Task/README.md)). **Rev 2**: decisions D1–D4 answered; new role **HR Admin Recruiter** (§5A). |
 | **Built differently from this plan** | (1) Release time stored as `mrf_hold_release_time` 'HH:MM' IST, not a cron string. (2) The four new notices (On Hold, Hold Date Changed, Decided On Your Behalf, Approvers Away) are **editable DB templates** under Email Templates › General / Alerts (added 22 Oct, rev 3); defaults + send-time fallback in `src/services/mrfHoldEmailTemplates.js`, seeded create-only by `prisma/seed-mrf-hold-email-templates.js`. The approval-request email itself keeps using the existing "MRF Approval Request" template. (3) No `emitToRoles` socket helper: the recruiter emits loop over `RECRUITER_ROOM_ROLES`. (4) The DDL is not added to `pgadmin/01-ddl-all.sql` (a snapshot ending 2026-09-04); it runs with `scripts/run-ddl.mjs`. (5) On release, the request row goes back to `managersubmitted`, its status when it first went for approval. |
 | **Date** | 22 Oct 2026 (rev 2 same day) |
 | **Branch base** | `pankaj-work-staging-v24` |
@@ -534,60 +534,87 @@ The server is the source of truth for every row. The UI only hides what the API 
 
 ---
 
-## 16. Handover: current state and how to resume (as of 22 Oct 2026)
+## 16. Handover: current state and how to resume (as of 23 Oct 2026)
 
-Read this section first in a new session. Everything needed to continue is here or in the linked files.
+Read this section first in a new session. Everything needed to continue is here or in the linked files. Nothing about this work is kept anywhere else (no assistant memory): update this section at the end of every session.
 
 ### 16.1 Where things stand
 
 | Item | State |
 |---|---|
-| Code | **Built, uncommitted**, branch `pankaj-work-staging-v24` (`git status` lists every changed file). No commit, no PR yet |
-| Tests | Backend unit **882/882** (`cd backend; node --test "src/tests/unit/*.test.js" "src/tests/*.test.js"`; don't use `npm run test:unit`, which also sweeps in the DB tests and hangs). Frontend `npm run build` OK. Playwright **R1 + H1–H6 run 1 PASS** ([PW-Task/README.md](PW-Task/README.md)) |
-| "Done when" | **Met.** A held MRF goes back to Pending on its hold-until date, and both approvers get a fresh approval email (H3-02, H3-03) |
-| Staging DB (`recruitmentautomationdb`) | DDL `2026-10-22-mrf-hold-and-delegate.sql` **applied**. Rollback rehearsed (dry run only) |
+| Code | **Merged and deployed to staging.** Branch `pankaj-work-staging-v24` → PR **#105** → `project-staging`. Commits: `232e849` (feature), `acafa8d` (test logs), `dfc3291` + `2229031` (merge of `project-staging` + fix below), `71a9733` (staging recheck logs, **after** the PR merge, so it still needs a PR; docs only) |
+| Merge of `project-staging` (23 Oct) | 3 conflicts (`mrf.routes.js`, `settings.routes.js`, `Settings.jsx`), all "accept both". Plus one fix: `project-staging`'s new `JD_LABEL_ROLES` in `MRF.jsx` missed the new role → now `RECRUITER_TIER_ROLES`. The role guard test now skips candidate **source** lists (`hr_upload`, `vendor`, `recruiter`, `other`) |
+| Tests | Backend unit **939/939** after the merge (`cd backend; node --test "src/tests/unit/*.test.js" "src/tests/*.test.js"`; don't use `npm run test:unit`, it sweeps in DB tests and hangs). Frontend `npm run build` OK. Playwright logs: [PW-Task/README.md](PW-Task/README.md) |
+| "Done when" | **Met.** A held MRF goes back to Pending on its hold-until date and both approvers get a fresh approval email (H3-02, H3-03) |
+| Staging site check (23 Oct) | Live bundle contains the new role and Hold UI. On https://ats-staging.aapnainfotech.com: hold / approve / reject through approver links PASS; old link while held is blocked; MRF list On Hold tab OK; Admin Portal shows **HR ADMIN RECRUITER** badge and option in Add / Edit User |
+| Role checks (23 Oct) | Recruiter `biswajit.sur`: every hold / on-behalf / rules / absence action 403, no buttons on screen (**H5-05 PASS**). HR Admin Recruiter `admin`: Change date + Release now work, rules editable, absence not editable, on-behalf refused without a window. Run on **localhost** (same code, staging DB) because the staging login's Cloudflare check needs a human click |
+| Staging DB (`recruitmentautomationdb`) | DDL `2026-10-22-mrf-hold-and-delegate.sql` **applied**. Email templates #52–55 seeded. Rollback rehearsed (dry run only) |
 | Prod DB (`recruitmentautomationdbProd`) | **Not touched.** Needs the DDL **before** this code is deployed there |
 | Flags (env files are gitignored; server copies are set by hand) | `.env.development` and `.env.staging`: `MRF_HOLD_ENABLED=true`, `MRF_DELEGATE_DECISION_ENABLED=true`. `.env.production`: both `false` |
-| Settings rows (staging) | Hold rules 30 / 180 / 09:00 IST. Approver absence **off** (last set by Pan mondal) |
-| Not tested in the browser | ~~Plain Recruiter refused from deciding on behalf (H5-05)~~: **passed 23 Oct** after the staging deploy (H5 run 2, with hold / approve / reject via links on staging). ~~Held MRF absent from the JD screening dropdown (H3-07)~~: **passed in the browser 23 Oct** (H3 run 2, fixture MRF 827). Editable email templates: E1 run 1 PASS 23 Oct. Bell / socket live events for the new role (R1-48/49) |
+| Settings rows (staging) | Hold rules 30 / 180 / 09:00 IST. Approver absence **off** |
+| Email templates | The 4 hold / on-behalf notices are editable under Email Templates › General / Alerts ("MRF On Hold Notice", "MRF Hold Date Changed", "MRF Decided On Your Behalf", "MRF Approvers Away Notice"). E1 run 1 PASS |
 
-### 16.2 Accounts on staging (checked 22 Oct; credentials are given in chat, never written down)
+### 16.2 Still open (not deploy steps)
+
+1. **Staging mail reaches real staff.** The hold notice sent by the **staging server** (email log 884, MRF 828) went to cverma@, nsatywali@, sganguly@ …; the same notice from local dev reached only the test inbox. Check the staging server's mail-redirect setting / `mrfOutcome` flow-key recipients.
+2. **On-behalf decision inside an absence window** not re-run after the deploy (passed on 22 Oct, H5-02/H5-03). Needs Admin / Super Admin to switch the window on, and switching it on emails the approvers and every HR Admin Recruiter (now Chhaya). Switch it **off** afterwards.
+3. **Chhaya's own account** (R1 spot-check): R1-10, R1-38, R1-42, R1-48/49 (bell / live events) with `chhaya.verma598` after she logs out and in.
+4. **Old test data:** seven approved ZZ-TEST MRFs from 25 Sep (670, 671, 672, 675, 677, 679, 680) still show in the JD screening dropdown as open roles. Close them if not wanted.
+5. **PR for `71a9733`** (docs only) into `project-staging`.
+6. Not built (not needed for go-live): integration tests `mrfHold.test.js`, `mrfDelegateDecision.test.js`, `hrAdminRecruiterRole.test.js`; the DDL is not in `pgadmin/01-ddl-all.sql`.
+
+### 16.3 Accounts, test data and helper
+
+**Accounts on staging** (passwords are given in chat at test time, never written here; change any that were shared in chat):
 
 | Login | Name | Role |
 |---|---|---|
-| `pankaj` | Pan mondal (pkmondal@) | **Super Admin** (not Admin) |
+| `pankaj` | Pan mondal (pkmondal@) | **Super Admin** |
 | `harish.mopuri` | Harish Mopuri | Super Admin |
-| `admin` | "Admin Supers" (n8npankajmondal@gmail.com), test account | Was Recruiter; **switched to HR Admin Recruiter on 22 Oct for testing and left that way** |
-| `chhaya.verma598` | Chhaya Verma (user id 15) | **Still Recruiter**. Move her only after deploy (§16.4) |
+| `admin` | "Admin Supers" (n8npankajmondal@gmail.com), test account | **HR Admin Recruiter** |
+| `biswajit.sur` | Biswajit Sur, test account | **Recruiter** (use for H5-05-type checks) |
+| `chhaya.verma598` | Chhaya Verma (user id 15) | **HR Admin Recruiter** (shown in the Admin Portal, 23 Oct) |
 
-No user has the plain `admin` role on staging. Staging approvers (the `mrf_approvers` roster) are the test entries "N16 Chief" / "N16 People" (`@example.invalid`). All non-prod mail is redirected to the test inbox.
+No user has the plain `admin` (Company Admin) role on staging. Staging approvers (`mrf_approvers` roster) are the test entries "N16 Chief" / "N16 People" (`@example.invalid`).
 
-### 16.3 Test data and helper
+**Logging in for tests:** staging's login page has a Cloudflare Turnstile check that needs a human click. For role tests, run local dev (`backend: npm run dev`, `frontend: npm run dev`): localhost uses Turnstile test keys and the staging DB, so the same accounts work there. Approver personal links made by the helper also work on the staging site: replace `http://localhost:5173` with `https://ats-staging.aapnainfotech.com` (same JWT secret).
 
-- **Fixture:** ZZ-TEST MRF **717** (request row #191, "ZZ-TEST MRF Hold 2026-10-22 11:02"). It went through hold → change date → release → hold further → release on the date → approved on behalf, and was then **closed** (`budget_withdrawn`) so it never appears as an open role. Never use MRF 137 (real candidates).
-- **Helper:** [PW-Task/hold-fixture.mjs](PW-Task/hold-fixture.mjs). Test-only; it refuses any DB other than staging. Run it from `backend/`:
-  - `node ../docs/phase3/MRF/PW-Task/hold-fixture.mjs create`: a new ZZ-TEST MRF; approval emails sent; personal approval links printed
-  - `… links <mrfId>`: the current open approval links
-  - `… state <mrfId>`: the MRF, request row, tokens, audit events and email log
-  - `… email <logId>`: an email's subject, buttons and text
-  - `… due <mrfId>`: **test only**, moves `held_until` to yesterday and runs the release sweep twice
+**Fixtures used** (all ZZ-TEST, none open any more). Never use MRF 137 (real candidates).
 
-  It imports `jsonwebtoken` from `backend/node_modules` by absolute path. Fix the path if the repo moves.
+| MRF | Used for | Final state |
+|---|---|---|
+| 717 | 22 Oct full cycle: hold → change date → release → hold further → release on the date → approved on behalf | closed |
+| 827 | 23 Oct H3-07 (held MRF absent from JD screening) + hold-notice template | held, closed |
+| 828 | 23 Oct staging: hold via link → date changed → Release now | pending, closed |
+| 829 | 23 Oct staging: approve via link | approved, closed |
+| 830 | 23 Oct staging: reject via link | rejected |
 
-### 16.4 Remaining steps to go live
+**Helper:** [PW-Task/hold-fixture.mjs](PW-Task/hold-fixture.mjs). Test-only; refuses any DB other than staging. Run from `backend/`:
 
-1. Review → commit → PR (nothing is committed yet).
-2. Deploy to the staging server and set both flags `true` in its env file. The DB already has the DDL.
-3. On staging, set **Chhaya → HR Admin Recruiter** (Admin Portal › Users); she logs out and in. Spot-check R1-10, R1-38, R1-42 and R1-48 with her account, and run H5 once with her.
-4. Run H5-05 with a plain Recruiter login (create one, or move a test account back to Recruiter).
-5. Prod:
-   - Run the DDL with the guarded runner: `cd backend; node scripts/run-ddl.mjs --env .env.production --expect-db recruitmentautomationdbProd --file prisma/ddl/2026-10-22-mrf-hold-and-delegate.sql`, with `--dry-run` first.
-   - Run `npx prisma generate`. On Windows, stop the dev server **and** the `queue:worker` first.
-   - Deploy with the flags **off**.
-   - Add the 4 editable email templates (create-only, never overwrites HR edits): `cd backend; node prisma/seed-mrf-hold-email-templates.js --dry-run`, then without `--dry-run`, with the prod env loaded. Check it prints `Database: recruitmentautomationdbProd`. (Staging: done 22 Oct, rows #52–55.) Without the rows the emails still send, using the built-in default wording.
-   - Move Chhaya's role.
-   - Turn on `MRF_HOLD_ENABLED`, then `MRF_DELEGATE_DECISION_ENABLED`.
-6. Rollback if needed: flags off (the release sweep keeps running, so held MRFs are never stranded); set Chhaya back to `recruiter`; DDL rollback file `2026-10-22-mrf-hold-and-delegate.rollback.sql` (deploy the old build first).
+- `node ../docs/phase3/MRF/PW-Task/hold-fixture.mjs create`: a new ZZ-TEST MRF; approval emails sent; personal links printed
+- `… links <mrfId>`: current open approval links
+- `… state <mrfId>`: the MRF, request row, tokens, audit events and email log
+- `… email <logId>`: an email's subject, buttons and text
+- `… due <mrfId>`: **test only**, moves `held_until` to yesterday and runs the release sweep twice
+
+It imports `jsonwebtoken` from `backend/node_modules` by absolute path. Fix the path if the repo moves. Close every fixture when done: `POST /api/mrf/<id>/close` `{ reason: 'budget_withdrawn', note: 'ZZ-TEST fixture …' }`.
+
+**Local dev gotchas:**
+
+- After pulling a merge that changes `schema.prisma`, stop the dev server **and** `npm run queue:worker`, run `npx prisma generate`, then restart both. A stale client shows as "Failed to load MRF records" / "A database query failed".
+- Only one backend may run: a second `npm run dev` exits with `EADDRINUSE :5000` and emails a "Backend crashed" alert to the dev team.
+- `.env.*` files are gitignored; a fresh worktree has none, so env-dependent tests fail there until one is copied in.
+
+### 16.4 Remaining steps to go live (prod)
+
+1. Merge `project-staging` → `main` as usual.
+2. Run the DDL with the guarded runner: `cd backend; node scripts/run-ddl.mjs --env .env.production --expect-db recruitmentautomationdbProd --file prisma/ddl/2026-10-22-mrf-hold-and-delegate.sql`, with `--dry-run` first.
+3. Run `npx prisma generate` on the server.
+4. Deploy with both flags **off**.
+5. Add the 4 editable email templates (create-only, never overwrites HR edits): `cd backend; node prisma/seed-mrf-hold-email-templates.js --dry-run`, then without `--dry-run`, with the prod env loaded. Check it prints `Database: recruitmentautomationdbProd`. Without the rows the emails still send with the built-in default wording.
+6. Move Chhaya's role on prod (Admin Portal › Users › Role = HR Admin Recruiter); she logs out and in.
+7. Turn on `MRF_HOLD_ENABLED`, then `MRF_DELEGATE_DECISION_ENABLED`.
+8. Rollback if needed: flags off (the release sweep keeps running, so held MRFs are never stranded); set Chhaya back to `recruiter`; DDL rollback file `2026-10-22-mrf-hold-and-delegate.rollback.sql` (deploy the old build first).
 
 ### 16.5 Where the code is (for a reviewer)
 
