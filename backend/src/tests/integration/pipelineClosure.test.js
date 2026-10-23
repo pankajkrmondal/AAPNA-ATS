@@ -275,8 +275,9 @@ describe('PIPE-12 â€” concurrent-MRF journeys for one candidate', () => {
 // â”€â”€ PIPE-14 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('PIPE-14 â€” GET /api/pipeline filters', () => {
-  test('includeClosed defaults to excluding closed journeys', async () => {
+  test('closedOnly shows only closed journeys; the default board hides them', async () => {
     const { journey } = await makeJourney({ name: 'PIPE14' });
+    const { journey: openJourney } = await makeJourney({ name: 'PIPE14-open' });
     await setFinalOutcome(journey.id, { finalOutcomeKey: FINAL_OUTCOMES.REJECTED, actedBy: ACTED_BY });
 
     const idOf = (board) => board.columns.flatMap((c) => c.cards || []).map((c) => String(c.id));
@@ -284,8 +285,20 @@ describe('PIPE-14 â€” GET /api/pipeline filters', () => {
     const defaultBoard = await listPipeline({});
     assert.ok(!idOf(defaultBoard).includes(String(journey.id)), 'a closed journey must not appear by default');
 
-    const withClosed = await listPipeline({ includeClosed: true });
-    assert.ok(idOf(withClosed).includes(String(journey.id)), 'includeClosed=true must surface it');
+    const closedBoard = await listPipeline({ closedOnly: true });
+    assert.ok(idOf(closedBoard).includes(String(journey.id)), 'closedOnly must surface it');
+    assert.ok(!idOf(closedBoard).includes(String(openJourney.id)), 'closedOnly must not show open journeys');
+  });
+
+  test('pausedOnly shows only paused journeys; the default board hides them', async () => {
+    const { journey } = await makeJourney({ name: 'PIPE14-paused' });
+    await prisma.rpa_candidate_pipeline.update({ where: { id: journey.id }, data: { is_paused: true } });
+
+    const idOf = (board) => board.columns.flatMap((c) => c.cards || []).map((c) => String(c.id));
+
+    assert.ok(!idOf(await listPipeline({})).includes(String(journey.id)), 'a paused journey must not appear by default');
+    const pausedBoard = await listPipeline({ pausedOnly: true });
+    assert.ok(idOf(pausedBoard).includes(String(journey.id)), 'pausedOnly must surface it');
   });
 
   test('source filter narrows to vendor-sourced journeys only', async () => {

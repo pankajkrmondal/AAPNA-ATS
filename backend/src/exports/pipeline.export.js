@@ -13,11 +13,12 @@
  *
  * The board's own filter semantics ARE reused exactly (see buildPipelineWhere
  * and the in-memory position/stuckDays passes below) so the CSV never contains
- * rows the board deliberately hides — in particular closed journeys, which are
- * excluded unless `include_closed` is set.
+ * rows the board deliberately hides — closed and paused journeys appear only
+ * in their own views (`closed_only` / `paused_only`).
  */
 import prisma from '../config/database.js';
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
+import { buildBoardViewWhere } from '../utils/pipelineBoardView.js';
 
 /** Matches the chips the board renders for current_stage_status. */
 const STAGE_STATUS_LABEL = {
@@ -51,16 +52,15 @@ const SOURCE_LABEL = {
 
 /**
  * Same `where` the board builds (pipeline.service.js listPipeline).
- * Closed journeys stay hidden unless explicitly requested.
+ * Closed and paused journeys appear only in their own views.
  */
 export function buildPipelineWhere(filters = {}) {
-  const where = {};
+  const where = buildBoardViewWhere(filters);
   if (filters.source) where.source = filters.source;
   if (filters.onHoldOnly) where.current_stage_status = 'hold';
   if (filters.rejectedOnly) where.current_stage_status = 'rejected';
   if (filters.mrfId) where.mrf_id = BigInt(filters.mrfId);
   if (filters.ownedByUsername) where.rpa_shortlisted_candidates = { shortlisted_by: filters.ownedByUsername };
-  if (!filters.includeClosed) where.final_outcome = null;
   return where;
 }
 
@@ -132,7 +132,7 @@ export const columns = [
 export function parseFilters(req) {
   const {
     position, source, on_hold_only: onHoldOnly, rejected_only: rejectedOnly, stuck_days: stuckDays,
-    include_closed: includeClosed, mrf_id: mrfId, owned_by: ownedBy, position_mrf_id: positionMrfId,
+    closed_only: closedOnly, paused_only: pausedOnly, mrf_id: mrfId, owned_by: ownedBy, position_mrf_id: positionMrfId,
   } = req.query;
 
   return {
@@ -141,7 +141,8 @@ export function parseFilters(req) {
     onHoldOnly: onHoldOnly === 'true' || onHoldOnly === '1',
     rejectedOnly: rejectedOnly === 'true' || rejectedOnly === '1',
     stuckDays: stuckDays ? Number(stuckDays) : undefined,
-    includeClosed: includeClosed === 'true' || includeClosed === '1',
+    closedOnly: closedOnly === 'true' || closedOnly === '1',
+    pausedOnly: pausedOnly === 'true' || pausedOnly === '1',
     // The board's per-MRF Position choice (N19) is just an MRF filter here.
     mrfId: mrfId || positionMrfId || undefined,
     // Same server-side resolution as listPipeline — never trust a

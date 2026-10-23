@@ -57,4 +57,9 @@ router.post('/candidate-activity', requireAdmin, settingsController.saveCandidat
 router.get('/position-target', settingsController.getPositionTargetSetting);
 router.post('/position-target', requireAdmin, settingsController.savePositionTargetSetting);
 
+/** Candidate Pipeline auto-pause: journeys idle N days in one stage are paused.
+ *  Anyone signed in can read it; only admins can change it. */
+router.get('/pipeline-auto-pause', settingsController.getPipelineAutoPauseSetting);
+router.post('/pipeline-auto-pause', requireAdmin, settingsController.savePipelineAutoPauseSetting);
+
 export default router;

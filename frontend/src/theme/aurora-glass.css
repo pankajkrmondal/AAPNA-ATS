@@ -1101,7 +1101,89 @@
 .ats-v2 .pipeline-toolbar .ant-input-group-addon,
 .ats-v2 .pipeline-toolbar .ant-btn-default {
   background: var(--glass-3-bg);
-  border-color: var(--glass-2-border);
+  /* Not --glass-2-border: in light mode that is white, so a white control on
+     the white pane had no visible edge at all. */
+  border-color: color-mix(in srgb, var(--brand-primary) 30%, var(--border));
+}
+.ats-v2 .pipeline-toolbar .ant-btn-default:not(:disabled):hover,
+.ats-v2 .pipeline-toolbar .ant-select:hover .ant-select-selector,
+.ats-v2 .pipeline-toolbar .ant-input-affix-wrapper:hover {
+  border-color: var(--brand-primary);
+}
+
+/* The filter strip — a brand-tinted band with an accent edge, so the filters
+   read as one group against the pane rather than dissolving into it. */
+.ats-v2 .pipeline-filterbar {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 22%, transparent);
+  border-inline-start: 4px solid var(--brand-primary);
+}
+.ats-v2 .pipeline-filterbar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-primary-active);
+}
+[data-theme='dark'] .ats-v2 .pipeline-filterbar__label { color: var(--brand-primary); }
+.ats-v2 .pipeline-filterbar__count {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-primary-active);
+  background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+}
+[data-theme='dark'] .ats-v2 .pipeline-filterbar__count { color: var(--brand-primary); }
+
+/* "Ask the board" — the primary entry point, so it gets the brand edge and a
+   filled search button rather than another grey box. */
+.ats-v2 .pipeline-toolbar .pipeline-ask .ant-input-affix-wrapper {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, transparent);
+}
+.ats-v2 .pipeline-toolbar .pipeline-ask .ant-input-affix-wrapper-focused {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 18%, transparent);
+}
+.ats-v2 .pipeline-toolbar .pipeline-ask .ant-input-search-button {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+.ats-v2 .pipeline-toolbar .pipeline-ask .ant-input-search-button:not(:disabled):hover {
+  background: var(--brand-primary-hover);
+  border-color: var(--brand-primary-hover);
+  color: #fff;
+}
+
+/* Toggle filters as pill chips: an outlined pill when off, a filled brand
+   pill when on, so which filters are active is visible at a glance. */
+.ats-v2 .pipeline-chip.ant-checkbox-wrapper {
+  margin-inline-start: 0;
+  padding: 4px 12px 4px 10px;
+  border-radius: 999px;
+  background: var(--glass-3-bg);
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 30%, var(--border));
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ats-v2 .pipeline-chip.ant-checkbox-wrapper:hover {
+  border-color: var(--brand-primary);
+}
+.ats-v2 .pipeline-chip.ant-checkbox-wrapper-checked {
+  background: var(--brand-primary-bg);
+  border-color: var(--brand-primary);
+  color: var(--brand-primary-active);
+  font-weight: 600;
+}
+[data-theme='dark'] .ats-v2 .pipeline-chip.ant-checkbox-wrapper-checked {
+  background: color-mix(in srgb, var(--brand-primary) 22%, transparent);
+  color: var(--brand-primary);
 }
 
 /* Columns — tier 2, and NOT lifted on hover. The cards inside a column are the
