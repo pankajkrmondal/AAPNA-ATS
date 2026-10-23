@@ -183,9 +183,21 @@ function mrfRaiseStatus(status) {
   if (!s || s === 'pending' || s === 'pendingfromleader') {
     return { label: 'PENDING', color: 'gold', hint: 'Waiting for the hiring manager to fill in and submit the MRF form.' };
   }
+  if (s === 'held') return { label: 'ON HOLD', color: 'blue', hint: HELD_HINT };
   const label = s.toUpperCase();
   const color = label.includes('MANAGER') || label.includes('COMPLETED') || label.includes('APPROV') ? 'success' : label.includes('REJECT') ? 'error' : 'gold';
   return { label, color, hint: null };
+}
+
+const HELD_HINT = 'On hold at the approval stage. Not open for screening, the pipeline or vendors. On the hold-until date it goes back to pending and every approver is emailed again.';
+
+/** "until 27 Nov 2026 · by Abhijit Roy · Note: …" for an ON HOLD badge, from the list row. */
+function holdDetail(record) {
+  if (!record?.mrf_held_until) return null;
+  const parts = [`On hold until ${fmtDate(record.mrf_held_until)}`];
+  if (record.mrf_held_by_name) parts.push(`by ${record.mrf_held_by_name}`);
+  if (record.mrf_hold_count > 1) parts.push(`held ${record.mrf_hold_count}×`);
+  return `${parts.join(' · ')}.${record.mrf_hold_note ? ` Note: "${record.mrf_hold_note}".` : ''} ${HELD_HINT}`;
 }
 
 /** MRF approval status (rpa_mrf.approval_status) in words, with hover text (N35). */
@@ -202,6 +214,7 @@ function mrfApprovalStatus(status) {
   if (!s || s === 'pending' || s === 'waiting') {
     return { label: s === 'waiting' ? 'WAITING' : 'PENDING', color: 'gold', hint: 'Waiting for an approver’s decision. The approval email has been sent.' };
   }
+  if (s === 'held') return { label: 'ON HOLD', color: 'blue', hint: HELD_HINT };
   const label = s.toUpperCase();
   return { label, color: label.includes('COMPLETE') || label.includes('APPROV') ? 'success' : 'gold', hint: null };
 }
@@ -584,13 +597,17 @@ export default function MRF() {
       title: 'MRF STATUS',
       dataIndex: 'mrfstatus',
       key: 'mrfstatus',
-      render: (status) => {
+      render: (status, record) => {
         const st = mrfRaiseStatus(status);
+        const held = String(status || '').trim().toLowerCase() === 'held';
         return (
-          <Tooltip title={st.hint}>
+          <Tooltip title={held ? holdDetail(record) || st.hint : st.hint}>
             <Tag color={st.color} style={{ borderRadius: 6, fontWeight: 700, fontSize: 11, padding: '2px 8px', textTransform: 'uppercase' }}>
               {st.label}
             </Tag>
+            {held && record?.mrf_held_until ? (
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>until {fmtDate(record.mrf_held_until)}</div>
+            ) : null}
           </Tooltip>
         );
       },
@@ -798,6 +815,7 @@ export default function MRF() {
               <Radio.Button value="All">All</Radio.Button>
               <Radio.Button value="pending">Pending</Radio.Button>
               <Radio.Button value="manager submitted">Manager Submitted</Radio.Button>
+              <Radio.Button value="held">On Hold</Radio.Button>
               <Radio.Button value="closed">Closed</Radio.Button>
             </Radio.Group>
           </div>
@@ -984,7 +1002,16 @@ export default function MRF() {
               <ApprovalTrail
                 key={selectedRecord.mrf_id}
                 mrfId={selectedRecord.mrf_id}
-                onStatus={(status) => setSelectedRecord((r) => (r && r.approval_status !== status ? { ...r, approval_status: status } : r))}
+                onStatus={(status) => setSelectedRecord((r) => {
+                  if (!r || r.approval_status === status) return r;
+                  // The request row's raise status mirrors the decision; a hold
+                  // released returns it to MANAGER SUBMITTED (server does the same).
+                  const s = String(status || '').toLowerCase();
+                  const mrfstatus = ['approved', 'rejected', 'held'].includes(s) ? s
+                    : (s === 'pending' && String(r.approval_status).toLowerCase() === 'held') ? 'managersubmitted' : r.mrfstatus;
+                  return { ...r, approval_status: status, mrfstatus };
+                })}
+                onChanged={() => loadRecords(page, searchQuery, statusTab)}
               />
             )}
 

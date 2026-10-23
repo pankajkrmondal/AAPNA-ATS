@@ -2374,6 +2374,42 @@ h1, h2, h3, h4, h5, h6,
   color: #bcd566 !important;
 }
 
+/* --- MRF approval page: Approve / Reject / Hold decision picker ---
+   Colours come inline per option; this only handles layout and states. */
+.mrf-decision-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.mrf-decision-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 52px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out-quint);
+}
+
+.mrf-decision-btn[aria-checked='false']:hover {
+  filter: brightness(0.96);
+  transform: translateY(-1px);
+}
+
+.mrf-decision-btn:focus-visible {
+  outline: 3px solid #1f6feb;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .mrf-decision-group { gap: 8px; }
+  .mrf-decision-btn { height: 46px; font-size: 14px; gap: 6px; }
+}
+
 /* --- Custom premium horizontal menu (Workable-style capsule tabs) --- */
 .ant-menu-horizontal {
   border-bottom: none !important;
@@ -2484,6 +2520,7 @@ h1, h2, h3, h4, h5, h6,
 }
 .role-badge--admin     { background: #e8f0fb; color: #1d6fb8; border-color: #cfe1f6; }
 .role-badge--recruiter { background: #e7f6ec; color: #1f7a47; border-color: #cdebd6; }
+.role-badge--hr-admin-recruiter { background: #efe9fb; color: #5b3aa8; border-color: #dccff4; }
 .role-badge--vendor    { background: #fdefdc; color: #b5650f; border-color: #f6dcb6; }
 
 /* Dark-mode parity for role pills (light hex above washes out on dark chrome). */
@@ -2492,6 +2529,9 @@ h1, h2, h3, h4, h5, h6,
 }
 [data-theme='dark'] .role-badge--recruiter {
   background: rgba(90, 156, 110, 0.16); color: #7fc999; border-color: rgba(90, 156, 110, 0.32);
+}
+[data-theme='dark'] .role-badge--hr-admin-recruiter {
+  background: rgba(139, 92, 246, 0.16); color: #b9a2f2; border-color: rgba(139, 92, 246, 0.32);
 }
 [data-theme='dark'] .role-badge--vendor {
   background: rgba(240, 180, 41, 0.16); color: #e6b454; border-color: rgba(240, 180, 41, 0.32);

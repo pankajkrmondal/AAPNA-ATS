@@ -43,6 +43,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import useAuth from '../../hooks/useAuth';
+import { isRecruiterTier } from '../../constants/roles';
 import pipelineService from '../../services/pipeline';
 import ReferralChip from '../candidates/ReferralChip';
 import ErrorBoundary from '../common/ErrorBoundary';
@@ -954,8 +955,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // is consulted. Hiding the button is so nobody is offered an action they will
   // be refused, not a security boundary.
   const { user } = useAuth();
-  const canDownloadDossier = ['recruiter', 'hr', 'admin', 'superadmin']
-    .includes(String(user?.role || '').trim().toLowerCase());
+  const canDownloadDossier = isRecruiterTier(user?.role);
   // Editable emails for the schedule/cancel modals (candidate + panel), each
   // prefilled from the server preview. `touched` = recruiter edited it, so we
   // stop overwriting it when the preview refetches (e.g. after a date change).

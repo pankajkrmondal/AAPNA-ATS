@@ -6,6 +6,7 @@ import AppError from '../utils/AppError.js';
 import runExport from '../exports/runExport.js';
 import emailMonitoringExport from '../exports/emailMonitoring.export.js';
 import { SILENT_FINAL_OUTCOMES } from '../services/stageNotification.service.js';
+import { MRF_HOLD_OPTIONAL_PLACEHOLDERS } from '../services/mrfHoldEmailTemplates.js';
 
 /**
  * Structural placeholders that the sending service injects as HTML fragments
@@ -15,7 +16,7 @@ import { SILENT_FINAL_OUTCOMES } from '../services/stageNotification.service.js'
  * recruiter edits the template — removing them from the body is legitimate.
  * Kept in sync with the same constant in frontend/src/pages/EmailManagement.jsx.
  */
-const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
+const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line', ...MRF_HOLD_OPTIONAL_PLACEHOLDERS]);
 
 /**
  * @desc    Get all email templates

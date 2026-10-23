@@ -40,7 +40,11 @@ const { Title, Text } = Typography;
 // recruiter content) — excluded from required-placeholder validation so they
 // can be freely removed from a body. Mirrors OPTIONAL_PLACEHOLDERS in
 // backend/src/controllers/emailTemplate.controller.js.
-const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line']);
+const OPTIONAL_PLACEHOLDERS = new Set([
+  'teams_line', 'reason_line',
+  // MRF Hold & Delegate notices (backend/src/services/mrfHoldEmailTemplates.js)
+  'note_line', 'previous_until_line', 'absence_line', 'hold_until_row', 'comment_line', 'absence_note_line',
+]);
 
 // Tokens that render a whole HTML block the sending service builds, rather than
 // a value a recruiter types. Without this note the screen just shows a bare
@@ -51,6 +55,12 @@ const STRUCTURAL_PLACEHOLDER_NOTES = {
   teams_line: 'Renders the Microsoft Teams join block (button, link, Meeting ID, passcode). Generated automatically at send time — its wording is managed in code, not here.',
   reason_line: 'Renders the cancellation reason, when one was given.',
   notes_line: "Renders the recruiter's interview notes, when present.",
+  note_line: 'Renders the hold note, when one was given.',
+  previous_until_line: 'Renders “(was <old date>)” after the new hold-until date.',
+  absence_line: 'Renders “while the approvers were marked away (<from> – <to>)”, when an absence window was on.',
+  hold_until_row: 'Renders an “On hold until” table row, only when the decision was a hold.',
+  comment_line: 'Renders the decision comment, when one was given.',
+  absence_note_line: 'Renders the absence note in quotes, when one was given.',
 };
 
 // Creating templates from the UI isn't needed right now — flip this back to
@@ -90,6 +100,29 @@ const dummyReplacements = {
   confirm_link: 'https://ats.aapnainfotech.com/pipeline/confirm/sample-token',
   absent_party: 'the candidate did not join',
   notes_line: '<p><strong>Notes:</strong> Please bring a valid photo ID.</p>',
+  // MRF Hold & Delegate notices.
+  mrf_label: 'MRF #188 – Senior Node.js Engineer',
+  hold_until: '20 Nov 2026',
+  held_by: 'Abhijit Roy',
+  held_at: '22 Oct 2026, 11:05 AM IST',
+  changed_by: 'Chhaya Verma',
+  changed_at: '28 Oct 2026, 04:30 PM IST',
+  previous_until_line: ' (was 05 Nov 2026)',
+  note_line: '<p><strong>Note:</strong> Budget freeze till the Q3 review.</p>',
+  approver_name: 'Abhijit Roy',
+  decision: 'approved',
+  decision_upper: 'APPROVED',
+  decided_by: 'Chhaya Verma',
+  decided_by_role: 'HR Admin Recruiter',
+  decided_at: '28 Oct 2026, 11:05 AM IST',
+  absence_line: ' while the approvers were marked away (27 Oct 2026 – 31 Oct 2026)',
+  hold_until_row: '',
+  comment_line: '<p><strong>Comment:</strong> Client confirmed the headcount.</p>',
+  absence_from: '27 Oct 2026',
+  absence_to: '31 Oct 2026',
+  set_by: 'Pankaj Mondal',
+  on_behalf_names: 'Chhaya Verma',
+  absence_note_line: ' (&ldquo;Both travelling&rdquo;)',
 };
 
 /** Substitutes every recognized {token}/{{token}} with its dummy sample value. */
@@ -114,6 +147,7 @@ function sampleRecipientFor(template) {
   if (template.category === 'vendor_status') return 'vendor@partneragency.com';
   if (/panel|interviewer|leadership round/i.test(template.name)) return 'interviewer@aapnainfotech.com';
   if (/internal hr/i.test(template.name)) return 'hr-team@aapnainfotech.com';
+  if (/^MRF /i.test(template.name)) return 'approver@aapnainfotech.com';
   return 'candidate@example.com';
 }
 

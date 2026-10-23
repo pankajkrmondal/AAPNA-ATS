@@ -47,6 +47,7 @@ import ReferralLogPanel from '../components/admin/ReferralLogPanel';
 import SystemLogsPanel from '../components/admin/SystemLogsPanel';
 import useAuth from '../hooks/useAuth';
 import { fmtDate } from '../utils/dateFormat';
+import { outranks, roleLabel } from '../constants/roles';
 
 const { Title, Text } = Typography;
 
@@ -79,6 +80,7 @@ const MODULES_INFO = [
 const ROLE_META = {
   superadmin: { label: 'Super Admin', cls: 'role-badge--superadmin' },
   admin:      { label: 'Admin',       cls: 'role-badge--admin' },
+  hr_admin_recruiter: { label: 'HR Admin Recruiter', cls: 'role-badge--hr-admin-recruiter' },
   recruiter:  { label: 'Recruiter',   cls: 'role-badge--recruiter' },
   vendor:     { label: 'Vendor',      cls: 'role-badge--vendor' },
 };
@@ -139,19 +141,16 @@ export default function AdminDashboard() {
     [currentUser],
   );
 
-  // Mirror of backend ROLE_RANK (config/roles.js) — a requester may manage
-  // accounts of a strictly lower role, or edit their own account.
-  const ROLE_RANK = { superadmin: 40, admin: 30, recruiter: 20, hr: 20, vendor: 10 };
-  const outranks = (requesterRole, targetRole) =>
-    (ROLE_RANK[(requesterRole || '').toLowerCase()] ?? 0) >
-    (ROLE_RANK[(targetRole || '').toLowerCase()] ?? 0);
+  // `outranks` mirrors backend ROLE_RANK (constants/roles.js) — a requester may
+  // manage accounts of a strictly lower role, or edit their own account.
 
   // Roles a requester may assign. A company admin may assign Company Admin /
-  // Recruiter / Vendor within their own company; a superadmin can additionally
-  // assign the global Super Admin role.
+  // HR Admin Recruiter / Recruiter / Vendor within their own company; a
+  // superadmin can additionally assign the global Super Admin role.
   const roleOptions = useMemo(() => {
     const base = [
       { value: 'admin', label: 'Company Admin' },
+      { value: 'hr_admin_recruiter', label: 'HR Admin Recruiter' },
       { value: 'recruiter', label: 'Recruiter' },
       { value: 'vendor', label: 'Vendor' },
     ];
@@ -786,6 +785,7 @@ export default function AdminDashboard() {
                     { value: '', label: 'All Roles' },
                     ...(isSuper ? [{ value: 'superadmin', label: 'Super Admin' }] : []),
                     { value: 'admin', label: 'Admin' },
+                    { value: 'hr_admin_recruiter', label: 'HR Admin Recruiter' },
                     { value: 'recruiter', label: 'Recruiter' },
                     { value: 'vendor', label: 'Vendor' },
                   ]}
@@ -899,7 +899,7 @@ export default function AdminDashboard() {
                           <Text strong style={{ fontSize: 13, color: selected ? 'var(--gold-dark)' : 'var(--text)', display: 'block' }}>
                             {u.first_name} {u.last_name}
                           </Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{u.role}</Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{roleLabel(u.role)}</Text>
                         </div>
                       </div>
                     );

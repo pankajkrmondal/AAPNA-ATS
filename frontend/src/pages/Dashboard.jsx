@@ -190,7 +190,9 @@ export default function Dashboard() {
       value: stats.activeMRFs,
       icon: <FileTextOutlined />,
       color: '#2563eb',
-      footnote: `${stats.pendingApprovalMRFs} awaiting approval${allSuffix}`,
+      // Held MRFs are neither active nor awaiting approval until their
+      // hold-until date, so they are named separately (MRF Hold plan §6.8).
+      footnote: `${stats.pendingApprovalMRFs} awaiting approval${stats.onHoldMRFs ? ` · ${stats.onHoldMRFs} on hold` : ''}${allSuffix}`,
       sparklineData: mrfPoints,
       sparklineUnit: 'raised',
       chart: `New requisitions raised per day over ${rangeLabel}${mrfName ? `, with the same role name as ${mrfName}` : ''}. The number above is every open requisition, however old.`,

@@ -12,6 +12,7 @@
  */
 import prisma from '../config/database.js';
 import { locationParts } from '../utils/screeningFilters.js';
+import { ROLES } from '../config/roles.js';
 
 const TTL_MS = 60 * 60 * 1000;
 const RECRUITER_TTL_MS = 5 * 60 * 1000;
@@ -62,13 +63,13 @@ export async function getLocationSuggestions() {
 /**
  * Active, approved Recruiter accounts as "First Last" (decision 15 Oct 2026:
  * the Recruiter (AAPNA) list follows the user accounts — deactivate a login to
- * remove the name). Legacy `hr` counts as Recruiter.
+ * remove the name). Legacy `hr` and HR Admin Recruiter count as Recruiter.
  * @returns {Promise<string[]>}
  */
 export async function getRecruiterNames() {
   if (recruitersCache && Date.now() - recruitersCache.at < RECRUITER_TTL_MS) return recruitersCache.value;
   const users = await prisma.rpa_users.findMany({
-    where: { role: { in: ['recruiter', 'hr'] }, is_active: true, is_approved: true },
+    where: { role: { in: [ROLES.RECRUITER, 'hr', ROLES.HR_ADMIN_RECRUITER] }, is_active: true, is_approved: true },
     select: { first_name: true, last_name: true },
   });
   const names = [...new Set(users

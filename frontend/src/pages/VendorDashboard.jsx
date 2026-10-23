@@ -30,6 +30,7 @@ import {
 } from '@ant-design/icons';
 import useAuth from '../hooks/useAuth';
 import useTheme from '../hooks/useTheme';
+import { ROLES } from '../constants/roles';
 import vendorService from '../services/vendorService';
 import candidateService from '../services/candidateService';
 import ExportButton from '../components/common/ExportButton';
@@ -192,7 +193,7 @@ export default function VendorDashboard() {
   const { isDark } = useTheme();
   const role = (user?.role || '').toLowerCase();
   // Internal staff review a chosen vendor; vendors view their own submissions.
-  const isStaff = ['admin', 'superadmin', 'recruiter'].includes(role);
+  const isStaff = [ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.HR_ADMIN_RECRUITER, ROLES.RECRUITER].includes(role);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

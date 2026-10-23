@@ -625,6 +625,26 @@ const config = {
   },
 
   /**
+   * MRF Hold and decisions on behalf of absent approvers
+   * (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md).
+   * Requires prisma/ddl/2026-10-22-mrf-hold-and-delegate.sql. Both need the
+   * personal-link audit flow (MRF_APPROVAL_AUDIT_ENABLED=true).
+   */
+  mrfHold: {
+    /**
+     * true = approvers (and on-behalf deciders) may put an MRF on hold. false
+     * blocks NEW holds only: the hold sweep keeps releasing MRFs already held,
+     * so nothing is stranded when the switch is turned off.
+     */
+    enabled: env('MRF_HOLD_ENABLED', 'false') === 'true',
+    /**
+     * true = HR Admin Recruiter / Admin / Super Admin may approve, reject or
+     * hold from the ATS while the approvers are marked away in Settings.
+     */
+    delegateDecisionEnabled: env('MRF_DELEGATE_DECISION_ENABLED', 'false') === 'true',
+  },
+
+  /**
    * Flexible stage movement (docs/phase3/pipeline/FLEXIBLE-STAGE-MOVEMENT-DRAG-DROP-PLAN.md).
    * Requires prisma/ddl/2026-10-16-flexible-stage-movement.sql.
    */

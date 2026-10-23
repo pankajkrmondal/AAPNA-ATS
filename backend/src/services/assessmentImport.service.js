@@ -26,6 +26,7 @@ import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import * as onedriveService from './onedrive.service.js';
 import { emitToRole } from '../socket/index.js';
+import { RECRUITER_ROOM_ROLES } from '../config/roles.js';
 import { setStageOutcome } from './pipeline.service.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
@@ -798,7 +799,8 @@ export async function commitImport({ batchId, clusterMappings = [], rowOverrides
   try {
     // Kept: AssessmentImportModal and other open views still listen for this to
     // refresh themselves. The bell now reads from rpa_notifications instead.
-    emitToRole('recruiter', 'assessment:import_done', serializeBigInts(summary));
+    const payload = serializeBigInts(summary);
+    for (const role of RECRUITER_ROOM_ROLES) emitToRole(role, 'assessment:import_done', payload);
   } catch (err) {
     logger.warn(`assessment:import_done emit failed: ${err.message}`);
   }

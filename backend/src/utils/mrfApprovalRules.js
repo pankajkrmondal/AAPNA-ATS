@@ -6,7 +6,8 @@
  * Plan: docs/phase3/New MRF Request - Approval Request/MRF-Approval-Unified-Fix-Plan.md §6
  */
 
-import { fmtDateTimeIst } from './dateFormat.js';
+import { fmtDate, fmtDateTimeIst, IST } from './dateFormat.js';
+import { canDecideOnBehalf, normalizeRole } from '../config/roles.js';
 
 /** `typ` claim of a personal approval JWT. Stops any other JWT signed with the same secret (e.g. a login token) being accepted as an approval link. */
 export const APPROVAL_TOKEN_TYP = 'mrf_approval';
@@ -239,11 +240,12 @@ export function formatIst(value) {
   return fmtDateTimeIst(value);
 }
 
-/** "approved" / "declined" (the word the outcome email uses for a rejection). */
+/** "approved" / "declined" (the word the outcome email uses for a rejection) / "put on hold". */
 export function decisionWord(status) {
   const s = String(status || '').trim().toLowerCase();
   if (s === 'rejected') return 'declined';
   if (s === 'approved' || s === 'completed') return 'approved';
+  if (s === HELD_STATUS) return 'put on hold';
   return s || 'processed';
 }
 
@@ -256,6 +258,21 @@ export function decisionWord(status) {
 export function publicDecision(mrf, viewerEmail) {
   const status = String(mrf?.approval_status || '').trim().toLowerCase();
   if (!status || status === 'pending' || status === 'waiting') return null;
+  if (status === HELD_STATUS) {
+    // A hold is not a final decision: decided_* stay empty, the hold columns
+    // say who held it and until when.
+    const heldBy = mrf.held_by_email || null;
+    return {
+      status,
+      word: decisionWord(status),
+      decidedByName: mrf.held_by_name || null,
+      decidedAt: mrf.held_at || null,
+      decidedAtIst: mrf.held_at ? formatIst(mrf.held_at) : null,
+      heldUntil: mrf.held_until ? isoDate(mrf.held_until) : null,
+      heldUntilLabel: mrf.held_until ? fmtDate(mrf.held_until, { timeZone: 'UTC' }) : null,
+      isYou: Boolean(viewerEmail && heldBy && viewerEmail.toLowerCase() === heldBy.toLowerCase()),
+    };
+  }
   const decidedBy = mrf.decided_by_email || null;
   return {
     status,
@@ -265,4 +282,226 @@ export function publicDecision(mrf, viewerEmail) {
     decidedAtIst: mrf.decided_at ? formatIst(mrf.decided_at) : null,
     isYou: Boolean(viewerEmail && decidedBy && viewerEmail.toLowerCase() === decidedBy.toLowerCase()),
   };
+}
+
+// ── Hold and decisions on behalf of absent approvers ───────────────────
+// Plan: docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md
+//
+// Every date here is a calendar date in IST, carried as 'YYYY-MM-DD'. A hold
+// "until 27 Nov" means the MRF comes back on the morning of 27 Nov in India,
+// whatever timezone the server runs in.
+
+/** approval_status of an MRF parked at the approval gate. Not an "open" status. */
+export const HELD_STATUS = 'held';
+
+/** Decisions accepted at the approval gate. */
+export const DECISION_ACTIONS = Object.freeze(['approve', 'reject', 'hold']);
+
+/** Defaults when the settings rows are missing. */
+export const HOLD_DEFAULTS = Object.freeze({ defaultDays: 30, maxDays: 180, releaseTime: '09:00' });
+/** Hard ceiling on the max-days setting itself. */
+export const HOLD_MAX_DAYS_LIMIT = 365;
+
+/** Settings keys (rpa_settings). */
+export const HOLD_SETTING_KEYS = Object.freeze({
+  defaultDays: 'mrf_hold_default_days',
+  maxDays: 'mrf_hold_max_days',
+  releaseTime: 'mrf_hold_release_time',
+  absence: 'mrf_approver_absence',
+});
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 'YYYY-MM-DD' of a Date. A JS Date from a DATE column is UTC midnight, so it is
+ * read in UTC; anything else is read in IST.
+ * @param {Date|string} value
+ * @param {{ timeZone?: string }} [opts]
+ */
+export function isoDate(value, { timeZone = 'UTC' } = {}) {
+  if (typeof value === 'string' && ISO_DATE_RE.test(value)) return value;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  return parts; // en-CA formats as YYYY-MM-DD
+}
+
+/** Today's date in India, 'YYYY-MM-DD'. */
+export function todayIst(now = new Date()) {
+  return isoDate(now, { timeZone: IST });
+}
+
+/** 'YYYY-MM-DD' plus n calendar days. */
+export function addDays(isoDay, n) {
+  const d = new Date(`${isoDay}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whole days from a to b ('YYYY-MM-DD'), b - a. */
+export function daysBetween(a, b) {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+}
+
+/** "27 Nov 2026" for a 'YYYY-MM-DD'. */
+export function dateLabel(isoDay) {
+  return isoDay ? fmtDate(new Date(`${isoDay}T00:00:00Z`), { timeZone: 'UTC' }) : '';
+}
+
+/**
+ * Read the hold rules from settings rows, falling back to the defaults on a
+ * missing or broken value (a bad row must never block an approver).
+ * @param {Record<string, string|undefined>} values  key -> raw setting value
+ */
+export function parseHoldRules(values = {}) {
+  const int = (v, d) => {
+    const n = Number.parseInt(String(v ?? ''), 10);
+    return Number.isFinite(n) ? n : d;
+  };
+  let maxDays = int(values[HOLD_SETTING_KEYS.maxDays], HOLD_DEFAULTS.maxDays);
+  if (maxDays < 1 || maxDays > HOLD_MAX_DAYS_LIMIT) maxDays = HOLD_DEFAULTS.maxDays;
+  let defaultDays = int(values[HOLD_SETTING_KEYS.defaultDays], HOLD_DEFAULTS.defaultDays);
+  if (defaultDays < 1) defaultDays = HOLD_DEFAULTS.defaultDays;
+  if (defaultDays > maxDays) defaultDays = maxDays;
+  const rt = String(values[HOLD_SETTING_KEYS.releaseTime] ?? '').trim();
+  const releaseTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(rt) ? rt : HOLD_DEFAULTS.releaseTime;
+  return { defaultDays, maxDays, releaseTime };
+}
+
+/**
+ * Validate hold rules sent from Settings. Returns the clean rules, or the
+ * first error in words.
+ * @param {{ defaultDays: any, maxDays: any, releaseTime: any }} input
+ * @returns {{ ok: true, rules: object } | { ok: false, error: string }}
+ */
+export function validateHoldRules(input = {}) {
+  const defaultDays = Number(input.defaultDays);
+  const maxDays = Number(input.maxDays);
+  const releaseTime = String(input.releaseTime ?? '').trim();
+  if (!Number.isInteger(maxDays) || maxDays < 1 || maxDays > HOLD_MAX_DAYS_LIMIT) {
+    return { ok: false, error: `Maximum hold length must be a whole number of days from 1 to ${HOLD_MAX_DAYS_LIMIT}.` };
+  }
+  if (!Number.isInteger(defaultDays) || defaultDays < 1 || defaultDays > maxDays) {
+    return { ok: false, error: `Default hold length must be a whole number of days from 1 to ${maxDays} (the maximum).` };
+  }
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(releaseTime)) {
+    return { ok: false, error: 'Release time must be HH:MM (24-hour, IST).' };
+  }
+  return { ok: true, rules: { defaultDays, maxDays, releaseTime } };
+}
+
+/** node-cron expression for a daily 'HH:MM' (run with timezone Asia/Kolkata). */
+export function releaseTimeToCron(hhmm) {
+  const [h, m] = String(hhmm || HOLD_DEFAULTS.releaseTime).split(':').map((x) => Number.parseInt(x, 10));
+  return `${m} ${h} * * *`;
+}
+
+/**
+ * The date choices the Hold form offers, for a given "today".
+ * @param {{ defaultDays: number, maxDays: number }} rules
+ */
+export function holdDateBounds(rules, today = todayIst()) {
+  return {
+    minDate: addDays(today, 1),
+    maxDate: addDays(today, rules.maxDays),
+    defaultDate: addDays(today, rules.defaultDays),
+    defaultDays: rules.defaultDays,
+    maxDays: rules.maxDays,
+  };
+}
+
+/**
+ * Check a hold-until date: a real date, from tomorrow to today + maxDays (IST).
+ * @param {any} value  'YYYY-MM-DD'
+ * @param {{ maxDays: number, today?: string }} opts
+ * @returns {{ ok: true, date: string } | { ok: false, error: string }}
+ */
+export function validateHoldUntil(value, { maxDays, today = todayIst() }) {
+  const s = String(value ?? '').trim();
+  if (!ISO_DATE_RE.test(s) || Number.isNaN(Date.parse(`${s}T00:00:00Z`)) || isoDate(new Date(`${s}T00:00:00Z`)) !== s) {
+    return { ok: false, error: 'Please choose the date the hold should end (YYYY-MM-DD).' };
+  }
+  if (s <= today) return { ok: false, error: 'The hold-until date must be after today.' };
+  const latest = addDays(today, maxDays);
+  if (s > latest) {
+    return { ok: false, error: `An MRF can be held for at most ${maxDays} days (until ${dateLabel(latest)}).` };
+  }
+  return { ok: true, date: s };
+}
+
+/**
+ * The approver-absence window from its setting value (JSON). Broken or missing
+ * means "not away".
+ * @returns {{ active: boolean, from: string|null, to: string|null, note: string|null, setByName?: string|null, setAt?: string|null }}
+ */
+export function parseAbsence(raw) {
+  const off = { active: false, from: null, to: null, note: null, setByName: null, setAt: null };
+  if (!raw) return off;
+  let v;
+  try {
+    v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return off;
+  }
+  if (!v || typeof v !== 'object') return off;
+  const from = ISO_DATE_RE.test(String(v.from || '')) ? v.from : null;
+  const to = ISO_DATE_RE.test(String(v.to || '')) ? v.to : null;
+  return {
+    active: Boolean(v.active) && Boolean(from) && Boolean(to) && from <= to,
+    from,
+    to,
+    note: v.note ? String(v.note).slice(0, 500) : null,
+    setByName: v.setByName || null,
+    setByUserId: v.setByUserId ?? null,
+    setAt: v.setAt || null,
+  };
+}
+
+/**
+ * Validate an absence window sent from Settings.
+ * @returns {{ ok: true, absence: object } | { ok: false, error: string }}
+ */
+export function validateAbsence(input = {}) {
+  const active = Boolean(input.active);
+  const note = input.note ? String(input.note).trim().slice(0, 500) : null;
+  if (!active) return { ok: true, absence: { active: false, from: input.from || null, to: input.to || null, note } };
+  const from = String(input.from || '').trim();
+  const to = String(input.to || '').trim();
+  if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) {
+    return { ok: false, error: 'Choose both the From and To dates of the absence.' };
+  }
+  if (from > to) return { ok: false, error: 'The absence must end on or after the day it starts.' };
+  return { ok: true, absence: { active: true, from, to, note } };
+}
+
+/** True while the approvers are marked away today (inclusive of both ends, IST). */
+export function isAbsenceActive(absence, today = todayIst()) {
+  return Boolean(absence?.active && absence.from && absence.to && absence.from <= today && today <= absence.to);
+}
+
+/**
+ * May this ATS user approve / reject / hold on behalf of the approvers right now?
+ * Role HR Admin Recruiter or above, an active account, and an absence window
+ * that covers today.
+ * @returns {{ ok: boolean, reason: null|'role_too_low'|'inactive_user'|'no_absence_window' }}
+ */
+export function canDecideAsDelegate({ user, absence, today = todayIst() }) {
+  if (!user || !canDecideOnBehalf(normalizeRole(user.role))) return { ok: false, reason: 'role_too_low' };
+  if (user.is_active === false) return { ok: false, reason: 'inactive_user' };
+  if (!isAbsenceActive(absence, today)) return { ok: false, reason: 'no_absence_window' };
+  return { ok: true, reason: null };
+}
+
+/** Words for a canDecideAsDelegate() refusal. */
+export function delegateRefusalMessage(reason) {
+  switch (reason) {
+    case 'role_too_low':
+      return 'Only an HR Admin Recruiter, Admin or Super Admin can decide on behalf of the approvers.';
+    case 'inactive_user':
+      return 'Your account is not active.';
+    case 'no_absence_window':
+      return 'Deciding on behalf of the approvers is only allowed while they are marked away (Settings › MRF Approval & Hold).';
+    default:
+      return 'You cannot decide this MRF on behalf of the approvers.';
+  }
 }

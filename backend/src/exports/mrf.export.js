@@ -60,6 +60,7 @@ export function mrfStatusLabel(status) {
   const statusStr = (status || '').trim().toLowerCase();
   if (statusStr === 'managersubmitted' || statusStr === 'manager submitted') return 'MANAGER SUBMITTED';
   if (statusStr === 'pending' || statusStr === 'pendingfromleader' || statusStr === '') return 'PENDING';
+  if (statusStr === 'held') return 'ON HOLD';
   return (status || '').toUpperCase();
 }
 
@@ -86,7 +87,10 @@ export async function attachApprovalStatus(records) {
   const linked = mrfIds.length > 0
     ? await prisma.rpa_mrf.findMany({
       where: { id: { in: mrfIds } },
-      select: { id: true, approval_status: true, filled_at: true, closed_at: true, closure_reason: true },
+      select: {
+        id: true, approval_status: true, filled_at: true, closed_at: true, closure_reason: true,
+        held_until: true, held_by_name: true, hold_note: true, hold_count: true,
+      },
     })
     : [];
 
@@ -103,6 +107,11 @@ export async function attachApprovalStatus(records) {
       mrf_filled_at: mrf?.filled_at || null,
       mrf_closed_at: mrf?.closed_at || null,
       mrf_closure_reason: mrf?.closure_reason || null,
+      // Hold at the approval gate, for the ON HOLD badge (and tooltip) on the list.
+      mrf_held_until: mrf?.approval_status === 'held' && mrf.held_until ? mrf.held_until.toISOString().slice(0, 10) : null,
+      mrf_held_by_name: mrf?.approval_status === 'held' ? mrf.held_by_name || null : null,
+      mrf_hold_note: mrf?.approval_status === 'held' ? mrf.hold_note || null : null,
+      mrf_hold_count: mrf?.hold_count ?? 0,
     };
   });
 }

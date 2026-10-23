@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as settingsController from '../controllers/settings.controller.js';
+import * as mrfHoldSettingsController from '../controllers/mrfHoldSettings.controller.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
@@ -40,5 +41,11 @@ router.post('/flow-keys', settingsController.saveFlowKey);
  *  (the shortlist dialog previews it); only admins can change it. */
 router.get('/company-profile', settingsController.getCompanyProfileSetting);
 router.post('/company-profile', requireAdmin, settingsController.saveCompanyProfileSetting);
+
+/** MRF Approval & Hold: hold rules (HR Admin Recruiter+) and the approver-absence
+ *  window (Admin+). Role checks in the controller, so refusals say why. */
+router.get('/mrf-approval', mrfHoldSettingsController.getMrfApprovalSettings);
+router.put('/mrf-approval/hold-rules', mrfHoldSettingsController.saveMrfHoldRules);
+router.put('/mrf-approval/absence', requireAdmin, mrfHoldSettingsController.saveMrfApproverAbsence);
 
 export default router;
