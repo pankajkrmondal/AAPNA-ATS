@@ -39,3 +39,14 @@
 | H3-05 | PASS | Event 114; 409 "This approval link was replaced by a newer one. Please use the most recent approval email." |
 | H3-06 | PASS | 847/848 open until the decision in H5, then closed |
 | H3-07 | PASS (unit + code) | `mrfHoldRules.test.js` "held is not open"; `getApprovedRoles` / `candidateTag` require approved. Not checked in the JD dropdown UI during the hold |
+
+### Run 2: 23 Oct 2026 (H3-07 in the browser + editable hold-notice template)
+
+Fixture: ZZ-TEST MRF **827** (request row #195), held by "N16 Chief" through the personal link until 22 Nov 2026, then **closed** (`budget_withdrawn`) so the sweep never re-sends it.
+
+| ID | Result | Notes |
+|---|---|---|
+| H3-07 | PASS (browser) | While 827 was held: `GET /api/mrf/held` = [827]; `GET /api/screening/roles` (31 roles) has no 827; Candidate Screening › JD Filtering dropdown search "ZZ-TEST MRF Hold" → **No data** ([screenshot](screenshots/H3-07-jd-dropdown-held-absent.jpg)) |
+| Template | PASS | Hold notice (log 875) rendered from Email Templates row #52 "MRF On Hold Notice": subject "MRF #827 – … – on hold until 22 Nov 2026", branded header/footer, note shown and HTML-escaped. Event 139 `hold_notice_sent`, 140 `decision_confirmation_sent` |
+
+**Seen, not fixed (test data):** the JD dropdown still offers seven old approved ZZ-TEST fixtures from 25 Sep (MRF 670, 671, 672, 675, 677, 679, 680). Close them if they should not appear as open roles.
