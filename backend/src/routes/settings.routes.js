@@ -41,4 +41,14 @@ router.post('/flow-keys', settingsController.saveFlowKey);
 router.get('/company-profile', settingsController.getCompanyProfileSetting);
 router.post('/company-profile', requireAdmin, settingsController.saveCompanyProfileSetting);
 
+/** Active window for "Active candidates first" screening order (L01). Anyone
+ *  signed in can read it; only admins can change it. */
+router.get('/candidate-activity', settingsController.getCandidateActivitySetting);
+router.post('/candidate-activity', requireAdmin, settingsController.saveCandidateActivitySetting);
+
+/** Target days for an open position's health (L06, D9): past it, a position is
+ *  "At risk". Anyone signed in can read it; only admins can change it. */
+router.get('/position-target', settingsController.getPositionTargetSetting);
+router.post('/position-target', requireAdmin, settingsController.savePositionTargetSetting);
+
 export default router;

@@ -671,6 +671,9 @@ export async function getCandidateScorecardReport(pipelineId) {
     const s = serializeCard(c);
     return {
       scorecard_id: s.id,
+      // The booking it belongs to: the drawer splits a re-done stage's cards
+      // into this attempt and earlier attempts by it (L02-C).
+      schedule_id: s.schedule_id ?? null,
       stage_key: s.stage_key,
       stage_label: labelByKey[s.stage_key] || s.stage_key,
       card_type: s.card_type,

@@ -8,7 +8,11 @@
 > turned out differently from the plan below — both recorded in §6:
 > the vendor rate was **dropped, not rebuilt** (the staging data check failed),
 > and a fourth event type (`skip`) had to be handled. §2.6 (Role Summary double
-> aggregation) is the one item deliberately left open.
+> aggregation) was left open until **L06 (23 Oct 2026)** closed it: the grouping is now
+> server-side, one row per MRF, in `backend/src/utils/roleSummary.js`, used by both
+> `GET /api/screening/analytics/role-summary` and the CSV. L06 also added the page-wide
+> date range and the Open Positions tab — see
+> [CHANGES-2026-10-23-L06-open-position-analytics.md](./changelog/CHANGES-2026-10-23-L06-open-position-analytics.md).
 >
 > **⚠ Read §8 before trusting §1's status column.** A third pass on **2026-08-26**
 > found four further metrics that were silently wrong — including a headline tile
@@ -71,8 +75,8 @@ Two things worth knowing that are **not** defects to fix here:
 
 > ⚠️ **Historical — 2.1 through 2.5 were all fixed on 2026-08-11** (see the status note at the
 > top of this file and the shipped-deltas in §6). This table is the original defect list that
-> justified the work, kept because §3 below is written against its numbering. **Only 2.6 is
-> still open.** Verified 2026-08-21: `pipelineAnalytics.test.js` passes 16/16, and
+> justified the work, kept because §3 below is written against its numbering. **2.6 was
+> closed by L06 on 2026-10-23.** Verified 2026-08-21: `pipelineAnalytics.test.js` passes 16/16, and
 > `pipeline.service.js:1252-1266` now queries real scorecard rows for "Awaiting feedback".
 
 | # | Defect | Where | Impact |

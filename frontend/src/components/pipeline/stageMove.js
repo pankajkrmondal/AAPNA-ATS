@@ -29,15 +29,26 @@ export function describeMove({ stages, fromKey, toKey, passedStageKeys = [] }) {
   };
 }
 
+/** Passed stages that can never be re-done (L02-C): mirrors the backend. */
+export const REDO_EXCLUDED_STAGE_KEYS = Object.freeze(['documents', 'offer']);
+
+/** Moving into this stage re-does a passed stage (L02-C): a reason is required. */
+export function isRedoMove(card, stageKey) {
+  return (card?.passed_stage_keys || []).includes(stageKey) && !REDO_EXCLUDED_STAGE_KEYS.includes(stageKey);
+}
+
 /**
- * Why a card cannot go to a stage, or null when it can.
+ * Why a card cannot go to a stage, or null when it can. A passed stage can
+ * be re-done with a reason (L02-C), except Documents and Offer.
  * @param {{ current_stage_key: string, passed_stage_keys?: string[] }} card
  * @param {string} stageKey
  * @returns {string|null}
  */
 export function moveBlockReason(card, stageKey) {
   if (stageKey === card.current_stage_key) return 'The candidate is already here.';
-  if ((card.passed_stage_keys || []).includes(stageKey)) return 'Already passed. A passed stage cannot be entered again.';
+  if ((card.passed_stage_keys || []).includes(stageKey) && REDO_EXCLUDED_STAGE_KEYS.includes(stageKey)) {
+    return 'Already passed. Documents and Offer cannot be re-done.';
+  }
   return null;
 }
 

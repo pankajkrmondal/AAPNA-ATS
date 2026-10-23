@@ -15,6 +15,7 @@ import {
   CalendarOutlined,
   ArrowRightOutlined,
   CheckCircleOutlined,
+  AlertOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -24,9 +25,12 @@ export default function ActionCenterCard({
   reviewCount = 0,
   awaitingScreening = 0,
   interviewsToday = 0,
+  rolesNeedingAttention = null,
   onNavigate,
 }) {
   const items = [
+    // L06: open MRFs whose health is At risk or Watch (null = not loaded / not staff).
+    ...(rolesNeedingAttention == null ? [] : [{ key: 'roles', label: 'Roles needing attention', desc: 'Open positions marked At risk or Watch this week. Opens Analytics → Open Positions.', count: rolesNeedingAttention, icon: <AlertOutlined />, color: '#b45309', url: '/analytics?tab=open' }]),
     // `pendingMrfCount` now comes from the server's approval_status = pending count.
     // It was previously the LENGTH of a list fetched with status=pending, which mapped
     // onto `mrfstatus` (submission state) rather than approval state and was capped at

@@ -212,6 +212,14 @@ What this means for the build:
 ### C7. Re-doing a stage the candidate already passed: not allowed
 **Decided (D2): NO re-dos.** A candidate can be moved only into a stage that is `not_visited` or `skipped`. A stage the candidate has **passed** (Approved, i.e. `completed`) can never be entered again, by anyone. The server enforces it (`moveToStage` returns 400) and the board greys out that column while the card is dragged.
 
+> **Superseded on 22 Oct 2026 by L02-C (Harish).** A passed stage **can** now be re-done, with a required reason, except Documents and Offer.
+> - The earlier attempt stays as history: superseded bookings, older Zeko rows and results, shown as "Earlier attempt" in the drawer. It does not lock the stage or count as its score.
+> - A re-done Zeko round uses a different Zeko job.
+> - Approving a re-done stage returns the candidate to the stage they came from.
+> - The outcome email box starts unticked.
+>
+> See `docs/changelog/CHANGES-2026-10-22-L02C-stage-redo.md`.
+
 - **Skipped is not passed.** A stage the candidate was moved past without doing it can still be visited later. That is what the walk-in case needs.
 - **Side benefit:** a second Zeko round for the same job (which collides with the unique key `(candidate_id, zeko_job_id, stage)`) and a second Evalground score (which would overwrite the first) cannot happen through a move. No data-model work is needed for them.
 - **Approve landing (C4)** follows the same rule.
@@ -313,7 +321,7 @@ Approve, cancel and withdraw already write their own events, so the full story o
 | # | Question | Decision |
 |---|---|---|
 | D1 | Who may move candidates? | **Any user with access to the Candidate Pipeline menu.** Already enforced by `checkModuleAccess('recruitment_pipeline')` on every pipeline route; no new setting |
-| D2 | Can a candidate be moved back into a stage they already passed? | **NO.** Only not-visited or skipped stages are move targets (C7) |
+| D2 | Can a candidate be moved back into a stage they already passed? | **NO.** Only not-visited or skipped stages are move targets (C7). **Changed 22 Oct 2026 (L02-C): yes, with a reason, except Documents and Offer.** |
 | D3 | Can HR unlock a started stage by cancelling the activity? | **YES.** Interviews and Zeko already have cancel. New: Withdraw Evalground invite, Cancel document request (C11) |
 | D4 | Must every mandatory stage be done before Documents? | **NO.** Any move from HR Screening (Zeko) to Offer is allowed (C5) |
 | D5 | Does a move email the candidate or the vendor? | **No, not for now.** Every move needs a **confirmation popup** so accidental drags do nothing (C8) |

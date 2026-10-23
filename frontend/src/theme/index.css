@@ -3718,6 +3718,10 @@ html.theme-transition *::after {
 .cp-column-drop--invalid { opacity: 0.45; filter: grayscale(0.6); transition: opacity 120ms ease; }
 .cp-column-drop--valid { transition: box-shadow 120ms ease; }
 .cp-column-drop--over { box-shadow: 0 0 0 2px var(--brand-primary, #7a922e), var(--shadow-md); }
+/* L02-C: a passed column the dragged card can re-do. */
+.cp-column-drop--redo { outline: 2px dashed var(--warning, #d4a017); outline-offset: -2px; }
+.cp-column-drop--redo.cp-column-drop--over { box-shadow: 0 0 0 2px var(--warning, #d4a017), var(--shadow-md); }
+.cp-move-opt__badge--redo { color: var(--warn-text); background: var(--warn-bg); }
 .cp-card-draggable { touch-action: none; }
 .cp-card-draggable--dragging { opacity: 0.35; }
 /* Card move / lock controls: coloured chips so they stand out on the card at a
@@ -4034,3 +4038,35 @@ html.theme-transition *::after {
 .cp-emails-surface { background: var(--ink-3); border-radius: var(--radius-md); padding: 10px 14px 2px; }
 
 
+
+/* ----- Analytics › Open Positions (L06) -----
+   Synced with the app's own tokens (23 Oct 2026):
+   - Health uses the KPI semantic colours (--kpi-d red = at risk, --kpi-e amber =
+     watch, --kpi-c green = on track), always paired with a word.
+   - Source series use the app's avatar colours (olive, blue, magenta, gold), in
+     that fixed order. Validated with the dataviz validator: light passes; gold
+     sits below 3:1 on the surface, so every bar carries its total and the chart a
+     table view. Dark uses stepped shades of the same hues (all checks pass). */
+:root, [data-theme='light'] {
+  --op-src-hr: var(--avatar-1, #7a922e);
+  --op-src-vendor: #2f54eb;
+  --op-src-recruiter: #eb2f96;
+  --op-src-other: #d4a017;
+  --op-risk: var(--kpi-d);
+  --op-risk-tint: var(--kpi-d-tint);
+  --op-risk-ink: var(--kpi-d);
+  --op-watch: var(--kpi-e);
+  --op-watch-tint: var(--kpi-e-tint);
+  --op-watch-ink: #8a6420;
+  --op-ok: var(--kpi-c);
+  --op-ok-tint: var(--kpi-c-tint);
+  --op-ok-ink: var(--kpi-c);
+  --op-muted: var(--text-3);
+}
+[data-theme='dark'] {
+  --op-src-hr: #7f9636;
+  --op-src-vendor: #5b7ff0;
+  --op-src-recruiter: #d6489a;
+  --op-src-other: #ad8510;
+  --op-watch-ink: var(--kpi-e);
+}

@@ -33,6 +33,12 @@ router.get('/upcoming-interviews', requireStaff, dashboardController.getUpcoming
 router.get('/mrf-options', requireStaff, dashboardController.getMrfOptions);
 
 /**
+ * GET /api/dashboard/open-positions
+ * Open positions pulse (L06): health, applicants in the last 7 days, attention.
+ */
+router.get('/open-positions', requireStaff, dashboardController.getOpenPositionsPulse);
+
+/**
  * GET /api/dashboard/recent-uploads
  * List of recent CV uploads — optional ?limit=N query param
  */

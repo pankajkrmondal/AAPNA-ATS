@@ -98,6 +98,15 @@ router.get('/:id/emails', candidateController.getCandidateEmails);
  */
 router.get('/:id/pipeline-scores', requireStaff, candidateController.getCandidatePipelineScores);
 
+/**
+ * JD tags on Search Candidate (L02-B). A wrong tag can be removed while
+ * another remains; the only tag, or a JD the candidate is in the pipeline for,
+ * can only be switched (the pipeline one through Move to another JD).
+ */
+router.get('/:id/tags', requireStaff, candidateController.getCandidateTags);
+router.delete('/:id/tags/:mrfId', requireStaff, candidateController.removeCandidateTag);
+router.post('/:id/tags/:mrfId/switch', requireStaff, candidateController.switchCandidateTag);
+
 // ── Referral candidate (P1) ───────────────────────────────────────────
 //
 // Separate routes from the general PATCH above, because the three actions carry

@@ -67,6 +67,21 @@ const candidateService = {
     return api.get(`/candidates/${id}/pipeline-scores`);
   },
 
+  /** JDs the candidate is tagged to, with what each chip allows (L02-B). */
+  getTags(id) {
+    return api.get(`/candidates/${id}/tags`);
+  },
+
+  /** Remove a wrong JD tag (never the only one, never one in the pipeline). */
+  removeTag(id, mrfId, reason) {
+    return api.delete(`/candidates/${id}/tags/${mrfId}`, { data: { reason } });
+  },
+
+  /** Switch a JD tag to the right JD. */
+  switchTag(id, mrfId, payload) {
+    return api.post(`/candidates/${id}/tags/${mrfId}/switch`, payload);
+  },
+
   // ── Referral candidate ──────────────────────────────────────────────
   // Separate from update() on purpose: the flag is audited, and setting it and
   // removing it carry different permissions server-side (any recruiter may set;

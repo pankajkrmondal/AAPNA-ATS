@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card,
   Tabs,
@@ -34,48 +35,19 @@ import pipelineService from '../services/pipeline';
 import DeliveryMonitoring from '../components/email/DeliveryMonitoring';
 import ExportButton from '../components/common/ExportButton';
 import PositionsTab from '../components/analytics/PositionsTab';
+import AnalyticsRangeBar from '../components/analytics/AnalyticsRangeBar';
+import RoleDetailDrawer from '../components/analytics/RoleDetailDrawer';
+import MetricCandidatesDrawer from '../components/analytics/MetricCandidatesDrawer';
+import { ACCENT, DEFAULT_RANGE, SectionTitle, rangeParams } from '../components/analytics/openPositionsShared';
+import dayjs from 'dayjs';
 import KpiCard from '../components/common/KpiCard';
 import MetricInfo from '../components/common/MetricInfo';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 
 const { Title, Text } = Typography;
 
-/**
- * Semantic palette, shared with the Dashboard / HR Upload / Vendor screens.
- * Colour carries MEANING here rather than decoration — gold reads as positive,
- * red as rejected/failed, blue as in-flight, amber as waiting on someone. Kept
- * as one map so a tile, a tag and a table cell for the same concept cannot
- * drift to different colours.
- */
-const ACCENT = {
-  positive: { color: 'var(--kpi-a)', tint: 'var(--kpi-a-tint)', accent: 'linear-gradient(90deg,var(--kpi-a),var(--kpi-a-2))' },
-  negative: { color: 'var(--kpi-d)', tint: 'var(--kpi-d-tint)', accent: 'linear-gradient(90deg,var(--kpi-d),var(--kpi-d-2))' },
-  progress: { color: 'var(--kpi-b)', tint: 'var(--kpi-b-tint)', accent: 'linear-gradient(90deg,var(--kpi-b),var(--kpi-b-2))' },
-  waiting: { color: 'var(--kpi-e)', tint: 'var(--kpi-e-tint)', accent: 'linear-gradient(90deg,var(--kpi-e),var(--kpi-e-2))' },
-  neutral: { color: 'var(--text-2)', tint: 'color-mix(in srgb, var(--text-2) 12%, transparent)', accent: 'linear-gradient(90deg,var(--text-2),var(--text-3))' },
-  success: { color: 'var(--kpi-c)', tint: 'var(--kpi-c-tint)', accent: 'linear-gradient(90deg,var(--kpi-c),var(--kpi-c-2))' },
-};
-
-/**
- * Card header used across all four tabs: a coloured rule + title, so every
- * panel is scannable at a glance and colour-coded to what it reports on.
- */
-function SectionTitle({ children, accent = ACCENT.positive, hint }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      <span style={{
-        width: 4, height: 18, borderRadius: 3, background: accent.accent, flexShrink: 0,
-      }}
-      />
-      <span>
-        <Text strong style={{ fontSize: 15 }}>{children}</Text>
-        {hint && (
-          <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 400 }}>{hint}</Text>
-        )}
-      </span>
-    </span>
-  );
-}
+// ACCENT and SectionTitle now live in components/analytics/openPositionsShared.jsx
+// (L06), shared with the Open Positions board and the role view.
 
 /* The panel shell (radius / border / shadow) is now the shared `.panel-shell`
    class in theme/index.css — same values, but reachable by a stylesheet. It was
@@ -124,8 +96,7 @@ const DEFAULT_ANALYTICS_PARAMS = Object.freeze({
 const daysOptions = (values) => values.map((v) => ({ value: v, label: `${v} days` }));
 const STUCK_THRESHOLD_OPTIONS = daysOptions([5, 10, 14, 30]);
 const HOLD_THRESHOLD_OPTIONS = daysOptions([7, 30, 60, 90]);
-// Mirrors the Email Delivery tab's 7/30/90 selector so the page is consistent.
-const REJECTION_WINDOW_OPTIONS = daysOptions([7, 30, 90]);
+// L06: the rejection table follows the page range; its own window select is gone (D7).
 
 /**
  * PipelineInsights — stage funnel, stuck candidates, rejection reasons.
@@ -149,7 +120,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             <KpiCard
               index={0}
               icon={<ApartmentOutlined />}
-              label="Active in pipeline"
+              label="Active in pipeline · now"
                 metric="activeInPipeline"
               value={tiles.active_in_pipeline ?? 0}
               {...ACCENT.progress}
@@ -162,7 +133,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
               <KpiCard
                 index={1}
                 icon={<SolutionOutlined />}
-                label="Awaiting feedback"
+                label="Awaiting feedback · now"
                 metric="awaitingFeedback"
                 value={tiles.awaiting_feedback ?? 0}
                 {...ACCENT.waiting}
@@ -187,7 +158,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
               <KpiCard
                 index={2}
                 icon={<ClockCircleOutlined />}
-                label={`On hold > ${tiles.hold_threshold_days ?? 30} days`}
+                label={`On hold > ${tiles.hold_threshold_days ?? 30} days · now`}
                 metric="onHoldOverThreshold"
                 value={tiles.on_hold_over_threshold ?? 0}
                 {...ACCENT.negative}
@@ -212,7 +183,7 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
             <KpiCard
               index={3}
               icon={<FileDoneOutlined />}
-              label="Offers pending"
+              label="Offers pending · now"
                 metric="offersPending"
               value={tiles.offers_pending ?? 0}
               {...ACCENT.positive}
@@ -225,6 +196,9 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
         title={(
           <SectionTitle accent={ACCENT.positive}>
             {funnel.mrf_label ? `Stage funnel — ${funnel.mrf_label}` : 'Stage funnel'}
+            {data?.range?.from && (
+              <Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: 400 }}>candidates who entered the pipeline {data.range.label}</Text>
+            )}
           </SectionTitle>
         )}
         loading={loading}
@@ -394,21 +368,12 @@ function PipelineInsights({ data, loading, errored, params, onParamsChange }) {
           <Card
             title={(
               <SectionTitle accent={ACCENT.negative} hint="from the Candidate Pipeline">
-                {`Rejection reasons — last ${data?.rejectionWindowDays ?? 30} days`}
+                {data?.range?.from ? `Rejection reasons — ${data.range.label}` : 'Rejection reasons — all time'}
               </SectionTitle>
             )}
             className="panel-shell"
             extra={(
               <Space size={8}>
-                <Tooltip title="How far back to look for rejections. At 30 days this table counts only rejections recorded in the last 30 days, so recent hiring problems are not diluted by older ones. Widen it for a longer-term view.">
-                  <Select
-                    size="small"
-                    value={params.rejection_window_days}
-                    onChange={(v) => onParamsChange({ rejection_window_days: v })}
-                    options={REJECTION_WINDOW_OPTIONS}
-                    style={{ width: 100, cursor: 'help' }}
-                  />
-                </Tooltip>
                 <ExportButton
                   tooltip="Downloads why candidates were rejected in the selected window — each reason, how often it occurred, and the stage it happens at most."
                   request={(cfg) => pipelineService.exportAnalytics('rejection_reasons', { ...cfg, params })}
@@ -694,7 +659,46 @@ function RecruiterInsights({ data, loading, errored, params }) {
 export default function Analytics() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ pipeline: [], candidates: [], tiles: {} });
-  const [activeTab, setActiveTab] = useState('analytics');
+  // L06: Open Positions is the first tab and opens by default. A deep link
+  // (/analytics?tab=open&mrf=<id>, from the Dashboard pulse, the Pipeline
+  // header or the MRF page) opens that role's view straight away.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'open');
+  const [roleMrfId, setRoleMrfId] = useState(() => {
+    const id = Number(searchParams.get('mrf'));
+    return Number.isFinite(id) && id > 0 ? id : null;
+  });
+  const [metricTarget, setMetricTarget] = useState(null);
+  // The date range every tab follows (L06, D1: last 7 days by default).
+  const [range, setRange] = useState(DEFAULT_RANGE);
+  const rangeApi = useMemo(() => rangeParams(range), [range]);
+  const rangeKey = JSON.stringify(rangeApi);
+  const rangeCaption = rangeApi.from
+    ? `${dayjs(rangeApi.from).format('DD MMM YYYY')} – ${dayjs(rangeApi.to).format('DD MMM YYYY')}`
+    : 'All time';
+  const previousCaption = useMemo(() => {
+    if (!rangeApi.from) return null;
+    const days = dayjs(rangeApi.to).diff(dayjs(rangeApi.from), 'day') + 1;
+    const to = dayjs(rangeApi.from).subtract(1, 'day');
+    const from = to.subtract(days - 1, 'day');
+    return `${from.format('DD MMM YYYY')} – ${to.format('DD MMM YYYY')}`;
+  }, [rangeApi]);
+  const [roleSummary, setRoleSummary] = useState({ rows: [], loading: true });
+
+  const openRole = (mrfId) => {
+    setRoleMrfId(mrfId);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'open');
+    next.set('mrf', String(mrfId));
+    setSearchParams(next, { replace: true });
+  };
+  const closeRole = () => {
+    setRoleMrfId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('mrf');
+    setSearchParams(next, { replace: true });
+  };
+  const openMetric = (mrfId, metric) => setMetricTarget({ mrfId, metric });
   // Distinct from pipelineAnalytics.loading: that one drives per-card skeletons
   // on first paint, this one drives the blocking scrim on a user-triggered
   // refetch. Conflating them would put a full-screen overlay over the initial
@@ -720,7 +724,9 @@ export default function Analytics() {
 
   useEffect(() => {
     fetchMainData();
-  }, []);
+    loadRoleSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
 
   // Refetch whenever a control moves. The initial mount runs this too, with the
   // defaults, so there is still exactly ONE request per page load.
@@ -730,15 +736,24 @@ export default function Analytics() {
   // change the user is looking at real numbers that are about to be replaced —
   // that needs the overlay, or the swap reads as "nothing happened".
   const isInitialAnalyticsLoad = useRef(true);
+  // The page range rides along with the tab controls. "All" sends a ten-year
+  // rejection window so the rejection table is all-time too (D7).
+  const effectiveParams = useMemo(() => ({
+    ...analyticsParams,
+    ...rangeApi,
+    ...(rangeApi.from ? {} : { rejection_window_days: 3650 }),
+  }), [analyticsParams, rangeApi]);
+  const effectiveKey = JSON.stringify(effectiveParams);
   useEffect(() => {
-    loadPipelineAnalytics(analyticsParams, { showOverlay: !isInitialAnalyticsLoad.current });
+    loadPipelineAnalytics(effectiveParams, { showOverlay: !isInitialAnalyticsLoad.current });
     isInitialAnalyticsLoad.current = false;
-  }, [analyticsParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveKey]);
 
   const fetchMainData = async () => {
     setLoading(true);
     try {
-      const res = await screeningService.getZekoPipeline();
+      const res = await screeningService.getZekoPipeline(rangeApi);
       setData(res.data?.data || res.data || { pipeline: [], candidates: [], tiles: {} });
     } catch (err) {
       message.error('Failed to load recruitment analytics.');
@@ -747,7 +762,18 @@ export default function Analytics() {
     }
   };
 
-  const loadPipelineAnalytics = async (params = analyticsParams, { showOverlay = false } = {}) => {
+  const loadRoleSummary = async () => {
+    setRoleSummary((s) => ({ ...s, loading: true }));
+    try {
+      const res = await screeningService.getRoleSummary(rangeApi);
+      setRoleSummary({ rows: (res.data?.data || res.data)?.rows || [], loading: false });
+    } catch {
+      setRoleSummary({ rows: [], loading: false });
+      message.error('Failed to load the role summary.');
+    }
+  };
+
+  const loadPipelineAnalytics = async (params = effectiveParams, { showOverlay = false } = {}) => {
     if (showOverlay) setRefetching(true);
     setPipelineAnalytics((prev) => ({ ...prev, loading: true, errored: false }));
     try {
@@ -775,57 +801,21 @@ export default function Analytics() {
     });
   };
 
-  // Group candidates by Role for the Role Summary tab
-  const roleStats = useMemo(() => {
-    if (!data.candidates) return [];
-    const groups = {};
-    data.candidates.forEach((c) => {
-      const roleName = c.mrf?.position_hiring_for || c.position_applied || 'Unknown Role';
-      const mrfId = c.mrf_id || (c.mrf ? Number(c.mrf.id) : null);
-      const status = (c.pipeline_status || 'shortlisted').toLowerCase();
-
-      if (!groups[roleName]) {
-        groups[roleName] = {
-          key: roleName,
-          role: roleName,
-          mrf_id: mrfId,
-          shortlisted: 0,
-          rejected: 0,
-          on_hold: 0,
-          future_prospect: 0,
-          closed: 0,
-          total: 0
-        };
-      }
-
-      groups[roleName].total += 1;
-      if (status === 'shortlisted') {
-        groups[roleName].shortlisted += 1;
-      } else if (status === 'rejected') {
-        groups[roleName].rejected += 1;
-      } else if (status === 'on_hold' || status === 'on hold') {
-        groups[roleName].on_hold += 1;
-      } else if (status === 'future_prospect') {
-        groups[roleName].future_prospect += 1;
-      } else {
-        // Final else, not another named branch. The seven closure statuses
-        // setFinalOutcome writes from 2026-08-26 all roll up here, and so does
-        // anything added later: a status with no branch used to sum into
-        // `total` alone and the columns quietly stopped adding up. Mirrored in
-        // groupByRole() (backend/src/exports/screening.export.js) so the CSV
-        // matches the table.
-        groups[roleName].closed += 1;
-      }
-    });
-    return Object.values(groups);
-  }, [data.candidates]);
+  // Role Summary rows come from the server, one per MRF (L06), with Total
+  // applied, Moved forward and Shortlist % from the Open Positions board.
+  const roleStats = roleSummary.rows;
 
   const analyticsColumns = [
     {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (text) => <Text strong style={{ color: 'var(--text)' }}>{text}</Text>
+      render: (text, r) => (
+        <Space size={6} wrap>
+          <Text strong style={{ color: 'var(--text)' }}>{text}</Text>
+          {r.status && r.status !== 'Open' && <Tag style={{ fontSize: 11 }}>{r.status}</Tag>}
+        </Space>
+      )
     },
     {
       title: 'MRF ID',
@@ -839,6 +829,24 @@ export default function Analytics() {
           MRF #{text || 'N/A'}
         </Tag>
       )
+    },
+    {
+      // L06: the denominator RT asked for ("I need both the numbers 100 and 50").
+      title: <span>Total applied <MetricInfo metric="roleSummaryTotalApplied" size={10.5} /></span>,
+      dataIndex: 'total_applied',
+      key: 'total_applied',
+      align: 'center',
+      render: (count, r) => (count == null
+        ? <Text type="secondary">–</Text>
+        : (
+          <button
+            type="button"
+            onClick={() => openMetric(r.mrf_id, 'applied')}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--text)', font: 'inherit', fontWeight: 700, textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
+          >
+            {count}
+          </button>
+        )),
     },
     {
       title: 'Shortlisted',
@@ -882,11 +890,25 @@ export default function Analytics() {
       render: (count) => <Badge count={count} showZero color={ACCENT.neutral.color} />
     },
     {
-      title: 'Total Candidates',
+      title: <span>Total screened <MetricInfo metric="roleSummaryTotalScreened" size={10.5} /></span>,
       dataIndex: 'total',
       key: 'total',
       align: 'center',
       render: (count) => <Text strong style={{ fontSize: 14 }}>{count}</Text>
+    },
+    {
+      title: <span>Moved fwd <MetricInfo metric="opMovedForward" size={10.5} /></span>,
+      dataIndex: 'moved_forward',
+      key: 'moved_forward',
+      align: 'center',
+      render: (count) => (count == null ? <Text type="secondary">–</Text> : count),
+    },
+    {
+      title: <span>Shortlist % <MetricInfo metric="opShortlistPct" size={10.5} /></span>,
+      dataIndex: 'shortlist_pct',
+      key: 'shortlist_pct',
+      align: 'center',
+      render: (v) => (v == null ? <Text type="secondary">–</Text> : `${v}%`),
     }
   ];
 
@@ -916,19 +938,17 @@ export default function Analytics() {
       {/* Page Header. No "Refresh Data" button: the page already refetches
           whenever a control changes, and the Email Delivery tab carries its own
           Refresh for the one surface with a poller behind it. */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div>
         <Title level={3} style={{ fontWeight: 800, margin: 0 }}>
           Recruitment Analytics
         </Title>
         <Text type="secondary">
           Track recruitment performance and hiring trends across roles, sources, and vendors.
         </Text>
-        <br />
-        {/* These six counts have no date window — saying so beats letting
-            them be read as "this month". */}
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          Headline counts below are <strong>all time</strong>, across every requisition.
-        </Text>
+        </div>
+        {/* L06: one date range for every tab. The headline counts below follow it. */}
+        <AnalyticsRangeBar value={range} onChange={setRange} previousLabel={previousCaption} />
       </div>
 
       {/* Headline tiles. Until the first payload lands there is nothing true to
@@ -974,6 +994,29 @@ export default function Analytics() {
           tabBarStyle={{ marginBottom: 20 }}
           items={[
             {
+              // L06 — the main requirement: every open position for the range,
+              // health first. A role opens its view; a number, its candidates.
+              key: 'open',
+              label: (
+                <span>
+                  <ProfileOutlined className="tab-ico" />
+                  Open Positions
+                </span>
+              ),
+              children: (
+                <PositionsTab
+                  title={(
+                    <SectionTitle accent={ACCENT.progress} hint={`every requisition · ${rangeCaption}`}>
+                      Open positions
+                    </SectionTitle>
+                  )}
+                  range={range}
+                  onOpenRole={openRole}
+                  onOpenMetric={openMetric}
+                />
+              )
+            },
+            {
               key: 'analytics',
               label: (
                 <span>
@@ -992,12 +1035,12 @@ export default function Analytics() {
                     marginBottom: 14,
                   }}
                   >
-                    <SectionTitle accent={ACCENT.positive} hint="candidate outcomes per requisition">
+                    <SectionTitle accent={ACCENT.positive} hint={`candidate outcomes per requisition · ${rangeCaption}`}>
                       Role summary
                     </SectionTitle>
                     <ExportButton
-                      tooltip="Downloads one row per role — shortlisted, rejected, on-hold and total candidates for every requisition."
-                      request={(cfg) => screeningService.exportRoleSummary(cfg)}
+                      tooltip="Downloads one row per requisition for this date range — total applied, shortlisted, rejected, on hold, closed, moved forward and the shortlist rate."
+                      request={(cfg) => screeningService.exportRoleSummary(cfg, rangeApi)}
                       fallbackName="AAPNA-ATS_Screening-Role-Summary.csv"
                       rowCount={roleStats.length}
                       label="Export"
@@ -1005,9 +1048,10 @@ export default function Analytics() {
                     />
                   </div>
                   <Table
+                    rowKey="key"
                     dataSource={roleStats}
                     columns={analyticsColumns}
-                    loading={loading}
+                    loading={roleSummary.loading}
                     pagination={{ pageSize: 10 }}
                     locale={{ emptyText: <Empty description="No shortlisted roles found" /> }}
                   />
@@ -1028,31 +1072,8 @@ export default function Analytics() {
                   data={pipelineAnalytics.data}
                   loading={pipelineAnalytics.loading}
                   errored={pipelineAnalytics.errored}
-                  params={analyticsParams}
+                  params={effectiveParams}
                   onParamsChange={handleParamsChange}
-                />
-              )
-            },
-            {
-              // N39 — every requisition on one screen. A row click opens its funnel.
-              key: 'positions',
-              label: (
-                <span>
-                  <ProfileOutlined className="tab-ico" />
-                  Positions
-                </span>
-              ),
-              children: (
-                <PositionsTab
-                  title={(
-                    <SectionTitle accent={ACCENT.progress} hint="every requisition: journey, offers and joiners">
-                      Positions
-                    </SectionTitle>
-                  )}
-                  onOpenFunnel={(mrfId) => {
-                    handleParamsChange({ mrf_id: mrfId });
-                    setActiveTab('pipeline');
-                  }}
                 />
               )
             },
@@ -1069,7 +1090,7 @@ export default function Analytics() {
                   data={pipelineAnalytics.data}
                   loading={pipelineAnalytics.loading}
                   errored={pipelineAnalytics.errored}
-                  params={analyticsParams}
+                  params={effectiveParams}
                 />
               )
             },
@@ -1081,11 +1102,14 @@ export default function Analytics() {
                   Email Delivery
                 </span>
               ),
-              children: <DeliveryMonitoring />
+              children: <DeliveryMonitoring range={rangeApi} rangeLabel={rangeCaption} />
             }
           ]}
         />
       </Card>
+
+      <RoleDetailDrawer open={roleMrfId != null} mrfId={roleMrfId} range={range} onClose={closeRole} onOpenMetric={openMetric} />
+      <MetricCandidatesDrawer open={metricTarget != null} target={metricTarget} range={rangeApi} onClose={() => setMetricTarget(null)} />
     </div>
   );
 }

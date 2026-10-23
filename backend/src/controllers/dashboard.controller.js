@@ -3,6 +3,7 @@ import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import { parseDashboardParams } from '../utils/dashboardMetrics.js';
 import { getApprovedRoles } from '../services/screening.service.js';
+import { getOpenPositionsPulse as getOpenPositionsPulseData } from '../services/openPositions.service.js';
 
 /**
  * @desc    Get dashboard summary statistics
@@ -67,4 +68,16 @@ export const getRecruiterBreakdown = catchAsync(async (req, res) => {
 export const getMrfOptions = catchAsync(async (_req, res) => {
   const roles = await getApprovedRoles({ includeClosed: false });
   return success(res, roles, 'Dashboard MRF options retrieved');
+});
+
+/**
+ * @desc    "Open positions" strip on the Dashboard (L06): each open MRF's health,
+ *          applicants in the last 7 days and attention count. Always 7 days,
+ *          whatever range the Dashboard shows.
+ * @route   GET /api/dashboard/open-positions
+ * @access  Staff (names roles and their counts)
+ */
+export const getOpenPositionsPulse = catchAsync(async (_req, res) => {
+  const result = await getOpenPositionsPulseData();
+  return success(res, result, 'Open positions pulse retrieved');
 });

@@ -239,6 +239,37 @@ On the keyword tab, **Strong** = 4–5 stars, **Moderate** = 3 stars and **Weak*
 
 ---
 
+## Active candidates first
+
+*Added 22 Oct 2026 (L01).*
+
+Both tabs have an **"Active candidates first"** option, ticked by default. When it
+is ticked, candidates are grouped by how recently they responded, and the score
+orders them **inside** each group. Unticking it gives the plain score order
+described above.
+
+The groups are based on the candidate-details form: **when we asked** the candidate
+for their details, and **when they submitted** them. The **active window** is
+15 days. An admin can change it under Settings → Candidate activity.
+
+| Order | Group | Who is in it | Example chip on the card |
+|---|---|---|---|
+| 1 | **Active** | Submitted their details within the active window | Active · responded in 2 days (15 Oct 2026) |
+| 2 | **Pending response** | Asked for details within the window, not submitted yet | Pending response · details requested 18 Oct 2026 |
+| 2 | **New applicant** | Added within the window and never asked (nothing was missing, or not asked yet) | New applicant · profile complete |
+| 3 | **Inactive** | Everyone else: never contacted, no reply to an older request, or last response before the window | Inactive · no response since 02 Jun 2026 |
+
+- **Among Active candidates with the same score, the quicker responder comes first.**
+  The time from request to submission is the measure.
+- **Submissions before 14 Oct 2026** were recorded without a date. They count as
+  Active if the request was sent within the window.
+- **The groups never hide anyone.** They only change the order. The summary line
+  shows how many results are in each group.
+- The CSV export has **Activity Status**, **Activity Detail**, **Details Requested
+  On** and **Details Submitted On** columns.
+
+---
+
 ## Worked examples
 
 These use sample candidates to show how the rules play out.

@@ -35,6 +35,9 @@ export const columns = [
   { header: 'To stage', value: (e) => e._toLabel },
   { header: 'Direction', value: (e) => e._direction },
   { header: 'Stages skipped', value: (e) => e._skipped, numeric: true },
+  // L02-C: moving back into a passed stage to re-do it needs a reason.
+  { header: 'Re-do', value: (e) => (/ to re-do it$/.test(e.notes || '') ? 'Yes' : '') },
+  { header: 'Reason', value: (e) => e.reason_text || '' },
   { header: 'Moved by', value: (e) => e.rpa_users?.username || '' },
   { header: 'Moved at', key: 'created_at', type: 'datetime' },
 ];

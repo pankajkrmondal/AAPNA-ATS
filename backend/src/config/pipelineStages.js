@@ -133,7 +133,12 @@ export function isStageArrival(ev) {
   return STAGE_ARRIVAL_EVENT_TYPES.includes(ev?.event_type);
 }
 
-/** The 8 closure outcomes (Q12), modeled as terminal outcomes on the offer stage. */
+/**
+ * The 8 closure outcomes (Q12), modeled as terminal outcomes on the offer
+ * stage, plus MOVED_TO_OTHER_JD (L02, 22 Oct 2026). That one is never picked
+ * by hand: only Move to another JD (services/journeyMove.service.js) writes
+ * it, and the closure route refuses it.
+ */
 export const FINAL_OUTCOMES = Object.freeze({
   APPROVED: 'closure_approved',
   REJECTED: 'closure_rejected',
@@ -143,6 +148,7 @@ export const FINAL_OUTCOMES = Object.freeze({
   DID_NOT_JOIN: 'did_not_join',
   JOINED_AND_LEFT: 'joined_and_left',
   BACKED_OUT: 'backed_out',
+  MOVED_TO_OTHER_JD: 'moved_to_other_jd',
 });
 
 /**
@@ -333,6 +339,8 @@ export function finalStatusLabelFor(stageKey, outcomeKey) {
       return 'Joined and Left';
     case FINAL_OUTCOMES.BACKED_OUT:
       return 'Backed Out';
+    case FINAL_OUTCOMES.MOVED_TO_OTHER_JD:
+      return 'Moved to Another JD';
     default:
       return `${stageLabel} ${outcomeKey}`;
   }
@@ -383,6 +391,9 @@ export const SHORTLIST_STATUSES = Object.freeze({
   BACKED_OUT: 'backed_out',
   DID_NOT_JOIN: 'did_not_join',
   JOINED_AND_LEFT: 'joined_and_left',
+  // L02: the old JD's row after Move to another JD. Needs DDL
+  // 2026-10-22-journey-move.sql (the column has a CHECK).
+  MOVED: 'moved',
 });
 
 /**
@@ -397,6 +408,7 @@ export const TERMINAL_SHORTLIST_STATUSES = Object.freeze([
   SHORTLIST_STATUSES.BACKED_OUT,
   SHORTLIST_STATUSES.DID_NOT_JOIN,
   SHORTLIST_STATUSES.JOINED_AND_LEFT,
+  SHORTLIST_STATUSES.MOVED,
 ]);
 
 /**
@@ -463,6 +475,8 @@ export function shortlistStatusFor(outcomeKey) {
       return SHORTLIST_STATUSES.DID_NOT_JOIN;
     case FINAL_OUTCOMES.JOINED_AND_LEFT:
       return SHORTLIST_STATUSES.JOINED_AND_LEFT;
+    case FINAL_OUTCOMES.MOVED_TO_OTHER_JD:
+      return SHORTLIST_STATUSES.MOVED;
 
     default:
       return null;

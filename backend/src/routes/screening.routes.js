@@ -85,6 +85,7 @@ router.get('/analytics/jobs', screeningController.getZekoJobs);
  * Retrieve Zeko interview pipeline candidates
  */
 router.get('/analytics/pipeline', screeningController.getZekoPipeline);
+router.get('/analytics/role-summary', screeningController.getRoleSummary);
 
 /**
  * GET /api/screening/analytics/pipeline/export

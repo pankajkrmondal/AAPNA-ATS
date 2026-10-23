@@ -14,7 +14,106 @@ import {
   stateRowStamps,
   computeStageLock,
   stageActorsFromEvents,
+  redoVisitStart,
+  inVisit,
 } from '../utils/stageState.js';
+
+// ── Re-do visits (L02-C) ────────────────────────────────────────────────
+
+/**
+ * When the current visit to one stage started, if it is a re-do; else null.
+ * Everything that reads a stage's bookings / results / invites passes this
+ * as `since`, so an earlier attempt neither locks the stage nor counts as its
+ * score. First visits are never time-scoped (see redoVisitStart).
+ * @param {bigint|number|string} pipelineId
+ * @param {string} stageKey
+ * @param {object} [client]
+ * @returns {Promise<Date|null>}
+ */
+export async function stageVisitStart(pipelineId, stageKey, client = prisma) {
+  if (!pipelineId || !stageKey) return null;
+  const row = await client.rpa_pipeline_stage_state.findUnique({
+    where: { pipeline_id_stage_key: { pipeline_id: BigInt(pipelineId), stage_key: stageKey } },
+    select: { entered_at: true, completed_at: true },
+  });
+  return redoVisitStart(row);
+}
+
+/**
+ * Re-do visit starts for many journeys' CURRENT stages (the board, the lock).
+ * @param {{id: bigint|number, current_stage_key: string}[]} journeys
+ * @returns {Promise<Map<string, Date>>} String(journey id) -> start; first visits absent
+ */
+export async function redoVisitStarts(journeys) {
+  const out = new Map();
+  if (!journeys.length) return out;
+  const rows = await prisma.rpa_pipeline_stage_state.findMany({
+    where: {
+      pipeline_id: { in: journeys.map((j) => BigInt(j.id)) },
+      completed_at: { not: null },
+    },
+    select: { pipeline_id: true, stage_key: true, entered_at: true, completed_at: true },
+  });
+  const current = new Map(journeys.map((j) => [String(j.id), j.current_stage_key]));
+  for (const r of rows) {
+    if (current.get(String(r.pipeline_id)) !== r.stage_key) continue;
+    const start = redoVisitStart(r);
+    if (start) out.set(String(r.pipeline_id), start);
+  }
+  return out;
+}
+
+/**
+ * Every stage of one journey that is being (or was last) re-done: stage_key ->
+ * when that visit started. The drawer splits each such stage's bookings,
+ * scorecards and results into "this attempt" and "earlier attempt".
+ * @param {bigint|number|string} pipelineId
+ * @returns {Promise<Record<string, Date>>}
+ */
+export async function redoVisitsFor(pipelineId) {
+  const rows = await prisma.rpa_pipeline_stage_state.findMany({
+    where: { pipeline_id: BigInt(pipelineId), completed_at: { not: null } },
+    select: { stage_key: true, entered_at: true, completed_at: true },
+  });
+  const out = {};
+  for (const r of rows) {
+    const start = redoVisitStart(r);
+    if (start) out[r.stage_key] = start;
+  }
+  // A re-done stage that has been approved again: completed_at moved past
+  // entered_at, so redoVisitStart says "no re-do". Its earlier attempt is
+  // still history; the 'moved' re-do event marks when the latest attempt began.
+  const redoMoves = await prisma.rpa_pipeline_stage_events.findMany({
+    where: { pipeline_id: BigInt(pipelineId), event_type: 'moved', notes: { endsWith: 'to re-do it' } },
+    select: { stage_key: true, created_at: true },
+    orderBy: { created_at: 'desc' },
+  });
+  for (const m of redoMoves) {
+    if (!out[m.stage_key]) out[m.stage_key] = m.created_at;
+  }
+  return out;
+}
+
+/**
+ * The stage a re-done stage's Approve goes back to: the stage the candidate was
+ * moved FROM when the re-do started. Null on a first visit.
+ * @param {{id: bigint|number, current_stage_key: string}} pipeline
+ */
+export async function redoReturnStageKey(pipeline) {
+  const since = await stageVisitStart(pipeline.id, pipeline.current_stage_key);
+  if (!since) return null;
+  const move = await prisma.rpa_pipeline_stage_events.findFirst({
+    where: {
+      pipeline_id: BigInt(pipeline.id),
+      stage_key: pipeline.current_stage_key,
+      event_type: 'moved',
+      notes: { endsWith: 'to re-do it' },
+    },
+    orderBy: { created_at: 'desc' },
+    select: { from_stage_key: true },
+  });
+  return move?.from_stage_key || null;
+}
 
 /**
  * The state map for one journey (stage_key -> state; not-visited omitted).
@@ -109,17 +208,21 @@ export async function getStageLocks(journeys) {
   const documentIds = ids((j) => j.current_stage_key === STAGE_KEYS.DOCUMENTS);
   const offerIds = ids((j) => j.current_stage_key === STAGE_KEYS.OFFER);
   const allIds = open.map((j) => BigInt(j.id));
+  // L02-C: on a re-done stage only the current attempt's activity locks it.
+  const visitStarts = await redoVisitStarts(open);
 
   const [zekoRows, bookings, invites, results, docRequests, offers] = await Promise.all([
     zekoJourneys.length
       ? prisma.rpa_zeko_candidate_pipeline.findMany({
           where: { candidate_id: { in: zekoJourneys.map((j) => j.shortlist_id) }, status: { not: 'cancelled' } },
-          select: { candidate_id: true, stage: true, link_sent_at: true, interview_start_at: true },
+          select: { candidate_id: true, stage: true, link_sent_at: true, interview_start_at: true, created_at: true },
+          orderBy: { created_at: 'desc' },
         })
       : [],
     allIds.length
       ? prisma.rpa_interview_schedule.findMany({
-          where: { pipeline_id: { in: allIds }, status: { not: 'cancelled' } },
+          // superseded_at: bookings of an earlier attempt of a re-done stage (L02-C).
+          where: { pipeline_id: { in: allIds }, status: { not: 'cancelled' }, superseded_at: null },
           select: { pipeline_id: true, stage_key: true, scheduled_start_at: true },
           orderBy: { scheduled_start_at: 'desc' },
         })
@@ -134,7 +237,7 @@ export async function getStageLocks(journeys) {
     assessmentIds.length
       ? prisma.rpa_assessment_results.findMany({
           where: { pipeline_id: { in: assessmentIds }, status: { in: ['matched', 'score_overwritten'] } },
-          select: { pipeline_id: true },
+          select: { pipeline_id: true, created_at: true },
         })
       : [],
     documentIds.length
@@ -156,13 +259,23 @@ export async function getStageLocks(journeys) {
     for (const r of rows) { const k = keyFn(r); if (!m.has(k)) m.set(k, r); }
     return m;
   };
+  // A Zeko row belongs to the shortlist, not the journey: map it back to the
+  // journey so its re-do start can be applied.
+  const journeyByShortlist = new Map(zekoJourneys.map((j) => [String(j.shortlist_id), String(j.id)]));
+  const sinceOf = (journeyId) => visitStarts.get(String(journeyId)) || null;
   const zekoByRound = firstBy(
-    zekoRows.filter((r) => r.link_sent_at || r.interview_start_at),
+    zekoRows.filter((r) => (r.link_sent_at || r.interview_start_at)
+      && inVisit(r.created_at, sinceOf(journeyByShortlist.get(String(r.candidate_id))))),
     (r) => `${r.candidate_id}:${r.stage}`
   );
   const bookingByStage = firstBy(bookings, (r) => `${r.pipeline_id}:${r.stage_key}`);
-  const latestInvite = firstBy(invites, (r) => String(r.pipeline_id));
-  const resultIds = new Set(results.map((r) => String(r.pipeline_id)));
+  const latestInvite = firstBy(
+    invites.filter((r) => inVisit(r.sent_at, sinceOf(r.pipeline_id))),
+    (r) => String(r.pipeline_id),
+  );
+  const resultIds = new Set(results
+    .filter((r) => inVisit(r.created_at, sinceOf(r.pipeline_id)))
+    .map((r) => String(r.pipeline_id)));
   const docById = firstBy(docRequests, (r) => String(r.pipeline_id));
   const offerById = firstBy(offers, (r) => String(r.pipeline_id));
 

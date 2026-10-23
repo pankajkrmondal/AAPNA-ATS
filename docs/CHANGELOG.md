@@ -5,6 +5,30 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-23: L06 open-position analytics (date range & Total Applied)
+**Why:** Harish's 22 Oct re-plan: analytics for OPEN MRFs is the main requirement (CEO demo 28 Sep, Anuj, Naveen's date range, Sanghamitra's Total Applied). Design approved 22 Oct.
+
+Full write-up: [CHANGES-2026-10-23-L06-open-position-analytics.md](./changelog/CHANGES-2026-10-23-L06-open-position-analytics.md).
+
+- **Analytics:**
+  - one date range for every tab (7/30/60/90/365/All plus custom, default 7 days);
+  - a new first tab, **Open Positions**: health per role, applied by source, responded, shortlisted… and the "now" numbers;
+  - a **role view** with the "This week" sentence, Needs attention, a daily chart, the funnel, activity and the open-to-close journey;
+  - every number opens its candidates;
+  - Role Summary is one row per MRF, with **Total applied**.
+- **Dashboard:** "Open positions · last 7 days" strip and a "Roles needing attention" row. **Pipeline:** role header and `?mrf=`. **MRF:** "View analytics". **Settings:** Open position target (45 days).
+- **No DDL.** Tests: 691/691 unit tests; services run against staging data; the Dashboard-vs-Analytics check passes; the frontend builds. Not yet checked in the browser.
+
+## 2026-10-22: L07 editable JD label (no MRF)
+**Why:** RT §3: when there is no MRF, recruiters need a date or label against the JD to find the latest version.
+
+Full write-up: [CHANGES-2026-10-22-L07-jd-label.md](./changelog/CHANGES-2026-10-22-L07-jd-label.md).
+
+- DDL `2026-10-22-jd-send-version-label.sql` (applied on staging): `rpa_mrf_jd_send.version_label`, `version_date`.
+- `PATCH /api/mrf/:id/version-label` (refused once an MRF is linked; logged as `JD_LABEL`).
+- The MRF list shows "label · date" and a **Latest** tag per role, edited with a pencil popover. The CSV gains two columns.
+- Tests: `jdSendLabel` 8/8; the frontend builds. `prisma generate` is still pending (the dev backend was running).
+
 ## 2026-10-20: Phase 3 section F: developer logging & error tracing, system docs, user guides
 **Why:** "logs should be visible to developers" (our #52) and the CEO's longevity item (docs, runbooks, monitoring, error handling). Plan items N42, N43.
 

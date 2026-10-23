@@ -98,6 +98,8 @@ async function liveRow(pipelineId) {
       pipeline_id: BigInt(pipelineId),
       stage_key: STAGE_KEYS.CLIENT,
       status: { not: 'cancelled' },
+      // An earlier attempt of a re-done client round is history (L02-C).
+      superseded_at: null,
     },
     orderBy: { created_at: 'desc' },
   });

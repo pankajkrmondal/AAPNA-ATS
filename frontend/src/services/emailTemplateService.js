@@ -48,8 +48,9 @@ const emailTemplateService = {
    * @param {number} [days=30] - reporting window in days
    * @returns {Promise}
    */
-  getEmailMonitoring(days = 30) {
-    return api.get('/email/monitoring', { params: { days } });
+  getEmailMonitoring(days = 30, range = {}) {
+    // L06: Analytics passes its date range (from / to), which wins over days.
+    return api.get('/email/monitoring', { params: { days, ...range } });
   },
 
   /**
@@ -59,8 +60,8 @@ const emailTemplateService = {
    * @param {number} [days=30]
    * @param {object} [config] - blob/timeout config from downloadFile
    */
-  exportEmailMonitoring(table, days = 30, config = {}) {
-    return api.get('/email/monitoring/export', { params: { table, days }, ...config });
+  exportEmailMonitoring(table, days = 30, config = {}, range = {}) {
+    return api.get('/email/monitoring/export', { params: { table, days, ...range }, ...config });
   },
 };
 
