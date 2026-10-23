@@ -147,10 +147,21 @@ export async function getStats({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null } 
       }),
     ]);
 
+    // MRFs parked at the approval gate ('held'). Counted on their own: they are
+    // neither active nor awaiting a decision until their hold-until date
+    // (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §6.8).
+    const heldMrfs = await prisma.rpa_mrf.findMany({
+      where: { approval_status: 'held', filled_at: null, closed_at: null },
+      select: { held_until: true },
+      orderBy: { held_until: 'asc' },
+    });
+
     return {
       totalCandidates,
       activeMRFs,
       pendingApprovalMRFs,
+      onHoldMRFs: heldMrfs.length,
+      nextHoldRelease: heldMrfs[0]?.held_until ? heldMrfs[0].held_until.toISOString().slice(0, 10) : null,
       todayUploads,
       shortlisted: shortlistedCount,
       hired: hiredCount,
@@ -179,6 +190,8 @@ export async function getStats({ rangeDays = DEFAULT_RANGE_DAYS, mrfId = null } 
       totalCandidates: 0,
       activeMRFs: 0,
       pendingApprovalMRFs: 0,
+      onHoldMRFs: 0,
+      nextHoldRelease: null,
       todayUploads: 0,
       shortlisted: 0,
       hired: 0,

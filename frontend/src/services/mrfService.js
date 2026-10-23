@@ -180,6 +180,49 @@ const mrfService = {
   reissueApprovalLinks(mrfId) {
     return api.post(`/mrf/${mrfId}/approval-links/reissue`).then((res) => res.data);
   },
+
+  // ── MRF Hold and decisions on behalf of absent approvers ─────────────
+  // docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md
+
+  /**
+   * Approve / reject / hold on behalf of the approvers (HR Admin Recruiter and
+   * above, only while the approvers are marked away).
+   * @param {string} mrfId — rpa_mrf id
+   * @param {{ action: 'approve'|'reject'|'hold', comments: string, holdUntil?: string }} payload
+   */
+  decideOnBehalf(mrfId, payload) {
+    return api.post(`/mrf/${mrfId}/decision`, payload).then((res) => res.data);
+  },
+
+  /** Move the hold-until date ('YYYY-MM-DD') of a held MRF. */
+  changeHoldDate(mrfId, payload) {
+    return api.patch(`/mrf/${mrfId}/hold`, payload).then((res) => res.data);
+  },
+
+  /** Release a held MRF now: back to pending, approval email to every approver. */
+  releaseHold(mrfId) {
+    return api.post(`/mrf/${mrfId}/hold/release`, {}).then((res) => res.data);
+  },
+
+  /** Every held MRF, soonest release first. */
+  listHeld() {
+    return api.get('/mrf/held').then((res) => res.data?.data ?? res.data);
+  },
+
+  /** Settings › MRF Approval & Hold (with what this user may change). */
+  getApprovalSettings() {
+    return api.get('/settings/mrf-approval').then((res) => res.data?.data ?? res.data);
+  },
+
+  /** { defaultDays, maxDays, releaseTime: 'HH:MM' } — HR Admin Recruiter and above. */
+  saveHoldRules(payload) {
+    return api.put('/settings/mrf-approval/hold-rules', payload).then((res) => res.data);
+  },
+
+  /** { active, from, to, note } — Admin / Super Admin. */
+  saveApproverAbsence(payload) {
+    return api.put('/settings/mrf-approval/absence', payload).then((res) => res.data);
+  },
 };
 
 export default mrfService;

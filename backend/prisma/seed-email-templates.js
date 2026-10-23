@@ -29,6 +29,7 @@
  *  - Status templates use {candidate_name} and {position}.
  */
 import prisma from '../src/config/database.js';
+import { MRF_HOLD_TEMPLATE_DEFAULTS } from '../src/services/mrfHoldEmailTemplates.js';
 
 const SHORTLIST_SUBJECT = "You're Shortlisted -- Complete Your HR AI Interview | AAPNA Infotech";
 
@@ -869,6 +870,14 @@ const TEMPLATES = [
       is_active: true,
     },
   },
+  // MRF Hold & Delegate notices (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §6.7).
+  // Defaults live in src/services/mrfHoldEmailTemplates.js, which is also the
+  // send-time fallback. To add them WITHOUT overwriting other templates' edits,
+  // run prisma/seed-mrf-hold-email-templates.js instead of this script.
+  ...Object.entries(MRF_HOLD_TEMPLATE_DEFAULTS).map(([name, t]) => ({
+    find: { name },
+    data: { name, category: 'general', ...t, placeholders: [...t.placeholders], is_active: true },
+  })),
   // Module 2 — technical-round interview scheduling. Four editable defaults
   // (candidate + panel × schedule + cancel) surfaced by the Pipeline Tracker
   // Schedule / Cancel modals.

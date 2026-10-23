@@ -38,6 +38,7 @@ import {
 } from '@ant-design/icons';
 
 import useAuth from '../hooks/useAuth';
+import { ROLES } from '../constants/roles';
 import useTheme from '../hooks/useTheme';
 import useBrand from '../hooks/useBrand';
 import ThemeToggle from '../components/common/ThemeToggle';
@@ -142,7 +143,7 @@ const V2_ROUTES = [
 ];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
-const VENDOR_DASHBOARD_ROLES = ['admin', 'superadmin', 'recruiter'];
+const VENDOR_DASHBOARD_ROLES = [ROLES.ADMIN, ROLES.SUPERADMIN, ROLES.HR_ADMIN_RECRUITER, ROLES.RECRUITER];
 const VENDOR_DASHBOARD_MENU_ITEM = { key: '/vendor-dashboard', icon: <AuditOutlined />, label: 'Vendor Dashboard' };
 
 /** Map paths to breadcrumb labels */

@@ -9,6 +9,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { emitToUser, emitToRole } from '../socket/index.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
+import { RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 /** Canonical job statuses (also the display labels with spaces, see STATUS_LABELS). */
 export const JOB_STATUS = Object.freeze({
@@ -35,7 +36,7 @@ export const NON_TERMINAL_STATUSES = Object.freeze([
 ]);
 
 /** Roles that should receive "a duplicate needs review" notifications. */
-const REVIEW_ROLES = ['recruiter', 'hr', 'admin', 'superadmin'];
+const REVIEW_ROLES = [...RECRUITER_TIER_ROLES];
 
 /**
  * Fail-safe: the job-tracking feature requires the `rpa_upload_jobs` model in the

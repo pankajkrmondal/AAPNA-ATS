@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 // `Card` went with the hand-rolled shell this page used to render — the page
 // body now sits inside PublicPageShell's own card.
-import { Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Space, Divider, Row, Col, App } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, FileDoneOutlined } from '@ant-design/icons';
+import { Button, Typography, Alert, Spin, Input, Result, Descriptions, Badge, Divider, Row, Col, App } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, FileDoneOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import mrfService from '../services/mrfService';
+import HoldDateField from '../components/mrf/HoldDateField';
 // The shared public-page frame, mirroring the branded email the approver clicks
 // through from. This page hand-rolled its own logo header, footer and
 // `auth-background` shell, so an approver saw a different design from the mail
@@ -31,9 +33,22 @@ const decidedLabel = (status) => {
     case 'rejected': return 'declined';
     case 'completed': return 'completed';
     case 'closed': return 'closed';
+    case 'held': return 'put on hold';
     default: return 'processed';
   }
 };
+
+// Hold colours: blue, so ON HOLD never reads like amber "pending".
+const HOLD_COLOR = '#234e8c';
+const REJECT_COLOR = '#c0392b';
+
+// Decision picker: each choice carries its own colour; the selected one is
+// filled solid, the others stay a light tint with a coloured outline.
+const DECISION_OPTIONS = [
+  { value: 'approve', label: 'Approve', icon: <CheckCircleOutlined />, color: BRAND.accent, tint: '#f4f8e8' },
+  { value: 'reject', label: 'Reject', icon: <CloseCircleOutlined />, color: REJECT_COLOR, tint: '#fdf0ee' },
+  { value: 'hold', label: 'Hold', icon: <PauseCircleOutlined />, color: HOLD_COLOR, tint: '#eef3fb' },
+];
 
 // These public calls use plain axios, not the `api` wrapper, so the server's
 // message is on err.response.data — err.message is only "Request failed with
@@ -65,7 +80,20 @@ export default function MrfApprovalAction() {
   const [linkReplaced, setLinkReplaced] = useState(false);
   const [success, setSuccess] = useState(false);
   const [successStatus, setSuccessStatus] = useState('');
-  const [currentAction, setCurrentAction] = useState(actionParam.toLowerCase() === 'reject' ? 'reject' : 'approve');
+  const [successHoldUntil, setSuccessHoldUntil] = useState('');
+  const requested = actionParam.toLowerCase();
+  const [currentAction, setCurrentAction] = useState(['reject', 'hold'].includes(requested) ? requested : 'approve');
+  // 'YYYY-MM-DD'; filled with the default once the hold rules arrive.
+  const [holdUntil, setHoldUntil] = useState('');
+  // Hold is offered only when the server sends its rules (feature on, personal link).
+  const holdConfig = mrfDetails?.hold_config || null;
+  const canHold = Boolean(holdConfig);
+
+  useEffect(() => {
+    if (holdConfig && !holdUntil) setHoldUntil(holdConfig.defaultDate);
+    // A ?action=hold link on a page that cannot hold falls back to approve.
+    if (mrfDetails && !holdConfig && currentAction === 'hold') setCurrentAction('approve');
+  }, [holdConfig, mrfDetails]);
 
   useEffect(() => {
     if (!token) {
@@ -101,6 +129,10 @@ export default function MrfApprovalAction() {
   };
 
   const handleAction = async (actionType) => {
+    if (actionType === 'hold') {
+      if (!holdUntil) { message.error('Choose the date the hold should end.'); return; }
+      if (!comments.trim()) { message.error('Please add a note saying why the requisition is on hold.'); return; }
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -108,11 +140,16 @@ export default function MrfApprovalAction() {
         token,
         action: actionType,
         comments: comments.trim(),
+        ...(actionType === 'hold' ? { holdUntil } : {}),
       };
-      await mrfService.handleMrfApproval(id, payload);
-      setSuccessStatus(actionType === 'approve' ? 'approved' : 'rejected');
+      const res = await mrfService.handleMrfApproval(id, payload);
+      const status = actionType === 'approve' ? 'approved' : actionType === 'reject' ? 'rejected' : 'held';
+      setSuccessStatus(status);
+      setSuccessHoldUntil(res?.data?.held_until_label || '');
       setSuccess(true);
-      message.success(`Requisition request successfully ${actionType === 'approve' ? 'approved' : 'rejected'}!`);
+      message.success(status === 'held'
+        ? `Requisition put on hold until ${res?.data?.held_until_label || holdUntil}.`
+        : `Requisition request successfully ${status}!`);
     } catch (err) {
       if (err?.response?.status === 409) {
         // Someone decided while this page was open: reload, which lands on
@@ -130,6 +167,37 @@ export default function MrfApprovalAction() {
     return (
       <PublicPageShell title="Review Requisition Request" subtitle="Loading requisition details…">
         <div style={{ textAlign: 'center', padding: '32px 0' }}><Spin size="large" /></div>
+      </PublicPageShell>
+    );
+  }
+
+  if (success && successStatus === 'held') {
+    return (
+      <PublicPageShell
+        title="Requisition put on hold"
+        subtitle="Your decision has been recorded and the HR team notified."
+      >
+        <Result
+          icon={<PauseCircleOutlined style={{ color: HOLD_COLOR }} />}
+          title={<span style={{ fontWeight: 700 }}>On hold until {successHoldUntil}</span>}
+          subTitle={
+            <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+              <strong>{mrfDetails?.position_hiring_for}</strong> is on hold. On <strong>{successHoldUntil}</strong> it goes back to pending
+              and the approval request is emailed to every approver again, so it can be approved, rejected or held further.
+              HR and the hiring manager have been told, and a confirmation has been emailed to you.
+            </Paragraph>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>,
+          ]}
+        />
       </PublicPageShell>
     );
   }
@@ -159,6 +227,46 @@ export default function MrfApprovalAction() {
             >
               Close Window
             </Button>
+          ]}
+        />
+      </PublicPageShell>
+    );
+  }
+
+  if (decidedStatus === 'held') {
+    const byName = decision?.decidedByName;
+    const byTitle = decision?.decidedByTitle;
+    const until = decision?.heldUntilLabel;
+    return (
+      <PublicPageShell title="This MRF is on hold" subtitle="It will come back to you on its hold-until date.">
+        <Result
+          icon={<PauseCircleOutlined style={{ color: HOLD_COLOR }} />}
+          title={<span style={{ fontWeight: 700 }}>
+            {decision?.isYou ? 'You put this MRF on hold' : `On hold${byName ? ` — put on hold by ${byTitle ? `the ${byTitle} ` : ''}${byName}` : ''}`}
+          </span>}
+          subTitle={
+            <>
+              <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                <strong>{mrfDetails?.position_hiring_for}</strong>{mrfDetails?.id ? ` (MRF-${mrfDetails.id})` : ''} is on hold
+                {until ? <> until <strong>{until}</strong></> : null}. On that date a new approval email is sent to every approver.
+                This link can no longer be used.
+              </Paragraph>
+              {decision?.comments && (
+                <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  <strong>Note:</strong> {decision.comments}
+                </Paragraph>
+              )}
+            </>
+          }
+          extra={[
+            <Button
+              key="close"
+              type="primary"
+              onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND.accent, border: 'none', fontWeight: 600, paddingInline: 32 }}
+            >
+              Close Window
+            </Button>,
           ]}
         />
       </PublicPageShell>
@@ -253,8 +361,9 @@ export default function MrfApprovalAction() {
           title={<span style={{ fontWeight: 700 }}>Please use the most recent approval email</span>}
           subTitle={
             <Paragraph style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-              The HR team re-sent the approval request for <strong>{mrfDetails?.position_hiring_for}</strong>, so this older link no longer works.
-              Open the latest &quot;New MRF Request - Approval Request&quot; email to approve or decline.
+              A newer approval request for <strong>{mrfDetails?.position_hiring_for}</strong> has been emailed to you (re-sent by HR, or sent
+              again when the requisition came back from hold), so this older link no longer works.
+              Open the latest &quot;New MRF Request - Approval Request&quot; email to approve, decline or hold.
             </Paragraph>
           }
         />
@@ -373,21 +482,103 @@ export default function MrfApprovalAction() {
         {/* Action Form */}
         <Divider style={{ borderColor: '#e8ede0' }} />
         
+        {canHold && (
+          <div style={{ marginTop: 12, marginBottom: 20 }}>
+            <Title level={5} style={{ marginBottom: 10 }}>Your decision</Title>
+            <div role="radiogroup" aria-label="Your decision" className="mrf-decision-group">
+              {DECISION_OPTIONS.map(({ value, label, icon, color, tint }) => {
+                const selected = currentAction === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setCurrentAction(value)}
+                    className="mrf-decision-btn"
+                    style={{
+                      border: `2px solid ${color}`,
+                      background: selected ? color : tint,
+                      color: selected ? '#fff' : color,
+                      boxShadow: selected ? `0 6px 16px ${color}55` : 'none',
+                      transform: selected ? 'translateY(-1px)' : 'none',
+                    }}
+                  >
+                    {icon}
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {currentAction === 'hold' && canHold && (
+          <div style={{ border: '1px solid #9db6dd', background: '#f6f9fe', borderRadius: 12, padding: 18, marginBottom: 8 }}>
+            <HoldDateField value={holdUntil} onChange={setHoldUntil} config={holdConfig} />
+            <Alert
+              type="info"
+              showIcon
+              icon={<PauseCircleOutlined />}
+              style={{ borderRadius: 8, marginTop: 14 }}
+              message={holdUntil
+                ? <>On <strong>{dayjs(holdUntil).format('DD MMM YYYY')}</strong> this requisition goes back to <strong>pending</strong> and a fresh approval email is sent to every approver.</>
+                : 'Choose the date the hold should end.'}
+            />
+          </div>
+        )}
+
         <div style={{ marginTop: 12 }}>
           <Title level={5} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageOutlined style={{ color: BRAND.accent }} /> Add Review Comments (Optional)
+            <MessageOutlined style={{ color: BRAND.accent }} />
+            {currentAction === 'hold' ? <>Note <Text type="danger">*</Text> <Text type="secondary" style={{ fontWeight: 400, fontSize: 13 }}>(why it is on hold — shared with HR and the hiring manager)</Text></> : 'Add Review Comments (Optional)'}
           </Title>
           <TextArea
             value={comments}
             onChange={(e) => setComments(e.target.value)}
-            placeholder="Add any comments, special terms, priority preferences, or feedback..."
+            placeholder={currentAction === 'hold'
+              ? 'e.g. Budget freeze until the Q3 review. Revisit after the client renewal is signed.'
+              : 'Add any comments, special terms, priority preferences, or feedback...'}
             autoSize={{ minRows: 3, maxRows: 6 }}
+            maxLength={2000}
             style={{ borderRadius: 10, marginTop: 8, padding: 12 }}
           />
         </div>
 
         <div style={{ marginTop: 32 }}>
-          {isApproveFlow ? (
+          {currentAction === 'hold' ? (
+            <Row gutter={16}>
+              <Col xs={24} sm={16}>
+                <Button
+                  type="primary"
+                  icon={<PauseCircleOutlined />}
+                  onClick={() => handleAction('hold')}
+                  loading={submitting}
+                  disabled={!holdUntil || !comments.trim()}
+                  block
+                  style={{
+                    height: 48,
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    fontSize: 15,
+                    // Colour only when usable, so a disabled button looks disabled.
+                    ...(holdUntil && comments.trim() ? { background: HOLD_COLOR, borderColor: HOLD_COLOR } : {}),
+                  }}
+                >
+                  Put Requisition on Hold
+                </Button>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Button
+                  onClick={() => setCurrentAction('approve')}
+                  className="btn-approve-secondary"
+                  style={{ height: 48, borderRadius: 10, fontWeight: 600, width: '100%' }}
+                >
+                  Approve Instead
+                </Button>
+              </Col>
+            </Row>
+          ) : isApproveFlow ? (
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <Button

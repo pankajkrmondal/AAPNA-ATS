@@ -17,6 +17,7 @@ import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
 import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
 import { startMrfAuditRetentionJob, stopMrfAuditRetentionJob } from './jobs/mrfAuditRetentionSweep.js';
 import { startErrorLogRetentionJob, stopErrorLogRetentionJob } from './jobs/errorLogRetentionSweep.js';
+import { startMrfHoldSweepJob, stopMrfHoldSweepJob } from './jobs/mrfHoldSweep.js';
 import { recordError } from './services/errorLog.service.js';
 import { sendOpsAlert } from './services/emailNotification.service.js';
 import { currentRef } from './middleware/requestContext.js';
@@ -85,6 +86,11 @@ async function startServer() {
     // days; pure DB, off-peak, always runs.
     startErrorLogRetentionJob();
 
+    // MRF hold release — held MRFs whose hold-until date has come go back to
+    // pending and are emailed to every approver again. Pure DB + email, always
+    // runs (even with MRF_HOLD_ENABLED off, so no MRF is stranded on hold).
+    await startMrfHoldSweepJob();
+
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
     // the queue/Redis connection is never created when the flag is off.
@@ -124,6 +130,7 @@ async function gracefulShutdown(signal) {
   stopDocumentReminderJob();
   stopMrfAuditRetentionJob();
   stopErrorLogRetentionJob();
+  stopMrfHoldSweepJob();
 
   // Stop accepting new connections
   server.close(async () => {

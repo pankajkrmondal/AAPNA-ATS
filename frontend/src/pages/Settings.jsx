@@ -11,6 +11,7 @@ import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
 import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
 import CompanyProfileCard from '../components/settings/CompanyProfileCard';
+import MrfApprovalHoldSettings from '../components/settings/MrfApprovalHoldSettings';
 import CandidateActivityCard from '../components/settings/CandidateActivityCard';
 import PositionTargetCard from '../components/settings/PositionTargetCard';
 
@@ -1091,6 +1092,10 @@ export default function Settings() {
           />
         </div>
       </Card>
+
+      {/* MRF Approval & Hold — hold rules, approver absence, held MRFs
+          (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §7) */}
+      <MrfApprovalHoldSettings />
 
       {/* Assessment Automation — Evalground invite deadline + auto-advance/reject toggle */}
       <Card

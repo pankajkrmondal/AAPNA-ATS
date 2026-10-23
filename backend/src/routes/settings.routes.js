@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as settingsController from '../controllers/settings.controller.js';
+import * as mrfHoldSettingsController from '../controllers/mrfHoldSettings.controller.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
@@ -41,6 +42,11 @@ router.post('/flow-keys', settingsController.saveFlowKey);
 router.get('/company-profile', settingsController.getCompanyProfileSetting);
 router.post('/company-profile', requireAdmin, settingsController.saveCompanyProfileSetting);
 
+/** MRF Approval & Hold: hold rules (HR Admin Recruiter+) and the approver-absence
+ *  window (Admin+). Role checks in the controller, so refusals say why. */
+router.get('/mrf-approval', mrfHoldSettingsController.getMrfApprovalSettings);
+router.put('/mrf-approval/hold-rules', mrfHoldSettingsController.saveMrfHoldRules);
+router.put('/mrf-approval/absence', requireAdmin, mrfHoldSettingsController.saveMrfApproverAbsence);
 /** Active window for "Active candidates first" screening order (L01). Anyone
  *  signed in can read it; only admins can change it. */
 router.get('/candidate-activity', settingsController.getCandidateActivitySetting);

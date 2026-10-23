@@ -76,6 +76,7 @@ export function mrfApprovalLabel(status) {
   if (s === 'approved' || s === 'completed') return 'APPROVED';
   if (s === 'rejected') return 'REJECTED';
   if (s === 'waiting') return 'WAITING';
+  if (s === 'held') return 'ON HOLD';
   return s ? s.toUpperCase() : 'PENDING';
 }
 

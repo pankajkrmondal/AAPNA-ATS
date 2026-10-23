@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as emailTemplateController from '../controllers/emailTemplate.controller.js';
 import { authenticate, requireAdmin, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
+import { RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 /**
  * Roles allowed to bulk-export delivery logs. Vendors are excluded: the
@@ -9,7 +10,7 @@ import { exportLimiter } from '../middleware/exportRateLimit.js';
  * other people's PII. Vendors have no UI route to Analytics, but that is a
  * client-side confinement — their token can call the API directly.
  */
-const MONITORING_EXPORT_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
+const MONITORING_EXPORT_ROLES = [...RECRUITER_TIER_ROLES];
 
 const router = Router();
 

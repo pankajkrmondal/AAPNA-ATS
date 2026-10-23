@@ -8,6 +8,7 @@ import { authenticate, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 import { mrfApprovalLimiter } from '../middleware/mrfApprovalRateLimit.js';
 import AppError from '../utils/AppError.js';
+import { RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 /**
  * Roles allowed to bulk-export requisitions. Vendors are external companies and
@@ -16,10 +17,10 @@ import AppError from '../utils/AppError.js';
  * MRF either (`VENDOR_ALLOWED_PATHS` in MainLayout.jsx), but that is a
  * client-side confinement — a vendor's token can call the API directly.
  */
-const MRF_EXPORT_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
+const MRF_EXPORT_ROLES = [...RECRUITER_TIER_ROLES];
 // Who may close a requisition by hand (Q34). Same set as exports today, but
 // named separately so tightening one does not silently move the other.
-const MRF_CLOSURE_ROLES = ['admin', 'superadmin', 'recruiter', 'hr'];
+const MRF_CLOSURE_ROLES = [...RECRUITER_TIER_ROLES];
 
 const router = Router();
 
@@ -99,6 +100,15 @@ router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reope
 // are further restricted to admin tier in the controller.
 router.get('/:id/approval-trail', restrictTo(...MRF_EXPORT_ROLES), mrfController.getApprovalTrail);
 router.post('/:id/approval-links/reissue', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reissueApprovalLinks);
+// MRF Hold and decisions on behalf of absent approvers
+// (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md). Staff only here;
+// the role (HR Admin Recruiter and above) and the absence window are checked in
+// the service, so the reason for a refusal can be said in words.
+// '/held' is one segment: registered before '/:id' so it is never an MRF id.
+router.get('/held', restrictTo(...MRF_EXPORT_ROLES), mrfController.listHeldMrfs);
+router.post('/:id/decision', restrictTo(...MRF_EXPORT_ROLES), mrfController.decideOnBehalf);
+router.patch('/:id/hold', restrictTo(...MRF_EXPORT_ROLES), mrfController.changeHoldDate);
+router.post('/:id/hold/release', restrictTo(...MRF_EXPORT_ROLES), mrfController.releaseHold);
 // L07: label + JD date for a JD sent without an MRF. Registered before the
 // bare /:id routes.
 router.patch('/:id/version-label', restrictTo(...MRF_CLOSURE_ROLES), mrfController.updateJdVersionLabel);

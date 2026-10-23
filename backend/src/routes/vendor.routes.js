@@ -7,8 +7,12 @@ import { exportLimiter } from '../middleware/exportRateLimit.js';
 import * as vendorController from '../controllers/vendor.controller.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
+import { ROLES, RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 const router = Router();
+
+// Internal staff who may run the duplicate-review queue (never vendors).
+const STAFF_ROLES = [...RECRUITER_TIER_ROLES];
 
 // Ensure upload directory exists
 const uploadDir = path.resolve(config.upload.dir);
@@ -59,21 +63,22 @@ router.use(authenticate);
  */
 router.get(
   '/dashboard',
-  restrictTo('vendor', 'admin', 'superadmin', 'recruiter'),
+  restrictTo('vendor', 'admin', 'superadmin', ROLES.HR_ADMIN_RECRUITER, 'recruiter'),
   vendorController.getVendorDashboard,
 );
 
 /** List registered vendors — powers the staff vendor-picker. */
 router.get(
   '/vendors',
-  restrictTo('admin', 'superadmin', 'recruiter'),
+  restrictTo('admin', 'superadmin', ROLES.HR_ADMIN_RECRUITER, 'recruiter'),
   vendorController.listVendors,
 );
 
 // ── Upload-related APIs (vendor + internal staff, gated by vendor_upload) ──
-// Staff (admin/superadmin/recruiter/hr) may upload on behalf of a vendor; the
-// vendor they're acting for is supplied per-request and validated server-side.
-router.use(restrictTo('vendor', 'admin', 'superadmin', 'recruiter', 'hr'));
+// Staff (admin/superadmin/hr_admin_recruiter/recruiter/hr) may upload on behalf
+// of a vendor; the vendor they're acting for is supplied per-request and
+// validated server-side.
+router.use(restrictTo('vendor', ...STAFF_ROLES));
 router.use(checkModuleAccess('vendor_upload'));
 
 /** Get candidates uploaded by the vendor */
@@ -98,9 +103,9 @@ router.get('/jobs/export', exportLimiter, vendorController.exportUploadJobs);
 router.post('/jobs/:id/reprocess', vendorController.reprocessJob);
 
 /** Recruiter review actions on the duplicate queue (staff only — never vendors) */
-router.post('/review/search', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewSearch);
-router.post('/review/merge', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewMerge);
-router.post('/review/cancel', restrictTo('admin', 'superadmin', 'recruiter', 'hr'), vendorController.reviewCancel);
+router.post('/review/search', restrictTo(...STAFF_ROLES), vendorController.reviewSearch);
+router.post('/review/merge', restrictTo(...STAFF_ROLES), vendorController.reviewMerge);
+router.post('/review/cancel', restrictTo(...STAFF_ROLES), vendorController.reviewCancel);
 
 /** Get batch summary details */
 router.get('/summary/:executionId', vendorController.getSummary);

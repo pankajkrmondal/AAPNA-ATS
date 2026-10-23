@@ -5,6 +5,8 @@ import config from '../config/index.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
 import { approverNoteHtml } from '../utils/mrfApprovalRules.js';
+import { wrapBrandedEmail } from './emailLayout.service.js';
+import { MRF_HOLD_TEMPLATE_NAMES, MRF_HOLD_TEMPLATE_DEFAULTS } from './mrfHoldEmailTemplates.js';
 import { tracedFetch } from '../utils/externalCall.js';
 import { alertAllowed, ERROR_ALERT_COOLDOWN_MS, JOB_ALERT_COOLDOWN_MS } from '../utils/alertThrottle.js';
 
@@ -1111,7 +1113,10 @@ const escapeHtml = (s) => String(s ?? '')
  * The approval-request email body, shared by the shared-link flow and the
  * per-approver flow so the two cannot drift apart.
  */
-function renderMrfApprovalRequestHtml({ greeting, introText, approveLink, rejectLink, noteHtml = '', tableBody }) {
+function renderMrfApprovalRequestHtml({ greeting, introText, approveLink, rejectLink, holdLink = null, bannerHtml = '', noteHtml = '', tableBody }) {
+  const holdButton = holdLink
+    ? `<a href="${holdLink}" style="background-color: #234e8c; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-left: 15px; display: inline-block;">Hold Requisition</a>`
+    : '';
   return `
 <!DOCTYPE html>
 <html>
@@ -1130,12 +1135,14 @@ body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; li
   <div class="header">
     <div class="logo">AAPNA Requisition Portal</div>
   </div>
+  ${bannerHtml}
   <p><strong>${greeting}</strong></p>
   <div class="intro">${introText}</div>
   ${noteHtml}
   <div style="margin: 24px 0; text-align: center;">
     <a href="${approveLink}" style="background-color: #7a922e; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 15px; display: inline-block;">Approve Requisition</a>
     <a href="${rejectLink}" style="background-color: #d9534f; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reject Requisition</a>
+    ${holdButton}
   </div>
   <hr style="border: none; border-top: 1px solid #e8ede0; margin: 20px 0;"/>
   ${tableBody}
@@ -1217,14 +1224,25 @@ const mrfLabel = (mrfRecord) =>
  *
  * @returns {Promise<number|null>} the rpa_email_log id, or null if the send failed
  */
-export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherApprovers = [], token, frontendUrl }) {
+export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherApprovers = [], token, frontendUrl, backFromHold = null }) {
   const referenceId = Number(mrfRecord.id);
   try {
     const sender = config.microsoft.defaultSender;
     const baseUrl = frontendUrl || config.cors.frontendUrl;
     const approveLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=approve&token=${token}`;
     const rejectLink = `${baseUrl}/mrf/${mrfRecord.id}/approve?action=reject&token=${token}`;
+    // Hold is offered only while the feature is on (MRF_HOLD_ENABLED).
+    const holdLink = config.mrfHold.enabled ? `${baseUrl}/mrf/${mrfRecord.id}/approve?action=hold&token=${token}` : null;
     const { introText, subject } = await loadMrfApprovalTemplate();
+
+    // Same email as the first time, with a banner when the MRF is back from a
+    // hold (plan D5: same subject, so it threads with the original request).
+    const bannerHtml = backFromHold ? `
+  <div style="background:#e7eef9; border:1px solid #9db6dd; border-radius:6px; padding:12px 14px; margin-bottom:18px; color:#1b3d6e; font-size:13px;">
+    <strong>Back from hold.</strong> Put on hold by ${escapeHtml(backFromHold.heldByName || 'an approver')}${backFromHold.heldAtLabel ? ` on ${escapeHtml(backFromHold.heldAtLabel)}` : ''} until ${escapeHtml(backFromHold.heldUntilLabel || '')}.
+    ${backFromHold.note ? `<br/>Note: &ldquo;${escapeHtml(backFromHold.note)}&rdquo;` : ''}
+    <br/>Please approve, reject or hold further.
+  </div>` : '';
 
     const alsoSent = approverNoteHtml(otherApprovers);
     const noteHtml = `
@@ -1238,6 +1256,8 @@ export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherA
       introText,
       approveLink,
       rejectLink,
+      holdLink,
+      bannerHtml,
       noteHtml,
       tableBody: mrfRecord.emailbody || '',
     });
@@ -1284,6 +1304,7 @@ function renderMrfDecisionNoticeHtml({ greeting, lead, decision, closing }) {
       <tr><td style="padding: 4px 12px 4px 0; color: #666;">Decision</td><td style="padding: 4px 0;"><strong>${escapeHtml(decision.word.toUpperCase())}</strong></td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #666;">By</td><td style="padding: 4px 0;">${escapeHtml(decision.byName)}</td></tr>
       <tr><td style="padding: 4px 12px 4px 0; color: #666;">When</td><td style="padding: 4px 0;">${escapeHtml(decision.atIst)}</td></tr>
+      ${decision.untilLabel ? `<tr><td style="padding: 4px 12px 4px 0; color: #666;">On hold until</td><td style="padding: 4px 0;"><strong>${escapeHtml(decision.untilLabel)}</strong></td></tr>` : ''}
     </table>
     ${comment}
     <p>${closing}</p>
@@ -1336,11 +1357,14 @@ export async function sendMrfDecisionConfirmationEmail({ mrfRecord, recipient, d
   const referenceId = Number(mrfRecord.id);
   const subject = `You ${decision.word} ${mrfLabel(mrfRecord)}`;
   try {
+    const held = Boolean(decision.untilLabel);
     const html = renderMrfDecisionNoticeHtml({
       greeting: `Dear ${escapeHtml(recipient.name)},`,
       lead: `Your decision on <strong>${escapeHtml(mrfLabel(mrfRecord))}</strong> has been recorded and the HR team notified.`,
       decision,
-      closing: 'If you did not take this decision yourself, please contact the HR team immediately.',
+      closing: held
+        ? `On ${escapeHtml(decision.untilLabel)} the requisition goes back to pending and the approval request is emailed to every approver again, so it can be approved, rejected or held further. If you did not take this decision yourself, please contact the HR team immediately.`
+        : 'If you did not take this decision yourself, please contact the HR team immediately.',
     });
     await sendGraphEmail({ sender: config.microsoft.defaultSender, to: recipient.email, subject, html });
     const row = await prisma.rpa_email_log.create({
@@ -1359,6 +1383,194 @@ export async function sendMrfDecisionConfirmationEmail({ mrfRecord, recipient, d
     logger.error(`Failed to send decision confirmation to ${recipient?.email} for MRF ID ${mrfRecord?.id}: ${err.message}`);
     await logFailedEmail({ emailType: 'mrf_decision_confirmation', recipientEmail: recipient?.email, recipientName: recipient?.name, subject, referenceId, err });
     return null;
+  }
+}
+
+/**
+ * Recipients of an MRF status notice: the HR team ("mrfOutcome" flow key), and
+ * in production also the hiring manager and the given extra addresses, without
+ * duplicates. Outside production sendGraphEmail redirects everything anyway.
+ */
+function mrfNoticeRecipients({ hmEmail = '', extra = [] } = {}) {
+  const { to: toEmail, cc: baseCc } = resolveRecipients('mrfOutcome');
+  if (config.email.redirectInNonProd) return { to: toEmail, cc: baseCc };
+  const seen = new Set(String(toEmail || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean));
+  const cc = [];
+  for (const e of [...String(baseCc || '').split(','), hmEmail, ...extra]) {
+    const v = String(e || '').trim();
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); cc.push(v); }
+  }
+  return { to: toEmail, cc: cc.join(', ') };
+}
+
+/**
+ * Renders one of the editable MRF Hold & Delegate templates (Email Templates ›
+ * General / Alerts), falling back to the built-in default when the row is
+ * missing or inactive. `values` are plain text and are HTML-escaped for the
+ * body; `fragments` are HTML the caller built (empty string when not
+ * applicable). The subject gets the raw values, since it is not HTML.
+ * @returns {Promise<{subject: string, html: string}>} html is the full branded email
+ */
+async function renderMrfHoldTemplate(name, values, fragments = {}) {
+  const fallback = MRF_HOLD_TEMPLATE_DEFAULTS[name];
+  let tpl = null;
+  try {
+    tpl = await prisma.rpa_email_templates.findFirst({ where: { name, is_active: true } });
+  } catch (err) {
+    logger.warn(`Email template "${name}" lookup failed, using the built-in default: ${err.message}`);
+  }
+  const escaped = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, escapeHtml(v)]));
+  const { subject } = compileTemplate(tpl?.subject || fallback.subject, '', { ...values, ...fragments });
+  const { html } = compileTemplate('', tpl?.body_html || fallback.body_html, { ...escaped, ...fragments });
+  return { subject, html: wrapBrandedEmail(html, { title: subject }) };
+}
+
+const noteLineHtml = (label, text) =>
+  (text ? `<p><strong>${label}:</strong> ${escapeHtml(text)}</p>` : '');
+
+/**
+ * "MRF on hold until <date>" — to HR, the hiring manager and the approvers who
+ * did not hold it (plan D4). Also used, with kind 'date_changed', when the
+ * hold-until date is moved in the ATS. Wording: templates "MRF On Hold Notice"
+ * and "MRF Hold Date Changed".
+ * @param {{ kind?: 'held'|'date_changed', byName: string, atIst: string, untilLabel: string, previousUntilLabel?: string, note?: string|null }} hold
+ * @returns {Promise<number|null>} rpa_email_log id, or null on failure
+ */
+export async function sendMrfHoldNoticeEmail({ mrfRecord, hold, hmEmail = '', approverEmails = [] }) {
+  const referenceId = Number(mrfRecord.id);
+  const changed = hold.kind === 'date_changed';
+  let subject = null;
+  try {
+    const { to, cc } = mrfNoticeRecipients({ hmEmail, extra: approverEmails });
+    const rendered = changed
+      ? await renderMrfHoldTemplate(MRF_HOLD_TEMPLATE_NAMES.holdDateChanged, {
+          mrf_label: mrfLabel(mrfRecord),
+          hold_until: hold.untilLabel,
+          changed_by: hold.byName,
+          changed_at: hold.atIst,
+        }, {
+          previous_until_line: hold.previousUntilLabel ? ` (was ${escapeHtml(hold.previousUntilLabel)})` : '',
+          note_line: noteLineHtml('Note', hold.note),
+        })
+      : await renderMrfHoldTemplate(MRF_HOLD_TEMPLATE_NAMES.holdNotice, {
+          mrf_label: mrfLabel(mrfRecord),
+          hold_until: hold.untilLabel,
+          held_by: hold.byName,
+          held_at: hold.atIst,
+        }, {
+          note_line: noteLineHtml('Note', hold.note),
+        });
+    subject = rendered.subject;
+    const { html } = rendered;
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to, cc, subject, html });
+    const row = await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_hold_notice',
+        recipient_email: to,
+        recipient_name: 'HR Team',
+        subject,
+        body_html: html,
+        reference_id: referenceId,
+        sent_at: new Date(),
+      },
+    });
+    return row.id;
+  } catch (err) {
+    logger.error(`Failed to send hold notice for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({ emailType: 'mrf_hold_notice', recipientName: 'HR Team', subject, referenceId, err });
+    return null;
+  }
+}
+
+/**
+ * Tells an approver that an HR Admin Recruiter / Admin decided their MRF in the
+ * ATS on their behalf while they were marked away. Wording: template
+ * "MRF Decided On Your Behalf".
+ * @param {{ word: string, byName: string, byRoleLabel: string, atIst: string, comments?: string|null, untilLabel?: string|null }} decision
+ * @param {{ from: string, to: string }|null} absence  labels of the absence window
+ * @returns {Promise<number|null>} rpa_email_log id, or null on failure
+ */
+export async function sendMrfDelegateDecisionNoticeEmail({ mrfRecord, recipient, decision, absence = null }) {
+  const referenceId = Number(mrfRecord.id);
+  let subject = null;
+  try {
+    const rendered = await renderMrfHoldTemplate(MRF_HOLD_TEMPLATE_NAMES.delegateDecision, {
+      approver_name: recipient.name,
+      mrf_label: mrfLabel(mrfRecord),
+      decision: decision.word,
+      decision_upper: decision.word.toUpperCase(),
+      decided_by: decision.byName,
+      decided_by_role: decision.byRoleLabel,
+      decided_at: decision.atIst,
+    }, {
+      absence_line: absence
+        ? ` while the approvers were marked away (${escapeHtml(absence.from)} – ${escapeHtml(absence.to)})`
+        : '',
+      hold_until_row: decision.untilLabel
+        ? `<tr><td style="color:#666">On hold until</td><td><strong>${escapeHtml(decision.untilLabel)}</strong></td></tr>`
+        : '',
+      comment_line: noteLineHtml('Comment', decision.comments),
+    });
+    subject = rendered.subject;
+    const { html } = rendered;
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to: recipient.email, subject, html });
+    const row = await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_delegate_notice',
+        recipient_email: recipient.email,
+        recipient_name: recipient.name,
+        subject,
+        body_html: html,
+        reference_id: referenceId,
+        sent_at: new Date(),
+      },
+    });
+    return row.id;
+  } catch (err) {
+    logger.error(`Failed to send on-behalf notice to ${recipient?.email} for MRF ID ${mrfRecord?.id}: ${err.message}`);
+    await logFailedEmail({ emailType: 'mrf_delegate_notice', recipientEmail: recipient?.email, recipientName: recipient?.name, subject, referenceId, err });
+    return null;
+  }
+}
+
+/**
+ * Tells the approvers and the HR Admin Recruiters that the approvers are now
+ * marked away, and who may decide in their place. Wording: template
+ * "MRF Approvers Away Notice".
+ * @returns {Promise<boolean>}
+ */
+export async function sendMrfAbsenceNoticeEmail({ recipients, absence, onBehalfNames = [] }) {
+  let subject = null;
+  try {
+    const to = recipients.map((r) => r.email).filter(Boolean).join(', ');
+    if (!to) return false;
+    const rendered = await renderMrfHoldTemplate(MRF_HOLD_TEMPLATE_NAMES.approversAway, {
+      absence_from: absence.fromLabel,
+      absence_to: absence.toLabel,
+      set_by: absence.setByName || 'an admin',
+      on_behalf_names: onBehalfNames.length ? onBehalfNames.join(', ') : 'an HR Admin Recruiter, Admin or Super Admin',
+    }, {
+      absence_note_line: absence.note ? ` (&ldquo;${escapeHtml(absence.note)}&rdquo;)` : '',
+    });
+    subject = rendered.subject;
+    const { html } = rendered;
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to, subject, html });
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'mrf_absence_notice',
+        recipient_email: to,
+        recipient_name: 'Approvers and HR Admin Recruiters',
+        subject,
+        body_html: html,
+        reference_id: null,
+        sent_at: new Date(),
+      },
+    });
+    return true;
+  } catch (err) {
+    logger.error(`Failed to send approver-absence notice: ${err.message}`);
+    await logFailedEmail({ emailType: 'mrf_absence_notice', recipientName: 'Approvers', subject, referenceId: null, err });
+    return false;
   }
 }
 

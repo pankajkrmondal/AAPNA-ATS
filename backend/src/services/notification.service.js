@@ -19,6 +19,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { emitToUser } from '../socket/index.js';
+import { RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 /**
  * Roles that staff the pipeline. Mirrors REVIEW_ROLES in uploadJob.service.js —
@@ -26,7 +27,7 @@ import { emitToUser } from '../socket/index.js';
  * DELIBERATELY ABSENT: they never receive in-app notifications, the same rule
  * that keeps them off document and offer emails (Q5).
  */
-export const NOTIFY_ROLES = Object.freeze(['recruiter', 'hr', 'admin', 'superadmin']);
+export const NOTIFY_ROLES = RECRUITER_TIER_ROLES;
 
 /** Canonical event keys. Free text in the DB, so adding one is never a migration. */
 export const NOTIFICATION_TYPES = Object.freeze({

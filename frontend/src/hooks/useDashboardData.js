@@ -15,7 +15,7 @@ import { useEffect, useState, useCallback } from 'react';
 import dashboardService from '../services/dashboardService';
 
 const EMPTY_STATS = {
-  totalCandidates: 0, activeMRFs: 0, pendingApprovalMRFs: 0, todayUploads: 0, shortlisted: 0, hired: 0,
+  totalCandidates: 0, activeMRFs: 0, pendingApprovalMRFs: 0, onHoldMRFs: 0, todayUploads: 0, shortlisted: 0, hired: 0,
   mrf: null, period: null, timeToHireDays: null,
 };
 const EMPTY_FUNNEL = { sourced: 0, aiScreened: 0, shortlisted: 0, hired: 0 };

@@ -30,6 +30,10 @@ import {
   clientOf as approvalClientOf,
   getApprovalTrail as loadApprovalTrail,
   reissueApprovalLinks as reissueLinks,
+  decideOnBehalf as decideMrfOnBehalf,
+  changeHoldDate as changeMrfHoldDate,
+  releaseHoldNow as releaseMrfHoldNow,
+  listHeldMrfs as loadHeldMrfs,
 } from '../services/mrfApproval.service.js';
 import { MAX_COMMENT_LENGTH } from '../utils/mrfApprovalRules.js';
 import { isAdminTier } from '../config/roles.js';
@@ -1064,17 +1068,22 @@ export const getPublicMrfDetails = catchAsync(async (req, res) => {
  */
 export const handleMrfApproval = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const { token, action, comments } = req.body;
+  const { token, action, comments, holdUntil } = req.body;
 
   if (!token || !action) {
     throw new AppError('Token and action parameters are required.', 400);
   }
 
-  // Only the two real decisions are accepted. Anything else used to fall
-  // through to `isApproved = false` and was saved as a rejection.
+  // Only the real decisions are accepted. Anything else used to fall
+  // through to `isApproved = false` and was saved as a rejection. Hold needs
+  // the personal-link flow (it is checked again, with the hold rules, in the
+  // service).
   const normalizedAction = String(action).trim().toLowerCase();
-  if (normalizedAction !== 'approve' && normalizedAction !== 'reject') {
-    throw new AppError('Action must be either "approve" or "reject".', 400);
+  const allowedActions = config.mrfApprovalAudit.enabled && config.mrfHold.enabled
+    ? ['approve', 'reject', 'hold']
+    : ['approve', 'reject'];
+  if (!allowedActions.includes(normalizedAction)) {
+    throw new AppError(`Action must be ${allowedActions.map((a) => `"${a}"`).join(', ').replace(/, ([^,]*)$/, ' or $1')}.`, 400);
   }
   if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
   if (comments !== undefined && comments !== null && String(comments).length > MAX_COMMENT_LENGTH) {
@@ -1086,12 +1095,14 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
     // transaction, other approvers notified (services/mrfApproval.service.js).
     const result = await decideMrfApproval(
       id,
-      { token: String(token), action: normalizedAction, comments },
+      { token: String(token), action: normalizedAction, comments, holdUntil },
       approvalClientOf(req),
     );
     // A newly approved MRF must appear in the role dropdowns without a reload.
-    broadcastMrfUpdated(id, result.approval_status === 'approved' ? 'approved' : 'rejected');
-    return success(res, result, `Requisition request successfully ${result.approval_status}`);
+    broadcastMrfUpdated(id, result.approval_status);
+    return success(res, result, result.approval_status === 'held'
+      ? `Requisition put on hold until ${result.held_until_label}`
+      : `Requisition request successfully ${result.approval_status}`);
   }
 
   // ── Previous shared-link flow (MRF_APPROVAL_AUDIT_ENABLED=false) ──────
@@ -1215,8 +1226,72 @@ export const handleMrfApproval = catchAsync(async (req, res) => {
 export const getApprovalTrail = catchAsync(async (req, res) => {
   const { id } = req.params;
   if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
-  const trail = await loadApprovalTrail(id, { includeClientData: isAdminTier(req.user?.role) });
+  const trail = await loadApprovalTrail(id, { includeClientData: isAdminTier(req.user?.role), user: req.user });
   return success(res, trail, 'Approval trail retrieved');
+});
+
+/**
+ * @desc    Approve, reject or hold on behalf of the approvers, from the ATS.
+ *          HR Admin Recruiter / Admin / Super Admin, only while the approvers
+ *          are marked away (Settings › MRF Approval & Hold). Reason required.
+ * @route   POST /api/mrf/:id/decision   (:id = rpa_mrf id)
+ * @body    { action: 'approve'|'reject'|'hold', comments: string, holdUntil?: 'YYYY-MM-DD' }
+ * @access  Private (role and absence window checked in the service)
+ */
+export const decideOnBehalf = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const { action, comments, holdUntil } = req.body || {};
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  if (!['approve', 'reject', 'hold'].includes(normalizedAction)) {
+    throw new AppError('Action must be "approve", "reject" or "hold".', 400);
+  }
+  if (comments !== undefined && comments !== null && String(comments).length > MAX_COMMENT_LENGTH) {
+    throw new AppError(`The reason must be at most ${MAX_COMMENT_LENGTH} characters.`, 400);
+  }
+  const result = await decideMrfOnBehalf(id, { action: normalizedAction, comments, holdUntil }, req.user, approvalClientOf(req));
+  broadcastMrfUpdated(id, result.approval_status);
+  return success(res, result, result.approval_status === 'held'
+    ? `Requisition put on hold until ${result.held_until_label}`
+    : `Requisition ${result.approval_status} on behalf of the approvers`);
+});
+
+/**
+ * @desc    Held MRFs (Settings › Held MRFs), soonest release first.
+ * @route   GET /api/mrf/held
+ * @access  Private (staff)
+ */
+export const listHeldMrfs = catchAsync(async (_req, res) => {
+  const rows = await loadHeldMrfs();
+  return success(res, rows, 'Held requisitions retrieved');
+});
+
+/**
+ * @desc    Move the hold-until date of a held MRF.
+ * @route   PATCH /api/mrf/:id/hold   (:id = rpa_mrf id)
+ * @body    { holdUntil: 'YYYY-MM-DD', note?: string }
+ * @access  Private (HR Admin Recruiter and above, checked in the service)
+ */
+export const changeHoldDate = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const result = await changeMrfHoldDate(id, { holdUntil: req.body?.holdUntil, note: req.body?.note }, req.user);
+  broadcastMrfUpdated(id, 'held');
+  return success(res, result, `Hold now ends on ${result.held_until_label}`);
+});
+
+/**
+ * @desc    Release a held MRF now: back to pending, approval email to every
+ *          approver again.
+ * @route   POST /api/mrf/:id/hold/release   (:id = rpa_mrf id)
+ * @access  Private (HR Admin Recruiter and above, checked in the service)
+ */
+export const releaseHold = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(String(id))) throw new AppError('Invalid requisition id.', 400);
+  const result = await releaseMrfHoldNow(id, req.user, { frontendUrl: req.headers.origin || config.cors.frontendUrl });
+  broadcastMrfUpdated(id, 'pending');
+  return success(res, result, `Released from hold; approval email sent to ${result.sent} approver(s)`);
 });
 
 /**

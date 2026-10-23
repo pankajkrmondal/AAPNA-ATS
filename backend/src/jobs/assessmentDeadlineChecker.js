@@ -15,6 +15,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { emitToRole } from '../socket/index.js';
+import { RECRUITER_ROOM_ROLES } from '../config/roles.js';
 import { notify, NOTIFICATION_TYPES } from '../services/notification.service.js';
 import { runJob } from '../utils/jobRunner.js';
 
@@ -105,13 +106,14 @@ export async function checkOverdueAssessmentInvites() {
         || pipeline?.rpa_shortlisted_candidates?.position_applied || null;
 
       // Kept for any open view that refreshes on it; the bell reads the row.
-      emitToRole('recruiter', 'assessment:deadline_expired', {
+      const expiredPayload = {
         pipelineId: Number(row.pipeline_id),
         inviteId: Number(row.invite_id),
         candidateName,
         position,
         deadlineAt: row.deadline_at,
-      });
+      };
+      for (const role of RECRUITER_ROOM_ROLES) emitToRole(role, 'assessment:deadline_expired', expiredPayload);
 
       await notify({
         type: NOTIFICATION_TYPES.ASSESSMENT_DEADLINE_EXPIRED,
