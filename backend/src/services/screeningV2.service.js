@@ -49,6 +49,7 @@ import {
   skillPredicateSql,
   wholeWordMatch,
 } from '../utils/screeningFilters.js';
+import { EXCLUSION_LABELS, compareNearestMiss, exclusionReasons } from '../utils/screeningExclusionReasons.js';
 import {
   resolveMandatoryText,
   parseMandatorySkills,
@@ -674,6 +675,49 @@ async function insightsForTop(mrfId, roleContext, top) {
  * @param {number} mrfId
  * @param {boolean} [force=false] - skip the cache
  */
+/**
+ * The JD tab's cheap gates, in funnel order: [tagged], recently rejected for
+ * this MRF, education, CTC, experience, [added within]. Shared by the search
+ * and by "not shown" (L11), so the list of who was left out is built from
+ * exactly the rules that left them out.
+ *
+ * @returns {{ f: object, cheapConds: Array<{key: string, sql: Prisma.Sql}> }}
+ */
+function roleCheapConds({ mrfId, mandatory, band, budgetMax, eduReq, recencyDays, tagged }) {
+  const f = {
+    ...parseScreeningFilters({}),
+    skills: mandatory.skills,
+    matchMode: 'all',
+    expMin: band.min,
+    expMax: band.max,
+    ctcMax: budgetMax,
+    addedWithinDays: recencyDays,
+  };
+  const byKey = Object.fromEntries(buildFilterConditions(f, 'c').map((cond) => [cond.key, cond]));
+  const eduSql = educationGateSql(eduReq, 'c');
+  const cheapConds = [
+    // First, so the funnel reads "of N tagged to this JD" (N15).
+    tagged ? {
+      key: 'tagged',
+      sql: Prisma.sql`EXISTS (
+        SELECT 1 FROM public.rpa_candidate_mrf_tags t
+        WHERE t.cv_id = c.id AND t.mrf_id = ${BigInt(mrfId)})`,
+    } : null,
+    {
+      key: 'recentlyRejected',
+      sql: Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM public.rpa_shortlisted_candidates rsc
+        WHERE rsc.cv_id = c.id AND rsc.mrf_id = ${BigInt(mrfId)} AND rsc.pipeline_status = 'rejected'
+          AND rsc.modified_at > ${getCooldownCutoff()}::timestamp)`,
+    },
+    eduSql ? { key: 'education', sql: Prisma.sql`COALESCE((${eduSql}), false)` } : null,
+    byKey.ctc || null,
+    byKey.experience,
+    byKey.addedWithin || null,
+  ].filter(Boolean);
+  return { f, cheapConds };
+}
+
 export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithinDays = null, taggedOnly = false, activeFirst = true } = {}) {
   const t0 = Date.now();
   // N38 "Added within": same parser and SQL as keyword search. Each offered
@@ -785,37 +829,7 @@ export async function searchRoleCandidatesV2(mrfId, force = false, { addedWithin
   // search) → education → CTC → experience on plain columns, and only the
   // candidates left are searched for skills in their resume text (decided
   // 14 Oct; ~3x faster than skills-first on 100k resumes, same result).
-  const f = {
-    ...parseScreeningFilters({}),
-    skills: mandatory.skills,
-    matchMode: 'all',
-    expMin: band.min,
-    expMax: band.max,
-    ctcMax: budgetMax,
-    addedWithinDays: recencyDays,
-  };
-  const byKey = Object.fromEntries(buildFilterConditions(f, 'c').map((cond) => [cond.key, cond]));
-  const eduSql = educationGateSql(eduReq, 'c');
-  const cheapConds = [
-    // First, so the funnel reads "of N tagged to this JD" (N15).
-    tagged ? {
-      key: 'tagged',
-      sql: Prisma.sql`EXISTS (
-        SELECT 1 FROM public.rpa_candidate_mrf_tags t
-        WHERE t.cv_id = c.id AND t.mrf_id = ${BigInt(mrfId)})`,
-    } : null,
-    {
-      key: 'recentlyRejected',
-      sql: Prisma.sql`NOT EXISTS (
-        SELECT 1 FROM public.rpa_shortlisted_candidates rsc
-        WHERE rsc.cv_id = c.id AND rsc.mrf_id = ${BigInt(mrfId)} AND rsc.pipeline_status = 'rejected'
-          AND rsc.modified_at > ${getCooldownCutoff()}::timestamp)`,
-    },
-    eduSql ? { key: 'education', sql: Prisma.sql`COALESCE((${eduSql}), false)` } : null,
-    byKey.ctc || null,
-    byKey.experience,
-    byKey.addedWithin || null,
-  ].filter(Boolean);
+  const { f, cheapConds } = roleCheapConds({ mrfId, mandatory, band, budgetMax, eduReq, recencyDays, tagged });
   const keys = [...cheapConds.map((cond) => cond.key), 'skills'];
 
   // Semantic distance: last tiebreak only. No embedding → no distance, and the
@@ -1035,4 +1049,246 @@ export function isLookupRequest(body) {
   return detectLookup(parseScreeningFilters(body)) != null;
 }
 
-export default { searchKeywordCandidatesV2, searchRoleCandidatesV2, roleCacheKeyV2, isLookupRequest };
+// ── L11: who was left out, and why ──────────────────────────────────────
+
+/** At most this many left-out candidates are listed ("showing the nearest 200"). */
+export const NOT_SHOWN_CAP = 200;
+
+const notFailing = (cond) => Prisma.sql`NOT COALESCE((${cond.sql}), false)`;
+
+/**
+ * The candidates a search left out, nearest misses first, each with the rules
+ * that removed them.
+ *
+ * Computed on request only (the "See the N not shown" link), never as part of
+ * the search, so the search and its cache stay exactly as they are.
+ *
+ *   A. every candidate in scope failing at least one cheap gate: one scan, one
+ *      true/false per gate (the same cost as the funnel counts), capped and
+ *      ordered by how many gates they failed;
+ *   B. the candidates who passed every cheap gate but failed the skills (and,
+ *      on the keyword tab, the JS-only education filter): the search's own pool;
+ *   C. merged, nearest miss first, capped; card columns and the rejection
+ *      (who and when) for the ones shown, plus which skills they lack.
+ */
+async function notShownCore({
+  scopeSql, gates, skillTerms = [], skillLabels = [], skillMode = 'all', educationFilters = null,
+  mrfId = null, reason = null, limit = NOT_SHOWN_CAP, ctx,
+}) {
+  const cap = Math.min(Math.max(Number(limit) || NOT_SHOWN_CAP, 1), NOT_SHOWN_CAP);
+  const byReason = {};
+  const entries = [];
+  let gateTotal = 0;
+  let poolMisses = 0;
+  const skillCols = skillTerms.length
+    ? Prisma.join(skillTerms.map((t, j) => Prisma.sql`COALESCE(${skillPredicateSql(t, 'c')}, false) AS ${Prisma.raw(`k_${j}`)}`), ', ')
+    : null;
+  const missingOf = (row) => skillTerms.map((_, j) => j).filter((j) => row[`k_${j}`] !== true);
+  const skillFails = (missing) => skillTerms.length > 0
+    && (skillMode === 'any' ? missing.length === skillTerms.length : missing.length > 0);
+
+  // A — cheap-gate failures.
+  if (gates.length > 0) {
+    const anyFail = Prisma.join(gates.map(notFailing), ' OR ');
+    const countSel = Prisma.join(gates.map((g) => Prisma.sql`COUNT(*) FILTER (WHERE ${notFailing(g)})::int AS ${Prisma.raw(`"n_${g.key}"`)}`), ', ');
+    const [countRow] = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS total, ${countSel} FROM public.rpa_cv c WHERE ${scopeSql} AND (${anyFail})`;
+    gateTotal = Number(countRow?.total) || 0;
+    for (const g of gates) byReason[g.key] = Number(countRow?.[`n_${g.key}`]) || 0;
+
+    const reasonGate = reason ? gates.find((g) => g.key === reason) : null;
+    if (!reason || reasonGate) {
+      const where = reasonGate ? notFailing(reasonGate) : anyFail;
+      const flagSel = Prisma.join(gates.map((g) => Prisma.sql`${notFailing(g)} AS ${Prisma.raw(`"f_${g.key}"`)}`), ', ');
+      const failedCount = Prisma.join(gates.map((g) => Prisma.sql`(${notFailing(g)})::int`), ' + ');
+      const rows = await prisma.$queryRaw`
+        SELECT c.id, c."createdAt", ${flagSel}, (${failedCount}) AS failed
+        FROM public.rpa_cv c
+        WHERE ${scopeSql} AND (${where})
+        ORDER BY failed ASC, c."createdAt" DESC NULLS LAST
+        LIMIT ${cap}`;
+      for (const r of rows) {
+        entries.push({ id: String(r.id), createdAt: r.createdAt, keys: gates.filter((g) => r[`f_${g.key}`] === true).map((g) => g.key), fromGates: true });
+      }
+    }
+  }
+
+  // B — passed every cheap gate, failed the skills or (keyword) education.
+  const wantPool = (skillTerms.length > 0 || educationFilters) && (!reason || reason === 'skills' || reason === 'education');
+  if (wantPool) {
+    const eduCols = educationFilters
+      ? Prisma.raw(', c."HighestQualification", c.graduationdegree, c.graduationspecialization, c.postgraduationdegree, c.postgraduationspecialization')
+      : Prisma.empty;
+    const pool = await prisma.$queryRaw`
+      WITH p AS MATERIALIZED (
+        SELECT c.id FROM public.rpa_cv c WHERE ${scopeSql} AND ${joinConditions(gates)}
+      )
+      SELECT p.id, c."createdAt"${skillCols ? Prisma.sql`, ${skillCols}` : Prisma.empty}${eduCols}
+      FROM p JOIN public.rpa_cv c ON c.id = p.id`;
+    let skillCount = 0;
+    let eduCount = 0;
+    for (const r of pool) {
+      const missing = missingOf(r);
+      if (skillFails(missing)) {
+        skillCount += 1;
+        if (!reason || reason === 'skills') {
+          entries.push({ id: String(r.id), createdAt: r.createdAt, keys: ['skills'], missingSkills: missing.map((j) => skillLabels[j] || skillTerms[j]) });
+        }
+      } else if (educationFilters && !passesStrictFilters(r, educationFilters).pass) {
+        eduCount += 1;
+        if (!reason || reason === 'education') entries.push({ id: String(r.id), createdAt: r.createdAt, keys: ['education'] });
+      }
+    }
+    poolMisses = skillCount + eduCount;
+    if (skillTerms.length) byReason.skills = skillCount;
+    if (educationFilters) byReason.education = (byReason.education || 0) + eduCount;
+  }
+
+  // Which skills the cheap-gate misses lack too ("also missing C#"), BEFORE
+  // ordering, so a candidate failing location AND skills never ranks as a
+  // nearer miss than one failing skills alone. At most `cap` rows (A is capped
+  // in SQL), each a primary-key lookup.
+  const gateEntries = entries.filter((e) => e.fromGates);
+  if (skillCols && gateEntries.length && reason !== 'skills') {
+    const gateIds = gateEntries.map((e) => e.id);
+    const flags = await prisma.$queryRaw`SELECT c.id, ${skillCols} FROM public.rpa_cv c WHERE c.id = ANY(${gateIds}::bigint[])`;
+    const flagsById = new Map(flags.map((r) => [String(r.id), r]));
+    for (const e of gateEntries) {
+      const r = flagsById.get(e.id);
+      const missing = r ? missingOf(r) : [];
+      if (r && skillFails(missing)) {
+        e.keys = [...e.keys, 'skills'];
+        e.missingSkills = missing.map((j) => skillLabels[j] || skillTerms[j]);
+      }
+    }
+  }
+
+  // C — nearest miss first, capped, then the details for the ones shown.
+  entries.sort(compareNearestMiss);
+  const shown = entries.slice(0, cap);
+  const ids = shown.map((e) => e.id);
+  const details = ids.length === 0 ? [] : await prisma.$queryRaw`
+    SELECT ${CARD_COLUMNS}, ${PROVENANCE_COLUMNS}
+    FROM public.rpa_cv c
+    ${provenanceJoins(mrfId)}
+    WHERE c.id = ANY(${ids}::bigint[])`;
+  const byId = new Map(details.map((d) => [String(d.id), d]));
+
+  const now = Date.now();
+  const candidates = shown.map((e) => {
+    const c = byId.get(e.id) || {};
+    return {
+      id: e.id,
+      name: c.Name || null,
+      positionApplied: c.PositionApplied || null,
+      experience: c.TotalExperienceYears || null,
+      expectedCtc: c.ExpectedCTC_LPA || null,
+      location: c.CurrentLocation || null,
+      noticePeriod: c.NoticePeriod || null,
+      education: [c.postgraduationdegree, c.graduationdegree, c.HighestQualification].filter(Boolean).join(' / ') || null,
+      createdAt: c.createdAt || e.createdAt || null,
+      reasonKeys: e.keys,
+      reasons: exclusionReasons({ keys: e.keys, c, missingSkills: e.missingSkills || [], ctx, now }),
+    };
+  });
+  // Everyone left out: the cheap-gate misses (counted once each, although a
+  // candidate can fail several gates) plus the pool's misses.
+  const allCount = gateTotal + poolMisses;
+
+  const listedTotal = reason ? (byReason[reason] || 0) : allCount;
+  return {
+    total: allCount,
+    listed: candidates.length,
+    capped: listedTotal > candidates.length,
+    cap,
+    reason: reason || null,
+    byReason,
+    labels: Object.fromEntries(Object.keys(byReason).map((k) => [k, EXCLUSION_LABELS[k] || k])),
+    candidates,
+  };
+}
+
+/**
+ * JD tab (L11): who this MRF's search left out, and why. Same rules as
+ * searchRoleCandidatesV2 (roleCheapConds); "Tagged to this JD only" narrows the
+ * scope rather than counting as a reason.
+ */
+export async function notShownForRole(mrfId, { addedWithinDays = null, taggedOnly = false, reason = null, limit = NOT_SHOWN_CAP } = {}) {
+  const recencyDays = parseScreeningFilters({ addedWithinDays }).addedWithinDays;
+  const tagged = taggedOnly === true;
+  const mrf = await loadMrf(mrfId);
+  const mandatoryText = resolveMandatoryText(mrf);
+  const mandatory = parseMandatorySkills(mandatoryText.text);
+  if (mandatory.skills.length === 0) {
+    return { total: 0, listed: 0, capped: false, cap: NOT_SHOWN_CAP, reason: null, byReason: {}, labels: {}, candidates: [], note: 'This MRF has no mandatory skills; edit the MRF to add them.' };
+  }
+  const band = experienceBand(mrf.parsed_jd_json, mrf.total_years_of_experience);
+  const budgetMax = normaliseBudget(mrf.budget_max);
+  const eduReq = mapQualification(mrf.desired_qualification);
+  const { cheapConds } = roleCheapConds({ mrfId, mandatory, band, budgetMax, eduReq, recencyDays, tagged });
+  const scope = cheapConds.find((c) => c.key === 'tagged');
+  return notShownCore({
+    scopeSql: scope ? scope.sql : Prisma.sql`TRUE`,
+    gates: cheapConds.filter((c) => c.key !== 'tagged'),
+    skillTerms: mandatory.skills,
+    skillLabels: mandatory.labels,
+    skillMode: 'all',
+    mrfId,
+    reason,
+    limit,
+    ctx: {
+      mode: 'jd',
+      expMin: band.min,
+      expMax: band.max,
+      ctcMax: budgetMax,
+      educationLabel: eduReq ? QUALIFICATION_LABELS[eduReq] : null,
+      addedWithinDays: recencyDays,
+    },
+  });
+}
+
+/**
+ * Keyword tab (L11): who this keyword search left out, and why. Same filters
+ * as searchKeywordCandidatesV2, including the 90-day rejection cool-off and the
+ * JS-only education filter. A name / email / phone lookup applies no filters,
+ * so nothing is left out.
+ */
+export async function notShownForKeyword(body, { reason = null, limit = NOT_SHOWN_CAP } = {}) {
+  const f = parseScreeningFilters(body);
+  if (detectLookup(f)) {
+    return { total: 0, listed: 0, capped: false, cap: NOT_SHOWN_CAP, reason: null, byReason: {}, labels: {}, candidates: [] };
+  }
+  const anyFilter = f.skills.length || f.position.length || f.education.length || f.location.length
+    || f.gender || [f.expMin, f.expMax, f.ctcMin, f.ctcMax, f.noticePeriod, f.addedWithinDays].some((v) => v != null);
+  if (!anyFilter) {
+    throw new AppError('Enter at least one filter (skills, name, email, phone, location, experience …) to search.', 400);
+  }
+  const excludedIds = [...(await getRejectionCooldownExcludedCvIds())];
+  const conditions = buildFilterConditions(f, 'c').filter((cond) => cond.key !== 'skills');
+  if (excludedIds.length > 0) {
+    conditions.unshift({ key: 'recentlyRejected', sql: Prisma.sql`COALESCE((c.id <> ALL(${excludedIds}::bigint[])), false)` });
+  }
+  return notShownCore({
+    scopeSql: Prisma.sql`TRUE`,
+    gates: conditions,
+    skillTerms: f.skills,
+    skillLabels: f.skills,
+    skillMode: f.matchMode === 'any' ? 'any' : 'all',
+    educationFilters: f.education.length ? { ...parseScreeningFilters({}), education: f.education } : null,
+    reason,
+    limit,
+    ctx: {
+      mode: 'keyword',
+      expMin: f.expMin,
+      expMax: f.expMax,
+      ctcMin: f.ctcMin,
+      ctcMax: f.ctcMax,
+      noticeMax: f.noticePeriod,
+      addedWithinDays: f.addedWithinDays,
+      locations: f.location,
+      positions: f.position,
+    },
+  });
+}
+
+export default { searchKeywordCandidatesV2, searchRoleCandidatesV2, roleCacheKeyV2, isLookupRequest, notShownForRole, notShownForKeyword };

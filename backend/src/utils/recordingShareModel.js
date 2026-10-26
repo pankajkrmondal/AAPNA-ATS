@@ -186,6 +186,38 @@ export function shareExpiryFrom(days, from = new Date()) {
   return new Date(from.getTime() + safeDays * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * The ready-to-paste message for a recording shared with someone outside the
+ * ATS (L13): who and which round, the no-login link, until when it works, and
+ * the job description when the role has one.
+ *
+ * Plain text, not HTML: it is pasted into an Outlook, Teams or WhatsApp
+ * message the recruiter writes, never sent by the ATS itself.
+ *
+ * @param {object} p
+ * @param {string} [p.candidateName]
+ * @param {string} [p.stageLabel]
+ * @param {string} [p.role]
+ * @param {string} p.url - the no-login link (shareUrlFor)
+ * @param {Date|string} p.expiresAt
+ * @param {string|null} [p.jdLink]
+ * @param {string} [p.timeZone]
+ * @returns {string}
+ */
+export function recordingShareMessage({
+  candidateName, stageLabel, role, url, expiresAt, jdLink = null, timeZone = undefined,
+}) {
+  const who = [candidateName, stageLabel].filter(Boolean).join(' · ');
+  const lines = [
+    `Interview recording${who ? `: ${who}` : ''}${role ? ` (${role})` : ''}`,
+    `Watch it here (no sign-in needed): ${url}`,
+  ];
+  const until = shareDate(expiresAt, timeZone);
+  if (until) lines.push(`The link works until ${until}.`);
+  if (jdLink) lines.push(`Job description: ${jdLink}`);
+  return lines.join('\n');
+}
+
 export default {
   SHARE_STATES,
   isShareToken,
@@ -196,4 +228,5 @@ export default {
   shareDate,
   describeShareLink,
   shareExpiryFrom,
+  recordingShareMessage,
 };

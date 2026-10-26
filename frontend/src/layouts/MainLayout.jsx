@@ -35,6 +35,7 @@ import {
   AuditOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 
 import useAuth from '../hooks/useAuth';
@@ -46,6 +47,7 @@ import ChangePasswordModal from '../components/common/ChangePasswordModal';
 import AmbientBackdrop from '../components/common/AmbientBackdrop';
 import AapnaLogo from '../components/common/AapnaLogo';
 import NotificationBell from '../components/common/NotificationBell';
+import { FORMS_LINKS_ENABLED } from '../utils/featureFlags';
 
 const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
@@ -94,6 +96,10 @@ const MENU_ITEMS = [
   // you can land on by accident.
   { key: '/pipeline', icon: <ApartmentOutlined />, label: 'Candidate Pipeline' },
   { key: '/analytics',  icon: <BarChartOutlined />,  label: 'Recruitment Analytics' },
+  // L08 (D1): after the reports, before the admin pages. Behind
+  // VITE_FORMS_LINKS_ENABLED until Chhaya signs off the new slot; the page
+  // itself is always reachable at /forms-links.
+  ...(FORMS_LINKS_ENABLED ? [{ key: '/forms-links', icon: <LinkOutlined />, label: 'Forms & Links' }] : []),
   { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
   { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
 ];
@@ -140,6 +146,7 @@ const V2_ROUTES = [
   '/hr-upload', '/vendor', '/vendor-dashboard', '/mrf',
   '/analytics', '/settings', '/email',
   '/candidate-pipeline-prototype',
+  '/forms-links',
 ];
 
 /** Roles that get the Vendor Dashboard nav item (to review vendor submissions). */
@@ -161,6 +168,7 @@ const BREADCRUMB_MAP = {
   'candidate-pipeline-prototype': 'Candidate Pipeline (Demo — mock data)',
   pipeline: 'Candidate Pipeline',
   analytics: 'Recruitment Analytics',
+  'forms-links': 'Forms & Links',
   email: 'Email Template Management',
   settings: 'Settings',
 };
@@ -206,6 +214,9 @@ export default function MainLayout() {
   let selectedKey = '/' + (pathSegments[0] || 'dashboard');
   if (pathSegments[0] === 'candidates' && pathSegments[1] && location.state?.from === 'analytics') {
     selectedKey = '/analytics';
+  }
+  if (pathSegments[0] === 'candidates' && pathSegments[1] && location.state?.from === 'hr-upload') {
+    selectedKey = '/hr-upload';
   }
   const isAdminPath = location.pathname.startsWith('/admin');
 

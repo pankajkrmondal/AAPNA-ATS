@@ -17,8 +17,10 @@ import {
   CloudUploadOutlined,
   UserOutlined,
   EnterOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import candidateService from '../../services/candidateService';
+import { FORMS_LINKS_ENABLED } from '../../utils/featureFlags';
 
 const NAV_COMMANDS = [
   { key: 'dashboard', label: 'Dashboard', icon: <DashboardOutlined />, url: '/dashboard' },
@@ -28,6 +30,7 @@ const NAV_COMMANDS = [
   { key: 'screening_analytics', label: 'Recruitment Analytics', icon: <BarChartOutlined />, url: '/analytics', module: 'screening_analytics' },
   { key: 'hr_manual_upload', label: 'HR Manual Upload', icon: <UploadOutlined />, url: '/hr-upload', module: 'hr_manual_upload' },
   { key: 'vendor_upload', label: 'Vendor Upload', icon: <CloudUploadOutlined />, url: '/vendor', module: 'vendor_upload' },
+  ...(FORMS_LINKS_ENABLED ? [{ key: 'forms_links', label: 'Forms & Links', icon: <LinkOutlined />, url: '/forms-links' }] : []),
   { key: 'email', label: 'Email Templates', icon: <MailOutlined />, url: '/email' },
   { key: 'settings', label: 'Settings', icon: <SettingOutlined />, url: '/settings' },
 ];
@@ -118,6 +121,18 @@ export default function CommandPalette({ open, onClose, onNavigate, isModuleEnab
                 <EnterOutlined className="dash-cmdk__enter" />
               </div>
             ))}
+          </div>
+        )}
+
+        {/* L08 (D8): any search can jump to the links sent for it. */}
+        {FORMS_LINKS_ENABLED && query.trim().length >= 2 && (
+          <div className="dash-cmdk__group">
+            <div className="dash-cmdk__grouphead">Links</div>
+            <div className="dash-cmdk__row" onClick={() => go(`/forms-links?q=${encodeURIComponent(query.trim())}`)}>
+              <span className="dash-cmdk__icon"><LinkOutlined /></span>
+              <span className="dash-cmdk__label">Find a link for &ldquo;{query.trim()}&rdquo;</span>
+              <EnterOutlined className="dash-cmdk__enter" />
+            </div>
           </div>
         )}
 

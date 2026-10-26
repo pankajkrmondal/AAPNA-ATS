@@ -54,7 +54,7 @@ const PLACEHOLDER_CONTACT = '9876543210';
  * any address in `exclude` (e.g. the uploader's / vendor's own email, which is never
  * the candidate's identity and must not leak in as one).
  */
-function sanitizeMatchEmails(raw, exclude = []) {
+export function sanitizeMatchEmails(raw, exclude = []) {
   const blocked = exclude
     .filter(Boolean)
     .map((e) => String(e).trim().toLowerCase());
@@ -68,7 +68,7 @@ function sanitizeMatchEmails(raw, exclude = []) {
  * Build a clean list of phone match-keys from a raw comma-separated string.
  * Keeps the existing space-stripped format; drops blanks and the placeholder default.
  */
-function sanitizeMatchContacts(raw) {
+export function sanitizeMatchContacts(raw) {
   return String(raw || '')
     .split(',')
     .map((n) => n.replace(/\s+/g, ''))
@@ -473,6 +473,39 @@ function getMissingFields(parsed) {
 }
 
 /**
+ * The existing candidate an upload duplicates, by validated email or phone
+ * (L09: one helper for the upload and the merge, so both pick the same one).
+ *
+ * Several candidates can share an email or phone. The old query took LIMIT 1
+ * with no ORDER BY, so the upload and the later merge could each land on a
+ * different one. Deterministic now: the most recently updated record, then
+ * the newest id.
+ *
+ * @param {object} db - prisma, or a transaction client
+ * @param {string[]} cleanContactNumbers - from sanitizeMatchContacts()
+ * @param {string[]} cleanEmails - from sanitizeMatchEmails()
+ * @returns {Promise<object|null>} the full rpa_cv row, or null
+ */
+export async function findExistingCandidateMatch(db, cleanContactNumbers, cleanEmails) {
+  if (cleanContactNumbers.length === 0 && cleanEmails.length === 0) return null;
+  const matches = await db.$queryRaw`
+    SELECT id FROM public.rpa_cv
+    WHERE
+      (
+        coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
+        string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
+      ) OR (
+        coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
+        string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
+      )
+    ORDER BY "modifiedAt" DESC NULLS LAST, id DESC
+    LIMIT 1
+  `;
+  if (!matches || matches.length === 0) return null;
+  return db.rpa_cv.findUnique({ where: { id: matches[0].id } });
+}
+
+/**
  * Service methods
  */
 
@@ -586,26 +619,13 @@ export async function mergeDuplicates(ids, token, user = {}) {
         const cleanContactNumbers = sanitizeMatchContacts(tempCandidate.ContactNumber);
         const cleanEmails = sanitizeMatchEmails(tempCandidate.EmailID);
 
-        let existingCandidate = null;
-        if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
-          const matches = await tx.$queryRaw`
-            SELECT id FROM public.rpa_cv
-            WHERE
-              (
-                coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
-                string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
-              ) OR (
-                coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
-                string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
-              )
-            LIMIT 1
-          `;
-          if (matches && matches.length > 0) {
-            const matchId = matches[0].id;
-            existingCandidate = await tx.rpa_cv.findUnique({
-              where: { id: matchId }
-            });
-          }
+        // The candidate the recruiter was shown in the Review window (L09) while
+        // it still exists; otherwise match again, the same way the upload did.
+        let existingCandidate = tempCandidate.matched_cv_id
+          ? await tx.rpa_cv.findUnique({ where: { id: tempCandidate.matched_cv_id } })
+          : null;
+        if (!existingCandidate) {
+          existingCandidate = await findExistingCandidateMatch(tx, cleanContactNumbers, cleanEmails);
         }
 
         // 3) Merge fields
@@ -729,7 +749,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
             fileName: fileName,
             source: 'HR_APPROVED_MERGE',
             status: 'merged',
-            logMessage: `HR duplicate approved and merged into rpa_cv by admin. Tmp ID: ${tempCandidate.id}`,
+            logMessage: `HR duplicate approved and merged into rpa_cv by ${user?.email || user?.username || 'a recruiter'}. Tmp ID: ${tempCandidate.id}, candidate ID: ${existingCandidate ? existingCandidate.id : 'new'}`,
             createdAt: new Date()
           }
         });
@@ -821,6 +841,9 @@ export async function mergeDuplicates(ids, token, user = {}) {
             status: mergedStatus,
             action_required: false,
             cv_id: task.id,
+            // Who resolved it (L09); the columns existed but were never written.
+            reviewed_by: user?.email || user?.username || null,
+            review_action: 'merged',
           }).catch((e) => logger.warn(`Failed to flip job after merge: ${e.message}`));
         }
       } catch (err) {
@@ -855,7 +878,7 @@ export async function mergeDuplicates(ids, token, user = {}) {
   }
 }
 
-export async function deleteDuplicates(ids, token) {
+export async function deleteDuplicates(ids, token, user = {}) {
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new AppError('An array of IDs is required for delete.', 400);
   }
@@ -874,7 +897,8 @@ export async function deleteDuplicates(ids, token) {
           fileName: tmp?.Name ? `${tmp.Name}_Resume.pdf` : 'candidate_resume.pdf',
           source: 'REVIEW_CANCELLED',
           status: 'cancelled',
-          logMessage: `Recruiter cancelled/rejected duplicate review. Tmp ID: ${id}` +
+          logMessage: `${user?.email || user?.username || 'Recruiter'} cancelled/rejected duplicate review. Tmp ID: ${id}` +
+            (tmp?.matched_cv_id ? `, candidate ID: ${tmp.matched_cv_id}` : '') +
             (tmp?.VendorEmail ? ` (vendor: ${tmp.VendorEmail})` : ''),
           createdAt: new Date(),
         },
@@ -883,6 +907,9 @@ export async function deleteDuplicates(ids, token) {
       await updateJobByCvTmpId(id, {
         status: JOB_STATUS.CANCELLED,
         action_required: false,
+        // Who resolved it (L09); the columns existed but were never written.
+        reviewed_by: user?.email || user?.username || null,
+        review_action: 'cancelled',
       }).catch((e) => logger.warn(`Failed to flip job to Cancelled: ${e.message}`));
     }
 
@@ -1319,26 +1346,7 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
             // non-empty here — email-less resumes were rejected above).
             const emailToSearch = cleanEmails.join(', ');
 
-            let existingCandidate = null;
-            if (cleanContactNumbers.length > 0 || cleanEmails.length > 0) {
-              const matches = await prisma.$queryRaw`
-                SELECT id FROM public.rpa_cv
-                WHERE
-                  (
-                    coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
-                    string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
-                  ) OR (
-                    coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
-                    string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
-                  )
-                LIMIT 1
-              `;
-              if (matches && matches.length > 0) {
-                existingCandidate = await prisma.rpa_cv.findUnique({
-                  where: { id: matches[0].id }
-                });
-              }
-            }
+            const existingCandidate = await findExistingCandidateMatch(prisma, cleanContactNumbers, cleanEmails);
 
             if (existingCandidate) {
               if (source === 'vendor_portal' || source === 'hr_manual_upload') {
@@ -1348,45 +1356,50 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 const isVendorSource = source === 'vendor_portal';
                 const tempCandidate = await prisma.rpa_cv_tmp.create({
                   data: {
-                    // Falls back to the EXISTING candidate's value (this is a duplicate,
-                    // so that value is about the same person) and then to null — never
-                    // to an invented one. The old "9876543210" / "Software Engineer" /
-                    // "B.Tech" / "3" tail put fabricated data in front of the recruiter
-                    // making the Merge/Cancel call.
+                    // What THIS resume says, and nothing else (L09). It used to fall
+                    // back to the existing candidate's value, so the Review window
+                    // could not tell "unchanged" from "missing from the new resume".
+                    // The merge needs no padding: prefer() keeps the existing value
+                    // wherever the new one is empty. Never an invented value either:
+                    // the old "9876543210" / "Software Engineer" / "B.Tech" / "3" tail
+                    // put fabricated data in front of the recruiter.
                     Name: parsed.Name || "Candidate",
                     EmailID: emailToSearch,
-                    ContactNumber: parsed.ContactNumber || existingCandidate.ContactNumber || null,
-                    PositionApplied: parsed.PositionApplied || existingCandidate.PositionApplied || null,
-                    HighestQualification: parsed.HighestQualification || existingCandidate.HighestQualification || null,
-                    TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : (existingCandidate.TotalExperienceYears || null),
-                    LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : (existingCandidate.LastCompanyExperienceYears || null),
-                    CurrentLocation: parsed.CurrentLocation || existingCandidate.CurrentLocation || null,
-                    CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || existingCandidate.CurrentCompany || null),
-                    Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || existingCandidate.Top5KeySkills || ""),
+                    ContactNumber: parsed.ContactNumber || null,
+                    PositionApplied: parsed.PositionApplied || null,
+                    HighestQualification: parsed.HighestQualification || null,
+                    TotalExperienceYears: parsed.TotalExperienceYears ? String(parsed.TotalExperienceYears) : null,
+                    LastCompanyExperienceYears: parsed.LastCompanyExperienceYears ? String(parsed.LastCompanyExperienceYears) : null,
+                    CurrentLocation: parsed.CurrentLocation || null,
+                    CurrentCompany: (parsed.CurrentCompany && typeof parsed.CurrentCompany === 'object') ? JSON.stringify(parsed.CurrentCompany) : (parsed.CurrentCompany || null),
+                    Top5KeySkills: Array.isArray(parsed.Top5KeySkills) ? parsed.Top5KeySkills.join(', ') : (parsed.Top5KeySkills || null),
                     // Same omission the main create carried: parsed, but never stored,
                     // so a merge could not restore them either.
-                    NoticePeriod: parsed.NoticePeriod || existingCandidate.NoticePeriod || null,
-                    CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : (existingCandidate.CTC_LPA || null),
-                    ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : (existingCandidate.ExpectedCTC_LPA || null),
-                    JobSource: parsed.JobSource || existingCandidate.JobSource || null,
-                    RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || existingCandidate.RecruiterInfoAAPNA || null,
-                    EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || existingCandidate.EducationalScoresPercentage || null),
-                    a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : (existingCandidate.a10th || null),
-                    a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : (existingCandidate.a12th || null),
-                    graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : (existingCandidate.graduation || null),
-                    postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : (existingCandidate.postGraduation || null),
-                    graduationdegree: parsed.GraduationDegree || existingCandidate.graduationdegree || null,
-                    graduationspecialization: parsed.GraduationSpecialization || existingCandidate.graduationspecialization || null,
-                    postgraduationdegree: parsed.PostGraduationDegree || existingCandidate.postgraduationdegree || null,
-                    postgraduationspecialization: parsed.PostGraduationSpecialization || existingCandidate.postgraduationspecialization || null,
-                    employment_history: historyInput.length > 0 ? employmentHistoryDb : (existingCandidate.employment_history || null),
-                    Gender: parsed.Gender || existingCandidate.Gender || null,
-                    EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : (existingCandidate.EnglishCommunicationRating || null),
-                    PreferredShift: parsed.PreferredShift || existingCandidate.PreferredShift || null,
-                    ReasonForJobChange: parsed.ReasonForJobChange || existingCandidate.ReasonForJobChange || null,
-                    WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || existingCandidate.WillingToTakeOnlineTest || null,
-                    HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || existingCandidate.HasLaptopForInitialDays || null,
-                    LinkedInProfile: parsed.LinkedInProfile || existingCandidate.LinkedInProfile || null,
+                    NoticePeriod: parsed.NoticePeriod || null,
+                    CTC_LPA: parsed.CTC_LPA ? String(parsed.CTC_LPA) : null,
+                    ExpectedCTC_LPA: parsed.ExpectedCTC_LPA ? String(parsed.ExpectedCTC_LPA) : null,
+                    JobSource: parsed.JobSource || null,
+                    RecruiterInfoAAPNA: parsed.RecruiterInfoAAPNA || null,
+                    EducationalScoresPercentage: typeof parsed.EducationalScoresPercentage === 'object' && parsed.EducationalScoresPercentage ? JSON.stringify(parsed.EducationalScoresPercentage) : (parsed.EducationalScoresPercentage || null),
+                    a10th: parsed.EducationalScoresPercentage?.['10th'] ? String(parsed.EducationalScoresPercentage['10th']) : null,
+                    a12th: parsed.EducationalScoresPercentage?.['12th'] ? String(parsed.EducationalScoresPercentage['12th']) : null,
+                    graduation: parsed.EducationalScoresPercentage?.['Graduation'] ? String(parsed.EducationalScoresPercentage['Graduation']) : null,
+                    postGraduation: parsed.EducationalScoresPercentage?.['PostGraduation'] ? String(parsed.EducationalScoresPercentage['PostGraduation']) : null,
+                    graduationdegree: parsed.GraduationDegree || null,
+                    graduationspecialization: parsed.GraduationSpecialization || null,
+                    postgraduationdegree: parsed.PostGraduationDegree || null,
+                    postgraduationspecialization: parsed.PostGraduationSpecialization || null,
+                    employment_history: historyInput.length > 0 ? employmentHistoryDb : null,
+                    Gender: parsed.Gender || null,
+                    EnglishCommunicationRating: parsed.EnglishCommunicationRating ? String(parsed.EnglishCommunicationRating) : null,
+                    PreferredShift: parsed.PreferredShift || null,
+                    ReasonForJobChange: parsed.ReasonForJobChange || null,
+                    WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || null,
+                    HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || null,
+                    LinkedInProfile: parsed.LinkedInProfile || null,
+                    // Which candidate this duplicates, so the Review window can show
+                    // both side by side and the merge updates that one (L09).
+                    matched_cv_id: existingCandidate.id,
                     cvFileUrl: cvUrl,
                     cv_file_item_id: cvItemId,
                     uploadedByHRName: fullName,

@@ -6,6 +6,7 @@ import MetricInfo from '../common/MetricInfo';
  *  - duplicates to review (live socket count, passed in)
  *  - candidates awaiting screening (funnel.sourced − funnel.aiScreened)
  *  - interviews scheduled today (Zeko pipeline)
+ *  - links waiting for a response (L08, Forms & Links; null when the flag is off)
  */
 import { Card, Typography, Tooltip } from 'antd';
 import {
@@ -16,6 +17,7 @@ import {
   ArrowRightOutlined,
   CheckCircleOutlined,
   AlertOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -26,6 +28,7 @@ export default function ActionCenterCard({
   awaitingScreening = 0,
   interviewsToday = 0,
   rolesNeedingAttention = null,
+  linksWaiting = null,
   onNavigate,
 }) {
   const items = [
@@ -40,6 +43,7 @@ export default function ActionCenterCard({
     { key: 'mrf', label: 'MRFs awaiting approval', desc: 'Requisitions submitted but not yet approved or declined. Opens MRF Requests.', count: pendingMrfCount, icon: <FileTextOutlined />, color: '#2563eb', url: '/mrf' },
     { key: 'dup', label: 'Duplicates to review', desc: 'CVs flagged as possible duplicates of someone already on file. Opens Search Candidates.', count: reviewCount, icon: <BranchesOutlined />, color: '#e11d48', url: '/candidates', live: true },
     { key: 'screen', label: 'Awaiting screening', desc: 'Candidates on file that the AI has not scored yet. Opens Candidate Screening.', count: awaitingScreening, icon: <FilterOutlined />, color: '#d97706', url: '/filtering' },
+    ...(linksWaiting == null ? [] : [{ key: 'links', label: 'Links waiting for a response', desc: 'Scorecards, document uploads, tests and MRF forms sent but not answered yet. Opens Forms & Links.', count: linksWaiting, icon: <LinkOutlined />, color: '#0e7490', url: '/forms-links' }]),
     { key: 'interview', label: 'Interviews today', desc: 'Interviews with a start time falling today. Opens Recruitment Analytics.', count: interviewsToday, icon: <CalendarOutlined />, color: '#16a34a', url: '/analytics' },
   ];
 

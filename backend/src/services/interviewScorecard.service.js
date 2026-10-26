@@ -24,6 +24,9 @@ import { parseInterviewerEmails, stageSendsInvites } from './interviewSchedule.s
 import { interviewerGreeting } from '../utils/emailGreeting.js';
 import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { notify, NOTIFICATION_TYPES } from './notification.service.js';
+import { renderInterviewTemplate } from './interviewEmailRender.js';
+import { INTERVIEW_EMAIL_TEMPLATE_NAMES } from './interviewEmailTemplates.js';
+import { fmtDateTimeIst } from '../utils/dateFormat.js';
 
 /** Days a scorecard link stays valid after it is emailed. */
 const TOKEN_TTL_DAYS = 7;
@@ -273,10 +276,11 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
     logger.info(`Scorecard dispatch: schedule ${scheduleId} is a manually-coordinated round (${schedule.stage_key}) — nothing sent.`);
     return { dispatched: false, alreadySent: false, reason: 'manually_coordinated' };
   }
-  // Single-fire guard.
-  if (schedule.scorecard_dispatched_at) {
-    return { dispatched: false, alreadySent: true };
-  }
+  // The single-fire guard (scorecard_dispatched_at) is applied BELOW, after the
+  // delivery context is built: an already-dispatched round re-sends only the
+  // cards that never reached anyone. It used to return here, before that
+  // branch, so the drawer's "Retry scorecard link" replied "already sent" and
+  // sent nothing (L08).
 
   const pipeline = schedule.rpa_candidate_pipeline;
   const candidate = pipeline?.rpa_shortlisted_candidates;
@@ -400,6 +404,106 @@ export async function dispatchScorecards(scheduleId, { trigger = 'manual', acted
 
   logger.info(`Scorecard dispatched: schedule ${scheduleId} → ${delivered}/${created.length} delivered (${trigger}).`);
   return { dispatched: delivered > 0, count: created.length, delivered, failed, failures };
+}
+
+/** The no-login link a scorecard token opens. */
+export function scorecardLinkFor(token) {
+  return `${config.cors.frontendUrl}/scorecard/${token}`;
+}
+
+/** The card, its booking and the candidate, for a re-send. */
+async function loadCardForSend(cardId) {
+  const card = await prisma.rpa_interview_scorecard.findUnique({
+    where: { id: BigInt(cardId) },
+    include: {
+      rpa_interview_schedule: true,
+      rpa_candidate_pipeline: { include: { rpa_shortlisted_candidates: { include: { mrf: true } } } },
+    },
+  });
+  if (!card) throw new AppError('Scorecard not found.', 404);
+  if (card.status === SCORECARD_STATUS.SUBMITTED) {
+    throw new AppError('This scorecard has already been submitted, so there is nothing to re-send.', 409);
+  }
+  const candidate = card.rpa_candidate_pipeline?.rpa_shortlisted_candidates;
+  const ctx = {
+    role: roleForStage(card.stage_key),
+    stageLabel: await stageLabelFor(card.stage_key),
+    candidateName: candidate?.candidate_name || 'the candidate',
+    position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+    allEmails: parseInterviewerEmails(card.rpa_interview_schedule?.interviewer_email || '').emails.join(','),
+  };
+  return { card, ctx };
+}
+
+const isCardExpired = (card) => card.status === SCORECARD_STATUS.EXPIRED
+  || (card.token_expires_at && new Date(card.token_expires_at).getTime() <= Date.now());
+
+/**
+ * Re-send ONE card's SAME link (L08 Forms & Links, and the drawer's "Re-send"):
+ * for an interviewer who cannot find the email, or one it never reached. An
+ * expired card is refused: renewScorecard() is the explicit way to extend it.
+ *
+ * @param {number|string} cardId
+ * @param {{ user?: object }} [opts]
+ * @returns {Promise<{ delivered: boolean, expires_at: Date, recipient: string }>}
+ */
+export async function resendScorecard(cardId, { user = null } = {}) {
+  const { card, ctx } = await loadCardForSend(cardId);
+  if (isCardExpired(card)) {
+    throw new AppError('This scorecard link has expired. Use "Renew & re-send" to give it 7 more days.', 409);
+  }
+  const result = await deliverScorecards([card], ctx);
+  if (result.delivered !== 1) {
+    throw new AppError(`The scorecard email could not be sent: ${result.failures[0]?.error || 'unknown error'}.`, 502);
+  }
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: card.pipeline_id,
+      stage_key: card.stage_key,
+      event_type: 'note',
+      notes: `Scorecard link for ${ctx.stageLabel} re-sent to ${card.recipient_email} by ${user?.username || user?.email || 'a recruiter'}.`,
+      acted_by: user?.id || null,
+    },
+  }).catch((err) => logger.warn(`Scorecard re-send not noted on the timeline: ${err.message}`));
+  return { delivered: true, expires_at: card.token_expires_at, recipient: card.recipient_email };
+}
+
+/**
+ * Renew an expired card for another TOKEN_TTL_DAYS and send it again (L08,
+ * design decision D5): the SAME link starts working again, so a round whose
+ * interviewer missed the window can still be scored. Before this a lapsed card
+ * could never be submitted and the round stayed unscored.
+ *
+ * @param {number|string} cardId
+ * @param {{ user?: object }} [opts]
+ * @returns {Promise<{ delivered: boolean, expires_at: Date, recipient: string }>}
+ */
+export async function renewScorecard(cardId, { user = null } = {}) {
+  const { card, ctx } = await loadCardForSend(cardId);
+  if (card.rpa_interview_schedule?.occurrence_status === 'no_show') {
+    throw new AppError('This interview was marked as not held, so its scorecard cannot be renewed.', 409);
+  }
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const renewed = await prisma.rpa_interview_scorecard.update({
+    where: { id: card.id },
+    data: { status: SCORECARD_STATUS.PENDING, token_expires_at: expiresAt, modified_at: new Date() },
+  });
+  const result = await deliverScorecards([renewed], ctx);
+  await prisma.rpa_pipeline_stage_events.create({
+    data: {
+      pipeline_id: card.pipeline_id,
+      stage_key: card.stage_key,
+      event_type: 'note',
+      notes: `Scorecard link for ${ctx.stageLabel} renewed until ${expiresAt.toDateString()}`
+        + `${result.delivered === 1 ? ` and re-sent to ${card.recipient_email}` : ' (the email could not be sent)'}`
+        + ` by ${user?.username || user?.email || 'a recruiter'}.`,
+      acted_by: user?.id || null,
+    },
+  }).catch((err) => logger.warn(`Scorecard renewal not noted on the timeline: ${err.message}`));
+  if (result.delivered !== 1) {
+    throw new AppError(`The link was renewed, but the email could not be sent: ${result.failures[0]?.error || 'unknown error'}. Copy the link instead.`, 502);
+  }
+  return { delivered: true, expires_at: expiresAt, recipient: card.recipient_email };
 }
 
 /**
@@ -628,8 +732,70 @@ export async function submitScorecardByToken(token, payload = {}, { ip = null } 
     meta: { stage_key: card.stage_key, recommendation: rec, avg_score: avg },
   });
 
+  // L14: and the recruitment mailbox by email. Not awaited: the interviewer's
+  // submission has succeeded, and a slow or failing mailbox must not hold up
+  // the page they are waiting on.
+  sendFeedbackReceivedEmail({
+    card, stageLabel, recommendation: rec, avg, comments: updated.comments, submittedAt: updated.submitted_at,
+  }).catch(() => {});
+
   logger.info(`Scorecard submitted: card ${card.id} (schedule ${card.schedule_id}) by ${card.recipient_email}.`);
   return serializeCard(updated);
+}
+
+const RECOMMENDATION_WORDS = Object.freeze({
+  approve: 'Move forward', hold: 'Hold', reject: 'Reject',
+});
+
+/**
+ * "Feedback received: <candidate> · <round>" to the recruitment mailbox (L14,
+ * Harish 23 Oct). Recipients: flow key `scorecardSubmitted` (Settings › Email
+ * recipients); wording: the editable "Interview Feedback Received" template.
+ * The in-app bell (notify above) is unchanged. Never throws.
+ *
+ * @returns {Promise<boolean>} true when sent
+ */
+export async function sendFeedbackReceivedEmail({ card, stageLabel, recommendation, avg, comments, submittedAt }) {
+  try {
+    const { to, cc } = resolveRecipients('scorecardSubmitted');
+    if (!to) return false;
+    const journey = await prisma.rpa_candidate_pipeline.findUnique({
+      where: { id: BigInt(card.pipeline_id) },
+      select: {
+        rpa_shortlisted_candidates: {
+          select: { candidate_name: true, position_applied: true, mrf: { select: { position_hiring_for: true } } },
+        },
+      },
+    });
+    const s = journey?.rpa_shortlisted_candidates;
+    const rendered = await renderInterviewTemplate(INTERVIEW_EMAIL_TEMPLATE_NAMES.feedbackReceived, {
+      candidate_name: s?.candidate_name || 'the candidate',
+      stage_label: stageLabel,
+      interviewer: card.recipient_name || card.recipient_email || 'The interviewer',
+      position: s?.mrf?.position_hiring_for || s?.position_applied || 'the role',
+      recommendation: RECOMMENDATION_WORDS[recommendation] || 'Not given',
+      avg_score: avg !== null && avg !== undefined ? `${avg} / 5` : 'Not scored',
+      submitted_at: fmtDateTimeIst(submittedAt || new Date()),
+      comments: comments || '—',
+      candidate_link: `${config.cors.frontendUrl}/pipeline?candidate=${card.pipeline_id}`,
+    });
+    await sendGraphEmail({ sender: config.microsoft.defaultSender, to, cc, subject: rendered.subject, html: rendered.html });
+    await prisma.rpa_email_log.create({
+      data: {
+        email_type: 'scorecard_submitted',
+        recipient_email: to,
+        recipient_name: 'Recruitment team',
+        subject: rendered.subject,
+        body_html: rendered.html,
+        reference_id: Number(card.pipeline_id),
+        sent_at: new Date(),
+      },
+    }).catch((err) => logger.warn(`Feedback-received email sent but not logged: ${err.message}`));
+    return true;
+  } catch (err) {
+    logger.warn(`Feedback-received email for scorecard ${card?.id} failed: ${err.message}`);
+    return false;
+  }
 }
 
 /**
@@ -744,7 +910,7 @@ export async function getCandidateScorecardReport(pipelineId) {
  * @param {{average: number|null, outstanding?: number}} overall
  * @returns {{summary: string, lines: Array<object>, recommendation_counts: object}|null}
  */
-function buildConsolidatedFeedback(rounds, { average, outstanding = 0 }) {
+export function buildConsolidatedFeedback(rounds, { average, outstanding = 0 }) {
   if (!rounds.length) return null;
 
   // Count the explicit recommendations, so "3 of 4 interviewers said hire" can

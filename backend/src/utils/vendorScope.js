@@ -39,6 +39,25 @@ export function enforceVendorScope(filters = {}, user) {
 }
 
 /**
+ * May this caller read ONE candidate record (GET /api/candidates/:id)?
+ *
+ * The single-record read had no vendor scope at all — the list, the export and
+ * the dashboard were scoped by enforceVendorScope(), but a vendor token could
+ * fetch any candidate by id. Same rule as the list: a vendor sees only the
+ * candidates they submitted. Staff are unaffected.
+ *
+ * @param {{ role?: string, email?: string }} [user]
+ * @param {string|null|undefined} candidateVendorEmail - rpa_cv.VendorEmail
+ * @returns {boolean}
+ */
+export function vendorMayReadCandidate(user, candidateVendorEmail) {
+  if (normalizeRole(user?.role) !== ROLES.VENDOR) return true;
+  const own = String(user?.email || '').trim().toLowerCase();
+  const theirs = String(candidateVendorEmail || '').trim().toLowerCase();
+  return own !== '' && own === theirs;
+}
+
+/**
  * True when the caller is a vendor — the one role that must never see the
  * referral flag.
  *

@@ -8,6 +8,7 @@
  *    (Review → full details → Merge / Reject) and reprocess failures.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Card,
   Upload,
@@ -20,7 +21,6 @@ import {
   Modal,
   Alert,
   Descriptions,
-  Divider,
   message,
   Row,
   Col,
@@ -51,6 +51,7 @@ import { fmtDateTime } from '../utils/dateFormat';
 import { UPLOAD_STATUS_FILTERS, uploadStatusMeta } from '../constants/uploadStatus';
 import dashboardService from '../services/dashboardService';
 import UploadJdPicker, { jobJdText } from '../components/common/UploadJdPicker';
+import DuplicateCompareModal from '../components/uploads/DuplicateCompareModal';
 
 /** Open JDs for the "Uploading for JD" picker (N14); module-level so the picker loads once. */
 const loadJdOptions = () => dashboardService.getMrfOptions();
@@ -103,7 +104,6 @@ export default function HRUpload() {
 
   // ── Full-details modal (opened from the Review modal) ──
   const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [viewCandidate, setViewCandidate] = useState(null);
   // Holds the job while its full details are shown, so Merge/Cancel stay available there.
   const [detailReviewJob, setDetailReviewJob] = useState(null);
 
@@ -247,7 +247,6 @@ export default function HRUpload() {
       setReviewJob(null);
       setDetailReviewJob(null);
       setViewModalOpen(false);
-      setViewCandidate(null);
       loadJobs(jobsPage);
     } catch (err) {
       const verb = action === 'merge' ? 'Merge' : 'Cancel';
@@ -283,86 +282,38 @@ export default function HRUpload() {
     window.open(url, '_blank');
   };
 
-  // From a job row, pull the full staging record so the full-details modal can open.
-  const openFullDetailsFromJob = async (job) => {
+  // Swap the compact Review modal for the side-by-side comparison (L09), never
+  // both at once, keeping the job so Merge / Cancel stay available there. The
+  // comparison loads by the staging id itself; the old lookup searched by email
+  // and could fall back to a different staging row.
+  const openFullDetailsFromJob = (job) => {
     if (!job?.cv_tmp_id) {
       message.info('Full details are only available for duplicates pending review.');
       return;
     }
-    try {
-      const res = await hrUploadService.searchDuplicates({
-        filterEmail: job.candidate_email || '',
-        page: 1,
-        perPage: 50,
-      });
-      const payload = res.data?.data || res.data;
-      const rows = payload?.data || payload?.candidates || [];
-      const match = rows.find((r) => Number(r.id) === Number(job.cv_tmp_id)) || rows[0];
-      if (match) {
-        // Swap the compact Review modal for the full-details one (never both at once),
-        // keeping the job so Merge/Cancel stay available from the full view.
-        setReviewJob(null);
-        setDetailReviewJob(job);
-        setViewCandidate(match);
-        setViewModalOpen(true);
-      } else {
-        message.info('Full details not found — the record may already have been resolved.');
-      }
-    } catch {
-      message.error('Could not load full details.');
-    }
+    setReviewJob(null);
+    setDetailReviewJob(job);
+    setViewModalOpen(true);
   };
 
-  const closeViewModal = () => { setViewModalOpen(false); setViewCandidate(null); setDetailReviewJob(null); };
-
-  /* ═══════ PARSE HELPERS (full-details modal) ═══════ */
-  const parseJSON = (val) => {
-    if (!val) return {};
-    if (typeof val === 'object') return val;
-    try { return JSON.parse(val); } catch { return {}; }
-  };
-  const parseCompany = (val) => {
-    if (!val) return {};
-    if (typeof val === 'string') {
-      const trimmed = val.trim();
-      if (trimmed === '' || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') return {};
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (!parsed) return {};
-        if (Array.isArray(parsed)) {
-          return parsed.length > 0 ? (typeof parsed[0] === 'object' ? parsed[0] : { Name: String(parsed[0]) }) : {};
-        }
-        if (typeof parsed === 'object') return parsed;
-        return { Name: String(parsed) };
-      } catch {
-        return { Name: val };
-      }
-    }
-    if (typeof val === 'object') {
-      if (Array.isArray(val)) return val.length > 0 ? (typeof val[0] === 'object' ? val[0] : { Name: String(val[0]) }) : {};
-      return val;
-    }
-    return {};
-  };
-  const parseEmploymentHistory = (val) => {
-    if (!val) return [];
-    const obj = parseJSON(val);
-    if (obj && Array.isArray(obj.companies)) return obj.companies;
-    if (Array.isArray(obj)) return obj;
-    return [];
-  };
-  const displayVal = (v) => {
-    if (v === null || v === undefined || v === '') return '—';
-    if (Array.isArray(v)) return v.join(', ');
-    return String(v);
-  };
+  const closeViewModal = () => { setViewModalOpen(false); setDetailReviewJob(null); };
 
   /* ═══════ JOBS TABLE COLUMNS ═══════ */
   const jobColumns = [
     {
       title: 'Candidate Name',
       key: 'candidate_name',
-      render: (_, r) => <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>,
+      // L10: once an upload has a candidate record (new, merged, missing info),
+      // the name opens that candidate's profile; Back returns here.
+      render: (_, r) => (r.cv_id ? (
+        <Tooltip title="Open candidate profile">
+          <Link to={`/candidates/${r.cv_id}`} state={{ from: 'hr-upload' }} style={{ fontWeight: 600, fontSize: 13 }}>
+            {r.candidate_name || 'Open profile'}
+          </Link>
+        </Tooltip>
+      ) : (
+        <Text strong style={{ fontSize: 13 }}>{r.candidate_name || '—'}</Text>
+      )),
     },
     {
       title: 'JD',
@@ -588,7 +539,7 @@ export default function HRUpload() {
         footer={(
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <Button icon={<EyeOutlined />} onClick={() => openFullDetailsFromJob(reviewJob)}>
-              View full details
+              Compare with the ATS record
             </Button>
             <Space size={8}>
               <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', reviewJob)}>
@@ -607,127 +558,31 @@ export default function HRUpload() {
             <Descriptions.Item label="Email">{reviewJob.candidate_email || '—'}</Descriptions.Item>
             <Descriptions.Item label="File">{reviewJob.file_name}</Descriptions.Item>
             <Descriptions.Item label="Uploaded By">{reviewJob.uploaded_by || '—'}</Descriptions.Item>
+            {reviewJob.matched_cv_id && (
+              <Descriptions.Item label="Already in ATS">
+                <Link to={`/candidates/${reviewJob.matched_cv_id}`} state={{ from: 'hr-upload' }}>Open existing profile</Link>
+              </Descriptions.Item>
+            )}
           </Descriptions>
         )}
         <Alert
           style={{ marginTop: 16 }} type="info" showIcon
-          message="Merge updates the existing candidate with new values (blanks retained). Cancel deletes the staging record and keeps the existing candidate unchanged."
+          message="Merge updates the existing candidate with the new values (blanks keep the existing value; emails and phones are combined). Cancel deletes the staging record and keeps the existing candidate unchanged. Use Compare to see what would change."
         />
       </Modal>
 
-      {/* ═══════ FULL-DETAILS MODAL ═══════ */}
-      <Modal
-        title="Duplicate Review — Full Details"
+      {/* ═══════ FULL DETAILS: ALREADY IN ATS vs THIS UPLOAD (L09) ═══════ */}
+      <DuplicateCompareModal
         open={viewModalOpen}
-        onCancel={closeViewModal}
-        footer={(
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            <Button onClick={() => { closeViewModal(); if (detailReviewJob) setReviewJob(detailReviewJob); }}>
-              Back to Review
-            </Button>
-            <Space size={8}>
-              <Button danger icon={<CloseCircleOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('cancel', detailReviewJob)}>
-                Cancel / Reject
-              </Button>
-              <Button className="btn-sheen" type="primary" icon={<MergeCellsOutlined />} loading={reviewBusy} onClick={() => resolveDuplicate('merge', detailReviewJob)}>
-                Merge into Database
-              </Button>
-            </Space>
-          </div>
-        )}
-        width={880}
-        styles={{ body: { maxHeight: '72vh', overflowY: 'auto', padding: '24px 28px' } }}
-      >
-        {viewCandidate && (() => {
-          const c = viewCandidate;
-          const cc = parseCompany(c.CurrentCompany);
-          const edu = parseJSON(c.EducationalScoresPercentage);
-          const companies = parseEmploymentHistory(c.employment_history);
-
-          return (
-            <>
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-                Personal Information
-              </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
-                <Descriptions.Item label="Candidate Name">{displayVal(c.Name)}</Descriptions.Item>
-                <Descriptions.Item label="Candidate Email">{displayVal(c.EmailID)}</Descriptions.Item>
-                <Descriptions.Item label="Contact Number">{displayVal(c.ContactNumber)}</Descriptions.Item>
-                <Descriptions.Item label="Highest Qualification">{displayVal(c.HighestQualification)}</Descriptions.Item>
-                <Descriptions.Item label="Total Experience (Yrs)">{displayVal(c.TotalExperienceYears)}</Descriptions.Item>
-                <Descriptions.Item label="Last Company Exp (Yrs)">{displayVal(c.LastCompanyExperienceYears)}</Descriptions.Item>
-                <Descriptions.Item label="Current Location">{displayVal(c.CurrentLocation)}</Descriptions.Item>
-                <Descriptions.Item label="CTC (LPA)">{displayVal(c.CTC_LPA)}</Descriptions.Item>
-                <Descriptions.Item label="Expected CTC (LPA)">{displayVal(c.ExpectedCTC_LPA)}</Descriptions.Item>
-                <Descriptions.Item label="Notice Period">{displayVal(c.NoticePeriod)}</Descriptions.Item>
-                <Descriptions.Item label="Position Applied">{displayVal(c.PositionApplied)}</Descriptions.Item>
-                <Descriptions.Item label="Job Source">{displayVal(c.JobSource)}</Descriptions.Item>
-                <Descriptions.Item label="Recruiter Info">{displayVal(c.RecruiterInfoAAPNA)}</Descriptions.Item>
-                <Descriptions.Item label="English Comm. Rating">{displayVal(c.EnglishCommunicationRating)}</Descriptions.Item>
-                <Descriptions.Item label="Top 5 Key Skills" span={2}>{displayVal(c.Top5KeySkills)}</Descriptions.Item>
-                <Descriptions.Item label="Gender">{displayVal(c.Gender)}</Descriptions.Item>
-                <Descriptions.Item label="Preferred Shift">{displayVal(c.PreferredShift)}</Descriptions.Item>
-                <Descriptions.Item label="Reason for Job Change" span={2}>{displayVal(c.ReasonForJobChange)}</Descriptions.Item>
-                <Descriptions.Item label="Willing to Take Online Test?">{displayVal(c.WillingToTakeOnlineTest)}</Descriptions.Item>
-                <Descriptions.Item label="Has Laptop for Initial Days?">{displayVal(c.HasLaptopForInitialDays)}</Descriptions.Item>
-                <Descriptions.Item label="Last Activity By">{displayVal(c.last_action_by)}</Descriptions.Item>
-                <Descriptions.Item label="Last Activity Context">{displayVal(c.last_action_context)}</Descriptions.Item>
-              </Descriptions>
-
-              <div style={{ marginTop: 12, padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid var(--border-light)' }}>
-                <Text style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-3)', display: 'block', marginBottom: 10 }}>
-                  Current Company
-                </Text>
-                <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
-                  <Descriptions.Item label="Company Name">{displayVal(cc.Name)}</Descriptions.Item>
-                  <Descriptions.Item label="Website">{displayVal(cc.Website)}</Descriptions.Item>
-                </Descriptions>
-              </div>
-
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-                Education
-              </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
-                <Descriptions.Item label="10th %">{displayVal(edu['10th'] || c.a10th)}</Descriptions.Item>
-                <Descriptions.Item label="12th %">{displayVal(edu['12th'] || c.a12th)}</Descriptions.Item>
-                <Descriptions.Item label="Graduation %">{displayVal(edu.Graduation || c.graduation)}</Descriptions.Item>
-                <Descriptions.Item label="Post Graduation %">{displayVal(edu.PostGraduation || c.postGraduation)}</Descriptions.Item>
-                <Descriptions.Item label="Graduation Degree">{displayVal(c.graduationdegree)}</Descriptions.Item>
-                <Descriptions.Item label="Graduation Specialization">{displayVal(c.graduationspecialization)}</Descriptions.Item>
-                <Descriptions.Item label="PG Degree">{displayVal(c.postgraduationdegree)}</Descriptions.Item>
-                <Descriptions.Item label="PG Specialization">{displayVal(c.postgraduationspecialization)}</Descriptions.Item>
-                <Descriptions.Item label="LinkedIn Profile" span={2}>{displayVal(c.LinkedInProfile)}</Descriptions.Item>
-              </Descriptions>
-
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-                Employment History
-              </Divider>
-              {companies.length === 0 ? (
-                <Text style={{ fontSize: 13, color: 'var(--text-3)' }}>No employment history recorded.</Text>
-              ) : (
-                companies.map((co, i) => (
-                  <div key={i} style={{ padding: 14, background: 'var(--ink-3)', borderRadius: 10, border: '1px solid var(--border-light)', marginBottom: 10 }}>
-                    <Descriptions column={3} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
-                      <Descriptions.Item label="Company Name">{displayVal(co.CompanyName)}</Descriptions.Item>
-                      <Descriptions.Item label="Start Date">{displayVal(co.StartDate)}</Descriptions.Item>
-                      <Descriptions.Item label="End Date">{displayVal(co.EndDate)}</Descriptions.Item>
-                    </Descriptions>
-                  </div>
-                ))
-              )}
-
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-                Upload Details
-              </Divider>
-              <Descriptions column={2} size="small" bordered={false} labelStyle={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', color: 'var(--text-3)' }} contentStyle={{ fontSize: 13 }}>
-                <Descriptions.Item label="Uploaded By HR">{displayVal(c.uploadedByHRName)}</Descriptions.Item>
-                <Descriptions.Item label="Uploaded At">{fmtDateTime(c.uploadedAt)}</Descriptions.Item>
-                <Descriptions.Item label="Upload Source">{displayVal(c.uploadSource)}</Descriptions.Item>
-              </Descriptions>
-            </>
-          );
-        })()}
-      </Modal>
+        job={detailReviewJob}
+        fetchComparison={hrUploadService.compareDuplicate}
+        busy={reviewBusy}
+        from="hr-upload"
+        onMerge={(job) => resolveDuplicate('merge', job)}
+        onCancel={(job) => resolveDuplicate('cancel', job)}
+        onClose={closeViewModal}
+        onBack={() => { const job = detailReviewJob; closeViewModal(); if (job) setReviewJob(job); }}
+      />
     </div>
   );
 }

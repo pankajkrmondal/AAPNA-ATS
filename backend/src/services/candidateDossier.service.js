@@ -37,13 +37,15 @@ import AppError from '../utils/AppError.js';
 import { emailCandidates } from '../utils/emailMatch.js';
 import { downloadDriveItem } from './onedrive.service.js';
 import { serializeRecording } from './interviewRecording.service.js';
-import { getCandidateScorecardReport } from './interviewScorecard.service.js';
+import { buildConsolidatedFeedback, getCandidateScorecardReport } from './interviewScorecard.service.js';
 import { generateZekoShareLink, getZekoReport } from './zeko.service.js';
 import { parseZekoReportUrl } from '../utils/zekoShareLink.js';
 import { withDeadline } from '../utils/withDeadline.js';
 import {
   assertNoForbiddenFields,
+  CV_ROUND_NOTE_FIELDS,
   pickCvProfile,
+  pickRoundNotes,
   redactionSummary,
 } from '../utils/dossierRedaction.js';
 import {
@@ -137,7 +139,11 @@ export async function collectRecordingShareLinks(pipelineId, { include = false, 
  * what they are about to withhold.
  */
 const CV_SELECT = Object.fromEntries(
-  [...pickCvProfile(null, { includeContactDetails: true }).map((e) => e.field)].map((f) => [f, true]),
+  [
+    ...pickCvProfile(null, { includeContactDetails: true }).map((e) => e.field),
+    // L12: the recruiter's per-round notes (an edited "Tech round 1" lives here).
+    ...CV_ROUND_NOTE_FIELDS.map(([field]) => field),
+  ].map((f) => [f, true]),
 );
 
 /** MRF columns the position brief may show. No budget — plan §8.2. */
@@ -538,6 +544,13 @@ export async function buildDossierModel(pipelineId, options = {}) {
 
   const labelByKey = Object.fromEntries(stageRows.map((r) => [r.stage_key, r.label]));
   const stageLabel = (key) => labelByKey[key] || key;
+  // Pipeline order (L12): the scorecard report sorts by stage_key, which is
+  // alphabetical and printed CEO and HR before Technical Round 1.
+  const orderByKey = Object.fromEntries(stageRows.map((r) => [r.stage_key, r.sort_order ?? 0]));
+  const stageOrder = (key) => orderByKey[key] ?? Number.MAX_SAFE_INTEGER;
+  // Bookings a re-done stage replaced (L02-C). Their cards are an EARLIER
+  // attempt: printed as such, and left out of the consolidated feedback.
+  const supersededScheduleIds = new Set(schedules.filter((s) => s.superseded_at).map((s) => String(s.id)));
   // `locator` holds the ids parsed out of Zeko's login-walled report URL and is
   // dropped here, at the boundary: from this line on there is no model carrying
   // a URL an outsider cannot open. collectZekoShareLinks() re-derives it.
@@ -586,8 +599,15 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // hr_expected_ctc through HR_TEXT_FIELDS (interviewScorecard.service.js:430),
   // so its output is PROJECTED here, never spread. Naive reuse of that object is
   // precisely how CTC would reach an external interviewer.
-  const scorecards = (scorecardReport?.rounds || []).map((r) => ({
+  const reportRounds = [...(scorecardReport?.rounds || [])].sort((a, b) => (
+    stageOrder(a.stage_key) - stageOrder(b.stage_key)
+    || new Date(a.submitted_at || 0) - new Date(b.submitted_at || 0)
+  ));
+  const isEarlierAttempt = (r) => r.schedule_id != null && supersededScheduleIds.has(String(r.schedule_id));
+  const scorecards = reportRounds.map((r) => ({
+    stage_key: r.stage_key,
     stage_label: r.stage_label,
+    earlier_attempt: isEarlierAttempt(r),
     card_type: r.card_type,
     interviewer: r.recipient_email || null,
     interviewer_role: r.recipient_role || null,
@@ -626,6 +646,11 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // ---- Section 8: interview history ----------------------------------------
   const interviews = schedules.map((s) => ({
     stage_label: stageLabel(s.stage_key),
+    earlier_attempt: Boolean(s.superseded_at),
+    // The client round's feedback is recorded on the booking ("Edit feedback"
+    // in the drawer, clientRound.service.js). Only that round's notes travel:
+    // on other rounds the field holds the booking's internal notes.
+    client_feedback: s.stage_key === 'client' ? (s.notes || null) : null,
     interviewer: s.interviewer_name || s.interviewer_email || null,
     scheduled_start_at: s.scheduled_start_at,
     scheduled_end_at: s.scheduled_end_at,
@@ -650,6 +675,24 @@ export async function buildDossierModel(pipelineId, options = {}) {
     available: r.playable,
   }));
 
+  // The current attempt of every round: what the consolidated feedback and the
+  // overall average speak for. Identical to the report's own numbers unless a
+  // stage was re-done.
+  const current = (() => {
+    const overall = scorecardReport?.overall || {};
+    if (!reportRounds.some(isEarlierAttempt)) {
+      return { consolidated: scorecardReport?.consolidated_feedback || null, count: overall.count ?? 0, average: overall.average ?? null };
+    }
+    const rounds = reportRounds.filter((r) => !isEarlierAttempt(r));
+    const scored = rounds.map((r) => r.avg_score).filter((n) => n !== null && n !== undefined);
+    const average = scored.length ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 100) / 100 : null;
+    return {
+      consolidated: buildConsolidatedFeedback(rounds, { average, outstanding: overall.outstanding ?? 0 }),
+      count: scored.length,
+      average,
+    };
+  })();
+
   const model = {
     generated: {
       at: new Date(),
@@ -668,15 +711,21 @@ export async function buildDossierModel(pipelineId, options = {}) {
     position: MRF_FIELDS
       .map(([field, label]) => ({ field, label, value: mrf ? (mrf[field] ?? null) : null })),
     stages,
-    consolidated_feedback: scorecardReport?.consolidated_feedback?.summary || null,
+    consolidated_feedback: current.consolidated?.summary || null,
     scorecard_overall: scorecardReport?.overall
       ? {
-        rounds_scored: scorecardReport.overall.count,
-        average: scorecardReport.overall.average,
+        rounds_scored: current.count,
+        average: current.average,
         outstanding: scorecardReport.overall.outstanding,
       }
       : null,
     scorecards,
+    // L12: the recruiter's own notes per round (rpa_cv), printed under the round.
+    round_notes: pickRoundNotes(cv).map((n) => ({
+      stage_key: n.stage_key,
+      stage_label: stageLabel(n.stage_key),
+      value: n.value,
+    })),
     // Rounds still owed a scorecard. Included on purpose: "no feedback yet" and
     // "feedback was withheld" are different things, and only one of them is true.
     scorecards_pending: (scorecardReport?.pending_rounds || []).map((p) => ({

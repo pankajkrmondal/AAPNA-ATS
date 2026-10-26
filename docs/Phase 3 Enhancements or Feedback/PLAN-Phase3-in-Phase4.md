@@ -30,7 +30,8 @@ They start once the Do Now list is closed. The plan assumes these Do Now items a
 | Search, scoring and candidate movement | Scoring weights & recency (L01), Move / re-tag candidate (L02), Flexible stages (L03) | 128 |
 | MRF and pipeline hygiene | MRF Hold (L04), Drop-out rules (L05) | 48 |
 | Analytics and JD records | Analytics - date range & Total Applied (L06), Editable JD label (no MRF) (L07) | 26 |
-| **Total** | | **202** |
+| Other bugs | Forms & Links (L08), Upload duplicate compare (L09), Profile link from uploads (L10), Screening "not shown" (L11), One-record exports & dossier feedback (L12), Outside links (L13), Next-round pack (L14), MRF emails & form (L15), Password emails (L16) | 104 |
+| **Total** | | **306** |
 
 ## 2. Build order (easy items first)
 
@@ -429,6 +430,124 @@ Shorthand used below:
 
 ---
 
+### Other bugs (L08–L16)
+
+Added 23 Oct 2026 from the "Other Bugs" block of the sheet (rows 13–19), plus two rows Harish added the same day (L15, L16). Build order: L16 → L10 → L13 → L15 → L12 → L09 → L14 → L11 → L08 (easy first; L15 before L14 so the panel invite and every MRF email share one shell before L14 changes the invite).
+
+#### L08 · Forms & Links (adhoc links for all forms)
+**Medium · 32 h · design approved 23 Oct as recommended (D1–D10, full version)**
+
+**Goal**
+- **Today:** the ATS sends links for scorecards, meetings, recordings, document uploads, profile forms, Zeko, Evalground and MRF forms and approvals, but a recruiter can see and copy only the recording share link. The drawer's "Retry scorecard link" sends nothing.
+- **Change:** a "Forms & Links" menu page (after Recruitment Analytics) listing every link the ATS has sent, with status and expiry. Recruiters can Copy (link or ready-to-paste message), Re-send, Renew an expired scorecard, and Revoke a recording link. Shortcuts sit in the candidate drawer, MRF details, Ctrl+K and the Dashboard Action Center.
+- **Done when:** a recruiter can find, copy or re-send any link the ATS sent without asking for the email again.
+
+**Design:** `docs/Phase 3 Enhancements or Feedback/Forms & Links — design for approval.html` (12 boards).
+- **Server:** `formsLinks.service.js` has one adapter per link type, reading only existing tables. The list never carries URLs; a URL is fetched on Copy, and each copy is noted on the candidate timeline (D4).
+- **Scorecards:** `resendScorecard` / `renewScorecard`, plus a fix for the unreachable retry branch in `dispatchScorecards` (`interviewScorecard.service.js:277-279` vs `:311-327`).
+- **MRF approval links:** never copied; status and "Re-send approval links" only (D3).
+- **Access:** staff only. Pipeline-backed types need the `recruitment_pipeline` module.
+- **Flag:** `FORMS_LINKS_ENABLED` hides the menu item until Chhaya signs off the slot.
+
+**Tests:**
+- Unit: status per type and the message builders.
+- Integration: list with no URLs, copy and its note, renew, the retry fix, vendor 403, the module filter.
+
+**Depends on:** L13 (no-login recording links). **Open decisions:** none (D1–D10 answered).
+
+#### L09 · Upload duplicate Review: old vs new comparison
+**Low · 14 h**
+
+**Goal**
+- **Today:** the Review window shows only the new upload, padded with the existing candidate's values (`hrUpload.service.js:1356-1389`). The matched candidate's id is thrown away, and the match query has no ORDER BY.
+- **Change:** a side-by-side "Already in ATS | This upload | On merge" table with "Only show differences", plus the candidate's upload history.
+- **Done when:** a recruiter can see exactly what a duplicate upload changes before merging.
+
+**Design**
+- **DDL:** `rpa_cv_tmp.matched_cv_id`.
+- **Match helper:** one shared helper with a deterministic order.
+- **Staging row:** the staging insert stops padding with existing values.
+- **Service and endpoints:** a new `duplicateReview.service.js`, with staff-only compare endpoints on `/hr-upload` and `/vendor`.
+- **Bookkeeping:** `reviewed_by` / `review_action` are now written.
+- **Vendor page:** the same window in a links-hidden mode (no profile or old-resume links); vendors never see it.
+
+**Tests:**
+- Unit: the diff builder.
+- `sectionB` integration.
+- `vendorIsolation`: vendor 403.
+
+#### L10 · Profile link from HR Manual Upload rows
+**Low · 3 h**
+
+**Goal**
+- **Today:** an uploaded candidate's name is plain text.
+- **Change:** the name links to `/candidates/:id` and Back returns to the upload page.
+- **Done when:** one click from an HR upload row opens the candidate profile.
+
+**Design**
+- HR Manual Upload only. The Vendor Upload page gets no profile links (decision 23 Oct: share no unnecessary links or access there).
+- Alongside: `requireStaff` on `GET /api/candidates/:id`, which has no vendor scope today.
+
+#### L11 · Screening: see who was left out, and why
+**Medium · 16 h · supersedes PLAN-Phase4.md P12**
+
+P12's design, with these corrections from the code:
+- `passesStrictFilters` returns only the first failure, so per-rule flags are selected as SQL columns from the same gate conditions.
+- The work happens behind separate `not-shown` endpoints, so the cached search and its cache keys are untouched.
+- The summary line shows the per-gate counts it already has.
+- The list is read-only in v1.
+
+#### L12 · One-record exports as Field | Value; dossier round feedback
+**Low · 13 h**
+
+**Goal**
+- **Today:** the dossier and other one-record exports read sideways. An edited Tech 1 feedback (`rpa_cv."TechRoundOne"`, edited in Search Candidate) never reaches the dossier, and the XLSX drops scorecard comments.
+- **Change (decision 23 Oct):** every export holding one record uses column A = field and column B = value, with section names as heading rows. This covers the dossier XLSX (all sheets, inside the ZIP too), the dossier HTML (vertical cards), the MRF details CSV and the role report CSV. List exports keep one row per record.
+- **Also in the dossier:** the round notes are added, scorecards follow stage order, re-done attempts are labelled, and the client-round notes are included.
+
+**Tests:** the pinned `candidateDossier.test.js` layout tests and `mrfDetailExport.test.js` are updated, plus the leak scan.
+
+#### L13 · Meeting and recording links for people outside the ATS
+**Low · 4 h**
+
+**Goal**
+- **Today:** the drawer's recording "Copy link" needs an ATS login. No-login links exist only after a dossier download.
+- **Change:**
+  - "Copy link for someone outside the ATS" mints (or reuses) the 14-day no-login link.
+  - "Copy join details" for the Teams meeting.
+  - Both copied messages carry the JD link.
+- **Done when:** a recording link pasted into Outlook opens for someone with no ATS account.
+
+#### L14 · Next-round report pack; feedback-received email
+**Medium · 12 h**
+
+**Goal**
+- **Today:** the panel invite carries nothing from earlier rounds. A submitted scorecard only rings the in-app bell.
+- **Change (decisions 23 Oct):**
+  - Every panel invite carries the role's JD and the CV.
+  - From the second round on, it also carries the "report so far" (the redacted dossier, no contact details, no-login recording links), on by default, with a tick-box in the Schedule window. Files are capped at 3 MB in total and fall back to links.
+  - A "Feedback received" email goes to the recruitment mailbox (flow key `scorecardSubmitted`).
+- **Flag:** `INTERVIEW_PANEL_PACK_ENABLED`.
+
+#### L15 · MRF emails and the public MRF form on the AAPNA design
+**Medium · 8 h**
+
+**Goal**
+- **Today:** the MRF emails each build their own HTML: the New MRF Request (footer says 2025), the approval request ("AAPNA Requisition Portal"), the HR copy, the outcome and the decision notices. `/mrf-submit` keeps the n8n layout.
+- **Change:**
+  - Every MRF email moves onto `wrapBrandedEmail`, with the same wording, buttons and links.
+  - `/mrf-submit` renders inside `PublicPageShell`.
+  - The New MRF Request card on `/mrf` gets a consistency pass.
+
+#### L16 · Password emails on the AAPNA design
+**Low · 2 h**
+
+**Goal**
+- **Today:** `sendCredentialEmail` and `sendPasswordResetEmail` have their own styling.
+- **Change:** both move onto `wrapBrandedEmail` with the same content. Recipients stay in `NEVER_REDIRECT`.
+
+---
+
 ## 4. Cross-cutting tables
 
 ### DDL
@@ -440,6 +559,7 @@ Shorthand used below:
 | 3 | `chk_mrf_approval_events_type` widened with `held`, `hold_reminder_sent`; enum gets `held` | MRF Hold (L04) |
 | 4 | `rpa_zeko_candidate_pipeline.last_zeko_status`, `last_zeko_status_at` | Drop-out rules (L05) |
 | 5 | `rpa_mrf_jd_send.version_label`, `version_date` | Editable JD label (no MRF) (L07) |
+| 6 | `rpa_cv_tmp.matched_cv_id` | Upload duplicate compare (L09) |
 
 ### Settings keys
 
@@ -451,7 +571,7 @@ Shorthand used below:
 
 ### Feature flags
 
-`FLEXIBLE_STAGES_ENABLED` (Flexible stages (L03)).
+`FLEXIBLE_STAGES_ENABLED` (Flexible stages (L03)), `FORMS_LINKS_ENABLED` (Forms & Links (L08)), `INTERVIEW_PANEL_PACK_ENABLED` (Next-round pack (L14)).
 
 ### New cron jobs
 
@@ -467,6 +587,8 @@ Shorthand used below:
 | "Now considered for <role>" (optional, on move) | Move / re-tag candidate (L02) |
 | Hold notice to requester; hold-due reminder to approver | MRF Hold (L04) |
 | Drop-out reminder to candidate; daily dry-run report to RT | Drop-out rules (L05) |
+| "Interview feedback received" to the recruitment mailbox; JD, CV and report so far on the panel invite | Next-round pack (L14) |
+| Every MRF email and both password emails move onto the branded shell | MRF emails & form (L15), Password emails (L16) |
 
 ## 5. Release plan
 
@@ -504,3 +626,12 @@ Each release follows the steps in [PLAN-Phase3-Now.md](PLAN-Phase3-Now.md) §6.
 | L05 | Drop-out rules |
 | L06 | Analytics - date range & Total Applied |
 | L07 | Editable JD label (no MRF) |
+| L08 | Forms & Links |
+| L09 | Upload duplicate compare |
+| L10 | Profile link from HR uploads |
+| L11 | Screening: who was left out, and why |
+| L12 | One-record exports as Field \| Value; dossier round feedback |
+| L13 | Meeting and recording links for people outside the ATS |
+| L14 | Next-round report pack; feedback-received email |
+| L15 | MRF emails and public MRF form on the AAPNA design |
+| L16 | Password emails on the AAPNA design |

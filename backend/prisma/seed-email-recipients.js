@@ -72,6 +72,8 @@ const RECIPIENTS = {
     mrfSubmitHrNotify:  { to: 'hmopuri@aapnainfotech.com', cc: '' },
     mrfOutcome:         { to: 'hmopuri@aapnainfotech.com', cc: '' },
     shortlistCc:        { to: '', cc: 'pkmondal@aapnainfotech.com' },
+    // L14: "Feedback received" when a scorecard is submitted.
+    scorecardSubmitted: { to: 'hmopuri@aapnainfotech.com', cc: '' },
   },
   production: {
     resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '' },
@@ -83,6 +85,8 @@ const RECIPIENTS = {
     // A8): the CEO approves MRFs but never received the outcome email.
     mrfOutcome:         { to: 'recruitment@aapnainfotech.in', cc: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com' },
     shortlistCc:        { to: '', cc: 'recruitment@aapnainfotech.in' },
+    // L14: "Feedback received" to the recruitment mailbox (Harish, 23 Oct).
+    scorecardSubmitted: { to: 'recruitment@aapnainfotech.in', cc: '' },
   },
 };
 

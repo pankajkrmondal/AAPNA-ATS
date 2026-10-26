@@ -25,7 +25,7 @@ import { requireStaff } from '../middleware/auth.js';
 // From utils, not candidate.service.js: the service pulls in prisma and the
 // socket layer, whose open handles keep the test runner alive after the
 // assertions finish. Same function either way — the service re-exports this one.
-import { enforceVendorScope } from '../utils/vendorScope.js';
+import { enforceVendorScope, vendorMayReadCandidate } from '../utils/vendorScope.js';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -133,6 +133,59 @@ describe('enforceVendorScope', () => {
     enforceVendorScope(original, VENDOR);
     assert.equal(original.vendorEmail, 'rival@other.example');
     assert.equal(original.vendorOnly, true);
+  });
+});
+
+// ── L10: one candidate by id is scoped like the list ──────────────────
+
+describe('vendorMayReadCandidate', () => {
+  const VENDOR = { role: 'vendor', email: 'Talent@Partner.example' };
+
+  test('a vendor may read a candidate they submitted (case-insensitive)', () => {
+    assert.equal(vendorMayReadCandidate(VENDOR, 'talent@partner.example '), true);
+  });
+
+  test("a vendor may not read another vendor's or an internal candidate", () => {
+    assert.equal(vendorMayReadCandidate(VENDOR, 'rival@other.example'), false);
+    assert.equal(vendorMayReadCandidate(VENDOR, ''), false);
+    assert.equal(vendorMayReadCandidate(VENDOR, null), false);
+  });
+
+  test('a vendor account with no email reads nothing', () => {
+    assert.equal(vendorMayReadCandidate({ role: 'vendor', email: '' }, ''), false);
+  });
+
+  test('staff read any candidate', () => {
+    for (const role of ['recruiter', 'hr', 'hr_admin_recruiter', 'admin', 'superadmin']) {
+      assert.equal(vendorMayReadCandidate({ role, email: 'staff@aapnainfotech.com' }, 'rival@other.example'), true, role);
+    }
+  });
+
+  test('GET /:id checks it, and /:id/emails is staff-only', () => {
+    const ctrl = fs.readFileSync(path.join(SRC, 'controllers', 'candidate.controller.js'), 'utf8');
+    const getCandidate = ctrl.slice(ctrl.indexOf('export const getCandidate ='), ctrl.indexOf('export const updateCandidate'));
+    assert.ok(getCandidate.includes('vendorMayReadCandidate('), 'getCandidate must apply vendorMayReadCandidate');
+    const routes = fs.readFileSync(path.join(SRC, 'routes', 'candidate.routes.js'), 'utf8');
+    assert.match(routes, /router\.get\('\/:id\/emails',\s*requireStaff,/);
+  });
+
+  test('L09: the duplicate comparison is staff-only on both upload routers', () => {
+    // It shows the EXISTING record next to the upload, and that record may
+    // belong to another vendor or to internal HR.
+    const vendorRoutes = fs.readFileSync(path.join(SRC, 'routes', 'vendor.routes.js'), 'utf8');
+    assert.match(vendorRoutes, /router\.get\('\/review\/:tmpId\/compare', restrictTo\(\.\.\.STAFF_ROLES\),/);
+    const hrRoutes = fs.readFileSync(path.join(SRC, 'routes', 'hrUpload.routes.js'), 'utf8');
+    const guard = hrRoutes.indexOf('router.use(requireStaff);');
+    assert.ok(guard > 0 && guard < hrRoutes.indexOf("'/duplicates/:tmpId/compare'"), 'compare sits behind requireStaff');
+  });
+
+  test('L08: every Forms & Links route sits behind requireStaff', () => {
+    // The list names candidates, interviewers and approvers, and Copy hands out
+    // working links: none of it may reach a vendor token.
+    const routes = fs.readFileSync(path.join(SRC, 'routes', 'formsLinks.routes.js'), 'utf8');
+    const guard = routes.indexOf('router.use(requireStaff);');
+    const firstRoute = routes.search(/router\.(get|post)\(/);
+    assert.ok(guard > 0 && guard < firstRoute, 'requireStaff comes before the first route');
   });
 });
 

@@ -184,6 +184,45 @@ export function keywordSpec(filters) {
   };
 }
 
+// ── L11: who a search left out, and why ───────────────────────────────
+
+export const notShownColumns = [
+  { header: 'Candidate', key: 'name' },
+  { header: 'Why not shown', key: 'reasonText' },
+  { header: 'Position Applied', key: 'positionApplied' },
+  { header: 'Total Experience', key: 'experience' },
+  { header: 'Expected CTC (LPA)', key: 'expectedCtc' },
+  { header: 'Current Location', key: 'location' },
+  { header: 'Notice Period', key: 'noticePeriod' },
+  { header: 'Education', key: 'education' },
+  { header: 'Added', key: 'createdAt', type: 'date' },
+];
+
+/**
+ * The "not shown" list as a CSV, nearest misses first (the same nearest 200
+ * the screen lists). Re-computed on the server from the same filter body, so
+ * the file never trusts a client-sent candidate list.
+ *
+ * @param {'jd'|'keyword'} kind
+ * @param {object} p - { mrfId, addedWithinDays, taggedOnly, reason } or { filters, reason }
+ */
+export function notShownSpec(kind, { mrfId = null, addedWithinDays = null, taggedOnly = false, filters = {}, reason = null } = {}) {
+  return {
+    key: kind === 'jd' ? 'screening_jd_not_shown' : 'screening_keyword_not_shown',
+    label: kind === 'jd' ? `Screening-MRF-${mrfId}-Not-Shown` : 'Screening-Keyword-Not-Shown',
+    columns: notShownColumns,
+    filters: kind === 'jd' ? { mrfId, addedWithinDays, taggedOnly, reason } : { ...filters, reason },
+    fetch: async ({ max }) => {
+      const result = kind === 'jd'
+        ? await screeningV2.notShownForRole(mrfId, { addedWithinDays, taggedOnly, reason })
+        : await screeningV2.notShownForKeyword(filters, { reason });
+      return {
+        rows: (result.candidates || []).slice(0, max).map((c) => ({ ...c, reasonText: c.reasons.join('; ') })),
+      };
+    },
+  };
+}
+
 // ── Analytics "Role Summary" table ────────────────────────────────────
 
 export const roleSummaryColumns = [
@@ -220,4 +259,4 @@ export function roleSummarySpec(query = {}) {
   };
 }
 
-export default { columns, roleSpec, keywordSpec, roleSummarySpec, groupByRole };
+export default { columns, roleSpec, keywordSpec, roleSummarySpec, groupByRole, notShownSpec, notShownColumns };

@@ -75,6 +75,9 @@ router.get('/interview/:scheduleId/cancel-preview', pipelineController.getCancel
 router.post('/interview/:scheduleId/occurrence', pipelineController.recordInterviewOccurrence);
 /** Manually send the scorecard link (idempotent; only after 'held'). */
 router.post('/interview/:scheduleId/send-scorecard', pipelineController.sendScorecard);
+/** POST /api/pipeline/interview/:scheduleId/send-pack — the JD, CV and report so
+ *  far to an already-booked round's panel (L14). */
+router.post('/interview/:scheduleId/send-pack', pipelineController.sendPanelPack);
 /** GET /api/pipeline/interviews/unresolved — ended interviews still awaiting a
  * held/no_show verdict. Registered before "/:id" for the same reason as above. */
 router.get('/interviews/unresolved', pipelineController.listUnresolvedInterviews);
@@ -117,6 +120,10 @@ router.get('/:id/recordings', pipelineController.getPipelineRecordings);
  *  Every open is written to the journey's stage timeline; see
  *  interviewRecording.service.js for why that audit is load-bearing. */
 router.get('/:id/recordings/:recordingId/stream', pipelineController.streamPipelineRecording);
+/** POST /api/pipeline/:id/recordings/:recordingId/share-link — the no-login link
+ *  for ONE recording, for someone outside the ATS (L13). Reuses a live link and
+ *  never extends it; every request is noted on the candidate's timeline. */
+router.post('/:id/recordings/:recordingId/share-link', pipelineController.createRecordingShareLink);
 /** GET /api/pipeline/:id/share-links — every recording share link ever minted for
  *  this journey, live or not. Dead ones are included on purpose: the list has to
  *  answer "what did we send out?", not only "what is open right now". */

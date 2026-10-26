@@ -32,6 +32,7 @@ import XLSX from 'xlsx';
 
 import config from '../config/index.js';
 import { formatDate, formatDateTime, stringifyCell } from '../utils/csvExport.js';
+import { toFieldValueAoa } from '../utils/fieldValueExport.js';
 
 /**
  * HTML-escape. Applied to EVERY interpolated value without exception.
@@ -277,6 +278,12 @@ function section(n, title, body, emptyNote = 'No records.') {
   return `<section><h2><span class="num">${n}</span>${esc(title)}</h2>${content}</section>`;
 }
 
+/** How an event type reads to a person ("note" is "Note", "moved" is "Moved"…). */
+function eventLabel(type) {
+  const t = String(type || '').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1).replace(/_/g, ' ') : '';
+}
+
 /** A two-column label/value table from [{label, value}] rows. */
 function fieldTable(rows) {
   if (!rows.length) return '';
@@ -335,7 +342,11 @@ function valueToHtml(value, depth = 0) {
     if (items.every(isPlainObject)) {
       const keys = unionKeys(items);
       if (keys.length) {
-        return dataTable(keys.map(humanizeKey), items.map((r) => keys.map((k) => r[k])));
+        // One card per record, not a grid (L12): employment history and the
+        // like are read one entry at a time.
+        return recordList(items.map((r) => ({
+          rows: keys.map((k) => ({ label: humanizeKey(k), value: r[k] })),
+        })));
       }
     }
     return `<ul>${items.map((i) => `<li>${valueToHtml(i, depth + 1)}</li>`).join('')}</ul>`;
@@ -354,6 +365,26 @@ function valueToHtml(value, depth = 0) {
   }
 
   return esc(text(node));
+}
+
+/**
+ * Records read top to bottom (L12): one small card per record, each a list of
+ * label / value lines, instead of a grid that runs off the page. Rows with no
+ * value are left out so a card shows what is known; a record with nothing at
+ * all still shows its title.
+ *
+ * @param {Array<{title?: string, rows: Array<{label: string, value: *}>}>} records
+ * @returns {string} HTML ('' for no records)
+ */
+function recordList(records) {
+  if (!records.length) return '';
+  return records.map((r) => {
+    const rows = (r.rows || []).filter((row) => !isEmptyValue(coerceStructured(row.value)));
+    return '<div class="rec">'
+      + (r.title ? `<h4>${esc(r.title)}</h4>` : '')
+      + fieldTable(rows)
+      + '</div>';
+  }).join('');
 }
 
 /** A data table from a header list and row arrays. */
@@ -420,6 +451,13 @@ ul.kv{margin:0;padding:0;list-style:none}
 ul.kv li{margin-bottom:3px}
 ul.kv .k{color:var(--muted);font-weight:600;margin-right:6px}
 .card{border:1px solid var(--line);border-radius:5px;padding:16px 18px;margin-bottom:16px}
+.rec{border:1px solid var(--line);border-left:3px solid var(--band);border-radius:4px;padding:8px 14px 4px;margin:0 0 10px}
+.rec h4{margin:2px 0 4px;font-size:13.5px}
+.rec table.fields th{width:30%;padding:4px 12px 4px 0}
+.rec table.fields td{padding:4px 0}
+.notesbox{background:#f7f9fa;border:1px dashed var(--line);border-radius:4px;padding:10px 14px;margin:10px 0 0}
+.notesbox .k{display:block;color:var(--muted);font-size:12px;font-weight:600;margin-bottom:4px}
+.attempt{color:var(--warn);font-weight:600;font-size:12.5px}
 .card h3{margin-top:0}
 .tags{color:var(--muted);font-size:12.5px;margin-bottom:10px}
 .tags b{color:var(--ink)}
@@ -440,7 +478,7 @@ footer{padding:24px 36px;color:var(--muted);font-size:12px;line-height:1.7}
   body{background:#fff}
   .page{max-width:none}
   section{page-break-inside:auto;border-bottom:0;padding:18px 0}
-  .card,table.grid tr,.linkbox{page-break-inside:avoid}
+  .card,.rec,table.grid tr,.linkbox{page-break-inside:avoid}
   h2{page-break-after:avoid}
   header.band{color:#000;background:#fff;border-bottom:3px solid #000;padding:0 0 14px}
   .confidential,.status{padding-left:0;padding-right:0}
@@ -462,19 +500,35 @@ export function renderDossierHtml(model) {
   const days = config.dossier.deletionDays;
 
   // ---- 4. Progress so far --------------------------------------------------
-  const stagesHtml = dataTable(
-    ['Stage', 'What happened', 'Outcome', 'Reason', 'Decided by', 'When'],
-    model.stages.map((s) => [
-      s.stage_label,
-      s.event_type === 'note' ? 'Note' : s.event_type,
-      s.outcome,
-      s.reason || s.notes,
-      s.decided_by,
-      formatDateTime(s.decided_at),
-    ]),
-  );
+  // One record per decision, read top to bottom (L12), not a six-column grid.
+  const stagesHtml = recordList(model.stages.map((s) => ({
+    title: `${s.stage_label} — ${s.outcome || eventLabel(s.event_type)}`,
+    rows: [
+      { label: 'What happened', value: eventLabel(s.event_type) },
+      { label: 'Reason / note', value: s.reason || s.notes },
+      { label: 'Decided by', value: s.decided_by },
+      { label: 'When', value: formatDateTime(s.decided_at) },
+    ],
+  })));
 
   // ---- 6. Per-round scorecards --------------------------------------------
+  // The recruiter's own notes for a round (L12: an edited "Tech round 1"
+  // feedback), printed once, inside that round's current scorecard; a round
+  // with notes but no scorecard gets a card of its own.
+  const notesByStage = new Map((model.round_notes || []).map((n) => [n.stage_key, n]));
+  const notesBox = (n) => `<div class="notesbox"><span class="k">Round feedback recorded in the ATS</span>`
+    + `<div style="white-space:pre-wrap">${esc(n.value)}</div></div>`;
+  const notesPrinted = new Set();
+  const roundNotesHtml = (c) => {
+    const n = notesByStage.get(c.stage_key);
+    if (!n || c.earlier_attempt || notesPrinted.has(c.stage_key)) return '';
+    notesPrinted.add(c.stage_key);
+    return notesBox(n);
+  };
+  const leftoverNotesHtml = () => (model.round_notes || [])
+    .filter((n) => !model.scorecards.some((c) => c.stage_key === n.stage_key && !c.earlier_attempt))
+    .map((n) => `<div class="card"><h3>${esc(n.stage_label)}</h3>${notesBox(n)}</div>`)
+    .join('');
   const scorecardsHtml = model.scorecards.map((c) => {
     const tags = [
       c.recommendation ? `<b>Recommendation:</b> ${esc(c.recommendation)}` : null,
@@ -503,12 +557,14 @@ export function renderDossierHtml(model) {
 
     return '<div class="card">'
       + `<h3>${esc(c.stage_label)}${c.interviewer ? ` — ${esc(c.interviewer)}` : ''}</h3>`
+      + (c.earlier_attempt ? '<p class="attempt">Earlier attempt: this round was done again later; the newer scorecard follows.</p>' : '')
       + (tags ? `<div class="tags">${tags}</div>` : '')
       + skills
       + (c.comments ? `<div class="quote">${esc(c.comments)}</div>` : '')
       + hr
+      + roundNotesHtml(c)
       + '</div>';
-  }).join('');
+  }).join('') + leftoverNotesHtml();
 
   // Rounds still owed a scorecard. Stated rather than omitted, so "no feedback
   // yet" is never mistaken for "feedback was withheld".
@@ -519,12 +575,15 @@ export function renderDossierHtml(model) {
     : '';
 
   // ---- 7. Screening and assessment scores ----------------------------------
-  const zekoHtml = dataTable(
-    ['Round', 'Overall', 'Technical', 'Communication', 'Taken on'],
-    model.zeko.map((z) => [
-      z.round, z.overall_score, z.technical_score, z.communication_score, formatDate(z.taken_at),
-    ]),
-  );
+  const zekoHtml = recordList(model.zeko.map((z) => ({
+    title: z.round,
+    rows: [
+      { label: 'Overall', value: z.overall_score },
+      { label: 'Technical', value: z.technical_score },
+      { label: 'Communication', value: z.communication_score },
+      { label: 'Taken on', value: formatDate(z.taken_at) },
+    ],
+  })));
 
   // The screening assessment itself, rendered into the pack (plan §6.7).
   //
@@ -559,31 +618,32 @@ export function renderDossierHtml(model) {
         + (tags ? `<div class="tags">${tags}</div>` : '')
         + list('Summary', d.summary)
         + list('Red flags', d.red_flags)
-        + dataTable(
-          ['Requirement', 'Met?', 'What the candidate said', 'Assessment'],
-          d.parameters.map((p) => [
-            `${p.name}${p.required ? ' (must-have)' : ''}`,
-            p.met ? 'Yes' : 'No',
-            p.answer,
-            p.remark,
-          ]),
-        )
+        + (d.parameters.length ? '<h3>Requirements</h3>' : '')
+        + recordList(d.parameters.map((p) => ({
+          title: `${p.name}${p.required ? ' (must-have)' : ''}`,
+          rows: [
+            { label: 'Met?', value: p.met ? 'Yes' : 'No' },
+            { label: 'What the candidate said', value: p.answer },
+            { label: 'Assessment', value: p.remark },
+          ],
+        })))
         + list('Strengths', d.strengths)
         + list('Areas of concern', d.concerns)
         + list('Recommendation', d.recommendation)
         + list('Suggested development', d.improvements)
         + (d.soft_skills?.length
-          ? `<h3>Communication and thinking</h3>${dataTable(
-            ['Area', 'Rating', 'Assessment'],
+          ? `<h3>Communication and thinking</h3>${recordList(
             // "Not assessed" rather than a dash or a rating: the screening AI
             // stamps "weak" on skills it never got the chance to observe, and
             // passing that on would misrepresent a real candidate to someone
             // about to interview them.
-            d.soft_skills.map((s) => [
-              s.area,
-              s.assessed ? s.rating : 'Not assessed in this interview',
-              s.comment,
-            ]),
+            d.soft_skills.map((s) => ({
+              title: s.area,
+              rows: [
+                { label: 'Rating', value: s.assessed ? s.rating : 'Not assessed in this interview' },
+                { label: 'Assessment', value: s.comment },
+              ],
+            })),
           )}`
           : '')
         + (d.withheld_count
@@ -660,13 +720,18 @@ export function renderDossierHtml(model) {
     // printed alongside it — the same numbers twice invites a reader to look for
     // a difference that is not there.
     const sectionsHtml = d?.sections?.length
-      ? dataTable(
-        ['Section', 'Marks', 'Correct', 'Wrong', 'Unattempted', 'Easy / med / hard correct', 'Result'],
-        d.sections.map((s) => [
-          s.label, s.marks, s.correct, s.wrong, s.unattempted, split(s), s.result,
-        ]),
-      )
-      : dataTable(['Section', 'Score'], a.sections.map((s) => [s.label, s.score]));
+      ? recordList(d.sections.map((s) => ({
+        title: s.label,
+        rows: [
+          { label: 'Marks', value: s.marks },
+          { label: 'Correct', value: s.correct },
+          { label: 'Wrong', value: s.wrong },
+          { label: 'Unattempted', value: s.unattempted },
+          { label: 'Easy / medium / hard correct', value: split(s) },
+          { label: 'Result', value: s.result },
+        ],
+      })))
+      : fieldTable(a.sections.map((s) => ({ label: s.label, value: s.score })));
 
     const totals = d?.totals || null;
     const totalsHtml = totals && (totals.correct !== null || totals.wrong !== null
@@ -678,7 +743,7 @@ export function renderDossierHtml(model) {
     // Discovered per test, never a fixed list — one test's topics are "Sql,
     // Python, Playwright", the next one's are something else entirely.
     const topicsHtml = d?.topics?.length
-      ? `<h3>Topic scores</h3>${dataTable(['Topic', 'Score'], d.topics.map((t) => [t.label, t.value]))}`
+      ? `<h3>Topic scores</h3>${fieldTable(d.topics.map((t) => ({ label: t.label, value: t.value })))}`
       : '';
 
     // Absence is not omission (§3.1). A result recorded before the ATS kept the
@@ -700,17 +765,17 @@ export function renderDossierHtml(model) {
   }).join('');
 
   // ---- 8/9. Interviews and recordings --------------------------------------
-  const interviewsHtml = dataTable(
-    ['Round', 'Interviewer', 'Scheduled', 'Did it happen?'],
-    model.interviews.map((i) => [
-      i.stage_label,
-      i.interviewer,
-      formatDateTime(i.scheduled_start_at),
+  const interviewsHtml = recordList(model.interviews.map((i) => ({
+    title: `${i.stage_label}${i.earlier_attempt ? ' (earlier attempt)' : ''}`,
+    rows: [
+      { label: 'Interviewer', value: i.interviewer },
+      { label: 'Scheduled', value: formatDateTime(i.scheduled_start_at) },
       // Null is a genuine third state — nobody has confirmed either way — and
       // must not be printed as "did not happen".
-      i.occurrence === 'held' ? 'Yes' : i.occurrence === 'no_show' ? `No-show (${i.no_show_party || 'unrecorded'})` : 'Not confirmed',
-    ]),
-  );
+      { label: 'Did it happen?', value: i.occurrence === 'held' ? 'Yes' : i.occurrence === 'no_show' ? `No-show (${i.no_show_party || 'unrecorded'})` : 'Not confirmed' },
+      { label: 'Client feedback', value: i.client_feedback },
+    ],
+  })));
 
   // Recordings travel as expiring, revocable links rather than as bytes (HR
   // decision #7): an MP4 round is hundreds of MB and three of them would make
@@ -747,20 +812,19 @@ export function renderDossierHtml(model) {
             + 'watch it.</p>')
         + '</div>';
     }).join('')
-    : dataTable(
-      ['Round', 'Recorded on', 'Length', 'How to watch'],
-      model.recordings.map((r) => [
-        r.stage_label,
-        formatDateTime(r.recorded_start_at),
-        r.duration_seconds !== null ? `${Math.round(r.duration_seconds / 60)} min` : null,
-        'Ask the recruiter',
-      ]),
-    );
+    : recordList(model.recordings.map((r) => ({
+      title: r.stage_label,
+      rows: [
+        { label: 'Recorded on', value: formatDateTime(r.recorded_start_at) },
+        { label: 'Length', value: r.duration_seconds !== null ? `${Math.round(r.duration_seconds / 60)} min` : null },
+        { label: 'How to watch', value: 'Ask the recruiter' },
+      ],
+    })));
 
-  const manifestHtml = dataTable(
-    ['Item', 'In this pack?', 'Note'],
-    model.manifest.map((m) => [m.item, m.included ? 'Yes' : 'No', m.note]),
-  );
+  const manifestHtml = fieldTable(model.manifest.map((m) => ({
+    label: m.item,
+    value: `${m.included ? 'Yes' : 'No'}${m.note ? ` — ${m.note}` : ''}`,
+  })));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -839,10 +903,12 @@ ${section(10, 'What is in this pack', manifestHtml)}
 /**
  * Render the XLSX summary.
  *
- * Sheet 1 is TRANSPOSED — Section | Field | Value, one row per field — for the
- * reason mrfDetail.export.js documents at length: a single-row sheet carrying
- * this many fields is unreadable, because you scroll sideways forever to find
- * one value. The other three sheets are genuinely list-shaped and stay that way.
+ * EVERY sheet is two columns, Field | Value (L12, utils/fieldValueExport.js):
+ * column A names the line, column B says it, and each round, event or test is
+ * a heading row. A dossier is one candidate — read top to bottom, like the
+ * HTML — so no sheet runs sideways, not even the scorecards, which used to be
+ * one row per round × skill with the round repeated on every row and the
+ * interviewer's written comments left out altogether.
  *
  * @param {object} model
  * @returns {Buffer}
@@ -853,147 +919,165 @@ export function renderDossierWorkbook(model) {
   // own right ("Spreadsheet only"), so a JSON blob is no more acceptable in a
   // cell than it is in the report.
   const cell = (v) => (v === null || v === undefined ? '' : valueToText(v));
+  const hasValue = (v) => v !== null && v !== undefined && v !== '';
+  const addSheet = (rows, name) => {
+    const sheet = XLSX.utils.aoa_to_sheet(toFieldValueAoa(rows.filter((r) => hasValue(r.value) || r.keep)));
+    sheet['!cols'] = [{ wch: 40 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(book, sheet, name);
+  };
 
-  // --- Sheet 1: Summary (transposed) ---------------------------------------
-  const summary = [['Section', 'Field', 'Value']];
-  summary.push(['Dossier', 'Candidate', cell(model.candidate.name)]);
-  summary.push(['Dossier', 'Position', cell(model.candidate.position)]);
-  summary.push(['Dossier', 'Requisition', cell(model.candidate.mrf_ref)]);
-  summary.push(['Dossier', 'Prepared by', cell(model.generated.by)]);
-  summary.push(['Dossier', 'Prepared on', formatDateTime(model.generated.at)]);
-  summary.push(['Dossier', 'Application status', cell(model.status.headline)]);
-  for (const f of model.profile) summary.push(['Candidate profile', f.label, cell(f.value)]);
-  for (const f of model.position) summary.push(['Position', f.label, cell(f.value)]);
+  // --- Sheet 1: Summary ------------------------------------------------------
+  const summary = [];
+  const add = (section, field, value, keep = false) => summary.push({ section, field, value: cell(value), keep });
+  add('Dossier', 'Candidate', model.candidate.name);
+  add('Dossier', 'Position', model.candidate.position);
+  add('Dossier', 'Requisition', model.candidate.mrf_ref);
+  add('Dossier', 'Prepared by', model.generated.by);
+  add('Dossier', 'Prepared on', formatDateTime(model.generated.at));
+  add('Dossier', 'Application status', model.status.headline);
+  // Profile and position keep their empty fields: "we don't know" must read
+  // differently from "the dossier left it out" (pickCvProfile's rule).
+  for (const f of model.profile) add('Candidate profile', f.label, f.value, true);
+  for (const f of model.position) add('Position', f.label, f.value, true);
   if (model.scorecard_overall) {
-    summary.push(['Scores', 'Rounds scored', cell(model.scorecard_overall.rounds_scored)]);
-    summary.push(['Scores', 'Average score', cell(model.scorecard_overall.average)]);
-    summary.push(['Scores', 'Scorecards outstanding', cell(model.scorecard_overall.outstanding)]);
+    add('Scores', 'Rounds scored', model.scorecard_overall.rounds_scored);
+    add('Scores', 'Average score', model.scorecard_overall.average);
+    add('Scores', 'Scorecards outstanding', model.scorecard_overall.outstanding);
   }
-  if (model.consolidated_feedback) {
-    summary.push(['Feedback', 'Consolidated interviewer feedback', model.consolidated_feedback]);
-  }
+  if (model.consolidated_feedback) add('Feedback', 'Consolidated interviewer feedback', model.consolidated_feedback);
   // Recording links belong in the spreadsheet too: "Spreadsheet only" is one of
   // the three formats, and a recruiter who picks it must not silently lose the
   // one thing in the pack that lets an interviewer watch the round. Only linked
   // recordings are listed — an unlinked one has nothing to put in the cell.
   for (const r of model.recordings.filter((rec) => rec.share_url)) {
-    summary.push([
+    add(
       'Interview recordings',
       `${r.stage_label}${r.share_expires_at ? ` (link expires ${formatDate(r.share_expires_at)})` : ''}`,
       r.share_url,
-    ]);
+    );
   }
-  for (const r of model.redaction) summary.push(['Removed from this pack', r, '']);
+  for (const r of model.redaction) add('Removed from this pack', r, 'Removed', true);
+  addSheet(summary, 'Summary');
 
-  const s1 = XLSX.utils.aoa_to_sheet(summary);
-  s1['!cols'] = [{ wch: 24 }, { wch: 34 }, { wch: 70 }];
-  XLSX.utils.book_append_sheet(book, s1, 'Summary');
-
-  // --- Sheet 2: Scorecards (one row per round × skill) ----------------------
-  const cards = [['Round', 'Interviewer', 'Recommendation', 'Average score', 'Skill', 'Rating', 'Remark']];
+  // --- Sheet 2: Scorecards, one block per round ------------------------------
+  const cards = [];
+  const notesByStage = new Map((model.round_notes || []).map((n) => [n.stage_key, n]));
+  const notesPrinted = new Set();
+  // The heading is the round alone (headings print in capitals, which an email
+  // address must not); a round scored by several interviewers is numbered so
+  // each scorecard stays its own block.
+  const roundKey = (c) => c.stage_key || c.stage_label;
+  const perStage = new Map();
+  for (const c of model.scorecards) perStage.set(roundKey(c), (perStage.get(roundKey(c)) || 0) + 1);
+  const seenStage = new Map();
   for (const c of model.scorecards) {
-    if (!c.skills.length) {
-      cards.push([c.stage_label, cell(c.interviewer), cell(c.recommendation), cell(c.avg_score), '', '', '']);
-      continue;
-    }
+    const n = (seenStage.get(roundKey(c)) || 0) + 1;
+    seenStage.set(roundKey(c), n);
+    const section = `${c.stage_label}${perStage.get(roundKey(c)) > 1 ? ` (${n})` : ''}${c.earlier_attempt ? ' — earlier attempt' : ''}`;
+    const line = (field, value) => cards.push({ section, field, value: cell(value) });
+    line('Interviewer', c.interviewer);
+    line('Submitted', c.submitted_at ? formatDate(c.submitted_at) : null);
+    line('Recommendation', c.recommendation);
+    line('Average score', c.avg_score);
+    line('Overall rating', c.final_rating);
+    line('Communication', c.communication);
+    line('Attitude', c.attitude);
     for (const s of c.skills) {
-      cards.push([
-        c.stage_label, cell(c.interviewer), cell(c.recommendation), cell(c.avg_score),
-        cell(s.label), cell(s.rating), cell(s.remark),
-      ]);
+      line(s.label || 'Skill', [cell(s.rating), cell(s.remark)].filter(Boolean).join(' · '));
     }
+    line('Comments', c.comments);
+    if (c.hr_round) {
+      line('Strengths', c.hr_round.strengths);
+      line('Areas of concern', c.hr_round.weakness);
+      line('Communication (HR)', c.hr_round.communication_comments);
+      line('Attitude (HR)', c.hr_round.attitude_comments);
+      line('Relocation', c.hr_round.relocation);
+      line('Notice period', c.hr_round.notice_period);
+      line('Other observations', c.hr_round.other_observation);
+      line('Final feedback', c.hr_round.final_feedback);
+    }
+    const notes = notesByStage.get(c.stage_key);
+    if (notes && !c.earlier_attempt && !notesPrinted.has(c.stage_key)) {
+      notesPrinted.add(c.stage_key);
+      line('Round feedback recorded in the ATS', notes.value);
+    }
+    if (c.earlier_attempt) line('Note', 'Earlier attempt: this round was done again later.');
   }
-  const s2 = XLSX.utils.aoa_to_sheet(cards);
-  s2['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 16 }, { wch: 13 }, { wch: 24 }, { wch: 8 }, { wch: 60 }];
-  XLSX.utils.book_append_sheet(book, s2, 'Scorecards');
-
-  // --- Sheet 3: Stage history ----------------------------------------------
-  const stages = [['Stage', 'Event', 'Outcome', 'Reason / note', 'Decided by', 'When']];
-  for (const s of model.stages) {
-    stages.push([
-      s.stage_label, s.event_type, cell(s.outcome), cell(s.reason || s.notes),
-      cell(s.decided_by), formatDateTime(s.decided_at),
-    ]);
+  for (const n of model.round_notes || []) {
+    if (notesPrinted.has(n.stage_key)) continue;
+    cards.push({ section: n.stage_label, field: 'Round feedback recorded in the ATS', value: cell(n.value) });
   }
-  const s3 = XLSX.utils.aoa_to_sheet(stages);
-  s3['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 16 }, { wch: 46 }, { wch: 18 }, { wch: 18 }];
-  XLSX.utils.book_append_sheet(book, s3, 'Stage History');
+  for (const p of model.scorecards_pending) {
+    cards.push({ section: 'Still awaited', field: p.stage_label, value: cell(p.interviewer) || 'Awaiting the scorecard', keep: true });
+  }
+  addSheet(cards, 'Scorecards');
 
-  // --- Sheet 4: Assessments (Zeko + Evalground together) --------------------
-  const assess = [['Source', 'Test / round', 'Item', 'Score']];
+  // --- Sheet 3: Stage history, one block per decision ------------------------
+  const stages = [];
+  model.stages.forEach((s, i) => {
+    // Numbered so two identical decisions (a stage re-done) stay separate blocks.
+    const section = `${i + 1}. ${s.stage_label} — ${s.outcome || eventLabel(s.event_type)}`;
+    stages.push({ section, field: 'What happened', value: eventLabel(s.event_type) });
+    stages.push({ section, field: 'Reason / note', value: cell(s.reason || s.notes) });
+    stages.push({ section, field: 'Decided by', value: cell(s.decided_by) });
+    stages.push({ section, field: 'When', value: formatDateTime(s.decided_at) });
+  });
+  addSheet(stages, 'Stage History');
+
+  // --- Sheet 4: Assessments (Zeko + Evalground), one block per test ----------
+  const assess = [];
   for (const z of model.zeko) {
-    assess.push(['AI screening', z.round, 'Overall', cell(z.overall_score)]);
-    assess.push(['AI screening', z.round, 'Technical', cell(z.technical_score)]);
-    assess.push(['AI screening', z.round, 'Communication', cell(z.communication_score)]);
+    const section = `AI screening · ${z.round}`;
+    const line = (field, value) => assess.push({ section, field, value: cell(value) });
+    line('Overall', z.overall_score);
+    line('Technical', z.technical_score);
+    line('Communication', z.communication_score);
+    line('Taken on', z.taken_at ? formatDate(z.taken_at) : null);
     // Carried in the spreadsheet too: "Spreadsheet only" is one of the three
     // formats, and a recruiter who picks it should not silently lose either the
     // assessment or the link to the full report.
     const d = z.report_detail;
     if (d) {
-      if (d.verdict) assess.push(['AI screening', z.round, 'Verdict', cell(d.verdict)]);
-      if (d.parameters_total) {
-        assess.push(['AI screening', z.round, 'Requirements met', `${d.parameters_met} of ${d.parameters_total}`]);
-      }
+      line('Verdict', d.verdict);
+      if (d.parameters_total) line('Requirements met', `${d.parameters_met} of ${d.parameters_total}`);
       for (const p of d.parameters) {
-        assess.push([
-          'AI screening', z.round,
+        line(
           `Requirement — ${p.name}${p.required ? ' (must-have)' : ''}`,
           `${p.met ? 'Met' : 'Not met'}${p.answer ? ` — ${p.answer}` : ''}`,
-        ]);
+        );
       }
       for (const s of d.soft_skills) {
-        assess.push([
-          'AI screening', z.round, `Communication — ${s.area}`,
-          s.assessed ? cell(s.rating) : 'Not assessed',
-        ]);
+        line(`Communication — ${s.area}`, s.assessed ? cell(s.rating) : 'Not assessed');
       }
     }
-    if (z.report_link) {
-      assess.push(['AI screening', z.round, 'Full report link (opens with no login)', z.report_link]);
-    }
+    if (z.report_link) line('Full report link (opens with no login)', z.report_link);
   }
   for (const a of model.assessments) {
-    for (const s of a.sections) assess.push(['Assessment', a.test_name, cell(s.label), cell(s.score)]);
-    if (a.overall_percentage !== null) {
-      assess.push(['Assessment', a.test_name, 'Overall %', cell(a.overall_percentage)]);
-    }
-    if (a.result) assess.push(['Assessment', a.test_name, 'Result', cell(a.result)]);
+    const section = `Assessment · ${a.test_name}`;
+    const line = (field, value) => assess.push({ section, field, value: cell(value) });
+    for (const s of a.sections) line(cell(s.label), s.score);
+    if (a.overall_percentage !== null) line('Overall %', a.overall_percentage);
+    line('Result', a.result);
 
     // Carried in the spreadsheet too: "Spreadsheet only" is one of the three
     // formats, and a recruiter who picks it should not silently lose the
     // breakdown that section 7 of the report carries.
     const d = a.detail;
     if (!d) continue;
-    if (d.started_on) assess.push(['Assessment', a.test_name, 'Taken on', d.started_on]);
-    if (d.duration) assess.push(['Assessment', a.test_name, 'Time taken', d.duration]);
-    if (d.totals?.correct !== null && d.totals?.correct !== undefined) {
-      assess.push(['Assessment', a.test_name, 'Total correct', cell(d.totals.correct)]);
-    }
-    if (d.totals?.wrong !== null && d.totals?.wrong !== undefined) {
-      assess.push(['Assessment', a.test_name, 'Total wrong', cell(d.totals.wrong)]);
-    }
-    if (d.totals?.unattempted !== null && d.totals?.unattempted !== undefined) {
-      assess.push(['Assessment', a.test_name, 'Total unattempted', cell(d.totals.unattempted)]);
-    }
+    line('Taken on', d.started_on);
+    line('Time taken', d.duration);
+    line('Total correct', d.totals?.correct);
+    line('Total wrong', d.totals?.wrong);
+    line('Total unattempted', d.totals?.unattempted);
     for (const s of d.sections) {
-      assess.push([
-        'Assessment', a.test_name, `${s.label} — correct / wrong / unattempted`,
-        `${s.correct ?? '—'} / ${s.wrong ?? '—'} / ${s.unattempted ?? '—'}`,
-      ]);
+      line(`${s.label} — correct / wrong / unattempted`, `${s.correct ?? '—'} / ${s.wrong ?? '—'} / ${s.unattempted ?? '—'}`);
       if (s.easy_correct !== null || s.medium_correct !== null || s.hard_correct !== null) {
-        assess.push([
-          'Assessment', a.test_name, `${s.label} — easy / medium / hard correct`,
-          `${s.easy_correct ?? '—'} / ${s.medium_correct ?? '—'} / ${s.hard_correct ?? '—'}`,
-        ]);
+        line(`${s.label} — easy / medium / hard correct`, `${s.easy_correct ?? '—'} / ${s.medium_correct ?? '—'} / ${s.hard_correct ?? '—'}`);
       }
     }
-    for (const t of d.topics) {
-      assess.push(['Assessment', a.test_name, `Topic — ${t.label}`, cell(t.value)]);
-    }
+    for (const t of d.topics) line(`Topic — ${t.label}`, t.value);
   }
-  const s4 = XLSX.utils.aoa_to_sheet(assess);
-  s4['!cols'] = [{ wch: 16 }, { wch: 30 }, { wch: 26 }, { wch: 12 }];
-  XLSX.utils.book_append_sheet(book, s4, 'Assessments');
+  addSheet(assess, 'Assessments');
 
   return XLSX.write(book, { type: 'buffer', bookType: 'xlsx' });
 }

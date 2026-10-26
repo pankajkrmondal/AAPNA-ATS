@@ -1,6 +1,6 @@
 import * as candidateService from '../services/candidate.service.js';
 import * as referralService from '../services/referral.service.js';
-import { isVendor } from '../utils/vendorScope.js';
+import { isVendor, vendorMayReadCandidate } from '../utils/vendorScope.js';
 import { success, paginated } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 import prisma from '../config/database.js';
@@ -85,12 +85,17 @@ export const exportCandidates = catchAsync(async (req, res) => runExport(req, re
 /**
  * @desc    Get a single candidate by ID
  * @route   GET /api/candidates/:id
- * @access  Private
+ * @access  Private (vendors only their own submissions)
  */
 export const getCandidate = catchAsync(async (req, res) => {
   const candidate = await candidateService.findById(req.params.id, {
     redactReferral: isVendor(req.user),
   });
+  // A vendor asking for someone else's candidate gets the same answer as for a
+  // missing one, so the endpoint cannot be used to probe which ids exist.
+  if (!vendorMayReadCandidate(req.user, candidate.vendorEmail)) {
+    throw new AppError('Candidate not found.', 404);
+  }
   return success(res, candidate, 'Candidate retrieved');
 });
 

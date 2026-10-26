@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip';
 import prisma from '../config/database.js';
 import * as candidateService from '../services/candidate.service.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
+import { getDuplicateComparison } from '../services/duplicateReview.service.js';
 import * as uploadJobService from '../services/uploadJob.service.js';
 import { success } from '../utils/apiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
@@ -629,6 +630,17 @@ export const reviewMerge = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    The duplicate Review window's comparison: the candidate already in the
+ *          ATS next to this upload, field by field, with what Merge will do (L09).
+ * @route   GET /api/vendor/review/:tmpId/compare
+ * @access  Private (staff only)
+ */
+export const reviewCompare = catchAsync(async (req, res) => {
+  const result = await getDuplicateComparison(req.params.tmpId);
+  return success(res, result, 'Duplicate comparison retrieved');
+});
+
+/**
  * @desc    Recruiter review action — CANCEL/reject selected duplicates.
  * @route   POST /api/vendor/review/cancel
  * @access  Private (staff: admin/superadmin/recruiter/hr)
@@ -636,7 +648,7 @@ export const reviewMerge = catchAsync(async (req, res) => {
 export const reviewCancel = catchAsync(async (req, res) => {
   const { ids } = req.body;
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const result = await hrUploadService.deleteDuplicates(ids, token);
+  const result = await hrUploadService.deleteDuplicates(ids, token, req.user);
   return success(res, result, 'Duplicate candidates cancelled');
 });
 

@@ -616,7 +616,7 @@ const ZEKO_CANCELLED_BODY = `<p>Dear <strong>{{candidate_name}}</strong>,</p>
  * The greeting, Approve/Decline buttons and MRF field table are built by
  * sendMrfApprovalEmail(); this template only overrides the intro text.
  */
-const MRF_APPROVAL_BODY = `<p>We have received a new Manpower Requisition Form ( MRF ) request for your review and approval.</p><p><br></p><p>Kindly review the filled MRF and the attached Job Description and share your approval. Please review the filled MRF and attached JD and confirm your approval. Also, let us know whether this should be a permanent role or a different engagement model.</p><p><br></p><p>Also, please help define the priority of the role (High / Moderate / Low) as per the business need.</p>`;
+const MRF_APPROVAL_BODY = `<p>We have received a new Manpower Requisition Form ( MRF ) request for your review and approval.</p><p><br></p><p>Kindly review the filled MRF and the attached Job Description and share your approval. Also, let us know whether this should be a permanent role or a different engagement model.</p><p><br></p><p>Also, please help define the priority of the role (High / Moderate / Low) as per the business need.</p>`;
 
 // ── Technical-round interview scheduling (Module 2) ──────────────────────────
 // Editable defaults for the Pipeline Tracker Schedule/Cancel actions, shown in

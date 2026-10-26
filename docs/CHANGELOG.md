@@ -5,6 +5,129 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-26: L15 follow-up: compact MRF approval email
+**Why:** after testing on staging, the Approve / Reject / Hold email was too big and needed too much scrolling.
+
+Full write-up: [CHANGES-2026-10-26-L15-mrf-approval-email-design.md](./changelog/CHANGES-2026-10-26-L15-mrf-approval-email-design.md).
+
+- **Design only; every field is kept.**
+- **Buttons:** three compact solid buttons (Approve, Reject, Hold), table-based, about 40 px tall, repeated under the details table.
+- **Note:** the personal-link note is a slim grey line.
+- **Table:** 13 px text, light separators, zebra rows, and a "—" for empty values.
+- **Intro:** the repeated sentence is removed (code default, seed, and the staging template).
+- **Built at send time:** the details table is built from the MRF record when the email goes out, so earlier MRFs get the design too. This also applies to the HR copy and the outcome email.
+- **Tests:** unit 16/16, full run 1025/1025. Preview checked in Edge; no email sent.
+
+## 2026-10-24: L08 Forms & Links: find, copy or re-send any link the ATS has sent
+**Why:** "Adhoc links for all forms" (sheet row 13). A recruiter could not find a link the ATS had emailed, for example the scorecard sent to an interviewer.
+
+Full write-up: [CHANGES-2026-10-24-L08-forms-and-links.md](./changelog/CHANGES-2026-10-24-L08-forms-and-links.md).
+
+- **Screen:** `/forms-links`, to the approved design (D1–D10). Nine link types, with search, four filtering tiles, recipient tabs, type, status and date filters, "My candidates", and a Standing forms tab.
+  - Row actions: Copy, Copy with message, Join / Open, Re-send, Renew & re-send, Revoke, Re-send approval links. Confirms before any email.
+  - The list holds no URLs; each copy is noted on the timeline (or in the processing log for MRF links).
+  - MRF approval links are never copied.
+- **Shortcuts:** the scorecard report's "Still awaiting feedback" card, a "Links for this MRF" block in MRF details, Ctrl+K "Find a link", and a Dashboard "Links waiting for a response" row.
+- **API:** `/api/forms-links`, staff only. Pipeline-backed types need admin tier or the `recruitment_pipeline` module. Endpoints: `GET /`, `/summary` (cached a minute per user), `/standing`; `POST /:type/:id/copy|resend|renew|revoke`.
+- **Fixes:** the drawer's "Retry scorecard link" sent nothing (unreachable branch). New `resendScorecard` and `renewScorecard` (7 days, same link).
+- **Switch:** `VITE_FORMS_LINKS_ENABLED` shows the menu item and shortcuts. On in dev and staging, off in production until HR signs off the menu slot.
+- **No DDL.** Tests:
+  - unit: `formsLinksModel` 9, `vendorIsolation` +1, full run 1019/1019;
+  - integration: `formsLinks` 7/7 on staging. It found and fixed a module check that hid pipeline links from every non-admin.
+  - The frontend builds.
+  - Re-send and Renew were not run against real mail.
+
+## 2026-10-23: L11 Candidate Screening: see who was left out, and why
+**Why:** "Candidate Screening - Hidden by system data" (sheet row 16). The summary counted who each rule removed but could not show them.
+
+Full write-up: [CHANGES-2026-10-23-L11-screening-not-shown.md](./changelog/CHANGES-2026-10-23-L11-screening-not-shown.md).
+
+- **Screen:** a "See the N not shown" link on both tabs opens `NotShownDrawer`: rule tabs with counts, the nearest 200 misses with reason chips in plain words, a profile link, CSV export. Read-only.
+- **API:** `POST /api/screening/roles/:id/not-shown`, `POST /api/screening/keyword-not-shown`, and their `/export`. Computed on request only, so the search and its cache are unchanged.
+- **Code:** the JD gates are shared through `roleCheapConds()`.
+- **No DDL.** Tests: reasons 5 unit; integration `screeningNotShown` 4/4 on staging; `jdGates` 14/14, `keywordFilters` 23/23, `legacyAddedWithin` 3/3, `candidateActivityOrder` 3/3; unit 1009/1009; the frontend builds.
+
+## 2026-10-23: L14 the next round's panel gets the JD, CV and report so far; "feedback received" email
+**Why:** "Report link for the next round" (sheet row 19). Harish, 23 Oct: attach the dossier by default, the JD too, and send the feedback notice to the recruitment mailbox.
+
+Full write-up: [CHANGES-2026-10-23-L14-next-round-pack.md](./changelog/CHANGES-2026-10-23-L14-next-round-pack.md).
+
+- **Panel invite** (schedule and reschedule; panel only): the role's JD and the CV, plus, from the second round on, "report so far" (the dossier, with no contact details, no CTC and no-login recording links), and an "Earlier rounds" block. Capped at 3 MB, falling back to links. A tick-box in the Schedule window, on by default.
+- **Already-booked rounds:** "Send JD, CV & report to panel" (`POST /api/pipeline/interview/:scheduleId/send-pack`).
+- **Flag:** `INTERVIEW_PANEL_PACK_ENABLED` (default on).
+- **Scorecard submitted:** "Feedback received" email to flow `scorecardSubmitted` (production seed `recruitment@aapnainfotech.in`). Templates "Interview Feedback Received" and "Candidate Pack for Interview Panel" are seeded on staging.
+- **No DDL.** Tests: `panelPack` 11 unit; integration `panelPack` 3/3 on staging; unit 1004/1004; the frontend builds. `schedulingAndScorecard` was not run, because it sends real mail and needs the fixture seed.
+
+## 2026-10-23: L09 duplicate Review: old vs new comparison
+**Why:** "HR Manual Upload & Vendor Manual Upload" (sheet row 14). The Review window showed only the new upload, not what was already in the ATS or what would change.
+
+Full write-up: [CHANGES-2026-10-23-L09-duplicate-compare.md](./changelog/CHANGES-2026-10-23-L09-duplicate-compare.md).
+
+- **DDL** `2026-10-23-duplicate-match-id.sql` (applied on staging): `rpa_cv_tmp.matched_cv_id`.
+  - One deterministic match helper for the upload and the merge.
+  - The merge updates the candidate the recruiter was shown.
+  - The staged row no longer copies the existing values.
+- **Comparison:** staff-only `GET …/duplicates/:tmpId/compare` (HR and vendor), with `DuplicateCompareModal`: Field | Already in ATS | This upload | On merge, earlier uploads and "only differences". The vendor page gets no links.
+- `reviewed_by` / `review_action` are now written.
+- Tests: `duplicateCompare` 11; `vendorIsolation` +1; integration `sectionB` 11/11 on staging (2 new); the frontend builds.
+
+## 2026-10-23: L12 one-record exports as Field | Value, plus the dossier's round feedback
+**Why:** "Dossier Enhancements" (sheet row 17). Harish, 23 Oct: every one-record export, the file inside the dossier ZIP included, should read column A = field, column B = value.
+
+Full write-up: [CHANGES-2026-10-23-L12-field-value-exports-and-dossier.md](./changelog/CHANGES-2026-10-23-L12-field-value-exports-and-dossier.md).
+
+- **New `utils/fieldValueExport.js`:** the MRF details CSV, the role report CSV and all four dossier sheets are now Field | Value with section heading rows. The dossier HTML uses vertical record cards instead of wide grids.
+- **Dossier:**
+  - the edited round feedback (`rpa_cv.TechRoundOne` and the others) prints under its round;
+  - scorecard comments are in the XLSX;
+  - rounds are in pipeline order;
+  - re-done attempts are labelled and left out of the consolidated feedback;
+  - client-round feedback is shown.
+- **No DDL.** Tests: unit 981/981 (dossier tests updated, `fieldValueExport` 9 new); 3 staging packs leak-scan clean.
+
+## 2026-10-23: L15 MRF emails and the public MRF form on the AAPNA design
+**Why:** Harish, 23 Oct: the new-MRF emails and form did not match our design.
+
+Full write-up: [CHANGES-2026-10-23-L15-mrf-emails-and-form.md](./changelog/CHANGES-2026-10-23-L15-mrf-emails-and-form.md).
+
+- **Emails:** the New MRF Request (HM), the approval request, the HR copy, the outcome and the two decision notices are now body fragments (`mrfEmailBodies.js`) inside `wrapBrandedEmail`. Wording, links, subjects and recipients are unchanged.
+- **Details table:** brand-styled, and old stored tables are restyled at send time.
+- **Security:** every submitted value in the details table is now escaped. The form is public and used to reach approvers raw.
+- **Public form:** `/mrf-submit` now sits in `PublicPageShell`.
+- Tests: `mrfEmailBodies` 10/10; MRF suites 80/80; the frontend builds; all seven emails rendered and checked in Chrome. Still to do: the Outlook check on staging.
+
+## 2026-10-23: L13 meeting and recording links for people outside the ATS
+**Why:** "Meetings links" (sheet row 18). A copied recording link needed an ATS sign-in, so it could not be forwarded through Outlook. The JD should travel with anything shared.
+
+Full write-up: [CHANGES-2026-10-23-L13-outside-links.md](./changelog/CHANGES-2026-10-23-L13-outside-links.md).
+
+- **Drawer:** "Copy link for outside the ATS" on each recording, through `POST /api/pipeline/:id/recordings/:recordingId/share-link` (`shareLinkForRecording`).
+  - It reuses or mints the 14-day no-login link, never extends it, and notes each request on the timeline.
+  - It copies a message with the JD link.
+  - The old button is now "Copy ATS link".
+- **Teams card:** "Copy join details" (join link, time, ID, passcode, JD).
+- **No DDL.** Tests: unit 958/958 (3 new); integration `recordingShareLink` 4/4 on staging; the frontend builds. Not yet checked in the browser.
+
+## 2026-10-23: L10 profile link from HR Manual Upload rows, plus two vendor-scope fixes
+**Why:** "HR Manual Upload - User Profile redirect" (sheet row 15).
+
+Full write-up: [CHANGES-2026-10-23-L10-upload-profile-link.md](./changelog/CHANGES-2026-10-23-L10-upload-profile-link.md).
+
+- The HR upload row's name opens `/candidates/:id`, and Back returns to HR Manual Upload. The Vendor Upload page is unchanged by decision.
+- **Security:**
+  - `GET /api/candidates/:id` now gives a vendor only their own submissions (anyone else's is a 404);
+  - `GET /api/candidates/:id/emails` is `requireStaff`.
+- Tests: `vendorIsolation` +5; unit 958/958; the frontend builds.
+
+## 2026-10-23: L16 password emails on the AAPNA design
+**Why:** Harish, 23 Oct: the password emails did not follow our email design.
+
+Full write-up: [CHANGES-2026-10-23-L16-password-emails.md](./changelog/CHANGES-2026-10-23-L16-password-emails.md).
+
+- `sendCredentialEmail` and `sendPasswordResetEmail` now build a body fragment (`accountEmailBodies.js`) inside `wrapBrandedEmail`. Content, subjects and recipients (`NEVER_REDIRECT`) are unchanged.
+- User values are now escaped, so a password with `<` or `&` is shown exactly as set.
+- Tests: `accountEmailBodies` 7/7; unit 958/958. Still to do: an Outlook check with your own account.
+
 ## 2026-10-23: L06 open-position analytics (date range & Total Applied)
 **Why:** Harish's 22 Oct re-plan: analytics for OPEN MRFs is the main requirement (CEO demo 28 Sep, Anuj, Naveen's date range, Sanghamitra's Total Applied). Design approved 22 Oct.
 

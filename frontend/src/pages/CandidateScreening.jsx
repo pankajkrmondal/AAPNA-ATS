@@ -66,6 +66,7 @@ import ShortlistResultModal from '../components/screening/ShortlistResultModal';
 import JdTagChip from '../components/screening/JdTagChip';
 import ActivityChip, { ACTIVITY_STYLES, activityHint } from '../components/screening/ActivityChip';
 import ChangeJdModal from '../components/screening/ChangeJdModal';
+import NotShownDrawer from '../components/screening/NotShownDrawer';
 import ReferralChip from '../components/candidates/ReferralChip';
 import { cleanMsgBody } from '../utils/emailText';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
@@ -429,6 +430,8 @@ export default function CandidateScreening() {
   const [candidates, setCandidates] = useState([]);
   // The keyword filters behind the results on screen, replayed by Export.
   const [lastKeywordPayload, setLastKeywordPayload] = useState(null);
+  // L11: "See the N not shown" drawer.
+  const [notShownOpen, setNotShownOpen] = useState(false);
   const [summary, setSummary] = useState(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedCandidateKeys, setSelectedCandidateKeys] = useState([]);
@@ -1687,6 +1690,24 @@ export default function CandidateScreening() {
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                   <Text strong style={{ color: 'var(--text)', fontSize: 15, letterSpacing: '-0.01em' }}>{head.trim()}</Text>
                   {detail && <Text style={{ color: 'var(--text-3)', fontSize: 12 }}>{detail.trim()}</Text>}
+                  {/* L11: who the rules left out, and why. Strict search only. */}
+                  {(() => {
+                    const removed = summary.removedBy || {};
+                    const inScope = Number(summary.total || 0) - (strictJd ? Number(removed.tagged || 0) : 0);
+                    const notShown = Math.max(0, inScope - Number(summary.shown ?? candidates.length));
+                    // removedBy exists only on the strict searches' funnel; a
+                    // name / email lookup has none, and leaves no one out.
+                    if (!summary.removedBy || notShown === 0 || (activeTab === 'jd' ? !selectedRoleId : !lastKeywordPayload)) return null;
+                    return (
+                      <a
+                        role="button"
+                        onClick={() => setNotShownOpen(true)}
+                        style={{ fontSize: 12, fontWeight: 600 }}
+                      >
+                        See the {notShown.toLocaleString('en-IN')} not shown
+                      </a>
+                    );
+                  })()}
                   {/* Carries the match score and the per-dimension breakdown the
                       cards have no room for. The server re-runs the search. */}
                   <ExportButton
@@ -2223,6 +2244,19 @@ export default function CandidateScreening() {
         confirmLoading={isShortlisting}
         onCancel={() => setDecisionModalOpen(null)}
         onConfirm={handleDecisionConfirm}
+      />
+
+      {/* L11: who the search left out, and why. */}
+      <NotShownDrawer
+        open={notShownOpen}
+        onClose={() => setNotShownOpen(false)}
+        kind={activeTab === 'jd' ? 'jd' : 'keyword'}
+        params={activeTab === 'jd'
+          ? (selectedRoleId ? { mrfId: selectedRoleId, addedWithinDays: jdAddedWithin, taggedOnly: jdTaggedOnly } : null)
+          : (lastKeywordPayload ? { filters: lastKeywordPayload } : null)}
+        contextLabel={activeTab === 'jd'
+          ? (selectedRole ? mrfOptionLabel(selectedRole) : 'this JD')
+          : 'this keyword search'}
       />
 
       <ChangeJdModal

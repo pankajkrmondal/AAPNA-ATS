@@ -5,6 +5,82 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-10-24: L08 Forms & Links page and shortcuts
+
+Write-up: [L08](../docs/changelog/CHANGES-2026-10-24-L08-forms-and-links.md).
+
+- **Menu:** "Forms & Links" (`LinkOutlined`) after Recruitment Analytics, behind `VITE_FORMS_LINKS_ENABLED`. `/forms-links` is in `V2_ROUTES`, and the breadcrumb reads "Forms & Links".
+- **Page (max width 1240):**
+  - **Header:** a title with a link icon, a subtitle, a 380 px search box (Enter to search) and Refresh.
+  - **Tiles:** four `KpiCard`s (waiting `--kpi-b`, expiring `--kpi-e`, expired and not delivered `--kpi-d`). Click to filter; the selected tile gets a 2 px brand outline.
+  - **Glass card:** recipient tabs (Segmented, with counts, scrolling inside their row on a phone); type chips (`CheckableTag`, with counts) plus a complete-profile chip with a tooltip; a status Segmented; a Sent select; a "My candidates" switch; and "Clear filters".
+  - **Table (small, scroll x 1086):** column widths are sized to fit the card at 1440 px, with Actions pinned right at 200 px. two-line cells with a secondary sub line. Status Tags are coloured per state (gold waiting, blue opened or upcoming, green done, orange expired, red not delivered). The expiry is relative, amber within 48 h and red once expired.
+  - **Actions:** a "Copy link" `Dropdown.Button` with "Copy with message", plus Join, Open, Re-send, Renew & re-send (primary), Revoke (danger) and Re-send approval links. Confirm dialogs come from `App.useApp()`.
+  - **Info Alerts** for no pipeline access and for a candidate or MRF filter (with "Show all links"). An error Alert has Try again; empty states are worded for search versus filters; a footnote says the list holds no links.
+  - **Standing forms tab:** three small cards (title, body, the URL in code style, Copy and Open), and a table of open MRFs with Copy JD link and Copy test link.
+- **Scorecard report → Still awaiting feedback:** per round, small Copy link (dropdown) and Re-send / "Send now" buttons, or a primary "Renew & re-send" when expired; then an "All links for this candidate →" link.
+- **MRF details:** a "Links for this MRF" glass strip under the Approval trail, with the hiring manager's form, a status Tag, "Copy form link", "Open in Forms & Links →" and a one-line approval-links note.
+- **Ctrl+K:** a "Forms & Links" command, and a "Links" group with "Find a link for '…'" once two characters are typed.
+- **Dashboard → Needs your attention:** a "Links waiting for a response" row (teal `#0e7490`, link icon) that opens the page.
+- **Shared:** `utils/clipboard.js` (`copyText`, with the textarea fallback for http origins).
+
+## 2026-10-23: L11 "See the N not shown" on Candidate Screening
+
+Write-up: [L11](../docs/changelog/CHANGES-2026-10-23-L11-screening-not-shown.md).
+
+- **Summary bar (both tabs):** a bold 12 px link "See the N not shown" after the funnel text. Hidden when nobody was left out, and on name / email / phone lookups.
+- **`NotShownDrawer` (760 px):**
+  - title "Not shown: N candidates" with the subtitle "nearest misses first · read-only";
+  - a Segmented control of rule tabs with counts, and a note that rule counts overlap;
+  - candidate rows: a name link to the profile (new tab), a meta line, and reason Tags coloured per rule (red recently rejected, purple education, orange CTC, gold experience, volcano skills, blue location…);
+  - a "Showing the nearest 200 of N" note, an Export button, and empty and error states.
+
+## 2026-10-23: L14 panel pack controls
+
+Write-up: [L14](../docs/changelog/CHANGES-2026-10-23-L14-next-round-pack.md).
+
+- **Schedule / Reschedule window:** a "Send the JD, CV and report so far to the panel" checkbox (on by default, reset on every open), with a one-paragraph note of what is attached and what is left out. Shown only on rounds that send invites.
+- **Teams card in the drawer:** a "Send JD, CV & report to panel" button (send icon), with a confirm dialog and a toast listing what went.
+
+## 2026-10-23: L09 duplicate Review compares old and new
+
+Write-up: [L09](../docs/changelog/CHANGES-2026-10-23-L09-duplicate-compare.md).
+
+- **HR Manual Upload and Vendor Manual Upload:** the Review window's "View full details" is now "Compare with the ATS record". It opens `DuplicateCompareModal` (980 px):
+  - a match summary alert;
+  - change tags;
+  - an "Only show differences" switch;
+  - a table Field | Already in ATS | This upload | On merge (gold Changed, green New, grey Not in new resume; merge tags blue / green / cyan / grey);
+  - an "Earlier uploads" collapse;
+  - Back to Review, Open existing profile, Cancel / Reject, Merge into Database.
+- The vendor page uses it with `linksHidden` (no profile or resume links), for staff only.
+- The old full-details modal and its parse helpers are removed from both pages.
+
+## 2026-10-23: L15 public MRF form in the shared public-page frame
+
+Write-up: [L15](../docs/changelog/CHANGES-2026-10-23-L15-mrf-emails-and-form.md).
+
+- **`/mrf-submit`:** the n8n header band ("MANPOWER REQUISITION FORM (MRF)" with the logo on a white chip) and the page's own footer are replaced by `PublicPageShell` (`maxWidth` 920).
+  - Title: "Manpower Requisition Form (MRF)", with a one-line subtitle.
+  - The success view uses the shell too, titled "MRF submitted".
+  - Field descriptions are muted grey (`#6b7280`) instead of the n8n green.
+  - Fields, sections and buttons are unchanged.
+- **`/mrf` New MRF Request card:** reviewed and unchanged. It already matches the V2 form style used in Settings.
+
+## 2026-10-23: L10 upload profile link and L13 outside links
+
+Write-ups: [L10](../docs/changelog/CHANGES-2026-10-23-L10-upload-profile-link.md), [L13](../docs/changelog/CHANGES-2026-10-23-L13-outside-links.md).
+
+- **HR Manual Upload:**
+  - the Candidate Name is a link to the profile once the upload has a candidate record;
+  - Duplicate Review shows "Already in ATS → Open existing profile" when the matched candidate is known.
+- **Candidate profile:** "Back to HR Manual Upload" when opened from there, and the sidebar keeps HR Manual Upload selected.
+- **Pipeline drawer → recordings:**
+  - the green "Copy link" tag is now "Copy ATS link";
+  - a new blue "Copy link for outside the ATS" tag (share icon, spinner while minting) copies a no-login message;
+  - both appear in the round panel and the Schedule window's earlier-rounds list.
+- **Pipeline drawer → Teams card:** a "Copy join details" button next to Join.
+
 ## 2026-10-23: L06 open-position analytics and L07 JD label
 
 Agreed on the "ATS L06 & L07 designs" canvas first. Write-ups: [L06](../docs/changelog/CHANGES-2026-10-23-L06-open-position-analytics.md), [L07](../docs/changelog/CHANGES-2026-10-22-L07-jd-label.md).

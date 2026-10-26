@@ -630,6 +630,15 @@ const config = {
    * Requires prisma/ddl/2026-10-22-mrf-hold-and-delegate.sql. Both need the
    * personal-link audit flow (MRF_APPROVAL_AUDIT_ENABLED=true).
    */
+  interviewPanelPack: {
+    /**
+     * L14: the interview panel's invite carries the role's JD and the CV, and
+     * from the second round on the "report so far" (the redacted dossier). On
+     * by default; INTERVIEW_PANEL_PACK_ENABLED=false sends the plain invite as
+     * before. The recruiter can also untick it per booking in the Schedule window.
+     */
+    enabled: env('INTERVIEW_PANEL_PACK_ENABLED', 'true') === 'true',
+  },
   mrfHold: {
     /**
      * true = approvers (and on-behalf deciders) may put an MRF on hold. false

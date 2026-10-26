@@ -38,6 +38,7 @@ import Settings from './pages/Settings';
 import HRUpload from './pages/HRUpload';
 import CandidateScreening from './pages/CandidateScreening';
 import Analytics from './pages/Analytics';
+import FormsLinks from './pages/FormsLinks';
 import EmailManagement from './pages/EmailManagement';
 import NotFound from './pages/NotFound';
 import MissingJdUpload from './pages/MissingJdUpload';
@@ -386,6 +387,9 @@ function AppShell() {
               />
               <Route path="/filtering" element={<CandidateScreening />} />
               <Route path="/analytics" element={<Analytics />} />
+              {/* L08: every link the ATS has sent. Staff only on the server
+                  (requireStaff); vendors are confined by VENDOR_ALLOWED_PATHS. */}
+              <Route path="/forms-links" element={<FormsLinks />} />
               {/* Real Pipeline Tracker (Module 1) — persists to /api/pipeline,
                   sends real outcome emails. This is "Candidate Pipeline" in the
                   sidebar. */}

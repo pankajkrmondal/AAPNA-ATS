@@ -129,6 +129,16 @@ const vendorService = {
   searchDuplicates(params) {
     return api.post('/vendor/review/search', params);
   },
+
+  /**
+   * The Review window's comparison (L09): already in the ATS vs this upload.
+   * Staff-only, like the rest of the review queue.
+   * @param {number|string} tmpId - the rpa_cv_tmp id (job.cv_tmp_id)
+   * @returns {Promise}
+   */
+  compareDuplicate(tmpId) {
+    return api.get(`/vendor/review/${tmpId}/compare`);
+  },
 };
 
 export default vendorService;

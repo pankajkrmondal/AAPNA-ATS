@@ -212,6 +212,15 @@ const pipelineService = {
   },
 
   /**
+   * L14: email an already-booked round's panel the JD, the CV and the report so
+   * far. Returns { sent, recipients, summary: { jd, cv, report, rounds } }.
+   * @param {number} scheduleId
+   */
+  sendPanelPack(scheduleId) {
+    return api.post(`/pipeline/interview/${scheduleId}/send-pack`);
+  },
+
+  /**
    * Compiled (not sent) candidate + panel reschedule emails for the modal.
    * @param {number} id - pipeline id
    * @param {Object} params - { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email }
@@ -338,6 +347,19 @@ const pipelineService = {
    */
   revokeShareLink(id, linkId) {
     return api.post(`/pipeline/${id}/share-links/${linkId}/revoke`);
+  },
+
+  /**
+   * The no-login link for ONE recording, for someone outside the ATS (L13).
+   * Reuses a live link (never extends it). Returns { url, expires_at, summary,
+   * created, message }: `message` is ready to paste into Outlook or Teams and
+   * carries the JD link when the role has one.
+   *
+   * @param {number} id - pipeline id
+   * @param {number} recordingId
+   */
+  createRecordingShareLink(id, recordingId) {
+    return api.post(`/pipeline/${id}/recordings/${recordingId}/share-link`);
   },
 
   /**

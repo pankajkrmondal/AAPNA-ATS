@@ -75,6 +75,9 @@ router.post('/jobs/:id/reprocess', hrUploadController.reprocessJob);
 /** Search duplicate records in staging table */
 router.post('/duplicates/search', hrUploadController.searchDuplicates);
 
+/** Side-by-side comparison for the Review window: already in the ATS vs this upload (L09). */
+router.get('/duplicates/:tmpId/compare', hrUploadController.compareDuplicate);
+
 /** Merge selected duplicates into main CV table */
 router.post('/duplicates/merge', hrUploadController.mergeDuplicates);
 
