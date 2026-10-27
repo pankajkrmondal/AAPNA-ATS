@@ -3,9 +3,12 @@
  *
  * The persisted *mode* ('light' | 'dark' | 'system') lives in localStorage
  * under `ats_theme`; the *resolved* theme ('light' | 'dark') is derived from
- * it. Default is 'light' — the OS preference is honored only when the user
- * explicitly picks 'system'. Switches animate via startThemeTransition
- * (circular reveal / cross-fade fallback).
+ * it. Default is 'dark' — the OS preference is honored only when the user
+ * explicitly picks 'system'. Only an explicit choice is persisted, so the
+ * default can change later without being shadowed by stored values (the
+ * one-time cleanup of old auto-persisted 'light' values runs in index.html).
+ * Switches animate via startThemeTransition (circular reveal / cross-fade
+ * fallback).
  */
 import { createContext, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
@@ -16,10 +19,11 @@ export const ThemeContext = createContext(null);
 
 const STORAGE_KEY = 'ats_theme';
 const MODES = ['light', 'dark', 'system'];
+const DEFAULT_MODE = 'dark';
 const THEME_COLOR = { light: '#7a922e', dark: '#0a0e0c' };
 
 /**
- * Reads the initial mode: valid localStorage value → that mode, else 'light'.
+ * Reads the initial mode: valid localStorage value → that mode, else 'dark'.
  * Never falls back to the OS preference — that is what 'system' is for.
  * @returns {'light' | 'dark' | 'system'}
  */
@@ -30,7 +34,7 @@ function getInitialMode() {
   } catch {
     /* storage unavailable (private mode) */
   }
-  return 'light';
+  return DEFAULT_MODE;
 }
 
 const osIsDark = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
@@ -45,7 +49,7 @@ const resolveMode = (mode) => (mode === 'system' ? (osIsDark() ? 'dark' : 'light
  */
 let forceLightDepth = 0;
 /** The theme the app WANTS, so releasing the pin restores it. */
-let lastResolved = 'light';
+let lastResolved = DEFAULT_MODE;
 
 /** Syncs the resolved theme to the DOM (html attribute, color-scheme, theme-color meta). */
 function applyResolvedTheme(resolved) {
@@ -90,15 +94,11 @@ export function ThemeProvider({ children }) {
   const [mode, setModeState] = useState(getInitialMode);
   const [resolved, setResolved] = useState(() => resolveMode(getInitialMode()));
 
-  // Persist the mode and keep the DOM in sync (covers initial mount too).
+  // Keep the DOM in sync (covers initial mount too). Persisting happens in
+  // setMode only, so an untouched default is never written to storage.
   useLayoutEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
     applyResolvedTheme(resolved);
-  }, [mode, resolved]);
+  }, [resolved]);
 
   // Follow live OS changes — only while in system mode.
   useEffect(() => {
@@ -122,6 +122,11 @@ export function ThemeProvider({ children }) {
    */
   const setMode = useCallback((nextMode, coords) => {
     if (!MODES.includes(nextMode)) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, nextMode);
+    } catch {
+      /* ignore */
+    }
     const nextResolved = resolveMode(nextMode);
     startThemeTransition(() => {
       applyResolvedTheme(nextResolved);

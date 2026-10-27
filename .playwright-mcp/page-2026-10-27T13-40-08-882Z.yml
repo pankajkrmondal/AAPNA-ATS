@@ -1,0 +1,24 @@
+- generic [ref=f14e5]:
+  - button "Toggle theme" [pressed] [ref=f14e7] [cursor=pointer]
+  - generic [ref=f14e9]:
+    - img "AAPNA" [ref=f14e10]
+    - generic [ref=f14e11]:
+      - heading "Sign in to your account" [level=2] [ref=f14e12]
+      - text: Enter your credentials to access the dashboard
+    - generic [ref=f14e14]:
+      - generic [ref=f14e16]:
+        - generic [ref=f14e17]: Username or Email
+        - generic [ref=f14e23]:
+          - img "user" [ref=f14e25]
+          - textbox "Username or Email" [ref=f14e28]:
+            - /placeholder: Enter username or email
+      - generic [ref=f14e30]:
+        - generic [ref=f14e31]: Password
+        - generic [ref=f14e37]:
+          - img "lock" [ref=f14e39]
+          - textbox "Password" [ref=f14e42]:
+            - /placeholder: Enter password
+          - img "eye-invisible" [ref=f14e44] [cursor=pointer]
+      - button "Sign In" [disabled] [ref=f14e60]
+      - link "Forgot password?" [ref=f14e62] [cursor=pointer]:
+        - /url: /forgot-password

@@ -11,7 +11,6 @@
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Alert, Button } from 'antd';
-import useTheme from '../hooks/useTheme';
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
@@ -40,7 +39,6 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
   const widgetIdRef = useRef(null);
   const onTokenRef = useRef(onToken);
   onTokenRef.current = onToken;
-  const { isDark } = useTheme();
   // Cloudflare renders its own "Verification failed / Troubleshoot" UI inside
   // the widget's cross-origin iframe on failure — meaningless to an end user
   // and not something we can restyle. Track the failure ourselves so we can
@@ -68,7 +66,9 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
         if (cancelled || !containerRef.current || !window.turnstile) return;
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
-          theme: isDark ? 'dark' : 'light',
+          // Only rendered on the sign-in pages, which are always light
+          // (ForceLight in App.jsx) whatever the user's saved theme.
+          theme: 'light',
           action,
           callback: (token) => {
             setHasError(false);
@@ -94,7 +94,7 @@ const TurnstileWidget = forwardRef(function TurnstileWidget({ siteKey, onToken, 
         widgetIdRef.current = null;
       }
     };
-  }, [siteKey, isDark, action]);
+  }, [siteKey, action]);
 
   if (!siteKey) return null;
   return (
