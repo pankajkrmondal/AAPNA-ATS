@@ -324,11 +324,13 @@ function AppShell() {
         <BrowserRouter>
           <RouteErrorBoundary>
           <Routes>
-            {/* Public (auth) routes */}
+            {/* Public (auth) routes — always light; the user's theme applies after sign-in */}
             <Route
               element={
                 <PublicRoute>
-                  <AuthLayout />
+                  <ForceLight>
+                    <AuthLayout />
+                  </ForceLight>
                 </PublicRoute>
               }
             >

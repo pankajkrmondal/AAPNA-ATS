@@ -1,0 +1,426 @@
+[    1438ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:21550
+[    1785ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4426
+[    1786ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4426
+[   22962ms] ReferenceError: useTheme is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109231102:45:22)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   22976ms] ReferenceError: useTheme is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109231102:45:22)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   22981ms] [ERROR] The above error occurred in the <ForwardRef(TurnstileWidget2)> component:
+
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109231102:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14031
+[   22981ms] [ERROR] [ErrorBoundary] ReferenceError: useTheme is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109231102:45:22)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19753:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19116:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18736:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18879:28) 
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109231102:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3) @ http://localhost:5173/src/components/common/ErrorBoundary.jsx:16
+[   24107ms] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109232254:84:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   24125ms] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109232254:84:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   24135ms] [ERROR] The above error occurred in the <ForwardRef(TurnstileWidget2)> component:
+
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109232254:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14031
+[   24135ms] [ERROR] [ErrorBoundary] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109232254:84:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19753:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19116:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18736:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18879:28) 
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109232254:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3) @ http://localhost:5173/src/components/common/ErrorBoundary.jsx:16
+[   25221ms] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109233367:86:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   25232ms] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109233367:86:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3674:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3699:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:3733:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19765:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+[   25238ms] [ERROR] The above error occurred in the <ForwardRef(TurnstileWidget2)> component:
+
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109233367:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3)
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14031
+[   25238ms] [ERROR] [ErrorBoundary] ReferenceError: isDark is not defined
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109233367:86:16)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:11548:26)
+    at updateForwardRef (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:14325:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:15946:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19753:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19198:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19137:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:19116:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18736:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-WERSD76P.js?v=5ef7c5a3:18879:28) 
+    at TurnstileWidget2 (http://localhost:5173/src/components/TurnstileWidget.jsx?t=1793109233367:39:75)
+    at StatusProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62970:3)
+    at div
+    at div
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51713:16
+    at FormItemInput (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62765:5)
+    at div
+    at http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:51855:16
+    at div
+    at ItemHolder (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63041:5)
+    at InternalFormItem (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:63201:5)
+    at form
+    at Form2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17853:19)
+    at NoFormStyle (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:18053:3)
+    at FormProvider2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:17806:31)
+    at FormProvider3
+    at DisabledContextProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:4261:3)
+    at InternalForm2 (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:62495:36)
+    at div
+    at Login (http://localhost:5173/src/pages/Login.jsx:28:33)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Outlet (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4528:26)
+    at div
+    at div
+    at div
+    at AuthLayout (http://localhost:5173/src/layouts/AuthLayout.jsx?t=1793109192649:192:20)
+    at div
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at ForceLight (http://localhost:5173/src/App.jsx?t=1793109192649:268:23)
+    at PublicRoute (http://localhost:5173/src/App.jsx?t=1793109192649:98:24)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4122:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4592:5)
+    at ErrorBoundary (http://localhost:5173/src/components/common/ErrorBoundary.jsx:10:5)
+    at RouteErrorBoundary (http://localhost:5173/src/App.jsx?t=1793109192649:287:31)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:4535:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=5ef7c5a3:5273:5)
+    at div
+    at App (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:20990:16)
+    at MotionWrapper (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6260:32)
+    at ProviderChildren (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6368:5)
+    at ConfigProvider (http://localhost:5173/node_modules/.vite/deps/antd.js?v=5ef7c5a3:6659:27)
+    at AppShell (http://localhost:5173/src/App.jsx?t=1793109192649:302:22)
+    at AuthProvider (http://localhost:5173/src/context/AuthContext.jsx:23:32)
+    at BrandProvider (http://localhost:5173/src/context/BrandContext.jsx:27:33)
+    at ThemeProvider (http://localhost:5173/src/context/ThemeContext.jsx:57:33)
+    at App
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=5ef7c5a3:3235:3) @ http://localhost:5173/src/components/common/ErrorBoundary.jsx:16

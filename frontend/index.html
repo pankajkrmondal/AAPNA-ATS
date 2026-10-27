@@ -9,28 +9,38 @@
     <meta name="author" content="AAPNA" />
     <meta name="theme-color" content="#7a922e" />
 
-    <!-- Anti-FOUC: apply the saved theme before first paint. Default is LIGHT;
-         the OS preference is honored only when the user explicitly chose "system". -->
+    <!-- Anti-FOUC: apply the saved theme before first paint. Default is DARK;
+         the OS preference is honored only when the user explicitly chose "system".
+         Keep in step with getInitialMode() in src/context/ThemeContext.jsx. -->
     <script>
       (function () {
         var mode = null;
         try {
+          // One-time migration: the old ThemeProvider persisted the 'light'
+          // default on every load, so a stored 'light' is not a real choice.
+          // Drop it once so everyone lands on the new dark default; only an
+          // explicit toggle is persisted from here on.
+          if (localStorage.getItem('ats_theme_default') !== 'dark') {
+            if (localStorage.getItem('ats_theme') === 'light') localStorage.removeItem('ats_theme');
+            localStorage.setItem('ats_theme_default', 'dark');
+          }
           mode = localStorage.getItem('ats_theme');
         } catch (e) {
-          /* storage unavailable (private mode) — fall through to light */
+          /* storage unavailable (private mode) — fall through to dark */
         }
-        // Public token-link pages (candidate / approver / interviewer forms)
-        // are always light — keep in step with the ForceLight routes in App.jsx.
+        // Sign-in pages and public token-link pages (candidate / approver /
+        // interviewer forms) are always light — keep in step with the
+        // ForceLight routes in App.jsx.
         var path = window.location.pathname;
         var publicPage =
+          /^\/(login|admin\/login|forgot-password|reset-password)\/?$/.test(path) ||
           /^\/(missing-jd-upload|mrf-submit|scorecard\/|documents\/)/.test(path) ||
           /^\/mrf\/[^/]+\/approve/.test(path);
         var dark =
           !publicPage &&
-          (mode === 'dark' ||
-            (mode === 'system' &&
-              window.matchMedia &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches));
+          (mode === 'system'
+            ? !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+            : mode !== 'light');
         var theme = dark ? 'dark' : 'light';
         var el = document.documentElement;
         el.setAttribute('data-theme', theme);

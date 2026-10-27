@@ -1,0 +1,66 @@
+- generic [ref=f11e6]:
+  - generic [ref=f11e7]:
+    - generic [ref=f11e8]:
+      - img "AAPNA" [ref=f11e10]
+      - generic [ref=f11e11]:
+        - strong [ref=f11e12]: AAPNA ATS
+        - generic [ref=f11e13]: Applicant Tracking System
+    - generic [ref=f11e14]:
+      - heading "Right talent, hired faster." [level=1] [ref=f11e15]: Right talent,hired faster.
+      - paragraph [ref=f11e16]: Requisitions approved in a click, résumés ranked by AI against the JD, interviews scheduled on Teams — and every candidate's journey in one pipeline.
+      - generic [aria-hidden] [ref=f11e17]:
+        - generic [ref=f11e18]:
+          - generic [ref=f11e19]: 92%
+          - generic [ref=f11e21]:
+            - strong [ref=f11e22]: AI match score
+            - generic [ref=f11e23]: Résumé vs. job description
+        - generic [ref=f11e24]:
+          - generic [ref=f11e25]:
+            - generic [ref=f11e26]:
+              - generic [ref=f11e27]: Senior React Developer
+              - generic [ref=f11e28]: Engineering · 3 openings
+            - generic [ref=f11e29]: MRF-142
+          - list [ref=f11e30]:
+            - listitem [ref=f11e31]:
+              - generic [ref=f11e36]: Sourced
+            - listitem [ref=f11e37]:
+              - generic [ref=f11e42]: Screened
+            - listitem [ref=f11e43]:
+              - generic [ref=f11e44]: "3"
+              - generic [ref=f11e45]: Interview
+            - listitem [ref=f11e46]:
+              - generic [ref=f11e47]: "4"
+              - generic [ref=f11e48]: Offer
+            - listitem [ref=f11e49]:
+              - generic [ref=f11e50]: "5"
+              - generic [ref=f11e51]: Joined
+          - generic [ref=f11e52]: Round 2 on Microsoft Teams · tomorrow, 11:00 AM
+        - generic [ref=f11e62]:
+          - strong [ref=f11e63]: Requisition approved
+          - generic [ref=f11e64]: Hiring manager signed off · 2m ago
+    - generic [ref=f11e65]: © 2026 AAPNA Infotech · All rights reserved
+  - generic [ref=f11e67]:
+    - generic [ref=f11e68]:
+      - generic [ref=f11e69]: HR Admin Portal
+      - heading "Welcome back" [level=2] [ref=f11e70]
+      - text: Sign in to manage users and system access
+    - generic [ref=f11e72]:
+      - generic [ref=f11e74]:
+        - generic [ref=f11e75]: Username or Email
+        - generic [ref=f11e81]:
+          - img "user" [ref=f11e83]
+          - textbox "Username or Email" [ref=f11e86]:
+            - /placeholder: Enter your username or email
+      - generic [ref=f11e88]:
+        - generic [ref=f11e89]: Password
+        - generic [ref=f11e95]:
+          - img "lock" [ref=f11e97]
+          - textbox "Password" [ref=f11e100]:
+            - /placeholder: Enter your password
+          - img "eye-invisible" [ref=f11e102] [cursor=pointer]
+      - button "login Sign In" [disabled] [ref=f11e118]:
+        - generic:
+          - img "login"
+        - generic: Sign In
+      - link "Forgot password?" [ref=f11e120] [cursor=pointer]:
+        - /url: /forgot-password

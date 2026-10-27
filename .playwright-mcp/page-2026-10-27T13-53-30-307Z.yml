@@ -1,0 +1,62 @@
+- generic [ref=e6]:
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - img "AAPNA" [ref=e10]
+      - generic [ref=e11]:
+        - strong [ref=e12]: AAPNA ATS
+        - generic [ref=e13]: Applicant Tracking System
+    - generic [ref=e14]:
+      - heading "Right talent, hired faster." [level=1] [ref=e15]: Right talent,hired faster.
+      - paragraph [ref=e16]: Requisitions approved in a click, résumés ranked by AI against the JD, interviews scheduled on Teams — and every candidate's journey in one pipeline.
+      - generic [aria-hidden] [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]: 92%
+          - generic [ref=e21]:
+            - strong [ref=e22]: AI match score
+            - generic [ref=e23]: Résumé vs. job description
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]:
+              - generic [ref=e27]: Senior React Developer
+              - generic [ref=e28]: Engineering · 3 openings
+            - generic [ref=e29]: MRF-142
+          - list [ref=e30]:
+            - listitem [ref=e31]:
+              - generic [ref=e36]: Sourced
+            - listitem [ref=e37]:
+              - generic [ref=e42]: Screened
+            - listitem [ref=e43]:
+              - generic [ref=e44]: "3"
+              - generic [ref=e45]: Interview
+            - listitem [ref=e46]:
+              - generic [ref=e47]: "4"
+              - generic [ref=e48]: Offer
+            - listitem [ref=e49]:
+              - generic [ref=e50]: "5"
+              - generic [ref=e51]: Joined
+          - generic [ref=e52]: Round 2 on Microsoft Teams · tomorrow, 11:00 AM
+        - generic [ref=e62]:
+          - strong [ref=e63]: Requisition approved
+          - generic [ref=e64]: Hiring manager signed off · 2m ago
+    - generic [ref=e65]: © 2026 AAPNA Infotech · All rights reserved
+  - generic [ref=e67]:
+    - generic [ref=e68]:
+      - heading "Sign in to your account" [level=2] [ref=e69]
+      - text: Enter your credentials to access the dashboard
+    - generic [ref=e71]:
+      - generic [ref=e73]:
+        - generic [ref=e74]: Username or Email
+        - generic [ref=e80]:
+          - img "user" [ref=e82]
+          - textbox "Username or Email" [ref=e85]:
+            - /placeholder: Enter username or email
+      - generic [ref=e87]:
+        - generic [ref=e88]: Password
+        - generic [ref=e94]:
+          - img "lock" [ref=e96]
+          - textbox "Password" [ref=e99]:
+            - /placeholder: Enter password
+          - img "eye-invisible" [ref=e101] [cursor=pointer]
+      - button "Sign In" [disabled] [ref=e117]
+      - link "Forgot password?" [ref=e119] [cursor=pointer]:
+        - /url: /forgot-password

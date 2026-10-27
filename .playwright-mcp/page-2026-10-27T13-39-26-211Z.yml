@@ -1,0 +1,64 @@
+- generic [ref=f8e4]:
+  - generic [ref=f8e5]:
+    - generic [ref=f8e6]:
+      - img "AAPNA" [ref=f8e8]
+      - generic [ref=f8e9]:
+        - strong [ref=f8e10]: AAPNA ATS
+        - generic [ref=f8e11]: Applicant Tracking System
+    - generic [ref=f8e12]:
+      - heading "Right talent, hired faster." [level=1] [ref=f8e13]: Right talent,hired faster.
+      - paragraph [ref=f8e14]: Requisitions approved in a click, résumés ranked by AI against the JD, interviews scheduled on Teams — and every candidate's journey in one pipeline.
+      - generic [aria-hidden] [ref=f8e15]:
+        - generic [ref=f8e16]:
+          - generic [ref=f8e17]: 92%
+          - generic [ref=f8e19]:
+            - strong [ref=f8e20]: AI match score
+            - generic [ref=f8e21]: Résumé vs. job description
+        - generic [ref=f8e22]:
+          - generic [ref=f8e23]:
+            - generic [ref=f8e24]:
+              - generic [ref=f8e25]: Senior React Developer
+              - generic [ref=f8e26]: Engineering · 3 openings
+            - generic [ref=f8e27]: MRF-142
+          - list [ref=f8e28]:
+            - listitem [ref=f8e29]:
+              - generic [ref=f8e34]: Sourced
+            - listitem [ref=f8e35]:
+              - generic [ref=f8e40]: Screened
+            - listitem [ref=f8e41]:
+              - generic [ref=f8e42]: "3"
+              - generic [ref=f8e43]: Interview
+            - listitem [ref=f8e44]:
+              - generic [ref=f8e45]: "4"
+              - generic [ref=f8e46]: Offer
+            - listitem [ref=f8e47]:
+              - generic [ref=f8e48]: "5"
+              - generic [ref=f8e49]: Joined
+          - generic [ref=f8e50]: Round 2 on Microsoft Teams · tomorrow, 11:00 AM
+        - generic [ref=f8e60]:
+          - strong [ref=f8e61]: Requisition approved
+          - generic [ref=f8e62]: Hiring manager signed off · 2m ago
+    - generic [ref=f8e63]: © 2026 AAPNA Infotech · All rights reserved
+  - generic [ref=f8e64]:
+    - button "Toggle theme" [ref=f8e66] [cursor=pointer]
+    - generic [ref=f8e77]:
+      - generic [ref=f8e78]:
+        - heading "Sign in to your account" [level=2] [ref=f8e79]
+        - text: Enter your credentials to access the dashboard
+      - generic [ref=f8e81]:
+        - generic [ref=f8e83]:
+          - generic [ref=f8e84]: Username or Email
+          - generic [ref=f8e90]:
+            - img "user" [ref=f8e92]
+            - textbox "Username or Email" [ref=f8e95]:
+              - /placeholder: Enter username or email
+        - generic [ref=f8e97]:
+          - generic [ref=f8e98]: Password
+          - generic [ref=f8e104]:
+            - img "lock" [ref=f8e106]
+            - textbox "Password" [ref=f8e109]:
+              - /placeholder: Enter password
+            - img "eye-invisible" [ref=f8e111] [cursor=pointer]
+        - button "Sign In" [disabled] [ref=f8e127]
+        - link "Forgot password?" [ref=f8e129] [cursor=pointer]:
+          - /url: /forgot-password

@@ -1,0 +1,57 @@
+- generic [ref=f8e6]:
+  - generic [ref=f8e7]:
+    - generic [ref=f8e8]:
+      - img "AAPNA" [ref=f8e10]
+      - generic [ref=f8e11]:
+        - strong [ref=f8e12]: AAPNA ATS
+        - generic [ref=f8e13]: Applicant Tracking System
+    - generic [ref=f8e14]:
+      - heading "Right talent, hired faster." [level=1] [ref=f8e15]: Right talent,hired faster.
+      - paragraph [ref=f8e16]: Requisitions approved in a click, résumés ranked by AI against the JD, interviews scheduled on Teams — and every candidate's journey in one pipeline.
+      - generic [aria-hidden] [ref=f8e17]:
+        - generic [ref=f8e18]:
+          - generic [ref=f8e19]: 92%
+          - generic [ref=f8e21]:
+            - strong [ref=f8e22]: AI match score
+            - generic [ref=f8e23]: Résumé vs. job description
+        - generic [ref=f8e24]:
+          - generic [ref=f8e25]:
+            - generic [ref=f8e26]:
+              - generic [ref=f8e27]: Senior React Developer
+              - generic [ref=f8e28]: Engineering · 3 openings
+            - generic [ref=f8e29]: MRF-142
+          - list [ref=f8e30]:
+            - listitem [ref=f8e31]:
+              - generic [ref=f8e36]: Sourced
+            - listitem [ref=f8e37]:
+              - generic [ref=f8e42]: Screened
+            - listitem [ref=f8e43]:
+              - generic [ref=f8e44]: "3"
+              - generic [ref=f8e45]: Interview
+            - listitem [ref=f8e46]:
+              - generic [ref=f8e47]: "4"
+              - generic [ref=f8e48]: Offer
+            - listitem [ref=f8e49]:
+              - generic [ref=f8e50]: "5"
+              - generic [ref=f8e51]: Joined
+          - generic [ref=f8e52]: Round 2 on Microsoft Teams · tomorrow, 11:00 AM
+        - generic [ref=f8e62]:
+          - strong [ref=f8e63]: Requisition approved
+          - generic [ref=f8e64]: Hiring manager signed off · 2m ago
+    - generic [ref=f8e65]: © 2026 AAPNA Infotech · All rights reserved
+  - generic [ref=f8e67]:
+    - generic [ref=f8e68]:
+      - heading "Reset your password" [level=2] [ref=f8e69]
+      - text: Enter your username or email and we'll send you a reset link
+    - generic [ref=f8e71]:
+      - generic [ref=f8e73]:
+        - generic [ref=f8e74]: Username or Email
+        - generic [ref=f8e80]:
+          - img "user" [ref=f8e82]
+          - textbox "Username or Email" [ref=f8e85]:
+            - /placeholder: Enter your username or email
+      - button "Send Reset Link" [disabled] [ref=f8e98]
+      - link [ref=f8e100] [cursor=pointer]:
+        - /url: /login
+        - img "arrow-left" [ref=f8e101]
+        - text: Back to sign in

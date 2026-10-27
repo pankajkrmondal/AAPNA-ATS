@@ -1,21 +1,83 @@
 /**
  * AuthLayout — Split-screen auth layout for login / admin-login.
- * Left: rich olive brand panel (logo, value proposition, feature highlights).
+ * Left: deep olive brand panel (logo, value proposition, and an illustrative
+ * hiring-pipeline card with floating AI-match / MRF-approval badges).
  * Right: clean form panel with contextual heading + the page form (Outlet).
+ * Always light (wrapped in ForceLight in App.jsx), so there is no theme toggle.
+ *
+ * The pipeline card is decorative sample content (aria-hidden), not live data.
  */
 import { Outlet, useLocation } from 'react-router-dom';
 import { Typography } from 'antd';
-import { CheckCircleFilled } from '@ant-design/icons';
+import { CheckOutlined, VideoCameraOutlined, SafetyCertificateFilled } from '@ant-design/icons';
 
 const { Text } = Typography;
 
 const LOGO = 'https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png';
 
-const BRAND_HIGHLIGHTS = [
-  'AI-powered candidate screening & profiling',
-  'Automated requisition & approval workflows',
-  'Real-time pipeline metrics & analytics',
+/** Stages of the sample pipeline card; `done` / `current` drive the styling. */
+const PIPELINE_STAGES = [
+  { label: 'Sourced', state: 'done' },
+  { label: 'Screened', state: 'done' },
+  { label: 'Interview', state: 'current' },
+  { label: 'Offer', state: 'todo' },
+  { label: 'Joined', state: 'todo' },
 ];
+
+const AI_MATCH = 92;
+
+/** Decorative hiring-pipeline illustration for the brand panel. */
+function PipelineShowcase() {
+  return (
+    <div className="auth-showcase" aria-hidden="true">
+      <div className="auth-float auth-float--match">
+        <span className="auth-match-ring" style={{ '--pct': AI_MATCH }}>
+          <span>{AI_MATCH}%</span>
+        </span>
+        <span className="auth-float__text">
+          <strong>AI match score</strong>
+          <small>Résumé vs. job description</small>
+        </span>
+      </div>
+
+      <div className="auth-pipeline-card">
+        <div className="auth-pipeline-card__head">
+          <div>
+            <div className="auth-pipeline-card__title">Senior React Developer</div>
+            <div className="auth-pipeline-card__sub">Engineering · 3 openings</div>
+          </div>
+          <span className="auth-pill">MRF-142</span>
+        </div>
+
+        <ol className="auth-stepper">
+          {PIPELINE_STAGES.map((stage, i) => (
+            <li key={stage.label} className={`auth-step auth-step--${stage.state}`}>
+              <span className="auth-step__dot">
+                {stage.state === 'done' ? <CheckOutlined /> : i + 1}
+              </span>
+              <span className="auth-step__label">{stage.label}</span>
+            </li>
+          ))}
+        </ol>
+
+        <div className="auth-pipeline-card__foot">
+          <VideoCameraOutlined />
+          <span>Round 2 on Microsoft Teams · tomorrow, 11:00 AM</span>
+        </div>
+      </div>
+
+      <div className="auth-float auth-float--approved">
+        <span className="auth-float__icon">
+          <SafetyCertificateFilled />
+        </span>
+        <span className="auth-float__text">
+          <strong>Requisition approved</strong>
+          <small>Hiring manager signed off · 2m ago</small>
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** Contextual heading/subheading per auth page (fallback: login copy). */
 const PAGE_HEADINGS = {
@@ -38,57 +100,35 @@ export default function AuthLayout() {
     <div className="auth-split">
       {/* ---- Left: brand panel ---- */}
       <div className="auth-brand-panel">
-        {/* Logo chip (keeps the original colored logo legible on olive) */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: '#fff',
-              borderRadius: 12,
-              padding: '10px 16px',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
-            }}
-          >
-            <img src={LOGO} alt="AAPNA" style={{ height: 32, width: 'auto', objectFit: 'contain', display: 'block' }} />
-          </div>
+        {/* Brand chip: white logo pill (keeps the colored logo legible) + product name */}
+        <div className="auth-brand-chip">
+          <span className="auth-brand-chip__logo">
+            <img src={LOGO} alt="AAPNA" />
+          </span>
+          <span className="auth-brand-chip__text">
+            <strong>AAPNA ATS</strong>
+            <small>Applicant Tracking System</small>
+          </span>
         </div>
 
-        {/* Value proposition */}
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: 460 }}>
-          <h1
-            style={{
-              fontFamily: 'var(--font-heading)',
-              fontSize: 'clamp(28px, 3.4vw, 40px)',
-              fontWeight: 800,
-              lineHeight: 1.18,
-              letterSpacing: '-0.02em',
-              margin: '0 0 16px',
-              color: '#fff',
-            }}
-          >
-            Recruitment, reimagined for speed and precision.
+        {/* Value proposition + pipeline illustration */}
+        <div className="auth-brand-body">
+          <h1 className="auth-brand-title">
+            Right talent,
+            <br />
+            <span className="auth-brand-title__accent">hired faster.</span>
           </h1>
-          <p style={{ fontSize: 15.5, lineHeight: 1.7, color: 'rgba(255,255,255,0.88)', margin: '0 0 28px' }}>
-            AAPNA's intelligent ATS streamlines every step — from sourcing and AI screening to
-            requisitions, approvals, and analytics.
+          <p className="auth-brand-lede">
+            Requisitions approved in a click, résumés ranked by AI against the JD, interviews
+            scheduled on Teams — and every candidate's journey in one pipeline.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {BRAND_HIGHLIGHTS.map((text) => (
-              <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <CheckCircleFilled style={{ color: '#fff', fontSize: 18, opacity: 0.95 }} />
-                <span style={{ fontSize: 14.5, fontWeight: 500, color: 'rgba(255,255,255,0.94)' }}>{text}</span>
-              </div>
-            ))}
-          </div>
+          <PipelineShowcase />
         </div>
 
         {/* Footer */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <Text style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>
-            © {new Date().getFullYear()} AAPNA Infotech · All rights reserved
-          </Text>
+        <div className="auth-brand-foot">
+          © {new Date().getFullYear()} AAPNA Infotech · All rights reserved
         </div>
       </div>
 

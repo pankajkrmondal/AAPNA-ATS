@@ -21,7 +21,7 @@ npm install playwright   # then: chromium.launch({ channel: 'msedge', headless: 
 
 ## Flows worth driving
 - **Login page** (`/`) is public — good for theme/global-style checks without credentials.
-- **Theme system**: mode is `localStorage['ats_theme']` = `light | dark | system` (default light). Anti-FOUC inline script in `index.html` sets `data-theme` on `<html>` pre-paint. Seed storage with `ctx.addInitScript`, emulate OS via `colorScheme` context option / `page.emulateMedia`.
+- **Theme system**: mode is `localStorage['ats_theme']` = `light | dark | system` (default dark; only an explicit toggle is persisted, and a one-time `ats_theme_default` marker migration clears old auto-saved `light` values). Anti-FOUC inline script in `index.html` sets `data-theme` on `<html>` pre-paint. Seed storage with `ctx.addInitScript`, emulate OS via `colorScheme` context option / `page.emulateMedia`.
 - **MainLayout (header, theme toggle, sidebar) and Settings are auth-gated** — need the backend running plus credentials.
 
 ## Gotchas
