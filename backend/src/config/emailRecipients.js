@@ -86,6 +86,10 @@ const DEFAULTS = {
   // stays redirected on staging.
   interviewScheduledPanel: { to: '', cc: '', dynamic: true },
   interviewCancelledPanel: { to: '', cc: '', dynamic: true },
+  // L14: "Feedback received" when an interviewer submits a scorecard. Internal:
+  // the recruitment mailbox (production seed: recruitment@aapnainfotech.in),
+  // editable in Settings. Redirected to the test inbox outside production.
+  scorecardSubmitted: { to: 'hmopuri@aapnainfotech.com', cc: '', dynamic: false },
   // Interviewer scorecard link, sent once an interview is confirmed held.
   // Prod -> the interviewer/HR/CEO mailbox (dynamic); non-prod -> test inbox.
   scorecardInvite: { to: '', cc: '', dynamic: true },

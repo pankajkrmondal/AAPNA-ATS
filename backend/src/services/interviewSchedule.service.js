@@ -775,6 +775,36 @@ async function buildInterviewEmails(action, ctx) {
 const interviewWrapOpts = (subject) => ({ title: subject || '' });
 
 /**
+ * L14: the JD, the CV and (from the second round on) the report so far, for
+ * the panel's invite. Best-effort: a pack that cannot be built never stops the
+ * invite going out.
+ *
+ * Imported lazily: the pack reads the dossier, whose scorecard service imports
+ * this module, so a static import would be a cycle at load time.
+ */
+async function panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy }) {
+  if (!sendsInvites || sendPack === false || config.interviewPanelPack?.enabled === false) return null;
+  try {
+    const { buildPanelPack } = await import('./interviewPanelPack.service.js');
+    return await buildPanelPack(pipelineId, { user: user || (actedBy ? { id: actedBy } : null) });
+  } catch (err) {
+    logger.warn(`Interview panel pack skipped for pipeline ${pipelineId}: ${err.message}`);
+    return null;
+  }
+}
+
+/** Audit a pack that reached the panel (timeline + dossier log). Never throws. */
+async function notePanelPack({ pipelineId, stageKey, stageLabel, user, actedBy, pack, recipientCount }) {
+  if (!pack) return;
+  try {
+    const { logPanelPackSent } = await import('./interviewPanelPack.service.js');
+    await logPanelPackSent({ pipelineId, stageKey, stageLabel, user: user || (actedBy ? { id: actedBy } : null), pack, recipientCount });
+  } catch (err) {
+    logger.error(`AUDIT GAP: panel pack for pipeline ${pipelineId} was sent but not recorded: ${err.message}`);
+  }
+}
+
+/**
  * Assembles the full email context for a pipeline's current round without
  * sending — feeds the Schedule modal's editable preview. Uses the given
  * date/time/duration so the preview reflects what the recruiter is entering.
@@ -872,6 +902,10 @@ export async function scheduleInterviewRound(pipelineId, {
   candidateBody = null,
   panelSubject = null,
   panelBody = null,
+  // L14: send the JD, CV and report so far with the panel's invite (the
+  // Schedule window's tick-box, on by default).
+  sendPack = true,
+  user = null,
 }) {
   if (!isSchedulableStage(stageKey)) {
     throw new AppError(`Stage "${stageKey}" does not support interview scheduling.`, 400);
@@ -1025,13 +1059,16 @@ export async function scheduleInterviewRound(pipelineId, {
         interviewWrapOpts(candidateFinalSubject)
       ),
     };
+    // L14: the panel's pack. Its "Earlier rounds" block goes after the Teams
+    // block and the recording notice, inside the branded card.
+    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy });
     const panelEmail = {
       subject: panelFinalSubject,
       body: wrapBrandedEmail(
         ensureRecordingNotice(
           ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
           'panel', isRecorded
-        ),
+        ) + (pack?.blockHtml || ''),
         interviewWrapOpts(panelFinalSubject)
       ),
     };
@@ -1062,8 +1099,10 @@ export async function scheduleInterviewRound(pipelineId, {
           subject: panelEmail.subject,
           html: panelEmail.body,
           allowRealRecipients: true,
+          attachments: pack?.attachments || [],
         });
         inviteSentAt = inviteSentAt || new Date();
+        await notePanelPack({ pipelineId, stageKey, stageLabel, user, actedBy, pack, recipientCount: interviewerEmails.length });
       } catch (err) {
         logger.error(`Interview schedule: interviewer email failed for pipeline ${pipelineId}: ${err.message}`);
       }
@@ -1373,6 +1412,8 @@ export async function rescheduleInterviewRound(pipelineId, {
   candidateBody = null,
   panelSubject = null,
   panelBody = null,
+  sendPack = true,
+  user = null,
 }) {
   if (!isSchedulableStage(stageKey)) {
     throw new AppError(`Stage "${stageKey}" does not support interview scheduling.`, 400);
@@ -1527,9 +1568,10 @@ export async function rescheduleInterviewRound(pipelineId, {
       subject: candidateFinalSubject,
       body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded), interviewWrapOpts(candidateFinalSubject)),
     };
+    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy });
     const panelEmail = {
       subject: panelFinalSubject,
-      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded), interviewWrapOpts(panelFinalSubject)),
+      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded) + (pack?.blockHtml || ''), interviewWrapOpts(panelFinalSubject)),
     };
 
     const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
@@ -1545,8 +1587,9 @@ export async function rescheduleInterviewRound(pipelineId, {
     if (sendsInvites && panelTo && panelEmail.subject) {
       try {
         // OPERATOR_ADDRESSED: panel address typed into the Reschedule modal.
-        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body, allowRealRecipients: true });
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: panelTo, subject: panelEmail.subject, html: panelEmail.body, allowRealRecipients: true, attachments: pack?.attachments || [] });
         inviteSentAt = inviteSentAt || new Date();
+        await notePanelPack({ pipelineId, stageKey, stageLabel, user, actedBy, pack, recipientCount: interviewerEmails.length });
       } catch (err) {
         logger.error(`Interview reschedule: panel email failed for pipeline ${pipelineId}: ${err.message}`);
       }

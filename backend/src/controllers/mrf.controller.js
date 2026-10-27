@@ -12,6 +12,7 @@ import logger from '../config/logger.js';
 import redis from '../config/redis.js';
 import { uploadFileToOneDrive, uploadFileToOneDriveDetailed } from '../services/onedrive.service.js';
 import { saveMrfJdItemId } from '../services/jdAttachment.service.js';
+import { buildMrfDetailsTable } from '../services/mrfEmailBodies.js';
 import { extractTextFromBuffer } from '../utils/fileExtractor.js';
 import { parseJobDescription } from '../services/geminiParser.service.js';
 import { sendMrfRequestEmail, sendMrfApprovalEmail, sendMrfSubmissionHrEmail } from '../services/emailNotification.service.js';
@@ -597,88 +598,6 @@ function broadcastMrfUpdated(mrfId, reason) {
 }
 
 /**
- * Helper to generate the legacy HTML table representation of the MRF data.
- */
-const generateMrfEmailTable = (j, jdLink, testPaperLink, parsedJd) => {
-  const v = (val) => {
-    if (val === null || val === undefined || val === '') return '';
-    return String(val);
-  };
-
-  // For dropdown fields with an "Other" option: show "Other - <custom text>" when chosen.
-  const otherFmt = (sel, other) =>
-    String(sel || '').trim().toLowerCase() === 'other' && v(other)
-      ? `Other - ${v(other)}`
-      : v(sel);
-
-  const aiExperienceRange = parsedJd && (parsedJd.min_experience_years != null || parsedJd.max_experience_years != null)
-    ? `${v(parsedJd.min_experience_years) || '—'} - ${v(parsedJd.max_experience_years) || '—'} years`
-    : '';
-
-  return `
-<table style="border: 1px solid black; border-collapse: collapse; width: 100%; font-family: Calibri, sans-serif; font-size: 14px;">
-<thead>
-  <tr style="background-color: #f2f2f2;">
-    <th style="border: 1px solid black; padding: 8px; text-align: left;"><b>Field Name</b></th>
-    <th style="border: 1px solid black; padding: 8px; text-align: left;"><b>User Submitted Data</b></th>
-  </tr>
-</thead>
-<tbody>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Submitter Email:</td><td style="border: 1px solid black; padding: 8px;">${v(j.submitter_email)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Name of the Hiring Manager:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hiring_manager_name)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Designation of the Hiring Manager:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hiring_manager_designation)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Date of Request:</td><td style="border: 1px solid black; padding: 8px;">${v(j.date_of_request)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Required in:</td><td style="border: 1px solid black; padding: 8px;">${v(j.required_in)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Position hiring for:</td><td style="border: 1px solid black; padding: 8px;">${v(j.position_hiring_for)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Number of Positions:</td><td style="border: 1px solid black; padding: 8px;">${v(j.number_of_positions)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Position reports to:</td><td style="border: 1px solid black; padding: 8px;">${v(j.position_reports_to)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Requirement for the team:</td><td style="border: 1px solid black; padding: 8px;">${v(j.requirement_for_team)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Requirement for team (Other):</td><td style="border: 1px solid black; padding: 8px;">${v(j.requirement_for_team_other)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Desired Qualification:</td><td style="border: 1px solid black; padding: 8px;">${v(j.desired_qualification)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">PG Qualification Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.pg_information)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Graduate / Other Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.graduate_other_information)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Other Qualification Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.other_qualification_more_info)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Replacement or New Role:</td><td style="border: 1px solid black; padding: 8px;">${v(j.replacement_or_new_role)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Replacement Comments:</td><td style="border: 1px solid black; padding: 8px;">${v(j.replacement_comments)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Total Years of Experience:</td><td style="border: 1px solid black; padding: 8px;">${v(j.total_years_of_experience)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Relevant Years of Experience:</td><td style="border: 1px solid black; padding: 8px;">${v(j.relevant_years_of_experience)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Project Name:</td><td style="border: 1px solid black; padding: 8px;">${v(j.project_name)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Project Duration:</td><td style="border: 1px solid black; padding: 8px;">${v(j.project_duration)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Employment Type:</td><td style="border: 1px solid black; padding: 8px;">${v(j.employment_type)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Allocation Possible:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_allocation ? 'Yes' : 'No')}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Existing Resource Info:</td><td style="border: 1px solid black; padding: 8px;">${v(j.existing_resource_information)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Roles & Responsibilities:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.roles_responsibilities, j.roles_responsibilities_other)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Mandatory Skills:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.mandatory_skills, j.mandatory_skills_other)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Good to Have Skills:</td><td style="border: 1px solid black; padding: 8px;">${otherFmt(j.good_to_have_skills, j.good_to_have_skills_other)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">1st Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.first_technical_round)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">2nd Technical Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.second_technical_round)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">CEO / Management Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.ceo_management_round)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">CEO Panel Details:</td><td style="border: 1px solid black; padding: 8px;">${v(j.ceo_panel_details)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">HR Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.hr_round)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Round:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_round)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Round Coordinator:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_round_coordinator)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Job Timing:</td><td style="border: 1px solid black; padding: 8px;">${v(j.job_timing)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Daily Interview Slot (Round 1):</td><td style="border: 1px solid black; padding: 8px;">${v(j.first_round_interview_slot)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Daily Interview Slot (Round 2):</td><td style="border: 1px solid black; padding: 8px;">${v(j.second_round_interview_slot)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Weekly Meeting Slot:</td><td style="border: 1px solid black; padding: 8px;">${v(j.weekly_meeting_slot)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Client Details:</td><td style="border: 1px solid black; padding: 8px;">${v(j.client_details)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Additional Information:</td><td style="border: 1px solid black; padding: 8px;">${v(j.additional_information)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Competencies Required:</td><td style="border: 1px solid black; padding: 8px;">${v(j.competencies_required)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper Link:</td><td style="border: 1px solid black; padding: 8px;">${testPaperLink ? `<a href="${testPaperLink}">Click here to view Test Paper</a>` : 'Not Uploaded'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">Question Paper New Owner:</td><td style="border: 1px solid black; padding: 8px;">${v(j.question_paper_new_owner)}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">JD Document Link:</td><td style="border: 1px solid black; padding: 8px;">${jdLink ? `<a href="${jdLink}">Click here to view JD</a>` : 'Not Uploaded'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold; background-color: #f2f2f2;" colspan="2">AI-Parsed JD Summary</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Experience Range:</td><td style="border: 1px solid black; padding: 8px;">${aiExperienceRange || 'Not Available'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Mandatory Skills (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.mandatory_skills) || 'Not Available'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Good to Have Skills (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.good_to_have_skills) || 'Not Available'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Education (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.education) || 'Not Available'}</td></tr>
-  <tr><td style="border: 1px solid black; padding: 8px; font-weight: bold;">AI Roles & Responsibilities (from JD):</td><td style="border: 1px solid black; padding: 8px;">${v(parsedJd?.roles_and_responsibilities) || 'Not Available'}</td></tr>
-</tbody>
-</table>
-  `;
-};
-
-/**
  * @desc    Get pre-fill options based on a manager's email (and optionally role)
  * @route   GET /api/mrf/prefill-options
  * @access  Public
@@ -886,7 +805,8 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
     question_paper_new_owner,
   };
 
-  const compiledHtmlTable = generateMrfEmailTable(inputData, jdUrl, testPaperUrl, parsedJdJson);
+  // L15: escaped and brand-styled (mrfEmailBodies.js); the values come from the public form.
+  const compiledHtmlTable = buildMrfDetailsTable(inputData, jdUrl, testPaperUrl, parsedJdJson);
 
   // 2) Insert record into rpa_mrf
   const newMrf = await prisma.rpa_mrf.create({

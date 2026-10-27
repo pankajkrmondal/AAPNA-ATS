@@ -6,6 +6,7 @@ import vendorRoutes from './vendor.routes.js';
 import adminRoutes from './admin.routes.js';
 import companyRoutes from './company.routes.js';
 import mrfRoutes from './mrf.routes.js';
+import formsLinksRoutes from './formsLinks.routes.js';
 import settingsRoutes from './settings.routes.js';
 import hrUploadRoutes from './hrUpload.routes.js';
 import screeningRoutes from './screening.routes.js';
@@ -55,6 +56,8 @@ const placeholder = (moduleName) => (_req, res) => {
 };
 
 router.use('/mrf', mrfRoutes);
+// L08 Forms & Links: every link the ATS has sent (staff only).
+router.use('/forms-links', formsLinksRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/email', emailTemplateRoutes);
 router.use('/notifications', notificationRoutes);

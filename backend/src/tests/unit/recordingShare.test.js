@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 
 import {
   SHARE_STATES, describeShareLink, isShareLinkLive, isShareToken, shareDate, shareExpiryFrom,
-  shareLinkState, shareRefusal, shareUrlFor,
+  shareLinkState, shareRefusal, shareUrlFor, recordingShareMessage,
 } from '../../utils/recordingShareModel.js';
 import { applyRecordingShareLinks, describeIncludedCategories } from '../../utils/dossierModel.js';
 // Safe to import in a unit test: the service reaches Prisma but never connects
@@ -445,5 +445,37 @@ describe('applyRecordingShareLinks — what the pack says about the footage', ()
     const m = model(twoRounds());
     applyRecordingShareLinks(m, { links: [], requested: false }, { includeRecordingLinks: false });
     assert.ok(!describeIncludedCategories(m).some((c) => c.startsWith('recording_no_login_link')));
+  });
+});
+
+// ── L13: the message pasted into an email for someone outside the ATS ──
+
+describe('recordingShareMessage', () => {
+  const base = {
+    candidateName: 'Priya Nair',
+    stageLabel: 'Technical Round 1',
+    role: 'Java Developer',
+    url: 'https://ats.example.com/api/recording-share/0b9e3f1e-0000-4000-8000-000000000000',
+    expiresAt: new Date('2026-11-06T06:00:00Z'),
+    timeZone: 'Asia/Kolkata',
+  };
+
+  test('names the candidate, round and role, and says no sign-in is needed', () => {
+    const msg = recordingShareMessage(base);
+    assert.match(msg, /^Interview recording: Priya Nair · Technical Round 1 \(Java Developer\)/);
+    assert.ok(msg.includes(`no sign-in needed): ${base.url}`));
+    assert.match(msg, /works until 06 Nov 2026\./);
+  });
+
+  test('adds the job description only when the role has one', () => {
+    assert.ok(!recordingShareMessage(base).includes('Job description'));
+    const withJd = recordingShareMessage({ ...base, jdLink: 'https://onedrive.example/jd.pdf' });
+    assert.ok(withJd.endsWith('Job description: https://onedrive.example/jd.pdf'));
+  });
+
+  test('is plain text, one fact per line', () => {
+    const msg = recordingShareMessage({ ...base, jdLink: 'https://onedrive.example/jd.pdf' });
+    assert.equal(msg.split('\n').length, 4);
+    assert.ok(!/<[a-z]/i.test(msg));
   });
 });

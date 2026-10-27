@@ -88,6 +88,25 @@ const screeningService = {
     return api.post('/screening/keyword-export', filters, config);
   },
 
+  /**
+   * L11: who the search left out, and why (nearest 200), with per-reason counts.
+   * `reason` lists one rule's misses only.
+   * @param {'jd'|'keyword'} kind
+   * @param {{ mrfId?: number, addedWithinDays?: number|null, taggedOnly?: boolean, filters?: object, reason?: string|null }} p
+   */
+  notShown(kind, { mrfId, addedWithinDays = null, taggedOnly = false, filters = {}, reason = null } = {}) {
+    return kind === 'jd'
+      ? api.post(`/screening/roles/${mrfId}/not-shown`, { ...roleSearchBody(addedWithinDays, taggedOnly), reason })
+      : api.post('/screening/keyword-not-shown', { ...filters, reason });
+  },
+
+  /** L11: the same list as a CSV (blob config from downloadFile). */
+  exportNotShown(kind, { mrfId, addedWithinDays = null, taggedOnly = false, filters = {}, reason = null } = {}, config = {}) {
+    return kind === 'jd'
+      ? api.post(`/screening/roles/${mrfId}/not-shown/export`, { ...roleSearchBody(addedWithinDays, taggedOnly), reason }, config)
+      : api.post('/screening/keyword-not-shown/export', { ...filters, reason }, config);
+  },
+
   /** CSV of the Analytics "Role Summary" table. */
   exportRoleSummary(config = {}, range = {}) {
     return api.get('/screening/analytics/pipeline/export', { params: range, ...config });

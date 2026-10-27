@@ -1,30 +1,25 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, App } from 'antd';
+import { Form, Input, Button, Typography, Alert, Select, InputNumber, DatePicker, Result, Upload, Spin, App } from 'antd';
 import { UploadOutlined, SendOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import dayjs from 'dayjs';
 
-import { BRAND as PUBLIC_BRAND } from '../components/common/PublicPageShell';
+import PublicPageShell, { BRAND as PUBLIC_BRAND } from '../components/common/PublicPageShell';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
-// Brand colours pulled from the n8n form.
+// The page sits in PublicPageShell (L15), like the scorecard, document-upload,
+// missing-details and MRF-approval pages: the same green band, logo, card and
+// footer as the "New MRF Request" email that links here, so clicking through
+// feels like one journey. It used to keep the n8n form's own header band and
+// footer; only the shell's width is different here (a long sectioned form).
 //
-// `BRAND` is now the SHARED public-page accent rather than this file's own
-// `#92a63c`. That hex was a near-miss of the real brand green (#7a922e) carried
-// over from the n8n form, so this page's header band was a visibly different
-// green from the branded email that links to it and from the other public
-// pages — on the surface where continuity is the entire point.
-//
-// The page keeps its own layout deliberately. Unlike the other public pages,
-// this is a long sectioned form whose accent is woven through section rules and
-// required-field marks; reframing it in PublicPageShell would be a rewrite of
-// the form, not a restyle, and the shell's narrow card is the wrong container
-// for it. Aligning the colour is the part that actually closes the visual gap.
+// The accent is the shared public-page green, not the n8n form's near-miss
+// `#92a63c`.
 const BRAND = PUBLIC_BRAND.accent;
-const HELP = 'rgb(12, 136, 42)';
+const HELP = '#6b7280';
 const REQUIRED = '#bc2f32';
 
 /**
@@ -367,25 +362,23 @@ export default function MrfSubmit() {
 
   if (success) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: PUBLIC_BRAND.page }}>
-        <Card style={{ width: '100%', maxWidth: 650, borderRadius: 14, padding: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
-          <Result
-            status="success"
-            title={<span style={{ fontWeight: 700 }}>MRF Submitted Successfully!</span>}
-            subTitle={
-              <Paragraph style={{ fontSize: 14 }}>
-                Your MRF has been submitted successfully and routed to Management (Abhijit Roy &amp; Sanghamitra Roy) for review. You may close this browser window now.
-              </Paragraph>
-            }
-            extra={[
-              <Button key="close" type="primary" onClick={() => window.close()}
-                style={{ height: 44, borderRadius: 8, background: BRAND, border: 'none', fontWeight: 600, paddingInline: 32 }}>
-                Close
-              </Button>,
-            ]}
-          />
-        </Card>
-      </div>
+      <PublicPageShell title="MRF submitted" subtitle="Thank you. Your requisition is on its way to Management.">
+        <Result
+          status="success"
+          title={<span style={{ fontWeight: 700 }}>MRF Submitted Successfully!</span>}
+          subTitle={
+            <Paragraph style={{ fontSize: 14 }}>
+              Your MRF has been submitted successfully and routed to Management (Abhijit Roy &amp; Sanghamitra Roy) for review. You may close this browser window now.
+            </Paragraph>
+          }
+          extra={[
+            <Button key="close" type="primary" onClick={() => window.close()}
+              style={{ height: 44, borderRadius: 8, background: BRAND, border: 'none', fontWeight: 600, paddingInline: 32 }}>
+              Close
+            </Button>,
+          ]}
+        />
+      </PublicPageShell>
     );
   }
 
@@ -465,98 +458,80 @@ export default function MrfSubmit() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', padding: '40px 14px', background: PUBLIC_BRAND.page }}>
-      <div style={{ maxWidth: 920, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ background: BRAND, borderRadius: '14px 14px 0 0', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
-          <img
-            src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png"
-            alt="AAPNA Logo"
-            style={{ height: 40, objectFit: 'contain', background: '#fff', borderRadius: 8, padding: 4 }}
-          />
-          <Title level={3} style={{ margin: 0, color: '#fff', fontWeight: 800, letterSpacing: '0.5px' }}>
-            MANPOWER REQUISITION FORM (MRF)
-          </Title>
-        </div>
-
-        <Card style={{ borderRadius: '0 0 14px 14px', padding: '8px 28px 28px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
-          {/* Prefill dropdown — only shown when prior submissions exist */}
-          {prefillLoading ? (
-            <div style={{ padding: '16px 0' }}><Spin size="small" /> <Text type="secondary">Loading previous requisitions…</Text></div>
-          ) : prefillOptions.length > 0 ? (
-            <div style={{ margin: '16px 0' }}>
-              <Select
-                style={{ width: '100%', maxWidth: 420 }}
-                placeholder="Select an option"
-                onChange={onPrefillSelect}
-                allowClear
-              >
-                {prefillOptions.map((item, idx) => (
-                  <Select.Option key={idx} value={idx}>
-                    {`${item.position_hiring_for || 'Role'} – ${item.project_name || 'MRF'}`}
-                  </Select.Option>
-                ))}
-              </Select>
-              <div style={{ fontSize: 12, color: '#000', marginTop: 4 }}>Select a request to auto-fill the form</div>
-            </div>
-          ) : null}
-
-          {error && <Alert message="Submission Error" description={error} type="error" showIcon closable style={{ marginBottom: 20, borderRadius: 8 }} />}
-
-          <Form
-            form={form}
-            name="mrf-submission"
-            layout="vertical"
-            onFinish={onFinish}
-            size="large"
-            requiredMark={false}
+    <PublicPageShell
+      title="Manpower Requisition Form (MRF)"
+      subtitle="Tell us about the role you are hiring for. Once submitted, it goes to Management for approval."
+      maxWidth={920}
+    >
+      {/* Prefill dropdown — only shown when prior submissions exist */}
+      {prefillLoading ? (
+        <div style={{ padding: '16px 0' }}><Spin size="small" /> <Text type="secondary">Loading previous requisitions…</Text></div>
+      ) : prefillOptions.length > 0 ? (
+        <div style={{ margin: '16px 0' }}>
+          <Select
+            style={{ width: '100%', maxWidth: 420 }}
+            placeholder="Select an option"
+            onChange={onPrefillSelect}
+            allowClear
           >
-            {FIELDS.map((f, idx) =>
-              f.section ? (
-                <div key={`sec-${idx}`} style={{ margin: '24px 0 12px', paddingBottom: 6, borderBottom: `2px solid ${BRAND}`, color: BRAND, fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  {f.section}
-                </div>
-              ) : (
-                renderField(f)
-              )
-            )}
+            {prefillOptions.map((item, idx) => (
+              <Select.Option key={idx} value={idx}>
+                {`${item.position_hiring_for || 'Role'} – ${item.project_name || 'MRF'}`}
+              </Select.Option>
+            ))}
+          </Select>
+          <div style={{ fontSize: 12, color: '#000', marginTop: 4 }}>Select a request to auto-fill the form</div>
+        </div>
+      ) : null}
 
-            <Form.Item style={{ marginTop: 32, marginBottom: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-                <Button
-                  htmlType="button"
-                  onClick={() => {
-                    form.resetFields();
-                    form.setFieldsValue({
-                      position_hiring_for: roleParam,
-                      submitter_email: emailParam,
-                      date_of_request: dayjs(),
-                    });
-                  }}
-                  style={{ height: 44, borderRadius: 10, paddingInline: 28 }}
-                >
-                  Reset
-                </Button>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={submitting}
-                  icon={<SendOutlined />}
-                  style={{ height: 44, borderRadius: 10, fontWeight: 700, paddingInline: 32, background: BRAND, borderColor: BRAND }}
-                >
-                  Submit
-                </Button>
-              </div>
-            </Form.Item>
-          </Form>
+      {error && <Alert message="Submission Error" description={error} type="error" showIcon closable style={{ marginBottom: 20, borderRadius: 8 }} />}
 
-          <div style={{ textAlign: 'center', marginTop: 32 }}>
-            <Text type="secondary" style={{ fontSize: 11, opacity: 0.6 }}>
-              © {new Date().getFullYear()} AAPNA Infotech · Secure Manpower Planning Portal
-            </Text>
+      <Form
+        form={form}
+        name="mrf-submission"
+        layout="vertical"
+        onFinish={onFinish}
+        size="large"
+        requiredMark={false}
+      >
+        {FIELDS.map((f, idx) =>
+          f.section ? (
+            <div key={`sec-${idx}`} style={{ margin: '24px 0 12px', paddingBottom: 6, borderBottom: `2px solid ${BRAND}`, color: BRAND, fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {f.section}
+            </div>
+          ) : (
+            renderField(f)
+          )
+        )}
+
+        <Form.Item style={{ marginTop: 32, marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+            <Button
+              htmlType="button"
+              onClick={() => {
+                form.resetFields();
+                form.setFieldsValue({
+                  position_hiring_for: roleParam,
+                  submitter_email: emailParam,
+                  date_of_request: dayjs(),
+                });
+              }}
+              style={{ height: 44, borderRadius: 10, paddingInline: 28 }}
+            >
+              Reset
+            </Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={submitting}
+              icon={<SendOutlined />}
+              style={{ height: 44, borderRadius: 10, fontWeight: 700, paddingInline: 32, background: BRAND, borderColor: BRAND }}
+            >
+              Submit
+            </Button>
           </div>
-        </Card>
-      </div>
-    </div>
+        </Form.Item>
+      </Form>
+    </PublicPageShell>
   );
 }

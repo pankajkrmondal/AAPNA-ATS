@@ -18,12 +18,15 @@ import {
 } from '../services/interviewRecording.service.js';
 import { getAccessToken } from '../services/onedrive.service.js';
 // Phase 4 — the no-login recording links a dossier can carry (plan §6.5).
-// Minting is NOT imported here on purpose: it happens inside
-// collectRecordingShareLinks() during a download, so there is exactly one place
-// in the system where a public URL to someone's interview comes into existence.
+// Bulk minting is NOT imported here on purpose: it happens inside
+// collectRecordingShareLinks() during a download. The one other way a link comes
+// into existence is a recruiter asking for ONE recording's link from the drawer
+// (L13, shareLinkForRecording) — and that is mintShareLinks() for one row, so
+// both paths obey the same reuse-never-extend rule.
 import {
   listShareLinks,
   revokeShareLink,
+  shareLinkForRecording,
 } from '../services/recordingShare.service.js';
 import { emailCandidates } from '../utils/emailMatch.js';
 import prisma from '../config/database.js';
@@ -428,7 +431,7 @@ export const scheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name, notes,
-    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and interview start time are required.', 400);
@@ -453,6 +456,9 @@ export const scheduleInterview = catchAsync(async (req, res) => {
     panelSubject: panel_subject ?? null,
     panelBody: panel_body ?? null,
     actedBy: req.user?.id,
+    // L14: JD, CV and report so far to the panel unless the box was unticked.
+    sendPack: send_pack !== false,
+    user: req.user,
   });
   return success(res, result, 'Interview scheduled successfully');
 });
@@ -490,7 +496,7 @@ export const rescheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name,
-    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and new interview start time are required.', 400);
@@ -511,6 +517,8 @@ export const rescheduleInterview = catchAsync(async (req, res) => {
     panelSubject: panel_subject ?? null,
     panelBody: panel_body ?? null,
     actedBy: req.user?.id,
+    sendPack: send_pack !== false,
+    user: req.user,
   });
   return success(res, result, 'Interview rescheduled successfully');
 });
@@ -607,6 +615,21 @@ export const listUnresolvedInterviews = catchAsync(async (req, res) => {
  * Manually dispatches the scorecard link (only meaningful once the interview is
  * confirmed held). Idempotent — a second call is a no-op.
  */
+/**
+ * POST /api/pipeline/interview/:scheduleId/send-pack
+ * L14: send the role's JD, the CV and the report so far (the redacted dossier,
+ * with no-login recording links) to the panel of a round that is already
+ * booked: one booked before this feature, or a panel that should see a
+ * scorecard that arrived after their invite. Audited like a dossier download.
+ */
+export const sendPanelPack = catchAsync(async (req, res) => {
+  const scheduleId = parseInt(req.params.scheduleId, 10);
+  if (Number.isNaN(scheduleId)) throw new AppError('Invalid interview id.', 400);
+  const { sendPanelPackForBooking } = await import('../services/interviewPanelPack.service.js');
+  const result = await sendPanelPackForBooking(scheduleId, req.user);
+  return success(res, result, 'Sent to the interview panel');
+});
+
 export const sendScorecard = catchAsync(async (req, res) => {
   const scheduleId = parseInt(req.params.scheduleId, 10);
   if (Number.isNaN(scheduleId)) throw new AppError('Invalid interview id.', 400);
@@ -895,6 +918,24 @@ export const revokeRecordingShareLink = catchAsync(async (req, res) => {
   }
   const result = await revokeShareLink(id, linkId, req.user);
   return success(res, result, result.already_revoked ? 'That link was already revoked' : 'Share link revoked');
+});
+
+/**
+ * POST /api/pipeline/:id/recordings/:recordingId/share-link
+ * The no-login link for one recording, to paste into an email for someone with
+ * no ATS account (L13). Reuses a live link; creates one only when none is live.
+ * Returns the link and a ready-to-paste message (with the JD when the role has
+ * one). Noted on the candidate's timeline either way.
+ */
+export const createRecordingShareLink = catchAsync(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const recordingId = parseInt(req.params.recordingId, 10);
+  if (Number.isNaN(id) || Number.isNaN(recordingId)) throw new AppError('Invalid id.', 400);
+  if (!canViewRecordings(req.user?.role)) {
+    throw new AppError('You do not have permission to share interview recordings.', 403);
+  }
+  const result = await shareLinkForRecording(id, recordingId, req.user);
+  return success(res, result, result.created ? 'Share link created' : 'Share link copied');
 });
 
 /**

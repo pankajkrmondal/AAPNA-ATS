@@ -9,6 +9,7 @@ import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import * as hrUploadService from '../services/hrUpload.service.js';
+import { getDuplicateComparison } from '../services/duplicateReview.service.js';
 import * as uploadJobService from '../services/uploadJob.service.js';
 import { partitionBySignature } from '../utils/fileSignature.js';
 import runExport from '../exports/runExport.js';
@@ -267,10 +268,26 @@ export const getUploadJobs = catchAsync(async (req, res) => {
   const processing = (byStatus.Processing || 0) + (byStatus.Queued || 0) + (byStatus.Uploaded || 0);
   const completed = byStatus.Completed || 0;
 
+  // A pending duplicate's matched candidate (L09), so the Review window can link
+  // to the existing profile (L10). HR page only: the vendor page hands out no
+  // profile links.
+  const pendingTmpIds = rows.filter((r) => r.cv_tmp_id && r.action_required).map((r) => r.cv_tmp_id);
+  const matchedByTmp = new Map(pendingTmpIds.length
+    ? (await prisma.rpa_cv_tmp.findMany({
+      where: { id: { in: pendingTmpIds } },
+      select: { id: true, matched_cv_id: true },
+    })).map((t) => [String(t.id), t.matched_cv_id])
+    : []);
+  const serialize = (r) => {
+    const job = uploadJobService.serializeJob(r);
+    const matched = r.cv_tmp_id ? matchedByTmp.get(String(r.cv_tmp_id)) : null;
+    return matched ? { ...job, matched_cv_id: String(matched) } : job;
+  };
+
   return res.status(200).json({
     status: 'success',
     message: 'Upload jobs retrieved',
-    data: rows.map(uploadJobService.serializeJob),
+    data: rows.map(serialize),
     stats: { actionRequired: actionCount, total: baseTotal, processing, completed },
     pagination: {
       page: pageNum,
@@ -384,6 +401,17 @@ export const mergeDuplicates = catchAsync(async (req, res) => {
 });
 
 /**
+ * @desc    The duplicate Review window's comparison: the candidate already in the
+ *          ATS next to this upload, field by field, with what Merge will do (L09).
+ * @route   GET /api/hr-upload/duplicates/:tmpId/compare
+ * @access  Private (staff only)
+ */
+export const compareDuplicate = catchAsync(async (req, res) => {
+  const result = await getDuplicateComparison(req.params.tmpId);
+  return success(res, result, 'Duplicate comparison retrieved');
+});
+
+/**
  * @desc    Delete selected duplicates from review queue
  * @route   POST /api/hr-upload/duplicates/delete
  * @access  Private (HR, Admin)
@@ -392,6 +420,6 @@ export const deleteDuplicates = catchAsync(async (req, res) => {
   const { ids } = req.body;
   const authHeader = req.headers.authorization || '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
-  const result = await hrUploadService.deleteDuplicates(ids, token);
+  const result = await hrUploadService.deleteDuplicates(ids, token, req.user);
   return success(res, result, 'Duplicate candidates deleted successfully');
 });

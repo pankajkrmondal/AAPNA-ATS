@@ -74,6 +74,39 @@ export const CV_CONTACT_FIELDS = Object.freeze([
 ]);
 
 /**
+ * The recruiter's own per-round notes on rpa_cv (L12): the "Tech round 1 …"
+ * fields that Search Candidate edits and the drawer lists under "Uploaded
+ * scores". Each is mapped to the pipeline stage it belongs to, so the pack
+ * prints it under that round. An edited Tech 1 feedback lives HERE, not on a
+ * scorecard (scorecards are submit-once), which is why it never reached the
+ * dossier before.
+ *
+ * HRQuickcomments and the Heat / IQ / Tech scores stay internal on purpose:
+ * they are recruiter shorthand, not feedback written for an interviewer.
+ *
+ * @type {ReadonlyArray<[string, string]>} [rpa_cv column, stage_key]
+ */
+export const CV_ROUND_NOTE_FIELDS = Object.freeze([
+  ['TechRoundOne', 'tech1'],
+  ['TechRoundTwo', 'tech2'],
+  ['TechRoundThree', 'tech3'],
+  ['HRInterview', 'hr_round'],
+  ['ManagerialOrCEOFeedback', 'ceo'],
+]);
+
+/**
+ * The non-empty round notes of one candidate, in pipeline order.
+ * @param {object|null} cv - an rpa_cv row selected with CV_ROUND_NOTE_FIELDS
+ * @returns {Array<{ field: string, stage_key: string, value: string }>}
+ */
+export function pickRoundNotes(cv) {
+  if (!cv) return [];
+  return CV_ROUND_NOTE_FIELDS
+    .map(([field, stage_key]) => ({ field, stage_key, value: cv[field] == null ? '' : String(cv[field]).trim() }))
+    .filter((n) => n.value !== '');
+}
+
+/**
  * Key names that must never appear anywhere in a dossier model — asserted, not
  * merely omitted (plan §8.2).
  *
@@ -336,7 +369,9 @@ export default {
   FORBIDDEN_OBJECT_KEYS,
   FORBIDDEN_KEY_PATTERNS,
   isForbiddenKey,
+  CV_ROUND_NOTE_FIELDS,
   pickCvProfile,
+  pickRoundNotes,
   assertNoForbiddenFields,
   redactionSummary,
 };

@@ -523,6 +523,9 @@ model rpa_cv_tmp {
   /// JD of the upload this duplicate came from; the merge tags it (N14).
   mrf_id                       BigInt?
   mrf                          rpa_mrf?                 @relation(fields: [mrf_id], references: [id], onUpdate: NoAction)
+  /// L09: the existing rpa_cv candidate this staged duplicate matched at upload.
+  /// No foreign key: the merge re-checks it still exists (DDL 2026-10-23-duplicate-match-id.sql).
+  matched_cv_id                BigInt?
 
   @@index([resume_tsvector], map: "idx_rpa_cv_tmp_resume_tsvector", type: Gin)
   @@index([reviewStatus], map: "idx_rpa_cv_tmp_review_status")

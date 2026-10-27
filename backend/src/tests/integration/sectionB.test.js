@@ -180,4 +180,50 @@ describe('section B', () => {
     assert.deepEqual(await tagsOf(existing.id), [{ mrf_id: jd.id, source: 'vendor_portal' }]);
     assert.equal(await prisma.rpa_cv_tmp.count({ where: { id: tmp.id } }), 0, 'the duplicate row is gone');
   });
+
+  test('L09: the comparison shows both sides, and merge updates the candidate the recruiter was shown', async () => {
+    // Two candidates share a phone, the case where the old LIMIT-1 match could
+    // land on either. The upload recorded which one it matched.
+    const shown = await cv('B Compare Shown', { ContactNumber: '9876500022', CurrentLocation: 'Pune' });
+    const other = await cv('B Compare Other', { ContactNumber: '9876500022', CurrentLocation: 'Delhi' });
+    const tmp = await prisma.rpa_cv_tmp.create({
+      data: {
+        Name: 'B Compare Shown', EmailID: 'b.compare.new@example.invalid', ContactNumber: '9876500022',
+        CurrentLocation: 'Bengaluru', source: 'hr_manual_upload', last_action_context: 'hr_manual_upload',
+        MetaData: TAG, matched_cv_id: shown.id, createdAt: new Date(), modifiedAt: new Date(),
+      },
+    });
+    made.tmps.push(tmp.id);
+
+    const { getDuplicateComparison } = await import('../../services/duplicateReview.service.js');
+    const cmp = await getDuplicateComparison(Number(tmp.id));
+    assert.equal(cmp.existing.id, Number(shown.id));
+    assert.deepEqual(cmp.matched_by, ['phone']);
+    const loc = cmp.fields.find((f) => f.field === 'CurrentLocation');
+    assert.deepEqual([loc.existing, loc.incoming, loc.change, loc.on_merge], ['Pune', 'Bengaluru', 'updated', 'replaced']);
+    assert.equal(cmp.fields.find((f) => f.field === 'EmailID').on_merge, 'combined');
+
+    await mergeDuplicates([Number(tmp.id)], null, { email: 'section-b@example.invalid', username: 'section-b-test' });
+    const after = await prisma.rpa_cv.findUnique({ where: { id: shown.id } });
+    assert.equal(after.CurrentLocation, 'Bengaluru');
+    assert.match(after.EmailID, /b\.compare\.new@example\.invalid/);
+    assert.equal((await prisma.rpa_cv.findUnique({ where: { id: other.id } })).CurrentLocation, 'Delhi', 'the other candidate is untouched');
+  });
+
+  test('L09: a row staged before the matched id existed is still compared, by email', async () => {
+    const existing = await cv('B Compare Legacy', { CurrentLocation: 'Noida' });
+    const tmp = await prisma.rpa_cv_tmp.create({
+      data: {
+        Name: 'B Compare Legacy', EmailID: existing.EmailID, CurrentLocation: 'Noida',
+        source: 'vendor_portal', MetaData: TAG, createdAt: new Date(), modifiedAt: new Date(),
+      },
+    });
+    made.tmps.push(tmp.id);
+    const { getDuplicateComparison } = await import('../../services/duplicateReview.service.js');
+    const cmp = await getDuplicateComparison(Number(tmp.id));
+    assert.equal(cmp.existing.id, Number(existing.id));
+    assert.deepEqual(cmp.matched_by, ['email']);
+    assert.equal(cmp.fields.find((f) => f.field === 'CurrentLocation').change, 'same');
+    await assert.rejects(getDuplicateComparison(999999999), (err) => err.statusCode === 404);
+  });
 });

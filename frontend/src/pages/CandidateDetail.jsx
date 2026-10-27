@@ -369,13 +369,18 @@ export default function CandidateDetail() {
             navigate('/analytics');
           } else if (fromPage === 'dashboard') {
             navigate('/dashboard');
+          } else if (fromPage === 'hr-upload') {
+            navigate('/hr-upload');
           } else {
             navigate('/candidates');
           }
         }}
         style={{ marginBottom: 16, borderRadius: 8, fontWeight: 500 }}
       >
-        {fromPage === 'analytics' ? 'Back to Analytics' : fromPage === 'dashboard' ? 'Back to Dashboard' : 'Back to Candidates'}
+        {fromPage === 'analytics' ? 'Back to Analytics'
+          : fromPage === 'dashboard' ? 'Back to Dashboard'
+            : fromPage === 'hr-upload' ? 'Back to HR Manual Upload'
+              : 'Back to Candidates'}
       </Button>
 
       {/* Header card — this page's hero-analog, so it carries the cursor

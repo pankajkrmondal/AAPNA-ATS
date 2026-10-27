@@ -32,13 +32,14 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   Alert, App as AntApp, Avatar, Button, Card, Checkbox, Collapse, DatePicker, Drawer, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Row, Col, Select, Space, Spin, Tag, Timeline, Tooltip, Typography,
 } from 'antd';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
-  ExclamationCircleOutlined, FileTextOutlined, HistoryOutlined, LinkOutlined, LockOutlined, MailOutlined, PauseCircleOutlined,
-  PlayCircleOutlined, SendOutlined, StepForwardOutlined, StopOutlined, SwapOutlined, UndoOutlined, UserOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, HistoryOutlined, LinkOutlined, LoadingOutlined, LockOutlined, MailOutlined, PauseCircleOutlined,
+  PlayCircleOutlined, SendOutlined, ShareAltOutlined, StepForwardOutlined, StopOutlined, SwapOutlined, UndoOutlined, UserOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -65,6 +66,8 @@ import MoveJdModal from './MoveJdModal';
 import EarlierAttemptPanel from './EarlierAttemptPanel';
 import { REDO_EXCLUDED_STAGE_KEYS } from './stageMove';
 import EarlierRolesSection, { useRelatedJourneys, roundSummary } from './EarlierRolesSection';
+import PendingScorecardLinkActions from './PendingScorecardLinkActions';
+import { FORMS_LINKS_ENABLED } from '../../utils/featureFlags';
 
 /**
  * The email_error the server records when the recruiter unticks "Send email
@@ -975,6 +978,9 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   const [cxlEmail, setCxlEmail] = useState({
     candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false,
   });
+  // L14: the JD, CV and report so far go to the panel with the invite. On by
+  // default; the recruiter can untick it per booking.
+  const [sendPanelPack, setSendPanelPack] = useState(true);
   // Which preview payload schedEmail/cxlEmail currently reflect. The body
   // editors freeze their srcDoc on mount, so they must wait for the adopting
   // effect below to land — same guard as emailStateForKey in the outcome modal.
@@ -1586,6 +1592,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         candidate_body: schedEmail.candidateBody,
         panel_subject: schedEmail.panelSubject,
         panel_body: schedEmail.panelBody,
+        send_pack: sendPanelPack,
       };
       return mode === 'reschedule'
         ? pipelineService.rescheduleInterview(pipelineId, payload)
@@ -1875,6 +1882,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     setInterviewerEmailTouched(false);
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
+    setSendPanelPack(true);
     setInterviewOpen(true);
   };
 
@@ -1893,6 +1901,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     setInterviewerEmailTouched(false);
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
+    setSendPanelPack(true);
     setInterviewOpen(true);
   };
 
@@ -2404,7 +2413,14 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 {i === 1 && isSchedulableStageKey(stage.stage_key) && interviewSchedule?.teams_join_url
                   && !interviewSchedule.occurrence_status && (
                   <div className="cp-pipeline-step__extra">
-                    <TeamsDetails schedule={interviewSchedule} />
+                    <TeamsDetails
+                      pipelineId={pipelineId}
+                      schedule={interviewSchedule}
+                      candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
+                      stageLabel={stage.label}
+                      role={pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline?.rpa_shortlisted_candidates?.position_applied}
+                      jdLink={pipeline?.rpa_shortlisted_candidates?.mrf?.jd_document_link}
+                    />
                   </div>
                 )}
                 {/* The recording outlives the join link: the Teams card above
@@ -3597,6 +3613,20 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
             allStages={allStages}
           />
 
+          {/* L14: what the panel receives with the invite. */}
+          {stageSendsInvites(selectedStageKey) && (
+            <div>
+              <Checkbox checked={sendPanelPack} onChange={(e) => setSendPanelPack(e.target.checked)}>
+                Send the JD, CV and report so far to the panel
+              </Checkbox>
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 2, marginLeft: 24 }}>
+                Attached to the panel&apos;s invite: the role&apos;s JD and the candidate&apos;s CV, plus the report so far
+                (earlier scorecards, AI screening, assessments, no-login recording links) once an earlier round has
+                results. The report leaves out CTC and the candidate&apos;s contact details. The candidate&apos;s own invite is unchanged.
+              </Text>
+            </div>
+          )}
+
           {/* Editable emails — prefilled from the seeded templates, tweakable
               before send, exactly like the Approve outcome flow. Hidden on
               manually-coordinated rounds, which send nothing. */}
@@ -4269,8 +4299,34 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
  * applied, the recruiter can still start the recording by hand — but only if
  * they know, and only while the interview has not happened yet.
  */
-function TeamsDetails({ schedule }) {
-  const { message } = AntApp.useApp();
+function TeamsDetails({ pipelineId, schedule, candidateName, stageLabel, role, jdLink }) {
+  const { message, modal } = AntApp.useApp();
+  const queryClient = useQueryClient();
+  const [sendingPack, setSendingPack] = useState(false);
+
+  // L14: the JD, CV and report so far for a panel booked before the pack
+  // existed, or one that should see a scorecard that arrived after its invite.
+  const sendPackToPanel = () => {
+    modal.confirm({
+      title: 'Send the JD, CV and report so far to the panel?',
+      content: `This emails ${schedule.interviewer_email || 'the panel'} the role's JD, the candidate's CV and, when earlier rounds have results, the report so far (no CTC, no contact details) with no-login recording links. It is recorded on the candidate's timeline.`,
+      okText: 'Send',
+      onOk: async () => {
+        setSendingPack(true);
+        try {
+          const res = await pipelineService.sendPanelPack(schedule.id);
+          const s = res.data?.data?.summary || {};
+          const sent = [s.jd === 'attached' && 'JD', s.cv === 'attached' && 'CV', s.report && 'report so far'].filter(Boolean);
+          message.success(`Sent to the panel${sent.length ? `: ${sent.join(', ')}` : ''}.`);
+          queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
+        } catch (err) {
+          message.error(err?.response?.data?.message || 'Could not send to the panel.');
+        } finally {
+          setSendingPack(false);
+        }
+      },
+    });
+  };
   const copy = (label, value) => {
     if (!value) return;
     navigator.clipboard?.writeText(value).then(
@@ -4278,6 +4334,27 @@ function TeamsDetails({ schedule }) {
       () => message.error('Could not copy'),
     );
   };
+
+  // L13: everything someone outside the ATS needs to join, in one paste. A
+  // Teams join link needs no ATS sign-in, so this works for anyone it is sent
+  // to; the JD rides along so the reader knows the role.
+  const copyJoinDetails = async () => {
+    const who = [candidateName, stageLabel].filter(Boolean).join(' · ');
+    const start = schedule.scheduled_start_at;
+    const end = schedule.scheduled_end_at;
+    const lines = [
+      `Interview${who ? `: ${who}` : ''}${role ? ` (${role})` : ''}`,
+      start ? `When: ${fmtDateTime(start)}${end ? ` to ${fmtTime(end)}` : ''}` : null,
+      `Join on Microsoft Teams: ${schedule.teams_join_url}`,
+      [schedule.teams_meeting_id && `Meeting ID: ${schedule.teams_meeting_id}`, schedule.teams_passcode && `Passcode: ${schedule.teams_passcode}`]
+        .filter(Boolean).join(' · ') || null,
+      jdLink ? `Job description: ${jdLink}` : null,
+    ].filter(Boolean);
+    const ok = await copyToClipboard(lines.join('\n'));
+    if (ok) message.success('Join details copied. The Teams link works without an ATS sign-in.');
+    else message.error('Could not copy');
+  };
+
   return (
     <div style={{ border: '1px solid var(--ink-3)', borderRadius: 8, padding: '8px 12px', marginTop: 4 }}>
       <Text strong style={{ fontSize: 12.5, display: 'block', marginBottom: 4 }}>Microsoft Teams meeting</Text>
@@ -4285,6 +4362,18 @@ function TeamsDetails({ schedule }) {
         <Button size="small" type="primary" icon={<LinkOutlined />} href={schedule.teams_join_url} target="_blank" rel="noopener noreferrer">
           Join
         </Button>
+        <Tooltip title="Copy the join link, time, meeting ID, passcode and the JD link, ready to paste into an email for someone outside the ATS.">
+          <Button size="small" icon={<CopyOutlined />} onClick={copyJoinDetails}>
+            Copy join details
+          </Button>
+        </Tooltip>
+        {schedule.id && schedule.interviewer_email && (
+          <Tooltip title="Email the panel the role's JD, the CV and the report so far (earlier rounds).">
+            <Button size="small" icon={<SendOutlined />} loading={sendingPack} onClick={sendPackToPanel}>
+              Send JD, CV &amp; report to panel
+            </Button>
+          </Tooltip>
+        )}
         {schedule.teams_meeting_id && (
           <Tooltip title="Click to copy">
             <Tag style={{ cursor: 'pointer' }} onClick={() => copy('Meeting ID', schedule.teams_meeting_id)}>
@@ -4688,6 +4777,8 @@ function RoundRecordings({ pipelineId, stageKey, stageLabel, recordings }) {
  */
 function RecordingLinks({ pipelineId, recordings, onPlay }) {
   const { message } = AntApp.useApp();
+  const queryClient = useQueryClient();
+  const [sharingId, setSharingId] = useState(null);
   const mine = recordings || [];
 
   const copyLink = async (r) => {
@@ -4696,9 +4787,31 @@ function RecordingLinks({ pipelineId, recordings, onPlay }) {
       // Says what was copied, because it is not the video file: someone who
       // expects a raw media link would otherwise paste this and wonder why the
       // recipient landed on a sign-in page.
-      message.success('Recording link copied — the person you send it to signs in to the ATS to watch it.');
+      message.success('ATS link copied — the person you send it to signs in to the ATS to watch it.');
     } else {
       message.error('Could not copy the link.');
+    }
+  };
+
+  // L13: the no-login link, for someone with no ATS account (a client, an
+  // external interviewer, a manager reading Outlook). The server reuses a live
+  // link or mints one, and hands back a ready-to-paste message with the JD.
+  const copyOutsideLink = async (r) => {
+    setSharingId(r.id);
+    try {
+      const res = await pipelineService.createRecordingShareLink(pipelineId, r.id);
+      const link = res.data?.data || {};
+      const ok = await copyToClipboard(link.message || link.url);
+      if (ok) {
+        message.success(`Copied a link that works without signing in (${(link.summary || '').toLowerCase()}). Revoke it any time under Shared recording links.`, 6);
+      } else {
+        message.error('The link was created, but it could not be copied. Find it under Shared recording links.');
+      }
+      queryClient.invalidateQueries({ queryKey: ['recording-share-links', pipelineId] });
+    } catch (err) {
+      message.error(err?.response?.data?.message || 'Could not create the share link.');
+    } finally {
+      setSharingId(null);
     }
   };
 
@@ -4747,7 +4860,28 @@ function RecordingLinks({ pipelineId, recordings, onPlay }) {
                 }}
                 style={{ cursor: 'pointer' }}
               >
-                Copy link
+                Copy ATS link
+              </Tag>
+            </Tooltip>
+          )}
+          {r.playable && (
+            <Tooltip title="Copy a message with a link that works WITHOUT signing in, for someone outside the ATS. The link works for 14 days, every view is recorded on this candidate's timeline, and you can revoke it under Shared recording links.">
+              <Tag
+                color="blue"
+                className="cp-recording-copy"
+                icon={sharingId === r.id ? <LoadingOutlined /> : <ShareAltOutlined />}
+                role="button"
+                tabIndex={0}
+                onClick={() => { if (sharingId === null) copyOutsideLink(r); }}
+                onKeyDown={(e) => {
+                  if ((e.key === 'Enter' || e.key === ' ') && sharingId === null) {
+                    e.preventDefault();
+                    copyOutsideLink(r);
+                  }
+                }}
+                style={{ cursor: sharingId === null ? 'pointer' : 'wait' }}
+              >
+                Copy link for outside the ATS
               </Tag>
             </Tooltip>
           )}
@@ -4929,6 +5063,7 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                         </Text>
                       )}
                     </div>
+                    <PendingScorecardLinkActions pending={p} pipelineId={pipelineId} />
                     {/* The recording belongs here MORE than on a scored round,
                         not less: with no written feedback yet, watching is the
                         only way to know how the interview went. Leaving it off
@@ -4942,6 +5077,11 @@ function ScorecardReportModal({ open, onClose, pipelineId }) {
                     />
                   </div>
                 ))}
+                {FORMS_LINKS_ENABLED && (
+                  <Link to={`/forms-links?candidate=${pipelineId}`} onClick={onClose} style={{ fontSize: 12 }}>
+                    All links for this candidate →
+                  </Link>
+                )}
               </Space>
             </Card>
           )}

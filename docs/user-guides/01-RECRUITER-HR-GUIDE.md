@@ -16,10 +16,11 @@ The pictures show **sample people**; real names and contact details are replaced
 7. [Candidate Screening](#7-candidate-screening)
 8. [Candidate Pipeline](#8-candidate-pipeline)
 9. [Recruitment Analytics](#9-recruitment-analytics)
-10. [Email Templates](#10-email-templates)
-11. [Settings](#11-settings)
-12. [Referral candidates](#12-referral-candidates)
-13. [When something goes wrong](#13-when-something-goes-wrong)
+10. [Forms & Links: finding a link you sent](#10-forms--links-finding-a-link-you-sent)
+11. [Email Templates](#11-email-templates)
+12. [Settings](#12-settings)
+13. [Referral candidates](#13-referral-candidates)
+14. [When something goes wrong](#14-when-something-goes-wrong)
 
 ---
 
@@ -242,7 +243,26 @@ Read-only reports. Nothing here changes a candidate or sends an email. Full defi
 
 The six numbers at the top are **all-time totals** across every MRF.
 
-## 10. Email Templates
+## 10. Forms & Links: finding a link you sent
+Every link the ATS has emailed, in one list: interviewer scorecards, Teams meetings, recording links, document uploads, complete-profile forms, Zeko interviews, Evalground tests, MRF request forms and MRF approvals. Use it when someone says "I never got the link", or when you want to paste a link into WhatsApp or Teams.
+
+- **Find it:** type a candidate, interviewer, approver, email, role or MRF number in the search box. Search looks at every link, however old. Or press **Ctrl+K** anywhere, type a name, and pick **Find a link for "…"**.
+- **The four tiles** at the top (waiting, expiring within 48 h, expired before a response, not delivered) filter the list. Click one again to clear it.
+- **Tabs** split the list by who the link went to. **Standing forms** holds the links that are the same for everyone: the blank MRF form, sign-in, forgot password, and the JD and test paper of every open MRF.
+- By default the list shows links that are **open or expired**. Use the status buttons for done or closed ones, **Sent** for a date range, and **My candidates** for the journeys you shortlisted.
+- **Complete-profile forms** are hidden while you browse, because the ATS sends one to every upload with missing details. Search for the candidate, or switch on the chip, to see theirs.
+
+**What you can do with a link**
+- **Copy link**, or **Copy with message** (the arrow beside it) for a ready-to-paste note: who it is for, the round, the deadline. Each copy is noted on the candidate's timeline, so the team can see who shared what.
+- **Re-send** emails the same link again. **Renew & re-send** brings an expired scorecard back for 7 days. **Revoke** stops a recording link at once. The ATS asks before anything is emailed.
+- **MRF approval links are never copied.** Whoever opens one decides in the approver's name. Use **Re-send approval links** instead: each approver gets a new personal link, and the old ones stop working.
+- Scorecard and recording links can be copied but not opened from here, because opening one would count as the interviewer opening it.
+
+**Shortcuts:** the **Still awaiting feedback** card in the candidate's scorecard report has Copy, Re-send and Renew for each round, plus **All links for this candidate**. The MRF details window shows the hiring manager's form link. The Dashboard's **Needs your attention** shows how many links are waiting for a response.
+
+If you cannot see scorecards, meetings or documents here, you do not have the Candidate Pipeline. Ask your admin to switch it on.
+
+## 11. Email Templates
 The text of every email the ATS sends: shortlist, outcome emails, interview invites and reminders, document requests, and more.
 
 ![Email Templates](images/recruiter-10-email-templates.jpg)
@@ -253,7 +273,7 @@ The text of every email the ATS sends: shortlist, outcome emails, interview invi
 
 Only admins can create new templates. To see which emails were sent and opened, use **Recruitment Analytics → Email Delivery**.
 
-## 11. Settings
+## 12. Settings
 
 ![Settings](images/recruiter-11-settings.jpg)
 
@@ -269,7 +289,7 @@ Only admins can create new templates. To see which emails were sent and opened, 
 
 Changes apply to everyone. Each section explains in plain words what its setting will do before you save.
 
-## 12. Referral candidates
+## 13. Referral candidates
 When an AAPNA employee refers someone, record it so that it counts at the final decision, while interviewers never see it.
 
 1. **Search Candidate** → open the person → **Edit** → **Referral** section.
@@ -278,7 +298,7 @@ When an AAPNA employee refers someone, record it so that it counts at the final 
 
 **Two rules:** never write the referral on the resume file itself (it travels in the dossier), and don't use the "Job Source" field for it. Only an admin can remove a referral, with a reason. Full guide: [docs/reference/REFERRAL_CANDIDATE_RECRUITER_GUIDE.md](../reference/REFERRAL_CANDIDATE_RECRUITER_GUIDE.md).
 
-## 13. When something goes wrong
+## 14. When something goes wrong
 - **"Something went wrong… (ref: K7Q2MX)"**: copy the whole message, including the ref, and send it to the ATS team with what you were doing. The ref lets them see exactly what happened; you don't need a screenshot.
 - **A message without a ref** (e.g. "Email is required") is telling you what to fix on the form.
 - **A candidate you expected is missing from screening:** see the checklist at the end of [the screening rules](../Screening-Rules-for-RT.md).

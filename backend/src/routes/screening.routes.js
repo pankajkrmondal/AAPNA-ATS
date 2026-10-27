@@ -28,6 +28,15 @@ router.get('/roles', screeningController.getRoles);
 router.post('/roles/:id/search', screeningController.searchRoleCandidates);
 
 /**
+ * POST /api/screening/roles/:id/not-shown
+ * L11: the candidates the JD search left out, nearest misses first, each with
+ * the rules that removed them. Same body as the search, plus `reason` to list
+ * one rule's misses only. Read-only.
+ */
+router.post('/roles/:id/not-shown', screeningController.notShownForRole);
+router.post('/roles/:id/not-shown/export', exportLimiter, screeningController.exportNotShownForRole);
+
+/**
  * GET /api/screening/roles/:id/jd
  * The MRF's JD file as it would be attached to a keyword shortlist email (N17):
  * name and size, or why it cannot be attached. Also warms the attachment cache.
@@ -46,6 +55,14 @@ router.post('/roles/:id/export', exportLimiter, screeningController.exportRoleCa
  * Keyword-based candidate search and scoring
  */
 router.post('/keyword-search', screeningController.searchKeywordCandidates);
+
+/**
+ * POST /api/screening/keyword-not-shown
+ * L11: the candidates the keyword search left out, and why. Same filter body
+ * as the search, plus `reason`. Read-only.
+ */
+router.post('/keyword-not-shown', screeningController.notShownForKeyword);
+router.post('/keyword-not-shown/export', exportLimiter, screeningController.exportNotShownForKeyword);
 
 /**
  * POST /api/screening/keyword-export

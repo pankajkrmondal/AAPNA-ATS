@@ -104,6 +104,9 @@ router.post('/jobs/:id/reprocess', vendorController.reprocessJob);
 
 /** Recruiter review actions on the duplicate queue (staff only — never vendors) */
 router.post('/review/search', restrictTo(...STAFF_ROLES), vendorController.reviewSearch);
+/** Side-by-side comparison for the Review window (L09). Staff only: the existing
+ *  record may belong to another vendor or to internal HR. */
+router.get('/review/:tmpId/compare', restrictTo(...STAFF_ROLES), vendorController.reviewCompare);
 router.post('/review/merge', restrictTo(...STAFF_ROLES), vendorController.reviewMerge);
 router.post('/review/cancel', restrictTo(...STAFF_ROLES), vendorController.reviewCancel);
 

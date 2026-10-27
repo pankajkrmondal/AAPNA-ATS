@@ -80,6 +80,16 @@ const hrUploadService = {
   deleteDuplicates(ids) {
     return api.post('/hr-upload/duplicates/delete', { ids });
   },
+
+  /**
+   * The Review window's comparison (L09): the candidate already in the ATS next
+   * to this upload, field by field, with what Merge will do. Staff only.
+   * @param {number|string} tmpId - the rpa_cv_tmp id (job.cv_tmp_id)
+   * @returns {Promise}
+   */
+  compareDuplicate(tmpId) {
+    return api.get(`/hr-upload/duplicates/${tmpId}/compare`);
+  },
 };
 
 export default hrUploadService;

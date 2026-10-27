@@ -61,6 +61,8 @@ import LatestUploads from '../components/dashboard/LatestUploads';
 import OpenPositionsPulse from '../components/dashboard/OpenPositionsPulse';
 import dashboardService from '../services/dashboardService';
 import CommandPalette from '../components/dashboard/CommandPalette';
+import formsLinksService from '../services/formsLinksService';
+import { FORMS_LINKS_ENABLED } from '../utils/featureFlags';
 
 const { Title, Text } = Typography;
 
@@ -95,6 +97,17 @@ export default function Dashboard() {
     return () => { alive = false; };
   }, [isVendorUser]);
   const rolesNeedingAttention = pulse.data?.summary ? pulse.data.summary.at_risk + pulse.data.summary.watch : null;
+  // L08 (D8): "Links waiting for a response". null hides the row (flag off,
+  // vendor, or a role the endpoint refuses).
+  const [linksWaiting, setLinksWaiting] = useState(null);
+  useEffect(() => {
+    if (!FORMS_LINKS_ENABLED || isVendorUser) return undefined;
+    let alive = true;
+    formsLinksService.summary()
+      .then((res) => { if (alive) setLinksWaiting((res.data?.data || res.data)?.waiting ?? null); })
+      .catch(() => { if (alive) setLinksWaiting(null); });
+    return () => { alive = false; };
+  }, [isVendorUser]);
   const { brand } = useBrand();
   const navigate = useNavigate();
 
@@ -337,6 +350,7 @@ export default function Dashboard() {
             awaitingScreening={awaitingScreening}
             interviewsToday={interviewsToday}
             rolesNeedingAttention={rolesNeedingAttention}
+            linksWaiting={linksWaiting}
             onNavigate={navigate}
           />
         </Col>

@@ -6,6 +6,14 @@ import { resolveRecipients } from '../config/emailRecipients.js';
 import { getAccessToken } from './onedrive.service.js';
 import { approverNoteHtml } from '../utils/mrfApprovalRules.js';
 import { wrapBrandedEmail } from './emailLayout.service.js';
+import {
+  buildCredentialEmailBody, buildPasswordResetBody, CREDENTIAL_SUBJECTS, PASSWORD_RESET_SUBJECT,
+} from './accountEmailBodies.js';
+import {
+  approvalNote, buildMrfApprovalRequestBody, buildMrfDecisionNoticeBody, buildMrfOutcomeBody, buildMrfRequestBody,
+  buildMrfSubmissionHrBody, emailCallout, mrfDetailsTableFor,
+} from './mrfEmailBodies.js';
+import { fmtDate } from '../utils/dateFormat.js';
 import { MRF_HOLD_TEMPLATE_NAMES, MRF_HOLD_TEMPLATE_DEFAULTS } from './mrfHoldEmailTemplates.js';
 import { tracedFetch } from '../utils/externalCall.js';
 import { alertAllowed, ERROR_ALERT_COOLDOWN_MS, JOB_ALERT_COOLDOWN_MS } from '../utils/alertThrottle.js';
@@ -982,76 +990,14 @@ export async function sendMrfRequestEmail({ first_name, last_name, email, cc_ema
       introParagraph = `As discussed, we would like to initiate the hiring process for the <strong>${role}</strong> position.<br><br>We request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing.`;
     }
 
-    // Build final HTML body
-    const finalEmailBody = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
-.wrapper{max-width:620px;margin:28px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);}
-.top-bar{background:#7a922e;height:5px;}
-.header{padding:28px 40px 22px;text-align:center;border-bottom:1px solid #e8ede0;}
-.brand-mark{font-size:13px;font-weight:700;color:#7a922e;letter-spacing:1px;margin-bottom:4px;}
-.brand-mark span{color:#1a1a2e;}
-.cmmi{font-size:9px;font-weight:700;letter-spacing:3px;color:#7a922e;text-transform:uppercase;margin-bottom:14px;}
-.logo-img{height:48px;}
-.body{padding:32px 40px;}
-.greeting{font-size:16px;font-weight:700;color:#1a1a2e;margin-bottom:14px;}
-.intro{font-size:14px;color:#444;line-height:1.8;margin-bottom:26px;}
-.divider{border:none;border-top:1px solid #e8ede0;margin:0 0 24px;}
-.action-card{border:1px solid #e8ede0;border-left:4px solid #7a922e;border-radius:8px;padding:18px 20px;margin-bottom:14px;background:#f9fbf5;}
-.action-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#7a922e;margin-bottom:6px;}
-.action-desc{font-size:13px;color:#555;line-height:1.65;margin-bottom:14px;}
-.btn{display:inline-block;background:#7a922e;color:#ffffff!important;text-decoration:none;padding:10px 22px;border-radius:6px;font-size:13px;font-weight:700;}
-.btn-outline{display:inline-block;background:#fff;color:#7a922e!important;text-decoration:none;padding:9px 22px;border-radius:6px;font-size:13px;font-weight:700;border:1.5px solid #7a922e;}
-.note{margin-top:22px;padding:13px 16px;background:#fffdf0;border:1px solid #e8ede0;border-left:3px solid #7a922e;border-radius:6px;font-size:13px;color:#555;line-height:1.65;}
-.footer{background:#f4f6f9;border-top:1px solid #e8ede0;padding:20px 40px;text-align:center;}
-.footer-tagline{font-size:11px;font-style:italic;color:#7a922e;margin-bottom:6px;}
-.footer-text{font-size:11px;color:#999;line-height:1.7;}
-.footer-copy{font-size:10px;color:#bbb;margin-top:8px;}
-</style>
-</head>
-<body>
-<div class="wrapper">
-  <div class="top-bar"></div>
-  <div class="header">
-    <div class="brand-mark">◆ aapna<span>®</span></div>
-    <div class="cmmi">CMMIDEV/3 &nbsp;|&nbsp; CERTIFIED</div>
-    <img class="logo-img" src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" alt="AAPNA Infotech"/>
-  </div>
-  <div class="body">
-    <p class="greeting">Dear ${first_name},</p>
-    <div class="intro">${introParagraph}</div>
-    <hr class="divider"/>
-    <div class="action-card">
-      <div class="action-label">📄 Step 1 — Review the JD</div>
-      <div class="action-desc">We are sharing the existing Job Description for your reference. Please review and let us know if any changes are required. <strong>Kindly upload the updated/final JD in the MRF (Step 2).</strong></div>
-      <a class="btn-outline" href="${jd_doc_link}" target="_blank">View Job Description →</a>
-    </div>
-    <div class="action-card">
-      <div class="action-label">📋 Step 2 — Fill the MRF & Upload JD</div>
-      <div class="action-desc">Please open and complete the Manpower Requisition Form. <strong>Upload the actual Job Description</strong> directly within the form before submitting.</div>
-      <a class="btn" href="${MRF_FORM_URL}" target="_blank">Open MRF →</a>
-    </div>
-    <div class="note">
-      💡 Once the form is submitted & approved, we will proceed with creating and publishing the job opening. Please feel free to reach out if you need any assistance while completing the form.
-    </div>
-    <br/>
-    <p style="font-size:14px;color:#444;line-height:1.8;">Warm regards,<br/><strong>HR Team</strong><br/>AAPNA Infotech</p>
-  </div>
-  <div class="footer">
-    <p class="footer-tagline">Where Culture, Code, and Courage Come Together</p>
-    <p class="footer-text">This email was sent via AAPNA Infotech's Recruitment Portal.</p>
-    <p class="footer-copy">© 2025 AAPNA Infotech. All rights reserved.</p>
-  </div>
-</div>
-</body>
-</html>`;
-
     const subject = `New MRF Request`;
+
+    // L15: a body fragment inside the standard branded shell (was a hand-built
+    // document with its own header, logo and a "(c) 2025" footer).
+    const finalEmailBody = wrapBrandedEmail(
+      buildMrfRequestBody({ firstName: first_name, introHtml: introParagraph, jdLink: jd_doc_link, mrfFormUrl: MRF_FORM_URL }),
+      { title: subject },
+    );
 
     await sendGraphEmail({
       sender,
@@ -1091,8 +1037,7 @@ body{background:#f4f6f9;font-family:Arial,sans-serif;color:#1a1a2e;}
 }
 
 const DEFAULT_MRF_APPROVAL_INTRO = `We have received a new Manpower Requisition Form (MRF) request for your review and approval.<br><br>
-Kindly review the filled MRF and the attached Job Description and share your approval.
-Please review the filled MRF and attached JD and confirm your approval. Also, let us know whether this should be a permanent role or a different engagement model.<br><br>
+Kindly review the filled MRF and the attached Job Description and share your approval. Also, let us know whether this should be a permanent role or a different engagement model.<br><br>
 Also, please help define the priority of the role (High / Moderate / Low) as per the business need.`;
 
 /** The editable "MRF Approval Request" template (intro + subject), with the built-in defaults. */
@@ -1110,46 +1055,12 @@ const escapeHtml = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /**
- * The approval-request email body, shared by the shared-link flow and the
- * per-approver flow so the two cannot drift apart.
+ * The approval-request email, shared by the shared-link flow and the
+ * per-approver flow so the two cannot drift apart. L15: the body is a fragment
+ * (mrfEmailBodies.js) inside the standard branded shell, titled with the subject.
  */
-function renderMrfApprovalRequestHtml({ greeting, introText, approveLink, rejectLink, holdLink = null, bannerHtml = '', noteHtml = '', tableBody }) {
-  const holdButton = holdLink
-    ? `<a href="${holdLink}" style="background-color: #234e8c; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-left: 15px; display: inline-block;">Hold Requisition</a>`
-    : '';
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
-<style>
-body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }
-.wrapper { max-width: 650px; margin: 20px auto; border: 1px solid #e8ede0; border-radius: 8px; padding: 25px; background: #fff; }
-.header { border-bottom: 2px solid #7a922e; padding-bottom: 15px; margin-bottom: 20px; }
-.logo { font-size: 20px; font-weight: bold; color: #7a922e; }
-.intro { font-size: 14px; margin-bottom: 20px; }
-</style>
-</head>
-<body>
-<div class="wrapper">
-  <div class="header">
-    <div class="logo">AAPNA Requisition Portal</div>
-  </div>
-  ${bannerHtml}
-  <p><strong>${greeting}</strong></p>
-  <div class="intro">${introText}</div>
-  ${noteHtml}
-  <div style="margin: 24px 0; text-align: center;">
-    <a href="${approveLink}" style="background-color: #7a922e; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 15px; display: inline-block;">Approve Requisition</a>
-    <a href="${rejectLink}" style="background-color: #d9534f; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reject Requisition</a>
-    ${holdButton}
-  </div>
-  <hr style="border: none; border-top: 1px solid #e8ede0; margin: 20px 0;"/>
-  ${tableBody}
-</div>
-</body>
-</html>
-    `;
+function renderMrfApprovalRequestHtml({ subject, ...body }) {
+  return wrapBrandedEmail(buildMrfApprovalRequestBody(body), { title: subject });
 }
 
 /**
@@ -1171,11 +1082,12 @@ export async function sendMrfApprovalEmail({ mrfRecord, token, frontendUrl }) {
     const { introText, subject } = await loadMrfApprovalTemplate();
 
     const html = renderMrfApprovalRequestHtml({
+      subject,
       greeting: `Dear Abhijit Roy & Sanghamitra Roy,`,
       introText,
       approveLink,
       rejectLink,
-      tableBody: mrfRecord.emailbody || '',
+      tableBody: mrfDetailsTableFor(mrfRecord, fmtDate),
     });
 
     await sendGraphEmail({
@@ -1237,21 +1149,20 @@ export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherA
 
     // Same email as the first time, with a banner when the MRF is back from a
     // hold (plan D5: same subject, so it threads with the original request).
-    const bannerHtml = backFromHold ? `
-  <div style="background:#e7eef9; border:1px solid #9db6dd; border-radius:6px; padding:12px 14px; margin-bottom:18px; color:#1b3d6e; font-size:13px;">
-    <strong>Back from hold.</strong> Put on hold by ${escapeHtml(backFromHold.heldByName || 'an approver')}${backFromHold.heldAtLabel ? ` on ${escapeHtml(backFromHold.heldAtLabel)}` : ''} until ${escapeHtml(backFromHold.heldUntilLabel || '')}.
-    ${backFromHold.note ? `<br/>Note: &ldquo;${escapeHtml(backFromHold.note)}&rdquo;` : ''}
-    <br/>Please approve, reject or hold further.
-  </div>` : '';
+    const bannerHtml = backFromHold ? emailCallout(
+      `<strong>Back from hold.</strong> Put on hold by ${escapeHtml(backFromHold.heldByName || 'an approver')}${backFromHold.heldAtLabel ? ` on ${escapeHtml(backFromHold.heldAtLabel)}` : ''} until ${escapeHtml(backFromHold.heldUntilLabel || '')}.`
+      + `${backFromHold.note ? `<br/>Note: &ldquo;${escapeHtml(backFromHold.note)}&rdquo;` : ''}`
+      + '<br/>Please approve, reject or hold further.',
+      'info',
+    ) : '';
 
     const alsoSent = approverNoteHtml(otherApprovers);
-    const noteHtml = `
-  <p style="background:#f4f7ec; border-left:4px solid #7a922e; padding:10px 14px; border-radius:4px; font-size:13px;">
-    ${alsoSent ? `${alsoSent}<br/>` : ''}
-    These buttons are personal to you and record your decision under your name, so please do not forward this email.
-  </p>`;
+    const noteHtml = approvalNote(
+      `${alsoSent ? `${alsoSent} ` : ''}These buttons are personal to you and record your decision under your name, so please do not forward this email.`,
+    );
 
     const html = renderMrfApprovalRequestHtml({
+      subject,
       greeting: `Dear ${escapeHtml(approver.name)},`,
       introText,
       approveLink,
@@ -1259,7 +1170,7 @@ export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherA
       holdLink,
       bannerHtml,
       noteHtml,
-      tableBody: mrfRecord.emailbody || '',
+      tableBody: mrfDetailsTableFor(mrfRecord, fmtDate),
     });
 
     await sendGraphEmail({ sender, to: approver.email, subject, html });
@@ -1290,27 +1201,9 @@ export async function sendMrfPersonalApprovalEmail({ mrfRecord, approver, otherA
   }
 }
 
-/** Shared body for the two post-decision notices below. */
-function renderMrfDecisionNoticeHtml({ greeting, lead, decision, closing }) {
-  const comment = decision.comments
-    ? `<p><strong>Comment:</strong> ${escapeHtml(decision.comments)}</p>`
-    : '';
-  return `
-<html>
-  <body style="font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
-    <p>${greeting}</p>
-    <p>${lead}</p>
-    <table style="border-collapse: collapse; margin: 12px 0;">
-      <tr><td style="padding: 4px 12px 4px 0; color: #666;">Decision</td><td style="padding: 4px 0;"><strong>${escapeHtml(decision.word.toUpperCase())}</strong></td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #666;">By</td><td style="padding: 4px 0;">${escapeHtml(decision.byName)}</td></tr>
-      <tr><td style="padding: 4px 12px 4px 0; color: #666;">When</td><td style="padding: 4px 0;">${escapeHtml(decision.atIst)}</td></tr>
-      ${decision.untilLabel ? `<tr><td style="padding: 4px 12px 4px 0; color: #666;">On hold until</td><td style="padding: 4px 0;"><strong>${escapeHtml(decision.untilLabel)}</strong></td></tr>` : ''}
-    </table>
-    ${comment}
-    <p>${closing}</p>
-    <p>Regards,<br/>AAPNA Recruitment Team</p>
-  </body>
-</html>`;
+/** The two post-decision notices below: branded shell + mrfEmailBodies.js body (L15). */
+function renderMrfDecisionNoticeHtml({ subject, ...body }) {
+  return wrapBrandedEmail(buildMrfDecisionNoticeBody(body), { title: subject });
 }
 
 /**
@@ -1323,6 +1216,7 @@ export async function sendMrfAlreadyActionedEmail({ mrfRecord, recipient, decisi
   const subject = `${mrfLabel(mrfRecord)} – already ${decision.word.toUpperCase()} by ${decision.byName}`;
   try {
     const html = renderMrfDecisionNoticeHtml({
+      subject,
       greeting: `Dear ${escapeHtml(recipient.name)},`,
       lead: `The requisition <strong>${escapeHtml(mrfLabel(mrfRecord))}</strong> that was sent to you for approval has already been <strong>${escapeHtml(decision.word)}</strong>.`,
       decision,
@@ -1359,6 +1253,7 @@ export async function sendMrfDecisionConfirmationEmail({ mrfRecord, recipient, d
   try {
     const held = Boolean(decision.untilLabel);
     const html = renderMrfDecisionNoticeHtml({
+      subject,
       greeting: `Dear ${escapeHtml(recipient.name)},`,
       lead: `Your decision on <strong>${escapeHtml(mrfLabel(mrfRecord))}</strong> has been recorded and the HR team notified.`,
       decision,
@@ -1586,21 +1481,10 @@ export async function sendMrfSubmissionHrEmail({ mrfRecord }) {
     // Resolve HR-team recipients (prod -> HR team; non-prod -> internal test inbox)
     const { to: toEmail } = resolveRecipients('mrfSubmitHrNotify');
 
-    const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"/>
-<style>body { font-family: Calibri, Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; }</style>
-</head>
-<body>
-  <p>Hi Team,</p>
-  <p>This is an automated email. A new MRF has been submitted. You can quickly view the submitted details below:</p>
-  ${mrfRecord.emailbody || ''}
-</body>
-</html>
-    `;
-
     const subject = `New MRF Request - Approval Request`;
+
+    // L15: branded shell + mrfEmailBodies.js body (was a plain Calibri page).
+    const html = wrapBrandedEmail(buildMrfSubmissionHrBody({ tableBody: mrfDetailsTableFor(mrfRecord, fmtDate) }), { title: subject });
 
     await sendGraphEmail({ sender, to: toEmail, subject, html });
 
@@ -1658,55 +1542,15 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, hmEma
     }
 
     const statusText = approved ? 'Approved' : 'Declined';
-    // Escaped: the comment is typed on a PUBLIC page. The label text is also
-    // what the audit backfill parses, so keep "Comment from Management:".
-    const commentSection = comments
-      ? `<p><strong>Comment from Management:</strong> ${escapeHtml(comments)}</p>`
-      : '';
-    const decidedBySection = decidedBy
-      ? `<p><strong>${statusText} by:</strong> ${escapeHtml(decidedBy.name)} on ${escapeHtml(decidedBy.atIst)}</p>`
-      : '';
-
-    let outcomeBody = '';
-    if (approved) {
-      outcomeBody = `
-<html>
-  <body style="font-family: Calibri, sans-serif; font-size: 14px; color: #333;">
-    <p>Hi Team,</p>
-    <p>This is to formally inform you that Management has approved the request to proceed with the recruitment of additional manpower.</p>
-    ${decidedBySection}
-    ${commentSection}
-    <p>Please initiate the recruitment process as per company policies and the approved MRF details.</p>
-    <p>Thank you for your continued support, and we look forward to timely updates on the progress.</p>
-    <p>Best regards,<br>CEO, AAPNA</p>
-  </body>
-</html>
-      `;
-    } else {
-      outcomeBody = `
-<html>
-  <body style="font-family: Calibri, sans-serif; font-size: 14px; color: #333;">
-    <p>Hi Team,</p>
-    <p>This is to formally inform you that Management has reviewed the request for additional manpower and has decided not to proceed with it at this time.</p>
-    ${decidedBySection}
-    ${commentSection}
-    <p>Accordingly, please place the recruitment activity on hold until further instructions.</p>
-    <p>Thank you for your understanding.</p>
-    <p>Best regards,<br>CEO, AAPNA</p>
-  </body>
-</html>
-      `;
-    }
-
-    const html = `
-      ${outcomeBody}
-      <br><br>
-      ---------- Forwarded message ---------<br>
-      Subject: Re: New MRF Submission<br><br>
-      ${mrfRecord.emailbody || ''}
-    `;
-
     const subject = `${statusText}: New MRF Request`;
+
+    // L15: branded shell + mrfEmailBodies.js body. The comment (typed on a
+    // PUBLIC page) is escaped there, and the "Comment from Management:" label
+    // keeps the markup the audit backfill parses.
+    const html = wrapBrandedEmail(
+      buildMrfOutcomeBody({ approved, comments, decidedBy, tableBody: mrfDetailsTableFor(mrfRecord, fmtDate) }),
+      { title: subject },
+    );
 
     await sendGraphEmail({
       sender,
@@ -1745,7 +1589,7 @@ export async function sendMrfOutcomeEmail({ mrfRecord, approved, comments, hmEma
 
 /**
  * Sends login credentials or password change notifications to the user.
- * In staging/dev environments, the email is redirected to staging overrides.
+ * A NEVER_REDIRECT flow: it reaches the user's own inbox in every environment.
  */
 export async function sendCredentialEmail({ user, plainTextPassword, isNewUser = false }) {
   try {
@@ -1760,106 +1604,16 @@ export async function sendCredentialEmail({ user, plainTextPassword, isNewUser =
       return false;
     }
 
-    const actionText = isNewUser ? 'created' : 'updated';
-    const subject = isNewUser 
-      ? 'Your AAPNA ATS Account Credentials'
-      : 'Your AAPNA ATS Account Password Has Been Updated';
+    const subject = isNewUser ? CREDENTIAL_SUBJECTS.created : CREDENTIAL_SUBJECTS.updated;
 
     const loginUrl = config.cors.frontendUrl || 'https://ats.aapnainfotech.com';
 
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <style>
-    body {
-      font-family: Calibri, Arial, sans-serif;
-      font-size: 14px;
-      color: #333;
-      line-height: 1.6;
-    }
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px;
-      border: 1px solid #e8ede0;
-      border-radius: 5px;
-    }
-    .header {
-      background-color: #f7f9f6;
-      padding: 15px;
-      text-align: center;
-      border-bottom: 2px solid #7cb342;
-      margin-bottom: 20px;
-    }
-    .header h2 {
-      margin: 0;
-      color: #33691e;
-    }
-    .credential-box {
-      background-color: #f1f8e9;
-      border: 1px solid #c5e1a5;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 4px;
-    }
-    .credential-row {
-      margin-bottom: 8px;
-    }
-    .credential-label {
-      font-weight: bold;
-      display: inline-block;
-      width: 120px;
-    }
-    .footer {
-      font-size: 12px;
-      color: #777;
-      margin-top: 30px;
-      border-top: 1px solid #e8ede0;
-      padding-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h2>AAPNA Recruitment Process Automation</h2>
-    </div>
-    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
-    <p>Your AAPNA ATS account credentials have been ${actionText} by the Administrator. Please find your login details below:</p>
-    
-    <div class="credential-box">
-      <div class="credential-row">
-        <span class="credential-label">Portal URL:</span>
-        <a href="${loginUrl}">${loginUrl}</a>
-      </div>
-      <div class="credential-row">
-        <span class="credential-label">Username:</span>
-        <code>${user.username}</code>
-      </div>
-      <div class="credential-row">
-        <span class="credential-label">Email:</span>
-        <code>${user.email}</code>
-      </div>
-      <div class="credential-row">
-        <span class="credential-label">New Password:</span>
-        <code>${plainTextPassword}</code>
-      </div>
-    </div>
-    
-    <p>For security reasons, we recommend that you log in and change your password as soon as possible.</p>
-    <p>If you did not request this change, please contact the IT administrator immediately.</p>
-    
-    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
-    
-    <div class="footer">
-      This is an automated notification. Please do not reply directly to this email.
-    </div>
-  </div>
-</body>
-</html>
-    `;
+    // L16: a body fragment inside the standard branded shell, like every other
+    // AAPNA email (was a hand-built document with its own header).
+    const html = wrapBrandedEmail(
+      buildCredentialEmailBody({ user, plainTextPassword, isNewUser, loginUrl }),
+      { title: subject },
+    );
 
     // 1) Send email
     // NEVER_REDIRECT: account security — credentials go to the affected user in every env.
@@ -1909,98 +1663,10 @@ export async function sendPasswordResetEmail({ user, resetUrl }) {
       return false;
     }
 
-    const subject = 'Reset Your AAPNA ATS Password';
+    const subject = PASSWORD_RESET_SUBJECT;
 
-    const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8"/>
-  <style>
-    body {
-      font-family: Calibri, Arial, sans-serif;
-      font-size: 14px;
-      color: #333;
-      line-height: 1.6;
-    }
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px;
-      border: 1px solid #e8ede0;
-      border-radius: 5px;
-    }
-    .header {
-      background-color: #f7f9f6;
-      padding: 15px;
-      text-align: center;
-      border-bottom: 2px solid #7cb342;
-      margin-bottom: 20px;
-    }
-    .header h2 {
-      margin: 0;
-      color: #33691e;
-    }
-    .reset-box {
-      background-color: #f1f8e9;
-      border: 1px solid #c5e1a5;
-      padding: 20px;
-      margin: 20px 0;
-      border-radius: 4px;
-      text-align: center;
-    }
-    .reset-button {
-      display: inline-block;
-      background-color: #558b2f;
-      color: #ffffff !important;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 12px 28px;
-      border-radius: 4px;
-    }
-    .reset-link {
-      word-break: break-all;
-      font-size: 12px;
-      color: #555;
-      margin-top: 15px;
-    }
-    .footer {
-      font-size: 12px;
-      color: #777;
-      margin-top: 30px;
-      border-top: 1px solid #e8ede0;
-      padding-top: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h2>AAPNA Recruitment Process Automation</h2>
-    </div>
-    <p>Dear ${user.first_name || ''} ${user.last_name || ''},</p>
-    <p>We received a request to reset the password for your AAPNA ATS account. Click the button below to choose a new password:</p>
-
-    <div class="reset-box">
-      <a class="reset-button" href="${resetUrl}">Reset Password</a>
-      <div class="reset-link">
-        If the button doesn't work, copy and paste this link into your browser:<br/>
-        <a href="${resetUrl}">${resetUrl}</a>
-      </div>
-    </div>
-
-    <p>This link expires in <strong>30 minutes</strong> and can only be used once.</p>
-    <p>If you did not request a password reset, you can safely ignore this email — your password will not change.</p>
-
-    <p>Best regards,<br/>HR Admin Team<br/>AAPNA Infotech</p>
-
-    <div class="footer">
-      This is an automated notification. Please do not reply directly to this email.
-    </div>
-  </div>
-</body>
-</html>
-    `;
+    // L16: body fragment + the standard branded shell (see sendCredentialEmail).
+    const html = wrapBrandedEmail(buildPasswordResetBody({ user, resetUrl }), { title: subject });
 
     // 1) Send email
     // NEVER_REDIRECT: account security — a reset link is only useful in the owner's inbox.

@@ -441,7 +441,7 @@ describe('renderDossierHtml — recordings as no-login links (Phase 4, §6.5)', 
   test('the workbook carries the link too, so "Spreadsheet only" loses nothing', () => {
     const book = XLSX.read(renderDossierWorkbook(withLink()), { type: 'buffer' });
     const flat = JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Summary, { header: 1 }));
-    assert.ok(flat.includes('Interview recordings'));
+    assert.ok(flat.includes('INTERVIEW RECORDINGS'), 'the recordings heading row');
     assert.ok(flat.includes('/api/recording-share/'));
   });
 
@@ -627,28 +627,40 @@ describe('renderDossierWorkbook — the four sheets in plan §3.2', () => {
     assert.deepEqual(book.SheetNames, ['Summary', 'Scorecards', 'Stage History', 'Assessments']);
   });
 
-  test('Summary is transposed — Section | Field | Value', () => {
+  // L12 (Harish, 23 Oct): a dossier is ONE candidate, so every sheet reads top
+  // to bottom: column A the field, column B the value, a heading row per block.
+  test('every sheet is two columns, Field | Value (L12)', () => {
+    for (const name of book.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1 });
+      assert.deepEqual(rows[0], ['Field', 'Value'], name);
+      assert.ok(rows.every((r) => r.length <= 2), `${name}: no row wider than two columns`);
+    }
+  });
+
+  test('Summary carries the candidate, the profile heading and the feedback', () => {
     const rows = XLSX.utils.sheet_to_json(book.Sheets.Summary, { header: 1 });
-    assert.deepEqual(rows[0], ['Section', 'Field', 'Value']);
     const flat = JSON.stringify(rows);
     assert.ok(flat.includes('Pankaj Mondal'));
+    assert.ok(rows.some((r) => r[0] === 'CANDIDATE PROFILE' && !r[1]), 'a section heading row');
     assert.ok(flat.includes('Consolidated interviewer feedback'));
   });
 
-  test('Scorecards has one row per round x skill', () => {
+  test('Scorecards is one block per round, with the written comments', () => {
     const rows = XLSX.utils.sheet_to_json(book.Sheets.Scorecards, { header: 1 });
-    assert.deepEqual(rows[0][0], 'Round');
     // Technical 1 has one skill; the HR round has none but must still appear —
     // a round with no skill breakdown is not a round that did not happen.
-    const flat = JSON.stringify(rows);
-    assert.ok(flat.includes('Java'));
-    assert.ok(flat.includes('HR Round'));
+    assert.ok(rows.some((r) => r[0] === 'TECHNICAL 1'));
+    assert.ok(rows.some((r) => r[0] === 'HR ROUND'));
+    assert.ok(rows.some((r) => String(r[0]).includes('Java')), 'a skill row');
+    // The interviewer's written comments used to be left out of the sheet.
+    assert.ok(rows.some((r) => r[0] === 'Comments' && r[1] === 'Handled the system-design question well.'));
+    assert.ok(rows.some((r) => r[0] === 'Interviewer'), 'the interviewer is a row, not the heading');
   });
 
   test('Assessments carries both the screening and the written test', () => {
     const flat = JSON.stringify(XLSX.utils.sheet_to_json(book.Sheets.Assessments, { header: 1 }));
-    assert.ok(flat.includes('HR screening'));
-    assert.ok(flat.includes('Java Backend Assessment'));
+    assert.ok(flat.includes('HR SCREENING'));
+    assert.ok(flat.includes('JAVA BACKEND ASSESSMENT'));
     assert.ok(flat.includes('Core Java'));
   });
 
@@ -664,8 +676,10 @@ describe('renderDossierWorkbook — the four sheets in plan §3.2', () => {
   test('an empty model still produces four sheets with their headers', () => {
     const empty = XLSX.read(renderDossierWorkbook(emptyModel()), { type: 'buffer' });
     assert.deepEqual(empty.SheetNames, ['Summary', 'Scorecards', 'Stage History', 'Assessments']);
-    const rows = XLSX.utils.sheet_to_json(empty.Sheets['Stage History'], { header: 1 });
-    assert.deepEqual(rows[0], ['Stage', 'Event', 'Outcome', 'Reason / note', 'Decided by', 'When']);
+    for (const name of empty.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(empty.Sheets[name], { header: 1 });
+      assert.deepEqual(rows[0], ['Field', 'Value'], name);
+    }
   });
 });
 
@@ -1414,8 +1428,8 @@ describe('the rendered screening assessment, as the reader meets it', () => {
   test('the spreadsheet carries the assessment too', () => {
     const sheet = XLSX.read(renderDossierWorkbook(rendered()), { type: 'buffer' }).Sheets.Assessments;
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    assert.ok(rows.some((r) => r[2] === 'Verdict' && r[3] === 'Strong Fit'));
-    assert.ok(rows.some((r) => String(r[2]).startsWith('Requirement — SQL and Manual Testing')));
+    assert.ok(rows.some((r) => r[0] === 'Verdict' && r[1] === 'Strong Fit'));
+    assert.ok(rows.some((r) => String(r[0]).startsWith('Requirement — SQL and Manual Testing')));
   });
 
   test('the READ-ME points the reader at the section and says what was removed', () => {
@@ -1455,9 +1469,9 @@ describe('the screening report link, as the reader meets it', () => {
   test('the spreadsheet carries it too, so "Spreadsheet only" is not a silent loss', () => {
     const sheet = XLSX.read(renderDossierWorkbook(linked()), { type: 'buffer' }).Sheets.Assessments;
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    const link = rows.find((r) => String(r[2] || '').startsWith('Full report link'));
+    const link = rows.find((r) => String(r[0] || '').startsWith('Full report link'));
     assert.ok(link, 'no link row in the Assessments sheet');
-    assert.equal(link[3], url);
+    assert.equal(link[1], url);
   });
 
   test('the READ-ME tells the recipient the link is as sensitive as the pack', () => {
@@ -1477,5 +1491,45 @@ describe('the screening report link, as the reader meets it', () => {
     }, { includeScreeningReport: true });
     const html = renderDossierHtml(model);
     assert.ok(!/<script>alert/.test(html), 'the link escaped its attribute');
+  });
+});
+
+// ── L12: round order, earlier attempts, the recruiter's round notes ────
+
+describe('L12 — scorecards in round order, re-dos labelled, edited round notes printed', () => {
+  const model = () => fullModel({
+    scorecards: [
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', earlier_attempt: true, interviewer: 'old@example.com', recommendation: 'Hold', avg_score: 2, skills: [], comments: 'First attempt.' },
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', earlier_attempt: false, interviewer: 'new@example.com', recommendation: 'Hire', avg_score: 4, skills: [], comments: 'Second attempt.' },
+    ],
+    round_notes: [
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', value: 'Edited after the debrief: strong on Java.' },
+      { stage_key: 'ceo', stage_label: 'CEO / Final Round', value: 'Met the CEO informally.' },
+    ],
+  });
+
+  test('HTML: an earlier attempt is labelled, and the notes sit under the current attempt once', () => {
+    const html = renderDossierHtml(model());
+    assert.match(html, /Earlier attempt: this round was done again later/);
+    assert.equal(html.split('Edited after the debrief: strong on Java.').length - 1, 1);
+    const firstCard = html.indexOf('old@example.com');
+    const notesAt = html.indexOf('Edited after the debrief');
+    assert.ok(notesAt > html.indexOf('new@example.com') && notesAt > firstCard, 'notes follow the current attempt');
+  });
+
+  test('HTML: notes for a round with no scorecard get a card of their own', () => {
+    const html = renderDossierHtml(model());
+    assert.match(html, /<h3>CEO \/ Final Round<\/h3><div class="notesbox">/);
+  });
+
+  test('XLSX: the round notes print under the round, the earlier attempt is marked', () => {
+    const rows = XLSX.utils.sheet_to_json(
+      XLSX.read(renderDossierWorkbook(model()), { type: 'buffer' }).Sheets.Scorecards,
+      { header: 1 },
+    );
+    assert.ok(rows.some((r) => r[0] === 'TECHNICAL ROUND 1 (1) — EARLIER ATTEMPT'));
+    assert.ok(rows.some((r) => r[0] === 'TECHNICAL ROUND 1 (2)'));
+    const notes = rows.filter((r) => r[0] === 'Round feedback recorded in the ATS');
+    assert.deepEqual(notes.map((r) => r[1]), ['Edited after the debrief: strong on Java.', 'Met the CEO informally.']);
   });
 });

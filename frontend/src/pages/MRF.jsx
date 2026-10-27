@@ -11,6 +11,7 @@ import { SendOutlined, ClearOutlined } from '@ant-design/icons';
 import mrfService from '../services/mrfService';
 import ExportButton from '../components/common/ExportButton';
 import ApprovalTrail from '../components/mrf/ApprovalTrail';
+import MrfLinksBlock from '../components/mrf/MrfLinksBlock';
 import useAuth from '../hooks/useAuth';
 import { FIELDS as MRF_SUBMIT_FIELDS } from './MrfSubmit';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
@@ -1058,6 +1059,11 @@ export default function MRF() {
                 })}
                 onChanged={() => loadRecords(page, searchQuery, statusTab)}
               />
+            )}
+
+            {/* L08: the hiring manager's form link, and every link for this MRF. */}
+            {selectedRecord?.id && (
+              <MrfLinksBlock key={selectedRecord.id} requestId={selectedRecord.id} mrfId={selectedRecord.mrf_id} />
             )}
 
             {/* Section 2: New MRF Request Info */}

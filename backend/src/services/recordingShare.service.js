@@ -19,10 +19,10 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
-import { serializeRecording } from './interviewRecording.service.js';
+import { getRecordingForStream, serializeRecording } from './interviewRecording.service.js';
 import { EXPORT_TIMEZONE } from '../utils/csvExport.js';
 import {
-  SHARE_STATES, describeShareLink, isShareToken, shareExpiryFrom, shareLinkState, shareUrlFor,
+  SHARE_STATES, describeShareLink, isShareToken, recordingShareMessage, shareExpiryFrom, shareLinkState, shareUrlFor,
 } from '../utils/recordingShareModel.js';
 
 /**
@@ -112,6 +112,94 @@ export async function mintShareLinks(pipelineId, { recordings = [], user = null 
 
   return {
     links, minted, reused, playable: playable.length, degraded,
+  };
+}
+
+/**
+ * The no-login link for ONE recording, on a recruiter's request from the drawer
+ * (L13): "Copy link for someone outside the ATS".
+ *
+ * Before this, a link only existed after a whole dossier download, so a
+ * recruiter who wanted to forward one round's recording through Outlook copied
+ * the in-app link instead, and the recipient landed on a sign-in page they had
+ * no account for.
+ *
+ * It IS mintShareLinks() for one row, so the same rules hold: a live link is
+ * handed back unchanged and its expiry is never extended, and a recording with
+ * nothing to play is refused (getRecordingForStream, 409) rather than given a
+ * link that cannot play.
+ *
+ * Every request is noted on the candidate's timeline, created or copied again,
+ * so the trail of who handed the footage out reads the same whether it left in
+ * a pack or as a pasted link.
+ *
+ * @param {number|string} pipelineId
+ * @param {number|string} recordingId
+ * @param {object} user
+ * @returns {Promise<{id: number, recording_id: number, url: string, expires_at: Date,
+ *   summary: string, created: boolean, stage_label: string, message: string}>}
+ */
+export async function shareLinkForRecording(pipelineId, recordingId, user) {
+  // Scoped by pipeline as well as id: the journey in the URL is the authority.
+  const recording = await getRecordingForStream(pipelineId, recordingId);
+
+  const { links, minted } = await mintShareLinks(pipelineId, { recordings: [recording], user });
+  const link = links.get(Number(recording.id));
+  if (!link) throw new AppError('The share link could not be created. Please try again.', 502);
+
+  const [stage, journey] = await Promise.all([
+    prisma.rpa_pipeline_stages.findFirst({ where: { stage_key: recording.stage_key }, select: { label: true } }),
+    prisma.rpa_candidate_pipeline.findUnique({
+      where: { id: BigInt(pipelineId) },
+      select: {
+        rpa_shortlisted_candidates: {
+          select: {
+            candidate_name: true,
+            position_applied: true,
+            mrf: { select: { position_hiring_for: true, jd_document_link: true } },
+          },
+        },
+      },
+    }),
+  ]);
+  const shortlist = journey?.rpa_shortlisted_candidates;
+  const stageLabel = stage?.label || recording.stage_key || 'Interview';
+  const url = shareUrlFor(link.token, config.publicBaseUrl);
+  const described = describeShareLink(link, new Date(), EXPORT_TIMEZONE);
+  const created = minted > 0;
+
+  try {
+    await prisma.rpa_pipeline_stage_events.create({
+      data: {
+        pipeline_id: BigInt(pipelineId),
+        stage_key: recording.stage_key || 'tech1',
+        event_type: 'note',
+        notes: `${created ? 'No-login recording link created' : 'No-login recording link copied again'} `
+          + `by ${user?.username || user?.email || 'a recruiter'} for ${stageLabel} (${described.summary.toLowerCase()}).`,
+        acted_by: user?.id || null,
+      },
+    });
+  } catch (err) {
+    logger.error(`AUDIT GAP: share link ${link.id} was handed out but the timeline note failed: ${err.message}`);
+  }
+
+  return {
+    id: Number(link.id),
+    recording_id: Number(recording.id),
+    url,
+    expires_at: link.expires_at,
+    summary: described.summary,
+    created,
+    stage_label: stageLabel,
+    message: recordingShareMessage({
+      candidateName: shortlist?.candidate_name,
+      stageLabel,
+      role: shortlist?.mrf?.position_hiring_for || shortlist?.position_applied,
+      url,
+      expiresAt: link.expires_at,
+      jdLink: shortlist?.mrf?.jd_document_link || null,
+      timeZone: EXPORT_TIMEZONE,
+    }),
   };
 }
 

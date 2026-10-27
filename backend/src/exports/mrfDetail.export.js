@@ -5,9 +5,10 @@
  * Deliberately NOT shaped like mrf.export.js. That one exports a LIST: one row
  * per requisition, columns across. This exports ONE requisition carrying ~65
  * fields, and a 65-column single-row file is unreadable — you scroll sideways
- * forever to find one value. So the layout is transposed:
+ * forever to find one value. So the layout is transposed (L12: two columns,
+ * the shape every one-record export now uses — utils/fieldValueExport.js):
  *
- *     Section, Field, Value
+ *     Field, Value   — a section is a heading row in capitals, a blank row before it
  *
  * one row per field, grouped by the same sections the modal renders. The
  * trade-off accepted here is that the file does not stack with other exports
@@ -28,6 +29,7 @@ import prisma from '../config/database.js';
 import AppError from '../utils/AppError.js';
 import { isMrfFilled } from '../config/pipelineStages.js';
 import { formatDate, formatDateTime } from '../utils/csvExport.js';
+import { FIELD_VALUE_COLUMNS, toFieldValueRows } from '../utils/fieldValueExport.js';
 import { nameForApprover } from '../utils/mrfApprovalRules.js';
 import { getApproverRoster } from '../services/mrfApproval.service.js';
 
@@ -189,11 +191,7 @@ function experienceRange(jd) {
   return `${min ?? ''} - ${max ?? ''} years`;
 }
 
-export const columns = [
-  { header: 'Section', key: 'section' },
-  { header: 'Field', key: 'field' },
-  { header: 'Value', key: 'value' },
-];
+export const columns = FIELD_VALUE_COLUMNS;
 
 /**
  * Flatten one requisition into Section/Field/Value rows, in the order the modal
@@ -309,7 +307,7 @@ export async function fetch({ filters }) {
     mainMrf.decided_by_name = nameForApprover(roster, mainMrf.decided_by_email, mainMrf.decided_by_name);
   }
 
-  return buildDetailRows(jdSend, mainMrf);
+  return toFieldValueRows(buildDetailRows(jdSend, mainMrf));
 }
 
 export default { columns, fetch, parseFilters, buildDetailRows, mrfRaiseLabel, mrfApprovalLabel };

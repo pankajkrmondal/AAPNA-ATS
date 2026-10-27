@@ -82,6 +82,54 @@ export const searchKeywordCandidates = catchAsync(async (req, res) => {
 });
 
 /**
+ * POST /api/screening/roles/:id/not-shown
+ * L11: who the JD search left out, and why. Strict search (SCREENING_V2) only:
+ * the old search ranks rather than filters, so it has no rules to name.
+ */
+export const notShownForRole = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId)) throw new AppError('Invalid MRF ID provided.', 400);
+  if (!config.screening.v2) throw new AppError('"Not shown" needs the strict screening search (SCREENING_V2).', 409);
+  const result = await screeningV2.notShownForRole(mrfId, {
+    addedWithinDays: req.body?.addedWithinDays ?? null,
+    taggedOnly: isTrue(req.body?.taggedOnly),
+    reason: req.body?.reason || null,
+  });
+  return success(res, result, 'Candidates not shown retrieved');
+});
+
+/** POST /api/screening/roles/:id/not-shown/export — the same list as a CSV (L11). */
+export const exportNotShownForRole = catchAsync(async (req, res) => {
+  const mrfId = parseInt(req.params.id, 10);
+  if (isNaN(mrfId)) throw new AppError('Invalid MRF ID provided.', 400);
+  if (!config.screening.v2) throw new AppError('"Not shown" needs the strict screening search (SCREENING_V2).', 409);
+  return runExport(req, res, screeningExport.notShownSpec('jd', {
+    mrfId,
+    addedWithinDays: req.body?.addedWithinDays ?? null,
+    taggedOnly: isTrue(req.body?.taggedOnly),
+    reason: req.body?.reason || null,
+  }));
+});
+
+/** POST /api/screening/keyword-not-shown/export — the same list as a CSV (L11). */
+export const exportNotShownForKeyword = catchAsync(async (req, res) => {
+  if (!config.screening.v2) throw new AppError('"Not shown" needs the strict screening search (SCREENING_V2).', 409);
+  const { reason = null, ...filters } = req.body || {};
+  return runExport(req, res, screeningExport.notShownSpec('keyword', { filters, reason }));
+});
+
+/**
+ * POST /api/screening/keyword-not-shown
+ * L11: who the keyword search left out, and why.
+ */
+export const notShownForKeyword = catchAsync(async (req, res) => {
+  if (!config.screening.v2) throw new AppError('"Not shown" needs the strict screening search (SCREENING_V2).', 409);
+  const { reason = null, ...filters } = req.body || {};
+  const result = await screeningV2.notShownForKeyword(filters, { reason });
+  return success(res, result, 'Candidates not shown retrieved');
+});
+
+/**
  * POST /api/screening/roles/:id/export
  * CSV of the JD-filtering results for one MRF. POST, not GET, to mirror the
  * search it re-runs.

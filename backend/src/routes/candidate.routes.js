@@ -73,7 +73,8 @@ router.get('/export', exportLimiter, candidateController.exportCandidates);
 
 /**
  * GET /api/candidates/:id
- * Retrieve a single candidate by ID
+ * Retrieve a single candidate by ID. A vendor gets only their own submissions
+ * (vendorMayReadCandidate, checked in the controller); anyone else's is a 404.
  */
 router.get('/:id', candidateController.getCandidate);
 
@@ -87,9 +88,12 @@ router.patch('/:id', requireStaff, candidateController.updateCandidate);
 
 /**
  * GET /api/candidates/:id/emails
- * Retrieve email conversations associated with a candidate
+ * Retrieve email conversations associated with a candidate. Staff only (L10):
+ * these are the recruiters' own conversations with the candidate, and no vendor
+ * screen reads them — but the route had no role check, so any vendor token
+ * could read any candidate's mail by id.
  */
-router.get('/:id/emails', candidateController.getCandidateEmails);
+router.get('/:id/emails', requireStaff, candidateController.getCandidateEmails);
 
 /**
  * GET /api/candidates/:id/pipeline-scores
