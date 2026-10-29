@@ -15,7 +15,8 @@ All jobs run **inside the API process** (`backend/src/server.js` starts them), w
 | `interviewRecordings` | every N min | `MS_RECORDING_FETCH_ENABLED` + Settings → Recording | Finds the Teams recording, archives it to OneDrive, flags missing recordings | Recordings not linked |
 | `recordingRetention` | `30 3 * * *` | `MS_RECORDING_RETAIN_MONTHS` (0 = off) | Deletes archived video N months after the journey closes | Video kept longer than promised to candidates |
 | `mailboxPoller` | `*/5 * * * *` | `MAILBOX_SYNC_CRON`; consumers gated by `EMAIL_INTAKE_ENABLED`, `INBOUND_SYNC_ENABLED` | One Graph delta fetch of the shared mailbox → resume intake (attachments) + inbound conversation sync | Emailed CVs and replies are not picked up; the delta link catches up on the next good run |
-| `zekoJobs` | `0 * * * *` | `ZEKO_JOBS_CRON`, `ZEKO_SYNC_ENABLED` | Refreshes the Zeko token and the job catalog | Scheduling dropdown goes stale; token may expire |
+| `zekoToken` | `0 * * * *` (same tick, before `zekoJobs`) | `ZEKO_JOBS_CRON`, `ZEKO_SYNC_ENABLED` | Mints a new Zeko bearer token (`rpa_zeko_auth_token`) when the stored one has under 10 min left | Nothing visible at first: schedule/cancel mint their own token. A failure means the API key or client id is wrong, and scheduling will fail too |
+| `zekoJobs` | `0 * * * *` | `ZEKO_JOBS_CRON`, `ZEKO_SYNC_ENABLED` | Syncs the Zeko job catalog (OTP cookie) | Scheduling dropdown goes stale |
 | `zekoResults` | `*/5 * * * *` | `ZEKO_RESULTS_CRON`, `ZEKO_SYNC_ENABLED` | Fetches scores and report links for finished Zeko interviews | Scores don't arrive |
 | `assessmentDeadline` | `0 * * * *` | `ASSESSMENT_DEADLINE_CHECK_CRON` | Marks overdue Evalground invites, notifies recruiters | "Test overdue" not shown |
 | `offerSweep` | `0 7 * * *` | `OFFER_SWEEP_CRON`, `OFFER_AUTO_CLOSE_AFTER_DAYS` (90) | Auto-closes Joined journeys after 90 days (the approval nudge is disabled since 25 Aug) | Records stay open |
@@ -42,9 +43,12 @@ Not scheduled: `jobs/emailResumeIntake.js` and `jobs/inboundEmailSync.js` keep t
 
 ### Zeko
 - **Auth:** an API-key token grant (`ZEKO_CLIENT_ID`, `ZEKO_API_KEY`; `rpa_zeko_auth_token`) for scheduling, plus a dashboard **cookie** minted by OTP login (`rpa_zeko_auth_cookie`). The OTP email arrives in the shared mailbox and is read back through Graph, which can take 30–40 s.
+  - The bearer token lasts 1 hour. Schedule and cancel get it through `withZekoToken()` (`zeko.service.js`), which mints a new one when the stored token has under 10 minutes left. If Zeko refuses a stored token, it mints a new one and retries once. Zeko answers a bad or revoked token with **HTTP 500**, not 401; 401 means only that the header is missing. The `zekoToken` job keeps one ready.
+  - Since 29 Oct 2026 the n8n workflow "Zeko — FULLY AUTO Sync (API Key Auth)" is no longer needed. See `docs/phase3/zeko-token-without-n8n/PLAN.md`.
+  - Local dev needs `ZEKO_CLIENT_ID` and `ZEKO_API_KEY` (staging values) to schedule.
 - **Scores:** read from the per-candidate report API (`ZEKO_REPORT_API_BASE`), not the old results endpoint. See `docs/PLAN-2026-08-25-zeko-report-api-score-sync.md`.
 - **Outside production:** `ZEKO_TEST_PHONE` replaces the candidate's phone, since Zeko texts that number itself.
-- **Failures:** an expired cookie re-runs the OTP login; if the mailbox poll is down, the login fails too. Only published jobs are offered for scheduling.
+- **Failures:** an expired cookie re-runs the OTP login; if the mailbox poll is down, the login fails too. If no bearer token can be minted, schedule/cancel answer 503 "Could not sign in to the Zeko interview platform…" and change nothing. Only published jobs are offered for scheduling.
 
 ### Evalground
 - No API (a paid add-on that was not bought). HR uploads the CSV export; rows are matched by any of the candidate's emails (`utils/evalgroundRow.js`); the pass mark is configurable (Settings → Assessment automation).

@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
-import { syncZekoJobs, fetchInterviewResults } from '../services/zeko.service.js';
+import { ensureZekoToken, syncZekoJobs, fetchInterviewResults } from '../services/zeko.service.js';
 import { runJob } from '../utils/jobRunner.js';
 
 /**
@@ -9,8 +9,13 @@ import { runJob } from '../utils/jobRunner.js';
  *
  * Registers two node-cron jobs (replacing the n8n "FULLY AUTO Sync (API Key Auth)"
  * and "Step 3 — Auto Fetch Interview Results" workflows):
- *   - jobsCron    : refresh the Zeko bearer token + sync the job catalog (hourly).
- *   - resultsCron : fetch interview results for ended interviews (hourly, offset).
+ *   - jobsCron    : refresh the Zeko bearer token (job `zekoToken`), then sync the
+ *                   job catalog (job `zekoJobs`) — hourly.
+ *   - resultsCron : fetch interview results for ended interviews (every 5 min).
+ *
+ * The bearer token is also minted on demand by schedule/cancel (withZekoToken),
+ * so this refresh keeps one ready and surfaces a broken API key early; nothing
+ * depends on it running.
  *
  * Self-gated by config.zeko.sync.enabled — does nothing unless ZEKO_SYNC_ENABLED=true.
  */
@@ -53,10 +58,16 @@ export function startZekoSchedulerJob() {
   if (!cron.validate(jobsCron)) {
     logger.error(`Invalid ZEKO_JOBS_CRON "${jobsCron}" — Zeko job sync not scheduled.`);
   } else {
-    jobsTask = cron.schedule(jobsCron, () => runJob('zekoJobs', async () => {
-      logger.info('⏰ Running Zeko token refresh + job catalog sync…');
-      await syncZekoJobs();
-    }));
+    jobsTask = cron.schedule(jobsCron, async () => {
+      // Separate runs, separate heartbeats: the token is the API-key bearer used
+      // by schedule/cancel, the catalog sync signs in with the OTP cookie, and a
+      // failure in one must not skip the other. runJob never throws.
+      await runJob('zekoToken', () => ensureZekoToken());
+      await runJob('zekoJobs', async () => {
+        logger.info('⏰ Running Zeko job catalog sync…');
+        await syncZekoJobs();
+      });
+    });
     logger.info(`📅 Zeko job sync cron scheduled: "${jobsCron}"`);
   }
 

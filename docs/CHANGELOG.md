@@ -5,6 +5,24 @@ Feature-level detail lives in [docs/reference/screening.md](./reference/screenin
 
 ---
 
+## 2026-10-29: Zeko bearer token without n8n
+**Why:** with the n8n workflow "Zeko — FULLY AUTO Sync (API Key Auth)" switched off, Zeko scheduling and cancelling broke within an hour ("No active authentication token found for Zeko APIs."). The ATS only read `rpa_zeko_auth_token`; only n8n refreshed it.
+
+Plan, test cases and results: [docs/phase3/zeko-token-without-n8n/](./phase3/zeko-token-without-n8n/PLAN.md).
+
+- **`zeko.service.js`:**
+  - `ensureZekoToken()` mints on demand; concurrent callers share one mint.
+  - New `withZekoToken()` retries once with a new token when Zeko refuses a stored one. Zeko signals that with HTTP 500, not 401.
+  - New `resolveZekoClientId()` (settings row, then env), shared with scheduling.
+  - A token that cannot be minted is a clear 503.
+- **`screening.service.js`:** schedule and cancel call Zeko through `withZekoToken()`.
+- **`zekoScheduler.js`:** new hourly `zekoToken` job, with its own heartbeat and alert, before the catalog sync.
+- **No DDL, no frontend change, no new env var.** Local dev needs `ZEKO_CLIENT_ID` and `ZEKO_API_KEY` (staging values).
+- **Tests:**
+  - unit 773/773;
+  - live token checks 12/12 on staging;
+  - Playwright schedule/cancel C1–C6 pass after one fix: Zeko's 500 for a bad token.
+
 ## 2026-10-26: L15 follow-up: compact MRF approval email
 **Why:** after testing on staging, the Approve / Reject / Hold email was too big and needed too much scrolling.
 

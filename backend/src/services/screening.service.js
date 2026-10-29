@@ -34,6 +34,7 @@ import { getMrfJdAttachment } from './jdAttachment.service.js';
 import { tagCandidatesSafe, tagsForMrf } from './candidateTag.service.js';
 import { tagSourceForShortlist, mrfCandidateBlock, MRF_OPEN_SELECT } from '../utils/candidateTag.js';
 import { tracedFetch } from '../utils/externalCall.js';
+import { withZekoToken, resolveZekoClientId } from './zeko.service.js';
 
 /**
  * GET /api/screening/roles
@@ -2800,24 +2801,13 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   // 1) Resolve Zeko Client ID — prefer the rpa_settings row, fall back to the
   //    environment value (ZEKO_CLIENT_ID) so scheduling works before the table is seeded.
-  const settingClientIdRow = await prisma.rpa_settings.findUnique({
-    where: { key: 'ZEKO_CLIENT_ID' },
-  });
-  const zekoClientId = settingClientIdRow?.value || config.zeko.clientId;
+  //    The bearer token is minted for this same client (see withZekoToken below).
+  const zekoClientId = await resolveZekoClientId();
   if (!zekoClientId) {
     throw new AppError('ZEKO_CLIENT_ID not found in settings or environment.', 500);
   }
 
-  // 2) Fetch active Zeko token
-  const tokenRecord = await prisma.rpa_zeko_auth_token.findFirst({
-    where: {
-      is_active: true,
-      expires_at: { gt: new Date() },
-    },
-  });
-  if (!tokenRecord) {
-    throw new AppError('No active authentication token found for Zeko APIs.', 500);
-  }
+  // 2) Zeko bearer token: obtained with the API call in step 4 (withZekoToken).
 
   // 3) Get candidate details
   const shortlist = await prisma.rpa_shortlisted_candidates.findUnique({
@@ -2904,17 +2894,21 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   logger.info(`Zeko API: Scheduling interview at Zeko for candidate ${shortlist.candidate_name}`);
 
+  // withZekoToken mints a bearer token when the stored one is missing or about
+  // to expire, so this no longer depends on the n8n "API Key Auth" workflow.
   let zekoRes;
   try {
-    zekoRes = await tracedFetch('zeko', zekoUrl, {
+    zekoRes = await withZekoToken((token) => tracedFetch('zeko', zekoUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${tokenRecord.access_token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(zekoPayload),
-    });
+    }), 'Zeko schedule');
   } catch (err) {
+    // No token at all: already a recruiter-facing 503.
+    if (err instanceof AppError) throw err;
     logger.error(`Zeko Schedule API network error: ${err.message}`, { cause: err.cause?.code });
     throw new AppError(
       'Could not reach the Zeko interview platform (connection timed out). Please check the connection and try again, or schedule from the Zeko Interview Schedule tab.',
@@ -2999,16 +2993,7 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
  * POST /api/screening/analytics/cancel
  */
 export async function cancelInterview(pipelineId, reason, user) {
-  // 1) Fetch active Zeko token
-  const tokenRecord = await prisma.rpa_zeko_auth_token.findFirst({
-    where: {
-      is_active: true,
-      expires_at: { gt: new Date() },
-    },
-  });
-  if (!tokenRecord) {
-    throw new AppError('No active authentication token found for Zeko APIs.', 500);
-  }
+  // 1) Zeko bearer token: obtained with the API call in step 3 (withZekoToken).
 
   // 2) Get pipeline details
   const pipeline = await prisma.rpa_zeko_candidate_pipeline.findUnique({
@@ -3049,14 +3034,16 @@ export async function cancelInterview(pipelineId, reason, user) {
 
   logger.info(`Zeko API: Cancelling interview at Zeko for candidate ${zekoCandidateEmail}`);
 
-  const zekoRes = await tracedFetch('zeko', zekoUrl, {
+  // A missing token throws (503) before anything is changed — the booking must
+  // not be marked cancelled here while it is still live at Zeko.
+  const zekoRes = await withZekoToken((token) => tracedFetch('zeko', zekoUrl, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${tokenRecord.access_token}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(zekoPayload),
-  });
+  }), 'Zeko cancel');
 
   if (!zekoRes.ok) {
     const errorBody = await zekoRes.json().catch(() => ({}));
