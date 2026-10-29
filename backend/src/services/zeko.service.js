@@ -10,6 +10,7 @@ import { deriveZekoInterviewType } from '../utils/zekoJobType.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
 import { tracedFetch } from '../utils/externalCall.js';
+import AppError from '../utils/AppError.js';
 
 /**
  * Zeko background sync service.
@@ -64,16 +65,58 @@ function findResultForCandidate(data, candidateEmail) {
 }
 
 /**
+ * The Zeko client id: the rpa_settings row first, then ZEKO_CLIENT_ID from the
+ * environment. scheduleInterview() sends it with every booking and the bearer
+ * token is minted for it, so both must read it the same way.
+ *
+ * @returns {Promise<string>} The client id, or '' when neither is set.
+ */
+export async function resolveZekoClientId() {
+  const row = await prisma.rpa_settings.findUnique({ where: { key: 'ZEKO_CLIENT_ID' } });
+  return row?.value || config.zeko.clientId;
+}
+
+/** The mint in progress, shared by every caller that arrives while it runs. */
+let tokenMint = null;
+
+/**
  * Ensures a valid (non-expiring-soon) Zeko bearer token exists in rpa_zeko_auth_token,
  * minting a fresh one via the API-key grant when needed.
  *
  * Mirrors n8n nodes: "DB: Check Token Valid" -> "HTTP: Generate Zeko Token" ->
- * "Code: Extract Token" -> "DB: Save New Token".
+ * "Code: Extract Token" -> "DB: Save New Token". The ATS no longer needs that
+ * workflow: schedule/cancel call this on demand (through withZekoToken) and the
+ * hourly zekoToken job keeps a token ready.
  *
+ * @param {object} [opts]
+ * @param {boolean} [opts.forceRefresh=false] - mint even if the stored token
+ *   looks valid (Zeko has just refused it).
  * @returns {Promise<string>} A valid bearer access token.
  */
-export async function ensureZekoToken() {
+export async function ensureZekoToken({ forceRefresh = false } = {}) {
   // 1) Reuse the active token if it stays valid for at least 10 more minutes.
+  if (!forceRefresh) {
+    const stored = await storedZekoToken();
+    if (stored) return stored;
+  }
+
+  // 2) Mint — once. Recruiters scheduling together when the token runs out
+  //    would otherwise each mint one and each replace the last.
+  if (!tokenMint) {
+    tokenMint = mintZekoToken().finally(() => {
+      tokenMint = null;
+    });
+  }
+  return tokenMint;
+}
+
+/**
+ * The stored active bearer token if it stays valid for at least 10 more
+ * minutes, else null.
+ *
+ * @returns {Promise<string|null>}
+ */
+async function storedZekoToken() {
   const existing = await prisma.rpa_zeko_auth_token.findFirst({
     where: {
       is_active: true,
@@ -81,12 +124,17 @@ export async function ensureZekoToken() {
     },
     orderBy: { created_at: 'desc' },
   });
-  if (existing?.access_token) {
-    return existing.access_token;
-  }
+  return existing?.access_token || null;
+}
 
-  // 2) Mint a new token via the API-key grant.
-  if (!config.zeko.clientId || !config.zeko.apiKey) {
+/**
+ * Mints a bearer token via the API-key grant and stores it as the only active one.
+ *
+ * @returns {Promise<string>} The new access token.
+ */
+async function mintZekoToken() {
+  const clientId = await resolveZekoClientId();
+  if (!clientId || !config.zeko.apiKey) {
     throw new Error('Zeko token refresh skipped: ZEKO_CLIENT_ID / ZEKO_API_KEY not configured.');
   }
 
@@ -95,7 +143,7 @@ export async function ensureZekoToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      clientId: config.zeko.clientId,
+      clientId,
       apiKey: config.zeko.apiKey,
       expiresIn: 3600,
     }),
@@ -131,6 +179,54 @@ export async function ensureZekoToken() {
 
   logger.info(`Zeko token refreshed; expires at ${expiresAt.toISOString()}`);
   return accessToken;
+}
+
+/**
+ * How Zeko /api/v1 answers a bearer token it will not accept. Only a MISSING
+ * header gets a 401; a revoked, expired or tampered token gets a bare
+ * HTTP 500 "Internal Server Error" (probed on staging, 29 Oct 2026). 403 is
+ * kept in case Zeko starts using it.
+ */
+const ZEKO_TOKEN_REFUSED = new Set([401, 403, 500]);
+
+/**
+ * Run a bearer-authenticated Zeko /api/v1 call, re-minting the token once if
+ * Zeko refuses it.
+ *
+ * The bearer counterpart of withDashboardCookie(). A token we hold as valid can
+ * still be refused — revoked early at Zeko, or replaced by another mint — and
+ * a recruiter's click should not fail for that when one more mint fixes it.
+ *
+ * Only a STORED token is retried: one minted for this very call cannot be the
+ * problem, so a 500 on it is a real Zeko fault and goes straight back. A real
+ * 500 on a stored token costs one extra mint and one retry.
+ *
+ * Network errors from `run` propagate unchanged, so callers keep their own
+ * "could not reach Zeko" handling. Not getting a token at all is an AppError
+ * (503), so a caller can tell the two apart.
+ *
+ * @param {(token: string) => Promise<Response>} run - makes the call with the token
+ * @param {string} [label] - for the log line when a re-mint is needed
+ * @returns {Promise<Response>} Zeko's response (the retry's, if one was needed)
+ */
+export async function withZekoToken(run, label = 'Zeko call') {
+  const stored = await storedZekoToken();
+  const res = await run(stored || (await zekoTokenOrAppError()));
+  if (!stored || !ZEKO_TOKEN_REFUSED.has(res.status)) return res;
+  logger.warn(`${label}: Zeko answered ${res.status} to the stored bearer token; minting a new one and retrying once.`);
+  return run(await zekoTokenOrAppError({ forceRefresh: true }));
+}
+
+async function zekoTokenOrAppError(opts) {
+  try {
+    return await ensureZekoToken(opts);
+  } catch (err) {
+    logger.error(`Zeko bearer token unavailable: ${err.message}`);
+    throw new AppError(
+      'Could not sign in to the Zeko interview platform. Please try again in a few minutes; if it keeps failing, contact the developers.',
+      503
+    );
+  }
 }
 
 /**
@@ -1219,6 +1315,8 @@ export async function repairZeroZekoScores() {
 
 export default {
   ensureZekoToken,
+  withZekoToken,
+  resolveZekoClientId,
   refreshZekoCookie,
   syncZekoJobs,
   fetchInterviewResults,

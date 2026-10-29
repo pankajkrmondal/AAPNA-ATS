@@ -1,0 +1,647 @@
+- generic [ref=f3e1]:
+  - generic [ref=f3e12]:
+    - complementary [ref=f3e13]:
+      - generic [ref=f3e14]:
+        - generic [ref=f3e15] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=f3e17]
+          - generic [ref=f3e18]: ATS Platform
+        - menu [ref=f3e19]:
+          - menuitem "dashboard Dashboard" [ref=f3e20] [cursor=pointer]:
+            - img "dashboard" [ref=f3e21]
+            - generic [ref=f3e24]: Dashboard
+          - menuitem "file-text MRF" [ref=f3e25] [cursor=pointer]:
+            - img "file-text" [ref=f3e26]
+            - generic [ref=f3e29]: MRF
+          - menuitem "solution Search Candidate" [ref=f3e30] [cursor=pointer]:
+            - img "solution" [ref=f3e31]
+            - generic [ref=f3e34]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=f3e35] [cursor=pointer]:
+            - img "upload" [ref=f3e36]
+            - generic [ref=f3e39]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=f3e40] [cursor=pointer]:
+            - img "shop" [ref=f3e41]
+            - generic [ref=f3e44]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=f3e45] [cursor=pointer]:
+            - img "audit" [ref=f3e46]
+            - generic [ref=f3e49]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=f3e50] [cursor=pointer]:
+            - img "filter" [ref=f3e51]
+            - generic [ref=f3e54]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=f3e55] [cursor=pointer]:
+            - img "apartment" [ref=f3e56]
+            - generic [ref=f3e59]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=f3e60] [cursor=pointer]:
+            - img "bar-chart" [ref=f3e61]
+            - generic [ref=f3e64]: Recruitment Analytics
+          - menuitem "link Forms & Links" [ref=f3e65] [cursor=pointer]:
+            - img "link" [ref=f3e66]
+            - generic [ref=f3e69]: Forms & Links
+          - menuitem "mail Email Templates" [ref=f3e70] [cursor=pointer]:
+            - img "mail" [ref=f3e71]
+            - generic [ref=f3e74]: Email Templates
+          - menuitem "setting Settings" [ref=f3e75] [cursor=pointer]:
+            - img "setting" [ref=f3e76]
+            - generic [ref=f3e79]: Settings
+    - generic [ref=f3e80]:
+      - banner [ref=f3e81]:
+        - generic [ref=f3e82]:
+          - button [ref=f3e84] [cursor=pointer]:
+            - img "menu-fold" [ref=f3e86]
+          - generic [ref=f3e89]: Candidate Pipeline
+        - generic [ref=f3e90]:
+          - button [ref=f3e93] [cursor=pointer]:
+            - img "bell" [ref=f3e95]
+          - button "Toggle theme" [pressed] [ref=f3e99] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=f3e102] [cursor=pointer]:
+            - generic [ref=f3e104]:
+              - img "user" [ref=f3e105]
+              - img "setting" [ref=f3e108]
+            - generic [ref=f3e111]: Admin Portal
+          - img "user" [ref=f3e116] [cursor=pointer]
+      - main [ref=f3e119]:
+        - generic [ref=f3e121]:
+          - generic [ref=f3e123]:
+            - generic [ref=f3e124]:
+              - generic [ref=f3e125]:
+                - heading "Candidate Pipeline" [level=3] [ref=f3e126]
+                - text: Candidates enter here when shortlisted from Candidate Screening.
+              - generic [ref=f3e127]:
+                - generic [ref=f3e128]: Updated just now
+                - button "question-circle What do these mean?" [ref=f3e131] [cursor=pointer]:
+                  - img "question-circle" [ref=f3e133]
+                  - generic [ref=f3e137]: What do these mean?
+                - button "reload Refresh" [ref=f3e139] [cursor=pointer]:
+                  - img "reload" [ref=f3e141]
+                  - generic [ref=f3e144]: Refresh
+                - button "file-excel Export CSV" [ref=f3e147] [cursor=pointer]:
+                  - img "file-excel" [ref=f3e149]
+                  - generic [ref=f3e152]: Export CSV
+                - button "history Move history" [ref=f3e154] [cursor=pointer]:
+                  - img "history" [ref=f3e156]
+                  - generic [ref=f3e159]: Move history
+            - generic [ref=f3e160]:
+              - generic [ref=f3e162]:
+                - generic [ref=f3e163]:
+                  - img "robot" [ref=f3e165]
+                  - searchbox "Ask the board — e.g. \"vendor candidates stuck on hold\"" [ref=f3e168]
+                - button [ref=f3e171] [cursor=pointer]:
+                  - img "search" [ref=f3e172]
+              - generic [ref=f3e175]:
+                - generic [ref=f3e177]:
+                  - img "filter" [ref=f3e178]
+                  - text: Filters
+                - generic [ref=f3e184]:
+                  - combobox [ref=f3e186]
+                  - generic: Position
+                - generic [ref=f3e190] [cursor=pointer]:
+                  - combobox [ref=f3e192]
+                  - generic: Source
+                - generic [ref=f3e194] [cursor=pointer]:
+                  - checkbox "On Hold only" [ref=f3e196]
+                  - generic [ref=f3e198]: On Hold only
+                - generic [ref=f3e200] [cursor=pointer]:
+                  - checkbox "Rejected only" [ref=f3e202]
+                  - generic [ref=f3e204]: Rejected only
+                - generic [ref=f3e206] [cursor=pointer]:
+                  - checkbox "Stuck > 10 days" [ref=f3e208]
+                  - generic [ref=f3e210]: Stuck > 10 days
+                - generic [ref=f3e212] [cursor=pointer]:
+                  - checkbox "My candidates" [ref=f3e214]
+                  - generic [ref=f3e216]: My candidates
+                - generic [ref=f3e218] [cursor=pointer]:
+                  - checkbox "Show closed (5)" [ref=f3e220]
+                  - generic [ref=f3e222]: Show closed (5)
+                - generic [ref=f3e224] [cursor=pointer]:
+                  - checkbox "Paused journey (15)" [ref=f3e226]
+                  - generic [ref=f3e228]: Paused journey (15)
+                - generic [ref=f3e229]: 16 candidates
+          - alert [ref=f3e232]:
+            - img "warning" [ref=f3e233]
+            - generic [ref=f3e236]: 1 interview awaiting confirmation · No scorecard is requested until one is marked held
+            - button "Details down" [ref=f3e240] [cursor=pointer]:
+              - generic [ref=f3e241]: Details
+              - img "down" [ref=f3e242]
+          - generic [ref=f3e246]:
+            - img "swap" [ref=f3e247]
+            - text: Drag a card to any stage, or use its Move to… menu. A passed stage can be re-done with a reason (not Documents or Offer). A card with a lock has started its current stage.
+          - generic [ref=f3e250]:
+            - generic [ref=f3e252]:
+              - generic [ref=f3e254]:
+                - strong [ref=f3e259]: HR Screening (Zeko)
+                - superscript [ref=f3e264]:
+                  - generic [ref=f3e265]: "2"
+              - generic [ref=f3e267]:
+                - 'button "ZT Zeko Token Test 0d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Not yet invited In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e269]':
+                  - generic [ref=f3e272] [cursor=pointer]:
+                    - generic [ref=f3e273]: ZT
+                    - generic [ref=f3e274]:
+                      - generic [ref=f3e275]:
+                        - strong [ref=f3e277]: Zeko Token Test
+                        - generic [ref=f3e278]:
+                          - generic [ref=f3e279]: 0d
+                          - button "Move to another stage" [ref=f3e282]:
+                            - img "swap" [ref=f3e284]
+                      - generic [ref=f3e287]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                      - generic [ref=f3e288]: Not yet invited
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e291]'
+                - 'button "FV Flex Vendor 8d Move to another stage .NET · genaiuserpankajmondal@gmail.com · harish.mopuri Not yet invited team 2 MRFs shop In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e296]':
+                  - generic [ref=f3e299] [cursor=pointer]:
+                    - generic [ref=f3e300]: FV
+                    - generic [ref=f3e301]:
+                      - generic [ref=f3e302]:
+                        - strong [ref=f3e304]: Flex Vendor
+                        - generic [ref=f3e305]:
+                          - generic [ref=f3e306]: 8d
+                          - button "Move to another stage" [ref=f3e309]:
+                            - img "swap" [ref=f3e311]
+                      - generic [ref=f3e314]: .NET · genaiuserpankajmondal@gmail.com · harish.mopuri
+                      - generic [ref=f3e315]:
+                        - generic [ref=f3e316]: Not yet invited
+                        - generic [ref=f3e319]:
+                          - img "team" [ref=f3e320]
+                          - generic [ref=f3e323]: 2 MRFs
+                        - img "shop" [ref=f3e325]
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e328]'
+            - generic [ref=f3e334]:
+              - generic [ref=f3e336]:
+                - strong [ref=f3e341]: IQ / Tech Assessment
+                - generic [ref=f3e343]:
+                  - button [ref=f3e345] [cursor=pointer]:
+                    - img "import" [ref=f3e347]
+                  - superscript [ref=f3e352]:
+                    - generic [ref=f3e353]: "1"
+              - generic [ref=f3e360] [cursor=pointer]:
+                - generic [ref=f3e361]: FV
+                - generic [ref=f3e362]:
+                  - generic [ref=f3e363]:
+                    - strong [ref=f3e365]: Flex Vendor
+                    - generic [ref=f3e366]:
+                      - generic [ref=f3e367]: 13d
+                      - 'img "Locked: Evalground result received and awaiting a decision." [ref=f3e370]'
+                  - generic [ref=f3e373]: FlexStage Test Role · genaiuserpankajmondal@gmail.com · flexstage-testpass
+                  - generic [ref=f3e374]:
+                    - generic [ref=f3e375]: Awaiting action
+                    - generic [ref=f3e378]:
+                      - img "team" [ref=f3e379]
+                      - generic [ref=f3e382]: 2 MRFs
+                    - img "shop" [ref=f3e384]
+                  - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e387]'
+            - generic [ref=f3e393]:
+              - generic [ref=f3e395]:
+                - strong [ref=f3e400]: Functional Screening (Zeko)
+                - superscript [ref=f3e405]:
+                  - generic [ref=f3e406]: "3"
+              - generic [ref=f3e408]:
+                - 'button "AR Abhay Ranjan Singh 8d Move to another stage AI Engineer · Screening Shortlist · admin Not yet invited In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e410]':
+                  - generic [ref=f3e413] [cursor=pointer]:
+                    - generic [ref=f3e414]: AR
+                    - generic [ref=f3e415]:
+                      - generic [ref=f3e416]:
+                        - strong [ref=f3e418]: Abhay Ranjan Singh
+                        - generic [ref=f3e419]:
+                          - generic [ref=f3e420]: 8d
+                          - button "Move to another stage" [ref=f3e423]:
+                            - img "swap" [ref=f3e425]
+                      - generic [ref=f3e428]: AI Engineer · Screening Shortlist · admin
+                      - generic [ref=f3e429]: Not yet invited
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e432]'
+                - 'button "S Shashank 11d Move to another stage Phase3 Test Role (1 opening) · Screening Shortlist · chhaya.verma598 Not yet invited In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e437]':
+                  - generic [ref=f3e440] [cursor=pointer]:
+                    - generic [ref=f3e441]: S
+                    - generic [ref=f3e442]:
+                      - generic [ref=f3e443]:
+                        - strong [ref=f3e445]: Shashank
+                        - generic [ref=f3e446]:
+                          - generic [ref=f3e447]: 11d
+                          - button "Move to another stage" [ref=f3e450]:
+                            - img "swap" [ref=f3e452]
+                      - generic [ref=f3e455]: Phase3 Test Role (1 opening) · Screening Shortlist · chhaya.verma598
+                      - generic [ref=f3e456]: Not yet invited
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e459]'
+                - 'button "SK Sa Kumar 12d Move to another stage Associate HR Operations · Screening Shortlist · harish.mopuri Not yet invited In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e464]':
+                  - generic [ref=f3e467] [cursor=pointer]:
+                    - generic [ref=f3e468]: SK
+                    - generic [ref=f3e469]:
+                      - generic [ref=f3e470]:
+                        - strong [ref=f3e472]: Sa Kumar
+                        - generic [ref=f3e473]:
+                          - generic [ref=f3e474]: 12d
+                          - button "Move to another stage" [ref=f3e477]:
+                            - img "swap" [ref=f3e479]
+                      - generic [ref=f3e482]: Associate HR Operations · Screening Shortlist · harish.mopuri
+                      - generic [ref=f3e483]: Not yet invited
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e486]'
+            - generic [ref=f3e492]:
+              - generic [ref=f3e494]:
+                - strong [ref=f3e499]: Technical Round 1
+                - superscript [ref=f3e504]:
+                  - generic [ref=f3e505]: "2"
+              - generic [ref=f3e507]:
+                - generic [ref=f3e512] [cursor=pointer]:
+                  - generic [ref=f3e513]: FI
+                  - generic [ref=f3e514]:
+                    - generic [ref=f3e515]:
+                      - strong [ref=f3e517]: Flex Interview
+                      - generic [ref=f3e518]:
+                        - generic [ref=f3e519]: 13d
+                        - 'img "Locked: Rejected in this stage." [ref=f3e522]'
+                    - generic [ref=f3e525]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f3e526]: Rejected
+                    - 'generic "In stage: done · Invited / booked: done · Results in: done · Decision: rejected" [ref=f3e529]'
+                - generic [ref=f3e537] [cursor=pointer]:
+                  - generic [ref=f3e538]: AS
+                  - generic [ref=f3e539]:
+                    - generic [ref=f3e540]:
+                      - strong [ref=f3e542]: Abhishek Singh
+                      - generic [ref=f3e543]:
+                        - generic [ref=f3e544]: 3d
+                        - 'img "Locked: Interview booked for 26 Oct 2026. Cancel the interview to move the candidate." [ref=f3e547]'
+                    - generic [ref=f3e550]: QA Automation Engineer · harishmopuri97@gmail.com · saukumar
+                    - generic [ref=f3e551]:
+                      - generic [ref=f3e552]: Scheduled
+                      - generic [ref=f3e555]:
+                        - img "warning" [ref=f3e556]
+                        - text: Role filled
+                      - img "shop" [ref=f3e560]
+                    - 'generic "In stage: done · Invited / booked: now · Results in: not yet · Decision: not yet" [ref=f3e563]'
+            - generic [ref=f3e569]:
+              - generic [ref=f3e571]:
+                - strong [ref=f3e576]: Technical Round 2
+                - superscript [ref=f3e581]: "0"
+              - generic [ref=f3e584]:
+                - img "inbox" [ref=f3e586]
+                - generic [ref=f3e589]: No candidates here
+                - generic [ref=f3e590]: Candidates appear in this stage as they progress.
+            - generic [ref=f3e592]:
+              - generic [ref=f3e594]:
+                - generic [ref=f3e596]:
+                  - strong [ref=f3e599]: Technical Round 3
+                  - generic [ref=f3e600]: optional
+                - superscript [ref=f3e606]:
+                  - generic [ref=f3e607]: "2"
+              - generic [ref=f3e609]:
+                - 'button "AV Ankit Verma 3d Move to another stage Decisions Developer · Recruiter · recruiter Not yet scheduled In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e611]':
+                  - generic [ref=f3e614] [cursor=pointer]:
+                    - generic [ref=f3e615]: AV
+                    - generic [ref=f3e616]:
+                      - generic [ref=f3e617]:
+                        - strong [ref=f3e619]: Ankit Verma
+                        - generic [ref=f3e620]:
+                          - generic [ref=f3e621]: 3d
+                          - button "Move to another stage" [ref=f3e624]:
+                            - img "swap" [ref=f3e626]
+                      - generic [ref=f3e629]: Decisions Developer · Recruiter · recruiter
+                      - generic [ref=f3e630]: Not yet scheduled
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e633]'
+                - 'button "FP Flex Passed Fn 13d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Not yet scheduled In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e638]':
+                  - generic [ref=f3e641] [cursor=pointer]:
+                    - generic [ref=f3e642]: FP
+                    - generic [ref=f3e643]:
+                      - generic [ref=f3e644]:
+                        - strong [ref=f3e646]: Flex Passed Fn
+                        - generic [ref=f3e647]:
+                          - generic [ref=f3e648]: 13d
+                          - button "Move to another stage" [ref=f3e651]:
+                            - img "swap" [ref=f3e653]
+                      - generic [ref=f3e656]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                      - generic [ref=f3e657]: Not yet scheduled
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e660]'
+            - generic [ref=f3e666]:
+              - generic [ref=f3e668]:
+                - strong [ref=f3e673]: HR Round
+                - superscript [ref=f3e678]:
+                  - generic [ref=f3e679]: "2"
+              - generic [ref=f3e681]:
+                - 'button "SK Sumit Kumar Kamti 12d Move to another stage .NET · Screening Shortlist · admin Not yet scheduled In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e683]':
+                  - generic [ref=f3e686] [cursor=pointer]:
+                    - generic [ref=f3e687]: SK
+                    - generic [ref=f3e688]:
+                      - generic [ref=f3e689]:
+                        - strong [ref=f3e691]: Sumit Kumar Kamti
+                        - generic [ref=f3e692]:
+                          - generic [ref=f3e693]: 12d
+                          - button "Move to another stage" [ref=f3e696]:
+                            - img "swap" [ref=f3e698]
+                      - generic [ref=f3e701]: .NET · Screening Shortlist · admin
+                      - generic [ref=f3e702]: Not yet scheduled
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e705]'
+                - 'button "FA Flex Assessment 12d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Not yet scheduled In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e710]':
+                  - generic [ref=f3e713] [cursor=pointer]:
+                    - generic [ref=f3e714]: FA
+                    - generic [ref=f3e715]:
+                      - generic [ref=f3e716]:
+                        - strong [ref=f3e718]: Flex Assessment
+                        - generic [ref=f3e719]:
+                          - generic [ref=f3e720]: 12d
+                          - button "Move to another stage" [ref=f3e723]:
+                            - img "swap" [ref=f3e725]
+                      - generic [ref=f3e728]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                      - generic [ref=f3e729]: Not yet scheduled
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e732]'
+            - generic [ref=f3e738]:
+              - generic [ref=f3e740]:
+                - generic [ref=f3e742]:
+                  - strong [ref=f3e745]: CEO / Final Round
+                  - generic [ref=f3e746]: optional
+                - superscript [ref=f3e752]:
+                  - generic [ref=f3e753]: "1"
+              - 'button "MP MAK PATEL 11d Move to another stage .NET · Screening Shortlist · admin Not yet scheduled In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e757]':
+                - generic [ref=f3e760] [cursor=pointer]:
+                  - generic [ref=f3e761]: MP
+                  - generic [ref=f3e762]:
+                    - generic [ref=f3e763]:
+                      - strong [ref=f3e765]: MAK PATEL
+                      - generic [ref=f3e766]:
+                        - generic [ref=f3e767]: 11d
+                        - button "Move to another stage" [ref=f3e770]:
+                          - img "swap" [ref=f3e772]
+                    - generic [ref=f3e775]: .NET · Screening Shortlist · admin
+                    - generic [ref=f3e776]: Not yet scheduled
+                    - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e779]'
+            - generic [ref=f3e785]:
+              - generic [ref=f3e787]:
+                - generic [ref=f3e789]:
+                  - strong [ref=f3e792]: Client Interview
+                  - generic [ref=f3e793]: optional
+                - superscript [ref=f3e799]: "0"
+              - generic [ref=f3e802]:
+                - img "inbox" [ref=f3e804]
+                - generic [ref=f3e807]: No candidates here
+                - generic [ref=f3e808]: Candidates appear in this stage as they progress.
+            - generic [ref=f3e810]:
+              - generic [ref=f3e812]:
+                - strong [ref=f3e817]: Documents
+                - superscript [ref=f3e822]:
+                  - generic [ref=f3e823]: "1"
+              - 'button "FD Flex Documents 12d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Awaiting action In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e827]':
+                - generic [ref=f3e830] [cursor=pointer]:
+                  - generic [ref=f3e831]: FD
+                  - generic [ref=f3e832]:
+                    - generic [ref=f3e833]:
+                      - strong [ref=f3e835]: Flex Documents
+                      - generic [ref=f3e836]:
+                        - generic [ref=f3e837]: 12d
+                        - button "Move to another stage" [ref=f3e840]:
+                          - img "swap" [ref=f3e842]
+                    - generic [ref=f3e845]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f3e846]: Awaiting action
+                    - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e849]'
+            - generic [ref=f3e855]:
+              - generic [ref=f3e857]:
+                - strong [ref=f3e862]: Offer
+                - superscript [ref=f3e867]:
+                  - generic [ref=f3e868]: "2"
+              - generic [ref=f3e870]:
+                - 'button "FF Flex Fresh A 13d Move to another stage FlexStage Test Role · Screening Shortlist · flexstage-testpass Awaiting action In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e872]':
+                  - generic [ref=f3e875] [cursor=pointer]:
+                    - generic [ref=f3e876]: FF
+                    - generic [ref=f3e877]:
+                      - generic [ref=f3e878]:
+                        - strong [ref=f3e880]: Flex Fresh A
+                        - generic [ref=f3e881]:
+                          - generic [ref=f3e882]: 13d
+                          - button "Move to another stage" [ref=f3e885]:
+                            - img "swap" [ref=f3e887]
+                      - generic [ref=f3e890]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                      - generic [ref=f3e891]: Awaiting action
+                      - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e894]'
+                - generic [ref=f3e902] [cursor=pointer]:
+                  - generic [ref=f3e903]: FF
+                  - generic [ref=f3e904]:
+                    - generic [ref=f3e905]:
+                      - strong [ref=f3e907]: Flex Fresh B
+                      - generic [ref=f3e908]:
+                        - generic [ref=f3e909]: 13d
+                        - 'img "Locked: Offer shared on 16 Oct 2026." [ref=f3e912]'
+                    - generic [ref=f3e915]: FlexStage Test Role · Screening Shortlist · flexstage-testpass
+                    - generic [ref=f3e916]: Awaiting action
+                    - 'generic "In stage: done · Invited / booked: not yet · Results in: not yet · Decision: not yet" [ref=f3e919]'
+          - status [ref=f3e924]
+  - button "Scroll pipeline stages right" [ref=f3e925] [cursor=pointer]:
+    - img "right" [ref=f3e926]
+  - dialog "user Zeko Token Test FlexStage Test Role · claudepankajmondal@gmail.com" [ref=f3e946]:
+    - generic [ref=f3e932]:
+      - button "Close" [ref=f3e933] [cursor=pointer]:
+        - img "close" [ref=f3e934]
+      - generic [ref=f3e948]:
+        - generic [ref=f3e950]:
+          - img "user" [ref=f3e952]
+          - strong [ref=f3e957]: Zeko Token Test
+        - generic [ref=f3e958]: FlexStage Test Role · claudepankajmondal@gmail.com
+    - generic [ref=f3e937]:
+      - generic [ref=f3e960]:
+        - generic [ref=f3e961]: screening_shortlist
+        - generic [ref=f3e963]: In this stage
+        - button "pause-circle Pause journey" [ref=f3e966] [cursor=pointer]:
+          - img "pause-circle" [ref=f3e968]
+          - generic [ref=f3e971]: Pause journey
+        - button "swap Move to another JD" [ref=f3e973] [cursor=pointer]:
+          - img "swap" [ref=f3e975]
+          - generic [ref=f3e978]: Move to another JD
+        - button "swap Move to…" [ref=f3e980] [cursor=pointer]:
+          - img "swap" [ref=f3e982]
+          - generic [ref=f3e985]: Move to…
+      - generic [ref=f3e986]:
+        - generic [ref=f3e987]: Shortlisted from Candidate Screening · 29 Oct 2026 · by flexstage-testpass
+        - generic [ref=f3e988]: No resume on file
+      - button "download Download dossier" [ref=f3e991] [cursor=pointer]:
+        - img "download" [ref=f3e993]
+        - generic [ref=f3e996]: Download dossier
+      - alert [ref=f3e997]:
+        - img "info-circle" [ref=f3e998]
+        - generic [ref=f3e1001]: FLEXSTAGE-TESTPASS-FIXTURE
+      - generic [ref=f3e1003]:
+        - button "HR (Zeko)" [ref=f3e1004] [cursor=pointer]
+        - button "Assessment" [disabled] [ref=f3e1005]
+        - button "Functional (Zeko)" [disabled] [ref=f3e1006]
+        - button "Tech 1" [disabled] [ref=f3e1007]
+        - button "Tech 2" [disabled] [ref=f3e1008]
+        - button "Tech 3" [disabled] [ref=f3e1009]
+        - button "HR Round" [disabled] [ref=f3e1010]
+        - button "CEO" [disabled] [ref=f3e1011]
+        - button "Client" [disabled] [ref=f3e1012]
+        - button "Documents" [disabled] [ref=f3e1013]
+        - button "Offer" [disabled] [ref=f3e1014]
+      - generic [ref=f3e1015]: Click a stage to see its details. Green = passed, dashed = skipped (can be visited later), grey = not visited.
+      - generic [ref=f3e1016]:
+        - generic [ref=f3e1020]:
+          - strong [ref=f3e1024]: HR Screening (Zeko)
+          - generic [ref=f3e1025]: Updated 29 Oct 2026, 5:34 PM
+        - generic [ref=f3e1027]:
+          - generic [ref=f3e1032]:
+            - generic [ref=f3e1033]:
+              - generic [ref=f3e1034]: Stage Entry
+              - generic [ref=f3e1035]: In progress
+            - generic [ref=f3e1036]: Shortlist notice not yet confirmed sent
+          - generic [ref=f3e1041]:
+            - generic [ref=f3e1042]:
+              - generic [ref=f3e1043]: Schedule Interview
+              - generic [ref=f3e1044]: Not started yet
+            - generic [ref=f3e1045]: Not yet assigned to a Zeko job
+            - button "calendar Schedule Interview" [ref=f3e1047] [cursor=pointer]:
+              - img "calendar" [ref=f3e1049]
+              - generic [ref=f3e1052]: Schedule Interview
+          - generic [ref=f3e1057]:
+            - generic [ref=f3e1058]:
+              - generic [ref=f3e1059]: Awaiting Results
+              - generic [ref=f3e1060]: Not started yet
+            - generic [ref=f3e1061]: Not started yet
+          - generic [ref=f3e1065]:
+            - generic [ref=f3e1066]:
+              - generic [ref=f3e1067]: Approve / Reject
+              - generic [ref=f3e1068]: Not started yet
+            - generic [ref=f3e1069]: Awaiting your decision once results are in
+      - generic [ref=f3e1070]:
+        - generic [ref=f3e1071]:
+          - button "expanded history Stage history 1" [expanded] [ref=f3e1072] [cursor=pointer]:
+            - img "expanded" [ref=f3e1074]
+            - generic [ref=f3e1078]:
+              - img "history" [ref=f3e1080]
+              - generic [ref=f3e1083]: Stage history
+              - generic [ref=f3e1084]: "1"
+          - list [ref=f3e1089]:
+            - listitem [ref=f3e1090]:
+              - generic [ref=f3e1093]:
+                - text: 29 Oct 2026, 5:34 pm
+                - generic [ref=f3e1094]: Entered HR Screening (Zeko)
+        - button "collapsed mail Conversation with candidate 7" [ref=f3e1096] [cursor=pointer]:
+          - img "collapsed" [ref=f3e1098]
+          - generic [ref=f3e1102]:
+            - img "mail" [ref=f3e1104]
+            - generic [ref=f3e1107]: Conversation with candidate
+            - generic [ref=f3e1108]: "7"
+      - generic [ref=f3e1110]:
+        - heading "Record outcome — current stage" [level=5] [ref=f3e1111]
+        - generic [ref=f3e1112]:
+          - button "check Approve" [ref=f3e1114] [cursor=pointer]:
+            - img "check" [ref=f3e1116]
+            - generic [ref=f3e1119]: Approve
+          - button "pause-circle Hold" [ref=f3e1121] [cursor=pointer]:
+            - img "pause-circle" [ref=f3e1123]
+            - generic [ref=f3e1126]: Hold
+          - button "close Reject" [ref=f3e1128] [cursor=pointer]:
+            - img "close" [ref=f3e1130]
+            - generic [ref=f3e1133]: Reject
+        - generic [ref=f3e1134]:
+          - button "stop Close this candidate's record" [ref=f3e1135] [cursor=pointer]:
+            - img "stop" [ref=f3e1137]
+            - generic [ref=f3e1140]: Close this candidate's record
+          - generic [ref=f3e1141]: For an exit that is not a stage decision — withdrew, backed out, joined, or never joined.
+        - alert [ref=f3e1142]:
+          - img "mail" [ref=f3e1143]
+          - generic [ref=f3e1146]: Outcome emails go to the candidate automatically, from the recruitment mailbox.
+  - generic [ref=f3e1148]:
+    - dialog "Schedule Zeko Interview":
+      - generic [ref=f3e1149]:
+        - button "Close" [ref=f3e1150] [cursor=pointer]:
+          - generic "Close" [ref=f3e1151]:
+            - img "close" [ref=f3e1152]
+        - generic [ref=f3e1155]: Schedule Zeko Interview
+        - generic [ref=f3e1158]:
+          - generic [ref=f3e1160]:
+            - generic [ref=f3e1161]: Z
+            - generic [ref=f3e1163]:
+              - strong [ref=f3e1165]: Zeko Token Test
+              - text: claudepankajmondal@gmail.com
+          - generic [ref=f3e1167]:
+            - strong [ref=f3e1169]: Zeko Job — HR Screening round
+            - generic [ref=f3e1172]:
+              - combobox [ref=f3e1174]
+              - generic "HR Interview - Associate Accountant" [ref=f3e1263]
+          - generic [ref=f3e1176]:
+            - strong [ref=f3e1178]: Interview window (IST)
+            - generic [ref=f3e1179]:
+              - text: Opens
+              - generic [ref=f3e1180]:
+                - generic [ref=f3e1182]:
+                  - textbox "Window opens" [ref=f3e1183]: Fri, 30 Oct 2026
+                  - generic:
+                    - img "calendar"
+                - generic [ref=f3e1186]:
+                  - combobox [ref=f3e1188]
+                  - generic "9:00 AM" [ref=f3e1386]
+            - generic [ref=f3e1193]:
+              - text: Closes
+              - generic [ref=f3e1194]:
+                - generic [ref=f3e1196]:
+                  - textbox "Window closes" [active] [ref=f3e1197]
+                  - generic:
+                    - img "calendar"
+                - generic [ref=f3e1200]:
+                  - combobox [ref=f3e1202]
+                  - generic: Time
+            - generic [ref=f3e1207]: Candidate self-schedules within this window via the Zeko link; times round to 30-minute slots automatically.
+        - generic [ref=f3e1208]:
+          - button "Cancel" [ref=f3e1209] [cursor=pointer]
+          - button "Confirm & Invite" [ref=f3e1211] [cursor=pointer]
+  - generic [ref=f3e1389]:
+    - generic [ref=f3e1391]:
+      - generic [ref=f3e1392]:
+        - button "Last year (Control + left)" [ref=f3e1393] [cursor=pointer]
+        - button "Previous month (PageUp)" [ref=f3e1395] [cursor=pointer]
+        - generic [ref=f3e1397]:
+          - button "Choose a month" [ref=f3e1398] [cursor=pointer]: Oct
+          - button "Choose a year" [ref=f3e1399] [cursor=pointer]: "2026"
+        - button "Next month (PageDown)" [ref=f3e1400] [cursor=pointer]
+        - button "Next year (Control + right)" [ref=f3e1402] [cursor=pointer]
+      - table [ref=f3e1405]:
+        - rowgroup [ref=f3e1406]:
+          - row [ref=f3e1407]:
+            - columnheader "Su" [ref=f3e1408]
+            - columnheader "Mo" [ref=f3e1409]
+            - columnheader "Tu" [ref=f3e1410]
+            - columnheader "We" [ref=f3e1411]
+            - columnheader "Th" [ref=f3e1412]
+            - columnheader "Fr" [ref=f3e1413]
+            - columnheader "Sa" [ref=f3e1414]
+        - rowgroup [ref=f3e1415]:
+          - row [ref=f3e1416]:
+            - cell "27" [ref=f3e1417]
+            - cell "28" [ref=f3e1419]
+            - cell "29" [ref=f3e1421]
+            - cell "30" [ref=f3e1423]
+            - cell "1" [ref=f3e1425]
+            - cell "2" [ref=f3e1427]
+            - cell "3" [ref=f3e1429]
+          - row [ref=f3e1431]:
+            - cell "4" [ref=f3e1432]
+            - cell "5" [ref=f3e1434]
+            - cell "6" [ref=f3e1436]
+            - cell "7" [ref=f3e1438]
+            - cell "8" [ref=f3e1440]
+            - cell "9" [ref=f3e1442]
+            - cell "10" [ref=f3e1444]
+          - row [ref=f3e1446]:
+            - cell "11" [ref=f3e1447]
+            - cell "12" [ref=f3e1449]
+            - cell "13" [ref=f3e1451]
+            - cell "14" [ref=f3e1453]
+            - cell "15" [ref=f3e1455]
+            - cell "16" [ref=f3e1457]
+            - cell "17" [ref=f3e1459]
+          - row [ref=f3e1461]:
+            - cell "18" [ref=f3e1462]
+            - cell "19" [ref=f3e1464]
+            - cell "20" [ref=f3e1466]
+            - cell "21" [ref=f3e1468]
+            - cell "22" [ref=f3e1470]
+            - cell "23" [ref=f3e1472]
+            - cell "24" [ref=f3e1474]
+          - row [ref=f3e1476]:
+            - cell "25" [ref=f3e1477]
+            - cell "26" [ref=f3e1479]
+            - cell "27" [ref=f3e1481]
+            - cell "28" [ref=f3e1483]
+            - cell "29" [ref=f3e1485]
+            - cell "30" [ref=f3e1487] [cursor=pointer]
+            - cell "31" [ref=f3e1489] [cursor=pointer]
+          - row [ref=f3e1491]:
+            - cell "1" [ref=f3e1492] [cursor=pointer]
+            - cell "2" [ref=f3e1494] [cursor=pointer]
+            - cell "3" [ref=f3e1496] [cursor=pointer]
+            - cell "4" [ref=f3e1498] [cursor=pointer]
+            - cell "5" [ref=f3e1500] [cursor=pointer]
+            - cell "6" [ref=f3e1502] [cursor=pointer]
+            - cell "7" [ref=f3e1504] [cursor=pointer]
+    - list [ref=f3e1507]:
+      - listitem [ref=f3e1508]: Today
