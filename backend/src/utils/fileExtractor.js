@@ -1,6 +1,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+// pdf-parse v2 exports a PDFParse class; the v1 `pdfParse(buffer)` call no longer exists.
+const { PDFParse } = require('pdf-parse');
 import mammoth from 'mammoth';
 import { stripControlChars } from './textSanitize.js';
 
@@ -20,8 +21,13 @@ export async function extractTextFromBuffer(buffer, mimetype) {
   const mime = mimetype.toLowerCase();
 
   if (mime === 'application/pdf') {
-    const data = await pdfParse(buffer);
-    return stripControlChars(data.text || '');
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const data = await parser.getText();
+      return stripControlChars(data.text || '');
+    } finally {
+      await parser.destroy();
+    }
   }
 
   if (

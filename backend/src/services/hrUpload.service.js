@@ -141,9 +141,15 @@ export async function extractTextFromFile(filePath, originalName) {
       const data = await pdfFn(dataBuffer);
       return stripControlChars(data.text || '');
     } else if (pdf.PDFParse) {
-      const pdfParseInstance = new pdf.PDFParse(uint8Array);
-      const textResult = await pdfParseInstance.getText();
-      return stripControlChars(textResult.text || '');
+      // Must be { data }: a bare array loses pdf-parse's default verbosity, and
+      // pdf.js then floods the error log with harmless font warnings.
+      const pdfParseInstance = new pdf.PDFParse({ data: uint8Array });
+      try {
+        const textResult = await pdfParseInstance.getText();
+        return stripControlChars(textResult.text || '');
+      } finally {
+        await pdfParseInstance.destroy();
+      }
     }
     throw new Error('PDF-parse package structure is unsupported.');
   }
