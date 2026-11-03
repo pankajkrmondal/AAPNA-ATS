@@ -77,13 +77,13 @@ const RECIPIENTS = {
   },
   production: {
     resumeErrorAlert:   { to: 'pkmondal@aapnainfotech.com, hmopuri@aapnainfotech.com', cc: '' },
-    missingEmailAlert:  { to: 'nsatywali@aapnainfotech.com, cverma@aapnainfotech.com', cc: '' },
+    missingEmailAlert:  { to: ' cverma@aapnainfotech.com', cc: '' },
     duplicateAlert:     { to: 'claudepankajmondal@gmail.com', cc: '' },
     mrfApproval:        { to: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com', cc: '' },
-    mrfSubmitHrNotify:  { to: 'recruitment@aapnainfotech.in, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com', cc: '' },
+    mrfSubmitHrNotify:  { to: 'recruitment@aapnainfotech.in,  cverma@aapnainfotech.com', cc: '' },
     // aroy@ added 2026-09-25 (MRF-Approval-Unified-Fix-Plan.md Phase 0 step 2 /
     // A8): the CEO approves MRFs but never received the outcome email.
-    mrfOutcome:         { to: 'recruitment@aapnainfotech.in', cc: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com, nsatywali@aapnainfotech.com, cverma@aapnainfotech.com' },
+    mrfOutcome:         { to: 'recruitment@aapnainfotech.in', cc: 'aroy@aapnainfotech.com, sroy@aapnainfotech.com,  cverma@aapnainfotech.com' },
     shortlistCc:        { to: '', cc: 'recruitment@aapnainfotech.in' },
     // L14: "Feedback received" to the recruitment mailbox (Harish, 23 Oct).
     scorecardSubmitted: { to: 'recruitment@aapnainfotech.in', cc: '' },
