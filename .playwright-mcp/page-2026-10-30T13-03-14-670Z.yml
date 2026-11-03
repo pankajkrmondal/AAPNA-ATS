@@ -1,0 +1,323 @@
+- generic [ref=e1]:
+  - generic [ref=e130]:
+    - complementary [ref=e131]:
+      - generic [ref=e132]:
+        - generic [ref=e133] [cursor=pointer]:
+          - img "AAPNA Infotech" [ref=e135]
+          - generic [ref=e136]: ATS Platform
+        - menu [ref=e137]:
+          - menuitem "dashboard Dashboard" [ref=e138] [cursor=pointer]:
+            - img "dashboard" [ref=e139]
+            - generic [ref=e142]: Dashboard
+          - menuitem "file-text MRF" [active] [ref=e143] [cursor=pointer]:
+            - img "file-text" [ref=e144]
+            - generic [ref=e147]: MRF
+          - menuitem "solution Search Candidate" [ref=e148] [cursor=pointer]:
+            - img "solution" [ref=e149]
+            - generic [ref=e152]: Search Candidate
+          - menuitem "upload HR Manual Upload" [ref=e153] [cursor=pointer]:
+            - img "upload" [ref=e154]
+            - generic [ref=e157]: HR Manual Upload
+          - menuitem "shop Vendor Upload" [ref=e158] [cursor=pointer]:
+            - img "shop" [ref=e159]
+            - generic [ref=e162]: Vendor Upload
+          - menuitem "audit Vendor Dashboard" [ref=e163] [cursor=pointer]:
+            - img "audit" [ref=e164]
+            - generic [ref=e167]: Vendor Dashboard
+          - menuitem "filter Candidate Screening" [ref=e168] [cursor=pointer]:
+            - img "filter" [ref=e169]
+            - generic [ref=e172]: Candidate Screening
+          - menuitem "apartment Candidate Pipeline" [ref=e173] [cursor=pointer]:
+            - img "apartment" [ref=e174]
+            - generic [ref=e177]: Candidate Pipeline
+          - menuitem "bar-chart Recruitment Analytics" [ref=e178] [cursor=pointer]:
+            - img "bar-chart" [ref=e179]
+            - generic [ref=e182]: Recruitment Analytics
+          - menuitem "link Forms & Links" [ref=e183] [cursor=pointer]:
+            - img "link" [ref=e184]
+            - generic [ref=e187]: Forms & Links
+          - menuitem "mail Email Templates" [ref=e188] [cursor=pointer]:
+            - img "mail" [ref=e189]
+            - generic [ref=e192]: Email Templates
+          - menuitem "setting Settings" [ref=e193] [cursor=pointer]:
+            - img "setting" [ref=e194]
+            - generic [ref=e197]: Settings
+    - generic [ref=e198]:
+      - banner [ref=e199]:
+        - generic [ref=e200]:
+          - button [ref=e202] [cursor=pointer]:
+            - img "menu-fold" [ref=e204]
+          - generic [ref=e207]: MRF
+        - generic [ref=e208]:
+          - button [ref=e211] [cursor=pointer]:
+            - img "bell" [ref=e213]
+          - button "Toggle theme" [pressed] [ref=e217] [cursor=pointer]
+          - button "user setting Admin Portal" [ref=e220] [cursor=pointer]:
+            - generic [ref=e222]:
+              - img "user" [ref=e223]
+              - img "setting" [ref=e226]
+            - generic [ref=e229]: Admin Portal
+          - img "user" [ref=e234] [cursor=pointer]
+      - main [ref=e237]:
+        - generic [ref=e1084]:
+          - generic [ref=e1086]:
+            - generic [ref=e1087]:
+              - heading "New MRF Request" [level=3] [ref=e1088]
+              - text: Hiring Manager Details
+            - generic [ref=e1089]:
+              - generic [ref=e1090]:
+                - generic [ref=e1093]:
+                  - generic [ref=e1095]:
+                    - text: "*"
+                    - generic [ref=e1096]: First Name *
+                  - textbox "* First Name *" [ref=e1100]:
+                    - /placeholder: e.g. Abhijit
+                - generic [ref=e1103]:
+                  - generic [ref=e1105]:
+                    - text: "*"
+                    - generic [ref=e1106]: Last Name *
+                  - textbox "* Last Name *" [ref=e1110]:
+                    - /placeholder: e.g. Roy
+                - generic [ref=e1113]:
+                  - generic [ref=e1115]:
+                    - text: "*"
+                    - generic [ref=e1116]: Email *
+                  - textbox "* Email *" [ref=e1120]:
+                    - /placeholder: e.g. aroy@aapnainfotech.com
+              - generic [ref=e1121]:
+                - generic [ref=e1124]:
+                  - generic [ref=e1125]: CC Email (Keep Comma Separated)
+                  - textbox "CC Email (Keep Comma Separated)" [ref=e1131]:
+                    - /placeholder: e.g. example1@aapnainfotech.com, example2@aapnainfotech.com
+                - generic [ref=e1134]:
+                  - generic [ref=e1136]:
+                    - text: "*"
+                    - generic [ref=e1137]: Role *
+                  - textbox "* Role *" [ref=e1141]:
+                    - /placeholder: e.g. Senior Software Engineer
+                - generic [ref=e1144]:
+                  - generic [ref=e1146]:
+                    - text: "*"
+                    - generic [ref=e1147]: JD Link *
+                  - textbox "* JD Link *" [ref=e1151]:
+                    - /placeholder: e.g. https://link-to-jd.com
+              - generic [ref=e1152]:
+                - generic [ref=e1155]:
+                  - generic [ref=e1157]:
+                    - text: "*"
+                    - generic [ref=e1158]: Budget Min (Annual CTC) *
+                  - generic [ref=e1162]:
+                    - generic:
+                      - button "Increase Value" [ref=e1163] [cursor=pointer]:
+                        - img "up" [ref=e1164]
+                      - button "Decrease Value" [ref=e1167] [cursor=pointer]:
+                        - img "down" [ref=e1168]
+                    - spinbutton "* Budget Min (Annual CTC) *" [ref=e1172]
+                - generic [ref=e1175]:
+                  - generic [ref=e1177]:
+                    - text: "*"
+                    - generic [ref=e1178]: Budget Max (Annual CTC) *
+                  - generic [ref=e1182]:
+                    - generic:
+                      - button "Increase Value" [ref=e1183] [cursor=pointer]:
+                        - img "up" [ref=e1184]
+                      - button "Decrease Value" [ref=e1187] [cursor=pointer]:
+                        - img "down" [ref=e1188]
+                    - spinbutton "* Budget Max (Annual CTC) *" [ref=e1192]
+              - generic [ref=e1194]:
+                - generic [ref=e1195]: Email Body
+                - textbox "Email Body" [ref=e1201]:
+                  - /placeholder: "As discussed, we would like to initiate the hiring process for this position.\n\nWe request you to kindly fill out the Manpower Requisition Form (MRF) using the link below. This will help us clearly capture the role requirements and move forward with job creation and publishing."
+              - generic [ref=e1202]:
+                - button "send Submit Request" [ref=e1204] [cursor=pointer]:
+                  - img "send" [ref=e1206]
+                  - generic [ref=e1209]: Submit Request
+                - button "clear Clear" [ref=e1211] [cursor=pointer]:
+                  - img "clear" [ref=e1213]
+                  - generic [ref=e1216]: Clear
+          - generic [ref=e1218]:
+            - generic [ref=e1219]:
+              - generic [ref=e1220]:
+                - generic [ref=e1221]: Records
+                - textbox "Search records..." [ref=e1222]
+                - generic [ref=e1223]:
+                  - generic [ref=e1224] [cursor=pointer]:
+                    - generic [ref=e1225]:
+                      - radio "All" [checked]
+                    - text: All
+                  - generic [ref=e1226] [cursor=pointer]:
+                    - generic [ref=e1227]:
+                      - radio "Pending"
+                    - text: Pending
+                  - generic [ref=e1228] [cursor=pointer]:
+                    - generic [ref=e1229]:
+                      - radio "Manager Submitted"
+                    - text: Manager Submitted
+                  - generic [ref=e1230] [cursor=pointer]:
+                    - generic [ref=e1231]:
+                      - radio "On Hold"
+                    - text: On Hold
+                  - generic [ref=e1232] [cursor=pointer]:
+                    - generic [ref=e1233]:
+                      - radio "Closed"
+                    - text: Closed
+              - button "file-excel Export CSV" [ref=e1235] [cursor=pointer]:
+                - img "file-excel" [ref=e1237]
+                - generic [ref=e1240]: Export CSV
+              - button "file-excel Approval audit" [ref=e1242] [cursor=pointer]:
+                - img "file-excel" [ref=e1244]
+                - generic [ref=e1247]: Approval audit
+            - generic [ref=e1250]:
+              - table [ref=e1254]:
+                - rowgroup [ref=e1255]:
+                  - row [ref=e1256]:
+                    - columnheader "FIRST NAME" [ref=e1257]
+                    - columnheader "LAST NAME" [ref=e1258]
+                    - columnheader "EMAIL" [ref=e1259]
+                    - columnheader "ROLE" [ref=e1260]
+                    - columnheader "MIN BUDGET" [ref=e1261]
+                    - columnheader "MAX BUDGET" [ref=e1262]
+                    - columnheader "MRF STATUS" [ref=e1263]
+                    - columnheader "CREATED DATE" [ref=e1264]
+                - rowgroup [ref=e1265]:
+                  - row [ref=e1266] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1267]
+                    - cell "HM" [ref=e1268]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1269]
+                    - cell "ZZ-TEST MRF Hold 2026-10-23 04:27 MRF-830" [ref=e1270]:
+                      - generic [ref=e1271]:
+                        - strong [ref=e1273]: ZZ-TEST MRF Hold 2026-10-23 04:27
+                        - generic [ref=e1274]: MRF-830
+                    - cell "₹5,00,000" [ref=e1275]
+                    - cell "₹6,00,000" [ref=e1276]
+                    - cell "REJECTED" [ref=e1277]
+                    - cell "23 Oct 2026" [ref=e1280]
+                  - row [ref=e1281] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1282]
+                    - cell "HM" [ref=e1283]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1284]
+                    - cell "ZZ-TEST MRF Hold 2026-10-23 04:26 MRF-829" [ref=e1285]:
+                      - generic [ref=e1286]:
+                        - strong [ref=e1288]: ZZ-TEST MRF Hold 2026-10-23 04:26
+                        - generic [ref=e1289]: MRF-829
+                    - cell "₹5,00,000" [ref=e1290]
+                    - cell "₹6,00,000" [ref=e1291]
+                    - cell "APPROVED" [ref=e1292]
+                    - cell "23 Oct 2026" [ref=e1295]
+                  - row [ref=e1296] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1297]
+                    - cell "HM" [ref=e1298]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1299]
+                    - cell "ZZ-TEST MRF Hold 2026-10-23 04:25 MRF-828" [ref=e1300]:
+                      - generic [ref=e1301]:
+                        - strong [ref=e1303]: ZZ-TEST MRF Hold 2026-10-23 04:25
+                        - generic [ref=e1304]: MRF-828
+                    - cell "₹5,00,000" [ref=e1305]
+                    - cell "₹6,00,000" [ref=e1306]
+                    - cell "MANAGER SUBMITTED" [ref=e1307]
+                    - cell "23 Oct 2026" [ref=e1310]
+                  - row [ref=e1311] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1312]
+                    - cell "HM" [ref=e1313]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1314]
+                    - cell "ZZ-TEST MRF Hold 2026-10-23 03:14 MRF-827" [ref=e1315]:
+                      - generic [ref=e1316]:
+                        - strong [ref=e1318]: ZZ-TEST MRF Hold 2026-10-23 03:14
+                        - generic [ref=e1319]: MRF-827
+                    - cell "₹5,00,000" [ref=e1320]
+                    - cell "₹6,00,000" [ref=e1321]
+                    - cell "ON HOLD until 22 Nov 2026" [ref=e1322]:
+                      - generic [ref=e1323]:
+                        - generic [ref=e1324]: ON HOLD
+                        - generic [ref=e1325]: until 22 Nov 2026
+                    - cell "23 Oct 2026" [ref=e1326]
+                  - row [ref=e1327] [cursor=pointer]:
+                    - cell "pankaj" [ref=e1328]
+                    - cell "mondal" [ref=e1329]
+                    - cell "pankajmondal3@gmail.com" [ref=e1330]
+                    - cell "Python MRF-761" [ref=e1331]:
+                      - generic [ref=e1332]:
+                        - strong [ref=e1334]: Python
+                        - generic [ref=e1335]: MRF-761
+                    - cell "₹4,00,000" [ref=e1336]
+                    - cell "₹6,00,000" [ref=e1337]
+                    - cell "MANAGER SUBMITTED" [ref=e1338]
+                    - cell "22 Oct 2026" [ref=e1341]
+                  - row [ref=e1342] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1343]
+                    - cell "HM" [ref=e1344]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1345]
+                    - cell "ZZ-TEST MRF Hold 2026-10-22 11:02 MRF-717" [ref=e1346]:
+                      - generic [ref=e1347]:
+                        - strong [ref=e1349]: ZZ-TEST MRF Hold 2026-10-22 11:02
+                        - generic [ref=e1350]: MRF-717
+                    - cell "₹5,00,000" [ref=e1351]
+                    - cell "₹6,00,000" [ref=e1352]
+                    - cell "APPROVED" [ref=e1353]
+                    - cell "22 Oct 2026" [ref=e1356]
+                  - row [ref=e1357] [cursor=pointer]:
+                    - cell "Harish" [ref=e1358]
+                    - cell "Mopuri" [ref=e1359]
+                    - cell "hmopuri@aapnainfotech.com" [ref=e1360]
+                    - cell "Associate HR Operations MRF-683" [ref=e1361]:
+                      - generic [ref=e1362]:
+                        - strong [ref=e1364]: Associate HR Operations
+                        - generic [ref=e1365]: MRF-683
+                    - cell "₹3,00,000" [ref=e1366]
+                    - cell "₹5,00,000" [ref=e1367]
+                    - cell "APPROVED" [ref=e1368]
+                    - cell "28 Sep 2026" [ref=e1371]
+                  - row [ref=e1372] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1373]
+                    - cell "HM" [ref=e1374]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1375]
+                    - cell "ZZ-TEST MRF Approval Fix STG-UI MRF-682" [ref=e1376]:
+                      - generic [ref=e1377]:
+                        - strong [ref=e1379]: ZZ-TEST MRF Approval Fix STG-UI
+                        - generic [ref=e1380]: MRF-682
+                    - cell "₹5,00,000" [ref=e1381]
+                    - cell "₹6,00,000" [ref=e1382]
+                    - cell "REJECTED" [ref=e1383]
+                    - cell "25 Sep 2026" [ref=e1386]
+                  - row [ref=e1387] [cursor=pointer]:
+                    - cell "ZZTest" [ref=e1388]
+                    - cell "HM" [ref=e1389]
+                    - cell "qa.mrf-approval-test@example.com" [ref=e1390]
+                    - cell "ZZ-TEST MRF Approval Fix B-UI MRF-676" [ref=e1391]:
+                      - generic [ref=e1392]:
+                        - strong [ref=e1394]: ZZ-TEST MRF Approval Fix B-UI
+                        - generic [ref=e1395]: MRF-676
+                    - cell "₹5,00,000" [ref=e1396]
+                    - cell "₹6,00,000" [ref=e1397]
+                    - cell "REJECTED" [ref=e1398]
+                    - cell "25 Sep 2026" [ref=e1401]
+                  - row [ref=e1402] [cursor=pointer]:
+                    - cell "Chhaya Verma" [ref=e1403]
+                    - cell "Chhaya Verma" [ref=e1404]
+                    - cell "cverma@aapnainfotech.com" [ref=e1405]
+                    - cell "Test Pilot3 MRF-669" [ref=e1406]:
+                      - generic [ref=e1407]:
+                        - strong [ref=e1409]: Test Pilot3
+                        - generic [ref=e1410]: MRF-669
+                    - cell "₹2,00,000" [ref=e1411]
+                    - cell "₹5,00,000" [ref=e1412]
+                    - cell "APPROVED" [ref=e1413]
+                    - cell "09 Sep 2026" [ref=e1416]
+              - list [ref=e1417]:
+                - listitem "Previous Page" [ref=e1418]:
+                  - button [disabled] [ref=e1419]:
+                    - img "left" [ref=e1420]
+                - listitem "1" [ref=e1423] [cursor=pointer]
+                - listitem "2" [ref=e1425] [cursor=pointer]
+                - listitem "3" [ref=e1427] [cursor=pointer]
+                - listitem "4" [ref=e1429] [cursor=pointer]
+                - listitem "5" [ref=e1431] [cursor=pointer]
+                - listitem "Next 5 Pages" [ref=e1433] [cursor=pointer]:
+                  - generic [ref=e1435]:
+                    - img "double-right" [ref=e1436]
+                    - generic [ref=e1439]: •••
+                - listitem "14" [ref=e1440] [cursor=pointer]
+                - listitem "Next Page" [ref=e1442] [cursor=pointer]:
+                  - button [ref=e1443]:
+                    - img "right" [ref=e1444]
+  - generic [aria-hidden] [ref=e645]: Unattributed
