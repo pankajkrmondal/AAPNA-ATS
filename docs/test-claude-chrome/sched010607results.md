@@ -7,7 +7,7 @@ so the attendee-collapse artifact that invalidated the 2026-08-20 SCHED-05/06 ru
 **Driven through:** the real Pipeline drawer UI (not the service layer), except where noted
 
 **Build under test:** local dev server `localhost:5173` → backend `localhost:5000`, working tree at
-`E:\Recruitment Process Automation\ATS-Migration-Local`, pointed at the **shared staging database**.
+`E:\Recruitment Process Automation\ATS-Migration-Local-Playwright-CLI`, pointed at the **shared staging database**.
 `GET /api/health` → `"environment": "development"`, uptime 3108 s at start. This is the current
 working tree (D3 fix + both 409 UX fixes present), **not** the deployed staging build.
 

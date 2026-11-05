@@ -1,7 +1,10 @@
 # Internal fix/change notes — not part of the shipped codebase
 Fixes/
 dump.rdb
-.claude/
+**/.claude/*
+# Share the root E2E agents and skills (Planner/Generator/Healer kit)
+!/.claude/agents/
+!/.claude/skills/
 Excel/
 
 # Pre-test-pass database snapshots (pg_dump). Real candidate data — never commit.
@@ -13,3 +16,26 @@ Excel/
 test-results/
 # Playwright MCP session output (snapshots, console logs, screenshots)
 .playwright-mcp/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+
+# Playwright Test E2E harness: secrets, auth state and reports
+.env
+.env.*
+!.env.example
+!.env.*.example
+playwright/.auth/
+**/storageState.json
+playwright-report/
+
+.claude/
+CLAUDE.md
+README-ATS-IMPLEMENTATION.md
+node_modules/
+package.json
+playwright.config.ts
+prompts/
+specs/
+tests/
+
+
