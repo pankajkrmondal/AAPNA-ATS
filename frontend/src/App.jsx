@@ -373,7 +373,14 @@ function AppShell() {
               <Route path="/candidates" element={<Candidates />} />
               <Route path="/candidates/:id" element={<CandidateDetail />} />
               <Route path="/hr-upload" element={<HRUpload />} />
-              <Route path="/mrf" element={<MRF />} />
+              <Route
+                path="/mrf"
+                element={
+                  <ModuleRoute moduleKey="new_mrf">
+                    <MRF />
+                  </ModuleRoute>
+                }
+              />
               {/* Vendor's home base — must always render for a vendor so the
                   MainLayout confinement redirect can't form a loop with a
                   ModuleRoute fallback. Data access is still enforced by the
@@ -421,8 +428,22 @@ function AppShell() {
                 }
               />
 
-              <Route path="/email" element={<EmailManagement />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route
+                path="/email"
+                element={
+                  <ModuleRoute moduleKey="system_config">
+                    <EmailManagement />
+                  </ModuleRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ModuleRoute moduleKey="system_config">
+                    <Settings />
+                  </ModuleRoute>
+                }
+              />
             </Route>
 
             {/* Redirects & 404 */}

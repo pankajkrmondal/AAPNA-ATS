@@ -51,6 +51,22 @@ function parseLine(raw) {
 }
 
 /**
+ * D-08: a lookup writes the ref into the log itself, in its own request line
+ * (`GET /api/admin/logs?ref=X`) and, outside production, in the "Prisma query"
+ * debug line for the stored-error search. Those are not evidence about the ref:
+ * an unknown ref reported log lines, more on every search. A Prisma line that
+ * belongs to the ref's own request carries it as requestId and is kept.
+ * @param {{ message: string, requestId: string|null }} line - from parseLine
+ * @param {string} ref
+ * @returns {boolean}
+ */
+export function isOwnLookupLine(line, ref) {
+  const message = String(line.message ?? '');
+  if (/\/api\/admin\/logs\?\S*\bref=/.test(message)) return true;
+  return message === 'Prisma query' && !String(line.requestId ?? '').endsWith(ref);
+}
+
+/**
  * All log lines mentioning `ref`, oldest first.
  * @param {string} ref
  * @returns {Promise<{ lines: Array<object>, filesScanned: string[], truncated: boolean, timedOut: boolean }>}
@@ -72,8 +88,11 @@ export async function findLogLinesByRef(ref) {
     try {
       for await (const raw of rl) {
         if (raw.includes(ref)) {
-          lines.push({ file: file.name, ...parseLine(raw.length > MAX_LINE_CHARS ? raw.slice(0, MAX_LINE_CHARS) : raw) });
-          if (lines.length >= MAX_LINES) { truncated = true; break; }
+          const line = parseLine(raw.length > MAX_LINE_CHARS ? raw.slice(0, MAX_LINE_CHARS) : raw);
+          if (!isOwnLookupLine(line, ref)) {
+            lines.push({ file: file.name, ...line });
+            if (lines.length >= MAX_LINES) { truncated = true; break; }
+          }
         }
         if (Date.now() - started > MAX_MS) { timedOut = true; break; }
       }

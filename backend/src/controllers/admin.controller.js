@@ -208,6 +208,17 @@ export const checkEmail = catchAsync(async (req, res) => {
 });
 
 /**
+ * D-07: the Add User form promises "Min 8 characters", but nothing enforced it.
+ * @param {string} password
+ * @throws {AppError} 400 when shorter than 8 characters
+ */
+function assertPasswordLength(password) {
+  if (String(password).length < 8) {
+    throw new AppError('Password must be at least 8 characters.', 400);
+  }
+}
+
+/**
  * Create a new user with SHA512 + Salt password.
  */
 export const createUser = catchAsync(async (req, res) => {
@@ -216,6 +227,7 @@ export const createUser = catchAsync(async (req, res) => {
   if (!email || !role || !password) {
     throw new AppError('Required fields: email, role, password', 400);
   }
+  assertPasswordLength(password);
 
   // Username is optional — default to the email (it doubles as a login id).
   const effectiveUsername = username?.trim() || email.trim();
@@ -398,6 +410,7 @@ export const updateUser = catchAsync(async (req, res) => {
     if (!isSelf && !outranks(req.user.role, existingUser.role)) {
       throw new AppError("You cannot change another SuperAdmin's password.", 403);
     }
+    assertPasswordLength(password);
     updateData.password_hash = hashPassword(password);
   }
 

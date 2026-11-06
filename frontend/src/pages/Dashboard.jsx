@@ -140,9 +140,11 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Module permission check (admins bypass)
+  // Module permission check. Admin and Super Admin bypass it, matching the
+  // ModuleRoute guard in App.jsx (D-03: Super Admin saw locked quick actions
+  // for modules it could open).
   const isModuleEnabled = (moduleKey) => {
-    if ((user?.role || '').toLowerCase() === 'admin') return true;
+    if (['admin', 'superadmin'].includes((user?.role || '').toLowerCase())) return true;
     return (user?.permissions || []).includes(moduleKey);
   };
 

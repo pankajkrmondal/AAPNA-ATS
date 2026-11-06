@@ -1,6 +1,6 @@
 # Phase 3 — Manual Pass Results, 2026-08-20 evening session
 
-**Ran against:** local dev (`http://localhost:5173`, backend `E:\Recruitment Process Automation\ATS-Migration-Local\backend`),
+**Ran against:** local dev (`http://localhost:5173`, backend `E:\Recruitment Process Automation\ATS-Migration-Local-Playwright-CLI\backend`),
 which carries the D6/D7/D9 fixes in the working tree. Not staging.
 
 **Scope:** the five items still open on

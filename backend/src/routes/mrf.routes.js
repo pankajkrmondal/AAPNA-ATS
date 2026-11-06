@@ -4,11 +4,11 @@ import path from 'path';
 import fs from 'fs';
 import config from '../config/index.js';
 import * as mrfController from '../controllers/mrf.controller.js';
-import { authenticate, restrictTo } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireStaff, restrictTo } from '../middleware/auth.js';
 import { exportLimiter } from '../middleware/exportRateLimit.js';
 import { mrfApprovalLimiter } from '../middleware/mrfApprovalRateLimit.js';
 import AppError from '../utils/AppError.js';
-import { RECRUITER_TIER_ROLES } from '../config/roles.js';
+import { MODULES, RECRUITER_TIER_ROLES } from '../config/roles.js';
 
 /**
  * Roles allowed to bulk-export requisitions. Vendors are external companies and
@@ -21,6 +21,11 @@ const MRF_EXPORT_ROLES = [...RECRUITER_TIER_ROLES];
 // Who may close a requisition by hand (Q34). Same set as exports today, but
 // named separately so tightening one does not silently move the other.
 const MRF_CLOSURE_ROLES = [...RECRUITER_TIER_ROLES];
+// D-02: these routes had no gate beyond login, so a vendor token could read every
+// MRF, budgets and hiring-manager emails included. Staff floor first (a vendor is
+// refused even if the toggle is switched on by mistake), then the Module Access
+// toggle. Routes with restrictTo below are already closed to vendors.
+const MRF_MODULE_GATE = [requireStaff, checkModuleAccess(MODULES.NEW_MRF)];
 
 const router = Router();
 
@@ -76,8 +81,8 @@ router.post('/:id/approve', mrfApprovalLimiter, mrfController.handleMrfApproval)
 // ── Private MRF endpoints (Require login) ──────────────────────────────
 router.use(authenticate);
 
-router.post('/', mrfController.createMrfRequest);
-router.get('/', mrfController.listMrfRequests);
+router.post('/', MRF_MODULE_GATE, mrfController.createMrfRequest);
+router.get('/', MRF_MODULE_GATE, mrfController.listMrfRequests);
 // Registered before '/:id' so 'export' is never captured as an MRF id — the
 // controller would run BigInt('export') and 500.
 router.get('/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfRequests);
@@ -88,11 +93,11 @@ router.get('/approval-audit/export', restrictTo('admin', 'superadmin'), exportLi
 // details modal. Two path segments, so it cannot collide with '/:id'.
 router.get('/:id/export', restrictTo(...MRF_EXPORT_ROLES), exportLimiter, mrfController.exportMrfDetail);
 // View/edit the submitted main MRF record (rpa_mrf). Declared before '/:id' for clarity.
-router.get('/main/:id', mrfController.getMainMrf);
-router.patch('/main/:id', mrfController.updateMainMrf);
+router.get('/main/:id', MRF_MODULE_GATE, mrfController.getMainMrf);
+router.patch('/main/:id', MRF_MODULE_GATE, mrfController.updateMainMrf);
 // Manual requisition closure (Q34). Two path segments, so no '/:id' collision.
 // Never writes approval_status or mrfstatus — closure lives in closed_at.
-router.get('/closure-reasons', mrfController.listClosureReasons);
+router.get('/closure-reasons', MRF_MODULE_GATE, mrfController.listClosureReasons);
 router.post('/:id/close', restrictTo(...MRF_CLOSURE_ROLES), mrfController.closeMrf);
 router.post('/:id/reopen', restrictTo(...MRF_CLOSURE_ROLES), mrfController.reopenMrf);
 // MRF approval audit trail. :id is the rpa_mrf id (the submitted requisition).
@@ -112,8 +117,8 @@ router.post('/:id/hold/release', restrictTo(...MRF_EXPORT_ROLES), mrfController.
 // L07: label + JD date for a JD sent without an MRF. Registered before the
 // bare /:id routes.
 router.patch('/:id/version-label', restrictTo(...MRF_CLOSURE_ROLES), mrfController.updateJdVersionLabel);
-router.get('/:id', mrfController.getMrfRequest);
-router.patch('/:id', mrfController.updateMrfRequest);
+router.get('/:id', MRF_MODULE_GATE, mrfController.getMrfRequest);
+router.patch('/:id', MRF_MODULE_GATE, mrfController.updateMrfRequest);
 
 export default router;
 
