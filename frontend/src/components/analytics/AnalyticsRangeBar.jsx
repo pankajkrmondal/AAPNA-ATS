@@ -3,6 +3,7 @@
  * Presets 7 / 30 / 60 / 90 / 365 days and All, plus custom dates. Picking
  * custom dates switches the preset off; picking a preset clears them.
  */
+import { useState } from 'react';
 import { DatePicker, Segmented, Space, Typography } from 'antd';
 import dayjs from 'dayjs';
 import MetricInfo from '../common/MetricInfo';
@@ -17,6 +18,9 @@ const { Text } = Typography;
 export default function AnalyticsRangeBar({ value, onChange, previousLabel }) {
   const params = rangeParams(value);
   const picker = params.from ? [dayjs(params.from), dayjs(params.to)] : null;
+  // D-11: the start date picked in this open session. While the end date is being
+  // chosen, earlier days are disabled so an end before the start cannot be picked.
+  const [pickedStart, setPickedStart] = useState(null);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }} data-testid="analytics-range-bar">
       <Space size={10} wrap style={{ justifyContent: 'flex-end' }}>
@@ -32,9 +36,13 @@ export default function AnalyticsRangeBar({ value, onChange, previousLabel }) {
             if (v?.[0] && v?.[1]) onChange({ preset: 'custom', from: v[0].startOf('day'), to: v[1].startOf('day') });
             else onChange({ preset: 'all', from: null, to: null });
           }}
+          onCalendarChange={(dates, _strings, info) => {
+            if (info?.range === 'start') setPickedStart(dates?.[0] ?? null);
+          }}
+          onOpenChange={(open) => { if (!open) setPickedStart(null); }}
           format="DD MMM YYYY"
           allowClear
-          disabledDate={(d) => d && d.isAfter(dayjs(), 'day')}
+          disabledDate={(d) => d && (d.isAfter(dayjs(), 'day') || (pickedStart && d.isBefore(pickedStart, 'day')))}
           aria-label="Custom date range"
           data-testid="analytics-range-picker"
         />

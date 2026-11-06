@@ -16,6 +16,7 @@ import {
   Table, Card, Space, Select, Input, DatePicker, Button, Tag, Typography, Row, Col, Statistic, Alert,
 } from 'antd';
 import { ReloadOutlined, ClearOutlined, WarningOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import adminService from '../../services/adminService';
 import ExportButton from '../common/ExportButton';
 import { fmtDateTime } from '../../utils/dateFormat';
@@ -185,6 +186,7 @@ export default function ReferralLogPanel() {
             onChange={(e) => setFilter({ referrer: e.target.value })}
           />
           <RangePicker
+            value={filters.from && filters.to ? [dayjs(filters.from), dayjs(filters.to)] : null}
             onChange={(range) => setFilter({
               from: range?.[0] ? range[0].format('YYYY-MM-DD') : undefined,
               to: range?.[1] ? range[1].format('YYYY-MM-DD') : undefined,

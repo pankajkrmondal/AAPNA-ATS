@@ -112,14 +112,14 @@ export const createMrfRequest = catchAsync(async (req, res) => {
     }
   }
 
-  // Budget validation — Budget Min >= 10,000 and Budget Max > Budget Min.
+  // Budget validation — Budget Min >= 1,00,000 and Budget Max > Budget Min.
   const minBudget = Number(budget_min);
   const maxBudget = Number(budget_max);
   if (Number.isNaN(minBudget) || Number.isNaN(maxBudget)) {
     throw new AppError('Budget values must be valid numbers.', 400);
   }
-  if (minBudget < 10000) {
-    throw new AppError('Budget Min should be at least 10,000.', 400);
+  if (minBudget < 100000) {
+    throw new AppError('Budget Min should be at least 1,00,000.', 400);
   }
   if (maxBudget <= minBudget) {
     throw new AppError('Budget Max must be greater than Budget Min.', 400);

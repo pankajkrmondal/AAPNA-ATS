@@ -79,7 +79,7 @@ function AdminPortalIcon() {
  *  after '/vendor' further down, so it tracks this order automatically. */
 const MENU_ITEMS = [
   { key: '/dashboard',  icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF' },
+  { key: '/mrf',        icon: <FileTextOutlined />,  label: 'MRF', moduleKey: 'new_mrf' },
   { key: '/candidates', icon: <SolutionOutlined />,  label: 'Search Candidate' },
   { key: '/hr-upload',  icon: <UploadOutlined />,    label: 'HR Manual Upload' },
   { key: '/vendor',     icon: <ShopOutlined />,      label: 'Vendor Upload' },
@@ -100,8 +100,8 @@ const MENU_ITEMS = [
   // VITE_FORMS_LINKS_ENABLED until Chhaya signs off the new slot; the page
   // itself is always reachable at /forms-links.
   ...(FORMS_LINKS_ENABLED ? [{ key: '/forms-links', icon: <LinkOutlined />, label: 'Forms & Links' }] : []),
-  { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates' },
-  { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings' },
+  { key: '/email',      icon: <MailOutlined />,      label: 'Email Templates', moduleKey: 'system_config' },
+  { key: '/settings',   icon: <SettingOutlined />,   label: 'Settings', moduleKey: 'system_config' },
 ];
 
 /** Navigation menu shown to vendors — restricted to their own surfaces. */
@@ -276,6 +276,12 @@ export default function MainLayout() {
     menuItems.splice(idx + 1, 0, VENDOR_DASHBOARD_MENU_ITEM);
   } else {
     menuItems = MENU_ITEMS;
+  }
+  // A restricted module is hidden here as well as refused by ModuleRoute and the
+  // API. Admin tier bypasses module checks, as ModuleRoute does.
+  if (!isVendor && !hasAdminAccess) {
+    const permissions = user?.permissions || [];
+    menuItems = menuItems.filter((m) => !m.moduleKey || permissions.includes(m.moduleKey));
   }
 
   if (isAdminPath) {

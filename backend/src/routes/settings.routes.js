@@ -1,36 +1,43 @@
 import { Router } from 'express';
 import * as settingsController from '../controllers/settings.controller.js';
 import * as mrfHoldSettingsController from '../controllers/mrfHoldSettings.controller.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, checkModuleAccess, requireAdmin, requireStaff } from '../middleware/auth.js';
+import { MODULES } from '../config/roles.js';
 
 const router = Router();
 
-// Require authentication for all settings operations
-router.use(authenticate);
+// D-05: vendors have no settings screen, but these routes only checked for a
+// login, so a vendor token could read them and write the schedulers. Everything
+// here is staff only. The routes that only the Settings page uses also follow the
+// System Configuration toggle; the ones the Pipeline and shortlist screens read
+// stay open to staff, or a recruiter without that toggle could not work there.
+router.use(authenticate, requireStaff);
+const systemConfig = checkModuleAccess(MODULES.SYSTEM_CONFIG);
 
-router.get('/reminder', settingsController.getReminderSettings);
-router.post('/reminder', settingsController.saveReminderSettings);
+router.get('/reminder', systemConfig, settingsController.getReminderSettings);
+router.post('/reminder', systemConfig, settingsController.saveReminderSettings);
 
 // Recruiters added as optional attendees to every booked round's Teams meeting
-router.get('/interview-optional-attendees', settingsController.getInterviewOptionalAttendees);
-router.post('/interview-optional-attendees', settingsController.saveInterviewOptionalAttendees);
+router.get('/interview-optional-attendees', systemConfig, settingsController.getInterviewOptionalAttendees);
+router.post('/interview-optional-attendees', systemConfig, settingsController.saveInterviewOptionalAttendees);
 
 // Interview reminder scheduler (on/off + poll interval) for booked technical rounds
-router.get('/interview-reminder', settingsController.getInterviewReminderConfig);
-router.post('/interview-reminder', settingsController.saveInterviewReminderConfig);
+router.get('/interview-reminder', systemConfig, settingsController.getInterviewReminderConfig);
+router.post('/interview-reminder', systemConfig, settingsController.saveInterviewReminderConfig);
 
 // Interview occurrence sweep (on/off + poll interval + grace) — the post-interview
 // "did it happen?" gate that guards scorecard dispatch.
-router.get('/interview-occurrence', settingsController.getInterviewOccurrenceConfig);
-router.post('/interview-occurrence', settingsController.saveInterviewOccurrenceConfig);
+router.get('/interview-occurrence', systemConfig, settingsController.getInterviewOccurrenceConfig);
+router.post('/interview-occurrence', systemConfig, settingsController.saveInterviewOccurrenceConfig);
 
 // Interview recording capture (on/off + poll interval + grace) — links the Teams
 // recording to the booking once Teams has finished processing it.
-router.get('/interview-recording', settingsController.getInterviewRecordingConfig);
-router.post('/interview-recording', settingsController.saveInterviewRecordingConfig);
-/** Evalground Assessment automation — deadline days + auto-advance/reject toggle. */
+router.get('/interview-recording', systemConfig, settingsController.getInterviewRecordingConfig);
+router.post('/interview-recording', systemConfig, settingsController.saveInterviewRecordingConfig);
+/** Evalground Assessment automation — deadline days + auto-advance/reject toggle.
+ *  The read stays open to staff: the Pipeline drawer uses the deadline days. */
 router.get('/assessment-automation', settingsController.getAssessmentAutomation);
-router.post('/assessment-automation', settingsController.saveAssessmentAutomation);
+router.post('/assessment-automation', systemConfig, settingsController.saveAssessmentAutomation);
 
 /** Email flow keys — who receives each kind of mail. Superadmin-gated in the
  *  controller (same pattern as assessment-automation above). */

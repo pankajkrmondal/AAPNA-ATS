@@ -357,6 +357,21 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
  * and let the page jump when results landed. Reuses the app-wide `.shimmer`
  * class so it animates like every other loading surface.
  */
+/**
+ * D-12: form rule for a Max field. An inverted range used to go to the server
+ * and come back as "0 matched", which reads as "no candidates exist".
+ * @param {string} minField - form name of the paired Min field
+ * @param {string} label - field label for the message
+ * @returns {Function} antd rule
+ */
+const maxNotBelowMin = (minField, label) => ({ getFieldValue }) => ({
+  validator(_, max) {
+    const min = getFieldValue(minField);
+    if (min == null || max == null || max >= min) return Promise.resolve();
+    return Promise.reject(new Error(`${label} Max must not be less than Min.`));
+  },
+});
+
 function CandidateListSkeleton({ rows = 4 }) {
   const Bar = ({ w, h = 12, mb = 0 }) => (
     <div className="shimmer" style={{ width: w, height: h, borderRadius: 6, marginBottom: mb }} />
@@ -1534,7 +1549,7 @@ export default function CandidateScreening() {
                           <Form.Item name="expMin" noStyle>
                             <InputNumber size="large" placeholder="Min" style={{ width: '50%' }} min={0} />
                           </Form.Item>
-                          <Form.Item name="expMax" noStyle>
+                          <Form.Item name="expMax" noStyle dependencies={['expMin']} rules={[maxNotBelowMin('expMin', 'Experience')]}>
                             <InputNumber size="large" placeholder="Max" style={{ width: '50%' }} min={0} />
                           </Form.Item>
                         </Space.Compact>
@@ -1546,7 +1561,7 @@ export default function CandidateScreening() {
                           <Form.Item name="ctcMin" noStyle>
                             <InputNumber size="large" placeholder="Min" style={{ width: '50%' }} min={0} />
                           </Form.Item>
-                          <Form.Item name="ctcMax" noStyle>
+                          <Form.Item name="ctcMax" noStyle dependencies={['ctcMin']} rules={[maxNotBelowMin('ctcMin', 'Expected CTC')]}>
                             <InputNumber size="large" placeholder="Max" style={{ width: '50%' }} min={0} />
                           </Form.Item>
                         </Space.Compact>

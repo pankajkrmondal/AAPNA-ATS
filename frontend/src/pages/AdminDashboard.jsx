@@ -109,6 +109,7 @@ export default function AdminDashboard() {
   const [selectedModUser, setSelectedModUser] = useState(null);
   const [userPermissions, setUserPermissions] = useState({});
   const [permsLoading, setPermsLoading] = useState(false);
+  const [permsLoadFailed, setPermsLoadFailed] = useState(false);
   const [autoSaved, setAutoSaved] = useState(false);
 
   // Modals state
@@ -273,6 +274,7 @@ export default function AdminDashboard() {
   const handleSelectModUser = async (userRecord) => {
     setSelectedModUser(userRecord);
     setPermsLoading(true);
+    setPermsLoadFailed(false);
     setAutoSaved(false);
     try {
       const res = await adminService.getModulesAccess(userRecord.id);
@@ -285,6 +287,10 @@ export default function AdminDashboard() {
       });
       setUserPermissions(permMap);
     } catch (err) {
+      // D-10: the card now names this user, so never leave the previous user's
+      // states on it. A click there would save them onto the wrong account.
+      setUserPermissions({});
+      setPermsLoadFailed(true);
       message.error('Failed to load user permissions.');
     } finally {
       setPermsLoading(false);
@@ -997,6 +1003,7 @@ export default function AdminDashboard() {
                           <Switch
                             checked={enabled}
                             loading={permsLoading}
+                            disabled={permsLoadFailed}
                             onChange={(checked) => handlePermissionToggle(mod.key, checked)}
                             style={enabled ? { background: 'var(--gold)' } : undefined}
                           />
@@ -1032,6 +1039,7 @@ export default function AdminDashboard() {
                       <Switch
                         checked={!!userPermissions['hr_admin']}
                         loading={permsLoading}
+                        disabled={permsLoadFailed}
                         onChange={(checked) => handlePermissionToggle('hr_admin', checked)}
                         style={userPermissions['hr_admin'] ? { background: 'var(--gold)' } : undefined}
                       />
@@ -1241,7 +1249,14 @@ export default function AdminDashboard() {
               </Text>
               <Row gutter={14}>
                 <Col span={12}>
-                  <Form.Item label="Password" name="password" rules={[{ required: true, message: 'Password is required' }]}>
+                  <Form.Item
+                    label="Password"
+                    name="password"
+                    rules={[
+                      { required: true, message: 'Password is required' },
+                      { min: 8, message: 'Password must be at least 8 characters.' },
+                    ]}
+                  >
                     <Input.Password placeholder="Min 8 characters" />
                   </Form.Item>
                 </Col>
@@ -1301,7 +1316,11 @@ export default function AdminDashboard() {
               </Text>
               <Row gutter={14}>
                 <Col span={12}>
-                  <Form.Item label="New Password" name="password">
+                  <Form.Item
+                    label="New Password"
+                    name="password"
+                    rules={[{ min: 8, message: 'Password must be at least 8 characters.' }]}
+                  >
                     <Input.Password placeholder="Leave blank to keep current" />
                   </Form.Item>
                 </Col>

@@ -525,16 +525,16 @@ export default function MRF() {
 
   // Handle submit new MRF
   const handleSubmit = async (values) => {
-    // Budget validation — mirrors the n8n MRF form rules
-    // (Budget Min >= 10,000 and Budget Max > Budget Min).
+    // Budget validation — same rules as the server
+    // (Budget Min >= 1,00,000 and Budget Max > Budget Min).
     const min = Number(values.budget_min);
     const max = Number(values.budget_max);
     if (Number.isNaN(min) || Number.isNaN(max)) {
       message.error('Budget values must be valid numbers.');
       return;
     }
-    if (min < 10000) {
-      message.error('Budget Min should be at least 10,000.');
+    if (min < 100000) {
+      message.error('Budget Min should be at least 1,00,000.');
       return;
     }
     if (max <= min) {
