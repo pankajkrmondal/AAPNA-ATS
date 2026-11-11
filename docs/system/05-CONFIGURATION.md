@@ -23,7 +23,7 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `DATABASE_URL` **R** | — | PostgreSQL connection (staging DB for local and staging) |
 | `JWT_SECRET` **R**, `JWT_EXPIRES_IN` (`24h`), `JWT_REFRESH_EXPIRES_IN` (`7d`) | — | Login tokens (sessions must also exist in `rpa_sessions`) |
 | `FRONTEND_URL` | `http://localhost:5173` | CORS origin |
-| `PUBLIC_BASE_URL` | empty | This backend's public URL, for the email open-tracking pixel; empty = no pixel |
+| `PUBLIC_BASE_URL` | empty | This backend's public URL, for the email open-tracking pixel and (U08) the tracked Zeko link `/api/z/<token>`; empty = no pixel, and the Zeko email links straight to the job's Zeko page |
 | `TRUST_PROXY` | `false` | `true` behind nginx, so rate limits key on the real client IP |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6379` / — | Cache, queue, socket bridge |
 | `USE_RESUME_QUEUE` | off | `true` = uploads go to the BullMQ queue and the separate worker process |
@@ -60,7 +60,7 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL` (`openai/gpt-4.1-nano`) | | Primary AI for parsing and summaries |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` (`gemini-2.5-flash`) | | Fallback AI; embeddings |
 | `COHERE_API_KEY`, `COHERE_BASE_URL`, `COHERE_MODEL` (`rerank-v3.5`) | | Reranking |
-| `SCREENING_V2` | `false` | Strict keyword / JD filtering (section A). Stays off in production until RT signs off the before/after check (N11) |
+| `SCREENING_V2` | `false` | Strict keyword / JD filtering (section A). Staging: `true` (for U04's UAT). Production: off until the N11 before/after check is built and RT signs it off. N11 was not built as of 10 Nov, but the server copy of `.env.production` already reads `true`; confirm what production actually runs (see §4) |
 
 ### Zeko
 | Variable | Purpose |
@@ -71,6 +71,7 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `ZEKO_LOGIN_EMAIL` | Account for the OTP login (defaults to the sender mailbox) |
 | `ZEKO_SYNC_ENABLED`, `ZEKO_JOBS_CRON` (hourly), `ZEKO_RESULTS_CRON` (5 min) | Background sync |
 | `ZEKO_TEST_PHONE` | Phone sent to Zeko outside production (Zeko sends SMS itself) |
+| `ZEKO_REMINDER_ENABLED` | U08 expiry reminder (`jobs/zekoExpiryReminder.js`, hourly at :20 IST). Default `false`. Runs only when `ZEKO_SYNC_ENABLED=true` too, because it asks Zeko whether the candidate has attempted the test. Staging: `true` for R2 UAT. Production: `false` until R2 |
 
 ### Pipeline, documents, offers, assessments
 | Variable | Default | Purpose |
@@ -80,6 +81,10 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `DOCUMENT_REMINDER_CRON` / `_AFTER_DAYS` / `_REPEAT_HOURS` / `_MAX_COUNT` | `0 9 * * *` / 2 / 24 / 3 | Document chasing |
 | `OFFER_SWEEP_CRON`, `OFFER_AUTO_CLOSE_AFTER_DAYS` | `0 7 * * *`, 90 | Post-joining auto-close |
 | `MRF_APPROVAL_AUDIT_ENABLED`, `MRF_APPROVAL_TOKEN_DAYS` (14), `MRF_APPROVAL_RATE_WINDOW_MS`, `MRF_APPROVAL_RATE_MAX` | `true` | Per-approver links and audit |
+| `MRF_HOLD_ENABLED` | `false` | Put an MRF on hold (approver link, or on behalf). Off blocks new holds only; the release sweep still frees held MRFs. Staging `true`, production `false` until R1 |
+| `MRF_DELEGATE_DECISION_ENABLED` | `false` | HR Admin Recruiter / Admin / Super Admin can approve, reject or hold for the approvers while an Admin marks them away. Needs `MRF_APPROVAL_AUDIT_ENABLED=true`. Staging `true`, production `false` until R1 |
+| `FORMS_DIGEST_ENABLED` | `false` | U10 bell note at 09:00 IST (`jobs/completedFormsDigest.js`): "N forms completed yesterday across M JDs", linking to Analytics → Completed Forms. In-app only, no email; nothing sent on a day with no forms. Staging `true` for R2 UAT, production `false` until R2 |
+| `FORMS_DIGEST_ROLES` | `superadmin,admin,hr_admin_recruiter,hr` | Who gets that note (HR and Admin). Staff roles only; `vendor` is ignored. Add `recruiter` to include every recruiter |
 
 ### Dossier, exports, limits
 | Variable | Default | Purpose |
@@ -105,12 +110,15 @@ Changed from the Settings screens (or by the system itself). Read with `prisma.r
 |---|---|---|
 | `reminder_cron_schedule`, `reminder_interval_days`, `reminder_max_count` | Settings → Reminders | `jobs/reminderScheduler.js` |
 | `interview_reminder_enabled`, `interview_reminder_interval_min`, `interview_reminder_lead_min` | Settings → Interview reminder | `jobs/interviewReminder.js` |
+| `zeko_reminder_lead_hours` | DB only (default 24, at most 168): how long before a Zeko window closes the reminder goes | `jobs/zekoExpiryReminder.js` (U08) |
 | `interview_occurrence_enabled`, `interview_occurrence_interval_min`, `interview_occurrence_grace_min` | Settings → Interview occurrence | `jobs/interviewOccurrence.js` |
 | `interview_recording_enabled`, `interview_recording_interval_min`, `interview_recording_grace_min` | Settings → Recording | `jobs/interviewRecordings.js` |
 | `interview_optional_attendees` | Settings → Optional attendees | `interviewOptionalAttendees.service.js` |
 | `assessment_deadline_days`, `assessment_auto_advance_enabled` | Settings → Assessment automation | `assessmentSettings.service.js` |
 | `email_recipients.<flow>.to` / `.cc` | Settings → Flow recipients (`/settings/flow-keys`); seeded by `prisma/seed-email-recipients.js` | `config/emailRecipients.js` |
 | `mrf_approvers` | DB only: JSON array of `{email, name}`; falls back to the `mrfApproval` recipients | `mrfApproval.service.js`, `utils/mrfApprovalRules.js` |
+| `mrf_hold_default_days`, `mrf_hold_max_days`, `mrf_hold_release_time` | Settings › MRF Approval & Hold (defaults 30 / 180 / 09:00 IST) | `mrfHoldSettings.service.js` |
+| `mrf_approver_absence` | Settings › MRF Approval & Hold, **Admin / Super Admin only**: JSON `{active, from, to, note}`. Decide on behalf works only while it covers today (IST) | `utils/mrfApprovalRules.js` |
 | `mrf_audit_client_data_retention_days` | DB only (default 365, minimum 30) | `jobs/mrfAuditRetentionSweep.js` |
 | `company_profile_text` | Settings → Company profile | JD attachment section in emails (N17) |
 | `mailbox_delta_link` | system | `jobs/mailboxPoller.js` (delete it to force a 24 h re-sync) |
@@ -129,9 +137,12 @@ Changed from the Settings screens (or by the system itself). Read with `prisma.r
 
 | Flag | Meaning when on | Note |
 |---|---|---|
-| `SCREENING_V2` | strict filtering | Production only after RT signs off N11 |
+| `SCREENING_V2` | strict filtering | Production only after RT signs off N11 (not built yet). Location is an exact part match ("Delhi" never finds "New Delhi"; HR reconfirmed 10 Nov). The local copy of `.env.production` says `true`: check the live server before the release |
 | `FLEXIBLE_STAGES_ENABLED` | any-order stage moves | Needs DDL `2026-10-16-flexible-stage-movement.sql` |
 | `MS_CALENDAR_ENABLED`, `MS_ATTENDANCE_ENABLED`, `MS_MEETING_RECORD_AUTO`, `MS_RECORDING_FETCH_ENABLED`, `MS_RECORDING_ARCHIVE_ENABLED` | Teams features | Each needs its Graph permission |
 | `EMAIL_INTAKE_ENABLED`, `INBOUND_SYNC_ENABLED`, `ZEKO_SYNC_ENABLED` | background sync | Off by default per environment |
+| `ZEKO_REMINDER_ENABLED` | Zeko expiry reminder email (U08) | Needs `ZEKO_SYNC_ENABLED`, DDL `2026-11-10-zeko-link-token.sql`, and `PUBLIC_BASE_URL` for the tracked link. Seed the template with `prisma/seed-zeko-reminder-template.js` |
+| `FORMS_DIGEST_ENABLED` | 09:00 IST completed-forms bell note (U10) | No DDL. Recipients: `FORMS_DIGEST_ROLES` |
 | `USE_RESUME_QUEUE` | queued uploads | Needs Redis and the worker process |
 | `MRF_APPROVAL_AUDIT_ENABLED` | per-approver links | On by default; kill switch |
+| `MRF_HOLD_ENABLED`, `MRF_DELEGATE_DECISION_ENABLED` | MRF hold; decide on behalf of away approvers | Needs DDL `2026-10-22-mrf-hold-and-delegate.sql` and Chhaya's role move first. Production order: `docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md` §16.4 |

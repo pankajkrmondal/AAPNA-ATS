@@ -44,6 +44,9 @@ router.get('/analytics/positions/:mrfId', pipelineController.getPositionDetail);
 router.get('/analytics/positions/:mrfId/candidates', pipelineController.getPositionMetricCandidates);
 router.get('/analytics/positions/:mrfId/export', exportLimiter, pipelineController.exportPositionReport);
 
+/** GET /api/pipeline/analytics/completed-forms?range=yesterday|today|7 or ?from&to — forms completed, by JD (U10). */
+router.get('/analytics/completed-forms', pipelineController.getCompletedForms);
+
 /** GET /api/pipeline/stages — admin-configurable stage list. */
 router.get('/stages', pipelineController.listStages);
 /** POST /api/pipeline/stages — create a stage (admin only). */

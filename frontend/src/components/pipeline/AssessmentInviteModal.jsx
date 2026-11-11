@@ -7,10 +7,13 @@
  * than PipelineDrawer.jsx's richer SimpleHtmlEditor iframe editor — this is
  * a much simpler one-off compose, not worth exporting that editor out of an
  * already-large file.
+ *
+ * U02: the role's JD goes with the invite (attached, or as a link when the
+ * file is too large); `hasJd` says whether the MRF has one on record.
  */
 import { useEffect, useState } from 'react';
 import { Modal, Input, Button, Space, Typography, Alert } from 'antd';
-import { MailOutlined } from '@ant-design/icons';
+import { MailOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { MODAL_WIDTH } from './modalWidths';
 
 const { TextArea } = Input;
@@ -22,7 +25,7 @@ function defaultTemplate({ candidateName, position, deadlineDays }) {
   };
 }
 
-export default function AssessmentInviteModal({ open, onClose, candidateName, position, deadlineDays, sending, onSend }) {
+export default function AssessmentInviteModal({ open, onClose, candidateName, position, deadlineDays, hasJd = false, sending, onSend }) {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
@@ -51,6 +54,16 @@ export default function AssessmentInviteModal({ open, onClose, candidateName, po
         <Alert type="info" showIcon message="There is no Evalground API — create the test in Evalground yourself, then paste the link into the body below before sending." />
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" />
         <TextArea rows={10} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Body" />
+        {hasJd ? (
+          <Typography.Text style={{ fontSize: 12.5 }} data-testid="invite-jd-attached">
+            <PaperClipOutlined style={{ marginInlineEnd: 4 }} />
+            The JD is attached (as a link if the file is too large).
+          </Typography.Text>
+        ) : (
+          <Typography.Text type="secondary" style={{ fontSize: 12.5 }} data-testid="invite-jd-missing">
+            This MRF has no JD file: the email goes without one.
+          </Typography.Text>
+        )}
       </Space>
     </Modal>
   );

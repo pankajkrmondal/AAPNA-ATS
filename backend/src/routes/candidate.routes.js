@@ -47,6 +47,26 @@ const upload = multer({
   },
 });
 
+// U01: a recruiter attaching a candidate's real resume (pdf, doc or docx) from
+// the Schedule window or the drawer. Separate from the public form's multer so
+// the formats and the temp-file prefix are its own.
+const STAFF_RESUME_EXTS = ['.pdf', '.doc', '.docx'];
+const staffResumeUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      cb(null, `staff-resume-${uniqueSuffix}${path.extname(file.originalname).toLowerCase()}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (STAFF_RESUME_EXTS.includes(ext)) cb(null, true);
+    else cb(new AppError(`File type ${ext || '(none)'} is not a resume. Upload a ${STAFF_RESUME_EXTS.join(', ')} file.`, 400));
+  },
+});
+
 // Public candidate routes (unauthenticated)
 router.get('/public/roles', candidateController.getPublicRoles);
 // Option lists for the candidate forms (N18): names only, cached for an hour.
@@ -94,6 +114,14 @@ router.patch('/:id', requireStaff, candidateController.updateCandidate);
  * could read any candidate's mail by id.
  */
 router.get('/:id/emails', requireStaff, candidateController.getCandidateEmails);
+
+/**
+ * POST /api/candidates/:id/resume  (multipart, field "resume")
+ * U01: staff attach the candidate's real resume (pdf, doc or docx). Stored in
+ * OneDrive, saved as the URL + item-id pair, and clears the "resume still owed"
+ * flag. requireStaff runs before multer, so a vendor's file is never written.
+ */
+router.post('/:id/resume', requireStaff, staffResumeUpload.single('resume'), candidateController.uploadCandidateResume);
 
 /**
  * GET /api/candidates/:id/pipeline-scores

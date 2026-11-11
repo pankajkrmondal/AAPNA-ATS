@@ -691,6 +691,12 @@ model rpa_zeko_candidate_pipeline {
   interview_end_at           DateTime?                  @db.Timestamptz(6)
   cancelled_at               DateTime?                  @db.Timestamptz(6)
   cancel_reason              String?
+  /// U08: per-booking token for the tracked link /api/z/<token> (ddl/2026-11-10-zeko-link-token.sql)
+  link_token                 String                     @unique(map: "rpa_zeko_candidate_pipeline_link_token_key") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// U08: when the expiry reminder went out for this window; cleared on reschedule
+  reminded_at                DateTime?                  @db.Timestamptz(6)
+  /// U08: when the candidate added a phone on the /zeko-start page
+  phone_captured_at          DateTime?                  @db.Timestamptz(6)
   rpa_shortlisted_candidates rpa_shortlisted_candidates @relation(fields: [candidate_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([candidate_id, zeko_job_id, stage])

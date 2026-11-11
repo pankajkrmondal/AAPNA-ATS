@@ -26,6 +26,8 @@ import LoadingSkeleton from '../components/common/LoadingSkeleton';
 import usePointerSpotlight from '../hooks/usePointerSpotlight';
 import { invalidateCandidateCopies } from '../utils/candidateCache';
 import { fmtDateTime } from '../utils/dateFormat';
+import { contactFormValues, joinContacts, phoneListRule, emailListRule } from '../constants/candidateFields';
+import ContactTagsSelect from '../components/candidates/ContactTagsSelect';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -100,24 +102,6 @@ export default function CandidateDetail() {
   usePointerSpotlight(rootRef);
 
   // Custom validation helpers
-  const contactNumberValidator = (_, value) => {
-    if (!value) return Promise.resolve();
-    const val = String(value).trim();
-    if (val === '') return Promise.resolve();
-    if (/[a-zA-Z]/.test(val)) return Promise.reject(new Error('No alphabets allowed'));
-    if (!/^[0-9\s\-+\(\)\.,]+$/.test(val)) return Promise.reject(new Error('Invalid characters in phone number'));
-    const parts = val.split(',').map(p => p.trim());
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i];
-      if (p === '') return Promise.reject(new Error('Empty number between commas'));
-      const digits = p.replace(/[^0-9]/g, '');
-      if (digits.length < 7 || digits.length > 15) {
-        return Promise.reject(new Error('Invalid length (7-15 digits)'));
-      }
-    }
-    return Promise.resolve();
-  };
-
   const experienceValidator = (_, value) => {
     if (value === undefined || value === null || String(value).trim() === '') return Promise.resolve();
     const val = String(value).trim();
@@ -163,8 +147,8 @@ export default function CandidateDetail() {
     editForm.resetFields();
     editForm.setFieldsValue({
       name: data.name,
-      email: data.email,
-      phone: data.phone,
+      // U05: primary email (read-only), other emails and every phone as tags.
+      ...contactFormValues(data.email, data.phone),
       location: data.location,
       experience: data.experience,
       education: data.education,
@@ -186,7 +170,6 @@ export default function CandidateDetail() {
       const values = await editForm.validateFields();
       
       const payload = {
-        phone: values.phone,
         education: values.education,
         experience: values.experience,
         location: values.location,
@@ -198,6 +181,13 @@ export default function CandidateDetail() {
           Website: values.currentCompany?.Website || '',
         }
       };
+      // Contacts only when edited: the server checks every value in a list it
+      // is sent, and an untouched list may hold an old, badly formatted entry.
+      const before = contactFormValues(data.email, data.phone);
+      const email = joinContacts([values.email, ...(values.otherEmails || [])]);
+      const phone = joinContacts(values.phones);
+      if (email !== joinContacts([before.email, ...before.otherEmails])) payload.email = email;
+      if (phone !== joinContacts(before.phones)) payload.phone = phone;
 
       await candidateService.update(id, payload);
       message.success('Candidate details updated successfully.');
@@ -477,7 +467,7 @@ export default function CandidateDetail() {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL</span>} name="email">
+              <Form.Item label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE EMAIL (PRIMARY)</span>} name="email">
                 <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
               </Form.Item>
             </Col>
@@ -485,14 +475,26 @@ export default function CandidateDetail() {
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item 
-                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CANDIDATE CONTACT NUMBER</span>} 
-                name="phone"
-                rules={[{ validator: contactNumberValidator }]}
+              <Form.Item
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>OTHER EMAILS</span>}
+                name="otherEmails"
+                rules={[emailListRule]}
               >
-                <Input style={{ borderRadius: 6 }} />
+                <ContactTagsSelect kind="email" />
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item
+                label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>PHONE NUMBERS</span>}
+                name="phones"
+                rules={[phoneListRule]}
+              >
+                <ContactTagsSelect kind="phone" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item 
                 label={<span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>CURRENT LOCATION</span>} 

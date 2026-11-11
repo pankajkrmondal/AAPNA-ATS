@@ -204,4 +204,50 @@ export async function applicantList(mrfs, mrfId, metric, range, limit = 500) {
   return rows.map((r) => ({ ...r, cv_id: String(r.cv_id) }));
 }
 
-export default { cvCreatedBetween, CV_IST_DAY, normalisedSql, positionMatches, cvLinkedToMrf, applicantCountsByMrf, applicantDaily, applicantDailyByMrf, applicantList };
+/**
+ * Candidates who completed the missing-details form in the range (U10), each
+ * with ONE JD so a candidate is counted once:
+ *   1. the MRF of their open journey (the JD they are being processed for), else
+ *   2. their most recent applicant link above (a tag, or the "Position Applied"
+ *      match), else
+ *   3. none (mrf_id null: the "No JD yet" group).
+ * Completed = rpa_cv.details_completed_at (first completion only).
+ *
+ * @param {Array<{ id, role, openedAt }>} mrfs  the board's MRFs (see factsCte)
+ * @param {{ from: Date, to: Date }} range
+ * @param {number} [limit]
+ * @returns {Promise<Array<{ cv_id: string, name: string|null, completed_at: Date, mrf_id: string|null }>>}
+ */
+export async function completedFormsWithMrf(mrfs, range, limit = 5000) {
+  const [from, to] = bounds(range);
+  const rows = await prisma.$queryRaw`
+    ${factsCte(mrfs)},
+    done AS (
+      SELECT c.id AS cv_id, c."Name" AS name, c.details_completed_at AS completed_at
+        FROM rpa_cv c
+       WHERE c.details_completed_at >= ${from}::timestamptz AND c.details_completed_at < ${to}::timestamptz
+       ORDER BY c.details_completed_at DESC
+       LIMIT ${limit}
+    )
+    SELECT d.cv_id, d.name, d.completed_at, COALESCE(j.mrf_id, f.mrf_id) AS mrf_id
+      FROM done d
+      LEFT JOIN LATERAL (
+        SELECT p.mrf_id FROM rpa_candidate_pipeline p
+         WHERE p.cv_id = d.cv_id AND p.final_outcome IS NULL AND p.mrf_id IS NOT NULL
+         ORDER BY p.modified_at DESC LIMIT 1
+      ) j ON true
+      LEFT JOIN LATERAL (
+        SELECT facts.mrf_id FROM facts
+         WHERE facts.cv_id = d.cv_id
+         ORDER BY facts.linked_at DESC, facts.mrf_id DESC LIMIT 1
+      ) f ON true
+     ORDER BY d.completed_at DESC`;
+  return rows.map((r) => ({
+    cv_id: String(r.cv_id),
+    name: r.name ?? null,
+    completed_at: r.completed_at,
+    mrf_id: r.mrf_id === null || r.mrf_id === undefined ? null : String(r.mrf_id),
+  }));
+}
+
+export default { cvCreatedBetween, CV_IST_DAY, normalisedSql, positionMatches, cvLinkedToMrf, applicantCountsByMrf, applicantDaily, applicantDailyByMrf, applicantList, completedFormsWithMrf };

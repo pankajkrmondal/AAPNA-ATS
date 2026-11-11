@@ -27,6 +27,7 @@ import { roleCacheKeyV2, isCacheableRecency } from '../utils/screeningCacheKeys.
 import redis from '../config/redis.js';
 import AppError from '../utils/AppError.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
+import { phoneMatchesSql } from '../utils/phone.js';
 import { getCooldownCutoff } from '../utils/rejectionCooldown.js';
 import { generateEmbedding } from './vectorStore.service.js';
 import { activityForSearch as activityFor } from './candidateActivitySettings.service.js';
@@ -179,12 +180,7 @@ async function runLookup(lookup) {
   if (lookup.type === 'email') {
     rows = await query(emailMatchesSql(Prisma.sql`c."EmailID"`, lookup.value));
   } else if (lookup.type === 'phone') {
-    // '[^0-9]' rather than '\D': a backslash would be swallowed by the template
-    // literal before Postgres saw it (same note as emailMatch.js).
-    rows = await query(Prisma.sql`EXISTS (
-      SELECT 1 FROM regexp_split_to_table(coalesce(c."ContactNumber", ''), '[,;/]') AS ph(part)
-      WHERE right(regexp_replace(ph.part, '[^0-9]', '', 'g'), 10) = ${lookup.value}
-    )`);
+    rows = await query(phoneMatchesSql(Prisma.sql`c."ContactNumber"`, lookup.value));
   } else {
     const nameSql = Prisma.sql`lower(btrim(regexp_replace(coalesce(c."Name", ''), '[[:space:]]+', ' ', 'g')))`;
     rows = await query(Prisma.sql`${nameSql} = ${lookup.value}`);
@@ -553,6 +549,8 @@ export async function searchKeywordCandidatesV2(body) {
     summary: {
       mode: 'keyword',
       matchMode: f.matchMode,
+      // U04: the terms the search actually split the inputs into, shown as chips.
+      terms: { skills: f.skills, location: f.location, matchMode: f.matchMode },
       total,
       shown: candidates.length,
       removedBy,

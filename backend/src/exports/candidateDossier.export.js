@@ -492,10 +492,21 @@ footer{padding:24px 36px;color:var(--muted);font-size:12px;line-height:1.7}
 /**
  * Render the self-contained HTML dossier.
  *
+ * U03 adds two cuts for the interview panel's email (utils/panelPackBlock.js
+ * packVariantFor() picks one per round). `download` is the dossier download and
+ * stays byte-identical (tests/unit/candidateDossier.test.js, sha256 snapshot):
+ *   - `panel_tech` (Tech 1/2/3): the header and the consolidated interviewer
+ *     feedback with names, nothing else;
+ *   - `panel_leadership` (HR, CEO): profile, progress so far without the
+ *     "moved" events, the named feedback, interview history & recordings,
+ *     scorecards, AI screening, assessment, and the position last; no "What is
+ *     in this pack".
+ *
  * @param {object} model - from buildDossierModel()
+ * @param {{ variant?: 'download'|'panel_tech'|'panel_leadership' }} [options]
  * @returns {string} a complete HTML document
  */
-export function renderDossierHtml(model) {
+export function renderDossierHtml(model, { variant = 'download' } = {}) {
   const { candidate, generated, status } = model;
   const days = config.dossier.deletionDays;
 
@@ -826,7 +837,7 @@ export function renderDossierHtml(model) {
     value: `${m.included ? 'Yes' : 'No'}${m.note ? ` — ${m.note}` : ''}`,
   })));
 
-  return `<!DOCTYPE html>
+  const open = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -859,7 +870,81 @@ export function renderDossierHtml(model) {
 
 <div class="status${status.closed ? ' closed' : status.state === 'paused' ? ' paused' : ''}">
   ${esc(status.headline)}
+</div>`;
+
+  const close = (recordedLine) => `<footer>
+  <p><b>What has been removed from this pack, deliberately:</b></p>
+  <p>${model.redaction.map((r) => esc(r)).join('<br>')}</p>
+  <p>Generated from the AAPNA Infotech ATS on ${esc(formatDateTime(generated.at))} by
+  ${esc(generated.by)}. ${recordedLine}</p>
+</footer>
+
 </div>
+</body>
+</html>`;
+
+  // ---- U03: the panel's cuts ----------------------------------------------
+  if (variant === 'panel_tech' || variant === 'panel_leadership') {
+    // The consolidated feedback with each interviewer's name (Process Phases
+    // sheet, row 15): the one-line summary, then one record per interviewer.
+    const named = model.consolidated_by_interviewer || [];
+    const namedHtml = (model.consolidated_feedback ? `<div class="quote">${esc(model.consolidated_feedback)}</div>` : '')
+      + recordList(named.map((c) => ({
+        title: `${c.round}${c.interviewer ? ` — ${c.interviewer}` : ''}`,
+        rows: [
+          { label: 'Recommendation', value: c.recommendation },
+          { label: 'Average score', value: c.average },
+          { label: 'Comments', value: c.comments },
+        ],
+      })));
+    const feedbackEmpty = 'No interviewer has submitted a scorecard yet, so there is nothing to consolidate.';
+    const sent = 'This pack was sent to the interview panel and is recorded against their name.';
+
+    if (variant === 'panel_tech') {
+      return `${open}
+
+${section(1, 'Consolidated interviewer feedback', namedHtml, feedbackEmpty)}
+
+${close(sent)}`;
+    }
+
+    // Leadership (HR, CEO): no "moved" events, the position last, and no
+    // "What is in this pack".
+    const progressHtml = recordList(model.stages.filter((s) => s.event_type !== 'moved').map((s) => ({
+      title: `${s.stage_label} — ${s.outcome || eventLabel(s.event_type)}`,
+      rows: [
+        { label: 'What happened', value: eventLabel(s.event_type) },
+        { label: 'Reason / note', value: s.reason || s.notes },
+        { label: 'Decided by', value: s.decided_by },
+        { label: 'When', value: formatDateTime(s.decided_at) },
+      ],
+    })));
+    const historyHtml = interviewsHtml + (model.recordings.length ? `<h3>Recordings</h3>${recordingsHtml}` : '');
+    return `${open}
+
+${section(1, 'Candidate profile', fieldTable(model.profile), 'No candidate profile is on file.')}
+
+${section(2, 'Progress so far', progressHtml, 'No decisions have been recorded on this application yet.')}
+
+${section(3, 'Consolidated interviewer feedback', namedHtml, feedbackEmpty)}
+
+${section(4, 'Interview history & recordings', historyHtml, 'No interviews have been booked for this candidate.')}
+
+${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml,
+    'No scorecards have been submitted for this candidate.')}
+
+${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml,
+    'No AI screening round has been completed for this candidate.')}
+
+${section(7, 'Assessment results', assessmentHtml,
+    'No written assessment result has been recorded for this candidate.')}
+
+${section(8, 'The position', fieldTable(model.position), 'No requisition details are on file.')}
+
+${close(sent)}`;
+  }
+
+  return `${open}
 
 ${section(1, 'Candidate profile', fieldTable(model.profile), 'No candidate profile is on file.')}
 
@@ -888,16 +973,7 @@ ${section(9, 'Interview recordings', recordingsHtml,
 
 ${section(10, 'What is in this pack', manifestHtml)}
 
-<footer>
-  <p><b>What has been removed from this pack, deliberately:</b></p>
-  <p>${model.redaction.map((r) => esc(r)).join('<br>')}</p>
-  <p>Generated from the AAPNA Infotech ATS on ${esc(formatDateTime(generated.at))} by
-  ${esc(generated.by)}. This download has been recorded against their name.</p>
-</footer>
-
-</div>
-</body>
-</html>`;
+${close('This download has been recorded against their name.')}`;
 }
 
 /**

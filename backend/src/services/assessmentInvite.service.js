@@ -15,6 +15,7 @@ import { stageVisitStart } from './stageState.service.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { sendAdHocCandidateEmail } from './stageNotification.service.js';
+import { jdForCandidateEmail } from './jdAttachment.service.js';
 import { compileTemplate } from './emailNotification.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
@@ -73,6 +74,8 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
     if (!subject?.trim() || !body?.trim()) {
       throw new AppError('subject and body are required to send an Evalground invite email.', 400);
     }
+    // U02: the JD goes with the invite — attached, or as a link.
+    const jdMail = await jdForCandidateEmail(pipeline.mrf_id || pipeline.rpa_shortlisted_candidates?.mrf_id);
     emailResult = await sendAdHocCandidateEmail({
       pipelineRow: pipeline,
       candidate: {
@@ -80,7 +83,9 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
         email: pipeline.rpa_shortlisted_candidates?.candidate_email,
       },
       subject,
-      body: plainTextToEmailHtml(body),
+      body: jdMail.appendLink(plainTextToEmailHtml(body)),
+      attachments: jdMail.attachments,
+      attachmentsLog: jdMail.logEntries,
     });
     if (!emailResult.sent) {
       logger.error('Failed to send the Evalground invite email:', { error: emailResult.error });

@@ -9,6 +9,7 @@
  * the database are never re-validated.
  */
 import { firstValidPhone } from './phone.js';
+import { splitContacts } from './contactMerge.js';
 
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 
@@ -42,11 +43,24 @@ const RANGE_RULES = [
 export function validateCandidateFields(fields = {}, existing = {}) {
   const errors = [];
 
-  if (present(fields.ContactNumber) && !firstValidPhone(fields.ContactNumber)) {
-    errors.push({ field: 'ContactNumber', message: 'Enter a 10-digit mobile number (for example 98765 43210 or +91 98765 43210).' });
+  // Both fields can hold a list ("primary, other1, other2", U05): every value
+  // in it must be valid, not just the first. The message names a bad value
+  // when there is more than one, so the recruiter knows which tag to fix.
+  if (present(fields.ContactNumber)) {
+    const phones = splitContacts(fields.ContactNumber, 'phone');
+    const bad = phones.length ? phones.find((p) => !firstValidPhone(p)) : String(fields.ContactNumber);
+    if (bad !== undefined) {
+      const which = phones.length > 1 ? `"${bad}" is not a 10-digit mobile number. ` : '';
+      errors.push({ field: 'ContactNumber', message: `${which}Enter a 10-digit mobile number (for example 98765 43210 or +91 98765 43210).` });
+    }
   }
-  if (present(fields.EmailID) && !EMAIL_RE.test(String(fields.EmailID).trim())) {
-    errors.push({ field: 'EmailID', message: 'Enter a valid email address.' });
+  if (present(fields.EmailID)) {
+    const emails = splitContacts(fields.EmailID, 'email');
+    const bad = emails.length ? emails.find((e) => !EMAIL_RE.test(e)) : String(fields.EmailID);
+    if (bad !== undefined) {
+      const which = emails.length > 1 ? `"${bad}" is not a valid email address. ` : '';
+      errors.push({ field: 'EmailID', message: `${which}Enter a valid email address.` });
+    }
   }
 
   for (const rule of RANGE_RULES) {

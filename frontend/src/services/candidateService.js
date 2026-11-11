@@ -176,6 +176,20 @@ const candidateService = {
     }
     return api.post(`/candidates/public/missing-data?token=${encodeURIComponent(token)}`, data, config);
   },
+
+  /**
+   * U01: staff attach the candidate's real resume (pdf, doc or docx).
+   * Returns { resumeStatus: 'ok', cvFileUrl }.
+   * @param {number|string} candidateId - rpa_cv id
+   * @param {File} file
+   */
+  uploadResume(candidateId, file) {
+    const form = new FormData();
+    form.append('resume', file);
+    return api.post(`/candidates/${candidateId}/resume`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 export default candidateService;

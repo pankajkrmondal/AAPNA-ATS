@@ -145,11 +145,11 @@ test.describe('N05 — filters decide who appears; the score only orders', () =>
 test.describe('N06 — screen changes', () => {
   test('labels, notice text, contact line and the keyword score breakdown', async ({ page }) => {
     await expect(page.getByText('Expected CTC (LPA)', { exact: true })).toBeVisible();
-    // Classic form: separate Name / Email / Phone fields and a plain "any skill" checkbox.
+    // Classic form: separate Name / Email / Phone fields and an All / Any skills choice (U04).
     for (const label of ['Candidate name', 'Email', 'Phone']) {
       await expect(page.locator('.ant-form-item-label').getByText(label, { exact: true })).toBeVisible();
     }
-    await expect(page.getByTestId('any-skill')).not.toBeChecked();
+    await expect(page.getByTestId('skill-match-mode').locator('.ant-segmented-item-selected')).toHaveText('All skills');
     await expect(page.getByText('Designation', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Annual CTC (LPA)', { exact: true })).toHaveCount(0);
 

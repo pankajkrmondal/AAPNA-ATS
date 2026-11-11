@@ -61,6 +61,8 @@ import pipelineAnalyticsExport from '../exports/pipelineAnalytics.export.js';
 import positionsExport from '../exports/positions.export.js';
 import roleReportExport from '../exports/roleReport.export.js';
 import * as openPositionsService from '../services/openPositions.service.js';
+import * as completedFormsService from '../services/completedForms.service.js';
+import { parseFormsRange } from '../services/completedForms.helpers.js';
 import { parseAnalyticsRange, rangeFileTag } from '../utils/analyticsRange.js';
 import { DEFAULT_STUCK_DAYS } from '../services/openPositions.helpers.js';
 import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
@@ -178,6 +180,16 @@ export const getPositionMetricCandidates = catchAsync(async (req, res) => {
     openPositionsParams(req.query),
   );
   return success(res, result, 'Candidates retrieved successfully');
+});
+
+/**
+ * GET /api/pipeline/analytics/completed-forms?range=yesterday|today|7 or ?from&to (U10)
+ * Missing-details forms completed in the range (India time; yesterday by
+ * default), one row per JD with its candidates.
+ */
+export const getCompletedForms = catchAsync(async (req, res) => {
+  const result = await completedFormsService.getCompletedForms(parseFormsRange(req.query));
+  return success(res, result, 'Completed forms retrieved successfully');
 });
 
 /**
@@ -431,7 +443,7 @@ export const scheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name, notes,
-    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack, attach_profile, show_source,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and interview start time are required.', 400);
@@ -458,6 +470,10 @@ export const scheduleInterview = catchAsync(async (req, res) => {
     actedBy: req.user?.id,
     // L14: JD, CV and report so far to the panel unless the box was unticked.
     sendPack: send_pack !== false,
+    // U01: no resume on file, so the panel gets the profile summary instead.
+    attachProfile: attach_profile === true,
+    // U03: the candidate's source in the panel's table; the service refuses it for a referral.
+    showSource: show_source === true,
     user: req.user,
   });
   return success(res, result, 'Interview scheduled successfully');
@@ -474,13 +490,15 @@ export const getSchedulePreview = catchAsync(async (req, res) => {
   // interviewer_name/_email are forwarded so the panel copy the modal shows is
   // the copy that gets sent — the submit posts this compiled body back, and the
   // send path prefers it over recompiling.
-  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email } = req.query;
+  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email, show_source } = req.query;
   const result = await pipelineService.previewScheduleEmails(id, {
     stageKey: stage_key,
     startAt: start_at,
     durationMinutes: duration_minutes ? parseInt(duration_minutes, 10) : 60,
     interviewerName: interviewer_name || '',
     interviewerEmail: interviewer_email || '',
+    // U03: the preview's candidate table follows the Source tick-box.
+    showSource: show_source === 'true',
   });
   return success(res, result, 'Schedule email preview generated');
 });
@@ -496,7 +514,7 @@ export const rescheduleInterview = catchAsync(async (req, res) => {
 
   const {
     stage_key, start_at, duration_minutes, interviewer_email, interviewer_name,
-    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack,
+    candidate_subject, candidate_body, panel_subject, panel_body, candidate_phone, send_pack, attach_profile, show_source,
   } = req.body || {};
   if (!stage_key || !start_at) {
     throw new AppError('Stage and new interview start time are required.', 400);
@@ -518,6 +536,8 @@ export const rescheduleInterview = catchAsync(async (req, res) => {
     panelBody: panel_body ?? null,
     actedBy: req.user?.id,
     sendPack: send_pack !== false,
+    attachProfile: attach_profile === true,
+    showSource: show_source === true,
     user: req.user,
   });
   return success(res, result, 'Interview rescheduled successfully');
@@ -531,13 +551,14 @@ export const getReschedulePreview = catchAsync(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) throw new AppError('Invalid pipeline id.', 400);
 
-  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email } = req.query;
+  const { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email, show_source } = req.query;
   const result = await pipelineService.previewRescheduleEmails(id, {
     stageKey: stage_key,
     startAt: start_at,
     durationMinutes: duration_minutes ? parseInt(duration_minutes, 10) : 60,
     interviewerName: interviewer_name || '',
     interviewerEmail: interviewer_email || '',
+    showSource: show_source === 'true',
   });
   return success(res, result, 'Reschedule email preview generated');
 });
@@ -626,7 +647,13 @@ export const sendPanelPack = catchAsync(async (req, res) => {
   const scheduleId = parseInt(req.params.scheduleId, 10);
   if (Number.isNaN(scheduleId)) throw new AppError('Invalid interview id.', 400);
   const { sendPanelPackForBooking } = await import('../services/interviewPanelPack.service.js');
-  const result = await sendPanelPackForBooking(scheduleId, req.user);
+  // U01: { attach_profile: true } attaches the candidate profile summary when
+  // no resume can travel. U03: { show_source: true } shows the source in the
+  // candidate table (never for a referral).
+  const result = await sendPanelPackForBooking(scheduleId, req.user, {
+    attachProfile: req.body?.attach_profile === true,
+    showSource: req.body?.show_source === true,
+  });
   return success(res, result, 'Sent to the interview panel');
 });
 

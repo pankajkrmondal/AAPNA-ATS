@@ -14,9 +14,26 @@ import { useState } from 'react';
 import { Alert, Button, Checkbox, Input, Segmented, Tag, Typography, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, LockOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import mrfService from '../../services/mrfService';
+import useAuth from '../../hooks/useAuth';
 import HoldDateField from './HoldDateField';
 
 const { Text } = Typography;
+
+const isAdminTier = (role) => ['admin', 'superadmin'].includes(String(role || '').toLowerCase());
+
+/**
+ * Why the panel is locked, and who can unlock it. Only an Admin or Super Admin
+ * can open an absence window (mrfHoldSettings.controller), so an HR Admin
+ * Recruiter is told whom to ask. Other refusals keep the server's words.
+ */
+function lockedReason(onBehalf, role) {
+  if (onBehalf?.reason === 'no_absence_window') {
+    return isAdminTier(role)
+      ? 'the approvers are not marked away today. Mark them away in Settings › MRF Approval & Hold to unlock it.'
+      : 'the approvers are not marked away today. Ask an Admin or Super Admin to mark them away in Settings › MRF Approval & Hold, then reopen this MRF.';
+  }
+  return onBehalf?.message || 'not available right now.';
+}
 
 const ACTION_COPY = {
   approve: { button: 'Approve on behalf', color: '#5b6e1e', icon: <CheckCircleOutlined /> },
@@ -33,6 +50,7 @@ const ACTION_COPY = {
  * }} props
  */
 export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDone }) {
+  const { user } = useAuth();
   const [action, setAction] = useState('approve');
   const [reason, setReason] = useState('');
   const [holdUntil, setHoldUntil] = useState(holdConfig?.defaultDate || '');
@@ -70,7 +88,7 @@ export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDon
       <div style={{ border: '1px dashed var(--border-light, #c9ccbe)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
         <LockOutlined style={{ color: 'var(--text-3)' }} aria-hidden="true" />
         <Text type="secondary" style={{ fontSize: 13 }}>
-          <b>Decide on behalf of approvers</b> — {onBehalf?.message || 'not available right now.'}
+          <b>Decide on behalf of approvers</b> — {lockedReason(onBehalf, user?.role)}
         </Text>
       </div>
     );

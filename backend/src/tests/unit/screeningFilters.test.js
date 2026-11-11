@@ -7,6 +7,7 @@
  * exact match on one part of the stored location. Each rule below is one of
  * the failures RT reported — "java" returning JavaScript-only profiles, "Noida"
  * returning "Greater Noida", "Sushree Sandhyarani Gagarai" returning 42 people.
+ * HR reconfirmed exact location matching on 10 Nov (U04).
  *
  * Pure unit test — the JS mirror and the SQL the database is handed. No
  * database, no network.
@@ -240,13 +241,28 @@ describe('location — exact match on one part of the stored location', () => {
   test('"Noida" never matches "Greater Noida" or a blank location', () => {
     assert.equal(loc('Greater Noida'), false);
     assert.equal(loc('Greater Noida, UP'), false);
+    assert.equal(loc('Noida Sector-62'), false);
     assert.equal(loc(''), false);
     assert.equal(loc(null), false);
   });
 
-  test('several typed cities: any one is enough', () => {
-    const f2 = parseScreeningFilters({ location: 'Pune, Noida' });
-    assert.equal(passesStrictFilters(candidate({ CurrentLocation: 'Pune' }), f2).pass, true);
+  test('"Delhi" means Delhi only: never "New Delhi" or "Delhi NCR" (HR, 10 Nov)', () => {
+    const at = (typed, stored) => passesStrictFilters(candidate({ CurrentLocation: stored }), parseScreeningFilters({ location: typed })).pass;
+    assert.equal(at('Delhi', 'Delhi'), true);
+    assert.equal(at('Delhi', 'Delhi, India'), true);
+    assert.equal(at('Delhi', 'New Delhi'), false);
+    assert.equal(at('Delhi', 'Delhi NCR'), false);
+    assert.equal(at('New Delhi', 'Delhi'), false);
+  });
+
+  test('several typed cities: any one is enough, each exact ("Noida, Delhi")', () => {
+    const f2 = parseScreeningFilters({ location: 'Noida, Delhi' });
+    const at = (v) => passesStrictFilters(candidate({ CurrentLocation: v }), f2).pass;
+    assert.equal(at('Noida, UP'), true);
+    assert.equal(at('Delhi'), true);
+    assert.equal(at('Greater Noida'), false);
+    assert.equal(at('New Delhi'), false);
+    assert.equal(at('Pune'), false);
   });
 
   test('locationParts splits on , / ; |', () => {
@@ -357,6 +373,7 @@ describe('SQL builders', () => {
     const f = parseScreeningFilters({ location: ' Noida , PUNE' });
     const sql = buildFilterSql(f);
     assert.ok(sql.values.some((v) => Array.isArray(v) && v.join() === 'noida,pune'));
+    assert.doesNotMatch(sql.sql, /noida|pune/i, 'cities are never spliced into SQL text');
   });
 
   test('All joins skill predicates with AND, Any with OR; regex is a bound value', () => {

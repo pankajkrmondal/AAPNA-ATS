@@ -42,7 +42,7 @@ api.interceptors.request.use(
  */
 const isPublicLinkPage = (pathname) =>
   /^\/mrf\/[^/]+\/approve\/?$/.test(pathname) ||
-  ['/mrf-submit', '/missing-jd-upload', '/scorecard/', '/documents/'].some((p) => pathname.startsWith(p));
+  ['/mrf-submit', '/missing-jd-upload', '/scorecard/', '/documents/', '/zeko-start/'].some((p) => pathname.startsWith(p));
 
 /**
  * Response interceptor — normalise errors and handle 401 (unauthorized).

@@ -43,6 +43,9 @@ import {
 // open and hangs `node --test`.
 import { parseZekoReportUrl, parseZekoResponseId, zekoSharedReportUrl } from '../../utils/zekoShareLink.js';
 import { assertNoForbiddenFields, pickCvProfile, redactionSummary } from '../../utils/dossierRedaction.js';
+import { createHash } from 'node:crypto';
+import config from '../../config/index.js';
+import { interviewerNameFor } from '../../utils/dossierModel.js';
 
 /** A fully-populated model, shaped exactly as buildDossierModel() returns one. */
 function fullModel(overrides = {}) {
@@ -1531,5 +1534,76 @@ describe('L12 — scorecards in round order, re-dos labelled, edited round notes
     assert.ok(rows.some((r) => r[0] === 'TECHNICAL ROUND 1 (2)'));
     const notes = rows.filter((r) => r[0] === 'Round feedback recorded in the ATS');
     assert.deepEqual(notes.map((r) => r[1]), ['Edited after the debrief: strong on Java.', 'Met the CEO informally.']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U03 · the panel's cuts of the report (renderDossierHtml variants)
+// ---------------------------------------------------------------------------
+describe('renderDossierHtml — U03 panel variants', () => {
+  const sha = (s) => createHash('sha256').update(s).digest('hex');
+  const panelModel = () => fullModel({
+    stages: [
+      ...fullModel().stages,
+      { stage_label: 'Offer', event_type: 'moved', outcome: null, reason: null, notes: 'Moved forward from Technical 1 to Offer', decided_by: 'harish', decided_at: new Date('2026-08-29T11:00:00Z') },
+    ],
+    consolidated_by_interviewer: [
+      { stage_key: 'tech1', round: 'Technical 1', interviewer: 'Harish Mopuri', recommendation: 'hire', average: 4.5, comments: 'Strong on concurrency.' },
+    ],
+  });
+  const titles = (html) => [...html.matchAll(/<h2><span class="num">(\d+)<\/span>([^<]+)<\/h2>/g)].map((m) => `${m[1]} ${m[2]}`);
+
+  test('download is unchanged: the default, byte for byte', () => {
+    const m = fullModel();
+    const html = renderDossierHtml(m);
+    assert.equal(renderDossierHtml(m, { variant: 'download' }), html);
+    assert.equal(renderDossierHtml(m, { variant: 'nonsense' }), html, 'an unknown variant is the download');
+    // Snapshot taken from the renderer before U03 (verified byte-identical on
+    // 10 Nov against git HEAD ff3aa34). The retention days come from config.
+    if (config.dossier.deletionDays === 30) {
+      assert.equal(sha(html), '9e5f56403e03eaebac37f16a0c501c33adba520275768d771e8e15bb41928bdc');
+      assert.equal(sha(renderDossierHtml(emptyModel())), '7cd81553245fcd9dc0dab4416efc2f493455df10bcf3c4a694a15744ca677498');
+    }
+    assert.deepEqual(titles(html).map((t) => t.split(' ')[0]), ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
+  });
+
+  test('panel_tech: the header and the named consolidated feedback, nothing else', () => {
+    const html = renderDossierHtml(panelModel(), { variant: 'panel_tech' });
+    assert.deepEqual(titles(html), ['1 Consolidated interviewer feedback']);
+    assert.match(html, /<h1>Pankaj Mondal<\/h1>/);
+    assert.match(html, /Technical 1 — Harish Mopuri/);
+    assert.match(html, /Strong on concurrency\./);
+    assert.match(html, /2 of 2 interviewers recommend hire/);
+    assert.ok(!html.includes('What is in this pack'));
+    assert.match(html, /sent to the interview panel/);
+  });
+
+  test('panel_leadership: profile first, position last, no moved events, no pack index', () => {
+    const html = renderDossierHtml(panelModel(), { variant: 'panel_leadership' });
+    assert.deepEqual(titles(html), [
+      '1 Candidate profile', '2 Progress so far', '3 Consolidated interviewer feedback',
+      '4 Interview history &amp; recordings', '5 Interviewer scorecards', '6 AI screening',
+      '7 Assessment results', '8 The position',
+    ]);
+    assert.ok(!html.includes('Moved forward from Technical 1 to Offer'), 'moved events are left out');
+    assert.ok(renderDossierHtml(panelModel()).includes('Moved forward from Technical 1 to Offer'), 'the download keeps them');
+    assert.ok(!html.includes('What is in this pack'));
+    assert.match(html, /Technical 1 — Harish Mopuri/);
+  });
+
+  test('both cuts say so when nobody has submitted feedback yet', () => {
+    const m = fullModel({ consolidated_feedback: null, consolidated_by_interviewer: [] });
+    assert.match(renderDossierHtml(m, { variant: 'panel_tech' }), /No interviewer has submitted a scorecard yet/);
+  });
+
+  test('the interviewer’s name comes from a single-person booking only', () => {
+    const bookings = new Map([
+      ['1', { interviewer_name: 'Rahul Verma', interviewer_email: 'rahul@example.com' }],
+      ['2', { interviewer_name: 'Rahul Verma', interviewer_email: 'rahul@example.com, priya@example.com' }],
+    ]);
+    assert.equal(interviewerNameFor({ schedule_id: 1n, recipient_email: 'Rahul@Example.com' }, bookings), 'Rahul Verma');
+    assert.equal(interviewerNameFor({ schedule_id: 2, recipient_email: 'priya@example.com' }, bookings), null, 'not on a panel of two');
+    assert.equal(interviewerNameFor({ schedule_id: 1, recipient_email: 'someone@example.com' }, bookings), null);
+    assert.equal(interviewerNameFor({ schedule_id: null, recipient_email: 'rahul@example.com' }, bookings), null);
   });
 });

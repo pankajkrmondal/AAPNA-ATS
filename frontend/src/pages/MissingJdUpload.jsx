@@ -49,7 +49,7 @@ const FIELDS = [
   { key: 'PreferredShift', label: 'Preferred shift' },
   { key: 'ReasonForJobChange', label: 'Reason for job change' },
   { key: 'WillingToTakeOnlineTest', label: 'Willing to take online test?' },
-  { key: 'HasLaptopForInitialDays', label: 'Has laptop for initial days?' },
+  { key: 'HasLaptopForInitialDays', label: 'Do you have a personal laptop (with 8 GB RAM) that you can use for the initial few days?' },
   { key: 'CurrentCompany', label: 'Current company' },
   { key: '10th (in percentage)', label: '10th percentage', hint: '0 to 100.' },
   { key: '12th (in percentage)', label: '12th percentage', hint: '0 to 100.' },

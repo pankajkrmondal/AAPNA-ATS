@@ -11,6 +11,7 @@ import {
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
+import { appendToBody } from '../utils/candidateEmailBlocks.js';
 
 /**
  * stageNotification.service.js — the single email dispatcher for every stage×
@@ -186,6 +187,11 @@ export async function previewOutcomeEmail({ stageKey, outcomeKey, stageLabel, ca
  * @param {string} params.stageLabel - human label for {{stage_label}} interpolation
  * @param {{name: string, email: string}} params.candidate
  * @param {string} [params.positionLabel]
+ * @param {Array<{name: string, contentType?: string, contentBytes: string}>} [params.attachments]
+ *   files to attach (U02: the JD), base64; the caller keeps them within the size budget
+ * @param {Array<{name: string, size: number|null, kind: string}>} [params.attachmentsLog]
+ *   what is recorded in rpa_email_messages.attachments_json
+ * @param {string} [params.extraHtml] - a block added to the end of the body (U02: the JD link)
  * @returns {Promise<{ sent: boolean, error: string|null, messageId: number|null }>}
  */
 export async function sendStageOutcomeEmail({
@@ -197,6 +203,9 @@ export async function sendStageOutcomeEmail({
   positionLabel = 'the role',
   subjectOverride = null,
   bodyOverride = null,
+  attachments = [],
+  attachmentsLog = [],
+  extraHtml = '',
 }) {
   if (!candidate?.email) {
     return { sent: false, error: 'No candidate email on file.', messageId: null };
@@ -244,6 +253,10 @@ export async function sendStageOutcomeEmail({
       }));
     }
 
+    // U02: the JD link block, when the JD travels as a link (before branding,
+    // so it lands inside the card).
+    if (extraHtml) bodyHtml = appendToBody(bodyHtml, extraHtml);
+
     const trackingToken = uuidv4();
     // Brand the fragment, THEN inject the pixel: injectTrackingPixel inserts
     // before </body>, which only exists once the shell is applied. bodyHtml
@@ -255,6 +268,7 @@ export async function sendStageOutcomeEmail({
       to: toEmail,
       subject,
       html: injectTrackingPixel(brandedHtml, trackingToken),
+      attachments,
     });
 
     const statusLabel = finalStatusLabelFor(stageKey, outcomeKey);
@@ -271,6 +285,7 @@ export async function sendStageOutcomeEmail({
         candidate_id: pipelineRow.cv_id ? BigInt(pipelineRow.cv_id) : null,
         mrf_id: pipelineRow.mrf_id ? BigInt(pipelineRow.mrf_id) : null,
         shortlist_id: pipelineRow.shortlist_id || null,
+        ...attachmentColumns(attachments, attachmentsLog),
         sent_at: new Date(),
       },
     });
@@ -298,6 +313,16 @@ export async function sendStageOutcomeEmail({
 }
 
 /**
+ * rpa_email_messages columns for what an email carried (U02). Pure.
+ * @param {Array} attachments
+ * @param {Array<{name: string, size: number|null, kind: string}>} log
+ */
+export function attachmentColumns(attachments = [], log = []) {
+  if (!attachments?.length) return {};
+  return { has_attachments: true, ...(log?.length ? { attachments_json: log } : {}) };
+}
+
+/**
  * Ad-hoc per-candidate email override (RT ask, 2026-07-14): a one-off send
  * that either uses a template as-is or a fully recruiter-edited subject/body.
  * Uses the same dispatcher plumbing (rpa_email_log/tracking, staging redirect)
@@ -314,9 +339,13 @@ export async function sendStageOutcomeEmail({
  * @param {{name: string, email: string}} params.candidate
  * @param {string} params.subject
  * @param {string} params.body
+ * @param {Array<{name: string, contentType?: string, contentBytes: string}>} [params.attachments]
+ *   files to attach (U02: the JD), base64; the caller keeps them within the size budget
+ * @param {Array<{name: string, size: number|null, kind: string}>} [params.attachmentsLog]
+ *   what is recorded in rpa_email_messages.attachments_json
  * @returns {Promise<{ sent: boolean, error: string|null, messageId: number|null }>}
  */
-export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject, body }) {
+export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject, body, attachments = [], attachmentsLog = [] }) {
   if (!candidate?.email) {
     return { sent: false, error: 'No candidate email on file.', messageId: null };
   }
@@ -336,6 +365,7 @@ export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject,
       to: toEmail,
       subject,
       html: injectTrackingPixel(brandedHtml, trackingToken),
+      attachments,
     });
 
     const message = await prisma.rpa_email_messages.create({
@@ -351,6 +381,7 @@ export async function sendAdHocCandidateEmail({ pipelineRow, candidate, subject,
         candidate_id: pipelineRow.cv_id ? BigInt(pipelineRow.cv_id) : null,
         mrf_id: pipelineRow.mrf_id ? BigInt(pipelineRow.mrf_id) : null,
         shortlist_id: pipelineRow.shortlist_id || null,
+        ...attachmentColumns(attachments, attachmentsLog),
         sent_at: new Date(),
       },
     });

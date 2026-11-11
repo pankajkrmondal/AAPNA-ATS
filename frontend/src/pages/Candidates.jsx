@@ -47,8 +47,10 @@ import { useApprovedRoles } from '../hooks/useScreeningData';
 import { mrfOptionLabel } from '../utils/mrfLabel';
 import {
   QUALIFICATION_OPTIONS, QUALIFICATION_OTHER, NOTICE_PERIOD_OPTIONS, SHIFT_OPTIONS, ENGLISH_RATING_OPTIONS,
-  RECRUITER_NONE, phoneRule, experienceRule, notMoreThanTotalRule, ctcRule, percentRule, optionsKeeping,
+  RECRUITER_NONE, experienceRule, notMoreThanTotalRule, ctcRule, percentRule, optionsKeeping,
+  contactFormValues, joinContacts, phoneListRule, emailListRule,
 } from '../constants/candidateFields';
+import ContactTagsSelect from '../components/candidates/ContactTagsSelect';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -257,8 +259,8 @@ export default function Candidates() {
     
     editForm.setFieldsValue({
       name: record.name,
-      email: record.email,
-      phone: record.phone,
+      // U05: primary email (read-only), other emails and every phone as tags.
+      ...contactFormValues(record.email, record.phone),
       education: record.education,
       experience: record.experience,
       lastCompanyExperience: record.lastCompanyExperience,
@@ -321,8 +323,9 @@ export default function Candidates() {
       
       const payload = {
         name: values.name,
-        email: values.email,
-        phone: values.phone,
+        // Stored as "primary, other1, other2"; the server keeps the primary first.
+        email: joinContacts([values.email, ...(values.otherEmails || [])]),
+        phone: joinContacts(values.phones),
         // "Other (please specify)" saves what was typed, not the label.
         education: values.education === QUALIFICATION_OTHER ? values.educationOther?.trim() : values.education,
         experience: values.experience,
@@ -379,6 +382,8 @@ export default function Candidates() {
       // Send only the fields the user changed. Two payload keys are built from
       // differently named form fields; every other key is its form field.
       const FORM_FIELDS_FOR = {
+        email: ['otherEmails'],
+        phone: ['phones'],
         education: ['education', 'educationOther'],
         employment_history: ['employment_history_companies'],
       };
@@ -905,17 +910,26 @@ export default function Candidates() {
             <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
           </Form.Item>
 
-          <Form.Item label={fieldLabel('CANDIDATE EMAIL')} name="email">
+          <Form.Item label={fieldLabel('CANDIDATE EMAIL')} name="email" extra={fieldHint('Primary email. It cannot be changed here.')}>
             <Input readOnly style={{ background: 'var(--ink-4)', cursor: 'not-allowed', borderRadius: 6 }} />
           </Form.Item>
 
           <Form.Item
-            label={fieldLabel('CANDIDATE CONTACT NUMBER')}
-            name="phone"
-            rules={[phoneRule]}
-            extra={fieldHint('10 digits; +91, spaces and dashes are fine.')}
+            label={fieldLabel('OTHER EMAILS')}
+            name="otherEmails"
+            rules={[emailListRule]}
+            extra={fieldHint('Search finds the candidate by any of these.')}
           >
-            <Input style={{ borderRadius: 6 }} />
+            <ContactTagsSelect kind="email" />
+          </Form.Item>
+
+          <Form.Item
+            label={fieldLabel('PHONE NUMBERS')}
+            name="phones"
+            rules={[phoneListRule]}
+            extra={fieldHint('10 digits each; +91, spaces and dashes are fine. The first is the main number.')}
+          >
+            <ContactTagsSelect kind="phone" />
           </Form.Item>
 
           <Form.Item label={fieldLabel('HIGHEST QUALIFICATION')} name="education">
@@ -1041,7 +1055,7 @@ export default function Candidates() {
             </Select>
           </Form.Item>
 
-          <Form.Item label={fieldLabel('HAS LAPTOP FOR INITIAL DAYS?')} name="hasLaptopForInitialDays">
+          <Form.Item label={fieldLabel('PERSONAL LAPTOP (8 GB RAM) FOR INITIAL DAYS?')} name="hasLaptopForInitialDays">
             <Select placeholder="Select">
               <Select.Option value="Yes">Yes</Select.Option>
               <Select.Option value="No">No</Select.Option>

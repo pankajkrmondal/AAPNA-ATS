@@ -37,7 +37,8 @@ export default function MoveJdModal({ open, pipelineId, onClose, onMoved }) {
   const [landingMode, setLandingMode] = useState('scratch');
   const [landingStageKey, setLandingStageKey] = useState(null);
   const [reason, setReason] = useState('');
-  const [notify, setNotify] = useState(false);
+  // U07: the new JD goes to the candidate by default; the recruiter can untick it.
+  const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -49,7 +50,7 @@ export default function MoveJdModal({ open, pipelineId, onClose, onMoved }) {
     setLandingMode('scratch');
     setLandingStageKey(null);
     setReason('');
-    setNotify(false);
+    setNotify(true);
     pipelineService.getMoveJdStatus(pipelineId)
       .then((res) => {
         if (!alive) return;
@@ -210,7 +211,7 @@ export default function MoveJdModal({ open, pipelineId, onClose, onMoved }) {
 
               <Checkbox checked={notify} onChange={(e) => setNotify(e.target.checked)} data-testid="move-jd-notify">
                 <Text strong>Email the candidate</Text> about the new role, with its JD attached
-                <div><Text type="secondary" style={{ fontSize: 12 }}>Off by default. The vendor is not emailed either way.</Text></div>
+                <div><Text type="secondary" style={{ fontSize: 12 }}>On by default; untick to move without emailing. The vendor is not emailed either way.</Text></div>
               </Checkbox>
 
               <Alert

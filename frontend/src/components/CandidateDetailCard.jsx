@@ -116,7 +116,7 @@ export default function CandidateDetailCard({ candidate, showPipelineScores = fa
           <Field label="Reason For Job Change" span={24}>{c.reasonForJobChange}</Field>
         )}
         <Field label="Willing To Take Online Test?">{c.willingToTakeOnlineTest}</Field>
-        <Field label="Has Laptop For Initial Days?">{c.hasLaptopForInitialDays}</Field>
+        <Field label="Personal Laptop (8 GB RAM) For Initial Days?">{c.hasLaptopForInitialDays}</Field>
 
         <Col span={24}>
           <div className="cdc-subcard">

@@ -29,7 +29,8 @@ import {
   Empty,
   Modal,
   notification,
-  Pagination
+  Pagination,
+  Segmented
 } from 'antd';
 import {
   UserOutlined,
@@ -704,7 +705,7 @@ export default function CandidateScreening() {
       email: v.email,
       phone: v.phone,
       keyword: v.keyword,
-      matchMode: v.anySkill ? 'any' : 'all',
+      matchMode: v.matchMode === 'any' ? 'any' : 'all',
       // Tags arrive as an array; sent as a comma list so the pre-V2 backend
       // (which lower-cases a string) keeps working while SCREENING_V2 is off.
       location: Array.isArray(v.location) ? v.location.join(',') : v.location,
@@ -1481,8 +1482,18 @@ export default function CandidateScreening() {
                     <Col xs={24} lg={12}>
                       <div className="screening-skills-head">
                         <label htmlFor="keyword-skills" className="screening-field-label">Skills</label>
-                        <Form.Item name="anySkill" valuePropName="checked" noStyle>
-                          <Checkbox data-testid="any-skill" className="screening-any-skill">Match any one skill</Checkbox>
+                        {/* U04: an explicit All / Any choice (was a "Match any one skill" checkbox). */}
+                        <Form.Item name="matchMode" initialValue="all" noStyle>
+                          <Segmented
+                            size="small"
+                            data-testid="skill-match-mode"
+                            className="screening-skill-mode"
+                            aria-label="How the skills must match"
+                            options={[
+                              { label: 'All skills', value: 'all' },
+                              { label: 'Any skill', value: 'any' },
+                            ]}
+                          />
                         </Form.Item>
                       </div>
                       <Form.Item name="keyword">
@@ -1780,6 +1791,32 @@ export default function CandidateScreening() {
                   </Tooltip>
                 ))}
             </div>
+            {/* U04: the terms the server split the Skills and Location inputs into,
+                so a recruiter can see "Java, Python" became two skills. Keyword only. */}
+            {(() => {
+              const terms = summary.terms;
+              const skills = terms?.skills || [];
+              const location = terms?.location || [];
+              if (!terms || (skills.length === 0 && location.length === 0)) return null;
+              return (
+                <div className="screening-terms" data-testid="search-terms">
+                  {skills.length > 0 && (
+                    <span className="screening-terms-group" data-testid="search-terms-skills">
+                      <span className="screening-terms-label">
+                        Skills ({terms.matchMode === 'any' ? 'any' : 'all'}):
+                      </span>
+                      {skills.map((s) => <Tag key={s} className="screening-term-tag">{s}</Tag>)}
+                    </span>
+                  )}
+                  {location.length > 0 && (
+                    <span className="screening-terms-group" data-testid="search-terms-location">
+                      <span className="screening-terms-label">Location (any):</span>
+                      {location.map((l) => <Tag key={l} className="screening-term-tag">{l}</Tag>)}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 

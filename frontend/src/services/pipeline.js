@@ -45,6 +45,15 @@ const pipelineService = {
     return api.get(`/pipeline/analytics/positions/${mrfId}/candidates`, { params: { metric, ...range } });
   },
 
+  /**
+   * U10: missing-details forms completed in a range, grouped by JD.
+   * @param {{ range?: 'yesterday'|'today'|'7', from?: string, to?: string }} [params]
+   *   a preset (resolved on the server in India time) or YYYY-MM-DD dates; none = yesterday
+   */
+  getCompletedForms(params = {}) {
+    return api.get('/pipeline/analytics/completed-forms', { params });
+  },
+
   /** L06: the role report CSV (the daily hiring-manager update). */
   exportPositionReport(mrfId, range = {}, config = {}) {
     return api.get(`/pipeline/analytics/positions/${mrfId}/export`, { params: range, ...config });
@@ -196,7 +205,8 @@ const pipelineService = {
    * submit and the server prefers it, so anything left out of the preview is
    * left out of the email that actually goes.
    * @param {number} id - pipeline id
-   * @param {Object} params - { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email }
+   * @param {Object} params - { stage_key, start_at, duration_minutes, interviewer_name, interviewer_email, show_source }
+   *   Returns the emails, `pack` (U01) and `candidate_table_html` (U03, read-only).
    */
   getSchedulePreview(id, params) {
     return api.get(`/pipeline/${id}/interview-preview`, { params });
@@ -213,11 +223,18 @@ const pipelineService = {
 
   /**
    * L14: email an already-booked round's panel the JD, the CV and the report so
-   * far. Returns { sent, recipients, summary: { jd, cv, report, rounds } }.
+   * far. Returns { sent, recipients, summary: { jd, cv, report, profile, rounds } }
+   * (U01: summary.cv is attached | missing | not_a_resume | failed | too_large).
    * @param {number} scheduleId
+   * @param {{ attachProfile?: boolean, showSource?: boolean }} [options] - U01: no
+   *   resume on file, so attach the candidate profile summary instead. U03: show
+   *   the candidate's source in the invite's table (the server refuses it for a referral).
    */
-  sendPanelPack(scheduleId) {
-    return api.post(`/pipeline/interview/${scheduleId}/send-pack`);
+  sendPanelPack(scheduleId, { attachProfile = false, showSource = false } = {}) {
+    return api.post(`/pipeline/interview/${scheduleId}/send-pack`, {
+      ...(attachProfile ? { attach_profile: true } : {}),
+      ...(showSource ? { show_source: true } : {}),
+    });
   },
 
   /**

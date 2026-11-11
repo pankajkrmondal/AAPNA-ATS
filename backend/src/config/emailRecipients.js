@@ -80,6 +80,8 @@ const DEFAULTS = {
   interviewScheduled: { to: '', cc: '', dynamic: true },
   // Interview cancelled notification to candidate. Prod -> candidate.
   interviewCancelled: { to: '', cc: '', dynamic: true },
+  // U08: "your Zeko interview closes soon" reminder. Prod -> candidate.
+  zekoReminder: { to: '', cc: '', dynamic: true },
   // Same two notifications, but to the interview PANEL rather than the
   // candidate. Separate keys so the panel side can keep its real recipients in
   // every environment (see OPERATOR_ADDRESSED below) while the candidate side

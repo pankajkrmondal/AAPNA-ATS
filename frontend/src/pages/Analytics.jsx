@@ -28,7 +28,8 @@ import {
   ProfileOutlined,
   RiseOutlined,
   SolutionOutlined,
-  FileDoneOutlined
+  FileDoneOutlined,
+  FormOutlined
 } from '@ant-design/icons';
 import screeningService from '../services/screeningService';
 import pipelineService from '../services/pipeline';
@@ -38,6 +39,7 @@ import PositionsTab from '../components/analytics/PositionsTab';
 import AnalyticsRangeBar from '../components/analytics/AnalyticsRangeBar';
 import RoleDetailDrawer from '../components/analytics/RoleDetailDrawer';
 import MetricCandidatesDrawer from '../components/analytics/MetricCandidatesDrawer';
+import CompletedFormsTab, { formsRangeFromParams } from '../components/analytics/CompletedFormsTab';
 import { ACCENT, DEFAULT_RANGE, SectionTitle, rangeParams } from '../components/analytics/openPositionsShared';
 import dayjs from 'dayjs';
 import KpiCard from '../components/common/KpiCard';
@@ -699,6 +701,34 @@ export default function Analytics() {
     setSearchParams(next, { replace: true });
   };
   const openMetric = (mrfId, metric) => setMetricTarget({ mrfId, metric });
+
+  // The tab follows the URL, so a link (the U10 bell note) switches it even
+  // when the page is already open; a tab click writes it back.
+  const urlTab = searchParams.get('tab');
+  useEffect(() => { if (urlTab) setActiveTab(urlTab); }, [urlTab]);
+  const changeTab = (key) => {
+    setActiveTab(key);
+    if (searchParams.get('tab') !== key) {
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', key);
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  // U10: Completed forms keeps its own range in the URL (?range= or ?from&to).
+  const formsRange = useMemo(() => formsRangeFromParams(searchParams), [searchParams]);
+  const changeFormsRange = (value) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'completed-forms');
+    ['range', 'from', 'to'].forEach((k) => next.delete(k));
+    if (value.preset === 'custom') {
+      next.set('from', value.from);
+      next.set('to', value.to);
+    } else {
+      next.set('range', value.preset);
+    }
+    setSearchParams(next, { replace: true });
+  };
   // Distinct from pipelineAnalytics.loading: that one drives per-card skeletons
   // on first paint, this one drives the blocking scrim on a user-triggered
   // refetch. Conflating them would put a full-screen overlay over the initial
@@ -989,7 +1019,7 @@ export default function Analytics() {
         <Tabs
           className="screening-tabs"
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={changeTab}
           size="large"
           tabBarStyle={{ marginBottom: 20 }}
           items={[
@@ -1015,6 +1045,18 @@ export default function Analytics() {
                   onOpenMetric={openMetric}
                 />
               )
+            },
+            {
+              // U10 — forms candidates completed per day, by JD. The 09:00 IST
+              // bell note links here. Has its own range (yesterday by default).
+              key: 'completed-forms',
+              label: (
+                <span>
+                  <FormOutlined className="tab-ico" />
+                  Completed Forms
+                </span>
+              ),
+              children: <CompletedFormsTab value={formsRange} onChange={changeFormsRange} />
             },
             {
               key: 'analytics',

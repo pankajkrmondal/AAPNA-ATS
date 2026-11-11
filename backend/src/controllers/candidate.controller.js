@@ -7,12 +7,14 @@ import prisma from '../config/database.js';
 import AppError from '../utils/AppError.js';
 import { saveCandidateVector } from '../services/vectorStore.service.js';
 import logger from '../config/logger.js';
-import { extractTextFromFile, parseResumeWithOpenRouter } from '../services/hrUpload.service.js';
+import { extractTextFromFile, parseResumeWithOpenRouter, sanitizeMatchEmails, sanitizeMatchContacts } from '../services/hrUpload.service.js';
+import { appendUnique, prependUnique } from '../utils/contactMerge.js';
 import { updateJobByCvId } from '../services/uploadJob.service.js';
 import { getPublicRoleNames } from '../services/screening.service.js';
 import * as onedriveService from '../services/onedrive.service.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { assertSignature } from '../utils/fileSignature.js';
+import { checkResumeBytes, withoutResumeFlag, missingFieldCount } from '../utils/resumeCheck.js';
 import path from 'path';
 import fsp from 'fs/promises';
 import { validateCandidateFields, describeFieldErrors } from '../utils/candidateFieldRules.js';
@@ -254,6 +256,76 @@ export const getCandidateEmails = catchAsync(async (req, res) => {
   }));
 
   return success(res, serializedEmails, 'Candidate email communications retrieved');
+});
+
+/**
+ * @desc    Staff attach a candidate's real resume (U01)
+ * @route   POST /api/candidates/:id/resume  (multipart, field "resume")
+ * @access  Staff
+ *
+ * For a candidate with no resume on file, typically an Excel-upload row, from
+ * the Schedule window's warning. Same replace-the-URL-and-clear-the-flag rule
+ * as the candidate's own form (submitPublicMissingData), with two differences:
+ *   - the file must reach OneDrive. A local-disk fallback would be a resume the
+ *     panel pack can never attach, so a failed upload is refused, not saved.
+ *   - the URL and the drive-item id are written together, always.
+ * The file is not parsed: the candidate's details stay as they are.
+ */
+export const uploadCandidateResume = catchAsync(async (req, res) => {
+  const cleanup = () => (req.file?.path ? fsp.unlink(req.file.path).catch(() => {}) : Promise.resolve());
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    await cleanup();
+    throw new AppError('Invalid candidate id.', 400);
+  }
+  if (!req.file) throw new AppError('Choose the resume to upload (pdf, doc or docx).', 400);
+
+  try {
+    // The bytes must match the name (D7), and a .docx must be a Word file, not
+    // a spreadsheet renamed (both are zips).
+    await assertSignature(req);
+    const verdict = checkResumeBytes(await fsp.readFile(req.file.path));
+    if (!verdict.ok) {
+      throw new AppError(`"${req.file.originalname}" is not a pdf or Word resume.`, 400);
+    }
+
+    const candidate = await prisma.rpa_cv.findUnique({
+      where: { id: BigInt(id) },
+      select: { id: true, Name: true, missingData: true },
+    });
+    if (!candidate) throw new AppError('Candidate not found.', 404);
+
+    let uploaded = null;
+    try {
+      uploaded = await onedriveService.uploadFileToOneDriveDetailed(req.file.path, req.file.originalname);
+    } catch (err) {
+      logger.warn(`Staff resume upload: OneDrive refused the file for candidate ${id}: ${err.message}`);
+    }
+    if (!uploaded?.webUrl || !uploaded?.id) {
+      throw new AppError('The resume could not be stored in OneDrive. Please try again in a minute.', 502);
+    }
+
+    const missingData = withoutResumeFlag(candidate.missingData);
+    const updated = await prisma.rpa_cv.update({
+      where: { id: candidate.id },
+      data: {
+        cvFileUrl: uploaded.webUrl,
+        cv_file_item_id: uploaded.id,
+        ...(missingData !== candidate.missingData ? {
+          missingData,
+          statusActive: missingFieldCount(missingData) > 0 ? 'INACTIVE' : 'ACTIVE',
+        } : {}),
+        last_action_by: req.user?.email || req.user?.username || 'recruiter',
+        last_action_context: 'staff_resume_upload',
+        modifiedAt: new Date(),
+      },
+      select: { cvFileUrl: true },
+    });
+    logger.info(`Staff resume upload: ${req.user?.email || 'a recruiter'} attached "${req.file.originalname}" to candidate ${id}.`);
+    return success(res, { resumeStatus: 'ok', cvFileUrl: updated.cvFileUrl }, 'Resume uploaded');
+  } finally {
+    await cleanup();
+  }
 });
 
 /**
@@ -576,6 +648,14 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
         logger.info(`Successfully parsed missing JD resume using OpenRouter for candidate: ${candidate.id}`);
         
         const fullText = text.trim();
+        // Only contacts actually printed in the resume, as on upload (U05):
+        // the parser can invent a plausible email or return a placeholder phone.
+        const textLower = fullText.toLowerCase();
+        const textDigits = fullText.replace(/[^0-9]/g, '');
+        parsedResume.EmailID = sanitizeMatchEmails(parsedResume.EmailID, [candidate.VendorEmail])
+          .filter((e) => textLower.includes(e)).join(', ') || null;
+        parsedResume.ContactNumber = sanitizeMatchContacts(parsedResume.ContactNumber)
+          .filter((n) => textDigits.includes(n)).join(', ') || null;
         const resume_text_quality = fullText.length === 0 ? 'failed' : (fullText.length < 200 ? 'lossy' : 'extracted');
         const rawTerms = parsedResume.ResumeTechnicalTerms;
         let resume_technical_terms = [];
@@ -648,6 +728,21 @@ export const submitPublicMissingData = catchAsync(async (req, res) => {
     ...resumeData,
     ...updateData
   };
+
+  // U05: contacts are added to, never overwritten. The number the candidate
+  // typed goes first (then the resume's, then what we had): it is the one
+  // they want us to use, and the Schedule dialog and Zeko read the first.
+  // Resume emails are appended, so the primary address stays first.
+  if (resumeData.ContactNumber || updateData.ContactNumber) {
+    finalUpdateData.ContactNumber = prependUnique(
+      prependUnique(candidate.ContactNumber, resumeData.ContactNumber, 'phone'),
+      updateData.ContactNumber,
+      'phone',
+    );
+  }
+  if (resumeData.EmailID) {
+    finalUpdateData.EmailID = appendUnique(candidate.EmailID, resumeData.EmailID, 'email');
+  }
 
   if (cvUrl) {
     finalUpdateData.cvFileUrl = cvUrl;

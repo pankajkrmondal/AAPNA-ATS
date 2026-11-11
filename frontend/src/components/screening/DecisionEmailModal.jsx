@@ -110,9 +110,10 @@ export default function DecisionEmailModal({
   // Bumped every time {role_paragraph} is (re-)baked into `body` as static text,
   // so the editor (uncontrolled after mount) remounts and shows the fresh text.
   const [roleParagraphRev, setRoleParagraphRev] = useState(0);
-  // N17: the tagged MRF's JD, for Keyword-tab shortlists only.
+  // N17 / U02: the tagged MRF's JD goes with every shortlist email — JD tab,
+  // Keyword tab and Search "Add to JD".
   const [jdInfo, setJdInfo] = useState(null);
-  const showJd = activeTab === 'keyword' && !isReject;
+  const showJd = !isReject;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -320,7 +321,7 @@ export default function DecisionEmailModal({
             {sendEmail && showJd && jdInfo && !jdInfo.attachable && (
               <div data-testid="jd-not-attached" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', color: 'var(--warn-text)', borderRadius: 6, padding: '6px 10px', fontSize: 12.5 }}>
                 {jdInfo.has_link
-                  ? 'This MRF\'s JD is over 3 MB or cannot be read: the email will carry a "View the job description" link instead.'
+                  ? 'This MRF\'s JD is too large to attach or cannot be read: the email will carry a "View the job description" link instead.'
                   : 'This MRF has no JD file: the email goes without one.'}
               </div>
             )}

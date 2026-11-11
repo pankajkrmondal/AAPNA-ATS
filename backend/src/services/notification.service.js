@@ -19,7 +19,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import { emitToUser } from '../socket/index.js';
-import { RECRUITER_TIER_ROLES } from '../config/roles.js';
+import { RECRUITER_TIER_ROLES, recruiterTierSubset } from '../config/roles.js';
 
 /**
  * Roles that staff the pipeline. Mirrors REVIEW_ROLES in uploadJob.service.js —
@@ -51,7 +51,18 @@ export const NOTIFICATION_TYPES = Object.freeze({
   // A candidate finished the public missing-details form (nothing left
   // missing). Fires once per candidate — partial submissions never notify (N44).
   CANDIDATE_DETAILS_COMPLETED: 'candidate.details_completed',
+  // U10: the 09:00 IST note to HR and Admin, "12 forms completed yesterday
+  // across 4 JDs", linking to Analytics → Completed forms (jobs/completedFormsDigest.js).
+  CANDIDATE_FORMS_DIGEST: 'candidate.forms_digest',
 });
+
+/**
+ * The roles a call may target: its own list, narrowed to NOTIFY_ROLES. A
+ * `roles` option can pick a subset of staff (U10: HR and Admin only), never
+ * widen past it, so a vendor can't be reached by passing 'vendor'.
+ * (The rule lives in roles.js so node:test can load it; see roles.test.js.)
+ */
+export const targetRoles = (roles = NOTIFY_ROLES) => recruiterTierSubset(roles);
 
 /** BigInt ids don't survive JSON.stringify — same helper the other services use. */
 const serialize = (row) => (row ? { ...row, id: Number(row.id), pipeline_id: row.pipeline_id === null || row.pipeline_id === undefined ? null : Number(row.pipeline_id) } : null);
@@ -69,13 +80,15 @@ export const pipelineLink = (pipelineId) => (pipelineId ? `/pipeline?candidate=$
  *
  * @param {object} params
  * @param {number|null} [params.companyId]
- * @param {string[]} [params.roles]
+ * @param {string[]} [params.roles] - narrowed to NOTIFY_ROLES (targetRoles)
  * @returns {Promise<number[]>} user ids
  */
-async function resolveRecipients({ companyId = null, roles = NOTIFY_ROLES } = {}) {
+export async function resolveRecipients({ companyId = null, roles = NOTIFY_ROLES } = {}) {
+  const allowed = targetRoles(roles);
+  if (allowed.length === 0) return [];
   const users = await prisma.rpa_users.findMany({
     where: {
-      role: { in: [...roles] },
+      role: { in: allowed },
       is_active: true,
       is_approved: true,
       ...(companyId ? { OR: [{ company_id: companyId }, { company_id: null }] } : {}),
@@ -96,7 +109,8 @@ async function resolveRecipients({ companyId = null, roles = NOTIFY_ROLES } = {}
  * @param {string|null} [params.linkPath] - defaults to the pipeline deep link
  * @param {object|null} [params.meta]
  * @param {number|null} [params.companyId] - scopes recipients
- * @param {string[]} [params.roles]
+ * @param {string[]} [params.roles] - only these staff roles (default: every
+ *   recruiter-tier role). Narrows only; vendors are never reached (targetRoles).
  * @param {number|null} [params.excludeUserId] - the actor; skip telling someone
  *   about their own click (pass null to notify everyone)
  * @returns {Promise<{created: number}>} never throws

@@ -16,8 +16,11 @@
  *   - re-adding to the old JD is skipped as moved_away
  *   - tags: the only tag and an in-pipeline tag cannot be removed; a tag can
  *     be switched; a second tag can be removed
+ *   - U07: moved after Tech 1, the Tech 2 panel's table and report on the new
+ *     JD carry the earlier role's Tech 1; the dossier download does not
  *
- * Requires DDL 2026-10-22-journey-move.sql. No email is sent (notify off).
+ * Requires DDL 2026-10-22-journey-move.sql. No email is sent (notify off; the
+ * panel pack is built, not sent).
  * Fixtures are tagged and torn down by explicit id.
  */
 import { test, describe, before, after } from 'node:test';
@@ -29,6 +32,8 @@ import { shortlistCandidates } from '../../services/screening.service.js';
 import { getMoveJdStatus, moveJourneyToMrf } from '../../services/journeyMove.service.js';
 import { getRelatedJourneys } from '../../services/pipeline.service.js';
 import { tagCandidates, listCandidateTags, untagCandidate, switchCandidateTag } from '../../services/candidateTag.service.js';
+import { buildPanelPack, loadPanelCandidateTable, panelPackPreflight } from '../../services/interviewPanelPack.service.js';
+import { buildDossierModel } from '../../services/candidateDossier.service.js';
 
 const TAG = 'L02-MOVE-FIXTURE';
 const USER = { username: 'l02-move-test', id: null };
@@ -75,6 +80,9 @@ describe('L02 — move to another JD, remove / switch a tag', () => {
   after(async () => {
     const pipes = await prisma.rpa_candidate_pipeline.findMany({ where: { cv_id: { in: made.cvs } }, select: { id: true } });
     const pIds = pipes.map((p) => p.id);
+    await prisma.rpa_interview_scorecard_skill.deleteMany({ where: { rpa_interview_scorecard: { pipeline_id: { in: pIds } } } }).catch(() => {});
+    await prisma.rpa_interview_scorecard.deleteMany({ where: { pipeline_id: { in: pIds } } });
+    await prisma.rpa_interview_schedule.deleteMany({ where: { pipeline_id: { in: pIds } } });
     await prisma.rpa_pipeline_stage_state.deleteMany({ where: { pipeline_id: { in: pIds } } }).catch(() => {});
     await prisma.rpa_pipeline_stage_events.deleteMany({ where: { pipeline_id: { in: pIds } } });
     await prisma.rpa_notifications.deleteMany({ where: { pipeline_id: { in: pIds } } });
@@ -135,6 +143,54 @@ describe('L02 — move to another JD, remove / switch a tag', () => {
     const again = await shortlistCandidates([{ id: Number(c.id) }], Number(senior.id), '', USER, { sendEmail: false, source: 'search_candidate' });
     assert.equal(again.shortlisted, 0);
     assert.equal(again.skipped_candidates?.[0]?.reason, 'moved_away');
+  });
+
+  test('U07: moved after Tech 1, the Tech 2 panel on the new JD sees the earlier Tech 1', async () => {
+    const c = await cv('L02 Earlier Rounds');
+    const { journey } = await shortlisted(c, senior);
+    await prisma.rpa_candidate_pipeline.update({ where: { id: journey.id }, data: { current_stage_key: 'tech1' } });
+    const start = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const booking = await prisma.rpa_interview_schedule.create({
+      data: { pipeline_id: journey.id, stage_key: 'tech1', scheduled_start_at: start, scheduled_end_at: new Date(start.getTime() + 3600e3), interviewer_email: 'panel@example.invalid' },
+    });
+    await prisma.rpa_interview_scorecard.create({
+      data: {
+        schedule_id: booking.id, pipeline_id: journey.id, stage_key: 'tech1', recipient_email: 'panel@example.invalid',
+        token_expires_at: new Date(Date.now() + 7 * 86400e3), status: 'submitted', submitted_at: new Date(),
+        recommendation: 'approve', avg_score: 4.5, comments: 'U07 earlier role: strong on design.',
+      },
+    });
+
+    const r = await moveJourneyToMrf({ pipelineId: journey.id, targetMrfId: Number(mid.id), landingStageKey: 'tech2', reason: 'better fit', user: USER });
+    const to = r.to_pipeline_id;
+    const label = `Technical Round 1 · earlier role: ${senior.position_hiring_for}`;
+
+    // The invite's table, as the Schedule window previews it (no links yet).
+    const preview = await loadPanelCandidateTable(to, { stageKey: 'tech2', linksPending: true });
+    assert.ok(preview.html.includes(`Technical Round 1 feedback · earlier role: ${senior.position_hiring_for}`), 'the table names the earlier role');
+    assert.match(preview.html, /U07 earlier role: strong on design\./);
+    assert.match(preview.html, /Move forward · avg 4\.5\/5/);
+    assert.equal((await panelPackPreflight(to)).report, true, 'the pre-send check sees the earlier round');
+
+    // The pack, as the Tech 2 booking builds it.
+    const pack = await buildPanelPack(to, { user: USER, stageKey: 'tech2' });
+    assert.equal(pack.summary.report, true);
+    assert.deepEqual(pack.tableModel.earlier_roles, [senior.position_hiring_for]);
+    const report = pack.attachments.find((a) => a.name.endsWith('report so far.html'));
+    assert.ok(report, 'the report is attached');
+    const html = Buffer.from(report.contentBytes, 'base64').toString('utf8');
+    assert.ok(html.includes(label), 'the report names the earlier role');
+    assert.match(html, /U07 earlier role: strong on design\./);
+    assert.ok(!html.includes(c.EmailID), 'the candidate’s email is not in the panel’s copy');
+    const sent = await loadPanelCandidateTable(to, { stageKey: 'tech2', model: pack.tableModel });
+    assert.equal((sent.html.match(/U07 earlier role: strong on design\./g) || []).length, 1, 'merged once, not twice');
+
+    // Switched off, and in the dossier download: this journey's rounds only.
+    const without = await loadPanelCandidateTable(to, { stageKey: 'tech2', includeEarlierRoles: false });
+    assert.ok(!without.html.includes('earlier role'));
+    const download = await buildDossierModel(to, { includeContactDetails: false });
+    assert.equal(download.scorecards.length, 0);
+    assert.equal(download.earlier_roles, undefined);
   });
 
   test('start from scratch lands on the first stage; a stage-rejected candidate can still move', async () => {

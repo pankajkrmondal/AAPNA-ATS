@@ -38,6 +38,7 @@ import {
   redoReturnStageKey,
 } from './stageState.service.js';
 import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
+import { jdForCandidateEmail, shouldAttachJd, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
 // cancelInterviewRound is also re-exported below for the controller's benefit;
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
@@ -65,10 +66,12 @@ import { assertSkippable, resolveApproveLanding, skipNote } from '../utils/stage
 import { scoreSourceFor, noScoreNoteError } from '../utils/stageScore.js';
 import { buildZekoRounds, zekoScoresFromResult, uploadedScoresFromCv, UPLOADED_SCORE_FIELDS } from '../utils/roundScores.js';
 import { firstValidPhone, maskPhone } from '../utils/phone.js';
+import { prependUnique } from '../utils/contactMerge.js';
 import { assessmentInviteState, latestInviteByPipeline } from '../utils/assessmentInviteState.js';
 import { generateZekoShareLink } from './zeko.service.js';
 import config from '../config/index.js';
 import { inRange, rangeForResponse } from '../utils/analyticsRange.js';
+import { resumeStatus as storedResumeStatus } from '../utils/resumeCheck.js';
 
 // Interview booking lives in its own service; re-exported so the pipeline
 // controller keeps a single service import for everything on this route.
@@ -568,8 +571,9 @@ export async function listPipeline(filters = {}) {
 
 /**
  * Saves the candidate's mobile number from the Schedule dialog (N22).
- * Stored as 10 digits (the ATS treats every number as Indian, +91). The log
- * shows only the last 4 digits.
+ * Stored as 10 digits (the ATS treats every number as Indian, +91), put FIRST
+ * in the candidate's list; the other numbers are kept (U05 — this used to
+ * replace the whole list). The log shows only the last 4 digits.
  *
  * @param {number} pipelineId
  * @param {string} rawPhone - as typed: spaces, dashes and +91 are fine
@@ -586,7 +590,8 @@ export async function updateCandidatePhoneForPipeline(pipelineId, rawPhone) {
   if (!pipeline.cv_id) throw new AppError('This journey has no candidate record to save the phone to.', 400);
   const cv = await prisma.rpa_cv.findUnique({ where: { id: pipeline.cv_id }, select: { ContactNumber: true } });
   if (firstValidPhone(cv?.ContactNumber) === phone) return { changed: false, phone };
-  await prisma.rpa_cv.update({ where: { id: pipeline.cv_id }, data: { ContactNumber: phone, modifiedAt: new Date() } });
+  const ContactNumber = prependUnique(cv?.ContactNumber, phone, 'phone');
+  await prisma.rpa_cv.update({ where: { id: pipeline.cv_id }, data: { ContactNumber, modifiedAt: new Date() } });
   logger.info(`Pipeline ${pipelineId}: candidate phone updated to ${maskPhone(phone)} from the Schedule dialog.`);
   return { changed: true, phone };
 }
@@ -887,6 +892,9 @@ export async function getPipelineDetail(pipelineId) {
   // round-scoped rpa_zeko_interview_results lookup below is now the only source.
   let zekoScores = null;
   let cvFileUrl = null;
+  // U01: 'ok' | 'missing' | 'not_a_resume' — the same rule the panel pack uses,
+  // so "View resume" never opens an Excel workbook.
+  let resumeStatus = 'missing';
   // The drawer DOES show the referrer's name — it is the surface where the
   // recruiter and the final decision-maker actually weigh the candidate, which
   // is the whole point of the requirement. Never reaches an interviewer: this
@@ -901,6 +909,8 @@ export async function getPipelineDetail(pipelineId) {
       where: { id: pipeline.cv_id },
       select: {
         cvFileUrl: true,
+        cv_file_item_id: true,
+        missingData: true,
         is_referral: true,
         referred_by: true,
         referral_note: true,
@@ -909,7 +919,8 @@ export async function getPipelineDetail(pipelineId) {
         ...Object.fromEntries(UPLOADED_SCORE_FIELDS.map((f) => [f.key, true])),
       },
     });
-    cvFileUrl = cv?.cvFileUrl || null;
+    resumeStatus = storedResumeStatus(cv);
+    cvFileUrl = resumeStatus === 'ok' ? (cv?.cvFileUrl || null) : null;
     uploadedScores = uploadedScoresFromCv(cv);
     referral = cv
       ? {
@@ -1035,6 +1046,7 @@ export async function getPipelineDetail(pipelineId) {
     reasons,
     zekoScores,
     cvFileUrl,
+    resumeStatus,
     referral,
     screening,
     zekoHrPipeline,
@@ -1494,6 +1506,11 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   // Sends the recruiter-edited subject/body from the preview step verbatim
   // when provided; falls back to a fresh server-side compile otherwise.
   const stageRow = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: pipeline.current_stage_key } });
+  // U02: an approval that moves the candidate on to another round carries the
+  // JD (attached, or as a link) — not one that lands on Documents or Offer.
+  const outcomeJd = sendEmail && outcomeKey === STAGE_OUTCOMES.APPROVED && nextStage && shouldAttachJd(nextStage.stage_key)
+    ? await jdForCandidateEmail(pipeline.mrf_id || pipeline.rpa_shortlisted_candidates?.mrf_id)
+    : NO_JD_FOR_EMAIL;
   // N45: the recruiter can save an outcome without emailing the candidate.
   // The vendor's separate status line below still goes out as before.
   const emailResult = !sendEmail
@@ -1510,6 +1527,9 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
     positionLabel: pipeline.rpa_shortlisted_candidates?.position_applied || 'the role',
     subjectOverride: emailSubject,
     bodyOverride: emailBody,
+    attachments: outcomeJd.attachments,
+    attachmentsLog: outcomeJd.logEntries,
+    extraHtml: outcomeJd.linkHtml,
   });
 
   // The vendor half of Q5 — a separate generated status line, never the

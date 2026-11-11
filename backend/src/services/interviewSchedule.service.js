@@ -33,6 +33,10 @@ import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.
 // From pure config, not pipeline.service.js: that module imports THIS one, so
 // reaching back for its assertJourneyOpen would close an import cycle.
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
+import { jdForCandidateEmail, shouldAttachJd, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
+import {
+  CANDIDATE_TABLE_PLACEHOLDER, insertBeforeCandidateTable, placeCandidateTable,
+} from '../utils/panelCandidateTable.js';
 
 /** Template names seeded by prisma/seed-email-templates.js for this flow. */
 const TEMPLATE_NAMES = Object.freeze({
@@ -649,7 +653,8 @@ export function buildTeamsBlock(joinUrl, meetingId, passcode) {
 function ensureTeamsBlock(html, joinUrl, meetingId, passcode) {
   if (!joinUrl || !html) return html;
   if (html.includes(joinUrl)) return html; // already there (fresh-compiled body)
-  return `${html}${buildTeamsBlock(joinUrl, meetingId, passcode)}`;
+  // U03: above the panel's candidate table when the body has its placeholder.
+  return insertBeforeCandidateTable(html, buildTeamsBlock(joinUrl, meetingId, passcode));
 }
 
 /**
@@ -705,7 +710,7 @@ export function buildRecordingNotice(audience) {
 function ensureRecordingNotice(html, audience, recorded) {
   if (!recorded || !html) return html;
   if (html.includes(RECORDING_NOTICE_MARKER)) return html;
-  return `${html}${buildRecordingNotice(audience)}`;
+  return insertBeforeCandidateTable(html, buildRecordingNotice(audience));
 }
 
 function interviewTokens({ candidate, stageLabel, position, when, durationMinutes, joinUrl, meetingId, passcode, reason, previousWhen, interviewerName, interviewerEmail }) {
@@ -729,6 +734,10 @@ function interviewTokens({ candidate, stageLabel, position, when, durationMinute
     duration: String(durationMinutes ?? ''),
     teams_line: teamsLine,
     reason_line: reasonLine,
+    // U03: a placeholder, never the table. The table carries CTC on HR/CEO
+    // rounds, and this compiled body is what the recruiter edits; the real
+    // table replaces the placeholder at send time (placeCandidateTable).
+    candidate_table: CANDIDATE_TABLE_PLACEHOLDER,
   };
 }
 
@@ -782,15 +791,75 @@ const interviewWrapOpts = (subject) => ({ title: subject || '' });
  * Imported lazily: the pack reads the dossier, whose scorecard service imports
  * this module, so a static import would be a cycle at load time.
  */
-async function panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy }) {
+async function panelPackFor(pipelineId, { sendsInvites, sendPack, attachProfile = false, user, actedBy, stageKey = null }) {
   if (!sendsInvites || sendPack === false || config.interviewPanelPack?.enabled === false) return null;
   try {
     const { buildPanelPack } = await import('./interviewPanelPack.service.js');
-    return await buildPanelPack(pipelineId, { user: user || (actedBy ? { id: actedBy } : null) });
+    return await buildPanelPack(pipelineId, { user: user || (actedBy ? { id: actedBy } : null), attachProfile, stageKey });
   } catch (err) {
     logger.warn(`Interview panel pack skipped for pipeline ${pipelineId}: ${err.message}`);
     return null;
   }
+}
+
+/**
+ * U01: the Schedule window's pre-send check of what the panel pack will carry
+ * (resume / JD / report so far), from the records only. Null when the round
+ * sends no invite or the pack is switched off. Never throws.
+ */
+async function panelPackPreflightFor(pipelineId, stageKey) {
+  if (!stageSendsInvites(stageKey) || config.interviewPanelPack?.enabled === false) return null;
+  try {
+    const { panelPackPreflight } = await import('./interviewPanelPack.service.js');
+    return await panelPackPreflight(pipelineId);
+  } catch (err) {
+    logger.warn(`Panel pack preflight skipped for pipeline ${pipelineId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * U03: the candidate table for the panel's invite body. In the invite whether
+ * or not the pack is ticked; its recording links come from the pack, so with
+ * the pack off the recording rows say to ask the recruitment team. '' for a
+ * round that sends no invite. Never throws.
+ *
+ * Imported lazily for the same cycle reason as panelPackFor().
+ */
+async function panelTableFor(pipelineId, { sendsInvites, stageKey, showSource = false, pack = null, linksPending = false }) {
+  if (!sendsInvites) return '';
+  try {
+    const { loadPanelCandidateTable } = await import('./interviewPanelPack.service.js');
+    const { html } = await loadPanelCandidateTable(pipelineId, {
+      stageKey, showSource, model: pack?.tableModel || null, linksPending,
+    });
+    return html;
+  } catch (err) {
+    logger.warn(`Panel candidate table skipped for pipeline ${pipelineId}: ${err.message}`);
+    return '';
+  }
+}
+
+/**
+ * The panel's invite body as sent: Teams block and recording notice, then the
+ * candidate table (at the template's placeholder, else last), then the pack's
+ * notes on what is attached (U03).
+ */
+function panelInviteBody(body, { calendar, isRecorded, table, pack }) {
+  const withMeeting = ensureRecordingNotice(
+    ensureTeamsBlock(body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
+    'panel', isRecorded,
+  );
+  return placeCandidateTable(withMeeting, table) + (pack?.notesHtml || '');
+}
+
+/**
+ * U02: the JD for the candidate's invite to this round — attached, or as a
+ * link. Never throws; nothing for a round that sends no invite.
+ */
+async function candidateJdFor(pipeline, stageKey, sendsInvites) {
+  if (!sendsInvites || !shouldAttachJd(stageKey)) return NO_JD_FOR_EMAIL;
+  return jdForCandidateEmail(pipeline?.mrf_id || pipeline?.rpa_shortlisted_candidates?.mrf_id);
 }
 
 /** Audit a pack that reached the panel (timeline + dossier log). Never throws. */
@@ -812,7 +881,7 @@ async function notePanelPack({ pipelineId, stageKey, stageLabel, user, actedBy, 
  * @param {number} pipelineId
  * @param {object} params - { stageKey, startAt, durationMinutes }
  */
-export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
+export async function previewScheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '', showSource = false } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
@@ -834,17 +903,25 @@ export async function previewScheduleEmails(pipelineId, { stageKey, startAt, dur
   // here: the modal posts this compiled body straight back on submit, and the
   // send path prefers it over its own defaults, so a preview that greeted "Hi
   // there," would be the copy that actually went out.
-  return buildInterviewEmails('schedule', {
-    candidate,
-    stageLabel: SCHEDULABLE_STAGES[key].label,
-    position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
-    when,
-    durationMinutes,
-    joinUrl: null,
-    reason: null,
-    interviewerName: interviewerName || mrfRoundHints(candidate?.mrf, key)?.interviewerName || '',
-    interviewerEmail,
-  });
+  const [emails, pack, candidateTable] = await Promise.all([
+    buildInterviewEmails('schedule', {
+      candidate,
+      stageLabel: SCHEDULABLE_STAGES[key].label,
+      position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
+      when,
+      durationMinutes,
+      joinUrl: null,
+      reason: null,
+      interviewerName: interviewerName || mrfRoundHints(candidate?.mrf, key)?.interviewerName || '',
+      interviewerEmail,
+    }),
+    // U01: { resume: 'ok'|'missing'|'not_a_resume', jd: 'ok'|'missing', report }
+    panelPackPreflightFor(pipelineId, key),
+    // U03: the table the panel's invite will carry, shown read-only under the
+    // editable body. Recording links are minted only when the invite is sent.
+    panelTableFor(pipelineId, { sendsInvites: stageSendsInvites(key), stageKey: key, showSource, linksPending: true }),
+  ]);
+  return { ...emails, pack, candidate_table_html: candidateTable || null };
 }
 
 /**
@@ -905,6 +982,10 @@ export async function scheduleInterviewRound(pipelineId, {
   // L14: send the JD, CV and report so far with the panel's invite (the
   // Schedule window's tick-box, on by default).
   sendPack = true,
+  // U01: no resume on file, so attach the candidate profile summary instead.
+  attachProfile = false,
+  // U03: show the candidate's source in the panel's table (never a referral's).
+  showSource = false,
   user = null,
 }) {
   if (!isSchedulableStage(stageKey)) {
@@ -1049,26 +1130,27 @@ export async function scheduleInterviewRound(pipelineId, {
     // so it lands inside the branded card rather than after </html> — same
     // reasoning as the Teams block above.
     const isRecorded = Boolean(recording.appliedAt);
+    // U02: the JD goes with the candidate's invite; its link (when it cannot
+    // be attached) lands inside the branded card.
+    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites);
     const candidateEmail = {
       subject: candidateFinalSubject,
       body: wrapBrandedEmail(
-        ensureRecordingNotice(
+        candidateJd.appendLink(ensureRecordingNotice(
           ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
           'candidate', isRecorded
-        ),
+        )),
         interviewWrapOpts(candidateFinalSubject)
       ),
     };
-    // L14: the panel's pack. Its "Earlier rounds" block goes after the Teams
-    // block and the recording notice, inside the branded card.
-    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy });
+    // L14: the panel's pack. U03: the candidate table goes after the Teams
+    // block and the recording notice, then what is attached, inside the card.
+    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, attachProfile, user, actedBy, stageKey });
+    const panelTable = await panelTableFor(pipelineId, { sendsInvites, stageKey, showSource, pack });
     const panelEmail = {
       subject: panelFinalSubject,
       body: wrapBrandedEmail(
-        ensureRecordingNotice(
-          ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode),
-          'panel', isRecorded
-        ) + (pack?.blockHtml || ''),
+        panelInviteBody(panelBody ?? defaults.panel.body, { calendar, isRecorded, table: panelTable, pack }),
         interviewWrapOpts(panelFinalSubject)
       ),
     };
@@ -1081,8 +1163,10 @@ export async function scheduleInterviewRound(pipelineId, {
           to: candidateTo,
           subject: candidateEmail.subject,
           html: candidateEmail.body,
+          attachments: candidateJd.attachments,
         });
         inviteSentAt = new Date();
+        logger.info(`Interview schedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}.`);
       } catch (err) {
         logger.error(`Interview schedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
       }
@@ -1350,7 +1434,7 @@ export async function cancelInterviewRound(scheduleId, {
  * @param {number} pipelineId
  * @param {object} params - { stageKey, startAt, durationMinutes }
  */
-export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '' } = {}) {
+export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, durationMinutes = 60, interviewerName = '', interviewerEmail = '', showSource = false } = {}) {
   const pipeline = await prisma.rpa_candidate_pipeline.findUnique({
     where: { id: BigInt(pipelineId) },
     include: { rpa_shortlisted_candidates: { include: { mrf: true, cv: { select: { EmailID: true } } } } },
@@ -1365,7 +1449,12 @@ export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, d
   const existing = await getLiveSchedule(pipelineId, key);
   const start = startAt ? new Date(startAt) : new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  return buildInterviewEmails('reschedule', {
+  const [pack, candidateTable] = await Promise.all([
+    panelPackPreflightFor(pipelineId, key),
+    // U03: as in the schedule preview.
+    panelTableFor(pipelineId, { sendsInvites: stageSendsInvites(key), stageKey: key, showSource, linksPending: true }),
+  ]);
+  const emails = await buildInterviewEmails('reschedule', {
     candidate,
     stageLabel: SCHEDULABLE_STAGES[key].label,
     position: candidate?.mrf?.position_hiring_for || candidate?.position_applied || 'the role',
@@ -1388,6 +1477,7 @@ export async function previewRescheduleEmails(pipelineId, { stageKey, startAt, d
     interviewerName: interviewerName || existing?.interviewer_name || '',
     interviewerEmail: interviewerEmail || existing?.interviewer_email || '',
   });
+  return { ...emails, pack, candidate_table_html: candidateTable || null };
 }
 
 /**
@@ -1413,6 +1503,8 @@ export async function rescheduleInterviewRound(pipelineId, {
   panelSubject = null,
   panelBody = null,
   sendPack = true,
+  attachProfile = false,
+  showSource = false,
   user = null,
 }) {
   if (!isSchedulableStage(stageKey)) {
@@ -1564,21 +1656,25 @@ export async function rescheduleInterviewRound(pipelineId, {
     const candidateFinalSubject = candidateSubject ?? defaults.candidate.subject;
     const panelFinalSubject = panelSubject ?? defaults.panel.subject;
     const isRecorded = Boolean(recording.appliedAt);
+    // U02: the JD goes with the candidate's rescheduled invite too.
+    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites);
     const candidateEmail = {
       subject: candidateFinalSubject,
-      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded), interviewWrapOpts(candidateFinalSubject)),
+      body: wrapBrandedEmail(candidateJd.appendLink(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded)), interviewWrapOpts(candidateFinalSubject)),
     };
-    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, user, actedBy });
+    const pack = await panelPackFor(pipelineId, { sendsInvites, sendPack, attachProfile, user, actedBy, stageKey });
+    const panelTable = await panelTableFor(pipelineId, { sendsInvites, stageKey, showSource, pack });
     const panelEmail = {
       subject: panelFinalSubject,
-      body: wrapBrandedEmail(ensureRecordingNotice(ensureTeamsBlock(panelBody ?? defaults.panel.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'panel', isRecorded) + (pack?.blockHtml || ''), interviewWrapOpts(panelFinalSubject)),
+      body: wrapBrandedEmail(panelInviteBody(panelBody ?? defaults.panel.body, { calendar, isRecorded, table: panelTable, pack }), interviewWrapOpts(panelFinalSubject)),
     };
 
     const { to: candidateTo } = resolveRecipients('interviewScheduled', liveCandidateEmail(candidate));
     if (sendsInvites && candidateTo && candidateEmail.subject) {
       try {
-        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body });
+        await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body, attachments: candidateJd.attachments });
         inviteSentAt = new Date();
+        logger.info(`Interview reschedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}.`);
       } catch (err) {
         logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
       }

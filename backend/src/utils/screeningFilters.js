@@ -18,7 +18,9 @@
  *   - Skills match WHOLE WORDS, with a small alias table (.NET / dotnet, C#,
  *     C++, Node.js, JS …). All / Any toggle, default All.
  *   - Location is an exact match on one comma-separated part of the stored
- *     location: "Noida" matches "Noida, UP" but never "Greater Noida".
+ *     location: "Noida" matches "Noida, UP" but never "Greater Noida", and
+ *     "Delhi" never matches "New Delhi". Several typed cities are ORed, each
+ *     exact. (HR reconfirmed exact matching on 10 Nov, U04.)
  *
  * Pure functions only — no prisma client, no redis — so every rule is unit
  * tested without a database (src/tests/unit/screeningFilters.test.js).
