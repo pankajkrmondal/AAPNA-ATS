@@ -34,6 +34,11 @@ import { syncShortlistIdentity, syncShortlistIdentitySafe, clearScreeningRoleCac
 import { tracedFetch } from '../utils/externalCall.js';
 import { tagCandidatesSafe } from './candidateTag.service.js';
 import { parseMrfId, tagSourceForUpload, TAG_SOURCES } from '../utils/candidateTag.js';
+import { isRealResume, missingFieldCount, pickResumePair, withoutResumeFlag } from '../utils/resumeCheck.js';
+import { normalisePhone, phoneMatchesSql } from '../utils/phone.js';
+import { emailMatchesSql } from '../utils/emailMatch.js';
+import { appendUnique } from '../utils/contactMerge.js';
+import { Prisma } from '@prisma/client';
 
 // Marker stamped on candidates who applied themselves (website or direct email),
 // where there is no recruiter. Stored in last_action_by for the email_intake source.
@@ -65,14 +70,13 @@ export function sanitizeMatchEmails(raw, exclude = []) {
 }
 
 /**
- * Build a clean list of phone match-keys from a raw comma-separated string.
- * Keeps the existing space-stripped format; drops blanks and the placeholder default.
+ * Build a clean list of phone match-keys from a raw phone list: each number's
+ * last 10 digits (normalisePhone), so "+91 98765 43210" and "98765-43210" are
+ * one key (U05 — a re-upload with "+91" used to create a second record).
+ * Drops parts under 10 digits and the placeholder default.
  */
 export function sanitizeMatchContacts(raw) {
-  return String(raw || '')
-    .split(',')
-    .map((n) => n.replace(/\s+/g, ''))
-    .filter((n) => n.length > 0 && n !== PLACEHOLDER_CONTACT);
+  return normalisePhone(raw).filter((n) => n !== PLACEHOLDER_CONTACT);
 }
 
 // Shared fields between rpa_cv_tmp and rpa_cv
@@ -253,7 +257,7 @@ Rules (IMPORTANT):
 2. Do NOT add explanations, markdown, or comments.
 3. Follow the schema exactly.
 4. If a value is not mentioned in the resume, assign it as null.
-5. EmailID must be treated as a unique identifier and returned as "unique_key".
+5. EmailID must list EVERY email address of the candidate written in the resume, comma-separated, the main one first (not referees', employers' or recruiters' addresses). The FIRST of them is the unique identifier and is returned as "unique_key".
 6. If VendorEmail or VendorName is already provided below and is not empty, you MUST use it as-is and MUST NOT override it from resume text.
 7. NEVER invent, guess, or derive an EmailID, unique_key, or ContactNumber. Do NOT build an email from the candidate's name and do NOT use placeholder/example values (e.g. "@example.com", "1234567890"). If an email or phone number is not explicitly written in the resume text, return null for EmailID, unique_key, and ContactNumber.
 
@@ -265,8 +269,8 @@ Input Details:
 Schema:
 - Name (string)
 - NoticePeriod (string, e.g. "15 Days" or "Immediate" or "3 Months" or "0")
-- ContactNumber (string, supports multiple comma-separated numbers)
-- EmailID (string)
+- ContactNumber (string, EVERY phone number of the candidate written in the resume, comma-separated, e.g. "+91 98765 43210, 91234 56789")
+- EmailID (string, EVERY email address of the candidate written in the resume, comma-separated, e.g. "a@gmail.com, a@company.com")
 - HighestQualification (string)
 - TotalExperienceYears (string, e.g. "5.5" or "3" or "Fresher")
 - LastCompanyExperienceYears (string, e.g. "5.5" or "3" or "Fresher")
@@ -290,7 +294,7 @@ Schema:
     - Graduation (string or null)
     - PostGraduation (string or null)
 - LinkedInProfile (string)
-- unique_key (string, always use the candidate's email address here)
+- unique_key (string, the first email address in EmailID)
 - VendorEmail (string)
 - VendorName (string)
 - Heat (string)
@@ -494,16 +498,13 @@ function getMissingFields(parsed) {
  */
 export async function findExistingCandidateMatch(db, cleanContactNumbers, cleanEmails) {
   if (cleanContactNumbers.length === 0 && cleanEmails.length === 0) return null;
+  // Each side is `false` when it has no keys. Phones compare by last 10
+  // digits on both sides (U05), so the stored format no longer matters.
   const matches = await db.$queryRaw`
     SELECT id FROM public.rpa_cv
     WHERE
-      (
-        coalesce(cardinality(${cleanContactNumbers}::text[]), 0) > 0 AND
-        string_to_array(replace(coalesce("ContactNumber", ''), ' ', ''), ',') && ${cleanContactNumbers}::text[]
-      ) OR (
-        coalesce(cardinality(${cleanEmails}::text[]), 0) > 0 AND
-        string_to_array(lower(replace(coalesce("EmailID", ''), ' ', '')), ',') && ${cleanEmails}::text[]
-      )
+      (${phoneMatchesSql(Prisma.sql`"ContactNumber"`, cleanContactNumbers)})
+      OR (${emailMatchesSql(Prisma.sql`"EmailID"`, cleanEmails)})
     ORDER BY "modifiedAt" DESC NULLS LAST, id DESC
     LIMIT 1
   `;
@@ -546,25 +547,9 @@ export async function searchDuplicates({ filterName, filterEmail, page = 1, perP
   };
 }
 
-// Helper: append unique comma-separated values (used for ContactNumber & EmailID)
-function appendUnique(existing, newValue) {
-  const existingStr = existing ? String(existing).trim() : '';
-  const newStr = newValue ? String(newValue).trim() : '';
-
-  if (existingStr === '') return newStr;
-  if (newStr === '' || newStr.toLowerCase() === 'null') return existingStr;
-
-  const existingValues = existingStr.split(',').map(v => v.trim()).filter(v => v !== '' && v.toLowerCase() !== 'null');
-  const newValues = newStr.split(',').map(v => v.trim()).filter(v => v !== '' && v.toLowerCase() !== 'null');
-
-  for (const val of newValues) {
-    if (!existingValues.some(ev => ev.toLowerCase() === val.toLowerCase())) {
-      existingValues.push(val);
-    }
-  }
-
-  return existingValues.join(', ');
-}
+// appendUnique (ContactNumber & EmailID merges) lives in utils/contactMerge.js
+// (U05): it splits on , ; and / and treats "+91 98765 43210" and "9876543210"
+// as one number.
 
 // Helper: prefer newly parsed value; fall back to existing DB value only when parsed is null/empty/literal "null"
 function prefer(parsedVal, existingVal) {
@@ -639,16 +624,31 @@ export async function mergeDuplicates(ids, token, user = {}) {
           const updateData = {};
           for (const field of CV_SHARED_FIELDS) {
             if (field === 'ContactNumber') {
-              updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, tempCandidate.ContactNumber);
+              updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, tempCandidate.ContactNumber, 'phone');
             } else if (field === 'EmailID') {
-              updateData.EmailID = appendUnique(existingCandidate.EmailID, tempCandidate.EmailID);
+              updateData.EmailID = appendUnique(existingCandidate.EmailID, tempCandidate.EmailID, 'email');
             } else if (field === 'employment_history') {
               updateData.employment_history = !isJsonEmpty(tempCandidate.employment_history)
                 ? tempCandidate.employment_history
                 : existingCandidate.employment_history;
+            } else if (field === 'cvFileUrl' || field === 'cv_file_item_id') {
+              // Set as a pair below (U01), never one field at a time.
             } else {
               updateData[field] = prefer(tempCandidate[field], existingCandidate[field]);
             }
+          }
+          // U01: the resume URL and its drive-item id come from ONE side. Picked
+          // separately, a new URL could sit beside the old item id, and the pack
+          // (which reads by item id) attached the old resume. A null or
+          // non-resume incoming pair (an Excel row) never replaces a real one.
+          const resumePair = pickResumePair(tempCandidate, existingCandidate);
+          updateData.cvFileUrl = resumePair.cvFileUrl;
+          updateData.cv_file_item_id = resumePair.cv_file_item_id;
+          if (resumePair.from === 'existing' && isRealResume({ ...resumePair, missingData: null })) {
+            // The incoming row's "resume still owed" flag does not apply to a
+            // candidate who already has one.
+            updateData.missingData = withoutResumeFlag(updateData.missingData);
+            if (missingFieldCount(updateData.missingData) === 0) updateData.statusActive = 'ACTIVE';
           }
           updateData.modifiedAt = new Date();
           updateData.last_action_by = user?.email || user?.username || 'recruiter';
@@ -721,6 +721,12 @@ export async function mergeDuplicates(ids, token, user = {}) {
           const insertData = {};
           for (const field of CV_SHARED_FIELDS) {
             insertData[field] = tempCandidate[field];
+          }
+          // U01: a queue row from before the fix can still carry the Excel
+          // workbook as its "resume"; only a real resume is carried over.
+          if (!isRealResume(tempCandidate)) {
+            insertData.cvFileUrl = null;
+            insertData.cv_file_item_id = null;
           }
           insertData.createdAt = tempCandidate.createdAt || new Date();
           insertData.modifiedAt = new Date();
@@ -1228,6 +1234,15 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
           await updateJob(executionId, file.originalname, { file_url: cvUrl })
             .catch((e) => logger.warn(`Failed to persist file_url for ${file.originalname}: ${e.message}`));
 
+          // U01: an .xlsx is a LIST of candidates, not anyone's resume. Its link
+          // stays on the upload job (jobInfo.file_url) and never becomes a row's
+          // cvFileUrl / cv_file_item_id: it used to, and the interview panel was
+          // sent the whole workbook (every other row's details) as "the resume".
+          // The row keeps missingData.uploadResume, so the candidate's form asks
+          // for the real one.
+          const rowCvUrl = isExcel ? null : cvUrl;
+          const rowCvItemId = isExcel ? null : cvItemId;
+
           // Process each item (row or file text)
           for (const item of candidateItems) {
             let parsed = null;
@@ -1406,8 +1421,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                     // Which candidate this duplicates, so the Review window can show
                     // both side by side and the merge updates that one (L09).
                     matched_cv_id: existingCandidate.id,
-                    cvFileUrl: cvUrl,
-                    cv_file_item_id: cvItemId,
+                    cvFileUrl: rowCvUrl,
+                    cv_file_item_id: rowCvItemId,
                     uploadedByHRName: fullName,
                     uploadSource: isVendorSource ? 'Vendor Portal' : 'HR Manual Upload',
                     // New review-queue columns — only sent when provisioned (table + client).
@@ -1523,9 +1538,9 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 const updateData = {};
                 for (const field of CV_SHARED_FIELDS) {
                   if (field === 'ContactNumber') {
-                    updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber);
+                    updateData.ContactNumber = appendUnique(existingCandidate.ContactNumber, parsed.ContactNumber, 'phone');
                   } else if (field === 'EmailID') {
-                    updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch);
+                    updateData.EmailID = appendUnique(existingCandidate.EmailID, emailToSearch, 'email');
                   } else if (field === 'employment_history') {
                     updateData.employment_history = employmentHistoryDb;
                   } else {
@@ -1550,8 +1565,14 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                 // Preserve existing vendor email and name (don't overwrite them)
                 updateData.VendorEmail = existingCandidate.VendorEmail;
                 updateData.vendorName = existingCandidate.vendorName;
-                updateData.cvFileUrl = cvUrl;
-                updateData.cv_file_item_id = cvItemId;
+                // U01: one pair, from one side; an Excel row (null pair) keeps
+                // the candidate's existing resume.
+                const directPair = pickResumePair(
+                  { cvFileUrl: rowCvUrl, cv_file_item_id: rowCvItemId, missingData: null },
+                  existingCandidate,
+                );
+                updateData.cvFileUrl = directPair.cvFileUrl;
+                updateData.cv_file_item_id = directPair.cv_file_item_id;
 
                 // Recompute missing fields against the MERGED record so a sparser resubmission
                 // does not re-flag fields already stored on the existing candidate (which would
@@ -1578,6 +1599,11 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                   'PostGraduation': prefer(parsedEdu['PostGraduation'], existingCandidate.postGraduation),
                 };
                 const mergedMissing = getMissingFields(mergedForMissing);
+                // U01: an Excel row brings no resume; still owed unless the
+                // candidate already has a real one.
+                if (isExcel && !isRealResume({ ...directPair, missingData: null })) {
+                  mergedMissing.uploadResume = 'Null';
+                }
                 updateData.statusActive = Object.keys(mergedMissing).length > 0 ? 'INACTIVE' : 'ACTIVE';
                 updateData.missingData = JSON.stringify(mergedMissing);
                 updateData.modifiedAt = new Date();
@@ -1656,8 +1682,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
                   WillingToTakeOnlineTest: parsed.WillingToTakeOnlineTest || null,
                   HasLaptopForInitialDays: parsed.HasLaptopForInitialDays || null,
                   LinkedInProfile: parsed.LinkedInProfile || null,
-                  cvFileUrl: cvUrl,
-                  cv_file_item_id: cvItemId,
+                  cvFileUrl: rowCvUrl,
+                  cv_file_item_id: rowCvItemId,
                   statusActive: statusActive,
                   missingData: missingDataJson,
                   VendorEmail: attrEmail,

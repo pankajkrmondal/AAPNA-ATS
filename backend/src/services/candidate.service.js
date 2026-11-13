@@ -9,6 +9,9 @@ import { preGenerateCandidateInsights } from './hrUpload.service.js';
 import { refreshCandidateVector } from './screening.service.js';
 import { syncShortlistIdentity, clearScreeningRoleCache, clearCandidateInsightCache } from './candidateSync.service.js';
 import { EMBEDDED_CV_FIELDS, touchesEmbeddedFields } from '../utils/candidateSync.js';
+import { phoneMatchesSql, phoneDigitsContainSql, normalisePhone } from '../utils/phone.js';
+import { appendUnique, withPrimaryEmailFirst } from '../utils/contactMerge.js';
+import { Prisma } from '@prisma/client';
 
 /**
  * Candidate service.
@@ -272,7 +275,7 @@ const REFERRAL_COLUMNS = Object.freeze({
 });
 
 export async function search(filters = {}, page = 1, limit = 20, sort = 'createdAt', order = 'desc', { redactReferral = false } = {}) {
-  const where = buildWhereClause(filters);
+  const where = await buildWhereClause(filters);
 
   // Shared with the CSV export so both order rows identically.
   const dbSortField = resolveSortField(sort);
@@ -539,6 +542,11 @@ export async function update(id, data, actor = null) {
     // the pipeline copied, and the fields the search vector is built from.
     select: Object.fromEntries([...new Set([...ruleFields, ...EMBEDDED_CV_FIELDS, 'Name'])].map((k) => [k, true])),
   });
+  // U05: the Edit form sends the whole email and phone lists. The record's
+  // primary email always stays first (the form shows it read-only), and
+  // repeats in any format ("+91 98765 43210" vs "9876543210") collapse.
+  if (dbData.EmailID !== undefined) dbData.EmailID = withPrimaryEmailFirst(dbData.EmailID, existingRow?.EmailID);
+  if (dbData.ContactNumber !== undefined) dbData.ContactNumber = appendUnique('', dbData.ContactNumber, 'phone');
   const changed = Object.fromEntries(
     Object.entries(dbData).filter(([k, v]) => ruleFields.includes(k) && String(v ?? '') !== String(existingRow?.[k] ?? '')),
   );
@@ -621,22 +629,33 @@ export async function update(id, data, actor = null) {
  * over `PositionApplied`. Combining a search term with a name filter therefore
  * dropped the name and returned MORE rows than asked for. Now they compose.
  *
+ * Phone (U05): ContactNumber is free text holding every number we have, in
+ * whatever format it arrived ("+91 98765 43210, 98765-11111"), so a `contains`
+ * on the typed text missed most matches. A phone filter, or a free-text search
+ * that looks like a number, is resolved to matching ids first: by last 10
+ * digits for a full number, by digits-only containment for a partial one.
+ * Emails keep `contains`: it already finds any address in the stored list, and
+ * a partial address ("pankaj@") still works.
+ *
  * @param {Object} filters
- * @returns {Object}
+ * @returns {Promise<Object>}
  */
-export function buildWhereClause(filters = {}) {
+export async function buildWhereClause(filters = {}) {
   const and = [];
 
   // Legacy identifier search — any one of these may match.
   const identityOr = [];
   if (filters.email) {
-    identityOr.push({ EmailID: { contains: filters.email, mode: 'insensitive' } });
+    identityOr.push({ EmailID: { contains: String(filters.email).trim(), mode: 'insensitive' } });
   }
   if (filters.name) {
     identityOr.push({ Name: { contains: filters.name, mode: 'insensitive' } });
   }
   if (filters.phone) {
-    identityOr.push({ ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
+    const phoneSql = phoneSearchSql(filters.phone);
+    identityOr.push(phoneSql
+      ? { id: { in: await idsWhere(phoneSql) } }
+      : { ContactNumber: { contains: filters.phone, mode: 'insensitive' } });
   }
   if (identityOr.length > 0) {
     and.push({ OR: identityOr });
@@ -644,14 +663,16 @@ export function buildWhereClause(filters = {}) {
 
   // Free-text search across the profile.
   if (filters.search) {
-    and.push({
-      OR: [
-        { Name: { contains: filters.search, mode: 'insensitive' } },
-        { EmailID: { contains: filters.search, mode: 'insensitive' } },
-        { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
-        { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
-      ],
-    });
+    const searchOr = [
+      { Name: { contains: filters.search, mode: 'insensitive' } },
+      { EmailID: { contains: String(filters.search).trim(), mode: 'insensitive' } },
+      { Top5KeySkills: { contains: filters.search, mode: 'insensitive' } },
+      { CurrentCompany: { contains: filters.search, mode: 'insensitive' } },
+    ];
+    if (looksLikePhone(filters.search)) {
+      searchOr.push({ id: { in: await idsWhere(phoneSearchSql(filters.search)) } });
+    }
+    and.push({ OR: searchOr });
   }
 
   // Discrete field filters (mirror the n8n vendor "My Uploads" filterName/filterEmail/filterPosition).
@@ -702,6 +723,31 @@ export function buildWhereClause(filters = {}) {
   }
 
   return and.length > 0 ? { AND: and } : {};
+}
+
+/** Free text made only of digits and phone punctuation, with at least 5 digits. */
+export function looksLikePhone(text) {
+  const s = String(text ?? '').trim();
+  return /^[+\d\s\-().]+$/.test(s) && s.replace(/[^0-9]/g, '').length >= 5;
+}
+
+/**
+ * The SQL predicate for a typed phone: last-10-digit match for a full number,
+ * digits-only containment for a partial one; null when it has no digits.
+ * @param {string} text
+ * @returns {Prisma.Sql|null}
+ */
+export function phoneSearchSql(text) {
+  const column = Prisma.sql`"ContactNumber"`;
+  if (normalisePhone(text).length > 0) return phoneMatchesSql(column, text);
+  const digits = String(text ?? '').replace(/[^0-9]/g, '');
+  return digits ? phoneDigitsContainSql(column, digits) : null;
+}
+
+/** rpa_cv ids matching a raw predicate, for `{ id: { in } }` in a Prisma where. */
+async function idsWhere(predicate) {
+  const rows = await prisma.$queryRaw`SELECT id FROM public.rpa_cv WHERE ${predicate}`;
+  return rows.map((r) => r.id);
 }
 
 /**
@@ -779,7 +825,7 @@ export function resolveSortField(sort) {
  */
 export async function findAllForExport(filters = {}, { sort = 'createdAt', order = 'desc', max } = {}) {
   const rows = await prisma.rpa_cv.findMany({
-    where: buildWhereClause(filters),
+    where: await buildWhereClause(filters),
     select: EXPORT_SELECT,
     orderBy: { [resolveSortField(sort)]: order === 'asc' ? 'asc' : 'desc' },
     take: max,

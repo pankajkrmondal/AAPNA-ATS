@@ -36,6 +36,7 @@ import AppError from '../utils/AppError.js';
 import { isAdminTier } from '../config/roles.js';
 import { fmtDate, fmtDateTimeIst } from '../utils/dateFormat.js';
 import { shareUrlFor } from '../utils/recordingShareModel.js';
+import { zekoCandidateLink } from '../utils/zekoLinkModel.js';
 import {
   LINK_TYPES, PIPELINE_TYPES, STATES, firstUrlIn, linkActions, linkMessage, linkStatus, tileCounts, tileFlags,
 } from '../utils/formsLinksModel.js';
@@ -474,10 +475,14 @@ async function resolveLink(type, id, user) {
     },
     zeko: async () => {
       const [r] = await prisma.$queryRaw`
-        SELECT j.slug, (SELECT p2.id FROM public.rpa_candidate_pipeline p2 WHERE p2.shortlist_id = z.candidate_id ORDER BY p2.id DESC LIMIT 1) AS pipeline_id
+        SELECT j.slug, z.link_token::text AS link_token, (SELECT p2.id FROM public.rpa_candidate_pipeline p2 WHERE p2.shortlist_id = z.candidate_id ORDER BY p2.id DESC LIMIT 1) AS pipeline_id
         FROM public.rpa_zeko_candidate_pipeline z
         LEFT JOIN public.rpa_zeko_jobs j ON j.zeko_id = z.zeko_job_id WHERE z.id = ${Number(id)}`;
-      return r?.slug && { url: `${config.zeko.interviewLinkBase}/${r.slug}`, pipelineId: r.pipeline_id, stageKey: 'zeko_hr' };
+      // U08: the same tracked link the email carries (falls back to the job's Zeko page).
+      const url = r && zekoCandidateLink({
+        token: r.link_token, slug: r.slug, publicBaseUrl: config.publicBaseUrl, interviewLinkBase: config.zeko.interviewLinkBase,
+      });
+      return url && { url, pipelineId: r.pipeline_id, stageKey: 'zeko_hr' };
     },
     evalground: async () => {
       const r = await prisma.rpa_assessment_invites.findUnique({ where: { id: big } });

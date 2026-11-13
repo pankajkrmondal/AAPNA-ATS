@@ -2,24 +2,26 @@
  * Settings › MRF Approval & Hold.
  *
  *   Approvers                 read-only (the mrf_approvers roster)
- *   Who can decide on behalf  read-only: users whose role is HR Admin Recruiter,
- *                             Admin or Super Admin (the role is the control)
- *   Approver absence          Admin / Super Admin edit
+ *   Who can decide on behalf  one person, chosen by an Admin / Super Admin; they
+ *                             decide any time an MRF is pending (U06b)
  *   Hold rules                HR Admin Recruiter and above edit; Recruiters read
- *   Held MRFs                 HR Admin Recruiter and above: change date, release now
+ *   Held MRFs                 HR Admin Recruiter and above, or that person:
+ *                             change date, release now
+ *
+ * The approver-absence window is no longer shown or used (U06b); its stored
+ * setting is left as it is.
  *
  * The server sends `can.*` so the card enables exactly what it will accept.
  * Plan: docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §7
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Card, DatePicker, Empty, Input, InputNumber, Modal, Space, Switch, Table, Tag, TimePicker, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Card, Empty, InputNumber, Modal, Select, Space, Table, Tag, TimePicker, Tooltip, Typography, message } from 'antd';
 import { CalendarOutlined, PauseCircleOutlined, PlayCircleOutlined, SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import mrfService from '../../services/mrfService';
 import HoldDateField from '../mrf/HoldDateField';
 
 const { Title, Text } = Typography;
-const ISO = 'YYYY-MM-DD';
 const HOLD_BLUE = '#234e8c';
 
 const sectionLabel = { fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--text-3)' };
@@ -34,9 +36,9 @@ export default function MrfApprovalHoldSettings() {
   const [rules, setRules] = useState({ defaultDays: 30, maxDays: 180, releaseTime: '09:00' });
   const [savingRules, setSavingRules] = useState(false);
 
-  // Absence form
-  const [absence, setAbsence] = useState({ active: false, from: null, to: null, note: '' });
-  const [savingAbsence, setSavingAbsence] = useState(false);
+  // The person who decides on behalf
+  const [designeeId, setDesigneeId] = useState(null);
+  const [savingDesignee, setSavingDesignee] = useState(false);
 
   // Change-date modal
   const [dateFor, setDateFor] = useState(null);
@@ -51,12 +53,7 @@ export default function MrfApprovalHoldSettings() {
       setData(settings);
       setHeld(Array.isArray(heldRows) ? heldRows : []);
       setRules(settings.hold_rules);
-      setAbsence({
-        active: Boolean(settings.absence?.active),
-        from: settings.absence?.from || null,
-        to: settings.absence?.to || null,
-        note: settings.absence?.note || '',
-      });
+      setDesigneeId(settings.on_behalf_user?.user_id ?? null);
     } catch (err) {
       message.error(err?.message || 'Could not load the MRF approval settings.');
     } finally {
@@ -81,16 +78,16 @@ export default function MrfApprovalHoldSettings() {
     }
   };
 
-  const saveAbsence = async () => {
-    setSavingAbsence(true);
+  const saveDesignee = async () => {
+    setSavingDesignee(true);
     try {
-      const res = await mrfService.saveApproverAbsence(absence);
+      const res = await mrfService.saveOnBehalfUser(designeeId);
       message.success(res?.message || 'Saved.');
       await load();
     } catch (err) {
-      message.error(err?.message || 'Could not save the absence.');
+      message.error(err?.message || 'Could not save the person.');
     } finally {
-      setSavingAbsence(false);
+      setSavingDesignee(false);
     }
   };
 
@@ -129,11 +126,13 @@ export default function MrfApprovalHoldSettings() {
     });
   };
 
-  const absenceStatus = data?.absence?.in_effect
-    ? <Tag color="green" style={{ margin: 0 }}>On-behalf decisions open until {data.absence.to_label}</Tag>
-    : data?.absence?.active
-      ? <Tag color="gold" style={{ margin: 0 }}>Scheduled {data.absence.from_label} – {data.absence.to_label}</Tag>
-      : <Tag style={{ margin: 0 }}>Off — approvers available</Tag>;
+  const designee = data?.on_behalf_user || null;
+  const designeeChanged = (designeeId ?? null) !== (designee?.user_id ?? null);
+  const designeeOptions = (data?.on_behalf_users || []).map((u) => ({ value: u.id, label: `${u.name} · ${u.roleLabel}` }));
+  // Keep a chosen person who is no longer active visible in the picker.
+  if (designee && !designeeOptions.some((o) => o.value === designee.user_id)) {
+    designeeOptions.unshift({ value: designee.user_id, label: `${designee.name} · not active` });
+  }
 
   const heldColumns = [
     { title: 'MRF', dataIndex: 'id', key: 'id', width: 70, render: (v) => `#${v}` },
@@ -177,8 +176,8 @@ export default function MrfApprovalHoldSettings() {
           MRF Approval &amp; Hold
         </Title>
         <Text type="secondary">
-          Who approves MRFs, who can decide when they are away, and how long an MRF can be held.
-          Approver absence: Admins. Hold rules and held MRFs: HR Admin Recruiter and above. Recruiters: view only.
+          Who approves MRFs, who can decide for them, and how long an MRF can be held.
+          Who decides on behalf: Admins. Hold rules and held MRFs: HR Admin Recruiter and above. Recruiters: view only.
         </Text>
         {data && (!data.features?.hold || !data.features?.on_behalf) && (
           <Alert
@@ -208,53 +207,31 @@ export default function MrfApprovalHoldSettings() {
             <div style={box}>
               <div style={sectionLabel}><TeamOutlined /> Who can decide on behalf</div>
               <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-3)' }}>
-                HR Admin Recruiter, Admin or Super Admin — only while the approvers are marked away.
+                This person can approve, reject or hold an MRF for the approvers.
               </div>
-              <Space wrap style={{ marginTop: 10 }}>
-                {data.on_behalf_users.map((u) => (
-                  <Tag key={u.id} color={u.role === 'hr_admin_recruiter' ? 'purple' : 'default'} style={{ padding: '4px 10px', borderRadius: 16, fontSize: 13 }}>
-                    {u.name} · {u.roleLabel}
-                  </Tag>
-                ))}
-              </Space>
-              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
-                To add someone, change their role in Admin Portal › Users.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ ...box, border: '2px solid var(--brand-primary, #5b6e1e)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={sectionLabel}>Approver absence</div>
-              {absenceStatus}
-            </div>
-            <Space wrap align="end" size={18} style={{ marginTop: 12 }}>
-              <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
-                <Switch checked={absence.active} disabled={!can.edit_absence} onChange={(v) => setAbsence((a) => ({ ...a, active: v }))} />
-                Approvers are away
-              </label>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>From – To</div>
-                <DatePicker.RangePicker
-                  disabled={!can.edit_absence}
-                  value={absence.from && absence.to ? [dayjs(absence.from), dayjs(absence.to)] : null}
-                  onChange={(v) => setAbsence((a) => ({ ...a, from: v?.[0]?.format(ISO) || null, to: v?.[1]?.format(ISO) || null }))}
-                  format="DD MMM YYYY"
+              <Space.Compact style={{ width: '100%', marginTop: 10 }}>
+                <Select
+                  aria-label="Who can decide on behalf"
+                  placeholder="No one"
+                  value={designeeId}
+                  onChange={(v) => setDesigneeId(v ?? null)}
+                  options={designeeOptions}
+                  disabled={!can.edit_on_behalf_user}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ flex: 1, minWidth: 0 }}
                 />
-              </div>
-              <div style={{ minWidth: 240, flex: 1 }}>
-                <label htmlFor="absence-note" style={{ fontSize: 12, fontWeight: 600 }}>Note</label>
-                <Input id="absence-note" disabled={!can.edit_absence} value={absence.note} maxLength={500} onChange={(e) => setAbsence((a) => ({ ...a, note: e.target.value }))} placeholder="e.g. Both travelling" style={{ marginTop: 4 }} />
-              </div>
-              {can.edit_absence && (
-                <Button type="primary" loading={savingAbsence} onClick={saveAbsence} disabled={absence.active && (!absence.from || !absence.to)}>
-                  Save absence
-                </Button>
+                {can.edit_on_behalf_user && (
+                  <Button type="primary" loading={savingDesignee} disabled={!designeeChanged} onClick={saveDesignee}>Save</Button>
+                )}
+              </Space.Compact>
+              {designee && designee.active === false && (
+                <Alert type="warning" showIcon style={{ marginTop: 8, borderRadius: 8 }} message={`${designee.name} is not active. Choose another person.`} />
               )}
-            </Space>
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-3)' }}>
-              {data.absence?.setByName ? `Last set by ${data.absence.setByName}. ` : ''}
-              Saving a window emails the approvers and every HR Admin Recruiter. Outside these dates nobody can decide on behalf, not even Admins.
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
+                {designee?.set_by_name ? `Set by ${designee.set_by_name}.` : (can.edit_on_behalf_user ? '' : 'An Admin chooses this person.')}
+              </div>
             </div>
           </div>
 

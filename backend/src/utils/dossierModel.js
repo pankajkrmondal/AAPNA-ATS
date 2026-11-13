@@ -38,8 +38,7 @@ export function describeJourneyStatus(pipeline, stageLabel) {
       ...base,
       state: 'closed',
       closed: true,
-      headline: `This candidate's application is CLOSED (${outcome.toUpperCase()}). `
-        + `It reached ${stage}. This pack is a record, not a request to interview.`,
+      headline: `Application CLOSED (${outcome.toUpperCase()}) at ${stage}.`,
     };
   }
   if (pipeline.is_paused) {
@@ -47,14 +46,14 @@ export function describeJourneyStatus(pipeline, stageLabel) {
       ...base,
       state: 'paused',
       closed: false,
-      headline: `This candidate's application is currently ON HOLD at ${stage}.`,
+      headline: `Application ON HOLD at ${stage}.`,
     };
   }
   return {
     ...base,
     state: 'in_progress',
     closed: false,
-    headline: `This candidate is currently at ${stage}.`,
+    headline: `Current stage: ${stage}.`,
   };
 }
 
@@ -466,8 +465,26 @@ export function describeIncludedCategories(model) {
   return included;
 }
 
+/**
+ * U03: an interviewer's name for a scorecard, from its booking. Only when the
+ * booking had exactly this one mailbox: on a multi-person panel the booking's
+ * single name belongs to one of them, and putting it on another's verdict
+ * would be worse than printing the address.
+ * @param {{schedule_id?: *, recipient_email?: string}} card
+ * @param {Map<string, {interviewer_name?: string, interviewer_email?: string}>} scheduleById
+ * @returns {string|null}
+ */
+export function interviewerNameFor(card, scheduleById) {
+  const booking = card?.schedule_id != null ? scheduleById.get(String(card.schedule_id)) : null;
+  const name = String(booking?.interviewer_name || '').trim();
+  if (!name || !card?.recipient_email) return null;
+  const emails = String(booking.interviewer_email || '').split(/[,;]/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return emails.length === 1 && emails[0] === String(card.recipient_email).trim().toLowerCase() ? name : null;
+}
+
 export default {
   describeJourneyStatus,
+  interviewerNameFor,
   describeIncludedCategories,
   applyAttachments,
   applyZekoExtras,

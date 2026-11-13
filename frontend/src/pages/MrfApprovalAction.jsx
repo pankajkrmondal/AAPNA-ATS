@@ -514,7 +514,7 @@ export default function MrfApprovalAction() {
         )}
 
         {currentAction === 'hold' && canHold && (
-          <div style={{ border: '1px solid #9db6dd', background: '#f6f9fe', borderRadius: 12, padding: 18, marginBottom: 8 }}>
+          <div style={{ border: '1px solid var(--info-border)', background: 'var(--info-bg)', borderRadius: 12, padding: 18, marginBottom: 8 }}>
             <HoldDateField value={holdUntil} onChange={setHoldUntil} config={holdConfig} />
             <Alert
               type="info"

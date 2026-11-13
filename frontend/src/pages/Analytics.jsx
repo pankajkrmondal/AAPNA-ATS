@@ -38,6 +38,7 @@ import PositionsTab from '../components/analytics/PositionsTab';
 import AnalyticsRangeBar from '../components/analytics/AnalyticsRangeBar';
 import RoleDetailDrawer from '../components/analytics/RoleDetailDrawer';
 import MetricCandidatesDrawer from '../components/analytics/MetricCandidatesDrawer';
+import { respondedRangeFromParams } from '../components/analytics/RespondedByJdPanel';
 import { ACCENT, DEFAULT_RANGE, SectionTitle, rangeParams } from '../components/analytics/openPositionsShared';
 import dayjs from 'dayjs';
 import KpiCard from '../components/common/KpiCard';
@@ -94,6 +95,10 @@ const DEFAULT_ANALYTICS_PARAMS = Object.freeze({
 });
 
 const daysOptions = (values) => values.map((v) => ({ value: v, label: `${v} days` }));
+/** U10's tab key, still in older bell notes' links; mapped to Open Positions › Responded (U10b). */
+const LEGACY_FORMS_TAB = 'completed-forms';
+/** The URL keys of Open Positions › Responded (U10b). */
+const RESPONDED_KEYS = ['view', 'range', 'from', 'to'];
 const STUCK_THRESHOLD_OPTIONS = daysOptions([5, 10, 14, 30]);
 const HOLD_THRESHOLD_OPTIONS = daysOptions([7, 30, 60, 90]);
 // L06: the rejection table follows the page range; its own window select is gone (D7).
@@ -663,7 +668,12 @@ export default function Analytics() {
   // (/analytics?tab=open&mrf=<id>, from the Dashboard pulse, the Pipeline
   // header or the MRF page) opens that role's view straight away.
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'open');
+  // U10b: the Completed Forms tab became Open Positions › Responded; bell notes
+  // already in the database still carry ?tab=completed-forms.
+  const [activeTab, setActiveTab] = useState(() => {
+    const tab = searchParams.get('tab');
+    return !tab || tab === LEGACY_FORMS_TAB ? 'open' : tab;
+  });
   const [roleMrfId, setRoleMrfId] = useState(() => {
     const id = Number(searchParams.get('mrf'));
     return Number.isFinite(id) && id > 0 ? id : null;
@@ -699,6 +709,63 @@ export default function Analytics() {
     setSearchParams(next, { replace: true });
   };
   const openMetric = (mrfId, metric) => setMetricTarget({ mrfId, metric });
+
+  // The tab follows the URL, so a link (the bell note) switches it even when
+  // the page is already open; a tab click writes it back. An old
+  // ?tab=completed-forms link becomes Open Positions › Responded, dates kept.
+  const urlTab = searchParams.get('tab');
+  useEffect(() => {
+    if (urlTab === LEGACY_FORMS_TAB) {
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', 'open');
+      next.set('view', 'responded');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    if (urlTab) setActiveTab(urlTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlTab]);
+  const changeTab = (key) => {
+    setActiveTab(key);
+    if (searchParams.get('tab') !== key) {
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', key);
+      if (key !== 'open') RESPONDED_KEYS.forEach((k) => next.delete(k));
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  // U10b: Open Positions › Responded keeps its view and own range in the URL
+  // (?tab=open&view=responded&range= or &from&to), so the bell note opens it.
+  const positionsView = searchParams.get('view') === 'responded' ? 'responded' : 'board';
+  const respondedRange = useMemo(() => respondedRangeFromParams(searchParams), [searchParams]);
+  const writeResponded = (next, value) => {
+    next.set('tab', 'open');
+    next.set('view', 'responded');
+    ['range', 'from', 'to'].forEach((k) => next.delete(k));
+    if (value.preset === 'custom') {
+      next.set('from', value.from);
+      next.set('to', value.to);
+    } else {
+      next.set('range', value.preset);
+    }
+  };
+  const changeRespondedRange = (value) => {
+    const next = new URLSearchParams(searchParams);
+    writeResponded(next, value);
+    setSearchParams(next, { replace: true });
+  };
+  /** Board | Responded; the tile passes the page's dates along. */
+  const changePositionsView = (view, value) => {
+    const next = new URLSearchParams(searchParams);
+    if (view === 'responded') {
+      if (value) writeResponded(next, value);
+      else next.set('view', 'responded');
+    } else {
+      RESPONDED_KEYS.forEach((k) => next.delete(k));
+    }
+    setSearchParams(next, { replace: true });
+  };
   // Distinct from pipelineAnalytics.loading: that one drives per-card skeletons
   // on first paint, this one drives the blocking scrim on a user-triggered
   // refetch. Conflating them would put a full-screen overlay over the initial
@@ -989,7 +1056,7 @@ export default function Analytics() {
         <Tabs
           className="screening-tabs"
           activeKey={activeTab}
-          onChange={setActiveTab}
+          onChange={changeTab}
           size="large"
           tabBarStyle={{ marginBottom: 20 }}
           items={[
@@ -1006,13 +1073,22 @@ export default function Analytics() {
               children: (
                 <PositionsTab
                   title={(
-                    <SectionTitle accent={ACCENT.progress} hint={`every requisition · ${rangeCaption}`}>
+                    <SectionTitle
+                      accent={ACCENT.progress}
+                      hint={positionsView === 'responded'
+                        ? 'who responded, by JD · own dates, yesterday by default (India time)'
+                        : `every requisition · ${rangeCaption}`}
+                    >
                       Open positions
                     </SectionTitle>
                   )}
                   range={range}
                   onOpenRole={openRole}
                   onOpenMetric={openMetric}
+                  view={positionsView}
+                  onViewChange={changePositionsView}
+                  respondedRange={respondedRange}
+                  onRespondedRangeChange={changeRespondedRange}
                 />
               )
             },
@@ -1108,7 +1184,14 @@ export default function Analytics() {
         />
       </Card>
 
-      <RoleDetailDrawer open={roleMrfId != null} mrfId={roleMrfId} range={range} onClose={closeRole} onOpenMetric={openMetric} />
+      <RoleDetailDrawer
+        open={roleMrfId != null}
+        mrfId={roleMrfId}
+        range={range}
+        onClose={closeRole}
+        onOpenMetric={openMetric}
+        respondedRange={positionsView === 'responded' ? respondedRange : undefined}
+      />
       <MetricCandidatesDrawer open={metricTarget != null} target={metricTarget} range={rangeApi} onClose={() => setMetricTarget(null)} />
     </div>
   );

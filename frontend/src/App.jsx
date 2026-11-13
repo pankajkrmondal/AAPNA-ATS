@@ -48,6 +48,7 @@ import CandidatePipelinePrototype from './pages/CandidatePipelinePrototype';
 import Pipeline from './pages/Pipeline';
 import InterviewScorecard from './pages/InterviewScorecard';
 import DocumentUpload from './pages/DocumentUpload';
+import ZekoStart from './pages/ZekoStart';
 
 /* ---- Route Guards ---- */
 
@@ -352,6 +353,9 @@ function AppShell() {
 
             {/* Public candidate document upload (no login — opened from an emailed link) */}
             <Route path="/documents/:token" element={<ForceLight><DocumentUpload /></ForceLight>} />
+
+            {/* Public optional phone step before a Zeko interview (no login — reached from the emailed /api/z/ link, U08) */}
+            <Route path="/zeko-start/:token" element={<ForceLight><ZekoStart /></ForceLight>} />
 
             {/* Protected (app) routes */}
             <Route

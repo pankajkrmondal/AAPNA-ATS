@@ -33,7 +33,7 @@
     "dossier:leakscan": "node scripts/dossier-leak-scan.mjs",
     "referral:jobsource-scan": "node scripts/referral-jobsource-scan.mjs",
     "test": "jest --passWithNoTests",
-    "test:unit": "node --test \"src/tests/**/*.test.js\"",
+    "test:unit": "node --test \"src/tests/unit/**/*.test.js\" \"src/tests/*.test.js\"",
     "test:watch": "jest --watch",
     "lint": "eslint src/"
   },

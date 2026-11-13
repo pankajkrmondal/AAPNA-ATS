@@ -38,11 +38,13 @@ const CATEGORY_BY_DECISION = { shortlist: 'shortlist', reject: 'rejection' };
  * server-side (backend/src/services/screening.service.js) — used to bake real,
  * static text into the editable body once a role is known, instead of leaving
  * {role_paragraph} as a raw token the recruiter has to mentally resolve.
+ * `data-ats-intro` marks it so the server puts the JD card right under it
+ * (INTRO_SLOT_ATTR in backend/src/utils/candidateEmailBlocks.js).
  */
 function buildRoleParagraph(roleName) {
   return roleName
-    ? `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
-    : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
+    ? `<p data-ats-intro="1">Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
+    : `<p data-ats-intro="1">Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`;
 }
 
 /** "240 KB" / "1.2 MB" */
@@ -110,9 +112,10 @@ export default function DecisionEmailModal({
   // Bumped every time {role_paragraph} is (re-)baked into `body` as static text,
   // so the editor (uncontrolled after mount) remounts and shows the fresh text.
   const [roleParagraphRev, setRoleParagraphRev] = useState(0);
-  // N17: the tagged MRF's JD, for Keyword-tab shortlists only.
+  // N17 / U02: the tagged MRF's JD goes with every shortlist email — JD tab,
+  // Keyword tab and Search "Add to JD".
   const [jdInfo, setJdInfo] = useState(null);
-  const showJd = activeTab === 'keyword' && !isReject;
+  const showJd = !isReject;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -189,6 +192,8 @@ export default function DecisionEmailModal({
       position: roleName || 'the role',
       job_title: roleName || 'the role',
       role_paragraph: roleParagraph,
+      // U02b: the server puts the JD card here (or nothing, when it is attached).
+      jd_link: '<div style="margin:14px 0;padding:8px 10px;border:1px dashed #c9d3a7;border-radius:6px;color:#6b7280;font-size:12px;">The Job Description card goes here when the JD is sent as a link.</div>',
     });
   }, [subject, body, firstCandidateName, roleName]);
 
@@ -320,7 +325,7 @@ export default function DecisionEmailModal({
             {sendEmail && showJd && jdInfo && !jdInfo.attachable && (
               <div data-testid="jd-not-attached" style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', color: 'var(--warn-text)', borderRadius: 6, padding: '6px 10px', fontSize: 12.5 }}>
                 {jdInfo.has_link
-                  ? 'This MRF\'s JD is over 3 MB or cannot be read: the email will carry a "View the job description" link instead.'
+                  ? 'This MRF\'s JD is too large to attach or cannot be read: the email will carry a "View Job Description" button instead.'
                   : 'This MRF has no JD file: the email goes without one.'}
               </div>
             )}

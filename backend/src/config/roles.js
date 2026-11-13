@@ -164,6 +164,18 @@ export function isRecruiterTier(role) {
 }
 
 /**
+ * The recruiter-tier roles among `roles`, in canonical order. A role list can
+ * pick a subset of staff, never widen past it: 'vendor' or an unknown role is
+ * dropped. Used by notify()'s `roles` option (U10: HR and Admin only).
+ * @param {string[]|null|undefined} roles
+ * @returns {string[]}
+ */
+export function recruiterTierSubset(roles) {
+  const wanted = new Set((roles || []).map(normalizeRole));
+  return RECRUITER_TIER_ROLES.filter((r) => wanted.has(r));
+}
+
+/**
  * Display label for a role ("HR Admin Recruiter"); the raw value if unknown.
  * @param {string|null|undefined} role
  * @returns {string}

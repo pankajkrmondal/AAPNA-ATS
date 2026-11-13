@@ -66,7 +66,7 @@ export async function runKeywordSearch(page, f = {}) {
   await page.getByRole('button', { name: 'Clear', exact: true }).click();
 
   if (f.skills) await page.locator('#keyword-skills').fill(f.skills);
-  if (f.matchMode === 'any') await page.getByTestId('any-skill').check();
+  if (f.matchMode === 'any') await page.getByTestId('skill-match-mode').getByText('Any skill', { exact: true }).click();
   if (f.position) await formItem(page, 'Position applied for').locator('input').fill(f.position);
   for (const city of f.location || []) {
     const input = formItem(page, 'Location').locator('input');

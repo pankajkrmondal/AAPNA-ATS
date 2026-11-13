@@ -16,6 +16,7 @@ import {
   Select,
   Switch,
   Tooltip,
+  Tag,
 } from 'antd';
 import {
   MailOutlined,
@@ -42,9 +43,16 @@ const { Title, Text } = Typography;
 // backend/src/controllers/emailTemplate.controller.js.
 const OPTIONAL_PLACEHOLDERS = new Set([
   'teams_line', 'reason_line',
+  // U02b: where the JD card goes; with no token it goes where it always did.
+  'jd_link',
   // MRF Hold & Delegate notices (backend/src/services/mrfHoldEmailTemplates.js)
   'note_line', 'previous_until_line', 'absence_line', 'hold_until_row', 'comment_line', 'absence_note_line',
 ]);
+
+// U02b: templates that can carry the JD declare {{jd_link}} (DDL
+// 2026-11-12-email-template-attach-jd.sql); only those show the switch.
+const carriesJd = (template) => (template?.placeholders || [])
+  .some((p) => String(p).replace(/[{}]/g, '').trim() === 'jd_link');
 
 // Tokens that render a whole HTML block the sending service builds, rather than
 // a value a recruiter types. Without this note the screen just shows a bare
@@ -61,6 +69,7 @@ const STRUCTURAL_PLACEHOLDER_NOTES = {
   hold_until_row: 'Renders an “On hold until” table row, only when the decision was a hold.',
   comment_line: 'Renders the decision comment, when one was given.',
   absence_note_line: 'Renders the absence note in quotes, when one was given.',
+  jd_link: 'Where the JD card goes; when the JD is attached as a file this shows nothing. Without it, the card goes where it always did.',
 };
 
 // Creating templates from the UI isn't needed right now — flip this back to
@@ -123,6 +132,10 @@ const dummyReplacements = {
   set_by: 'Pankaj Mondal',
   on_behalf_names: 'Chhaya Verma',
   absence_note_line: ' (&ldquo;Both travelling&rdquo;)',
+  // U02b: Evalground invite and the JD card (same look as jdLinkHtml in
+  // backend/src/utils/candidateEmailBlocks.js).
+  deadline_days: '2',
+  jd_link: '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#f6f9eb;border-left:4px solid #7a922e;border-radius:8px;"><tr><td style="padding:18px 20px;font-size:14px;color:#374151;line-height:1.6;"><p style="margin:0 0 4px 0;font-size:15px;font-weight:700;color:#5a6e1f;">Job Description</p><p style="margin:0 0 14px 0;">Take a few minutes to read the full role details before your next step.</p><a href="https://aapnainfotech.com/careers/sample-jd" target="_blank" style="display:inline-block;padding:10px 22px;background:#7a922e;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;font-size:14px;">View Job Description</a></td></tr></table>',
 };
 
 /** Substitutes every recognized {token}/{{token}} with its dummy sample value. */
@@ -172,6 +185,8 @@ export default function EmailManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [validationError, setValidationError] = useState('');
   const [isDirty, setIsDirty] = useState(false);
+  // U02b: "Attach the JD" — true / false, or null for the default rule.
+  const [attachJd, setAttachJd] = useState(null);
 
   // Create-template modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -221,8 +236,14 @@ export default function EmailManagement() {
     setSelectedTemplate(template);
     setSubject(template.subject);
     setBodyHtml(template.body_html);
+    setAttachJd(typeof template.attach_jd === 'boolean' ? template.attach_jd : null);
     setValidationError('');
     setIsDirty(false);
+  };
+
+  const changeAttachJd = (value) => {
+    setAttachJd(value);
+    setIsDirty(true);
   };
 
   const handleSelectTemplate = (template) => {
@@ -299,9 +320,12 @@ export default function EmailManagement() {
 
     setIsSaving(true);
     try {
+      // U02b: the switch is sent only for a template that can carry the JD.
+      const jdFields = carriesJd(selectedTemplate) ? { attach_jd: attachJd } : {};
       const res = await emailTemplateService.updateEmailTemplate(selectedTemplate.id, {
         subject,
         body_html: cleanBody,
+        ...jdFields,
       });
 
       if (res.data.status === 'success') {
@@ -310,7 +334,7 @@ export default function EmailManagement() {
         setTemplates(prev =>
           prev.map(t =>
             t.id === selectedTemplate.id
-              ? { ...t, subject, body_html: cleanBody, modified_at: new Date() }
+              ? { ...t, subject, body_html: cleanBody, ...jdFields, modified_at: new Date() }
               : t
           )
         );
@@ -319,6 +343,7 @@ export default function EmailManagement() {
           ...prev,
           subject,
           body_html: cleanBody,
+          ...jdFields,
           modified_at: new Date(),
         }));
         setIsDirty(false);
@@ -666,6 +691,28 @@ export default function EmailManagement() {
                   </Text>
                 </div>
               }
+              // U02b: whether this email carries the JD. Empty = the default
+              // rule, shown as its effective value with a "Default" tag.
+              extra={carriesJd(selectedTemplate) ? (
+                <Space size={6} align="center" wrap data-testid="template-attach-jd">
+                  <Text style={{ fontSize: 12.5 }}>Attach the JD</Text>
+                  <Switch
+                    size="small"
+                    checked={attachJd ?? true}
+                    onChange={changeAttachJd}
+                    aria-label="Attach the JD"
+                  />
+                  {attachJd === null ? (
+                    <Tooltip title="Default: the JD goes with this email, as a file or as a link card when the file is too large. An approval onto Documents or Offer goes without it.">
+                      <Tag style={{ marginInlineEnd: 0 }}>Default</Tag>
+                    </Tooltip>
+                  ) : (
+                    <Button type="link" size="small" style={{ padding: 0 }} onClick={() => changeAttachJd(null)}>
+                      Use default
+                    </Button>
+                  )}
+                </Space>
+              ) : null}
             >
               {selectedTemplate.neverSends && (
                 <Alert

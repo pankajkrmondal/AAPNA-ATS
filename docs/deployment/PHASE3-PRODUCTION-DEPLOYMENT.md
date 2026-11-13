@@ -169,9 +169,13 @@ npm run seed:stages:prod        # 12 stages, 45 outcomes, 9 reasons
 npm run seed:recipients:prod    # per-flow email recipients
 npm run seed:documents:prod     # document checklist
 NODE_ENV=production node prisma/seed-email-templates.js
+# U03b (Nov 2026): the two panel templates only, and only where HR never edited them.
+# Dry run first; read each line, then --apply. An edited row is never changed.
+NODE_ENV=production node scripts/refresh-panel-invite-templates.mjs
+NODE_ENV=production node scripts/refresh-panel-invite-templates.mjs --apply
 ```
 
-⚠ **Read §4.1 before running the template seed.**
+⚠ **Read §4.1 before running the template seed.** If the full seed is not run, `refresh-panel-invite-templates.mjs` alone updates "Interview Scheduled — Panel" and "Interview Rescheduled — Panel", dropping the "Candidate email:" line and adding `{{candidate_table}}`.
 
 **Verify** (counts confirmed against staging on 2026-08-06):
 
