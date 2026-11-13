@@ -3951,6 +3951,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       position={pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline?.rpa_shortlisted_candidates?.position_applied}
       deadlineDays={automationSettingsData?.assessment_deadline_days}
       hasJd={Boolean(pipeline?.rpa_shortlisted_candidates?.mrf?.jd_document_link || pipeline?.rpa_shortlisted_candidates?.mrf?.jd_attachment)}
+      template={assessmentInviteData?.template || null}
       sending={inviteMutation.isPending}
       onSend={(payload) => inviteMutation.mutate(payload)}
     />

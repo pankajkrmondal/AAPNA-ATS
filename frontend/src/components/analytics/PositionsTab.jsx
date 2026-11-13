@@ -8,9 +8,15 @@
  * ratios. Every underlined number opens its candidates (W1); the role name
  * opens the role view. Open is the default filter; Closed / All stay.
  *
+ * U10b: a "Board | Responded" switch. Responded (RespondedByJdPanel) lists who
+ * responded by JD on its own dates (yesterday by default), following the
+ * Open / Closed / All switch. The Responded tile opens it for the page's dates.
+ * The view and its dates live in the URL (Analytics.jsx), for the bell note.
+ *
  * Data: GET /api/pipeline/analytics/positions?from&to (openPositions.service.js).
  */
 import { useEffect, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
 import { Alert, Col, Row, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import {
   AlertOutlined, ApartmentOutlined, CheckCircleOutlined, MailOutlined, ProfileOutlined, TeamOutlined,
@@ -24,6 +30,7 @@ import { closureReasonLabel } from '../../utils/mrfLabel';
 import {
   ACCENT, Delta, HealthDot, HealthFlags, NowBadge, SOURCE_KEYS, SOURCE_LABEL_FALLBACK, rangeParams,
 } from './openPositionsShared';
+import RespondedByJdPanel, { MAX_RESPONDED_DAYS } from './RespondedByJdPanel';
 
 const { Text } = Typography;
 
@@ -33,6 +40,23 @@ const STATUS_FILTERS = [
   { label: 'All', value: 'all' },
 ];
 const STATUS_COLOR = { Open: 'green', Paused: 'orange', Filled: 'blue', Closed: 'default' };
+const VIEWS = [
+  { label: 'Board', value: 'board' },
+  { label: 'Responded', value: 'responded' },
+];
+
+/**
+ * The Responded view's dates when opened from the tile: the page's dates, so
+ * the numbers match, unless the page shows All time or more than the view's
+ * cap; then yesterday.
+ */
+function respondedRangeFor(params) {
+  if (!params.from || !params.to) return { preset: 'yesterday', from: null, to: null };
+  const days = dayjs(params.to).diff(dayjs(params.from), 'day') + 1;
+  return days > MAX_RESPONDED_DAYS
+    ? { preset: 'yesterday', from: null, to: null }
+    : { preset: 'custom', from: params.from, to: params.to };
+}
 
 const unwrap = (res) => res?.data?.data ?? res?.data ?? null;
 const numberSorter = (key) => (a, b) => (a[key] ?? -1) - (b[key] ?? -1);
@@ -60,8 +84,9 @@ function Num({ value, onClick, strong = false }) {
 /**
  * Summary tiles above the board (open positions only): the shared KpiCard, the
  * same strip the Analytics headline uses, with one line of context under each.
+ * The Responded tile opens the Responded view (U10b).
  */
-function SummaryTiles({ summary }) {
+function SummaryTiles({ summary, onOpenResponded }) {
   if (!summary) return null;
   const tiles = [
     { label: 'Open positions', value: summary.open_positions, icon: <ProfileOutlined />, accent: ACCENT.neutral, metric: null,
@@ -71,7 +96,8 @@ function SummaryTiles({ summary }) {
     { label: 'Applied', value: summary.applied, icon: <TeamOutlined />, accent: ACCENT.progress, metric: 'opApplied',
       note: summary.applied_previous == null ? 'all time' : <span><Delta value={summary.applied} previous={summary.applied_previous} /> vs {summary.applied_previous}</span> },
     { label: 'Responded', value: summary.responded, icon: <MailOutlined />, accent: ACCENT.waiting, metric: 'opResponded',
-      note: summary.response_pct == null ? '–' : `${summary.response_pct}% of applied` },
+      note: <span>{summary.response_pct == null ? '–' : `${summary.response_pct}% of applied`} · <a>See who →</a></span>,
+      onClick: onOpenResponded, testId: 'responded-tile' },
     { label: 'Shortlisted', value: summary.shortlisted, icon: <CheckCircleOutlined />, accent: ACCENT.positive, metric: 'opShortlisted',
       note: summary.shortlist_pct == null ? '–' : `${summary.shortlist_pct}% of applied` },
     { label: 'In pipeline · now', value: summary.in_pipeline, icon: <ApartmentOutlined />, accent: ACCENT.success, metric: 'opInPipeline',
@@ -79,21 +105,49 @@ function SummaryTiles({ summary }) {
   ];
   return (
     <Row gutter={[16, 16]} style={{ marginBottom: 18 }} data-testid="open-positions-summary">
-      {tiles.map((t, i) => (
-        <Col xs={12} sm={12} md={8} lg={4} key={t.label}>
-          <KpiCard index={i} icon={t.icon} label={t.label} value={t.value ?? 0} metric={t.metric} {...t.accent} />
-          <Text type="secondary" style={{ fontSize: 11.5, display: 'block', padding: '6px 4px 0', lineHeight: 1.4 }}>{t.note}</Text>
-        </Col>
-      ))}
+      {tiles.map((t, i) => {
+        const body = (
+          <>
+            <KpiCard index={i} icon={t.icon} label={t.label} value={t.value ?? 0} metric={t.metric} {...t.accent} />
+            <Text type="secondary" style={{ fontSize: 11.5, display: 'block', padding: '6px 4px 0', lineHeight: 1.4 }}>{t.note}</Text>
+          </>
+        );
+        return (
+          <Col xs={12} sm={12} md={8} lg={4} key={t.label}>
+            {t.onClick ? (
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label={`${t.label}: see who, by JD`}
+                // The metric's (i) is a button of its own: it opens the definition, not the view.
+                onClick={(e) => { if (!e.target.closest?.('button')) t.onClick(); }}
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.onClick(); }
+                }}
+                style={{ cursor: 'pointer' }}
+                data-testid={t.testId}
+              >
+                {body}
+              </div>
+            ) : body}
+          </Col>
+        );
+      })}
     </Row>
   );
 }
 
 /**
  * @param {{ title: React.ReactNode, range: object, onOpenRole: (mrfId: number) => void,
- *   onOpenMetric: (mrfId: number, metric: string) => void }} props  range: the page's range state
+ *   onOpenMetric: (mrfId: number, metric: string) => void,
+ *   view?: 'board'|'responded', onViewChange?: (view: string, respondedRange?: object) => void,
+ *   respondedRange?: object, onRespondedRangeChange?: (next: object) => void }} props
+ *   range: the page's range state; view / respondedRange: from the URL (Analytics.jsx)
  */
-export default function PositionsTab({ title, range, onOpenRole, onOpenMetric }) {
+export default function PositionsTab({
+  title, range, onOpenRole, onOpenMetric,
+  view = 'board', onViewChange, respondedRange = { preset: 'yesterday', from: null, to: null }, onRespondedRangeChange,
+}) {
   const [state, setState] = useState({ loading: true, errored: false, data: null });
   const [status, setStatus] = useState('open');
   const params = rangeParams(range);
@@ -199,37 +253,46 @@ export default function PositionsTab({ title, range, onOpenRole, onOpenMetric })
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
         {title}
         <Space size={10} wrap>
+          <Segmented value={view} onChange={(v) => onViewChange?.(v)} options={VIEWS} data-testid="positions-view-switch" />
           <Segmented value={status} onChange={setStatus} options={STATUS_FILTERS} data-testid="positions-status-filter" />
-          <ExportButton
-            tooltip="Downloads one row per requisition for this date range: health, applicants by source, every count on the board and each stage reached."
-            request={(cfg) => pipelineService.exportPositionsAnalytics(status, cfg, params)}
-            fallbackName="AAPNA-ATS_Open-Positions.csv"
-            rowCount={rows.length}
-            label="Export"
-            size="small"
-          />
+          {view === 'board' && (
+            <ExportButton
+              tooltip="Downloads one row per requisition for this date range: health, applicants by source, every count on the board and each stage reached."
+              request={(cfg) => pipelineService.exportPositionsAnalytics(status, cfg, params)}
+              fallbackName="AAPNA-ATS_Open-Positions.csv"
+              rowCount={rows.length}
+              label="Export"
+              size="small"
+            />
+          )}
         </Space>
       </div>
-      {state.errored && <Alert type="error" showIcon message="Open positions could not be loaded. Refresh the page to try again." style={{ marginBottom: 12 }} />}
-      <SummaryTiles summary={data?.summary} />
-      <Table
-        rowKey="mrf_id"
-        dataSource={rows}
-        columns={columns}
-        loading={state.loading}
-        size="middle"
-        scroll={{ x: 'max-content' }}
-        pagination={{ pageSize: 15, showSizeChanger: false }}
-        onRow={(r) => ({
-          onClick: () => onOpenRole?.(r.mrf_id),
-          style: { cursor: 'pointer' },
-          'data-testid': `positions-row-${r.mrf_id}`,
-        })}
-        locale={{ emptyText: status === 'open' ? 'No open positions' : 'No positions' }}
-      />
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        Click a role for its view over this range. Every underlined number opens the candidates behind it. Hover Applied for the sources.
-      </Text>
+      {view === 'responded' ? (
+        <RespondedByJdPanel value={respondedRange} onChange={(next) => onRespondedRangeChange?.(next)} status={status} onOpenRole={onOpenRole} />
+      ) : (
+        <>
+          {state.errored && <Alert type="error" showIcon message="Open positions could not be loaded. Refresh the page to try again." style={{ marginBottom: 12 }} />}
+          <SummaryTiles summary={data?.summary} onOpenResponded={() => onViewChange?.('responded', respondedRangeFor(params))} />
+          <Table
+            rowKey="mrf_id"
+            dataSource={rows}
+            columns={columns}
+            loading={state.loading}
+            size="middle"
+            scroll={{ x: 'max-content' }}
+            pagination={{ pageSize: 15, showSizeChanger: false }}
+            onRow={(r) => ({
+              onClick: () => onOpenRole?.(r.mrf_id),
+              style: { cursor: 'pointer' },
+              'data-testid': `positions-row-${r.mrf_id}`,
+            })}
+            locale={{ emptyText: status === 'open' ? 'No open positions' : 'No positions' }}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Click a role for its view over this range. Every underlined number opens the candidates behind it. Hover Applied for the sources.
+          </Text>
+        </>
+      )}
     </>
   );
 }

@@ -7,6 +7,8 @@ import runExport from '../exports/runExport.js';
 import emailMonitoringExport from '../exports/emailMonitoring.export.js';
 import { SILENT_FINAL_OUTCOMES } from '../services/stageNotification.service.js';
 import { MRF_HOLD_OPTIONAL_PLACEHOLDERS } from '../services/mrfHoldEmailTemplates.js';
+import { loadTemplateAttachJd, hasAttachJdColumn } from '../services/jdAttachment.service.js';
+import logger from '../config/logger.js';
 
 /**
  * Structural placeholders that the sending service injects as HTML fragments
@@ -15,8 +17,28 @@ import { MRF_HOLD_OPTIONAL_PLACEHOLDERS } from '../services/mrfHoldEmailTemplate
  * the compiler knows about them, but must NOT be enforced as "required" when a
  * recruiter edits the template — removing them from the body is legitimate.
  * Kept in sync with the same constant in frontend/src/pages/EmailManagement.jsx.
+ * U02b: jd_link (where the JD card goes) is optional too.
  */
-const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line', ...MRF_HOLD_OPTIONAL_PLACEHOLDERS]);
+const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line', 'jd_link', ...MRF_HOLD_OPTIONAL_PLACEHOLDERS]);
+
+/**
+ * U02b: rpa_email_templates.attach_jd is read and written with raw SQL, so the
+ * page keeps working before DDL 2026-11-12-email-template-attach-jd.sql runs
+ * (every template then shows the default rule).
+ */
+const missingAttachJdColumn = (err) => /attach_jd/.test(String(err?.message)) && /does not exist|column/i.test(String(err?.message));
+
+/** id -> true | false | null for every template; empty when the column is not there yet. */
+async function attachJdById() {
+  if (!(await hasAttachJdColumn())) return new Map();
+  try {
+    const rows = await prisma.$queryRaw`SELECT id, attach_jd FROM rpa_email_templates`;
+    return new Map(rows.map((r) => [Number(r.id), typeof r.attach_jd === 'boolean' ? r.attach_jd : null]));
+  } catch (err) {
+    if (!missingAttachJdColumn(err)) logger.warn(`[email templates] could not read attach_jd: ${err.message}`);
+    return new Map();
+  }
+}
 
 /**
  * @desc    Get all email templates
@@ -24,7 +46,7 @@ const OPTIONAL_PLACEHOLDERS = new Set(['teams_line', 'reason_line', ...MRF_HOLD_
  * @access  Private (Recruiter/Admin)
  */
 export const getEmailTemplates = catchAsync(async (req, res) => {
-  const [templates, silencedMappings] = await Promise.all([
+  const [templates, silencedMappings, attachJd] = await Promise.all([
     prisma.rpa_email_templates.findMany({ orderBy: { name: 'asc' } }),
     // A template mapped to an outcome in SILENT_FINAL_OUTCOMES can never send —
     // stageNotification.service.js's resolveTemplate() short-circuits before
@@ -35,10 +57,16 @@ export const getEmailTemplates = catchAsync(async (req, res) => {
       where: { outcome_key: { in: [...SILENT_FINAL_OUTCOMES] } },
       select: { template_id: true },
     }),
+    attachJdById(),
   ]);
 
   const neverSendIds = new Set(silencedMappings.map((m) => m.template_id));
-  const annotated = templates.map((t) => ({ ...t, neverSends: neverSendIds.has(t.id) }));
+  const annotated = templates.map((t) => ({
+    ...t,
+    neverSends: neverSendIds.has(t.id),
+    // U02b: the "Attach the JD" switch; null = the default rule.
+    attach_jd: attachJd.get(t.id) ?? null,
+  }));
 
   return success(res, annotated, 'Email templates retrieved successfully');
 });
@@ -58,7 +86,7 @@ export const getEmailTemplateById = catchAsync(async (req, res) => {
     throw new AppError('Email template not found', 404);
   }
 
-  return success(res, template, 'Email template retrieved successfully');
+  return success(res, { ...template, attach_jd: await loadTemplateAttachJd(template.id) }, 'Email template retrieved successfully');
 });
 
 /**
@@ -117,16 +145,23 @@ export const createEmailTemplate = catchAsync(async (req, res) => {
 });
 
 /**
- * @desc    Update template subject and body
+ * @desc    Update template subject and body, and (U02b) its "Attach the JD"
+ *          switch: `attach_jd` true | false | null (null = the default rule);
+ *          left out, the switch is not changed
  * @route   PUT /api/email/templates/:id
  * @access  Private (Recruiter/Admin)
  */
 export const updateEmailTemplate = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { subject, body_html } = req.body;
+  const setsAttachJd = Object.prototype.hasOwnProperty.call(req.body || {}, 'attach_jd');
+  const attachJd = setsAttachJd ? req.body.attach_jd : undefined;
 
   if (!subject || !body_html) {
     throw new AppError('Subject and body_html are required fields.', 400);
+  }
+  if (setsAttachJd && attachJd !== true && attachJd !== false && attachJd !== null) {
+    throw new AppError('attach_jd must be true, false or null.', 400);
   }
 
   const template = await prisma.rpa_email_templates.findUnique({
@@ -174,6 +209,19 @@ export const updateEmailTemplate = catchAsync(async (req, res) => {
     );
   }
 
+  // The switch first: if its column is missing, nothing is saved.
+  if (setsAttachJd) {
+    if (!(await hasAttachJdColumn())) {
+      throw new AppError('The "Attach the JD" switch needs database change 2026-11-12-email-template-attach-jd.sql. Nothing was saved.', 503);
+    }
+    try {
+      await prisma.$executeRaw`UPDATE rpa_email_templates SET attach_jd = ${attachJd} WHERE id = ${template.id}`;
+    } catch (err) {
+      if (!missingAttachJdColumn(err)) throw err;
+      throw new AppError('The "Attach the JD" switch needs database change 2026-11-12-email-template-attach-jd.sql. Nothing was saved.', 503);
+    }
+  }
+
   const updatedTemplate = await prisma.rpa_email_templates.update({
     where: { id: parseInt(id, 10) },
     data: {
@@ -183,7 +231,8 @@ export const updateEmailTemplate = catchAsync(async (req, res) => {
     },
   });
 
-  return success(res, updatedTemplate, 'Email template updated successfully');
+  const savedAttachJd = setsAttachJd ? attachJd : await loadTemplateAttachJd(template.id);
+  return success(res, { ...updatedTemplate, attach_jd: savedAttachJd }, 'Email template updated successfully');
 });
 
 /**

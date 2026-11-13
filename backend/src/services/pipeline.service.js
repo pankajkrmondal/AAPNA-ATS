@@ -37,8 +37,8 @@ import {
   redoVisitsFor,
   redoReturnStageKey,
 } from './stageState.service.js';
-import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail } from './stageNotification.service.js';
-import { jdForCandidateEmail, shouldAttachJd, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
+import { sendStageOutcomeEmail, sendAdHocCandidateEmail, previewOutcomeEmail, resolveTemplate } from './stageNotification.service.js';
+import { jdForCandidateEmail, jdWantedForTemplate, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
 // cancelInterviewRound is also re-exported below for the controller's benefit;
 // this import is the local binding setFinalOutcome calls (a re-export creates
 // no binding in this module).
@@ -1508,7 +1508,11 @@ export async function setStageOutcome(pipelineId, { outcomeKey, reasonId = null,
   const stageRow = await prisma.rpa_pipeline_stages.findUnique({ where: { stage_key: pipeline.current_stage_key } });
   // U02: an approval that moves the candidate on to another round carries the
   // JD (attached, or as a link) — not one that lands on Documents or Offer.
-  const outcomeJd = sendEmail && outcomeKey === STAGE_OUTCOMES.APPROVED && nextStage && shouldAttachJd(nextStage.stage_key)
+  // U02b: the resolved template's "Attach the JD" switch, when HR set it,
+  // overrides that rule (resolved here even when the recruiter edited the text).
+  const isApprovalOnward = sendEmail && outcomeKey === STAGE_OUTCOMES.APPROVED && nextStage;
+  const outcomeTemplate = isApprovalOnward ? await resolveTemplate(pipeline.current_stage_key, outcomeKey) : null;
+  const outcomeJd = isApprovalOnward && (await jdWantedForTemplate(outcomeTemplate, nextStage.stage_key))
     ? await jdForCandidateEmail(pipeline.mrf_id || pipeline.rpa_shortlisted_candidates?.mrf_id)
     : NO_JD_FOR_EMAIL;
   // N45: the recruiter can save an outcome without emailing the candidate.

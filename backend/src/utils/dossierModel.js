@@ -38,8 +38,7 @@ export function describeJourneyStatus(pipeline, stageLabel) {
       ...base,
       state: 'closed',
       closed: true,
-      headline: `This candidate's application is CLOSED (${outcome.toUpperCase()}). `
-        + `It reached ${stage}. This pack is a record, not a request to interview.`,
+      headline: `Application CLOSED (${outcome.toUpperCase()}) at ${stage}.`,
     };
   }
   if (pipeline.is_paused) {
@@ -47,14 +46,14 @@ export function describeJourneyStatus(pipeline, stageLabel) {
       ...base,
       state: 'paused',
       closed: false,
-      headline: `This candidate's application is currently ON HOLD at ${stage}.`,
+      headline: `Application ON HOLD at ${stage}.`,
     };
   }
   return {
     ...base,
     state: 'in_progress',
     closed: false,
-    headline: `This candidate is currently at ${stage}.`,
+    headline: `Current stage: ${stage}.`,
   };
 }
 

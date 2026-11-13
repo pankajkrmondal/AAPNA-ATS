@@ -680,8 +680,8 @@ const config = {
   },
 
   /**
-   * U10: the 09:00 IST bell note "12 forms completed yesterday across 4 JDs"
-   * (jobs/completedFormsDigest.js). Default OFF. In-app only, no email. Goes to
+   * U10 / U10b: the 09:00 IST bell note "12 candidates responded yesterday
+   * across 4 JDs", opening Open Positions › Responded (jobs/completedFormsDigest.js). Default OFF. In-app only, no email. Goes to
    * FORMS_DIGEST_ROLES (HR and Admin by default); vendors are never reached.
    */
   formsDigest: {

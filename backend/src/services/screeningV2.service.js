@@ -51,6 +51,7 @@ import {
   wholeWordMatch,
 } from '../utils/screeningFilters.js';
 import { EXCLUSION_LABELS, compareNearestMiss, exclusionReasons } from '../utils/screeningExclusionReasons.js';
+import { compareKeywordResults } from '../utils/keywordRanking.js';
 import {
   resolveMandatoryText,
   parseMandatorySkills,
@@ -235,40 +236,50 @@ const EVIDENCE_WEIGHT = { declared: 1, terms: 0.85, resume: 0.7 };
  * per term (ev_<i>_s / _t / _r) are computed by the database with the same
  * whole-word predicate that filtered the row, so the card can never disagree
  * with the filter — and the resume body never has to leave the database.
+ *
+ * `count` (the card's ×N, U04b) is the number of whole-word mentions in the
+ * resume text (ev_<i>_n, also counted by the database). Only when the resume
+ * text has none (no text stored) does the technical-terms JSON count stand in.
+ * So a skill found in the resume or its keywords never shows ×0; a skill only
+ * in the declared skills shows 0 and the card labels it "listed".
  */
 function skillEvidence(terms, c, prefix = 'ev_') {
   const techTerms = parseTechnicalTerms(c.resume_technical_terms);
 
   let weight = 0;
   let declaredCount = 0;
-  let totalFreq = 0;
+  let totalMentions = 0;
   const perTerm = terms.map((term, i) => {
     const inSkills = c[`${prefix}${i}_s`] === true;
     const inTerms = c[`${prefix}${i}_t`] === true;
     const inResumeText = c[`${prefix}${i}_r`] === true;
-    // Frequency only: the small technical-terms JSON is matched in JS.
-    const tech = inTerms ? techTerms.find((t) => wholeWordMatch(t.term, term)) : null;
+    const resumeCount = Number(c[`${prefix}${i}_n`]) || 0;
+    // Fallback only: the small technical-terms JSON is matched in JS.
+    const tech = inTerms && resumeCount === 0 ? techTerms.find((t) => wholeWordMatch(t.term, term)) : null;
+    const count = resumeCount > 0 ? resumeCount : tech ? tech.count || 1 : inTerms ? 1 : 0;
     const source = inSkills ? 'declared' : inTerms ? 'terms' : inResumeText ? 'resume' : null;
     if (source) weight += EVIDENCE_WEIGHT[source];
     if (inSkills) declaredCount++;
-    totalFreq += tech ? tech.count || 1 : 0;
-    return { term, inSkills, inTerms, inResumeText, count: tech ? tech.count || 1 : 0, source, matched: Boolean(source) };
+    totalMentions += count;
+    return { term, inSkills, inTerms, inResumeText, count, source, matched: Boolean(source) };
   });
 
   return {
     perTerm,
     matchedCount: perTerm.filter((p) => p.matched).length,
     total: terms.length,
+    totalMentions,
     skillPts: terms.length ? round1((10 * weight) / terms.length) : null,
-    // Tiebreak among equal scores: declared skills first, then term frequency.
-    evidence: declaredCount * 1e6 + totalFreq,
+    // JD-tab tiebreak among equal scores: declared skills first, then mentions.
+    evidence: declaredCount * 1e6 + totalMentions,
   };
 }
 
 /**
  * SELECT-list fragments for the evidence flags of `terms`: `flagSelect` goes in
  * the filtering CTE `m`, `flagOut` in the outer query. Column names are
- * <prefix><i>_s / _t / _r (declared skills / technical terms / resume text).
+ * <prefix><i>_s / _t / _r (declared skills / technical terms / resume text),
+ * plus <prefix><i>_n, the resume-text mention count (U04b).
  *
  * @param {string[]} terms
  * @param {string} [prefix='ev_'] - must start with "ev_" so toPublic strips it
@@ -279,7 +290,7 @@ function evidenceFlagSql(terms, prefix = 'ev_') {
   terms.forEach((term, i) => {
     const p = skillColumnPredicates(term, 'c');
     if (!p) return;
-    for (const [suffix, sql] of [['s', p.declared], ['t', p.terms], ['r', p.resume]]) {
+    for (const [suffix, sql] of [['s', p.declared], ['t', p.terms], ['r', p.resume], ['n', p.resumeCount]]) {
       select.push(Prisma.sql`${sql} AS ${Prisma.raw(`${prefix}${i}_${suffix}`)}`);
       out.push(`m.${prefix}${i}_${suffix}`);
     }
@@ -454,26 +465,22 @@ export async function searchKeywordCandidatesV2(body) {
   }
 
   // Score and order. The score never removes anyone. With "Active candidates
-  // first" (L01) the activity status comes before the score, and among Active
-  // candidates with equal scores the quicker responder goes first.
+  // first" (L01) the activity status comes first; then (U04b) more searched
+  // skills matched, then more resume mentions, then the score — see
+  // compareKeywordResults.
   const activity = await activityFor();
   const scored = passing.map((c) => {
     const ev = f.skills.length > 0 ? skillEvidence(f.skills, c) : null;
     return {
       c,
+      ev,
       rating: keywordScore(ev, c),
       signals: ev ? strictSkillSignals(ev) : undefined,
       distance: c.distance == null ? Infinity : Number(c.distance),
       activity: activity.of(c),
     };
   });
-  scored.sort((a, b) =>
-    (activeFirst ? compareActivity(a.activity, b.activity) : 0)
-    || b.rating.avgScore - a.rating.avgScore
-    || (activeFirst ? compareResponseSpeed(a.activity, b.activity) : 0)
-    || b.rating.evidence - a.rating.evidence
-    || a.distance - b.distance
-    || new Date(b.c.createdAt || 0) - new Date(a.c.createdAt || 0));
+  scored.sort((a, b) => compareKeywordResults(a, b, activeFirst));
 
   // AI insights for the top 10 only; a failure leaves results intact.
   const tAi0 = Date.now();

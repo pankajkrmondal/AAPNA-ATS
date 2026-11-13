@@ -85,5 +85,5 @@
 
 **Left over (R2 UAT):**
 - Staging has no open Zeko booking, so the live dry run was not done. Book our test candidate on staging, then run `sendZekoExpiryReminders({ dryRun: true, rowIds: [<id>] })`.
-- Set `ZEKO_REMINDER_ENABLED=true` in the staging server's env; it is off everywhere until then. `PUBLIC_BASE_URL` is set in all three local env files, so the tracked link goes live once the code is deployed.
+- Set `ZEKO_REMINDER_ENABLED=true` in the staging server's env; it is off everywhere until then. **12 Nov:** the owner decided on in staging on 13 Nov and in production on 16 Nov, set in R16. `PUBLIC_BASE_URL` is set in all three local env files, so the tracked link goes live once the code is deployed.
 - A real Zeko invite was not sent, so the `/api/z/` link in a real email has not been clicked through end to end.

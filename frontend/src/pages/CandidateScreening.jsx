@@ -228,6 +228,9 @@ const JD_SKILL_STATUS = {
 };
 
 const isPresent = (s) => s.status === 'evidenced' || s.status === 'signals_only';
+// U04b: every skill the search matched, a declared-only ("listed") one included,
+// so the card meter's n/m agrees with who passed the filter.
+const isMatched = (s) => s.status !== 'missing';
 
 // Renders the JD Skill Match for a candidate.
 //  - variant="card"  → compact: a match meter + chips for PRESENT skills only (calm, premium).
@@ -245,8 +248,8 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
   /* ---- Compact card variant: meter + present chips only ---- */
   if (variant === 'card') {
     const head = label.replace(/ JD Skills$/, '').replace(/ Skills$/, '');
-    const mandPresent = mandatory.filter(isPresent);
-    const gthPresent = goodToHave.filter(isPresent);
+    const mandPresent = mandatory.filter(isMatched);
+    const gthPresent = goodToHave.filter(isMatched);
     const pct = mandatory.length ? Math.round((mandPresent.length / mandatory.length) * 100) : 0;
     const CAP = 5;
     const shown = mandPresent.slice(0, CAP);
@@ -258,7 +261,7 @@ const JdSkillMatch = ({ signals, variant = 'full', label = 'Mandatory JD Skills'
       return (
         <Tooltip key={`${s.skill}-${idx}`} title={style.explain(s)}>
           <span className={cls}>
-            {s.skill}<span className="skill-chip__x">×{s.count}</span>
+            {s.skill}<span className="skill-chip__x">{s.status === 'listed_only' ? 'listed' : `×${s.count}`}</span>
           </span>
         </Tooltip>
       );
@@ -829,7 +832,7 @@ export default function CandidateScreening() {
       email_override: emailOverride,
     };
     if (decision === 'reject') payload.reason = reason;
-    // N17: only a Keyword-tab shortlist attaches the JD and adds About AAPNA.
+    // The tab the shortlist came from (sets the candidate's tag source).
     else payload.source = activeTab;
 
     setIsShortlisting(true);

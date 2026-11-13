@@ -10,7 +10,6 @@ import settingsService from '../services/settingsService';
 import useTheme from '../hooks/useTheme';
 import useAuth from '../hooks/useAuth';
 import PipelineConfigPanel from '../components/pipeline/PipelineConfigPanel';
-import CompanyProfileCard from '../components/settings/CompanyProfileCard';
 import MrfApprovalHoldSettings from '../components/settings/MrfApprovalHoldSettings';
 import CandidateActivityCard from '../components/settings/CandidateActivityCard';
 import PositionTargetCard from '../components/settings/PositionTargetCard';
@@ -455,10 +454,6 @@ export default function Settings() {
           />
         </div>
       </Card>
-
-      {/* What keyword-shortlist emails say about the company (N17). Admin
-          only, matching the API's requireAdmin. */}
-      {isAdmin && <CompanyProfileCard />}
 
       {/* How recent a response must be to count as Active in screening (L01). Admin only. */}
       {isAdmin && <CandidateActivityCard />}

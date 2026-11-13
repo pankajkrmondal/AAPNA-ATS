@@ -1,25 +1,54 @@
 /**
- * Completed forms (U10): the pure rules behind Analytics → "Completed forms"
- * and the 09:00 IST bell note. No Prisma and no socket import, so node:test can
- * load it (the job and the service import notification.service.js, which
- * pulls in the Redis socket bridge).
+ * Responded by JD (U10, revised as U10b): the pure rules behind Analytics →
+ * Open Positions › Responded and the 09:00 IST bell note. No Prisma and no
+ * socket import, so node:test can load it (the job and the service import
+ * notification.service.js, which pulls in the Redis socket bridge).
  *
- * "Completed" means the candidate submitted the public missing-details form
- * with nothing left missing: rpa_cv.details_completed_at, set once, on the
- * first completion (candidate.controller.js submitPublicMissingData).
+ * "Responded" is the Open Positions Responded column's definition
+ * (mrfApplicants.service.js RESPONDED_AT): the details form completed, else the
+ * older RECEIVED token, else a complete ACTIVE CV that was never asked.
  */
 import { istDay, makeRange, lastNDays, parseAnalyticsRange, rangeLabel } from '../utils/analyticsRange.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The tab's presets. A preset is resolved on the server, in India time. */
+/** The view's presets. A preset is resolved on the server, in India time. */
 export const FORMS_RANGE_PRESETS = Object.freeze(['yesterday', 'today', '7']);
-/** The longest custom range the tab accepts; anything longer falls back to yesterday. */
+/** The longest custom range the view accepts; anything longer falls back to yesterday. */
 export const MAX_FORMS_RANGE_DAYS = 92;
-/** The group for candidates with no tag, no "Position Applied" match and no journey. */
+/** The group for responders with no tag and no "Position Applied" match to any board MRF. */
 export const NO_JD_LABEL = 'No JD yet';
 /** rpa_settings key holding the last day a bell note was sent for (the once-a-day claim). */
 export const DIGEST_CLAIM_KEY = 'forms_digest.last_day';
+/** The board's Open / Closed / All switch, which the view follows. Open is the default. */
+export const RESPONDED_STATUS_FILTERS = Object.freeze(['open', 'closed', 'all']);
+
+/** `?status=` to a board filter; anything else is 'open'. */
+export function parseRespondedStatus(value) {
+  const s = String(value ?? '').trim().toLowerCase();
+  return RESPONDED_STATUS_FILTERS.includes(s) ? s : 'open';
+}
+
+/**
+ * `?mrf=` (U10c, one position's Responded section): a positive whole MRF id,
+ * else null (every JD, the overall view).
+ */
+export function parseRespondedMrf(value) {
+  const s = String(value ?? '').trim();
+  if (!/^\d{1,15}$/.test(s)) return null;
+  const n = Number(s);
+  return n > 0 ? n : null;
+}
+
+/**
+ * Whether a board status (positionStatus: Open, Paused, Filled, Closed) is in
+ * the filter: the board's own rule (positions.export.js filterPositions).
+ */
+export function inStatusFilter(positionStatus, filter) {
+  if (filter === 'open') return positionStatus === 'Open' || positionStatus === 'Paused';
+  if (filter === 'closed') return positionStatus === 'Filled' || positionStatus === 'Closed';
+  return true;
+}
 
 /** Yesterday in India time, as a one-day range. India has no daylight saving. */
 export function yesterdayRange(now = new Date()) {
@@ -56,28 +85,31 @@ const toIso = (v) => {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 };
 
-const byTimeDesc = (a, b) => String(b.completed_at || '').localeCompare(String(a.completed_at || ''));
+const byTimeDesc = (a, b) => String(b.responded_at || '').localeCompare(String(a.responded_at || ''));
 
 /**
- * One row per JD. Each candidate counts once, under one JD, so the group
- * counts add up to the total.
+ * One row per JD, as the Responded column counts: a candidate linked to two
+ * JDs is under both, so group counts can add up to more than the total. The
+ * total counts each candidate once.
  *
- * @param {Array<{ cv_id, name?: string|null, completed_at, mrf_id?: bigint|number|string|null }>} rows
- *   one row per candidate; the JD already chosen (mrfApplicants.completedFormsWithMrf)
+ * @param {Array<{ cv_id, name?: string|null, responded_at, how?: string, mrf_id?: bigint|number|string|null }>} rows
+ *   one row per (JD, candidate) (mrfApplicants.respondedByJd); mrf_id null = no JD
  * @param {(mrfId: string) => string|null} [titleOf] the JD title for an MRF id
  * @returns {{ total: number, jd_count: number, groups: Array<{ mrf_id: number|null, title: string, count: number,
- *   candidates: Array<{ cv_id: number, name: string, completed_at: string|null }> }> }}
+ *   candidates: Array<{ cv_id: number, name: string, responded_at: string|null, how: string }> }> }}
  *   biggest JD first; "No JD yet" always last
  */
-export function groupCompletedForms(rows = [], titleOf = () => null) {
+export function groupRespondedByJd(rows = [], titleOf = () => null) {
   const groups = new Map();
-  const seen = new Set();
+  const people = new Set();
+  const pairs = new Set();
   for (const r of rows) {
     const cvId = String(r.cv_id);
-    if (seen.has(cvId)) continue;
-    seen.add(cvId);
     const mrfKey = r.mrf_id === null || r.mrf_id === undefined ? null : String(r.mrf_id);
     const key = mrfKey ?? 'none';
+    if (pairs.has(`${key}:${cvId}`)) continue;
+    pairs.add(`${key}:${cvId}`);
+    people.add(cvId);
     if (!groups.has(key)) {
       groups.set(key, {
         mrf_id: mrfKey === null ? null : Number(mrfKey),
@@ -91,7 +123,8 @@ export function groupCompletedForms(rows = [], titleOf = () => null) {
     g.candidates.push({
       cv_id: Number(cvId),
       name: String(r.name || '').trim() || 'Unnamed candidate',
-      completed_at: toIso(r.completed_at),
+      responded_at: toIso(r.responded_at),
+      how: r.how === 'complete_cv' ? 'complete_cv' : 'form',
     });
   }
 
@@ -101,25 +134,25 @@ export function groupCompletedForms(rows = [], titleOf = () => null) {
     if ((a.mrf_id === null) !== (b.mrf_id === null)) return a.mrf_id === null ? 1 : -1;
     return b.count - a.count || a.title.localeCompare(b.title) || (b.mrf_id ?? 0) - (a.mrf_id ?? 0);
   });
-  return { total: seen.size, jd_count: list.filter((g) => g.mrf_id !== null).length, groups: list };
+  return { total: people.size, jd_count: list.filter((g) => g.mrf_id !== null).length, groups: list };
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * The bell note's text.
- * Title: "12 forms completed yesterday across 4 JDs".
+ * Title: "12 candidates responded yesterday across 4 JDs".
  * Description: "10 Nov 2026 · Java Developer (5), QA Engineer (3), Data Analyst (2) and 1 more JD · 2 with no JD yet".
  *
  * @param {{ total: number, jd_count: number, groups: Array<{ mrf_id, title, count }>, range: object }} params
  * @returns {{ title: string, description: string }}
  */
 export function digestNote({ total, jd_count: jdCount, groups = [], range }) {
-  const forms = plural(total, 'form');
+  const who = `${plural(total, 'candidate')} responded yesterday`;
   let title;
-  if (jdCount === 0) title = `${forms} completed yesterday, none linked to a JD yet`;
-  else if (jdCount === 1) title = `${forms} completed yesterday for 1 JD`;
-  else title = `${forms} completed yesterday across ${jdCount} JDs`;
+  if (jdCount === 0) title = `${who}, none linked to a JD yet`;
+  else if (jdCount === 1) title = `${who} for 1 JD`;
+  else title = `${who} across ${jdCount} JDs`;
 
   const jds = groups.filter((g) => g.mrf_id !== null);
   const top = jds.slice(0, 3).map((g) => `${g.title} (${g.count})`).join(', ');
@@ -132,22 +165,24 @@ export function digestNote({ total, jd_count: jdCount, groups = [], range }) {
 }
 
 /**
- * Where the note opens: the tab for THAT day, as dates rather than
- * "range=yesterday", so a note read a day later still shows the forms it counted.
+ * Where the note opens: Open Positions › Responded for THAT day, as dates
+ * rather than "range=yesterday", so a note read a day later still shows the
+ * candidates it counted. Notes from before U10b carry ?tab=completed-forms…;
+ * Analytics.jsx maps those here.
  */
 export function formsTabLink(range) {
-  return `/analytics?tab=completed-forms&from=${range.fromDay}&to=${range.toDay}`;
+  return `/analytics?tab=open&view=responded&from=${range.fromDay}&to=${range.toDay}`;
 }
 
 /**
  * What one 09:00 run should do with the day's numbers.
  *
  * @param {{ data: { total: number, jd_count: number, groups: Array }, range: object, roles: string[], type: string }} params
- * @returns {{ send: boolean, decision: 'nothing_completed'|'no_roles'|'send',
+ * @returns {{ send: boolean, decision: 'nobody_responded'|'no_roles'|'send',
  *   note: null | { type, title, description, linkPath, meta, roles } }}
  */
 export function planDigest({ data, range, roles = [], type }) {
-  if (!data?.total) return { send: false, decision: 'nothing_completed', note: null };
+  if (!data?.total) return { send: false, decision: 'nobody_responded', note: null };
   if (!roles.length) return { send: false, decision: 'no_roles', note: null };
   const { title, description } = digestNote({ ...data, range });
   return {
@@ -189,6 +224,7 @@ export async function claimDigestDay(day, db) {
 }
 
 export default {
-  FORMS_RANGE_PRESETS, MAX_FORMS_RANGE_DAYS, NO_JD_LABEL, DIGEST_CLAIM_KEY,
-  yesterdayRange, parseFormsRange, groupCompletedForms, digestNote, formsTabLink, planDigest, claimDigestDay,
+  FORMS_RANGE_PRESETS, MAX_FORMS_RANGE_DAYS, NO_JD_LABEL, DIGEST_CLAIM_KEY, RESPONDED_STATUS_FILTERS,
+  yesterdayRange, parseFormsRange, parseRespondedStatus, parseRespondedMrf, inStatusFilter, groupRespondedByJd, digestNote,
+  formsTabLink, planDigest, claimDigestDay,
 };

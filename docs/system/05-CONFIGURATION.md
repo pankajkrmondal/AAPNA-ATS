@@ -60,7 +60,7 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL` (`openai/gpt-4.1-nano`) | | Primary AI for parsing and summaries |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` (`gemini-2.5-flash`) | | Fallback AI; embeddings |
 | `COHERE_API_KEY`, `COHERE_BASE_URL`, `COHERE_MODEL` (`rerank-v3.5`) | | Reranking |
-| `SCREENING_V2` | `false` | Strict keyword / JD filtering (section A). Staging: `true` (for U04's UAT). Production: off until the N11 before/after check is built and RT signs it off. N11 was not built as of 10 Nov, but the server copy of `.env.production` already reads `true`; confirm what production actually runs (see §4) |
+| `SCREENING_V2` | `false` | Strict keyword / JD filtering (section A). **12 Nov decision:** `true` on staging **and** production; the strict search is final, and the N11 before/after check is dropped. The local `.env.staging` and `.env.production` copies both read `true`. Confirm the live servers at the 16 Nov release (see §4) |
 
 ### Zeko
 | Variable | Purpose |
@@ -71,7 +71,7 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `ZEKO_LOGIN_EMAIL` | Account for the OTP login (defaults to the sender mailbox) |
 | `ZEKO_SYNC_ENABLED`, `ZEKO_JOBS_CRON` (hourly), `ZEKO_RESULTS_CRON` (5 min) | Background sync |
 | `ZEKO_TEST_PHONE` | Phone sent to Zeko outside production (Zeko sends SMS itself) |
-| `ZEKO_REMINDER_ENABLED` | U08 expiry reminder (`jobs/zekoExpiryReminder.js`, hourly at :20 IST). Default `false`. Runs only when `ZEKO_SYNC_ENABLED=true` too, because it asks Zeko whether the candidate has attempted the test. Staging: `true` for R2 UAT. Production: `false` until R2 |
+| `ZEKO_REMINDER_ENABLED` | U08 expiry reminder (`jobs/zekoExpiryReminder.js`, hourly at :20 IST). Default `false`. Runs only when `ZEKO_SYNC_ENABLED=true` too, because it asks Zeko whether the candidate has attempted the test. **Not set in the local `.env.staging` or `.env.production` (12 Nov), so off everywhere.** Where to turn it on is the owner's decision (plan index, "Open for you") |
 
 ### Pipeline, documents, offers, assessments
 | Variable | Default | Purpose |
@@ -82,8 +82,8 @@ Defaults shown are the code defaults. **R** = required (the server refuses to st
 | `OFFER_SWEEP_CRON`, `OFFER_AUTO_CLOSE_AFTER_DAYS` | `0 7 * * *`, 90 | Post-joining auto-close |
 | `MRF_APPROVAL_AUDIT_ENABLED`, `MRF_APPROVAL_TOKEN_DAYS` (14), `MRF_APPROVAL_RATE_WINDOW_MS`, `MRF_APPROVAL_RATE_MAX` | `true` | Per-approver links and audit |
 | `MRF_HOLD_ENABLED` | `false` | Put an MRF on hold (approver link, or on behalf). Off blocks new holds only; the release sweep still frees held MRFs. Staging `true`, production `false` until R1 |
-| `MRF_DELEGATE_DECISION_ENABLED` | `false` | HR Admin Recruiter / Admin / Super Admin can approve, reject or hold for the approvers while an Admin marks them away. Needs `MRF_APPROVAL_AUDIT_ENABLED=true`. Staging `true`, production `false` until R1 |
-| `FORMS_DIGEST_ENABLED` | `false` | U10 bell note at 09:00 IST (`jobs/completedFormsDigest.js`): "N forms completed yesterday across M JDs", linking to Analytics → Completed Forms. In-app only, no email; nothing sent on a day with no forms. Staging `true` for R2 UAT, production `false` until R2 |
+| `MRF_DELEGATE_DECISION_ENABLED` | `false` | The person chosen in Settings (`mrf_on_behalf_user`) can approve, reject or hold for the approvers, any time an MRF is pending (U06b). Needs `MRF_APPROVAL_AUDIT_ENABLED=true`. Staging `true`, production `true` from 16 Nov (R16) |
+| `FORMS_DIGEST_ENABLED` | `false` | U10 / U10b bell note at 09:00 IST (`jobs/completedFormsDigest.js`): "N candidates responded yesterday across M JDs" (open positions plus "No JD yet", the Responded column's definition), linking to Analytics → Open Positions › Responded for that day. In-app only, no email; nothing sent on a day nobody responded. **Not set in the local `.env.staging` or `.env.production` (12 Nov).** Staging `true` from 13 Nov, production `true` from 16 Nov (R16) |
 | `FORMS_DIGEST_ROLES` | `superadmin,admin,hr_admin_recruiter,hr` | Who gets that note (HR and Admin). Staff roles only; `vendor` is ignored. Add `recruiter` to include every recruiter |
 
 ### Dossier, exports, limits
@@ -118,7 +118,8 @@ Changed from the Settings screens (or by the system itself). Read with `prisma.r
 | `email_recipients.<flow>.to` / `.cc` | Settings → Flow recipients (`/settings/flow-keys`); seeded by `prisma/seed-email-recipients.js` | `config/emailRecipients.js` |
 | `mrf_approvers` | DB only: JSON array of `{email, name}`; falls back to the `mrfApproval` recipients | `mrfApproval.service.js`, `utils/mrfApprovalRules.js` |
 | `mrf_hold_default_days`, `mrf_hold_max_days`, `mrf_hold_release_time` | Settings › MRF Approval & Hold (defaults 30 / 180 / 09:00 IST) | `mrfHoldSettings.service.js` |
-| `mrf_approver_absence` | Settings › MRF Approval & Hold, **Admin / Super Admin only**: JSON `{active, from, to, note}`. Decide on behalf works only while it covers today (IST) | `utils/mrfApprovalRules.js` |
+| `mrf_on_behalf_user` | Settings › MRF Approval & Hold › Who can decide on behalf, **Admin / Super Admin only**: JSON `{userId, setByUserId, setByName, setAt}`. The one active staff member who may decide on behalf; unset means nobody (U06b) | `services/mrfHoldSettings.service.js` |
+| `mrf_approver_absence` | No longer shown or used to decide (U06b). JSON `{active, from, to, note}`; the row is kept as stored | `utils/mrfApprovalRules.js` |
 | `mrf_audit_client_data_retention_days` | DB only (default 365, minimum 30) | `jobs/mrfAuditRetentionSweep.js` |
 | `company_profile_text` | Settings → Company profile | JD attachment section in emails (N17) |
 | `mailbox_delta_link` | system | `jobs/mailboxPoller.js` (delete it to force a 24 h re-sync) |
@@ -133,16 +134,28 @@ Changed from the Settings screens (or by the system itself). Read with `prisma.r
   - `OPERATOR_ADDRESSED`: interview panel invites and cancellations, scorecard invites and the occurrence nudge. A recruiter typed those addresses, so staging tests reach them.
 - Before testing on staging with real-looking data, check the stored `email_recipients.*` rows. On 19 Oct three still listed a business inbox; they are redirected, but should be cleaned before production.
 
+### The JD on candidate templates (U02b)
+Set per template on the Email Templates page. No env flag. Needs DDL `2026-11-12-email-template-attach-jd.sql`; until it runs, every template follows the default rule and saving the switch is refused (HTTP 503).
+
+| Setting | Values | Effect |
+|---|---|---|
+| `rpa_email_templates.attach_jd` ("Attach the JD" switch) | `NULL` (default rule, shown with a "Default" tag), `true`, `false` | `NULL`: `shouldAttachJd` decides (on for forward rounds; off for Documents, Offer and closures). `true` / `false` override it for that template, on every path that uses it, including an edited draft. The column is not in the Prisma model: it is read with raw SQL (`loadTemplateAttachJd`) |
+| `{{jd_link}}` token (in `placeholders`) | optional | Where the JD card goes when the JD is sent as a link. With no token, the card goes where it did before (after the intro on shortlists, else above the sign-off). It is removed when the JD is attached or not sent. The switch shows only on templates that declare it |
+
+Templates that declare it on staging (12 Nov dry run): Shortlist Notification, Zeko Interview Scheduled Invitation, Interview Scheduled / Rescheduled — Candidate, Stage Outcome — Approved (and any template mapped to an `approved` outcome), and Evalground Assessment Invite (new, created by the DDL).
+
+**JD link sources:** a JD with a OneDrive item id, or a `*.sharepoint.com`, `onedrive.live.com` or `1drv.ms` address, is downloaded and gets an "anyone" view link (counted as one only when Graph replies `scope: anonymous`). Any other `jd_document_link` is a website JD and is sent as that link, with no Graph calls.
+
 ## 4. Feature flags: production state to confirm at each release
 
 | Flag | Meaning when on | Note |
 |---|---|---|
-| `SCREENING_V2` | strict filtering | Production only after RT signs off N11 (not built yet). Location is an exact part match ("Delhi" never finds "New Delhi"; HR reconfirmed 10 Nov). The local copy of `.env.production` says `true`: check the live server before the release |
+| `SCREENING_V2` | strict filtering | On in production from 16 Nov (12 Nov decision; N11 dropped). Location is an exact part match ("Delhi" never finds "New Delhi"; HR reconfirmed 10 Nov). Check the live server's value at the release |
 | `FLEXIBLE_STAGES_ENABLED` | any-order stage moves | Needs DDL `2026-10-16-flexible-stage-movement.sql` |
 | `MS_CALENDAR_ENABLED`, `MS_ATTENDANCE_ENABLED`, `MS_MEETING_RECORD_AUTO`, `MS_RECORDING_FETCH_ENABLED`, `MS_RECORDING_ARCHIVE_ENABLED` | Teams features | Each needs its Graph permission |
 | `EMAIL_INTAKE_ENABLED`, `INBOUND_SYNC_ENABLED`, `ZEKO_SYNC_ENABLED` | background sync | Off by default per environment |
 | `ZEKO_REMINDER_ENABLED` | Zeko expiry reminder email (U08) | Needs `ZEKO_SYNC_ENABLED`, DDL `2026-11-10-zeko-link-token.sql`, and `PUBLIC_BASE_URL` for the tracked link. Seed the template with `prisma/seed-zeko-reminder-template.js` |
-| `FORMS_DIGEST_ENABLED` | 09:00 IST completed-forms bell note (U10) | No DDL. Recipients: `FORMS_DIGEST_ROLES` |
+| `FORMS_DIGEST_ENABLED` | 09:00 IST Responded bell note (U10 / U10b) | No DDL. Recipients: `FORMS_DIGEST_ROLES` |
 | `USE_RESUME_QUEUE` | queued uploads | Needs Redis and the worker process |
 | `MRF_APPROVAL_AUDIT_ENABLED` | per-approver links | On by default; kill switch |
-| `MRF_HOLD_ENABLED`, `MRF_DELEGATE_DECISION_ENABLED` | MRF hold; decide on behalf of away approvers | Needs DDL `2026-10-22-mrf-hold-and-delegate.sql` and Chhaya's role move first. Production order: `docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md` §16.4 |
+| `MRF_HOLD_ENABLED`, `MRF_DELEGATE_DECISION_ENABLED` | MRF hold; the person chosen in Settings decides on behalf | Needs DDL `2026-10-22-mrf-hold-and-delegate.sql`, and an Admin sets the person in Settings (no role move). Production order: `docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md` §16.4 |

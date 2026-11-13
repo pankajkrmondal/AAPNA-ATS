@@ -142,6 +142,31 @@ function phrasesRegexSource(phrases) {
 }
 
 /**
+ * The same whole-word regex for COUNTING mentions (U04b). The right edge is a
+ * lookahead, so the separator after one mention is left for the next mention's
+ * LEFT edge: "Java/Java EE" counts 2, where the filter form, which consumes
+ * that "/", would count 1. A text has at least one match exactly when
+ * phrasesRegexSource matches it, so a count is never 0 for a matched row.
+ *
+ * @param {string[]} phrases - already-expanded spellings
+ * @returns {string|null}
+ */
+function phrasesCountRegexSource(phrases) {
+  const source = phrasesRegexSource(phrases);
+  if (!source) return null;
+  return `${source.slice(0, -RIGHT.length)}(?=${RIGHT})`;
+}
+
+/**
+ * Whole-word counting regex source for one skill term, aliases included.
+ * @param {string} term
+ * @returns {string|null}
+ */
+export function skillCountRegexSource(term) {
+  return phrasesCountRegexSource(termVariants(term));
+}
+
+/**
  * Lower-case substrings at least one of which every match of
  * phrasesRegexSource(phrases) must contain — a cheap NECESSARY condition the
  * database checks with strpos() before running the regex.
@@ -342,6 +367,16 @@ function columnMatchSql(columnSql, regexSource, keys) {
 }
 
 /**
+ * Whole-word mention count over one text column, cheap substring test first
+ * (as columnMatchSql). regexp_matches rather than regexp_count, which needs
+ * Postgres 15. NULL columns give 0.
+ */
+function columnCountSql(columnSql, countSource, keys) {
+  const pre = Prisma.join(keys.map((k) => Prisma.sql`strpos(lower(${columnSql}), ${k}) > 0`), ' OR ');
+  return Prisma.sql`(CASE WHEN ${pre} THEN (SELECT count(*)::int FROM regexp_matches(${columnSql}, ${countSource}, 'gi')) ELSE 0 END)`;
+}
+
+/**
  * The three places a skill can be evidenced: declared skills, extracted
  * technical terms, and the full resume text.
  */
@@ -374,15 +409,20 @@ export function skillPredicateSql(term, alias = 'c') {
  *
  * @param {string} term
  * @param {string} [alias='c']
- * @returns {{declared: Prisma.Sql, terms: Prisma.Sql, resume: Prisma.Sql}|null}
+ * `resumeCount` (U04b) is the number of whole-word mentions in the resume
+ * text, for the card's ×N; it is ≥ 1 whenever `resume` is true.
+ *
+ * @returns {{declared: Prisma.Sql, terms: Prisma.Sql, resume: Prisma.Sql, resumeCount: Prisma.Sql}|null}
  */
 export function skillColumnPredicates(term, alias = 'c') {
   const variants = termVariants(term);
   const source = phrasesRegexSource(variants);
   if (!source) return null;
   const keys = prefilterKeys(variants);
-  const [declared, terms, resume] = skillColumns(alias).map((col) => columnMatchSql(col, source, keys));
-  return { declared, terms, resume };
+  const cols = skillColumns(alias);
+  const [declared, terms, resume] = cols.map((col) => columnMatchSql(col, source, keys));
+  const resumeCount = columnCountSql(cols[2], phrasesCountRegexSource(variants), keys);
+  return { declared, terms, resume, resumeCount };
 }
 
 /**
@@ -627,6 +667,7 @@ export default {
   ALIAS_GROUPS,
   termVariants,
   skillRegexSource,
+  skillCountRegexSource,
   prefilterKeys,
   wholeWordMatch,
   normaliseLocationPart,

@@ -3,8 +3,10 @@
  *
  * Who may change what (plan §7, decisions P6 / P11):
  *   - everyone signed in (staff) may READ it;
- *   - the approver-absence window: Admin / Super Admin only — an HR Admin
- *     Recruiter must not be able to open the window that lets them decide;
+ *   - the person who decides on behalf of the approvers (U06b): Admin / Super
+ *     Admin only — nobody may choose themselves unless they are an Admin;
+ *   - the approver-absence window: Admin / Super Admin only (no longer shown in
+ *     Settings or used to decide since U06b; the route stays);
  *   - the hold rules (default / maximum hold length, release time): HR Admin
  *     Recruiter and above; plain Recruiters see them read-only.
  *
@@ -20,20 +22,35 @@ import {
   dateLabel,
   holdDateBounds,
   isAbsenceActive,
+  mayManageHolds,
   validateAbsence,
   validateHoldRules,
 } from '../utils/mrfApprovalRules.js';
 import {
   getAbsence,
   getHoldRules,
+  getOnBehalfUser,
   hrAdminRecruiterEmails,
   listOnBehalfUsers,
   saveAbsence,
   saveHoldRules,
+  saveOnBehalfUser,
 } from '../services/mrfHoldSettings.service.js';
 import { getApproverRoster } from '../services/mrfApproval.service.js';
 import { sendMrfAbsenceNoticeEmail } from '../services/emailNotification.service.js';
 import { rescheduleMrfHoldSweepJob } from '../jobs/mrfHoldSweep.js';
+
+function designeeView(designee) {
+  if (!designee) return null;
+  return {
+    user_id: designee.userId,
+    name: designee.name,
+    role_label: designee.roleLabel,
+    active: designee.isActive,
+    set_by_name: designee.setByName,
+    set_at: designee.setAt,
+  };
+}
 
 function absenceView(absence) {
   return {
@@ -51,15 +68,17 @@ function absenceView(absence) {
  */
 export const getMrfApprovalSettings = catchAsync(async (req, res) => {
   if (!isRecruiterTier(req.user?.role)) throw new AppError('You do not have permission to view this setting.', 403);
-  const [approvers, onBehalfUsers, absence, rules] = await Promise.all([
+  const [approvers, onBehalfUsers, designee, absence, rules] = await Promise.all([
     getApproverRoster().catch(() => []),
     listOnBehalfUsers(),
+    getOnBehalfUser(),
     getAbsence(),
     getHoldRules(),
   ]);
   return success(res, {
     approvers: approvers.map((a) => ({ name: a.name, email: a.email, title: a.title || null })),
     on_behalf_users: onBehalfUsers,
+    on_behalf_user: designeeView(designee),
     absence: absenceView(absence),
     hold_rules: rules,
     hold_bounds: holdDateBounds(rules),
@@ -68,9 +87,10 @@ export const getMrfApprovalSettings = catchAsync(async (req, res) => {
       on_behalf: config.mrfHold.delegateDecisionEnabled,
     },
     can: {
+      edit_on_behalf_user: isAdminTier(req.user?.role),
       edit_absence: isAdminTier(req.user?.role),
       edit_hold_rules: canDecideOnBehalf(req.user?.role),
-      manage_held: canDecideOnBehalf(req.user?.role),
+      manage_held: mayManageHolds(req.user, designee),
     },
   }, 'MRF approval settings retrieved');
 });
@@ -94,6 +114,28 @@ export const saveMrfHoldRules = catchAsync(async (req, res) => {
   }
   logger.info(`[MRF Hold] hold rules changed by ${req.user?.username}: ${JSON.stringify(before)} -> ${JSON.stringify(saved)}`);
   return success(res, { hold_rules: saved, hold_bounds: holdDateBounds(saved) }, 'Hold rules saved');
+});
+
+/**
+ * @desc    Choose the one person who may decide on behalf of the approvers
+ *          (any time an MRF is pending), or clear it with null.
+ * @route   PUT /api/settings/mrf-approval/on-behalf-user
+ * @body    { user_id: number|null }
+ * @access  Private (Admin / Super Admin)
+ */
+export const saveMrfOnBehalfUser = catchAsync(async (req, res) => {
+  if (!isAdminTier(req.user?.role)) {
+    throw new AppError('Only an Admin or Super Admin can choose who decides on behalf of the approvers.', 403);
+  }
+  const before = await getOnBehalfUser();
+  const result = await saveOnBehalfUser(req.body?.user_id ?? null, req.user);
+  if (!result.ok) throw new AppError(result.error, 400);
+  logger.info(`[MRF approval] on-behalf person set by ${req.user?.username}: ${before?.userId ?? 'none'} -> ${result.designee?.userId ?? 'none'}`);
+  return success(
+    res,
+    { on_behalf_user: designeeView(result.designee) },
+    result.designee ? `${result.designee.name} can now decide on behalf of the approvers` : 'No one is set to decide on behalf',
+  );
 });
 
 /**

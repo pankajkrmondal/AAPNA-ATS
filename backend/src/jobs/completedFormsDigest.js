@@ -1,8 +1,9 @@
 /**
- * completedFormsDigest.js — U10: one bell note a day at 09:00 IST to HR and
- * Admin, "12 forms completed yesterday across 4 JDs", linking to Analytics →
- * Completed forms for that day. In-app only, no email. Nothing is sent when
- * nobody completed a form.
+ * completedFormsDigest.js — U10 (revised as U10b): one bell note a day at 09:00
+ * IST to HR and Admin, "12 candidates responded yesterday across 4 JDs", linking
+ * to Analytics → Open Positions › Responded for that day. It counts open
+ * positions plus "No JD yet". In-app only, no email. Nothing is sent when
+ * nobody responded.
  *
  * Fires once per day: the day is CLAIMED in rpa_settings (forms_digest.last_day)
  * before the note is written, because the local backend and the staging server
@@ -17,7 +18,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { runJob } from '../utils/jobRunner.js';
 import { notify, resolveRecipients, NOTIFICATION_TYPES } from '../services/notification.service.js';
-import { getCompletedForms } from '../services/completedForms.service.js';
+import { getRespondedByJd } from '../services/completedForms.service.js';
 import { yesterdayRange, planDigest, claimDigestDay } from '../services/completedForms.helpers.js';
 
 export const FORMS_DIGEST_CRON = '0 9 * * *';
@@ -36,12 +37,12 @@ let job = null;
  */
 export async function sendCompletedFormsDigest({ dryRun = false, now = new Date(), roles = config.formsDigest.roles } = {}) {
   const range = yesterdayRange(now);
-  const data = await getCompletedForms(range);
+  const data = await getRespondedByJd(range, { status: 'open' });
   const plan = planDigest({ data, range, roles, type: NOTIFICATION_TYPES.CANDIDATE_FORMS_DIGEST });
   const summary = { day: range.fromDay, total: data.total, jd_count: data.jd_count, decision: plan.decision, created: 0 };
 
   if (!plan.send) {
-    logger.info(`[Forms digest] ${range.fromDay}: ${plan.decision === 'no_roles' ? 'FORMS_DIGEST_ROLES is empty' : 'no forms completed'}; no note.`);
+    logger.info(`[Forms digest] ${range.fromDay}: ${plan.decision === 'no_roles' ? 'FORMS_DIGEST_ROLES is empty' : 'nobody responded'}; no note.`);
     return summary;
   }
 

@@ -11,7 +11,7 @@ import {
 import { wrapBrandedEmail, brandedWrapperParts } from './emailLayout.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
-import { appendToBody } from '../utils/candidateEmailBlocks.js';
+import { placeJdLink, JD_LINK_PLACEHOLDER } from '../utils/candidateEmailBlocks.js';
 
 /**
  * stageNotification.service.js — the single email dispatcher for every stage×
@@ -109,11 +109,13 @@ const outcomeWrapOpts = (subject) => ({ title: subject || '' });
 /**
  * Resolves the template to use for a stage×outcome pair: specific mapping
  * first, then the generic per-outcome fallback.
+ * Exported for U02b: the Approved email's JD decision reads the resolved
+ * template's "Attach the JD" switch before the email is built.
  * @param {string} stageKey
  * @param {string} outcomeKey
  * @returns {Promise<object|null>} an rpa_email_templates row, or null if none resolves
  */
-async function resolveTemplate(stageKey, outcomeKey) {
+export async function resolveTemplate(stageKey, outcomeKey) {
   // Deliberately silent closures short-circuit before any lookup, so an admin
   // mapping one of them to a template in the config UI still cannot send.
   if (SILENT_FINAL_OUTCOMES.has(outcomeKey)) return null;
@@ -161,6 +163,8 @@ export async function previewOutcomeEmail({ stageKey, outcomeKey, stageLabel, ca
     position: positionLabel,
     job_title: positionLabel,
     stage_label: stageLabel,
+    // U02b: a marker the editor keeps; the JD card (or nothing) replaces it at send.
+    jd_link: JD_LINK_PLACEHOLDER,
   });
   // Header headline = the subject, so the wrapper is built from the compiled
   // subject. The drawer re-renders it client-side as the recruiter edits the
@@ -254,8 +258,9 @@ export async function sendStageOutcomeEmail({
     }
 
     // U02: the JD link block, when the JD travels as a link (before branding,
-    // so it lands inside the card).
-    if (extraHtml) bodyHtml = appendToBody(bodyHtml, extraHtml);
+    // so it lands inside the card). U02b: at the template's {{jd_link}} when
+    // it has one, else at the end; with no block, any {{jd_link}} is removed.
+    bodyHtml = placeJdLink(bodyHtml, extraHtml);
 
     const trackingToken = uuidv4();
     // Brand the fragment, THEN inject the pixel: injectTrackingPixel inserts

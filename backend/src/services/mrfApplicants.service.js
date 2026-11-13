@@ -43,6 +43,20 @@ const FAR_FUTURE = new Date('2999-01-01T00:00:00Z');
 const bounds = (range) => (range ? [range.from, range.to] : [FAR_PAST, FAR_FUTURE]);
 
 /**
+ * When a CV "responded" (the Open Positions Responded column, and U10b's
+ * Responded view), on rpa_cv aliased `c`: the form completed; else, for a CV
+ * asked before details_completed_at existed (14 Oct), the request date once
+ * the token says RECEIVED; else, for an ACTIVE CV never asked, its arrival.
+ * One definition, so the view and the column cannot drift apart.
+ */
+const RESPONDED_AT = Prisma.sql`COALESCE(
+               c.details_completed_at,
+               CASE WHEN upper(COALESCE(c."cvMissingTokenStatus", '')) = 'RECEIVED' THEN c.details_requested_at END,
+               CASE WHEN c.details_requested_at IS NULL AND upper(COALESCE(c."statusActive", '')) = 'ACTIVE'
+                    THEN (c."createdAt" AT TIME ZONE 'UTC') END
+             )`;
+
+/**
  * The applicant links of a set of MRFs, one row per (MRF, CV), as a WITH
  * clause naming `facts(mrf_id, cv_id, linked_at, bucket, responded_at)`.
  * The latest-MRF rule needs every MRF of a role name, so callers pass the
@@ -90,12 +104,7 @@ function factsCte(mrfs) {
                   WHEN l.tag_source IS NOT NULL THEN 'recruiter'
                   WHEN COALESCE(btrim(c."VendorEmail"), '') <> '' OR COALESCE(btrim(c."vendorName"), '') <> '' THEN 'vendor'
                   ELSE 'other' END AS bucket,
-             COALESCE(
-               c.details_completed_at,
-               CASE WHEN upper(COALESCE(c."cvMissingTokenStatus", '')) = 'RECEIVED' THEN c.details_requested_at END,
-               CASE WHEN c.details_requested_at IS NULL AND upper(COALESCE(c."statusActive", '')) = 'ACTIVE'
-                    THEN (c."createdAt" AT TIME ZONE 'UTC') END
-             ) AS responded_at
+             ${RESPONDED_AT} AS responded_at
         FROM links l JOIN rpa_cv c ON c.id = l.cv_id
     )`;
 }
@@ -205,49 +214,53 @@ export async function applicantList(mrfs, mrfId, metric, range, limit = 500) {
 }
 
 /**
- * Candidates who completed the missing-details form in the range (U10), each
- * with ONE JD so a candidate is counted once:
- *   1. the MRF of their open journey (the JD they are being processed for), else
- *   2. their most recent applicant link above (a tag, or the "Position Applied"
- *      match), else
- *   3. none (mrf_id null: the "No JD yet" group).
- * Completed = rpa_cv.details_completed_at (first completion only).
+ * Who responded in the range, by JD (U10b, the Responded view in Open
+ * Positions). The same pairing and date as the Responded column: one row per
+ * (MRF, CV) from factsCte whose responded_at falls in the range, so a
+ * candidate linked to two JDs appears under both and a JD's row count equals
+ * its column. Plus, when `unlinked`, responders with no link to any board MRF
+ * (mrf_id null: the "No JD yet" group).
  *
- * @param {Array<{ id, role, openedAt }>} mrfs  the board's MRFs (see factsCte)
+ * @param {Array<{ id, role, openedAt }>} mrfs  the WHOLE board set (see factsCte: the latest-MRF rule needs it)
  * @param {{ from: Date, to: Date }} range
- * @param {number} [limit]
- * @returns {Promise<Array<{ cv_id: string, name: string|null, completed_at: Date, mrf_id: string|null }>>}
+ * @param {{ shownIds?: Array<bigint|number|string>|null, unlinked?: boolean, limit?: number }} [opts]
+ *   shownIds: the MRFs to list (null = all of `mrfs`); limit: rows, newest first
+ * @returns {Promise<Array<{ mrf_id: string|null, cv_id: string, name: string|null, responded_at: Date,
+ *   how: 'form'|'complete_cv' }>>}  how: through the details form, or a complete CV never asked
  */
-export async function completedFormsWithMrf(mrfs, range, limit = 5000) {
+export async function respondedByJd(mrfs, range, { shownIds = null, unlinked = true, limit = 5000 } = {}) {
   const [from, to] = bounds(range);
+  const ids = (shownIds ?? mrfs.map((m) => m.id)).map((id) => BigInt(id));
+  if (!ids.length) ids.push(0n); // no MRF has id 0; keeps the array typed
   const rows = await prisma.$queryRaw`
     ${factsCte(mrfs)},
-    done AS (
-      SELECT c.id AS cv_id, c."Name" AS name, c.details_completed_at AS completed_at
+    hits AS (
+      SELECT DISTINCT ON (f.mrf_id, f.cv_id) f.mrf_id, f.cv_id, f.responded_at
+        FROM facts f
+       WHERE f.mrf_id = ANY(${ids}::bigint[])
+         AND f.responded_at >= ${from}::timestamptz AND f.responded_at < ${to}::timestamptz
+       ORDER BY f.mrf_id, f.cv_id
+    ),
+    loose AS (
+      SELECT NULL::bigint AS mrf_id, c.id AS cv_id, ${RESPONDED_AT} AS responded_at
         FROM rpa_cv c
-       WHERE c.details_completed_at >= ${from}::timestamptz AND c.details_completed_at < ${to}::timestamptz
-       ORDER BY c.details_completed_at DESC
-       LIMIT ${limit}
+       WHERE ${unlinked}::boolean
+         AND ${RESPONDED_AT} >= ${from}::timestamptz AND ${RESPONDED_AT} < ${to}::timestamptz
+         AND NOT EXISTS (SELECT 1 FROM facts f WHERE f.cv_id = c.id)
     )
-    SELECT d.cv_id, d.name, d.completed_at, COALESCE(j.mrf_id, f.mrf_id) AS mrf_id
-      FROM done d
-      LEFT JOIN LATERAL (
-        SELECT p.mrf_id FROM rpa_candidate_pipeline p
-         WHERE p.cv_id = d.cv_id AND p.final_outcome IS NULL AND p.mrf_id IS NOT NULL
-         ORDER BY p.modified_at DESC LIMIT 1
-      ) j ON true
-      LEFT JOIN LATERAL (
-        SELECT facts.mrf_id FROM facts
-         WHERE facts.cv_id = d.cv_id
-         ORDER BY facts.linked_at DESC, facts.mrf_id DESC LIMIT 1
-      ) f ON true
-     ORDER BY d.completed_at DESC`;
+    SELECT r.mrf_id, r.cv_id, c."Name" AS name, r.responded_at,
+           CASE WHEN c.details_completed_at IS NULL AND c.details_requested_at IS NULL THEN 'complete_cv' ELSE 'form' END AS how
+      FROM (SELECT * FROM hits UNION ALL SELECT * FROM loose) r
+      JOIN rpa_cv c ON c.id = r.cv_id
+     ORDER BY r.responded_at DESC, r.cv_id DESC
+     LIMIT ${limit}`;
   return rows.map((r) => ({
+    mrf_id: r.mrf_id === null || r.mrf_id === undefined ? null : String(r.mrf_id),
     cv_id: String(r.cv_id),
     name: r.name ?? null,
-    completed_at: r.completed_at,
-    mrf_id: r.mrf_id === null || r.mrf_id === undefined ? null : String(r.mrf_id),
+    responded_at: r.responded_at,
+    how: r.how,
   }));
 }
 
-export default { cvCreatedBetween, CV_IST_DAY, normalisedSql, positionMatches, cvLinkedToMrf, applicantCountsByMrf, applicantDaily, applicantDailyByMrf, applicantList, completedFormsWithMrf };
+export default { cvCreatedBetween, CV_IST_DAY, normalisedSql, positionMatches, cvLinkedToMrf, applicantCountsByMrf, applicantDaily, applicantDailyByMrf, applicantList, respondedByJd };

@@ -4,10 +4,11 @@
 **Goal**
 - **Today:** "Comma is not working for skill or location; it picks one option only."
 - **Change:**
-  - a location matches a word inside each part ("Delhi" finds "New Delhi")
+  - ~~a location matches a word inside each part ("Delhi" finds "New Delhi")~~ **Superseded 10 Nov:** each city is matched exactly ("Delhi" means Delhi only). See Handoff.
   - a clear All / Any skills choice
   - the parsed terms are shown in the summary
-- **Done when:** "Java, Python" and "Noida, Delhi" return the expected candidates.
+- **Done when:** "Java, Python" and "Noida, Delhi" return the expected candidates. "Noida, Delhi" finds Noida or Delhi only, not "New Delhi" or "Greater Noida".
+- **12 Nov:** the strict search is the final outcome on staging **and** production. N11 is dropped (see the plan index and R16).
 
 **Decision:** fix only the **strict path**, then turn `SCREENING_V2` on. The old path is not patched.
 
@@ -30,7 +31,7 @@
 
 ## Changes
 1. **Confirm the cause on staging:** check `SCREENING_V2` in the staging server's env, and reproduce both searches.
-2. **Location rule** in `screeningFilters.js`: a stored part matches when it equals the typed city **or** contains it as a whole word.
+2. **(Not done, by HR's 10 Nov decision; steps 2–3 are kept for the record.) Location rule** in `screeningFilters.js`: a stored part matches when it equals the typed city **or** contains it as a whole word.
    - SQL: add an `OR lp.part ~ ('[[:<:]]' || <escaped city> || '[[:>:]]')` beside the `= ANY(...)` check. Regex-escape the city. Use no backslashes in template literals (see the existing notes). The cheap `LIKE ANY` pre-filter stays.
    - JS mirror: `\b` around the escaped city.
    - Several cities are still ORed.

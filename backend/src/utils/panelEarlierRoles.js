@@ -43,14 +43,16 @@ export function earlierRoleHasResults(model) {
   return (model.scorecards || []).some((c) => !c.earlier_attempt)
     || (model.zeko || []).some(scored)
     || (model.assessments || []).length > 0
-    || (model.recordings || []).length > 0;
+    // U03b: a recording from a cancelled booking or a no-show is not a result.
+    || (model.recordings || []).some((r) => r.booking_held !== false);
 }
 
 /**
  * The current journey's panel model with the earlier roles' rounds in front of
  * its own (they happened first). Returns a new object; neither input changes.
  * The result carries `earlier_roles: [title…]`, which also tells a second call
- * that the merge is done.
+ * that the merge is done, and `earlier_role_ids` (U03b): each merged role's
+ * journey id, in the same order, so a round note can join its role's row.
  *
  * @param {object} model - the current journey's dossier model (links applied)
  * @param {Array<{role?: string|null, model: object}>} earlier - oldest first
@@ -63,6 +65,7 @@ export function mergeEarlierRoles(model, earlier = []) {
   const out = {
     ...model,
     earlier_roles: [],
+    earlier_role_ids: [],
   };
   if (!roles.length) return out;
 
@@ -76,6 +79,7 @@ export function mergeEarlierRoles(model, earlier = []) {
     const role = e.role || m.candidate?.position || 'earlier role';
     const tag = (label) => ({ earlier_role: role, earlier_label: label, earlier_seq: seq });
     out.earlier_roles.push(role);
+    out.earlier_role_ids.push(m.generated?.pipeline_id != null ? String(m.generated.pipeline_id) : null);
 
     for (const c of (m.scorecards || []).filter((s) => !s.earlier_attempt)) {
       scorecards.push({

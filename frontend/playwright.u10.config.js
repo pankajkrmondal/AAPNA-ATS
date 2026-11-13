@@ -1,5 +1,6 @@
 /**
- * U10 browser check: Analytics → Completed forms, and the bell note's link.
+ * U10b browser check: Analytics → Open Positions › Responded (U10's Completed
+ * forms, moved), and the bell note's link.
  *
  *   npm run build; npx playwright test -c playwright.u10.config.js
  *
@@ -15,7 +16,7 @@ const PORT = 4180;
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: /u10-completed-forms\.spec\.js$/,
+  testMatch: /u10b-responded-view\.spec\.js$/,
   workers: 1,
   fullyParallel: false,
   timeout: 60_000,

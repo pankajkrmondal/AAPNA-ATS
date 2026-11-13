@@ -102,10 +102,149 @@ function experienceText(v) {
 }
 
 /**
+ * U03b · Did a round really happen? "We can skip some rounds… we should not
+ * miss the gaps." Scorecards prove a round by themselves (one is submitted
+ * only for a held booking). Two other row sources do not, and are checked here
+ * against the journey's own records:
+ *   - the recruiter's round notes live on rpa_cv, not on the journey, so a
+ *     "Tech round 1" note can come from an older journey or an Excel import;
+ *   - a recording can belong to a cancelled booking or a no-show.
+ *
+ * The service (loadRoundEvidence() in interviewPanelPack.service.js) reads the
+ * rows; the functions below decide.
+ */
+
+/** Stage states that mean the candidate was in that round (utils/stageState.js). */
+const REACHED_STATES = Object.freeze(['active', 'completed', 'rejected', 'hold']);
+
+/**
+ * The stages a journey's 'skip' events name as bypassed. A skip event sits on
+ * the stage the candidate LANDED in (utils/stageSkip.js), so the bypassed ones
+ * are read from its note, in each of the three wordings that write it:
+ *   - "Skipped optional stage tech3 (Technical Round 3)", or "… stages ceo (CEO
+ *     Round), client (Client Round)" (skipNote, an approval that skips);
+ *   - "Skipped optional stage from tech1" (advanceStage);
+ *   - "Approve landed on HR Round, past Technical Round 2, Technical Round 3"
+ *     (flexible stages on, by label).
+ *
+ * @param {Array<{notes?: string|null}>} events - the journey's 'skip' events
+ * @param {Record<string, string>} [labelByKey] - stage_key -> label
+ * @returns {string[]} stage keys
+ */
+export function skippedStagesFromEvents(events = [], labelByKey = {}) {
+  const keyByLabel = new Map(Object.entries(labelByKey || {}).map(([k, l]) => [String(l).trim().toLowerCase(), k]));
+  const known = (k) => Object.prototype.hasOwnProperty.call(labelByKey || {}, k);
+  const out = new Set();
+  for (const e of events || []) {
+    const note = String(e?.notes || '').trim();
+    let m = /^Skipped optional stage from (\S+)/i.exec(note);
+    if (m) { out.add(m[1]); continue; }
+    m = /^Skipped optional stages? (.+)$/i.exec(note);
+    if (m) {
+      for (const k of m[1].matchAll(/([a-z0-9_]+) \(/gi)) out.add(k[1]);
+      continue;
+    }
+    m = /, past (.+)$/i.exec(note);
+    if (m) {
+      for (const part of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+        const key = keyByLabel.get(part.toLowerCase()) || (known(part) ? part : null);
+        if (key) out.add(key);
+      }
+    }
+  }
+  return [...out];
+}
+
+/** A booking that took place: not cancelled and not a no-show. */
+export function bookingHeld(booking) {
+  if (!booking) return false;
+  return !booking.cancelled_at
+    && booking.status !== 'cancelled'
+    && booking.status !== 'no_show'
+    && booking.occurrence_status !== 'no_show';
+}
+
+/**
+ * One journey's round evidence.
+ *
+ * @param {object} p
+ * @param {Record<string, string>} [p.states] - loadStageStates() output
+ * @param {Array<{notes?: string|null}>} [p.skipEvents]
+ * @param {Record<string, string>} [p.labelByKey]
+ * @param {Array<{stage_key: string, status?: string, cancelled_at?: Date|null, occurrence_status?: string|null}>} [p.recordingBookings]
+ *   each recording's booking, in the dossier model's recording order
+ * @returns {{reached: string[], skipped: string[], recordings: Array<{stage_key: string, held: boolean}>}}
+ *   `reached`: the candidate was in the round (a state other than skipped or not
+ *   visited). `skipped`: marked skipped, or named by a skip event, and not
+ *   reached later (a skipped round can be visited later, D2).
+ */
+export function journeyRoundEvidence({
+  states = {}, skipEvents = [], labelByKey = {}, recordingBookings = [],
+} = {}) {
+  const reached = Object.entries(states || {}).filter(([, s]) => REACHED_STATES.includes(s)).map(([k]) => k);
+  const skipped = new Set([
+    ...Object.entries(states || {}).filter(([, s]) => s === 'skipped').map(([k]) => k),
+    ...skippedStagesFromEvents(skipEvents, labelByKey),
+  ]);
+  for (const k of reached) skipped.delete(k);
+  return {
+    reached,
+    skipped: [...skipped],
+    recordings: (recordingBookings || []).map((b) => ({ stage_key: b?.stage_key ?? null, held: bookingHeld(b) })),
+  };
+}
+
+/**
+ * Marks each of a journey's own recordings with `booking_held`, by position (the
+ * evidence is read in the dossier's recording order). An earlier role's
+ * recordings (`earlier_role`) are skipped: they were marked before the merge.
+ * If the lists do not line up (a recording found in between), nothing is
+ * marked and every recording stays, as before U03b.
+ *
+ * @param {object|null} model
+ * @param {Array<{stage_key: string, held: boolean}>|null|undefined} recordings
+ * @returns {object|null} a new model, or the same one when nothing is marked
+ */
+export function markHeldRecordings(model, recordings) {
+  if (!model || !Array.isArray(recordings)) return model;
+  const own = (model.recordings || []).filter((r) => !r.earlier_role);
+  if (own.length !== recordings.length) return model;
+  if (own.some((r, i) => (r.stage_key ?? null) !== (recordings[i].stage_key ?? null))) return model;
+  let i = 0;
+  return {
+    ...model,
+    recordings: (model.recordings || []).map((r) => (r.earlier_role ? r : { ...r, booking_held: recordings[i++].held })),
+  };
+}
+
+/**
+ * Where a recruiter's round note belongs: this journey when it reached the
+ * round; else the latest earlier role (U07 chain) that did, labelled as that
+ * role; else nowhere (the round was skipped, or never reached by any journey).
+ *
+ * @param {string|null} stageKey
+ * @param {{current?: {reached?: string[]}, earlier?: Array<{pipeline_id?: string, role?: string|null, reached?: string[]}>}|null} evidence
+ * @returns {{current: true}|{earlier: number}|null} `earlier` is the index in evidence.earlier
+ */
+export function roundNoteHome(stageKey, evidence) {
+  if (!evidence || !stageKey) return { current: true };
+  if ((evidence.current?.reached || []).includes(stageKey)) return { current: true };
+  const chain = evidence.earlier || [];
+  for (let j = chain.length - 1; j >= 0; j -= 1) {
+    if ((chain[j]?.reached || []).includes(stageKey)) return { earlier: j };
+  }
+  return null;
+}
+
+/**
  * The rounds part of the table, from the (redacted) dossier model. Only what is
  * DONE: a round with a current scorecard, a recruiter's round note or a
  * recording. Earlier attempts of a re-done round are left out, as is the round
  * the invite is for.
+ *
+ * U03b: with `evidence` (loadRoundEvidence()), a round note shows only under a
+ * round some journey in the chain really reached (roundNoteHome), and a
+ * recording marked `booking_held: false` is left out. Without it, as before.
  *
  * U07: a model merged by mergeEarlierRoles() (utils/panelEarlierRoles.js) also
  * carries the earlier roles' rounds. They come first, oldest role first, keep
@@ -115,7 +254,7 @@ function experienceText(v) {
  *
  * @param {object|null} model - buildDossierModel() output; `share_url` on a
  *   recording when the pack minted links for it
- * @param {{ excludeStageKey?: string|null }} [options]
+ * @param {{ excludeStageKey?: string|null, evidence?: object|null }} [options]
  * @returns {{ zeko: {functional: object|null, hr: object|null,
  *     earlier: Array<{screening: 'functional'|'hr', role: string, overall: number, technical: number|null, communication: number|null}>},
  *   evalground: Array<{test: string, result: string|null, percentage: number|null, role: string|null}>,
@@ -123,7 +262,7 @@ function experienceText(v) {
  *     feedback: Array<{interviewer: string|null, recommendation: string|null, average: number|null, comments: string|null}>,
  *     notes: string|null, recordings: Array<{url: string|null}>}>}}
  */
-export function panelTableRounds(model, { excludeStageKey = null } = {}) {
+export function panelTableRounds(model, { excludeStageKey = null, evidence = null } = {}) {
   const scores = (z) => ({ overall: z.overall_score, technical: z.technical_score ?? null, communication: z.communication_score ?? null });
   const isScored = (z) => z.overall_score !== null && z.overall_score !== undefined;
   const zekoRound = (name) => {
@@ -190,10 +329,38 @@ export function panelTableRounds(model, { excludeStageKey = null } = {}) {
       comments: c.comments || null,
     });
   }
+  // U03b: an earlier journey's place among the merged roles (their
+  // earlier_seq), so its note joins that role's row for the round. A journey
+  // with no results of its own was not merged: it sorts between its neighbours.
+  const mergedIds = (model?.earlier_role_ids || []).map(String);
+  const seqOf = (j) => {
+    const chain = evidence?.earlier || [];
+    const at = mergedIds.indexOf(String(chain[j]?.pipeline_id ?? ''));
+    if (at !== -1) return at;
+    if (!mergedIds.length) {
+      const byTitle = (model?.earlier_roles || []).lastIndexOf(chain[j]?.role);
+      if (byTitle !== -1) return byTitle;
+    }
+    return chain.slice(0, j).filter((e) => mergedIds.includes(String(e?.pipeline_id ?? ''))).length - 0.5;
+  };
   for (const n of model?.round_notes || []) {
-    if (has(n.value)) entry(n.stage_key, n.stage_label).notes = String(n.value);
+    if (!has(n.value)) continue;
+    const home = roundNoteHome(n.stage_key, evidence);
+    if (!home) continue; // skipped, or no journey reached it
+    if (home.current) {
+      entry(n.stage_key, n.stage_label).notes = String(n.value);
+      continue;
+    }
+    const role = evidence.earlier[home.earlier];
+    entry(null, n.stage_label, {
+      earlier_role: role?.role || 'earlier role',
+      earlier_label: n.stage_label || n.stage_key,
+      earlier_seq: seqOf(home.earlier),
+      earlier_stage_key: n.stage_key,
+    }).notes = String(n.value);
   }
   for (const r of model?.recordings || []) {
+    if (r.booking_held === false) continue; // U03b: a cancelled booking or a no-show
     entry(r.stage_key, r.stage_label, r).recordings.push({ url: safeUrl(r.share_url) });
   }
 
@@ -375,4 +542,5 @@ export function insertBeforeCandidateTable(html, extra) {
 export default {
   buildPanelCandidateTable, panelTableRounds, panelTableRows, placeCandidateTable, insertBeforeCandidateTable,
   showsCtc, sourceShown, CTC_STAGE_KEYS, CANDIDATE_TABLE_TOKEN, CANDIDATE_TABLE_PLACEHOLDER, EMPTY,
+  skippedStagesFromEvents, bookingHeld, journeyRoundEvidence, markHeldRecordings, roundNoteHome,
 };

@@ -19,6 +19,8 @@ import {
   splitSkillPhrases,
   termVariants,
   skillRegexSource,
+  skillCountRegexSource,
+  skillColumnPredicates,
   prefilterKeys,
   wholeWordMatch,
   locationParts,
@@ -430,5 +432,48 @@ describe('SQL builders', () => {
 
   test('a bad alias is refused before it reaches SQL', () => {
     assert.throws(() => buildFilterSql(parseScreeningFilters({ gender: 'male' }), 'c; drop'), /Invalid SQL alias/);
+  });
+});
+
+describe('mention counts — the card ×N (U04b)', () => {
+  /** How many mentions the counting regex finds, as regexp_matches(…, 'gi') would. */
+  const count = (text, term) => (String(text).match(new RegExp(skillCountRegexSource(term), 'gi')) || []).length;
+
+  test('the count regex is the filter regex with a lookahead right edge', () => {
+    const filter = skillRegexSource('java');
+    const counting = skillCountRegexSource('java');
+    const right = '($|[^a-z0-9+#.]|[.]($|[^a-z0-9]))';
+    assert.ok(filter.endsWith(right));
+    assert.equal(counting, `${filter.slice(0, -right.length)}(?=${right})`);
+  });
+
+  test('counts whole-word mentions, back-to-back ones included', () => {
+    assert.equal(count('Core Java, Java 8, Spring', 'java'), 2);
+    assert.equal(count('Java/Java EE', 'java'), 2);
+    assert.equal(count('java java java', 'java'), 3);
+    assert.equal(count('Worked in Java.', 'java'), 1);
+    assert.equal(count('JavaScript and TypeScript', 'java'), 0);
+    assert.equal(count('Python; python3; PYTHON', 'python'), 2);
+  });
+
+  test('a text the filter matches always counts at least 1', () => {
+    const samples = ['Java', 'java.', '(java)', 'Spring Boot / Java', 'node.js, java-8', 'C#, .NET, Java'];
+    for (const s of samples) {
+      if (wholeWordMatch(s, 'java')) assert.ok(count(s, 'java') >= 1, s);
+    }
+    // Aliases count too: "asp.net" is a ".net" spelling (ALIAS_GROUPS).
+    assert.equal(count('.NET Core, ASP.NET', '.net'), 2);
+    assert.equal(count('VB.NET only', '.net'), 0, '"VB.NET" is not a whole-word ".net"');
+    assert.equal(count('C, C#, C++ and c', 'c'), 2);
+  });
+
+  test('skillColumnPredicates adds resumeCount: a regexp_matches count on the resume text, term not spliced in', () => {
+    const p = skillColumnPredicates('java');
+    assert.ok(p.resumeCount, 'resumeCount is returned');
+    assert.match(p.resumeCount.sql, /regexp_matches\(c\.resume_full_text, \?, 'gi'\)/);
+    assert.match(p.resumeCount.sql, /ELSE 0 END/);
+    assert.doesNotMatch(p.resumeCount.sql, /java/i, 'the term never appears in SQL text');
+    assert.ok(p.resumeCount.values.includes(skillCountRegexSource('java')));
+    assert.equal(skillColumnPredicates('  '), null);
   });
 });

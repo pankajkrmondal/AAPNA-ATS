@@ -1,4 +1,5 @@
 # R1 · Fix release 1: staging 20 Nov, production 27 Nov
+> **Replaced on 12 Nov by [R16](R16-release-16-nov.md):** one release, staging 13 Nov and production 16 Nov. This file is kept for reference only.
 **Depends on:** the Handoffs of U09, U06, U04, U05, U01 and U02. Read only those Handoff sections.
 
 **Goal:** U01, U02, U04, U05, U06 and U09 live on production, after Chhaya's UAT on staging.
@@ -13,7 +14,7 @@
 3. **Chhaya's UAT on staging,** one check per item:
    - **U01:** schedule a candidate from an Excel upload. The warning shows and no `.xlsx` is attached.
    - **U02:** the JD is on the shortlist (all three sources), Zeko, Evalground, Tech, HR and CEO invites, and the Approved email.
-   - **U04:** "Java, Python" with All and with Any; "Noida, Delhi" finds "New Delhi" and "Greater Noida".
+   - **U04:** "Java, Python" with All and with Any; "Noida, Delhi" finds Noida or Delhi only, not "New Delhi" or "Greater Noida" (HR's exact-match decision, 10 Nov).
    - **U05:** search by a second email, by "+91 …" and by a dashed number.
    - **U06:** Chhaya decides on behalf for a test MRF.
    - **U09:** the new laptop wording.

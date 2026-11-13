@@ -12,8 +12,8 @@
  *   Candidate-Summary.xlsx   the same data as four sheets, for a team that works
  *                            in Excel (the Evalground sheet, the Interview
  *                            Evaluation Format).
- *   READ-ME.txt              who generated it, what was deliberately left out,
- *                            and the request to delete it.
+ *   READ-ME.txt              who generated it, what this version does not
+ *                            include, and the request to delete it.
  *
  * WHY NOT A SINGLE PDF (plan §2.1): it would need pdfkit or puppeteer — the
  * latter dragging a ~170 MB Chromium into the deploy — and still could not carry
@@ -278,6 +278,19 @@ function section(n, title, body, emptyNote = 'No records.') {
   return `<section><h2><span class="num">${n}</span>${esc(title)}</h2>${content}</section>`;
 }
 
+/** What an empty section says — a fact, not an explanation. */
+const EMPTY = {
+  profile: 'No profile on file.',
+  position: 'No requisition details on file.',
+  progress: 'No decisions yet.',
+  feedback: 'No feedback yet.',
+  scorecards: 'No scorecards submitted.',
+  screening: 'No AI screening completed.',
+  assessment: 'No assessment results.',
+  interviews: 'No interviews booked.',
+  recordings: 'No recordings.',
+};
+
 /** How an event type reads to a person ("note" is "Note", "moved" is "Moved"…). */
 function eventLabel(type) {
   const t = String(type || '').trim();
@@ -473,7 +486,6 @@ a.reportlink{display:inline-block;background:var(--band);color:#fff;font-weight:
   border:1px solid var(--band)}
 a.reportlink:hover{background:#0b3a2c;border-color:#0b3a2c}
 .linkbox .note{margin-bottom:0}
-footer{padding:24px 36px;color:var(--muted);font-size:12px;line-height:1.7}
 @media print{
   body{background:#fff}
   .page{max-width:none}
@@ -485,7 +497,6 @@ footer{padding:24px 36px;color:var(--muted);font-size:12px;line-height:1.7}
   /* Printers drop background colours by default, which would leave the report
      button as invisible white-on-white. Ink, not fill, on paper. */
   a.reportlink{background:#fff;color:var(--band);border:1.5px solid var(--band)}
-  footer{padding-left:0;padding-right:0}
 }
 `;
 
@@ -494,13 +505,16 @@ footer{padding:24px 36px;color:var(--muted);font-size:12px;line-height:1.7}
  *
  * U03 adds two cuts for the interview panel's email (utils/panelPackBlock.js
  * packVariantFor() picks one per round). `download` is the dossier download and
- * stays byte-identical (tests/unit/candidateDossier.test.js, sha256 snapshot):
+ * is pinned by a sha256 snapshot (tests/unit/candidateDossier.test.js):
  *   - `panel_tech` (Tech 1/2/3): the header and the consolidated interviewer
  *     feedback with names, nothing else;
  *   - `panel_leadership` (HR, CEO): profile, progress so far without the
  *     "moved" events, the named feedback, interview history & recordings,
- *     scorecards, AI screening, assessment, and the position last; no "What is
- *     in this pack".
+ *     scorecards, AI screening, assessment, and the position last.
+ *
+ * The report states facts about the candidate and nothing about itself: no
+ * account of what was redacted, no index of the pack, no instructions beyond
+ * the one-line confidentiality notice.
  *
  * @param {object} model - from buildDossierModel()
  * @param {{ variant?: 'download'|'panel_tech'|'panel_leadership' }} [options]
@@ -568,7 +582,7 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
 
     return '<div class="card">'
       + `<h3>${esc(c.stage_label)}${c.interviewer ? ` — ${esc(c.interviewer)}` : ''}</h3>`
-      + (c.earlier_attempt ? '<p class="attempt">Earlier attempt: this round was done again later; the newer scorecard follows.</p>' : '')
+      + (c.earlier_attempt ? '<p class="attempt">Earlier attempt</p>' : '')
       + (tags ? `<div class="tags">${tags}</div>` : '')
       + skills
       + (c.comments ? `<div class="quote">${esc(c.comments)}</div>` : '')
@@ -596,14 +610,11 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
     ],
   })));
 
-  // The screening assessment itself, rendered into the pack (plan §6.7).
-  //
-  // This is the alternative to sending the reader off to the vendor's own page:
-  // the same assessment, with compensation removed by buildZekoReportSection(),
-  // in a file that works offline and cannot be withdrawn from under them. What
-  // was withheld is stated rather than silently applied — a reader comparing
-  // this against a Zeko screenshot must be able to tell that something was
-  // removed on purpose, not conclude the ATS renders reports badly.
+  // The screening assessment itself, rendered into the pack (plan §6.7): the
+  // same assessment as the vendor's page, with compensation removed by
+  // buildZekoReportSection(), in a file that works offline. The removal is not
+  // announced to the reader — the report carries facts about the candidate, not
+  // an account of its own redaction.
   const zekoDetailHtml = model.zeko
     .filter((z) => z.report_detail)
     .map((z) => {
@@ -651,23 +662,18 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
             d.soft_skills.map((s) => ({
               title: s.area,
               rows: [
-                { label: 'Rating', value: s.assessed ? s.rating : 'Not assessed in this interview' },
+                { label: 'Rating', value: s.assessed ? s.rating : 'Not assessed' },
                 { label: 'Assessment', value: s.comment },
               ],
             })),
           )}`
           : '')
-        + (d.withheld_count
-          ? `<p class="note">${esc(d.withheld_count)} item(s) from this report were removed before `
-            + 'it was included here, because they concerned compensation.</p>'
-          : '')
         + '</div>';
     }).join('');
 
-  // The full screening report, as a link rather than a column: the URL is long,
-  // it would wreck the table on paper, and it needs a sentence of its own
-  // explaining that it opens without a login — which is both its whole value to
-  // the reader and the reason they should not forward it on.
+  // The full screening report, as a link rather than a column: the URL is long
+  // and would wreck the table on paper. One short line says it needs no login,
+  // which is the reason not to forward it.
   //
   // A hyperlink is not an external RESOURCE: nothing is fetched when the file is
   // opened, so the pack still renders complete on a machine with no network
@@ -689,11 +695,7 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
           + 'target="_blank" rel="noopener noreferrer">'
           + `Open the ${esc(z.round)} report &rarr;</a>`)
         .join('')
-      + '</p><p class="note">Opens in a browser with no login, so please treat '
-      + (zekoLinked.length > 1 ? 'these links' : 'this link')
-      + ' as confidential and do not forward '
-      + (zekoLinked.length > 1 ? 'them' : 'it')
-      + '.</p></div>'
+      + '</p><p class="note">No login required. Do not forward.</p></div>'
     : '';
 
   // The written assessment, rendered in full rather than named.
@@ -747,7 +749,7 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
     const totals = d?.totals || null;
     const totalsHtml = totals && (totals.correct !== null || totals.wrong !== null
       || totals.unattempted !== null)
-      ? `<p class="note">Across the whole test: ${esc(totals.correct ?? '—')} correct, `
+      ? `<p class="note">Total: ${esc(totals.correct ?? '—')} correct, `
         + `${esc(totals.wrong ?? '—')} wrong, ${esc(totals.unattempted ?? '—')} unattempted.</p>`
       : '';
 
@@ -757,21 +759,12 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
       ? `<h3>Topic scores</h3>${fieldTable(d.topics.map((t) => ({ label: t.label, value: t.value })))}`
       : '';
 
-    // Absence is not omission (§3.1). A result recorded before the ATS kept the
-    // breakdown must say so, or a reader concludes the candidate answered
-    // nothing beyond three numbers.
-    const legacyHtml = !d && a.detail_available === false
-      ? '<p class="note">Only the section scores were recorded for this attempt — the full '
-        + 'breakdown was not captured when it was imported.</p>'
-      : '';
-
     return '<div class="card">'
       + `<h3>${esc(a.test_name)}</h3>`
       + (tags ? `<div class="tags">${tags}</div>` : '')
       + sectionsHtml
       + totalsHtml
       + topicsHtml
-      + legacyHtml
       + '</div>';
   }).join('');
 
@@ -815,12 +808,10 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
           ? '<div class="linkbox"><p class="linktitle">Watch this interview</p><p>'
             + `<a href="${esc(r.share_url)}" class="reportlink" target="_blank" rel="noopener noreferrer">`
             + `Play the ${esc(r.stage_label)} recording &rarr;</a></p>`
-            + '<p class="note">Opens in a browser with no login'
-            + (r.share_expires_at ? `, and stops working after ${esc(formatDate(r.share_expires_at))}` : '')
-            + '. Please treat it as confidential and do not forward it — every time it is opened is '
-            + 'recorded, and the recruiter can withdraw it at any time.</p></div>'
-          : '<p class="note">This round was not shared in this pack — ask the recruiter if you need to '
-            + 'watch it.</p>')
+            + '<p class="note">No login required'
+            + (r.share_expires_at ? `. Expires ${esc(formatDate(r.share_expires_at))}` : '')
+            + '. Do not forward.</p></div>'
+          : '<p class="note">Link not shared.</p>')
         + '</div>';
     }).join('')
     : recordList(model.recordings.map((r) => ({
@@ -828,14 +819,8 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
       rows: [
         { label: 'Recorded on', value: formatDateTime(r.recorded_start_at) },
         { label: 'Length', value: r.duration_seconds !== null ? `${Math.round(r.duration_seconds / 60)} min` : null },
-        { label: 'How to watch', value: 'Ask the recruiter' },
       ],
     })));
-
-  const manifestHtml = fieldTable(model.manifest.map((m) => ({
-    label: m.item,
-    value: `${m.included ? 'Yes' : 'No'}${m.note ? ` — ${m.note}` : ''}`,
-  })));
 
   const open = `<!DOCTYPE html>
 <html lang="en">
@@ -864,22 +849,15 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
 </header>
 
 <div class="confidential">
-  CONFIDENTIAL — prepared for a named interviewer. Please do not forward this pack, and delete it
-  within ${esc(days)} days of the interview.
+  CONFIDENTIAL — do not forward. Delete within ${esc(days)} days of the interview.
 </div>
 
 <div class="status${status.closed ? ' closed' : status.state === 'paused' ? ' paused' : ''}">
   ${esc(status.headline)}
 </div>`;
 
-  const close = (recordedLine) => `<footer>
-  <p><b>What has been removed from this pack, deliberately:</b></p>
-  <p>${model.redaction.map((r) => esc(r)).join('<br>')}</p>
-  <p>Generated from the AAPNA Infotech ATS on ${esc(formatDateTime(generated.at))} by
-  ${esc(generated.by)}. ${recordedLine}</p>
-</footer>
-
-</div>
+  // No footer: who prepared it and when is already in the header.
+  const close = `</div>
 </body>
 </html>`;
 
@@ -897,19 +875,16 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
           { label: 'Comments', value: c.comments },
         ],
       })));
-    const feedbackEmpty = 'No interviewer has submitted a scorecard yet, so there is nothing to consolidate.';
-    const sent = 'This pack was sent to the interview panel and is recorded against their name.';
 
     if (variant === 'panel_tech') {
       return `${open}
 
-${section(1, 'Consolidated interviewer feedback', namedHtml, feedbackEmpty)}
+${section(1, 'Consolidated interviewer feedback', namedHtml, EMPTY.feedback)}
 
-${close(sent)}`;
+${close}`;
     }
 
-    // Leadership (HR, CEO): no "moved" events, the position last, and no
-    // "What is in this pack".
+    // Leadership (HR, CEO): no "moved" events, the position last.
     const progressHtml = recordList(model.stages.filter((s) => s.event_type !== 'moved').map((s) => ({
       title: `${s.stage_label} — ${s.outcome || eventLabel(s.event_type)}`,
       rows: [
@@ -922,58 +897,48 @@ ${close(sent)}`;
     const historyHtml = interviewsHtml + (model.recordings.length ? `<h3>Recordings</h3>${recordingsHtml}` : '');
     return `${open}
 
-${section(1, 'Candidate profile', fieldTable(model.profile), 'No candidate profile is on file.')}
+${section(1, 'Candidate profile', fieldTable(model.profile), EMPTY.profile)}
 
-${section(2, 'Progress so far', progressHtml, 'No decisions have been recorded on this application yet.')}
+${section(2, 'Progress so far', progressHtml, EMPTY.progress)}
 
-${section(3, 'Consolidated interviewer feedback', namedHtml, feedbackEmpty)}
+${section(3, 'Consolidated interviewer feedback', namedHtml, EMPTY.feedback)}
 
-${section(4, 'Interview history & recordings', historyHtml, 'No interviews have been booked for this candidate.')}
+${section(4, 'Interview history & recordings', historyHtml, EMPTY.interviews)}
 
-${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml,
-    'No scorecards have been submitted for this candidate.')}
+${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml, EMPTY.scorecards)}
 
-${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml,
-    'No AI screening round has been completed for this candidate.')}
+${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml, EMPTY.screening)}
 
-${section(7, 'Assessment results', assessmentHtml,
-    'No written assessment result has been recorded for this candidate.')}
+${section(7, 'Assessment results', assessmentHtml, EMPTY.assessment)}
 
-${section(8, 'The position', fieldTable(model.position), 'No requisition details are on file.')}
+${section(8, 'The position', fieldTable(model.position), EMPTY.position)}
 
-${close(sent)}`;
+${close}`;
   }
 
   return `${open}
 
-${section(1, 'Candidate profile', fieldTable(model.profile), 'No candidate profile is on file.')}
+${section(1, 'Candidate profile', fieldTable(model.profile), EMPTY.profile)}
 
-${section(2, 'The position', fieldTable(model.position), 'No requisition details are on file.')}
+${section(2, 'The position', fieldTable(model.position), EMPTY.position)}
 
-${section(3, 'Progress so far', stagesHtml, 'No decisions have been recorded on this application yet.')}
+${section(3, 'Progress so far', stagesHtml, EMPTY.progress)}
 
 ${section(4, 'Consolidated interviewer feedback',
     model.consolidated_feedback ? `<div class="quote">${esc(model.consolidated_feedback)}</div>` : '',
-    'No interviewer has submitted a scorecard yet, so there is nothing to consolidate.')}
+    EMPTY.feedback)}
 
-${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml,
-    'No scorecards have been submitted for this candidate.')}
+${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml, EMPTY.scorecards)}
 
-${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml,
-    'No AI screening round has been completed for this candidate.')}
+${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml, EMPTY.screening)}
 
-${section(7, 'Assessment results', assessmentHtml,
-    'No written assessment result has been recorded for this candidate.')}
+${section(7, 'Assessment results', assessmentHtml, EMPTY.assessment)}
 
-${section(8, 'Interview history', interviewsHtml,
-    'No interviews have been booked for this candidate.')}
+${section(8, 'Interview history', interviewsHtml, EMPTY.interviews)}
 
-${section(9, 'Interview recordings', recordingsHtml,
-    'No interview recordings exist for this candidate.')}
+${section(9, 'Interview recordings', recordingsHtml, EMPTY.recordings)}
 
-${section(10, 'What is in this pack', manifestHtml)}
-
-${close('This download has been recorded against their name.')}`;
+${close}`;
 }
 
 /**
@@ -1032,7 +997,6 @@ export function renderDossierWorkbook(model) {
       r.share_url,
     );
   }
-  for (const r of model.redaction) add('Removed from this pack', r, 'Removed', true);
   addSheet(summary, 'Summary');
 
   // --- Sheet 2: Scorecards, one block per round ------------------------------
@@ -1077,7 +1041,6 @@ export function renderDossierWorkbook(model) {
       notesPrinted.add(c.stage_key);
       line('Round feedback recorded in the ATS', notes.value);
     }
-    if (c.earlier_attempt) line('Note', 'Earlier attempt: this round was done again later.');
   }
   for (const n of model.round_notes || []) {
     if (notesPrinted.has(n.stage_key)) continue;
@@ -1126,7 +1089,7 @@ export function renderDossierWorkbook(model) {
         line(`Communication — ${s.area}`, s.assessed ? cell(s.rating) : 'Not assessed');
       }
     }
-    if (z.report_link) line('Full report link (opens with no login)', z.report_link);
+    if (z.report_link) line('Full report link', z.report_link);
   }
   for (const a of model.assessments) {
     const section = `Assessment · ${a.test_name}`;
@@ -1167,11 +1130,22 @@ export function renderDossierWorkbook(model) {
  * has been sent — the request to delete it — which is why HR were asked to
  * approve it (decision #12) rather than it being added as a nicety.
  *
+ * Kept to what the reader acts on: the files, the links that open without a
+ * login (the one real disclosure in the pack), and the deletion request.
+ *
  * @param {object} model
  * @returns {string}
  */
 export function renderReadMe(model) {
   const days = config.dossier.deletionDays;
+  const linkedRecordings = (model.recordings || []).filter((r) => r.share_url);
+  const expiry = linkedRecordings.find((r) => r.share_expires_at)?.share_expires_at;
+  const links = [
+    ...(model.zeko?.some((z) => z.report_link) ? ['  - AI screening report'] : []),
+    ...(linkedRecordings.length
+      ? [`  - Interview recordings (${linkedRecordings.length})${expiry ? `, expire ${formatDate(expiry)}` : ''}`]
+      : []),
+  ];
   const lines = [
     'CANDIDATE DOSSIER — CONFIDENTIAL',
     '================================',
@@ -1180,68 +1154,18 @@ export function renderReadMe(model) {
     `Position  : ${text(model.candidate.position)}`,
     `Prepared  : ${formatDateTime(model.generated.at)} by ${text(model.generated.by)}`,
     '',
-    'WHAT IS IN THIS FOLDER',
-    '----------------------',
-    'Candidate-Dossier.html   Open this first. It works in any web browser, with no',
-    '                         login and no internet connection. Press Ctrl+P to save',
-    '                         it as a PDF.',
-    'Candidate-Summary.xlsx   The same information as a spreadsheet (4 sheets).',
-    ...(model.zeko?.some((z) => z.report_detail)
-      ? [
-        '',
-        'Section 6 of the report sets out the AI screening assessment in full,',
-        'with compensation details removed.',
-      ]
+    'FILES',
+    '-----',
+    'Candidate-Dossier.html   The report. Opens in any browser; Ctrl+P saves a PDF.',
+    'Candidate-Summary.xlsx   The same information as a spreadsheet.',
+    ...(links.length
+      ? ['', 'LINKS', '-----', 'These open WITHOUT a login. Do not forward.', ...links]
       : []),
-    ...(model.zeko?.some((z) => z.report_link)
-      ? [
-        '',
-        'The report also carries a link to the full AI screening report. That link',
-        'opens in a browser WITHOUT a login, so anyone you forward it to can read the',
-        'screening report in full. Please treat it as confidential.',
-      ]
-      : []),
-    // Said here as well as in section 9, and said the most plainly of anything in
-    // this file. This is the one thing in the pack that lets somebody outside the
-    // company watch a real person's interview, and the READ-ME is the part a
-    // recipient reads in Notepad before opening anything else — it carried a
-    // paragraph about the vendor's screening report and nothing at all about the
-    // video links, which are the larger disclosure of the two.
-    ...(model.recordings?.some((r) => r.share_url)
-      ? (() => {
-        const linked = model.recordings.filter((r) => r.share_url);
-        const expiry = linked.find((r) => r.share_expires_at)?.share_expires_at;
-        return [
-          '',
-          'INTERVIEW RECORDINGS',
-          '--------------------',
-          `Section 9 of the report carries ${linked.length} link(s) that play this candidate's`,
-          'interview in a browser WITHOUT a login. Anyone the file is forwarded to can',
-          'watch. Please do not forward it.',
-          ...(expiry ? [`The links stop working after ${formatDate(expiry)}.`] : []),
-          'Every time a link is opened is recorded against the candidate, and the',
-          'recruiter can withdraw any of them at any time.',
-        ];
-      })()
-      : []),
-    '',
-    'WHAT HAS BEEN REMOVED, DELIBERATELY',
-    '-----------------------------------',
-    ...model.redaction.map((r) => `  - ${r}`),
-    '',
-    'WHAT IS NOT INCLUDED IN THIS VERSION',
-    '------------------------------------',
-    ...model.manifest.filter((m) => !m.included).map((m) => `  - ${m.item}: ${m.note}`),
     '',
     'PLEASE',
     '------',
-    'This pack contains personal information about a real person who applied for a',
-    'job with us. Please do not forward it, and please delete it (and any copies)',
-    `within ${days} days of completing the interview.`,
-    '',
-    'This download has been recorded in the ATS against the name of the person who',
-    'generated it. If you have questions about the candidate, or need the resume or',
-    'a recording, please reply to the recruiter who sent you this pack.',
+    `Do not forward this pack. Delete it, and any copies, within ${days} days of the interview.`,
+    'Questions: reply to the recruiter who sent it.',
     '',
   ];
   return lines.join('\r\n');

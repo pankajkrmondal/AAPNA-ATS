@@ -59,7 +59,7 @@
   - "HR and Admin" = superadmin, admin, hr_admin_recruiter and hr. This can be changed with `FORMS_DIGEST_ROLES`.
 - **Tests:** unit 26/26 (new suite), full unit 1178/1178, integration 7/7 on staging (job dry run reached 2 users), `npm run build` passes, Playwright 4/4 with a mocked API.
 - **Left for R2 / U11:**
-  - Set `FORMS_DIGEST_ENABLED=true` on staging. Production stays `false` until R2.
+  - Set `FORMS_DIGEST_ENABLED=true` on staging. Production stays `false` until R2. **12 Nov:** superseded. It goes on in staging on 13 Nov and in production on 16 Nov, in R16.
   - HR to confirm plain recruiters should not get the note.
   - At 1366 px, "Email Delivery" moves into the tabs' "…" menu.
   - No real note has been sent yet: check the first 09:00 bell on staging.

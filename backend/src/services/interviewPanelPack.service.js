@@ -33,8 +33,9 @@ import {
   buildEarlierRoundsBlock, buildPackNotes, earlierRoundLines, hasEarlierResults, packVariantFor,
 } from '../utils/panelPackBlock.js';
 import {
-  buildPanelCandidateTable, panelTableRounds, showsCtc, sourceShown,
+  buildPanelCandidateTable, journeyRoundEvidence, markHeldRecordings, panelTableRounds, showsCtc, sourceShown,
 } from '../utils/panelCandidateTable.js';
+import { loadStageStates } from './stageState.service.js';
 import { earlierRoleHasResults, mergeEarlierRoles } from '../utils/panelEarlierRoles.js';
 import AppError from '../utils/AppError.js';
 import { resolveRecipients } from '../config/emailRecipients.js';
@@ -101,6 +102,78 @@ export async function earlierJourneyIds(pipelineId) {
 }
 
 /**
+ * U03b: what one journey's records say about its rounds, for
+ * journeyRoundEvidence(): its stage states (rows, or derived from its events),
+ * its 'skip' events, and each recording's booking in the dossier's recording
+ * order. Throws; loadRoundEvidence() catches.
+ * @param {number|string|bigint} pipelineId
+ * @param {object[]} stages - every rpa_pipeline_stages row
+ */
+async function loadJourneyEvidence(pipelineId, stages) {
+  const id = BigInt(pipelineId);
+  const journey = await prisma.rpa_candidate_pipeline.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      current_stage_key: true,
+      current_stage_status: true,
+      rpa_shortlisted_candidates: { select: { position_applied: true, mrf: { select: { position_hiring_for: true } } } },
+    },
+  });
+  if (!journey) return null;
+  const [states, skipEvents, recordings] = await Promise.all([
+    loadStageStates(journey, prisma, stages),
+    prisma.rpa_pipeline_stage_events.findMany({
+      where: { pipeline_id: id, event_type: 'skip' },
+      orderBy: { created_at: 'asc' },
+      select: { notes: true },
+    }),
+    // The same filter and order as buildDossierModel(), so positions match.
+    prisma.rpa_interview_recording.findMany({
+      where: { pipeline_id: id, kind: 'recording' },
+      orderBy: [{ recorded_start_at: 'asc' }, { id: 'asc' }],
+      select: { stage_key: true, rpa_interview_schedule: { select: { status: true, cancelled_at: true, occurrence_status: true } } },
+    }),
+  ]);
+  const shortlist = journey.rpa_shortlisted_candidates;
+  return {
+    pipeline_id: String(journey.id),
+    role: shortlist?.mrf?.position_hiring_for || shortlist?.position_applied || null,
+    ...journeyRoundEvidence({
+      states,
+      skipEvents,
+      labelByKey: Object.fromEntries(stages.map((s) => [s.stage_key, s.label])),
+      recordingBookings: recordings.map((r) => ({ stage_key: r.stage_key, ...(r.rpa_interview_schedule || {}) })),
+    }),
+  };
+}
+
+/**
+ * U03b: the round evidence of this journey and of the journeys it was moved
+ * from (U07 chain, oldest first), for panelTableRounds() and
+ * markHeldRecordings(). Never throws: null when unreadable, and the table is
+ * then built as before U03b.
+ * @param {number|string} pipelineId
+ * @returns {Promise<{current: object, earlier: object[]}|null>}
+ */
+export async function loadRoundEvidence(pipelineId) {
+  try {
+    const stages = await prisma.rpa_pipeline_stages.findMany({ orderBy: { sort_order: 'asc' } });
+    const current = await loadJourneyEvidence(pipelineId, stages);
+    if (!current) return null;
+    const earlier = [];
+    for (const id of await earlierJourneyIds(pipelineId)) {
+      const ev = await loadJourneyEvidence(id, stages);
+      if (ev) earlier.push(ev);
+    }
+    return { current, earlier };
+  } catch (err) {
+    logger.warn(`Panel table: the round evidence of pipeline ${pipelineId} could not be read: ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * U07: one redacted dossier model per earlier journey that holds results, for
  * mergeEarlierRoles(). Each journey's own scorecards, assessments, Zeko (by its
  * own shortlist_id) and recordings; with `recordingLinks`, its recordings get
@@ -108,16 +181,27 @@ export async function earlierJourneyIds(pipelineId) {
  * earlier journey that cannot be read is left out. Never throws.
  *
  * @param {number|string} pipelineId - the CURRENT journey
- * @param {{ user?: object, recordingLinks?: boolean, includeAssessmentDetail?: boolean }} [options]
+ * U03b: each earlier journey's recordings are marked `booking_held` from
+ * `evidence` (loadRoundEvidence(); read here when not given), so one from a
+ * cancelled booking or a no-show neither counts as a result nor gets a row.
+ *
+ * @param {{ user?: object, recordingLinks?: boolean, includeAssessmentDetail?: boolean, evidence?: object|null }} [options]
  * @returns {Promise<Array<{role: string|null, model: object}>>} oldest first
  */
 export async function loadEarlierRoleModels(pipelineId, {
-  user = null, recordingLinks = false, includeAssessmentDetail = true,
+  user = null, recordingLinks = false, includeAssessmentDetail = true, evidence,
 } = {}) {
   const out = [];
-  for (const id of await earlierJourneyIds(pipelineId)) {
+  const ids = await earlierJourneyIds(pipelineId);
+  if (!ids.length) return out;
+  const ev = evidence === undefined ? await loadRoundEvidence(pipelineId) : evidence;
+  const held = new Map((ev?.earlier || []).map((e) => [e.pipeline_id, e.recordings]));
+  for (const id of ids) {
     try {
-      const model = await buildDossierModel(id, { includeContactDetails: false, includeAssessmentDetail, generatedBy: user });
+      const model = markHeldRecordings(
+        await buildDossierModel(id, { includeContactDetails: false, includeAssessmentDetail, generatedBy: user }),
+        held.get(String(id)),
+      );
       if (!earlierRoleHasResults(model)) continue;
       if (recordingLinks && (model.recordings || []).length) {
         const links = await collectRecordingShareLinks(id, { include: true, user });
@@ -178,6 +262,8 @@ export async function buildPanelPack(pipelineId, {
   // with no scorecard yet (usually Tech 1) there is no report to attach.
   let model = null;
   let lines = [];
+  // U03b: which rounds really happened, for the candidate table (tableModel).
+  const evidence = await loadRoundEvidence(pipelineId);
   try {
     model = await buildDossierModel(pipelineId, { includeContactDetails: false, generatedBy: user });
     // This journey's links go on BEFORE the merge: they are matched by position.
@@ -185,9 +271,10 @@ export async function buildPanelPack(pipelineId, {
       const links = await collectRecordingShareLinks(pipelineId, { include: true, user });
       applyRecordingShareLinks(model, links, { includeRecordingLinks: true });
     }
+    model = markHeldRecordings(model, evidence?.current?.recordings);
     // U07: the earlier role's rounds, with their own recording links.
     if (includeEarlierRoles) {
-      model = mergeEarlierRoles(model, await loadEarlierRoleModels(pipelineId, { user, recordingLinks: true }));
+      model = mergeEarlierRoles(model, await loadEarlierRoleModels(pipelineId, { user, recordingLinks: true, evidence }));
     }
     if (hasEarlierResults(model)) {
       assertNoForbiddenFields(model);
@@ -240,7 +327,8 @@ export async function buildPanelPack(pipelineId, {
   // 4) U01: no resume travelled and HR asked for the profile summary instead.
   // The report so far already IS that summary when it is attached. A panel cut
   // of it (U03) leads with the profile: the leadership one, whatever the round.
-  const tableModel = model;
+  // U03b: the table reads the evidence from here (loadPanelCandidateTable).
+  const tableModel = model ? { ...model, round_evidence: evidence } : model;
   if (attachProfile && summary.cv !== PACK_CV_STATUS.ATTACHED && !summary.report) {
     try {
       const profileModel = model || await buildDossierModel(pipelineId, { includeContactDetails: false, generatedBy: user });
@@ -350,10 +438,16 @@ export async function loadPanelCandidateTable(pipelineId, {
       referral,
     };
     let dossier = model || await buildDossierModel(pipelineId, { includeContactDetails: false, includeAssessmentDetail: false });
+    // U03b: buildPanelPack()'s model carries its evidence and is already marked.
+    const evidence = dossier.round_evidence !== undefined ? dossier.round_evidence : await loadRoundEvidence(pipelineId);
+    if (dossier.round_evidence === undefined) dossier = markHeldRecordings(dossier, evidence?.current?.recordings);
     if (includeEarlierRoles && !Array.isArray(dossier.earlier_roles)) {
-      dossier = mergeEarlierRoles(dossier, await loadEarlierRoleModels(pipelineId, { includeAssessmentDetail: false }));
+      dossier = mergeEarlierRoles(dossier, await loadEarlierRoleModels(pipelineId, { includeAssessmentDetail: false, evidence }));
     }
-    const rounds = panelTableRounds(dossier, { excludeStageKey: stageKey });
+    const rounds = panelTableRounds(dossier, {
+      excludeStageKey: stageKey,
+      evidence: evidence && !includeEarlierRoles ? { ...evidence, earlier: [] } : evidence,
+    });
     return {
       html: buildPanelCandidateTable({ facts, rounds, stageKey, showSource, linksPending }),
       showSource: withSource,
@@ -506,6 +600,6 @@ export async function sendPanelPackForBooking(scheduleId, user, { attachProfile 
 }
 
 export default {
-  buildPanelPack, earlierJourneyIds, loadEarlierRoleModels, loadPanelCandidateTable, logPanelPackSent,
+  buildPanelPack, earlierJourneyIds, loadEarlierRoleModels, loadPanelCandidateTable, loadRoundEvidence, logPanelPackSent,
   panelPackEnabled, panelPackPreflight, sendPanelPackForBooking, PACK_CV_STATUS,
 };

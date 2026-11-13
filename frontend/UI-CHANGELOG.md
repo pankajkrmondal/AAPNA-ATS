@@ -5,6 +5,54 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-11-13: U04b Card skill meter counts every matched skill
+
+Write-up: [U04b](../docs/changelog/CHANGES-2026-11-13-U04b-keyword-ranking.md).
+
+- **`CandidateScreening.jsx` `JdSkillMatch` (card variant):** the "n/m" meter and its chips now include a skill found only in the declared skills. That chip reads "listed" instead of ×N. The ×N values now come from real resume mentions (backend). The drawer and tooltips are unchanged.
+
+## 2026-11-13: U02c About AAPNA moves into the Shortlist template
+
+Write-up: [U02c](../docs/changelog/CHANGES-2026-11-13-U02c-about-aapna-in-template.md).
+
+- **Settings:** the "Candidate emails: About AAPNA" card (`components/settings/CompanyProfileCard.jsx`) is removed. The text is edited in Email Management › Shortlist, like the rest of the email.
+
+## 2026-11-13: U10c Responded per open position
+
+Write-up: [U10c](../docs/changelog/CHANGES-2026-11-13-U10c-responded-per-position.md).
+
+- **Role view (`components/analytics/RoleDetailDrawer.jsx`):** a "Responded" card after Needs attention, with the Responded view's own dates (Yesterday by default, Today, Last 7 days, custom) for this position only.
+- **`RespondedByJdPanel.jsx`:** an `mrfId` prop (one position, a plain candidate list) and an `onOpenRole` prop (a "Role view →" link on each JD row, which does not expand the row).
+
+---
+
+## 2026-11-12: U10b Responded view inside Open Positions (Completed Forms tab removed)
+
+Write-up: [U10b](../docs/changelog/CHANGES-2026-11-12-U10b-responded-view.md).
+
+- **Open Positions (`components/analytics/PositionsTab.jsx`):** a "Board | Responded" switch next to Open/Closed/All. The Responded tile is clickable ("See who →") and opens the view for the page's dates. Export shows on Board only.
+- **Responded view (`components/analytics/RespondedByJdPanel.jsx`, moved from `CompletedFormsTab.jsx`):** who responded by JD, with the column's count per JD. It has its own Yesterday / Today / Last 7 days / custom dates and follows Open/Closed/All. Each candidate shows when and how they responded and links to the profile.
+- **Analytics (`pages/Analytics.jsx`):** the Completed Forms tab is removed. The URL is `?tab=open&view=responded&…`; old `?tab=completed-forms…` links land there.
+
+---
+
+## 2026-11-12: U06b one person decides on behalf of the MRF approvers
+
+Write-up: [U06b](../docs/changelog/CHANGES-2026-11-12-U06b-on-behalf-designee.md).
+
+- **Settings › MRF Approval & Hold (`components/settings/MrfApprovalHoldSettings.jsx`):** "Who can decide on behalf" is now a searchable picker plus Save (Admin / Super Admin; others see it disabled). The "Approver absence" section is removed.
+- **Decide on behalf panel (`components/mrf/DecideOnBehalfPanel.jsx`):** the away-window banner is gone; the tag reads "Chosen in Settings". Locked for anyone but that person, with "Only <name> can decide…" or "No one is set…".
+
+---
+
+## 2026-11-12: U02b "Attach the JD" switch and {{jd_link}} on Email Templates
+
+Write-up: [U02b](../docs/changelog/CHANGES-2026-11-12-U02b-template-jd-switch.md).
+
+- **Email Templates editor header (`pages/EmailManagement.jsx`):** an "Attach the JD" switch on templates that declare `jd_link`. Empty shows the default rule with a "Default" tag; "Use default" resets it. Save sends `attach_jd`. The new `{{jd_link}}` chip has a note under the editor and a sample JD card in Live Preview.
+- **Evalground invite window (`AssessmentInviteModal.jsx`):** starts from the stored "Evalground Assessment Invite" template when there is one, else the old copy. It says when the switch is off, and when the card goes where `{{jd_link}}` is.
+- **Shortlist dialog preview (`DecisionEmailModal.jsx`):** `{{jd_link}}` shows as a dashed "JD card goes here" box.
+
 ## 2026-11-11: U10 Completed forms tab on Recruitment Analytics
 
 Write-up: [U10](../docs/changelog/CHANGES-2026-11-11-U10-completed-forms.md).

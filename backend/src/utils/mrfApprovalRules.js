@@ -308,6 +308,7 @@ export const HOLD_SETTING_KEYS = Object.freeze({
   maxDays: 'mrf_hold_max_days',
   releaseTime: 'mrf_hold_release_time',
   absence: 'mrf_approver_absence',
+  onBehalfUser: 'mrf_on_behalf_user',
 });
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -480,27 +481,72 @@ export function isAbsenceActive(absence, today = todayIst()) {
 }
 
 /**
- * May this ATS user approve / reject / hold on behalf of the approvers right now?
- * Role HR Admin Recruiter or above, an active account, and an absence window
- * that covers today.
- * @returns {{ ok: boolean, reason: null|'role_too_low'|'inactive_user'|'no_absence_window' }}
+ * The person chosen in Settings to decide on behalf of the approvers, from its
+ * setting value (JSON). Broken or missing means "nobody".
+ * @returns {{ userId: number|null, setByUserId: number|null, setByName: string|null, setAt: string|null }}
  */
-export function canDecideAsDelegate({ user, absence, today = todayIst() }) {
-  if (!user || !canDecideOnBehalf(normalizeRole(user.role))) return { ok: false, reason: 'role_too_low' };
+export function parseOnBehalfUser(raw) {
+  const none = { userId: null, setByUserId: null, setByName: null, setAt: null };
+  if (!raw) return none;
+  let v;
+  try {
+    v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return none;
+  }
+  if (!v || typeof v !== 'object') return none;
+  const id = Number(v.userId);
+  return {
+    userId: Number.isInteger(id) && id > 0 ? id : null,
+    setByUserId: v.setByUserId ?? null,
+    setByName: v.setByName || null,
+    setAt: v.setAt || null,
+  };
+}
+
+/** True when `user` is the designee (`{ userId }`). */
+export function isDesignee(user, designee) {
+  return Boolean(user && designee?.userId && Number(user.id) === Number(designee.userId));
+}
+
+/**
+ * May this ATS user approve / reject / hold on behalf of the approvers? Only
+ * the one person chosen in Settings, at any time, while their account is
+ * active. Role and absence windows play no part (U06b, 12 Nov).
+ * @param {{ user: object|null, designee: { userId: number|null, isActive?: boolean }|null }} args
+ * @returns {{ ok: boolean, reason: null|'no_designee'|'designee_inactive'|'not_designated'|'inactive_user' }}
+ */
+export function canDecideAsDelegate({ user, designee }) {
+  if (!designee?.userId) return { ok: false, reason: 'no_designee' };
+  if (designee.isActive === false) return { ok: false, reason: 'designee_inactive' };
+  if (!isDesignee(user, designee)) return { ok: false, reason: 'not_designated' };
   if (user.is_active === false) return { ok: false, reason: 'inactive_user' };
-  if (!isAbsenceActive(absence, today)) return { ok: false, reason: 'no_absence_window' };
   return { ok: true, reason: null };
 }
 
-/** Words for a canDecideAsDelegate() refusal. */
-export function delegateRefusalMessage(reason) {
+/**
+ * May this user change the date of, or release, a held MRF? HR Admin Recruiter
+ * and above, or the designee.
+ */
+export function mayManageHolds(user, designee) {
+  return canDecideOnBehalf(normalizeRole(user?.role)) || isDesignee(user, designee);
+}
+
+/**
+ * Words for a canDecideAsDelegate() refusal.
+ * @param {string} reason
+ * @param {{ designeeName?: string|null }} [opts]
+ */
+export function delegateRefusalMessage(reason, { designeeName = null } = {}) {
   switch (reason) {
-    case 'role_too_low':
-      return 'Only an HR Admin Recruiter, Admin or Super Admin can decide on behalf of the approvers.';
+    case 'no_designee':
+      return 'No one is set to decide on behalf. An Admin can choose the person in Settings › MRF Approval & Hold.';
+    case 'designee_inactive':
+      return `${designeeName || 'The person set to decide on behalf'} is no longer active. An Admin can choose another person in Settings › MRF Approval & Hold.`;
+    case 'not_designated':
+      return `Only ${designeeName || 'the person chosen in Settings'} can decide on behalf of the approvers.`;
     case 'inactive_user':
       return 'Your account is not active.';
-    case 'no_absence_window':
-      return 'Deciding on behalf of the approvers is only allowed while they are marked away (Settings › MRF Approval & Hold).';
     default:
       return 'You cannot decide this MRF on behalf of the approvers.';
   }

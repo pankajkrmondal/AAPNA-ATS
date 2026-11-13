@@ -46,11 +46,13 @@ const pipelineService = {
   },
 
   /**
-   * U10: missing-details forms completed in a range, grouped by JD.
-   * @param {{ range?: 'yesterday'|'today'|'7', from?: string, to?: string }} [params]
-   *   a preset (resolved on the server in India time) or YYYY-MM-DD dates; none = yesterday
+   * U10b: Open Positions › Responded, who responded in a range, by JD (the
+   * Responded column's definition). The path is U10's.
+   * @param {{ status?: 'open'|'closed'|'all', range?: 'yesterday'|'today'|'7', from?: string, to?: string }} [params]
+   *   status: the board's switch (open by default); a preset (resolved on the
+   *   server in India time) or YYYY-MM-DD dates; none = yesterday
    */
-  getCompletedForms(params = {}) {
+  getRespondedByJd(params = {}) {
     return api.get('/pipeline/analytics/completed-forms', { params });
   },
 

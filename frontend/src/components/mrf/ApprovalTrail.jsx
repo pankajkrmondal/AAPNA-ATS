@@ -233,28 +233,34 @@ export default function ApprovalTrail({ mrfId, onStatus, onChanged }) {
     )}
 
     {isHeld && (
-      <div style={{ border: '1px solid #9db6dd', background: '#e7eef9', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ border: '1px solid var(--info-border)', background: 'var(--info-bg)', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 340px', minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Tag color="blue" icon={<PauseCircleOutlined />} style={{ fontWeight: 700, margin: 0 }}>ON HOLD</Tag>
-            <span style={{ fontWeight: 700, color: '#1b3d6e' }}>
+            <span style={{ fontWeight: 700, color: 'var(--info-text)' }}>
               until {hold.held_until_label}{hold.days_left !== null && hold.days_left !== undefined ? ` · ${hold.days_left} day${hold.days_left === 1 ? '' : 's'} left` : ''}
             </span>
             {hold.hold_count > 1 ? <Tag style={{ margin: 0 }}>Held {hold.hold_count}×</Tag> : null}
           </div>
-          <div style={{ fontSize: 13, color: '#1b3d6e', marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--info-text)', marginTop: 4 }}>
             Put on hold by <b>{hold.held_by_name || 'an approver'}</b>{hold.held_at_ist ? ` on ${hold.held_at_ist}` : ''}.
             {hold.note ? <> Note: &ldquo;{hold.note}&rdquo;</> : null}
             {' '}On that date it goes back to pending and every approver is emailed again.
-            {hold.closed ? <Text type="warning"> The requisition is closed, so nothing will be sent until it is re-opened.</Text> : null}
+            {hold.closed ? <span style={{ color: 'var(--warn-text)', fontWeight: 600 }}> The requisition is closed, so nothing will be sent until it is re-opened.</span> : null}
           </div>
         </div>
         {hold.can_manage && (
           <Space>
             <Button icon={<CalendarOutlined />} onClick={openDateModal} disabled={!hold.config}>Change date</Button>
-            <Button type="primary" icon={<PlayCircleOutlined />} loading={releasing} onClick={release} disabled={hold.closed} style={{ background: HOLD_BLUE, borderColor: HOLD_BLUE }}>
-              Release now
-            </Button>
+            <Tooltip title={hold.closed ? 'Re-open the requisition first' : undefined}>
+              {/* The span lets the tooltip show on a disabled button. The hold blue
+                  only applies when enabled, so AntD's disabled look isn't overridden. */}
+              <span style={{ display: 'inline-block' }}>
+                <Button type="primary" icon={<PlayCircleOutlined />} loading={releasing} onClick={release} disabled={hold.closed} style={hold.closed ? undefined : { background: HOLD_BLUE, borderColor: HOLD_BLUE }}>
+                  Release now
+                </Button>
+              </span>
+            </Tooltip>
           </Space>
         )}
       </div>

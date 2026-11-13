@@ -581,6 +581,10 @@ model rpa_email_templates {
   is_active                 Boolean?                    @default(true)
   created_at                DateTime?                   @default(now()) @db.Timestamp(6)
   modified_at               DateTime?                   @default(now()) @db.Timestamp(6)
+  // attach_jd boolean NULL (U02b, DDL 2026-11-12-email-template-attach-jd.sql) is on this
+  // table but deliberately not mapped: it is read and written with raw SQL
+  // (jdAttachment.service.js loadTemplateAttachJd, emailTemplate.controller.js), like
+  // rpa_mrf.jd_item_id, so every template read keeps working whether or not the DDL has run.
   rpa_email_messages        rpa_email_messages[]
   rpa_users                 rpa_users?                  @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   rpa_stage_email_templates rpa_stage_email_templates[]

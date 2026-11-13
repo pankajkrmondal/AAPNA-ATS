@@ -3,7 +3,6 @@
  *
  *   E2E_BASE_URL=http://localhost:5174 npx playwright test e2e/section-c.spec.js
  *
- * N17  Settings: "Candidate emails: About AAPNA" card (admin)
  * N18  public "Complete your profile" form: Edit-form order, lists and rules
  * N18  recruiter Edit form: one field per row, same lists and rules
  * N21  Search Candidate: tick, "Add to JD", result naming who was not added
@@ -40,27 +39,6 @@ async function findJourney(page, name) {
 async function formItemLefts(scope) {
   return scope.locator('.ant-form-item:visible').evaluateAll((els) => [...new Set(els.map((e) => Math.round(e.getBoundingClientRect().left)))]);
 }
-
-test.describe('N17 About AAPNA', () => {
-  test('admin edits, saves and previews the text', async ({ page }) => {
-    await page.goto('/settings');
-    const card = page.getByTestId('company-profile-card');
-    await expect(card).toBeVisible();
-    const text = `AAPNA Infotech, Noida.\nE2E ${Date.now()}`;
-    await card.locator('textarea').fill(text);
-    const saved = page.waitForResponse((r) => r.url().endsWith('/api/settings/company-profile') && r.request().method() === 'POST');
-    await card.getByRole('button', { name: 'Save' }).click();
-    expect((await saved).status()).toBe(200);
-
-    await page.reload();
-    await expect(page.getByTestId('company-profile-card').locator('textarea')).toHaveValue(text);
-    await page.getByTestId('company-profile-card').getByRole('button', { name: 'Preview in email' }).click();
-    const preview = page.locator('.ant-modal:visible').filter({ hasText: 'How it appears in the email' });
-    await expect(preview.getByText('About AAPNA', { exact: true })).toBeVisible();
-    await expect(preview.getByText(/E2E \d+/)).toBeVisible();
-    await shot(page, 'settings-about-aapna');
-  });
-});
 
 test.describe('N18 public form', () => {
   test('Edit-form order, shared lists and rules', async ({ page }) => {

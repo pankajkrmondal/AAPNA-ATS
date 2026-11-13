@@ -1,4 +1,5 @@
 # U11 · L08–L16 production steps and fix release 2 (staging 4 Dec, production 11 Dec)
+> **Replaced on 12 Nov by [R16](R16-release-16-nov.md):** its L08–L16 steps and release steps now run in the single 16 Nov release. This file is kept for reference only.
 **Release 2 · Medium · 10 h · Depends on: the Handoffs of U03, U07, U08, U10 and R1. Read only those sections.**
 
 **Goal**

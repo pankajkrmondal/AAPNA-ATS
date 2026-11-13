@@ -62,7 +62,7 @@ import positionsExport from '../exports/positions.export.js';
 import roleReportExport from '../exports/roleReport.export.js';
 import * as openPositionsService from '../services/openPositions.service.js';
 import * as completedFormsService from '../services/completedForms.service.js';
-import { parseFormsRange } from '../services/completedForms.helpers.js';
+import { parseFormsRange, parseRespondedStatus, parseRespondedMrf } from '../services/completedForms.helpers.js';
 import { parseAnalyticsRange, rangeFileTag } from '../utils/analyticsRange.js';
 import { DEFAULT_STUCK_DAYS } from '../services/openPositions.helpers.js';
 import { FINAL_OUTCOMES } from '../config/pipelineStages.js';
@@ -183,13 +183,18 @@ export const getPositionMetricCandidates = catchAsync(async (req, res) => {
 });
 
 /**
- * GET /api/pipeline/analytics/completed-forms?range=yesterday|today|7 or ?from&to (U10)
- * Missing-details forms completed in the range (India time; yesterday by
- * default), one row per JD with its candidates.
+ * GET /api/pipeline/analytics/completed-forms?status=open|closed|all&mrf=<id>&range=yesterday|today|7 or ?from&to
+ * (U10, revised as U10b; the path is kept) Who responded in the range (India
+ * time; yesterday by default), one row per JD with its candidates: Open
+ * Positions › Responded. status follows the board's switch (open by default).
+ * mrf (U10c) narrows it to one position: the role view's Responded section.
  */
-export const getCompletedForms = catchAsync(async (req, res) => {
-  const result = await completedFormsService.getCompletedForms(parseFormsRange(req.query));
-  return success(res, result, 'Completed forms retrieved successfully');
+export const getRespondedByJd = catchAsync(async (req, res) => {
+  const result = await completedFormsService.getRespondedByJd(parseFormsRange(req.query), {
+    status: parseRespondedStatus(req.query.status),
+    mrfId: parseRespondedMrf(req.query.mrf),
+  });
+  return success(res, result, 'Responded candidates retrieved successfully');
 });
 
 /**

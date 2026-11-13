@@ -51,8 +51,8 @@ export const NOTIFICATION_TYPES = Object.freeze({
   // A candidate finished the public missing-details form (nothing left
   // missing). Fires once per candidate — partial submissions never notify (N44).
   CANDIDATE_DETAILS_COMPLETED: 'candidate.details_completed',
-  // U10: the 09:00 IST note to HR and Admin, "12 forms completed yesterday
-  // across 4 JDs", linking to Analytics → Completed forms (jobs/completedFormsDigest.js).
+  // U10 / U10b: the 09:00 IST note to HR and Admin, "12 candidates responded
+  // yesterday across 4 JDs", linking to Open Positions › Responded (jobs/completedFormsDigest.js).
   CANDIDATE_FORMS_DIGEST: 'candidate.forms_digest',
 });
 

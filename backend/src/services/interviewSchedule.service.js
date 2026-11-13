@@ -33,7 +33,8 @@ import { getOptionalAttendeeEmails } from './interviewOptionalAttendees.service.
 // From pure config, not pipeline.service.js: that module imports THIS one, so
 // reaching back for its assertJourneyOpen would close an import cycle.
 import { finalStatusLabelFor } from '../config/pipelineStages.js';
-import { jdForCandidateEmail, shouldAttachJd, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
+import { jdForCandidateEmail, jdWantedForTemplate, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
+import { JD_LINK_PLACEHOLDER } from '../utils/candidateEmailBlocks.js';
 import {
   CANDIDATE_TABLE_PLACEHOLDER, insertBeforeCandidateTable, placeCandidateTable,
 } from '../utils/panelCandidateTable.js';
@@ -738,6 +739,9 @@ function interviewTokens({ candidate, stageLabel, position, when, durationMinute
     // rounds, and this compiled body is what the recruiter edits; the real
     // table replaces the placeholder at send time (placeCandidateTable).
     candidate_table: CANDIDATE_TABLE_PLACEHOLDER,
+    // U02b: where the JD card goes, as a marker the editor keeps; the card (or
+    // nothing, when the JD is attached) replaces it at send time.
+    jd_link: JD_LINK_PLACEHOLDER,
   };
 }
 
@@ -855,10 +859,13 @@ function panelInviteBody(body, { calendar, isRecorded, table, pack }) {
 
 /**
  * U02: the JD for the candidate's invite to this round — attached, or as a
- * link. Never throws; nothing for a round that sends no invite.
+ * link. Never throws; nothing for a round that sends no invite. U02b: the
+ * candidate template's "Attach the JD" switch, when HR set it, overrides the
+ * default rule (read even when the recruiter edited the text).
+ * @param {number|null} [templateId] - the candidate template (buildInterviewEmails' templateId)
  */
-async function candidateJdFor(pipeline, stageKey, sendsInvites) {
-  if (!sendsInvites || !shouldAttachJd(stageKey)) return NO_JD_FOR_EMAIL;
+async function candidateJdFor(pipeline, stageKey, sendsInvites, templateId = null) {
+  if (!sendsInvites || !(await jdWantedForTemplate(templateId, stageKey))) return NO_JD_FOR_EMAIL;
   return jdForCandidateEmail(pipeline?.mrf_id || pipeline?.rpa_shortlisted_candidates?.mrf_id);
 }
 
@@ -1132,7 +1139,7 @@ export async function scheduleInterviewRound(pipelineId, {
     const isRecorded = Boolean(recording.appliedAt);
     // U02: the JD goes with the candidate's invite; its link (when it cannot
     // be attached) lands inside the branded card.
-    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites);
+    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites, defaults.candidate.templateId);
     const candidateEmail = {
       subject: candidateFinalSubject,
       body: wrapBrandedEmail(
@@ -1166,7 +1173,7 @@ export async function scheduleInterviewRound(pipelineId, {
           attachments: candidateJd.attachments,
         });
         inviteSentAt = new Date();
-        logger.info(`Interview schedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}.`);
+        logger.info(`Interview schedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}${candidateJd.linkKind ? ` (${candidateJd.linkKind})` : ''}.`);
       } catch (err) {
         logger.error(`Interview schedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
       }
@@ -1657,7 +1664,7 @@ export async function rescheduleInterviewRound(pipelineId, {
     const panelFinalSubject = panelSubject ?? defaults.panel.subject;
     const isRecorded = Boolean(recording.appliedAt);
     // U02: the JD goes with the candidate's rescheduled invite too.
-    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites);
+    const candidateJd = await candidateJdFor(pipeline, stageKey, sendsInvites, defaults.candidate.templateId);
     const candidateEmail = {
       subject: candidateFinalSubject,
       body: wrapBrandedEmail(candidateJd.appendLink(ensureRecordingNotice(ensureTeamsBlock(candidateBody ?? defaults.candidate.body, calendar.joinUrl, calendar.meetingId, calendar.passcode), 'candidate', isRecorded)), interviewWrapOpts(candidateFinalSubject)),
@@ -1674,7 +1681,7 @@ export async function rescheduleInterviewRound(pipelineId, {
       try {
         await sendGraphEmail({ sender: config.microsoft.defaultSender, to: candidateTo, subject: candidateEmail.subject, html: candidateEmail.body, attachments: candidateJd.attachments });
         inviteSentAt = new Date();
-        logger.info(`Interview reschedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}.`);
+        logger.info(`Interview reschedule: candidate invite sent for pipeline ${pipelineId} ${stageKey}, JD ${candidateJd.status}${candidateJd.linkKind ? ` (${candidateJd.linkKind})` : ''}.`);
       } catch (err) {
         logger.error(`Interview reschedule: candidate email failed for pipeline ${pipelineId}: ${err.message}`);
       }
