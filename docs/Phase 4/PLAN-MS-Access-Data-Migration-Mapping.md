@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Phase | 4 |
-| Version | v3.2, 2026-11-16. Planning only: no code written, nothing imported, no database touched. All doubts on the Access stage are decided (section 7). |
+| Version | v4.0, 2026-11-17. Stage 1 (MS Access) loaded and verified on staging; production not started. **For the production run, start at section 9, "START HERE".** |
 | Scope rule | One-time import and mapping into the database. The scripts are run once and not reused. No UI work and no export feature are part of this plan. |
 | Order of work | Stage 1 MS Access (current focus) → Stage 2 Excel files → Stage 3 resume files (PDF/DOCX) |
 | Access source | `E:\Recruitment Process Automation\Phase 4\MS-Access\All Data_ - With Daily Updated Data  16th Jan 2025.accdb` |
@@ -376,11 +376,11 @@ Written 17 Nov 2026, after the staging load. Nothing in this section has been ru
 | # | Check | Who |
 |---|---|---|
 | A1 | Chhaya has reviewed staging and signed the staging proof pack (`proof-pack-ms-access-staging-20261117-1001.xlsx`). | Chhaya |
-| A2 | The staging deployment is confirmed, including the legacy label and filter (`SCOPE-Legacy-Source-Label-and-Filter.md`) if it goes to production at the same time. | Pankaj |
+| A2 | The staging deployment is confirmed, including the legacy label and filter (`SCOPE-Legacy-Source-Label-and-Filter.md`). **Done 17 Nov** (Pankaj). Chhaya's UI checks 2–7 of that document's section 9.1 are still open. | Pankaj, Chhaya |
 | A3 | The half-done production deployment of 16 Nov (`PRODUCTION-DEPLOYMENT-PLAN-2026-11-16.md`) is finished, or its remaining steps are ordered together with this run. | Pankaj |
-| A4 | The migration scripts are committed. Today they are untracked files in `backend/scripts/legacy-migration/` and `backend/prisma/ddl/`. | Dev |
+| A4 | **Done 17 Nov.** All migration scripts, both DDL pairs and the label code are committed (commit `da71a03` on branch `pankaj-work-staging-v28`, pushed). Production deploys from a branch that contains this commit. | Pankaj |
 | A5 | Done 17 Nov: the two helper scripts of the staging run are in the repository. `6-run-tables.mjs` runs the tables (dry run → apply → check, stops on the first failure, resumes where it stopped; `--only "<table>"` for the pilot). `3c-check-batch.mjs` is the read-only check of one batch. Both take `--env` and `--expect-db`; the runner also refuses production without `--allow-production` and refuses an env/database pair that does not belong together. Tested on staging read-only: the check passes on the pilot batch, and the runner recognises all 28 tables as done. | Dev |
-| A6 | The work folder `E:\Recruitment Process Automation\Phase 4\MS-Access\_migration-work\` is unchanged since staging. Do **not** re-run the extract or the transform: production must load exactly what staging loaded. Fingerprints (SHA-256, first 16 characters) on 17 Nov: `manifest.json` `4A0A4FC3068597B6`, `transform/candidates.jsonl` `E57E4AFBEBE5B781`, `transform/rows.jsonl` `0735F581ED241570`. | Dev |
+| A6 | The work folder `E:\Recruitment Process Automation\Phase 4\MS-Access\_migration-work\` is unchanged since staging. Do **not** re-run the extract or the transform: production must load exactly what staging loaded. Fingerprints (SHA-256, first 16 characters) on 17 Nov: `manifest.json` `4A0A4FC3068597B6`, `transform/candidates.jsonl` `E57E4AFBEBE5B781`, `transform/rows.jsonl` `0735F581ED241570`. Re-verified after the staging deploy on 17 Nov: unchanged. Check again on production day (command in section 9, "Start here"). | Dev |
 | A7 | A production database backup taken on the day, before step B1. | Pankaj / DBA |
 | A8 | The developer machine can reach `20.244.34.176:5432`, will not sleep, and stays on for about five hours. | Dev |
 
@@ -389,8 +389,9 @@ Written 17 Nov 2026, after the staging load. Nothing in this section has been ru
 | # | Step | Command (run in `backend/`) | Exit check |
 |---|---|---|---|
 | B1 | Provenance table: dry run, then real | `node scripts/run-ddl.mjs --env .env.production --expect-db recruitmentautomationdbProd --file prisma/ddl/2026-11-17-legacy-import-rows.sql --dry-run`, then without `--dry-run` | 5 statements, COMMITTED |
-| B2 | Legacy label columns: dry run, then real | the same with `prisma/ddl/2026-11-17-legacy-source-label.sql` | COMMITTED. It must come **before** the backend build that knows the columns (the DDL file says why). |
-| B3 | `npx prisma generate`, then deploy the backend and frontend build with the label, if it is part of this release | per the deployment plan | ATS up; Search Candidate works |
+| B2 | Legacy label columns: dry run, then real | the same with `prisma/ddl/2026-11-17-legacy-source-label.sql` | `DRY RUN OK`, 7 statements; statement 7 (the backfill) labels **0** candidates because nothing is imported yet. Anything else: stop. Then COMMITTED. It must come **before** the backend build that knows the columns: Prisma reads every `rpa_cv` column, so the new build fails without them. |
+| B2a | Label check | `node scripts/legacy-migration/6-check-labels.mjs --env production --expect-db recruitmentautomationdbProd` | `CHECK OK` |
+| B3 | `npx prisma generate`, then deploy the backend and frontend with the label and filter | per `SCOPE-Legacy-Source-Label-and-Filter.md` section 9.3, steps 4–6 | ATS up; Search Candidate works. The Source filter appears once legacy candidates exist. |
 | B4 | Pilot dry run only, to read the figures | `node scripts/legacy-migration/3-load.mjs --work <work folder> --table "Build & Release" --env production --expect-db recruitmentautomationdbProd --allow-production` | Counts reconcile. Read the "matched existing" figure (see C1). |
 | B5 | Pilot: dry run, apply and check | `node scripts/legacy-migration/6-run-tables.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd --allow-production --only "Build & Release"` | "Build & Release" OK: 84 rows, check passes |
 | B6 | Pilot in the ATS | search two pilot candidates in the production ATS; open one profile | Fields as in Access; label shows |
@@ -398,7 +399,9 @@ Written 17 Nov 2026, after the staging load. Nothing in this section has been ru
 | B8 | Remaining 27 tables, in `RUN_ORDER` | the same command without `--only` (it skips the pilot, already done) | Each table: dry run reconciles, apply equals the dry run, check passes. The runner stops on the first failure; run it again after fixing the cause. Progress and batch ids: `<work folder>/report/production-load-all.json`. |
 | B9 | Missing search entries | `node scripts/legacy-migration/3b-retry-vectors.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd --allow-production` (dry run, then `--apply` if it finds any) | 0 missing |
 | B10 | Production proof pack | `node scripts/legacy-migration/5-proof-pack.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd` (read-only) | Status COMPLETE; 8,843 rows recorded; 0 unaccounted |
-| B11 | Chhaya signs the production pack; HR keeps it | | Signed |
+| B10a | Label check after the import | `node scripts/legacy-migration/6-check-labels.mjs --env production --expect-db recruitmentautomationdbProd` | `CHECK OK`; labelled candidates = new candidates + matched candidates |
+| B11 | Chhaya signs the production pack; HR keeps it. Smoke test the label and filter on production, read-only (scope document 9.1, checks 2–6). | | Signed |
+| B12 | Record the production result in section 9 of this file (date, counts per table from `production-load-all.json`, proof pack file name, who approved) and in section 9.5 of the scope document | Dev | Written |
 
 #### C. What will differ from staging
 
@@ -573,7 +576,7 @@ Decided by Pankaj on 17 Nov:
 | 11 | `Dot Net  March 2024`, 32 shifted rows | Not imported; they stay on the HR list. |
 | 12 | Different values for the same person in two tables | The rule stays: the base row keeps its value. |
 | 13 | Proof for management (R6) | A proof pack per source file, generated from the provenance table after the load (3.13). No separate screen for migrated data. |
-| 14 | Seeing legacy candidates on screen | A label and filter on the existing Search Candidate, as a separate task outside this plan (`SCOPE-Legacy-Source-Label-and-Filter.md`). Not yet approved for build. |
+| 14 | Seeing legacy candidates on screen | A label and filter on the existing Search Candidate, as a separate task outside this plan (`SCOPE-Legacy-Source-Label-and-Filter.md`). Approved, built, and deployed to staging on 17 Nov; goes to production in the same run (3.14 B2–B3). |
 
 No doubt is open on the Access stage. The questions in section 8 are for Chhaya; none of them blocks the pilot table.
 
@@ -589,7 +592,80 @@ No doubt is open on the Access stage. The questions in section 8 are for Chhaya;
 
 ## 9. Handover notes for a new session
 
-This file is the single record of the migration work. Nothing is kept anywhere else. A new session should read this file first and continue from "Next step" below.
+This file is the single record of the migration work. Nothing is kept anywhere else (no session memory). A new session should read this file first and continue from "START HERE" below.
+
+### START HERE: production run in a new session
+
+**State on 17 Nov 2026, end of day.** Stage 1 (MS Access) is complete on **staging** and **not started on production**. The legacy label and filter on Search Candidate are deployed on staging. The production run follows **section 3.14** of this file, step by step. Nothing runs on production without Pankaj's explicit go-ahead for that step.
+
+**Read, in this order:**
+
+1. This block.
+2. Section 3.14, the production runbook (A = before the day, B = the day, C = what differs from staging, D = known issues, E = rollback).
+3. `docs/Phase 4/SCOPE-Legacy-Source-Label-and-Filter.md`, section 9 (the label part of the production run; 3.14 already includes its steps in the right order).
+4. Sections 3.7–3.12 and 7 only if a question about the mapping comes up. All mapping decisions are final; production loads exactly what staging loaded.
+
+**Staging result (`recruitmentautomationdb`, 17 Nov 2026).**
+
+| | Count |
+|---|---|
+| Access rows (28 tables) | 8,843 |
+| Rows recorded in `rpa_legacy_import_rows` | 8,843 (0 unaccounted) |
+| New candidates created | 4,679 |
+| Existing ATS candidates matched (fields filled, nothing overwritten) | 1 |
+| Rows merged into another row of the same person | about 1,200 |
+| Blank rows skipped | about 2,890 |
+| Rows not imported (no valid email, no phone) | 77, listed for HR |
+| Search entries | 4,657 (the 22 others have no email) |
+| Labelled `ms_access` | 4,680 (4,679 "MS Access", 1 "Also in MS Access") |
+| Proof pack | `proof-pack-ms-access-staging-20261117-1001.xlsx`, COMPLETE; spot-check of 140 candidates / 2,280 values, every difference explained |
+| Time | about 5 hours for the 28 tables, mostly search-entry calls |
+
+**Where everything is.**
+
+| What | Where |
+|---|---|
+| Access source file (read-only) | `E:\Recruitment Process Automation\Phase 4\MS-Access\All Data_ - With Daily Updated Data  16th Jan 2025.accdb` |
+| Work folder (personal data, outside the repo, needed for production) | `E:\Recruitment Process Automation\Phase 4\MS-Access\_migration-work\`: `manifest.json`, `raw/`, `transform/` (what is loaded), `report/` (proof packs, HR lists, `staging-load-all.json`), `logs/` |
+| Scripts (run from `backend/`) | `backend/scripts/legacy-migration/`: `1-extract-access.ps1` and `2-transform.mjs` (done, **do not re-run**), `3-load.mjs` (one table), `3b-retry-vectors.mjs` (missing search entries), `3c-check-batch.mjs` (read-only check of one table run), `4-rollback-batch.mjs` (undo one table run), `5-proof-pack.mjs` (read-only proof pack), `6-run-tables.mjs` (runs all tables: dry run → apply → check), `6-check-labels.mjs` (read-only label check), `lib/` (mapping and value rules) |
+| DDL (apply in this order) | `backend/prisma/ddl/2026-11-17-legacy-import-rows.sql`, then `2026-11-17-legacy-source-label.sql`; each has a `.rollback.sql` |
+| ATS code for the label and filter | `backend/src` and `frontend/src` (list in the scope document, section 8.2). This is a separate approved task (decision 14); the import itself edits nothing under `backend/src`. |
+| Commit | Everything above is committed by Pankaj: `da71a03` on `pankaj-work-staging-v28`, pushed. Production deploys from a branch that contains it. |
+| Earlier partial proof pack | `report/proof-pack-ms-access-staging-20261117-0602-INCOMPLETE.xlsx` is not proof; the signed one is `-1001`. |
+| Guarded DDL runner | `backend/scripts/run-ddl.mjs --env <.env file> --expect-db <database> --file <sql> [--dry-run]` |
+| Databases | Same server `20.244.34.176`. Staging `recruitmentautomationdb` (`backend/.env.staging`). Production `recruitmentautomationdbProd` (`backend/.env.production`). |
+
+**Done on staging after the load (17 Nov).** Pankaj deployed the label build to staging and confirmed it. `6-check-labels.mjs --env staging` after the deploy: `CHECK OK` (4,679 + 1 = 4,680 logged candidates, all labelled, none extra). Work-folder fingerprints re-checked: unchanged.
+
+**Production (`recruitmentautomationdbProd`): nothing done yet.** No DDL, no import, label build not deployed.
+
+**Open before production (details in 3.14 A).** Chhaya signs the staging proof pack and finishes the label screen checks 2–7 (scope document 9.1); the 16 Nov production deployment (`PRODUCTION-DEPLOYMENT-PLAN-2026-11-16.md`) is finished or ordered with this run; production backup on the day; Pankaj's go-ahead on the day.
+
+**Order on production day** (commands and exit checks in 3.14 B):
+
+1. Fingerprints (A6), backup (A7), machine ready (A8). Fingerprint check, read-only, expected values in A6:
+   `$w='E:\Recruitment Process Automation\Phase 4\MS-Access\_migration-work'; foreach($f in 'manifest.json','transform\candidates.jsonl','transform\rows.jsonl'){ "$f " + (Get-FileHash (Join-Path $w $f) -Algorithm SHA256).Hash.Substring(0,16) }`
+2. B1 provenance table DDL → B2 label DDL → B2a label check.
+3. B3 deploy backend, then frontend. **Never the backend before B2.**
+4. B4–B6 pilot (`Build & Release`) → **B7 stop for Pankaj's go-ahead**.
+5. B8 the other 27 tables → B9 search entries → B10 proof pack → B10a label check → B11 sign and smoke test → B12 record.
+
+The label goes in before the import on purpose: the loader labels each candidate as it loads ("MS Access" when it creates the candidate, "Also in MS Access" when it matches one HR already has), and `3-load.mjs` refuses to run without the label columns.
+
+**Expected production figures.** 8,843 rows recorded; created + matched = 4,680; 77 rows not imported. Matched will be higher than staging's 1 (3.14 C1) and created lower by the same number. Read the "matched existing" figure in each dry run; if it is far above what Pankaj expects, stop and ask.
+
+**Rules for the production session.**
+
+- One step at a time, each with Pankaj's go-ahead. Dry run before every apply.
+- Never print candidate data in chat or logs; counts only.
+- Do not re-run the extract or the transform. Check the work-folder fingerprints (3.14, A6) first.
+- Do not change anything in `backend/scripts/legacy-migration/` during the run.
+- No email is sent by any of these scripts.
+- `pm2 restart all` is never used; follow the deployment plan for restarts.
+- Every command names the database twice (`--env` and `--expect-db`); writers also need `--allow-production`. Never edit an env file to point elsewhere.
+- Do not upload, merge or edit real candidates on production to test the label.
+- Pankaj commits; the session does not commit.
+- If something fails: 3.14 D (known issues) and E (rollback). Label-only rollback: scope document 9.4.
 
 **Status on 2026-11-17** (this replaces the 16 Nov status below where they differ)
 
@@ -603,7 +679,7 @@ Pankaj gave the go-ahead on 17 Nov: run Stage 1 (MS Access) only, everything on 
 | 5. Pilot on staging | Done 17 Nov. `Build & Release`, batch `e18befba-76f2-439c-ba4c-14f85978c494`: 84 rows, 79 candidates inserted, 5 rows merged in file, 0 matched an existing candidate. |
 | 6. Remaining tables on staging | Done 17 Nov, on Pankaj's go-ahead. All 28 tables loaded, one table per run, each with dry run, apply and read-only check. Totals: 8,843 rows recorded = Access total; 4,679 candidates created; 1 existing ATS candidate matched (so 4,680 people, as the dry run said); 4,657 search entries (the other 22 candidates have no email); 77 rows not imported; 0 rows unaccounted for. |
 | 6a. Proof pack, staging | Done 17 Nov: `proof-pack-ms-access-staging-20261117-1001.xlsx` in the work folder's `report/`, status COMPLETE. Spot-check: 140 candidates, 2,280 values; every difference is explained by a value rule or the name repair. |
-| 7–8 | Not started: review with Chhaya on staging, then production with Pankaj's explicit approval. |
+| 7–8 | Staging deployed and confirmed on 17 Nov (with the label). Not started: Chhaya's review and sign-off, then production with Pankaj's explicit approval. See "Start here" above. |
 
 Events during the staging load: (1) `Dot Net` and `QA`: 4 search entries failed on a database timeout inside the ATS's vector function and were created by the new `3b-retry-vectors.mjs`. (2) One dry run (`Sales Leader`) ended with a Windows crash code before writing anything; it passed when run again. (3) During the run, another session built the legacy label (`SCOPE-Legacy-Source-Label-and-Filter.md`) and changed `3-load.mjs` and `4-rollback-batch.mjs`; Pankaj applied its DDL on staging, and the last four tables were loaded with the changed loader. All 4,680 imported or matched candidates carry `legacy_source = 'ms_access'`.
 
@@ -655,7 +731,7 @@ Findings from the dry run that the plan did not know. The first three need Panka
 
 1. Done on 17 Nov: all 28 tables on staging, staging proof pack generated.
 2. Chhaya reviews staging with the pack's spot-check sheet and signs it.
-3. Production: follow the runbook in 3.14, starting with its preparation list (A1–A8). Nothing runs on production without Pankaj's explicit go-ahead.
+3. Production: follow "Start here" above and the runbook in 3.14. Nothing runs on production without Pankaj's explicit go-ahead.
 
 Batch ids of the staging run are in `<work folder>/report/staging-load-all.json` and `report/load-*.json`. The rollback script has not been run on staging.
 

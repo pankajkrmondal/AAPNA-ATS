@@ -232,14 +232,14 @@ Production database: `recruitmentautomationdbProd`, env file `backend/.env.produ
 
 | # | Check on staging | Who | Done |
 |---|---|---|---|
-| 1 | New backend and frontend deployed to staging | Pankaj | ☐ |
+| 1 | New backend and frontend deployed to staging | Pankaj | ☑ 2026-11-17 (Pankaj) |
 | 2 | Search Candidate shows the chip beside legacy candidates; the candidate view shows it with a tooltip (Access table and import date) | Chhaya | ☐ |
 | 3 | "Source" filter: count under "MS Access data only" equals the `ms_access` total from `6-check-labels.mjs` | Chhaya | ☐ |
 | 4 | "MS Access data only" + "Without legacy data" = "All candidates" | Chhaya | ☐ |
 | 5 | CSV export of a filtered list has the same row count as the screen and a "Legacy source" column | Chhaya | ☐ |
 | 6 | Vendor login: no chip, no Source filter, no "Legacy source" column in its export | Chhaya | ☐ |
 | 7 | HR Upload of a legacy candidate's resume, then Merge in duplicate review: the chip is gone. A manual Edit of another legacy candidate: the chip stays. (Use a synthetic test candidate, or one HR agrees to.) | Chhaya | ☐ |
-| 8 | `node scripts/legacy-migration/6-check-labels.mjs --env staging --expect-db recruitmentautomationdb` ends with `CHECK OK` | Pankaj / Claude | ☐ |
+| 8 | `node scripts/legacy-migration/6-check-labels.mjs --env staging --expect-db recruitmentautomationdb` ends with `CHECK OK` | Pankaj / Claude | ☑ 2026-11-17 after deploy: 4,679 "MS Access", 1 "Also in MS Access", 217 unlabelled; 4,680 logged candidates, all labelled, none extra; CHECK OK |
 
 ### 9.2 Before production
 
