@@ -10,6 +10,7 @@ import { deriveZekoInterviewType } from '../utils/zekoJobType.js';
 import { emitToRole } from '../socket/index.js';
 import { NOTIFY_ROLES } from './notification.service.js';
 import { tracedFetch } from '../utils/externalCall.js';
+import { createAttemptChecker } from '../utils/zekoLinkModel.js';
 import AppError from '../utils/AppError.js';
 
 /**
@@ -804,6 +805,28 @@ export function pickZekoScore(report) {
  * made a no-show look like a candidate who interviewed and failed.
  */
 export const ZEKO_NO_RESULT_STATUSES = Object.freeze(['slotMissed', 'leftInMiddle', 'notAttempted', 'scheduled']);
+
+/**
+ * A live "has this candidate attempted the interview yet?" check, for U08's
+ * expiry reminder. Results are only fetched after a window closes, so the
+ * reminder has to ask Zeko itself while the window is still open.
+ *
+ * Returns a checker for one run: the dashboard cookie is resolved once, on the
+ * first call, and each interview's responses are fetched once however many of
+ * its candidates are checked (the endpoint returns the whole roster).
+ *
+ * The caching rules live in utils/zekoLinkModel.js createAttemptChecker(), unit-tested there.
+ *
+ * @returns {(q: {jobId: string, interviewId: string, candidateEmail: string}) =>
+ *   Promise<{found: boolean, attemptStatus: string|null}>}
+ */
+export function createZekoAttemptChecker() {
+  return createAttemptChecker({
+    getCookie: getDashboardCookieHeader,
+    fetchResponses: fetchInterviewResponses,
+    findEntry: findResultForCandidate,
+  });
+}
 
 /**
  * Builds the deep link to a candidate's report on Zeko.

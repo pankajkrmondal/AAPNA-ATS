@@ -129,23 +129,6 @@ const settingsService = {
   },
 
   /**
-   * The "About AAPNA" text added under keyword-shortlist emails. Admin only.
-   * @returns {Promise} — { text }
-   */
-  getCompanyProfile() {
-    return api.get('/settings/company-profile');
-  },
-
-  /**
-   * Save the "About AAPNA" text. Empty adds nothing to the email.
-   * @param {object} payload — { text }
-   * @returns {Promise}
-   */
-  saveCompanyProfile(payload) {
-    return api.post('/settings/company-profile', payload);
-  },
-
-  /**
    * The active window behind "Active candidates first" in screening (L01).
    * @returns {Promise} — { activeWindowDays, defaultActiveWindowDays, min, max }
    */

@@ -532,3 +532,61 @@ export async function downloadDriveItem({ itemId, webUrl, maxBytes, timeoutMs = 
     resolvedFromUrl,
   };
 }
+
+/**
+ * A view-only "anyone with the link" sharing link for a drive item, so someone
+ * outside the tenant (a candidate) can open it without signing in.
+ *
+ *   POST /users/{owner}/drive/items/{itemId}/createLink  { type: 'view', scope: 'anonymous' }
+ *
+ * Graph returns the app's existing link when one of the same type and scope is
+ * already there, so calling this again for the same file is safe. A tenant
+ * that blocks Anyone links refuses the request; the caller decides what to do
+ * then. A legacy row with only a webUrl is resolved to its item first (as in
+ * downloadDriveItem), and the id is returned for the caller to write back.
+ *
+ * @param {{itemId?: string|null, webUrl?: string|null, timeoutMs?: number}} args
+ * @returns {Promise<{href: string, itemId: string, resolvedFromUrl: boolean, scope: string|null}>}
+ *   `scope` as Graph reports it ('anonymous', 'organization', ...)
+ * @throws {Error} on a missing locator or a Graph failure (detail on `.detail`)
+ */
+export async function createAnonymousViewLink({ itemId, webUrl, timeoutMs = 10_000 } = {}) {
+  if (!itemId && !webUrl) throw new Error('createAnonymousViewLink needs an itemId or a webUrl.');
+
+  const accessToken = await getAccessToken();
+  const owner = config.microsoft.defaultSender;
+  const driveBase = owner
+    ? `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(owner)}/drive`
+    : 'https://graph.microsoft.com/v1.0/drive';
+  const auth = { Authorization: `Bearer ${accessToken}` };
+
+  let resolvedId = itemId || null;
+  let resolvedFromUrl = false;
+  if (!resolvedId) {
+    const metaRes = await tracedFetch('graph', `https://graph.microsoft.com/v1.0/shares/${encodeShareUrl(webUrl)}/driveItem`, {
+      headers: auth,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!metaRes.ok) {
+      throw graphError('Could not resolve the stored file link', metaRes.status, await metaRes.text().catch(() => ''));
+    }
+    resolvedId = (await metaRes.json()).id;
+    resolvedFromUrl = true;
+  }
+
+  const res = await tracedFetch('graph', `${driveBase}/items/${resolvedId}/createLink`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'view', scope: 'anonymous' }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    throw graphError('Could not create a view link for the file', res.status, await res.text().catch(() => ''));
+  }
+  const link = (await res.json().catch(() => null))?.link;
+  const href = link?.webUrl;
+  if (!href) throw graphError('Graph returned no sharing link', res.status, '');
+  // U02b: a tenant policy can hand back an organisation link instead; the
+  // caller checks the scope before calling it an "anyone" link.
+  return { href, itemId: resolvedId, resolvedFromUrl, scope: link?.scope || null };
+}

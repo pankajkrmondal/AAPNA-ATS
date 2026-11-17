@@ -10,9 +10,10 @@
  * a row is missing or inactive, so the two cannot drift apart. Bodies are
  * fragments; wrapBrandedEmail() adds the branded header, sign-off and footer.
  *
- * `earlier_rounds_block` is an HTML fragment the service builds (the rounds so
- * far and what is attached). It is always present, so it is a normal required
- * placeholder.
+ * `earlier_rounds_block` is an HTML fragment the service builds. Since U03 it is
+ * the candidate details table (the rounds so far in it) and then what is
+ * attached; it is placed through this one token so stored rows keep working.
+ * It is always present, so it is a normal required placeholder.
  *
  * No imports on purpose: the seed script loads this file without the app.
  */
@@ -41,7 +42,7 @@ export const INTERVIEW_EMAIL_TEMPLATE_DEFAULTS = Object.freeze({
   [INTERVIEW_EMAIL_TEMPLATE_NAMES.panelPack]: {
     subject: 'Candidate pack: {{candidate_name}} · {{stage_label}}',
     body_html: `<p>Hi {{interviewer_name}},</p>
-<p>Ahead of your <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) on {{interview_when}}, here is what the candidate has done so far.</p>
+<p>Ahead of your <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) on {{interview_when}}, here are the candidate's details and what they have done so far.</p>
 {{earlier_rounds_block}}
 <p style="font-size:13px;color:#6b7280;">Please keep these files confidential and delete them after the interview.</p>`,
     placeholders: ['interviewer_name', 'stage_label', 'candidate_name', 'position', 'interview_when', 'earlier_rounds_block'],

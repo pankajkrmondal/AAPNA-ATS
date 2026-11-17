@@ -219,7 +219,12 @@ const mrfService = {
     return api.put('/settings/mrf-approval/hold-rules', payload).then((res) => res.data);
   },
 
-  /** { active, from, to, note } — Admin / Super Admin. */
+  /** The one person who decides on behalf of the approvers; null clears it. Admin / Super Admin. */
+  saveOnBehalfUser(userId) {
+    return api.put('/settings/mrf-approval/on-behalf-user', { user_id: userId ?? null }).then((res) => res.data);
+  },
+
+  /** { active, from, to, note } — Admin / Super Admin. No longer used by the UI (U06b). */
   saveApproverAbsence(payload) {
     return api.put('/settings/mrf-approval/absence', payload).then((res) => res.data);
   },

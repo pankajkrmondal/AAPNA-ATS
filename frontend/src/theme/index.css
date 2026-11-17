@@ -1825,13 +1825,36 @@ h1, h2, h3, h4, h5, h6,
   text-transform: uppercase;
   color: var(--text-2);
 }
-.screening-filter .screening-any-skill {
+/* U04: All skills | Any skill. Compact so it fits the 22px label row. */
+.screening-filter .screening-skill-mode .ant-segmented-item-label {
+  min-height: 18px;
+  line-height: 18px;
   font-size: 12px;
-  color: var(--text-2);
+  padding: 0 8px;
 }
-.screening-filter .screening-any-skill .ant-checkbox-inner {
-  width: 14px;
-  height: 14px;
+
+/* U04: parsed search terms, a full-width row at the foot of the summary bar. */
+.screening-terms {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  font-size: 12px;
+}
+.screening-terms-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.screening-terms-label {
+  color: var(--text-3);
+  font-weight: 600;
+}
+.screening-terms .screening-term-tag {
+  margin: 0;
+  font-size: 12px;
 }
 
 /* Inline helper/hint text under a field. */

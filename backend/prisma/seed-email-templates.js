@@ -634,12 +634,16 @@ const INTERVIEW_SCHED_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
 /** Interviewer/panel-facing notice.
  *  {{interviewer_name}} resolves to the booking's interviewer, to "all" when more
  *  than one mailbox was invited, and to "there" when no name was captured — see
- *  interviewerGreeting() in services/interviewSchedule.service.js. It is never blank. */
+ *  interviewerGreeting() in services/interviewSchedule.service.js. It is never blank.
+ *  {{candidate_table}} (U03) is the candidate details table (Chhaya's format). The
+ *  Schedule window shows a placeholder there; the table, which carries the
+ *  candidate's email, replaces it at send time. A stored template without the
+ *  token gets the table after its body. */
 const INTERVIEW_SCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
 <p>You are scheduled to take <strong>{{stage_label}}</strong> for <strong>{{candidate_name}}</strong> ({{position}}).</p>
-<p><strong>When:</strong> {{interview_when}}<br/><strong>Duration:</strong> {{duration}} minutes<br/>
-   <strong>Candidate email:</strong> {{candidate_email}}</p>
-{{teams_line}}`;
+<p><strong>When:</strong> {{interview_when}}<br/><strong>Duration:</strong> {{duration}} minutes</p>
+{{teams_line}}
+{{candidate_table}}`;
 
 /** Candidate-facing cancellation notice. */
 const INTERVIEW_CANCEL_CANDIDATE_BODY = `<p>Dear {{candidate_name}},</p>
@@ -666,9 +670,9 @@ const INTERVIEW_RESCHED_PANEL_BODY = `<p>Hi {{interviewer_name}},</p>
 <p>The <strong>{{stage_label}}</strong> interview with <strong>{{candidate_name}}</strong> ({{position}}) has been <strong>rescheduled</strong>.</p>
 <p><strong>Previous time:</strong> <span style="text-decoration:line-through;color:#888;">{{previous_when}}</span><br/>
    <strong>New time:</strong> {{interview_when}}<br/>
-   <strong>Duration:</strong> {{duration}} minutes<br/>
-   <strong>Candidate email:</strong> {{candidate_email}}</p>
-{{teams_line}}`;
+   <strong>Duration:</strong> {{duration}} minutes</p>
+{{teams_line}}
+{{candidate_table}}`;
 
 /** Pre-interview reminder — candidate. Sent by jobs/interviewReminder.js inside
  *  the configured lead-time window. Promoted from a hard-coded body so HR can
@@ -899,7 +903,7 @@ const TEMPLATES = [
       category: 'interview',
       subject: 'Interview panel — {{stage_label}}: {{candidate_name}}',
       body_html: INTERVIEW_SCHED_PANEL_BODY,
-      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line'],
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'interview_when', 'duration', 'teams_line', 'candidate_table'],
       is_active: true,
     },
   },
@@ -943,7 +947,7 @@ const TEMPLATES = [
       category: 'interview',
       subject: 'Interview rescheduled — {{stage_label}}: {{candidate_name}}',
       body_html: INTERVIEW_RESCHED_PANEL_BODY,
-      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line'],
+      placeholders: ['interviewer_name', 'candidate_name', 'candidate_email', 'position', 'stage_label', 'previous_when', 'interview_when', 'duration', 'teams_line', 'candidate_table'],
       is_active: true,
     },
   },

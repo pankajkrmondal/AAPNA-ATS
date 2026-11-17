@@ -37,8 +37,10 @@ import {
   delegateRefusalMessage,
   formatIst,
   holdDateBounds,
+  isDesignee,
   isoDate,
   looksLikeScanner,
+  mayManageHolds,
   normalizeIp,
   parseApproverRoster,
   publicDecision,
@@ -48,7 +50,7 @@ import {
   todayIst,
   validateHoldUntil,
 } from '../utils/mrfApprovalRules.js';
-import { canDecideOnBehalf, roleLabel } from '../config/roles.js';
+import { isAdminTier, roleLabel } from '../config/roles.js';
 import {
   sendMrfPersonalApprovalEmail,
   sendMrfAlreadyActionedEmail,
@@ -57,7 +59,7 @@ import {
   sendMrfHoldNoticeEmail,
   sendMrfOutcomeEmail,
 } from './emailNotification.service.js';
-import { getAbsence, getHoldRules } from './mrfHoldSettings.service.js';
+import { getHoldRules, getOnBehalfUser } from './mrfHoldSettings.service.js';
 
 const ROSTER_SETTING_KEY = 'mrf_approvers';
 const LEGACY_ACTOR_NAME = 'Unknown (shared link)';
@@ -645,8 +647,8 @@ function atsActor(user) {
 }
 
 /**
- * Approve, reject or hold from the ATS on behalf of the approvers (HR Admin
- * Recruiter / Admin / Super Admin, only while the approvers are marked away).
+ * Approve, reject or hold from the ATS on behalf of the approvers: only the
+ * person chosen in Settings › MRF Approval & Hold, at any time (U06b).
  * A reason is always required: the approvers are emailed it.
  *
  * @param {string} id  rpa_mrf id
@@ -661,9 +663,9 @@ export async function decideOnBehalf(id, { action, comments, holdUntil }, user, 
   if (!config.mrfApprovalAudit.enabled) {
     throw new AppError('Personal approval links are switched off (MRF_APPROVAL_AUDIT_ENABLED=false).', 409);
   }
-  const absence = await getAbsence();
-  const allowed = canDecideAsDelegate({ user, absence });
-  if (!allowed.ok) throw new AppError(delegateRefusalMessage(allowed.reason), 403);
+  const designee = await getOnBehalfUser();
+  const allowed = canDecideAsDelegate({ user, designee });
+  if (!allowed.ok) throw new AppError(delegateRefusalMessage(allowed.reason, { designeeName: designee?.name }), 403);
 
   const comment = clampText(comments, MAX_COMMENT_LENGTH);
   if (!comment) throw new AppError('Please give a reason. It is emailed to the approvers.', 400);
@@ -686,7 +688,7 @@ export async function decideOnBehalf(id, { action, comments, holdUntil }, user, 
       onBehalfOf: roster.map((a) => a.email),
       actorRole: user.role,
       actorUserId: user.id ?? null,
-      absence: { from: absence.from, to: absence.to, setByName: absence.setByName || null },
+      designee: { userId: designee.userId, name: designee.name },
     },
   });
   if (result.conflict) await throwConflict(mrf.id);
@@ -717,19 +719,19 @@ async function loadHeldMrf(id) {
   return mrf;
 }
 
-/** Same gate as Settings › Held MRFs: HR Admin Recruiter and above. */
-function assertMayManageHolds(user) {
-  if (!canDecideOnBehalf(user?.role)) {
-    throw new AppError('Only an HR Admin Recruiter, Admin or Super Admin can change or release a hold.', 403);
+/** Same gate as Settings › Held MRFs: HR Admin Recruiter and above, or the designee. */
+async function assertMayManageHolds(user) {
+  const designee = await getOnBehalfUser().catch(() => null);
+  if (!mayManageHolds(user, designee)) {
+    throw new AppError('Only an HR Admin Recruiter, Admin, Super Admin or the person chosen to decide on behalf can change or release a hold.', 403);
   }
 }
 
 /**
- * Move the hold-until date of a held MRF (no absence window needed: it does
- * not decide the MRF). Validated against today's hold rules.
+ * Move the hold-until date of a held MRF (it does not decide the MRF). Validated against today's hold rules.
  */
 export async function changeHoldDate(id, { holdUntil, note }, user) {
-  assertMayManageHolds(user);
+  await assertMayManageHolds(user);
   const mrf = await loadHeldMrf(id);
   const rules = await getHoldRules();
   const check = validateHoldUntil(holdUntil, { maxDays: rules.maxDays });
@@ -850,7 +852,7 @@ export async function releaseHold(mrfId, { trigger = 'date', user = null, fronte
 
 /** "Release now" from the ATS. */
 export async function releaseHoldNow(id, user, { frontendUrl } = {}) {
-  assertMayManageHolds(user);
+  await assertMayManageHolds(user);
   const mrf = await loadHeldMrf(id);
   if (mrf.closed_at || mrf.filled_at) {
     throw new AppError('This requisition is closed. Re-open it first, then release the hold.', 409);
@@ -1208,16 +1210,17 @@ export async function getApprovalTrail(mrfId, { includeClientData = false, user 
   });
   if (!mrf) throw new AppError('Requisition request not found.', 404);
 
-  const [tokens, events, roster, absence, holdRules] = await Promise.all([
+  const [tokens, events, roster, designee, holdRules] = await Promise.all([
     prisma.rpa_mrf_approval_tokens.findMany({ where: { mrf_id: id }, orderBy: { id: 'asc' } }),
     prisma.rpa_mrf_approval_events.findMany({ where: { mrf_id: id }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] }),
     rosterForDisplay(),
-    getAbsence().catch(() => ({ active: false })),
+    getOnBehalfUser().catch(() => null),
     getHoldRules().catch(() => null),
   ]);
   const heldNow = isHeld(mrf.approval_status);
   const untilIso = mrf.held_until ? isoDate(mrf.held_until) : null;
-  const onBehalf = canDecideAsDelegate({ user, absence });
+  const onBehalf = canDecideAsDelegate({ user, designee });
+  const userIsDesignee = isDesignee(user, designee);
   const featureOn = config.mrfHold.delegateDecisionEnabled && config.mrfApprovalAudit.enabled;
   // Names were copied when the request went out; show today's roster names
   // (N32). The stored rows, and the append-only events, stay as recorded.
@@ -1246,21 +1249,18 @@ export async function getApprovalTrail(mrfId, { includeClientData = false, user 
       hold_count: mrf.hold_count ?? 0,
       released_at_ist: mrf.hold_released_at ? formatIst(mrf.hold_released_at) : null,
       closed: Boolean(mrf.closed_at || mrf.filled_at),
-      can_manage: heldNow && canDecideOnBehalf(user?.role),
+      can_manage: heldNow && mayManageHolds(user, designee),
       enabled: config.mrfHold.enabled,
       config: holdRules ? holdDateBounds(holdRules) : null,
     },
     on_behalf: {
-      // Shown only to roles that could ever use it; the reason explains a
-      // disabled panel ("only while the approvers are marked away").
-      visible: featureOn && canDecideOnBehalf(user?.role) && isOpenApprovalStatus(mrf.approval_status),
+      // Shown to the designee, and to Admins (locked unless they are the
+      // designee) so they see who decides; the reason explains a locked panel.
+      visible: featureOn && isOpenApprovalStatus(mrf.approval_status) && (userIsDesignee || isAdminTier(user?.role)),
       can_decide: featureOn && onBehalf.ok && isOpenApprovalStatus(mrf.approval_status),
       reason: onBehalf.ok ? null : onBehalf.reason,
-      message: onBehalf.ok ? null : delegateRefusalMessage(onBehalf.reason),
-      absence: absence?.active ? {
-        from: absence.from, to: absence.to, from_label: dateLabel(absence.from), to_label: dateLabel(absence.to),
-        note: absence.note, set_by_name: absence.setByName,
-      } : null,
+      message: onBehalf.ok ? null : delegateRefusalMessage(onBehalf.reason, { designeeName: designee?.name }),
+      designee: designee ? { name: designee.name, role_label: designee.roleLabel, active: designee.isActive } : null,
       hold_enabled: config.mrfHold.enabled,
     },
     approvers: tokens.map((t) => ({

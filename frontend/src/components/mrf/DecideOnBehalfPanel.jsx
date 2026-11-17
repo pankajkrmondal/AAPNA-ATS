@@ -2,21 +2,46 @@
  * DecideOnBehalfPanel — approve / reject / hold an MRF from the ATS on behalf
  * of the approvers (Abhijit and Sanghamitra), shown in the MRF details modal.
  *
- * Visible to HR Admin Recruiter, Admin and Super Admin on an MRF still awaiting
- * a decision; usable only while the approvers are marked away (Settings › MRF
- * Approval & Hold). Outside a window it stays visible but locked, with the
- * reason, so nobody wonders where the buttons went. The server decides; this
- * panel only mirrors what it allows (`on_behalf` from the approval trail).
+ * Usable only by the one person chosen in Settings › MRF Approval & Hold, any
+ * time an MRF is awaiting a decision (U06b). Admins who are not that person see
+ * it locked, with the reason, so they know who decides. The server decides;
+ * this panel only mirrors what it allows (`on_behalf` from the approval trail).
  *
  * Plan: docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §6.3, §8
  */
 import { useState } from 'react';
-import { Alert, Button, Checkbox, Input, Segmented, Tag, Typography, message } from 'antd';
+import { Button, Checkbox, Input, Segmented, Tag, Typography, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, LockOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import mrfService from '../../services/mrfService';
+import useAuth from '../../hooks/useAuth';
 import HoldDateField from './HoldDateField';
 
 const { Text } = Typography;
+
+const isAdminTier = (role) => ['admin', 'superadmin'].includes(String(role || '').toLowerCase());
+
+/**
+ * Why the panel is locked. Only an Admin or Super Admin chooses the person
+ * (mrfHoldSettings.controller), so they are pointed at Settings. Other refusals
+ * keep the server's words.
+ */
+function lockedReason(onBehalf, role) {
+  const name = onBehalf?.designee?.name;
+  switch (onBehalf?.reason) {
+    case 'no_designee':
+      return isAdminTier(role)
+        ? 'no one is set to decide on behalf. Choose the person in Settings › MRF Approval & Hold.'
+        : 'no one is set to decide on behalf. An Admin can choose the person in Settings › MRF Approval & Hold.';
+    case 'not_designated':
+      return name
+        ? `only ${name} can decide on behalf of the approvers.${isAdminTier(role) ? ' You can change the person in Settings › MRF Approval & Hold.' : ''}`
+        : (onBehalf?.message || 'not available to you.');
+    case 'designee_inactive':
+      return `${name || 'the person set to decide on behalf'} is no longer active. ${isAdminTier(role) ? 'Choose another person' : 'An Admin can choose another person'} in Settings › MRF Approval & Hold.`;
+    default:
+      return onBehalf?.message || 'not available right now.';
+  }
+}
 
 const ACTION_COPY = {
   approve: { button: 'Approve on behalf', color: '#5b6e1e', icon: <CheckCircleOutlined /> },
@@ -27,12 +52,13 @@ const ACTION_COPY = {
 /**
  * @param {{
  *   mrfId: string,
- *   onBehalf: { can_decide: boolean, message?: string|null, absence?: object|null, hold_enabled: boolean },
+ *   onBehalf: { can_decide: boolean, reason?: string|null, message?: string|null, designee?: { name: string }|null, hold_enabled: boolean },
  *   holdConfig?: object|null,
  *   onDone: () => void,
  * }} props
  */
 export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDone }) {
+  const { user } = useAuth();
   const [action, setAction] = useState('approve');
   const [reason, setReason] = useState('');
   const [holdUntil, setHoldUntil] = useState(holdConfig?.defaultDate || '');
@@ -40,7 +66,6 @@ export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDon
   const [saving, setSaving] = useState(false);
 
   const locked = !onBehalf?.can_decide;
-  const absence = onBehalf?.absence;
   const canHold = Boolean(onBehalf?.hold_enabled && holdConfig);
   const copy = ACTION_COPY[action];
   const ready = reason.trim() && confirmed && (action !== 'hold' || holdUntil);
@@ -70,7 +95,7 @@ export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDon
       <div style={{ border: '1px dashed var(--border-light, #c9ccbe)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'center' }}>
         <LockOutlined style={{ color: 'var(--text-3)' }} aria-hidden="true" />
         <Text type="secondary" style={{ fontSize: 13 }}>
-          <b>Decide on behalf of approvers</b> — {onBehalf?.message || 'not available right now.'}
+          <b>Decide on behalf of approvers</b> — {lockedReason(onBehalf, user?.role)}
         </Text>
       </div>
     );
@@ -82,18 +107,8 @@ export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDon
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#4b5d17' }}>
           Decide on behalf of approvers
         </div>
-        <Tag color="purple" style={{ margin: 0 }}>HR Admin Recruiter · Admin · Super Admin</Tag>
+        <Tag color="purple" style={{ margin: 0 }}>Chosen in Settings</Tag>
       </div>
-
-      {absence && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12, borderRadius: 8 }}
-          message={<>The approvers are marked away <b>{absence.from_label} – {absence.to_label}</b>{absence.note ? <> (&ldquo;{absence.note}&rdquo;)</> : null}.</>}
-          description={absence.set_by_name ? `Set by ${absence.set_by_name}. Your decision is recorded under your name and emailed to both approvers straight away.` : 'Your decision is recorded under your name and emailed to both approvers straight away.'}
-        />
-      )}
 
       <Segmented
         block
@@ -108,7 +123,7 @@ export default function DecideOnBehalfPanel({ mrfId, onBehalf, holdConfig, onDon
       />
 
       {action === 'hold' && (
-        <div style={{ border: '1px solid #9db6dd', background: '#f6f9fe', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+        <div style={{ border: '1px solid var(--info-border)', background: 'var(--info-bg)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
           <HoldDateField value={holdUntil} onChange={setHoldUntil} config={holdConfig} id="on-behalf-hold-until" />
         </div>
       )}

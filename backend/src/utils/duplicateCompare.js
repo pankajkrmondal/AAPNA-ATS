@@ -65,7 +65,7 @@ export const COMPARE_FIELDS = Object.freeze([
   ['PreferredShift', 'Preferred shift', 'Other', 'text'],
   ['ReasonForJobChange', 'Reason for job change', 'Other', 'text'],
   ['WillingToTakeOnlineTest', 'Willing to take an online test', 'Other', 'text'],
-  ['HasLaptopForInitialDays', 'Has a laptop for the first days', 'Other', 'text'],
+  ['HasLaptopForInitialDays', 'Personal laptop (8 GB RAM) for initial days?', 'Other', 'text'],
   ['JobSource', 'Job source', 'Other', 'text'],
   ['RecruiterInfoAAPNA', 'Recruiter', 'Other', 'text'],
 ]);

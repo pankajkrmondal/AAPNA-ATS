@@ -50,11 +50,15 @@ import {
 } from '../utils/dossierRedaction.js';
 import {
   applyAttachments, applyRecordingShareLinks, applyZekoExtras, describeIncludedCategories,
-  describeJourneyStatus, extensionFor,
+  describeJourneyStatus, extensionFor, interviewerNameFor,
 } from '../utils/dossierModel.js';
 // Phase 4 — the no-login recording links the pack can carry (plan §6.5).
 import { mintShareLinks } from './recordingShare.service.js';
 import { shareUrlFor } from '../utils/recordingShareModel.js';
+// U01: one rule for "is this a resume?", shared with the panel pack and the drawer.
+import { RESUME_STATUS, checkResumeBytes, resumeStatus } from '../utils/resumeCheck.js';
+
+const NOT_A_RESUME_NOTE = 'The file on record for this candidate is not a resume (pdf, doc or docx), so it was left out.';
 
 // Re-exported so the controller keeps a single dossier import, and so callers do
 // not have to know that these are pure helpers living elsewhere. They are
@@ -551,6 +555,7 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // Bookings a re-done stage replaced (L02-C). Their cards are an EARLIER
   // attempt: printed as such, and left out of the consolidated feedback.
   const supersededScheduleIds = new Set(schedules.filter((s) => s.superseded_at).map((s) => String(s.id)));
+  const scheduleById = new Map(schedules.map((s) => [String(s.id), s]));
   // `locator` holds the ids parsed out of Zeko's login-walled report URL and is
   // dropped here, at the boundary: from this line on there is no model carrying
   // a URL an outsider cannot open. collectZekoShareLinks() re-derives it.
@@ -669,6 +674,8 @@ export async function buildDossierModel(pipelineId, options = {}) {
   // applyRecordingShareLinks() adds share_url later, on a download only, so the
   // preview cannot mint a public URL by being looked at.
   const recordingRows = recordings.map(serializeRecording).map((r) => ({
+    // U03: the panel invite's table matches a recording to its round by key.
+    stage_key: r.stage_key,
     stage_label: stageLabel(r.stage_key),
     recorded_start_at: r.recorded_start_at,
     duration_seconds: r.duration_seconds,
@@ -712,6 +719,18 @@ export async function buildDossierModel(pipelineId, options = {}) {
       .map(([field, label]) => ({ field, label, value: mrf ? (mrf[field] ?? null) : null })),
     stages,
     consolidated_feedback: current.consolidated?.summary || null,
+    // U03: the same rounds, one line per interviewer WITH their name, for the
+    // panel packs and the invite's candidate table. The name is the booking's
+    // interviewer when that booking had this one mailbox; otherwise the
+    // scorecard's own address, as the scorecards section already prints it.
+    consolidated_by_interviewer: reportRounds.filter((r) => !isEarlierAttempt(r)).map((r) => ({
+      stage_key: r.stage_key,
+      round: r.stage_label,
+      interviewer: interviewerNameFor(r, scheduleById) || r.recipient_email || null,
+      recommendation: r.recommendation || null,
+      average: r.avg_score ?? null,
+      comments: r.comments || null,
+    })),
     scorecard_overall: scorecardReport?.overall
       ? {
         rounds_scored: current.count,
@@ -899,7 +918,8 @@ function attachmentFailureNote(err) {
  * @param {number|string} pipelineId
  * @param {{ includeResume?: boolean, includeDocuments?: boolean, candidateName?: string }} options
  * @returns {Promise<{files: Array<{name: string, buffer: Buffer}>, notes: object,
- *   failed: string[], degraded: boolean, documentCount: number, totalBytes: number}>}
+ *   failed: string[], degraded: boolean, documentCount: number, totalBytes: number,
+ *   resumeStatus: 'attached'|'missing'|'not_a_resume'|'failed'|'too_large'|'not_requested'}>}
  */
 export async function collectAttachments(pipelineId, options = {}) {
   const { includeResume = true, includeDocuments = false, candidateName = '' } = options;
@@ -923,12 +943,20 @@ export async function collectAttachments(pipelineId, options = {}) {
   let documentCount = 0;
   let totalBytes = 0;
   const who = slugFor(candidateName);
+  // U01: what happened to each file — attached | failed | too_large |
+  // not_a_resume. The panel pack words its invite from the resume's.
+  const outcomes = {};
 
-  /** Shared fetch-and-record, so resume and documents degrade identically. */
-  const fetchOne = async ({ key, itemId, webUrl, label, fileName, persist }) => {
+  /**
+   * Shared fetch-and-record, so resume and documents degrade identically.
+   * `verify(buffer)` may refuse a downloaded file ({ok:false, note}) or fix its
+   * extension ({ok:true, ext}); only the resume uses it.
+   */
+  const fetchOne = async ({ key, itemId, webUrl, label, fileName, persist, verify = null }) => {
     if (Date.now() > deadline) {
       notes[key] = 'Could not be attached in time — please ask the recruiter for it.';
       failed.add(key);
+      outcomes[key] = 'failed';
       degraded = true;
       return null;
     }
@@ -942,6 +970,7 @@ export async function collectAttachments(pipelineId, options = {}) {
     if (!itemId && !/^https?:/i.test(String(webUrl))) {
       notes[key] = 'The file was never stored in OneDrive, so it cannot be attached.';
       failed.add(key);
+      outcomes[key] = 'failed';
       degraded = true;
       return null;
     }
@@ -957,14 +986,27 @@ export async function collectAttachments(pipelineId, options = {}) {
       if (totalBytes + got.buffer.length > maxPackBytes) {
         notes[key] = 'Left out to keep the pack small enough to email — ask the recruiter for it.';
         failed.add(key);
+        outcomes[key] = 'too_large';
         degraded = true;
         return null;
       }
 
-      const ext = extensionFor({ name: got.name, url: fileName, contentType: got.contentType });
+      let ext = extensionFor({ name: got.name, url: fileName, contentType: got.contentType });
+      if (verify) {
+        const verdict = verify(got.buffer);
+        if (!verdict.ok) {
+          // Not a failure to retry: the stored file is simply not the thing.
+          notes[key] = verdict.note;
+          outcomes[key] = 'not_a_resume';
+          logger.warn(`Dossier: the stored ${key} for pipeline ${pipelineId} is not a pdf/doc/docx (bytes say "${verdict.ext || 'unknown'}"), so it was left out.`);
+          return null;
+        }
+        if (verdict.ext) ext = verdict.ext;
+      }
       const name = `attachments/${label}${ext}`;
       files.push({ name, buffer: got.buffer });
       totalBytes += got.buffer.length;
+      outcomes[key] = 'attached';
 
       // Lazy backfill: a legacy row cost us an extra round trip to resolve its
       // id, so write it back and never pay that again. Best-effort — a failed
@@ -978,6 +1020,7 @@ export async function collectAttachments(pipelineId, options = {}) {
     } catch (err) {
       notes[key] = attachmentFailureNote(err);
       failed.add(key);
+      outcomes[key] = /attachment limit/i.test(String(err?.message)) ? 'too_large' : 'failed';
       degraded = true;
       // The DETAIL goes to the log, never to the pack — see attachmentFailureNote.
       logger.warn(
@@ -993,12 +1036,16 @@ export async function collectAttachments(pipelineId, options = {}) {
   });
 
   // --- The resume ----------------------------------------------------------
+  // U01: only a real resume travels (resumeCheck.js). An Excel-upload row used
+  // to carry the whole workbook as its "resume".
+  let resumeOutcome = includeResume ? RESUME_STATUS.MISSING : 'not_requested';
   if (includeResume && pipeline?.cv_id) {
     const cv = await prisma.rpa_cv.findUnique({
       where: { id: pipeline.cv_id },
-      select: { id: true, cvFileUrl: true, cv_file_item_id: true },
+      select: { id: true, cvFileUrl: true, cv_file_item_id: true, missingData: true },
     });
-    if (cv?.cvFileUrl || cv?.cv_file_item_id) {
+    const stored = resumeStatus(cv);
+    if (stored === RESUME_STATUS.OK) {
       await fetchOne({
         key: 'resume',
         itemId: cv.cv_file_item_id,
@@ -1006,7 +1053,17 @@ export async function collectAttachments(pipelineId, options = {}) {
         label: `01_Resume_${who}`,
         fileName: cv.cvFileUrl,
         persist: (id) => prisma.rpa_cv.update({ where: { id: cv.id }, data: { cv_file_item_id: id } }),
+        verify: (buffer) => {
+          const verdict = checkResumeBytes(buffer);
+          return verdict.ok
+            ? verdict
+            : { ...verdict, note: NOT_A_RESUME_NOTE };
+        },
       });
+      resumeOutcome = outcomes.resume || 'failed';
+    } else if (stored === RESUME_STATUS.NOT_A_RESUME) {
+      notes.resume = NOT_A_RESUME_NOTE;
+      resumeOutcome = RESUME_STATUS.NOT_A_RESUME;
     } else {
       notes.resume = 'No resume is on file for this candidate in the ATS.';
     }
@@ -1040,6 +1097,8 @@ export async function collectAttachments(pipelineId, options = {}) {
 
   return {
     files, notes, failed: [...failed], degraded, documentCount, totalBytes,
+    // U01: attached | missing | not_a_resume | failed | too_large | not_requested
+    resumeStatus: resumeOutcome,
   };
 }
 

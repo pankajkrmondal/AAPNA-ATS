@@ -1,6 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEarlierRoundsBlock, earlierRoundLines, hasEarlierResults } from '../../utils/panelPackBlock.js';
+import {
+  buildEarlierRoundsBlock, buildPackNotes, earlierRoundLines, hasEarlierResults, packVariantFor,
+} from '../../utils/panelPackBlock.js';
 import {
   INTERVIEW_EMAIL_TEMPLATE_DEFAULTS, INTERVIEW_EMAIL_TEMPLATE_NAMES,
 } from '../../services/interviewEmailTemplates.js';
@@ -77,6 +79,22 @@ describe('panel pack: the block in the invite', () => {
     assert.match(html, /The CV was too large to attach/);
   });
 
+  test('U01: each reason a CV did not travel has its own line, and nothing for an attached one', () => {
+    const say = (cv, extra = {}) => buildEarlierRoundsBlock({ lines: [], summary: { report: false, jd: 'attached', cv, ...extra } });
+    assert.match(say('missing'), /No CV is on file for this candidate yet\./);
+    assert.match(say('not_a_resume'), /The CV on record is not in a format we can share\. Reply to this email/);
+    assert.match(say('failed'), /The CV could not be attached this time\. Reply to this email/);
+    assert.match(say('too_large'), /The CV was too large to attach\./);
+    assert.ok(!/No CV|not in a format|could not be attached/.test(say('attached')));
+    // Never the internal reason: the panel is not told it was a spreadsheet.
+    assert.ok(!/spreadsheet|xlsx|excel/i.test(say('not_a_resume')));
+  });
+
+  test('U01: the profile summary sent in place of the CV is named as such', () => {
+    const html = buildEarlierRoundsBlock({ lines: [], summary: { report: false, profile: true, jd: 'attached', cv: 'missing' } });
+    assert.match(html, /Attached: the job description, the candidate profile summary \(in place of the CV\)\./);
+  });
+
   test('values are escaped', () => {
     const html = buildEarlierRoundsBlock({ lines: [{ round: '<b>x</b>', text: 'a & b', recordingUrl: null }], summary: {} });
     assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;') && html.includes('a &amp; b'));
@@ -100,5 +118,25 @@ describe('L14 email templates', () => {
       assert.ok(!/<html|<!doctype|<body/i.test(t.body_html));
       assert.ok(!/regards/i.test(t.body_html));
     }
+  });
+});
+
+describe('U03: the pack per round', () => {
+  test('tech rounds get the feedback-only cut, HR and CEO the leadership one, the rest the full dossier', () => {
+    for (const k of ['tech1', 'tech2', 'tech3']) assert.equal(packVariantFor(k), 'panel_tech');
+    for (const k of ['hr_round', 'ceo']) assert.equal(packVariantFor(k), 'panel_leadership');
+    for (const k of ['client', null, undefined, 'documents']) assert.equal(packVariantFor(k), 'download');
+  });
+
+  test('the notes under the table say what is attached, without the rounds', () => {
+    const html = buildPackNotes({ summary: { report: false, jd: 'link', cv: 'missing' }, jdLink: 'https://x.example/jd', recordingLinks: true });
+    assert.ok(!/Earlier rounds/.test(html));
+    assert.match(html, /open the JD/);
+    assert.match(html, /No CV is on file/);
+    assert.match(html, /Recording links open without signing in/);
+    assert.match(buildPackNotes({ summary: { report: false, jd: 'none', cv: 'attached' } }), /Attached: the candidate's CV./);
+    assert.equal(buildPackNotes({ summary: { report: false, jd: 'none', cv: 'unknown' } }), '');
+    assert.match(buildPackNotes({ summary: { report: true }, variant: 'panel_tech' }), /the interviewers' feedback so far/);
+    assert.match(buildPackNotes({ summary: { report: true } }), /every earlier round, with the scorecards/);
   });
 });

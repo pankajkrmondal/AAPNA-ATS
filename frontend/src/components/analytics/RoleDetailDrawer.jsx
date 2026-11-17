@@ -10,7 +10,12 @@
  * funnel since opened, upcoming interviews, what happened, and the
  * open-to-close journey. Every number opens its candidates (W1).
  *
- * Data: GET /api/pipeline/analytics/positions/:mrfId?from&to
+ * U10c: a Responded section, Open Positions › Responded for this position
+ * only, with the same own dates (Yesterday by default, Today, Last 7 days,
+ * custom). It starts on the dates the Responded view had, when opened from it.
+ *
+ * Data: GET /api/pipeline/analytics/positions/:mrfId?from&to, and
+ * GET /api/pipeline/analytics/completed-forms?mrf (RespondedByJdPanel)
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -32,6 +37,9 @@ import {
   ACCENT, Delta, HealthDot, NowBadge, SectionTitle, SOURCE_COLOR, SOURCE_KEYS, SOURCE_LABEL_FALLBACK,
   candidateLink, rangeParams,
 } from './openPositionsShared';
+import RespondedByJdPanel from './RespondedByJdPanel';
+
+const YESTERDAY = { preset: 'yesterday', from: null, to: null };
 
 const { Text } = Typography;
 
@@ -165,13 +173,22 @@ function SourceChart({ series, sourceLabels: labels }) {
 
 /**
  * @param {{ open: boolean, mrfId: number|null, range: object, onClose: () => void,
- *   onOpenMetric: (mrfId: number, metric: string) => void }} props  range: the page's range state
+ *   onOpenMetric: (mrfId: number, metric: string) => void, respondedRange?: object }} props
+ *   range: the page's range state; respondedRange: the Responded view's dates (from the URL), where
+ *   this position's Responded section starts
  */
-export default function RoleDetailDrawer({ open, mrfId, range, onClose, onOpenMetric }) {
+export default function RoleDetailDrawer({ open, mrfId, range, onClose, onOpenMetric, respondedRange = YESTERDAY }) {
   const navigate = useNavigate();
   const [state, setState] = useState({ loading: false, error: false, data: null });
+  const [responded, setResponded] = useState(respondedRange);
   const params = rangeParams(range);
   const paramsKey = JSON.stringify(params);
+
+  // Each opened position starts on the Responded view's dates (yesterday by default).
+  useEffect(() => {
+    if (open && mrfId) setResponded(respondedRange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mrfId]);
 
   useEffect(() => {
     if (!open || !mrfId) return undefined;
@@ -308,6 +325,14 @@ export default function RoleDetailDrawer({ open, mrfId, range, onClose, onOpenMe
                 />
               );
             })()}
+          </Card>
+
+          <Card
+            className="panel-shell"
+            title={<SectionTitle accent={ACCENT.waiting} hint="own dates · yesterday by default (India time)">Responded</SectionTitle>}
+            data-testid="role-responded"
+          >
+            <RespondedByJdPanel mrfId={mrfId} value={responded} onChange={setResponded} />
           </Card>
 
           {d.series?.length ? <SourceChart series={d.series} sourceLabels={d.source_labels} /> : null}

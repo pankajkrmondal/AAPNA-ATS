@@ -5,6 +5,122 @@ Newest entries first. **Every UI change should be recorded here.**
 
 ---
 
+## 2026-11-13: U04b Card skill meter counts every matched skill
+
+Write-up: [U04b](../docs/changelog/CHANGES-2026-11-13-U04b-keyword-ranking.md).
+
+- **`CandidateScreening.jsx` `JdSkillMatch` (card variant):** the "n/m" meter and its chips now include a skill found only in the declared skills. That chip reads "listed" instead of ×N. The ×N values now come from real resume mentions (backend). The drawer and tooltips are unchanged.
+
+## 2026-11-13: U02c About AAPNA moves into the Shortlist template
+
+Write-up: [U02c](../docs/changelog/CHANGES-2026-11-13-U02c-about-aapna-in-template.md).
+
+- **Settings:** the "Candidate emails: About AAPNA" card (`components/settings/CompanyProfileCard.jsx`) is removed. The text is edited in Email Management › Shortlist, like the rest of the email.
+
+## 2026-11-13: U10c Responded per open position
+
+Write-up: [U10c](../docs/changelog/CHANGES-2026-11-13-U10c-responded-per-position.md).
+
+- **Role view (`components/analytics/RoleDetailDrawer.jsx`):** a "Responded" card after Needs attention, with the Responded view's own dates (Yesterday by default, Today, Last 7 days, custom) for this position only.
+- **`RespondedByJdPanel.jsx`:** an `mrfId` prop (one position, a plain candidate list) and an `onOpenRole` prop (a "Role view →" link on each JD row, which does not expand the row).
+
+---
+
+## 2026-11-12: U10b Responded view inside Open Positions (Completed Forms tab removed)
+
+Write-up: [U10b](../docs/changelog/CHANGES-2026-11-12-U10b-responded-view.md).
+
+- **Open Positions (`components/analytics/PositionsTab.jsx`):** a "Board | Responded" switch next to Open/Closed/All. The Responded tile is clickable ("See who →") and opens the view for the page's dates. Export shows on Board only.
+- **Responded view (`components/analytics/RespondedByJdPanel.jsx`, moved from `CompletedFormsTab.jsx`):** who responded by JD, with the column's count per JD. It has its own Yesterday / Today / Last 7 days / custom dates and follows Open/Closed/All. Each candidate shows when and how they responded and links to the profile.
+- **Analytics (`pages/Analytics.jsx`):** the Completed Forms tab is removed. The URL is `?tab=open&view=responded&…`; old `?tab=completed-forms…` links land there.
+
+---
+
+## 2026-11-12: U06b one person decides on behalf of the MRF approvers
+
+Write-up: [U06b](../docs/changelog/CHANGES-2026-11-12-U06b-on-behalf-designee.md).
+
+- **Settings › MRF Approval & Hold (`components/settings/MrfApprovalHoldSettings.jsx`):** "Who can decide on behalf" is now a searchable picker plus Save (Admin / Super Admin; others see it disabled). The "Approver absence" section is removed.
+- **Decide on behalf panel (`components/mrf/DecideOnBehalfPanel.jsx`):** the away-window banner is gone; the tag reads "Chosen in Settings". Locked for anyone but that person, with "Only <name> can decide…" or "No one is set…".
+
+---
+
+## 2026-11-12: U02b "Attach the JD" switch and {{jd_link}} on Email Templates
+
+Write-up: [U02b](../docs/changelog/CHANGES-2026-11-12-U02b-template-jd-switch.md).
+
+- **Email Templates editor header (`pages/EmailManagement.jsx`):** an "Attach the JD" switch on templates that declare `jd_link`. Empty shows the default rule with a "Default" tag; "Use default" resets it. Save sends `attach_jd`. The new `{{jd_link}}` chip has a note under the editor and a sample JD card in Live Preview.
+- **Evalground invite window (`AssessmentInviteModal.jsx`):** starts from the stored "Evalground Assessment Invite" template when there is one, else the old copy. It says when the switch is off, and when the card goes where `{{jd_link}}` is.
+- **Shortlist dialog preview (`DecisionEmailModal.jsx`):** `{{jd_link}}` shows as a dashed "JD card goes here" box.
+
+## 2026-11-11: U10 Completed forms tab on Recruitment Analytics
+
+Write-up: [U10](../docs/changelog/CHANGES-2026-11-11-U10-completed-forms.md).
+
+- **New "Completed Forms" tab (second tab, `components/analytics/CompletedFormsTab.jsx`):** the missing-details forms completed in a range, one row per JD with its count, expanding to the candidates (each with a **Profile →** link). It has its own presets (Yesterday by default, Today, Last 7 days) plus custom dates, and keeps them in the URL (`?tab=completed-forms&range=` or `&from&to`). The 09:00 bell note opens it on that day.
+- **Analytics tabs now follow the URL:** a link with `?tab=` switches the tab even when the page is already open, and a tab click writes `tab` back to the URL. At 1366 px the sixth tab moves "Email Delivery" into the "…" overflow menu.
+
+## 2026-11-11: U08 Optional phone page before a Zeko interview
+
+Write-up: [U08](../docs/changelog/CHANGES-2026-11-11-U08-zeko-phone-reminder.md).
+
+- **New public page `/zeko-start/:token` (`pages/ZekoStart.jsx`, no login, always light):** shown when a candidate opens the Zeko link in our email and we hold no phone for them. It reads "Add a phone number so our team can reach you (optional)", with **Continue to Zeko** (saves the number, then opens Zeko) and **Skip** (opens Zeko). An expired, cancelled or completed link shows a short explanation instead. The buttons stack at phone width. `/zeko-start/` is added to the public pages in `services/api.js`, so a stale session never redirects the candidate to login.
+
+## 2026-11-11: U09 Laptop question wording
+
+Write-up: [U09](../docs/changelog/CHANGES-2026-11-11-U09-laptop-question.md).
+
+- **Candidate application form:** the laptop question reads "Do you have a personal laptop (with 8 GB RAM) that you can use for the initial few days?". Staff screens (Candidate Detail card, Edit candidate, duplicate compare) show "Personal laptop (8 GB RAM) for initial days?" in their own casing. The Screening panel's short "Has Laptop" label is unchanged.
+
+## 2026-11-10: U07 Move to another JD emails the new JD by default
+
+Write-up: [U07](../docs/changelog/CHANGES-2026-11-10-U07-move-jd-earlier-rounds.md).
+
+- **Pipeline drawer › Move to another JD:** "Email the candidate about the new role, with its JD attached" is ticked when the window opens, and again each time it reopens. The hint now reads "On by default; untick to move without emailing. The vendor is not emailed either way." Nothing else on the window changes.
+
+## 2026-11-10: U06 Locked "Decide on behalf" panel says who can unlock it
+
+Write-up: [U06](../docs/changelog/CHANGES-2026-11-10-U06-mrf-approve-chhaya.md).
+
+- **MRF details › Approval trail, locked "Decide on behalf of approvers" panel:** when no absence window covers today, the text says the approvers aren't marked away. An HR Admin Recruiter is told to ask an Admin or Super Admin to mark them away in Settings › MRF Approval & Hold. An Admin or Super Admin is told to do it there. The layout is unchanged.
+
+## 2026-11-10: U05 Other emails and phone numbers in Edit candidate
+
+Write-up: [U05](../docs/changelog/CHANGES-2026-11-10-U05-secondary-contacts.md).
+
+- **Edit candidate (Search Candidate and Candidate Detail):** the email stays read-only and is labelled as the primary one. The single phone input is replaced by two tag inputs, **Other emails** and **Phone numbers** (new `components/candidates/ContactTagsSelect.jsx`). A value is added on Enter, on a comma, or when the box loses focus. Each value is checked: 10 digits for a phone, a valid address for an email. Candidate Detail sends contacts only when they changed.
+
+## 2026-11-10: U04 Commas in keyword skills and location
+
+Write-up: [U04](../docs/changelog/CHANGES-2026-11-10-U04-keyword-commas.md).
+
+- **Keyword filtering, Skills:** the "Match any one skill" checkbox is replaced by a small `Segmented` control, **All skills | Any skill**, beside the Skills label (default All; Clear resets it). Test id `skill-match-mode`.
+- **Keyword summary bar:** a new full-width row at its foot shows the parsed terms as `Tag`s, "Skills (all|any): …" and "Location (any): …" (`.screening-terms`, test id `search-terms`). Shown only when the server returns `summary.terms`, i.e. the strict search.
+
+## 2026-11-10: U03 Candidate table in the panel invite
+
+Write-up: [U03](../docs/changelog/CHANGES-2026-11-10-U03-panel-table-and-pack.md).
+
+- **Schedule window:** a new **Show the candidate's source (vendor) to the panel** checkbox below the panel-pack block, unticked by default. For a referral it is disabled, and the note under it says the source is never shown. Otherwise the note says whether this round's table includes CTC (HR and CEO) or not.
+- **Schedule window, panel email:** under the editable panel body, a read-only preview of the candidate details table (sandboxed `iframe`) says it is added when the invite is sent. The editable body shows a dashed placeholder where the table goes. The pack text now says technical rounds get only the interviewers' feedback.
+- **Post-booking "Send JD, CV & report to panel":** the confirm dialog has the same Source checkbox (hidden for a referral). Its text mentions the candidate details table.
+
+## 2026-11-10: U02 The JD on every forward-moving email
+
+Write-up: [U02](../docs/changelog/CHANGES-2026-11-10-U02-jd-every-email.md).
+
+- **Shortlist dialog (`DecisionEmailModal`):** the "JD attached" line (`PaperClipOutlined`), or the warning when the JD can't travel, now shows on the JD tab and in Search "Add to JD", not only on the Keyword tab. The warning reads "too large to attach" instead of "over 3 MB".
+- **Evalground invite (`AssessmentInviteModal`):** a line under the body says "The JD is attached (as a link if the file is too large)". When the MRF has no JD, a secondary line says the email goes without one.
+- **Schedule window:** below the panel-pack text, a line shows the JD status from the preview's `pack.jd`. It reads "JD on file: it goes with the candidate's invite (and the panel's)", or "This MRF has no JD file". The sentence saying the candidate's invite is unchanged was removed.
+
+## 2026-11-10: U01 No-resume warning in the Schedule window
+
+Write-up: [U01](../docs/changelog/CHANGES-2026-11-10-U01-resume-attachment.md).
+
+- **Schedule window:** under "Send the JD, CV and report so far", a warning `Alert` appears when there is no resume. It reads "No resume on file for <name>" or "The file on record … is not a resume". It contains a small **Upload resume** button (`ResumeUploadButton`, `UploadOutlined`) and an unticked **Attach the candidate profile summary instead** checkbox. Booking first asks "Send without a resume?" (`modal.confirm`, OK "Send without a resume", Cancel "Go back").
+- **Post-booking "Send JD, CV & report to panel":** when there is no resume, the confirm shows the same warning `Alert` and checkbox, and an **Upload resume** button sits beside it.
+- **Drawer header:** "View resume" appears only for a real resume. Otherwise it shows "No resume on file" with a link-style **Upload resume**.
+
 ## 2026-10-24: L08 Forms & Links page and shortcuts
 
 Write-up: [L08](../docs/changelog/CHANGES-2026-10-24-L08-forms-and-links.md).

@@ -50,6 +50,51 @@ export const phoneRule = {
     : Promise.reject(new Error('Enter a 10-digit mobile number (for example 98765 43210 or +91 98765 43210).'))),
 };
 
+/**
+ * A stored email or phone list as separate values (U05). Same split as the
+ * server's utils/contactMerge.js: phones on , ; or /, emails on , or ;.
+ * @param {string|null|undefined} value
+ * @param {'email'|'phone'} kind
+ * @returns {string[]}
+ */
+export function splitContacts(value, kind) {
+  if (value == null) return [];
+  return String(value)
+    .split(kind === 'email' ? /[,;]/ : /[,;/]/)
+    .map((v) => v.trim())
+    .filter((v) => v !== '' && v.toLowerCase() !== 'null');
+}
+
+/** Values back into the stored form, "primary, other1, other2". */
+export const joinContacts = (list) => (list || []).map((v) => String(v).trim()).filter(Boolean).join(', ');
+
+/**
+ * Edit form values for a candidate's contacts: the primary email (read-only),
+ * the other emails and every phone, as tag lists.
+ */
+export function contactFormValues(email, phone) {
+  const emails = splitContacts(email, 'email');
+  return { email: emails[0] || '', otherEmails: emails.slice(1), phones: splitContacts(phone, 'phone') };
+}
+
+/** antd Form rule for a tag list of phones: every one a 10-digit number. */
+export const phoneListRule = {
+  validator: (_, list) => {
+    const bad = (list || []).find((v) => !firstValidPhone(v));
+    return bad === undefined
+      ? Promise.resolve()
+      : Promise.reject(new Error(`"${bad}" is not a 10-digit mobile number (for example 98765 43210 or +91 98765 43210).`));
+  },
+};
+
+/** antd Form rule for a tag list of emails: every one a valid address. */
+export const emailListRule = {
+  validator: (_, list) => {
+    const bad = (list || []).find((v) => !EMAIL_RE.test(String(v).trim()));
+    return bad === undefined ? Promise.resolve() : Promise.reject(new Error(`"${bad}" is not a valid email address.`));
+  },
+};
+
 /** antd Form rule: an email address (blank allowed). */
 export const emailRule = {
   validator: (_, value) => (blank(value) || EMAIL_RE.test(String(value).trim())

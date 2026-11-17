@@ -88,7 +88,6 @@ Every time a candidate is marked as an employee referral, changed, or has the re
 
 ## 6. Settings only admins can change
 Most of Settings is open to recruiters (see the recruiter guide, §11). Only admins can:
-- **Company profile**: the "About AAPNA" text added to shortlist emails with the JD.
 - **Assessment Automation → Auto-advance / auto-reject on score**: when on, importing Evalground results approves or rejects the round automatically at the pass mark.
 - **Pipeline Configuration** (section 5).
 

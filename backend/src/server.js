@@ -12,6 +12,7 @@ import { startInterviewOccurrenceJob, stopInterviewOccurrenceJob } from './jobs/
 import { startInterviewRecordingJob, stopInterviewRecordingJob } from './jobs/interviewRecordings.js';
 import { startMailboxPollerJob, stopMailboxPollerJob } from './jobs/mailboxPoller.js';
 import { startZekoSchedulerJob, stopZekoSchedulerJob } from './jobs/zekoScheduler.js';
+import { startZekoExpiryReminderJob, stopZekoExpiryReminderJob } from './jobs/zekoExpiryReminder.js';
 import { startAssessmentDeadlineJob, stopAssessmentDeadlineJob } from './jobs/assessmentDeadlineChecker.js';
 import { startOfferSweepJob, stopOfferSweepJob } from './jobs/offerSweep.js';
 import { startDocumentReminderJob, stopDocumentReminderJob } from './jobs/documentReminder.js';
@@ -19,6 +20,7 @@ import { startMrfAuditRetentionJob, stopMrfAuditRetentionJob } from './jobs/mrfA
 import { startErrorLogRetentionJob, stopErrorLogRetentionJob } from './jobs/errorLogRetentionSweep.js';
 import { startMrfHoldSweepJob, stopMrfHoldSweepJob } from './jobs/mrfHoldSweep.js';
 import { startPipelineAutoPauseJob, stopPipelineAutoPauseJob } from './jobs/pipelineAutoPause.js';
+import { startCompletedFormsDigestJob, stopCompletedFormsDigestJob } from './jobs/completedFormsDigest.js';
 import { recordError } from './services/errorLog.service.js';
 import { sendOpsAlert } from './services/emailNotification.service.js';
 import { currentRef } from './middleware/requestContext.js';
@@ -68,6 +70,10 @@ async function startServer() {
     // Zeko sync (replaces n8n "FULLY AUTO Sync (API Key Auth)" + "Step 3 Results"); self-gated
     startZekoSchedulerJob();
 
+    // Zeko expiry reminder (U08) — one email before a Zeko window closes, if the
+    // candidate has not attempted it; self-gated by ZEKO_REMINDER_ENABLED + ZEKO_SYNC_ENABLED.
+    startZekoExpiryReminderJob();
+
     // Evalground invite deadline checker — pure DB polling, no external API, always runs.
     startAssessmentDeadlineJob();
 
@@ -96,6 +102,10 @@ async function startServer() {
     // are paused and leave the default board. Pure DB; self-gated by
     // pipeline_auto_pause_enabled.
     startPipelineAutoPauseJob();
+
+    // Completed forms bell note (U10) — 09:00 IST, "N forms completed yesterday
+    // across M JDs" to HR and Admin; in-app only. Self-gated by FORMS_DIGEST_ENABLED.
+    startCompletedFormsDigestJob();
 
     // Durable resume-processing worker (BullMQ + Redis). Off by default; enable
     // with USE_RESUME_QUEUE=true once Redis is available. Dynamically imported so
@@ -131,6 +141,7 @@ async function gracefulShutdown(signal) {
   stopInterviewRecordingJob();
   stopMailboxPollerJob();
   stopZekoSchedulerJob();
+  stopZekoExpiryReminderJob();
   stopAssessmentDeadlineJob();
   stopOfferSweepJob();
   stopDocumentReminderJob();
@@ -138,6 +149,7 @@ async function gracefulShutdown(signal) {
   stopErrorLogRetentionJob();
   stopMrfHoldSweepJob();
   stopPipelineAutoPauseJob();
+  stopCompletedFormsDigestJob();
 
   // Stop accepting new connections
   server.close(async () => {
