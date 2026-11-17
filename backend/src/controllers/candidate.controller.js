@@ -44,13 +44,14 @@ export const searchCandidates = catchAsync(async (req, res) => {
     email,
     phone,
     completedWithin,
+    legacySource,
     page = 1,
     limit = 20,
     sort = 'createdAt',
     order = 'desc',
   } = req.query;
 
-  const requested = { search, status, finalStatus, vendorEmail, position, location, name, email, phone, completedWithin };
+  const requested = { search, status, finalStatus, vendorEmail, position, location, name, email, phone, completedWithin, legacySource };
   // `vendorEmail` is a plain query param, so a vendor-role token could omit it
   // (or name someone else's address) and page through the entire candidate
   // table. Scope is forced server-side from the session instead.
@@ -77,10 +78,31 @@ export const searchCandidates = catchAsync(async (req, res) => {
 export const exportCandidates = catchAsync(async (req, res) => runExport(req, res, {
   key: 'candidates',
   label: 'Candidates',
-  columns: candidatesExport.columns,
+  // A vendor's file has no "Legacy source" column (Phase 4).
+  columns: candidatesExport.columnsFor(req.user),
   filters: candidatesExport.parseFilters(req),
   fetch: candidatesExport.fetch,
 }));
+
+/**
+ * @desc    Candidate count per legacy import source, for the Search Candidate "Source" filter
+ * @route   GET /api/candidates/legacy-sources
+ * @access  Private — staff only
+ */
+export const getLegacySourceCounts = catchAsync(async (req, res) => {
+  const counts = await candidateService.legacySourceCounts();
+  return success(res, counts, 'Legacy sources retrieved');
+});
+
+/**
+ * @desc    Which legacy import rows created or updated this candidate (source table, date), for the label's tooltip
+ * @route   GET /api/candidates/:id/legacy-imports
+ * @access  Private — staff only
+ */
+export const getCandidateLegacyImports = catchAsync(async (req, res) => {
+  const imports = await candidateService.legacyImportsFor(req.params.id);
+  return success(res, imports, 'Legacy imports retrieved');
+});
 
 /**
  * @desc    Get a single candidate by ID
