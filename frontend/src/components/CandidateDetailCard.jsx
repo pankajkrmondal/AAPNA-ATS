@@ -9,6 +9,7 @@ import { Row, Col, Typography, Tag, Avatar, Space } from 'antd';
 import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import PipelineScoresSection from './candidates/PipelineScoresSection';
 import CandidateTagsSection from './candidates/CandidateTagsSection';
+import LegacySourceChip from './candidates/LegacySourceChip';
 
 const { Text, Paragraph } = Typography;
 
@@ -66,7 +67,17 @@ export default function CandidateDetailCard({ candidate, showPipelineScores = fa
       <div className="cdc-head">
         <Avatar size={52} icon={<UserOutlined />} className="cdc-avatar" />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="cdc-name">{c.name || 'Candidate'}</div>
+          <div className="cdc-name">
+            {c.name || 'Candidate'}
+            {/* Legacy import label (Phase 4), with the source table and import
+                date on hover. Absent for vendors and for normal candidates. */}
+            {c.legacyLabel ? (
+              <>
+                {' '}
+                <LegacySourceChip label={c.legacyLabel} source={c.legacySource} cvId={c.id} />
+              </>
+            ) : null}
+          </div>
           <div className="cdc-email">{c.email || '—'}</div>
           {(c.location || c.position) && (
             <div className="cdc-meta">

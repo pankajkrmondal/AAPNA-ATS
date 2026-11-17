@@ -92,6 +92,14 @@ router.get('/', candidateController.searchCandidates);
 router.get('/export', exportLimiter, candidateController.exportCandidates);
 
 /**
+ * GET /api/candidates/legacy-sources
+ * Candidate count per legacy import source, for the "Source" filter (Phase 4).
+ * Staff only: the legacy label is internal. Above '/:id' for the same reason
+ * as '/export'.
+ */
+router.get('/legacy-sources', requireStaff, candidateController.getLegacySourceCounts);
+
+/**
  * GET /api/candidates/:id
  * Retrieve a single candidate by ID. A vendor gets only their own submissions
  * (vendorMayReadCandidate, checked in the controller); anyone else's is a 404.
@@ -129,6 +137,13 @@ router.post('/:id/resume', requireStaff, staffResumeUpload.single('resume'), can
  * pipeline it reads from.
  */
 router.get('/:id/pipeline-scores', requireStaff, candidateController.getCandidatePipelineScores);
+
+/**
+ * GET /api/candidates/:id/legacy-imports
+ * Source table and date of the legacy import rows behind the candidate's label
+ * (Phase 4). Staff only. Never the original row itself.
+ */
+router.get('/:id/legacy-imports', requireStaff, candidateController.getCandidateLegacyImports);
 
 /**
  * JD tags on Search Candidate (L02-B). A wrong tag can be removed while

@@ -34,6 +34,7 @@ import { syncShortlistIdentity, syncShortlistIdentitySafe, clearScreeningRoleCac
 import { tracedFetch } from '../utils/externalCall.js';
 import { tagCandidatesSafe } from './candidateTag.service.js';
 import { parseMrfId, tagSourceForUpload, TAG_SOURCES } from '../utils/candidateTag.js';
+import { clearLegacyLabel } from '../utils/legacySourceView.js';
 import { isRealResume, missingFieldCount, pickResumePair, withoutResumeFlag } from '../utils/resumeCheck.js';
 import { normalisePhone, phoneMatchesSql } from '../utils/phone.js';
 import { emailMatchesSql } from '../utils/emailMatch.js';
@@ -697,10 +698,14 @@ export async function mergeDuplicates(ids, token, user = {}) {
             updateData.lockForNinetyDays = existingCandidate.lockForNinetyDays;
           }
 
-          // Update candidate in rpa_cv
+          // Update candidate in rpa_cv. The new upload is merged INTO the
+          // existing (older) record, which survives. A fresh resume removes the
+          // legacy-import label (Phase 4, decisions 3 and 6 of 17 Nov 2026);
+          // rpa_legacy_import_rows keeps the history. Not in updateData, which
+          // also feeds the search vector text below.
           await tx.rpa_cv.update({
             where: { id: existingCandidate.id },
-            data: updateData
+            data: { ...updateData, ...clearLegacyLabel() }
           });
           // The merge can bring a new name or an extra address: the pipeline's
           // copy of them follows, in the same transaction (N29).
@@ -1619,7 +1624,8 @@ export async function runBatchParsing(executionId, files, user, source = 'hr_man
 
                 const updatedCv = await prisma.rpa_cv.update({
                   where: { id: existingCandidate.id },
-                  data: updateData
+                  // A fresh resume removes the legacy-import label (Phase 4).
+                  data: { ...updateData, ...clearLegacyLabel() }
                 });
                 // A resubmitted resume can carry a new name or address: the
                 // pipeline's copy follows (N29). Best-effort, never fails intake.

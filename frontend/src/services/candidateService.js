@@ -30,6 +30,24 @@ const candidateService = {
   },
 
   /**
+   * Candidate count per legacy import source (Phase 4), for the "Source"
+   * filter. Staff only.
+   * @returns {Promise<{ data: { data: Array<{ source: string, count: number }> } }>}
+   */
+  getLegacySourceCounts() {
+    return api.get('/candidates/legacy-sources');
+  },
+
+  /**
+   * Source table and import date behind a candidate's legacy label. Staff only.
+   * @param {string} id
+   * @returns {Promise<{ data: { data: Array<{ sourceKind, sourceTable, outcome, importedAt }> } }>}
+   */
+  getLegacyImports(id) {
+    return api.get(`/candidates/${id}/legacy-imports`);
+  },
+
+  /**
    * Get a single candidate by ID.
    * @param {string} id
    * @returns {Promise<{ data: object }>}

@@ -35,6 +35,9 @@ export function enforceVendorScope(filters = {}, user) {
     // Overwrite, never merge: whatever the client asked for is irrelevant.
     vendorEmail: user.email,
     vendorOnly: false,
+    // The legacy-import label is internal (Phase 4). Filtering on it would let
+    // a vendor learn which of their candidates are in the legacy data.
+    legacySource: undefined,
   };
 }
 

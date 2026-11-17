@@ -12,6 +12,7 @@
  * EXPORT_SELECT there for why search() itself must not be reused.
  */
 import * as candidateService from '../services/candidate.service.js';
+import { isVendor } from '../utils/vendorScope.js';
 
 export const columns = [
   { header: 'Candidate ID', key: 'id' },
@@ -45,7 +46,20 @@ export const columns = [
   { header: 'Last Modified', key: 'modifiedAt', type: 'datetime' },
   { header: 'Details Requested', key: 'detailsRequestedAt', type: 'datetime' },
   { header: 'Details Completed', key: 'detailsCompletedAt', type: 'datetime' },
+  // Phase 4: "MS Access", "Also in MS Access", or empty. Staff only.
+  { header: 'Legacy source', key: 'legacyLabel' },
 ];
+
+/** Staff-only columns, dropped from a vendor's file (scope 4.5). */
+const STAFF_ONLY_KEYS = new Set(['legacyLabel']);
+
+/**
+ * The columns this caller's file gets.
+ * @param {{ role?: string }} [user]
+ */
+export function columnsFor(user) {
+  return isVendor(user) ? columns.filter((c) => !STAFF_ONLY_KEYS.has(c.key)) : columns;
+}
 
 /**
  * Same query params the list endpoint accepts, minus pagination.
@@ -58,7 +72,7 @@ export const columns = [
 export function parseFilters(req) {
   const {
     search, status, finalStatus, vendorEmail, position, location, name, email, phone,
-    vendorOnly, completedWithin,
+    vendorOnly, completedWithin, legacySource,
   } = req.query;
 
   return {
@@ -73,6 +87,7 @@ export function parseFilters(req) {
     phone,
     vendorOnly: vendorOnly === 'true' || vendorOnly === '1',
     completedWithin,
+    legacySource,
   };
 }
 
@@ -91,4 +106,4 @@ export async function fetch({ filters, user, max }) {
   });
 }
 
-export default { columns, fetch, parseFilters };
+export default { columns, columnsFor, fetch, parseFilters };

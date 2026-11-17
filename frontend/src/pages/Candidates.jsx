@@ -32,6 +32,7 @@ import candidateService from '../services/candidateService';
 import CandidateDetailCard from '../components/CandidateDetailCard';
 import ReferralPanel from '../components/candidates/ReferralPanel';
 import ReferralChip from '../components/candidates/ReferralChip';
+import LegacySourceChip from '../components/candidates/LegacySourceChip';
 import ExportButton from '../components/common/ExportButton';
 import EmptyState from '../components/common/EmptyState';
 import LoadingSkeleton from '../components/common/LoadingSkeleton';
@@ -74,6 +75,31 @@ const COMPLETED_IN_OPTIONS = [
 ];
 const COMPLETED_IN_PHRASE = { today: 'today', 7: 'in the last 7 days', 30: 'in the last 30 days' };
 
+/**
+ * "Source" filter (Phase 4). Values match the API's legacySource. One option
+ * per legacy import source that has candidates, so Excel and old resumes
+ * appear by themselves once imported; "Any legacy source" only when there is
+ * more than one to choose from.
+ */
+const LEGACY_SOURCE_NAMES = { ms_access: 'MS Access', excel: 'Excel', resume: 'Old resume' };
+function legacySourceOptions(counts) {
+  const perSource = counts.map((c) => ({
+    value: c.source,
+    label: `${LEGACY_SOURCE_NAMES[c.source] || c.source} data only (${c.count.toLocaleString()})`,
+  }));
+  return [
+    { value: '', label: 'All candidates' },
+    ...(perSource.length > 1 ? [{ value: 'any', label: 'Any legacy data' }] : []),
+    ...perSource,
+    ...(perSource.length > 0 ? [{ value: 'none', label: 'Without legacy data' }] : []),
+  ];
+}
+const LEGACY_FILTER_PHRASE = (value) => {
+  if (value === 'none') return 'are not in any legacy import';
+  if (value === 'any') return 'came from a legacy import';
+  return `are in the ${LEGACY_SOURCE_NAMES[value] || value} import (created by it, or already in the ATS and also in it)`;
+};
+
 /** Edit-form label and hint, in the form's existing small-caps style. */
 const fieldLabel = (text) => <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>{text}</span>;
 const fieldHint = (text) => <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{text}</span>;
@@ -115,7 +141,7 @@ export default function Candidates() {
   // Plus one quick filter (N44): candidates who completed the missing-details
   // form recently — the "warm" ones recruiters chase first.
   const [searchParams, setSearchParams] = useState({
-    name: '', email: '', phone: '', completedWithin: '',
+    name: '', email: '', phone: '', completedWithin: '', legacySource: '',
   });
 
   // Modals state
@@ -138,6 +164,17 @@ export default function Candidates() {
     && (userRole === 'admin' || userRole === 'superadmin' || (user?.permissions || []).includes('candidate_screening'));
   // Editing a candidate is staff-only; the API refuses vendors (N29).
   const canEdit = userRole !== 'vendor';
+  // Legacy import "Source" filter (Phase 4): staff only, and only once some
+  // candidate carries a legacy source. Counts are loaded once per visit.
+  const [legacyCounts, setLegacyCounts] = useState([]);
+  useEffect(() => {
+    if (userRole === 'vendor') return;
+    candidateService.getLegacySourceCounts()
+      .then((res) => setLegacyCounts(Array.isArray(res.data?.data) ? res.data.data : []))
+      .catch(() => setLegacyCounts([]));
+  }, [userRole]);
+  const legacyOptions = useMemo(() => legacySourceOptions(legacyCounts), [legacyCounts]);
+  const showLegacyFilter = userRole !== 'vendor' && legacyCounts.length > 0;
   // These three are the candidate-level copy the hourly Zeko sync rewrites,
   // so an edit here lasts only until the next synced result (N29).
   const ZEKO_SYNC_HINT = 'Updated automatically by Zeko sync';
@@ -219,13 +256,14 @@ export default function Candidates() {
       email: (values.email || '').trim(),
       phone: (values.phone || '').trim(),
       completedWithin: values.completedWithin || '',
+      legacySource: values.legacySource || '',
     });
     setPage(1);
   };
 
   const handleClearFilters = () => {
     form.resetFields();
-    setSearchParams({ name: '', email: '', phone: '', completedWithin: '' });
+    setSearchParams({ name: '', email: '', phone: '', completedWithin: '', legacySource: '' });
     setPage(1);
   };
 
@@ -535,6 +573,13 @@ export default function Candidates() {
               <ReferralChip compact />
             </>
           ) : null}
+          {/* Legacy import label (Phase 4): "MS Access" / "Also in MS Access". */}
+          {record.legacyLabel ? (
+            <>
+              {' '}
+              <LegacySourceChip label={record.legacyLabel} source={record.legacySource} compact />
+            </>
+          ) : null}
         </>
       ),
     },
@@ -710,6 +755,18 @@ export default function Candidates() {
                 <Select options={COMPLETED_IN_OPTIONS} style={{ height: 36 }} />
               </Form.Item>
             </Col>
+            {showLegacyFilter && (
+              <Col flex="1 1 200px">
+                <Form.Item
+                  label={<span style={{ fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--text-2)' }}>Source</span>}
+                  name="legacySource"
+                  initialValue=""
+                  style={{ marginBottom: 0 }}
+                >
+                  <Select options={legacyOptions} style={{ height: 36 }} data-testid="legacy-source-filter" />
+                </Form.Item>
+              </Col>
+            )}
             <Col flex="none">
               <Form.Item style={{ marginBottom: 0 }}>
                 <Space>
@@ -779,6 +836,11 @@ export default function Candidates() {
             {activeFilters.completedWithin && (
               <Text style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 1 }}>
                 {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'} completed their details {COMPLETED_IN_PHRASE[activeFilters.completedWithin]}. Newest first.
+              </Text>
+            )}
+            {activeFilters.legacySource && !activeFilters.completedWithin && (
+              <Text style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 1 }}>
+                {total.toLocaleString()} {total === 1 ? 'candidate' : 'candidates'} {LEGACY_FILTER_PHRASE(activeFilters.legacySource)}. The export follows this filter.
               </Text>
             )}
             {canAddToJd && selectedRowKeys.length > 0 && (

@@ -3,6 +3,7 @@ import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { parseExperienceNumeric, parseExpectedCTCNumeric, parseNoticePeriodDays } from '../utils/candidateParser.js';
 import { mapReferralFields } from '../utils/referralView.js';
+import { mapLegacyFields, legacySourceWhere, LEGACY_COLUMNS, LEGACY_SOURCES } from '../utils/legacySourceView.js';
 import { completedSince } from '../utils/missingDetails.js';
 import { validateCandidateFields, describeFieldErrors } from '../utils/candidateFieldRules.js';
 import { preGenerateCandidateInsights } from './hrUpload.service.js';
@@ -122,6 +123,10 @@ export function mapCandidate(c) {
     // has to fail closed, live in utils/referralView.js where they are testable
     // without a database.
     ...mapReferralFields(c),
+
+    // Legacy import label (Phase 4). Staff only: for a vendor caller the two
+    // columns are not selected (LEGACY_COLUMNS), so this maps to "no label".
+    ...mapLegacyFields(c),
 
     // Mapped fields for high fidelity modals
     lastCompanyExperience: c.LastCompanyExperienceYears || '',
@@ -294,7 +299,9 @@ export async function search(filters = {}, page = 1, limit = 20, sort = 'created
       omit: {
         resume_full_text: true,
         ai_profile_insights: true,
-        ...(redactReferral ? REFERRAL_COLUMNS : {}),
+        // `redactReferral` is "the caller is a vendor": the legacy label is
+        // internal too (scope 4.5), so it goes with the referral columns.
+        ...(redactReferral ? { ...REFERRAL_COLUMNS, ...LEGACY_COLUMNS } : {}),
       },
     }),
     prisma.rpa_cv.count({ where }),
@@ -497,7 +504,7 @@ async function vendorStageBreakdown(candidateWhere) {
 export async function findById(id, { redactReferral = false } = {}) {
   const candidate = await prisma.rpa_cv.findUnique({
     where: { id: BigInt(id) },
-    ...(redactReferral ? { omit: REFERRAL_COLUMNS } : {}),
+    ...(redactReferral ? { omit: { ...REFERRAL_COLUMNS, ...LEGACY_COLUMNS } } : {}),
   });
 
   if (!candidate) {
@@ -722,6 +729,13 @@ export async function buildWhereClause(filters = {}) {
     and.push({ VendorEmail: { not: '' } });
   }
 
+  // "Source" (Phase 4): legacy import candidates only, without them, or one
+  // source. enforceVendorScope() drops it for vendors.
+  const legacy = legacySourceWhere(filters.legacySource);
+  if (legacy) {
+    and.push(legacy);
+  }
+
   return and.length > 0 ? { AND: and } : {};
 }
 
@@ -748,6 +762,52 @@ export function phoneSearchSql(text) {
 async function idsWhere(predicate) {
   const rows = await prisma.$queryRaw`SELECT id FROM public.rpa_cv WHERE ${predicate}`;
   return rows.map((r) => r.id);
+}
+
+/**
+ * How many candidates carry each legacy source, for the "Source" filter: it
+ * lists a source only once candidates from it exist, so Excel and old resumes
+ * appear by themselves after their import (decision 4, 17 Nov 2026).
+ *
+ * @returns {Promise<Array<{ source: string, count: number }>>} in LEGACY_SOURCES order
+ */
+export async function legacySourceCounts() {
+  const grouped = await prisma.rpa_cv.groupBy({
+    by: ['legacy_source'],
+    where: { legacy_source: { not: null } },
+    _count: { _all: true },
+  });
+  const bySource = new Map(grouped.map((g) => [g.legacy_source, g._count._all]));
+  return LEGACY_SOURCES.filter((s) => bySource.has(s)).map((s) => ({ source: s, count: bySource.get(s) }));
+}
+
+/**
+ * Where a candidate came from in the legacy import: one entry per source row
+ * that created or updated it, for the chip's tooltip on the candidate view.
+ * Reads rpa_legacy_import_rows, which has no Prisma model (see its DDL).
+ * Never returns raw_row: the original record on screen is a later task.
+ *
+ * Returns [] when the table does not exist, so the view works on a database
+ * the import never ran on.
+ *
+ * @param {number|string} cvId
+ * @returns {Promise<Array<{ sourceKind: string, sourceTable: string, outcome: string, importedAt: Date }>>}
+ */
+export async function legacyImportsFor(cvId) {
+  const [{ has_table: hasTable }] = await prisma.$queryRaw`
+    SELECT to_regclass('public.rpa_legacy_import_rows') IS NOT NULL AS has_table`;
+  if (!hasTable) return [];
+  const rows = await prisma.$queryRaw`
+    SELECT source_kind, source_table, outcome, created_at
+    FROM rpa_legacy_import_rows
+    WHERE cv_id = ${BigInt(cvId)} AND outcome IN ('inserted', 'updated_existing', 'merged_in_file')
+    ORDER BY created_at, id`;
+  return rows.map((r) => ({
+    sourceKind: r.source_kind,
+    sourceTable: r.source_table,
+    outcome: r.outcome,
+    importedAt: r.created_at,
+  }));
 }
 
 /**
@@ -795,6 +855,10 @@ export const EXPORT_SELECT = {
   modifiedAt: true,
   details_requested_at: true,
   details_completed_at: true,
+  // Legacy import label (Phase 4). The export drops the column for vendors
+  // (candidates.export.js columnsFor).
+  legacy_source: true,
+  legacy_relation: true,
 };
 
 /**
