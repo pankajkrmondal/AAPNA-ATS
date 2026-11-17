@@ -365,6 +365,63 @@ It runs SELECT statements only and writes `<work>/report/proof-pack-ms-access-<e
 
 **Seeing legacy candidates on screen** is a separate task with its own approval: `SCOPE-Legacy-Source-Label-and-Filter.md` (a permanent label and a filter on Search Candidate). The proof pack does not depend on it.
 
+### 3.14 Production run (runbook)
+
+Written 17 Nov 2026, after the staging load. Nothing in this section has been run on production. Every production step needs Pankaj's explicit go-ahead for that step.
+
+**Databases.** Staging and production are on the same server (`20.244.34.176`). Staging is `recruitmentautomationdb` (`backend/.env.staging`); production is `recruitmentautomationdbProd` (`backend/.env.production`). Every command below names the database twice, through `--env` and `--expect-db`, and refuses to run if they do not match. Scripts that write also need `--allow-production`.
+
+#### A. Before production day
+
+| # | Check | Who |
+|---|---|---|
+| A1 | Chhaya has reviewed staging and signed the staging proof pack (`proof-pack-ms-access-staging-20261117-1001.xlsx`). | Chhaya |
+| A2 | The staging deployment is confirmed, including the legacy label and filter (`SCOPE-Legacy-Source-Label-and-Filter.md`) if it goes to production at the same time. | Pankaj |
+| A3 | The half-done production deployment of 16 Nov (`PRODUCTION-DEPLOYMENT-PLAN-2026-11-16.md`) is finished, or its remaining steps are ordered together with this run. | Pankaj |
+| A4 | The migration scripts are committed. Today they are untracked files in `backend/scripts/legacy-migration/` and `backend/prisma/ddl/`. | Dev |
+| A5 | Done 17 Nov: the two helper scripts of the staging run are in the repository. `6-run-tables.mjs` runs the tables (dry run → apply → check, stops on the first failure, resumes where it stopped; `--only "<table>"` for the pilot). `3c-check-batch.mjs` is the read-only check of one batch. Both take `--env` and `--expect-db`; the runner also refuses production without `--allow-production` and refuses an env/database pair that does not belong together. Tested on staging read-only: the check passes on the pilot batch, and the runner recognises all 28 tables as done. | Dev |
+| A6 | The work folder `E:\Recruitment Process Automation\Phase 4\MS-Access\_migration-work\` is unchanged since staging. Do **not** re-run the extract or the transform: production must load exactly what staging loaded. Fingerprints (SHA-256, first 16 characters) on 17 Nov: `manifest.json` `4A0A4FC3068597B6`, `transform/candidates.jsonl` `E57E4AFBEBE5B781`, `transform/rows.jsonl` `0735F581ED241570`. | Dev |
+| A7 | A production database backup taken on the day, before step B1. | Pankaj / DBA |
+| A8 | The developer machine can reach `20.244.34.176:5432`, will not sleep, and stays on for about five hours. | Dev |
+
+#### B. Production day, in this order
+
+| # | Step | Command (run in `backend/`) | Exit check |
+|---|---|---|---|
+| B1 | Provenance table: dry run, then real | `node scripts/run-ddl.mjs --env .env.production --expect-db recruitmentautomationdbProd --file prisma/ddl/2026-11-17-legacy-import-rows.sql --dry-run`, then without `--dry-run` | 5 statements, COMMITTED |
+| B2 | Legacy label columns: dry run, then real | the same with `prisma/ddl/2026-11-17-legacy-source-label.sql` | COMMITTED. It must come **before** the backend build that knows the columns (the DDL file says why). |
+| B3 | `npx prisma generate`, then deploy the backend and frontend build with the label, if it is part of this release | per the deployment plan | ATS up; Search Candidate works |
+| B4 | Pilot dry run only, to read the figures | `node scripts/legacy-migration/3-load.mjs --work <work folder> --table "Build & Release" --env production --expect-db recruitmentautomationdbProd --allow-production` | Counts reconcile. Read the "matched existing" figure (see C1). |
+| B5 | Pilot: dry run, apply and check | `node scripts/legacy-migration/6-run-tables.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd --allow-production --only "Build & Release"` | "Build & Release" OK: 84 rows, check passes |
+| B6 | Pilot in the ATS | search two pilot candidates in the production ATS; open one profile | Fields as in Access; label shows |
+| B7 | **Stop.** Pankaj confirms the pilot on production. | | Go-ahead for B8 |
+| B8 | Remaining 27 tables, in `RUN_ORDER` | the same command without `--only` (it skips the pilot, already done) | Each table: dry run reconciles, apply equals the dry run, check passes. The runner stops on the first failure; run it again after fixing the cause. Progress and batch ids: `<work folder>/report/production-load-all.json`. |
+| B9 | Missing search entries | `node scripts/legacy-migration/3b-retry-vectors.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd --allow-production` (dry run, then `--apply` if it finds any) | 0 missing |
+| B10 | Production proof pack | `node scripts/legacy-migration/5-proof-pack.mjs --work <work folder> --env production --expect-db recruitmentautomationdbProd` (read-only) | Status COMPLETE; 8,843 rows recorded; 0 unaccounted |
+| B11 | Chhaya signs the production pack; HR keeps it | | Signed |
+
+#### C. What will differ from staging
+
+1. **More matches with existing candidates.** Staging had 1. Production holds the real candidates HR has uploaded, so more Access people will already be there. They are updated by rule 3.9 (fill empty fields only, history appended) and get the label "Also in MS Access". The number of new candidates will be lower than 4,679 by the same amount; the total of people stays 4,680. Read the dry-run figure for each table before its apply; if it is far above what Pankaj expects, stop and ask.
+2. **Created dates.** Imported candidates keep their Access date, so dashboards and lists sorted by created date on production will show about 4,700 older candidates the day after the run. HR should know this in advance.
+3. **Live users.** The ATS stays up during the load. HR can keep working; the loader inserts one candidate at a time.
+4. **Search entries cost.** Each new candidate with an email calls the Gemini embedding service once (about 4,650 calls on staging, roughly two to three seconds each).
+
+#### D. Known issues from the staging run, and what to do
+
+| Issue on staging | What to do on production |
+|---|---|
+| 4 search entries failed on a 5-second database timeout inside the ATS's vector function | The runner retries once with `3b-retry-vectors.mjs`; B9 catches anything left |
+| One dry run ended with a Windows crash code before writing anything; it passed when run again | Run the runner again. It skips finished tables and repeats the dry run of the stopped one. If the apply step itself stops, check that table's batch with `3c-check-batch.mjs` first; the loader skips rows already recorded, so a second run finishes the table without doubling anything. |
+| "Redis error … 127.0.0.1:6379" lines | Expected on the developer machine; ignore |
+| The loader was changed by another session while it was running | Freeze `backend/scripts/legacy-migration/` for the whole production run |
+
+#### E. If something goes wrong
+
+- A table fails its check: the runner stops; later tables are not touched. Find the cause, then run the runner again.
+- Undo one table: `node scripts/legacy-migration/4-rollback-batch.mjs --batch <batch id> --env production --expect-db recruitmentautomationdbProd --allow-production` (dry run, then `--apply`). Batch ids are in the runner's output and in `report/production-load-all.json`. Check one batch at any time, read-only: `node scripts/legacy-migration/3c-check-batch.mjs --work <work folder> --batch <batch id> --env production --expect-db recruitmentautomationdbProd`. It deletes the candidates the batch created (unless changed or used in the ATS since), restores fields it filled on existing candidates, and removes the label it set on matched ones.
+- Undo everything: roll back each batch in reverse order, then the two DDL rollback files. The database backup from A7 is the last resort.
+
 ---
 
 ## 4. Stage 2: Excel files
@@ -596,13 +653,11 @@ Findings from the dry run that the plan did not know. The first three need Panka
 
 **Next step (from 17 Nov)**
 
-1. Done: database reachable, DDL applied, pilot loaded and checked, findings 1–3 decided, transform re-run with the name repair.
-2. Pankaj looks at a few pilot candidates in the staging ATS (search for them, open the profile, check the fields and the created date) and gives the go-ahead for the other tables.
-3. Load the remaining 27 tables on staging in `RUN_ORDER`, one table per run: dry run, then `--apply`, then the same read-only checks as the pilot. `Power BI` is next.
-4. Generate the staging proof pack (3.13) once all 28 tables are loaded. The script is built and was test-run on 17 Nov while the load was still running (8 of 28 tables complete; the test file is marked INCOMPLETE and is not the pack for sign-off).
-5. Review with Chhaya on staging using the pack's spot-check sheet, then production only with Pankaj's explicit approval, then the production pack.
+1. Done on 17 Nov: all 28 tables on staging, staging proof pack generated.
+2. Chhaya reviews staging with the pack's spot-check sheet and signs it.
+3. Production: follow the runbook in 3.14, starting with its preparation list (A1–A8). Nothing runs on production without Pankaj's explicit go-ahead.
 
-To undo the pilot: `node scripts/legacy-migration/4-rollback-batch.mjs --batch e18befba-76f2-439c-ba4c-14f85978c494 --env staging --expect-db recruitmentautomationdb` (dry run; add `--apply`). The rollback script has not been run yet.
+Batch ids of the staging run are in `<work folder>/report/staging-load-all.json` and `report/load-*.json`. The rollback script has not been run on staging.
 
 **Status on 2026-11-16**
 
