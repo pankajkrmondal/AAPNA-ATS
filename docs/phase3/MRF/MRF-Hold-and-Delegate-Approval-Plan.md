@@ -612,9 +612,9 @@ It imports `jsonwebtoken` from `backend/node_modules` by absolute path. Fix the 
 3. Run `npx prisma generate` on the server.
 4. Deploy with both flags **off**.
 5. Add the 4 editable email templates (create-only, never overwrites HR edits): `cd backend; node prisma/seed-mrf-hold-email-templates.js --dry-run`, then without `--dry-run`, with the prod env loaded. Check it prints `Database: recruitmentautomationdbProd`. Without the rows the emails still send with the built-in default wording.
-6. Move Chhaya's role on prod (Admin Portal › Users › Role = HR Admin Recruiter); she logs out and in.
+6. An Admin sets the designee in Settings › MRF Approval & Hold › Who can decide on behalf (the owner names the person). No role move (U06b, 12 Nov).
 7. Turn on `MRF_HOLD_ENABLED`, then `MRF_DELEGATE_DECISION_ENABLED`.
-8. Rollback if needed: flags off (the release sweep keeps running, so held MRFs are never stranded); set Chhaya back to `recruiter`; DDL rollback file `2026-10-22-mrf-hold-and-delegate.rollback.sql` (deploy the old build first).
+8. Rollback if needed: flags off (the release sweep keeps running, so held MRFs are never stranded); clear the designee in Settings; DDL rollback file `2026-10-22-mrf-hold-and-delegate.rollback.sql` (deploy the old build first).
 
 ### 16.5 Where the code is (for a reviewer)
 

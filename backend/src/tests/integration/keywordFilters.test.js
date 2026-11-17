@@ -12,7 +12,8 @@
  * nonsense sentinel skill the fixtures share, and assertions compare the
  * FIXTURE subset of the results. Each candidate isolates one rule RT reported
  * broken: JavaScript-only for "Java", "Greater Noida" for "Noida", blank
- * values passing range filters.
+ * values passing range filters. Location stays an exact part match (HR
+ * reconfirmed 10 Nov, U04); several cities are ORed.
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,7 +59,7 @@ const FIXTURES = {
   E: {
     Name: 'Zqxsentinel Echo', EmailID: 'zqx.sentinel.e@example.invalid', ContactNumber: '9000012349',
     Top5KeySkills: `Python, Django, ${SENTINEL}`, resume_full_text: 'Python, Django REST framework.',
-    PositionApplied: 'Python Developer', CurrentLocation: 'Pune', Gender: 'Male',
+    PositionApplied: 'Python Developer', CurrentLocation: 'Delhi', Gender: 'Male',
     TotalExperienceYearsNumeric: 0, ExpectedCTCNumeric: 4, NoticePeriodDays: 0,
     HighestQualification: 'B.Com', graduationdegree: 'B.Com',
   },
@@ -124,11 +125,22 @@ describe('N04 — skills: whole-word, All / Any', () => {
     assert.equal(fixtureLetters(await scoped({ keyword: 'c#' })), 'F');
     assert.equal(fixtureLetters(await scoped({ keyword: 'Go' })), '');
   });
+
+  test('U04: "Java, Python" — All finds nobody with both, Any finds either', async () => {
+    assert.equal(fixtureLetters(await scoped({ keyword: 'Java, Python' })), '');
+    assert.equal(fixtureLetters(await search({ keyword: 'Java, Python', matchMode: 'any' })), 'ACDE');
+  });
 });
 
 describe('N03 — every filter is a hard filter; empty values are excluded', () => {
   test('location "Noida" excludes "Greater Noida" and blank, keeps "Noida (UP)"', async () => {
     assert.equal(fixtureLetters(await scoped({ location: 'Noida' })), 'ABF');
+  });
+
+  test('U04: "Noida, Delhi" finds an exact Noida or an exact Delhi, never "Greater Noida"', async () => {
+    assert.equal(fixtureLetters(await scoped({ location: 'Delhi' })), 'E');
+    assert.equal(fixtureLetters(await scoped({ location: 'Noida, Delhi' })), 'ABEF');
+    assert.equal(fixtureLetters(await scoped({ location: ['Noida', 'Delhi'] })), 'ABEF');
   });
 
   test('gender is applied even when skills are entered', async () => {
@@ -180,7 +192,8 @@ describe('N05 — the score orders, it never hides', () => {
   });
 
   test('a passing candidate with a weak score is still shown, results sorted by score', async () => {
-    const r = await search({ keyword: 'Java, Spring', matchMode: 'any' });
+    // activeFirst (L01, on by default) groups by activity before score; turn it off to check score order.
+    const r = await search({ keyword: 'Java, Spring', matchMode: 'any', activeFirst: false });
     const scores = r.candidates.map((c) => c.relevanceScore.avgScore);
     assert.deepEqual(scores, [...scores].sort((a, b) => b - a));
     assert.ok(r.candidates.every((c) => c.relevanceScore.avgScore != null));

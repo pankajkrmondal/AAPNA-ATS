@@ -18,7 +18,8 @@ import AppError from '../utils/AppError.js';
 import { clearScreeningRoleCache } from './candidateSync.service.js';
 import { retagCandidate } from './candidateTag.service.js';
 import { sendShortlistEmail } from './screening.service.js';
-import { getMrfJdAttachment } from './jdAttachment.service.js';
+import { getMrfJdAttachment, jdWantedForTemplate } from './jdAttachment.service.js';
+import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { mrfCandidateBlock, MRF_OPEN_SELECT, parseMrfId } from '../utils/candidateTag.js';
 import { changeJdBlock, cleanChangeJdReason, changeJdNote } from '../utils/changeJd.js';
 
@@ -210,7 +211,8 @@ export async function changeShortlistJd({ shortlistId: rawShortlistId, newMrfId:
     searchType: 'jd',
     roleName: newRole,
     template,
-    jd: await getMrfJdAttachment(newMrfId),
+    // U02b: the shortlist template's "Attach the JD" switch.
+    jd: (await jdWantedForTemplate(template, STAGE_KEYS.SHORTLIST)) ? await getMrfJdAttachment(newMrfId) : null,
     leadHtml: CORRECTION_LEAD_HTML,
   });
   response.email = outcome.sent ? 'sent' : 'failed';

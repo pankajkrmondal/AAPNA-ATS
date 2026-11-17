@@ -43,6 +43,9 @@ import {
 // open and hangs `node --test`.
 import { parseZekoReportUrl, parseZekoResponseId, zekoSharedReportUrl } from '../../utils/zekoShareLink.js';
 import { assertNoForbiddenFields, pickCvProfile, redactionSummary } from '../../utils/dossierRedaction.js';
+import { createHash } from 'node:crypto';
+import config from '../../config/index.js';
+import { interviewerNameFor } from '../../utils/dossierModel.js';
 
 /** A fully-populated model, shaped exactly as buildDossierModel() returns one. */
 function fullModel(overrides = {}) {
@@ -262,14 +265,15 @@ describe('renderDossierHtml — opens with no login and no internet (tracker row
     assert.ok(html.includes('</html>'));
   });
 
-  test('renders all ten sections', () => {
+  test('renders all nine sections, and no index of the pack itself', () => {
     for (const title of [
       'Candidate profile', 'The position', 'Progress so far',
       'Consolidated interviewer feedback', 'Interviewer scorecards', 'AI screening',
-      'Assessment results', 'Interview history', 'Interview recordings', 'What is in this pack',
+      'Assessment results', 'Interview history', 'Interview recordings',
     ]) {
       assert.ok(html.includes(esc(title)), `missing section: ${title}`);
     }
+    assert.ok(!html.includes('What is in this pack'));
   });
 
   test('shows the candidate, the role and who prepared it', () => {
@@ -281,12 +285,15 @@ describe('renderDossierHtml — opens with no login and no internet (tracker row
 
   test('carries the confidentiality notice and the deletion request', () => {
     assert.ok(html.includes('CONFIDENTIAL'));
-    assert.ok(/delete it\s*\n?\s*within 30 days/i.test(html.replace(/\s+/g, ' ')));
+    assert.ok(/Delete within 30 days/i.test(html.replace(/\s+/g, ' ')));
   });
 
-  test('states what was removed, so redaction is visible rather than silent', () => {
-    assert.ok(/removed from this pack/i.test(html));
-    assert.ok(/compensation/i.test(html));
+  test('does not narrate its own redaction, or who downloaded it', () => {
+    // The reader gets facts about the candidate, not an account of the pack.
+    assert.ok(!/removed from this pack/i.test(html));
+    assert.ok(!/deliberately/i.test(html));
+    assert.ok(!/recorded against/i.test(html));
+    assert.ok(!/<footer/i.test(html), 'who prepared it is already in the header');
   });
 
   test('names the rounds still awaiting a scorecard', () => {
@@ -350,9 +357,7 @@ describe('renderDossierHtml — the written test, rendered rather than named (Ev
     assert.ok(nasty.includes('&lt;img'), 'escaped instead');
   });
 
-  test('a result imported before the breakdown existed says so', () => {
-    // Absence is not omission: without this line a reader concludes the
-    // candidate answered nothing beyond three numbers.
+  test('a result imported before the breakdown existed shows its section scores', () => {
     const legacy = renderDossierHtml(fullModel({
       assessments: [{
         ...fullModel().assessments[0], detail: null, detail_available: false,
@@ -360,7 +365,7 @@ describe('renderDossierHtml — the written test, rendered rather than named (Ev
       assessment_details: { count: 0 },
     }));
     const flat = legacy.replace(/\s+/g, ' ');
-    assert.ok(/breakdown was not captured/i.test(flat));
+    assert.ok(!/breakdown was not captured/i.test(flat), 'no explanation of the missing detail');
     assert.ok(legacy.includes('Core Java'), 'the section scores still render');
   });
 
@@ -398,17 +403,17 @@ describe('renderDossierHtml — recordings as no-login links (Phase 4, §6.5)', 
 
   test('it says the link needs no login and when it stops working', () => {
     const flat = html.replace(/\s+/g, ' ');
-    assert.ok(/no login/i.test(flat));
-    assert.ok(/stops working after/i.test(flat));
+    assert.ok(/No login required/i.test(flat));
+    assert.ok(/Expires 2026-09-17/.test(flat));
     // YYYY-MM-DD, like every other date in the pack — one format, so a reader
     // never has to work out whether 09-08 is August or September.
     assert.ok(/2026-09-17/.test(flat), 'the expiry date is stated');
   });
 
-  test('it says every open is recorded and that it can be withdrawn', () => {
+  test('the link note is a short warning, not an explanation of tracking', () => {
     const flat = html.replace(/\s+/g, ' ');
-    assert.ok(/recorded/i.test(flat));
-    assert.ok(/withdraw/i.test(flat));
+    assert.ok(/Do not forward/.test(flat));
+    assert.ok(!/withdraw/i.test(flat));
   });
 
   test('a hyperlink is still not an external REQUEST', () => {
@@ -435,7 +440,8 @@ describe('renderDossierHtml — recordings as no-login links (Phase 4, §6.5)', 
       ],
     });
     const out = renderDossierHtml(mixed);
-    assert.ok(/was not shared in this pack/i.test(out.replace(/\s+/g, ' ')));
+    assert.ok(/Link not shared/.test(out));
+    assert.ok(!/ask the recruiter/i.test(out));
   });
 
   test('the workbook carries the link too, so "Spreadsheet only" loses nothing', () => {
@@ -452,17 +458,16 @@ describe('renderDossierHtml — recordings as no-login links (Phase 4, §6.5)', 
     // about these — which are the larger disclosure of the two: video of a real
     // person, playable by anyone the file reaches.
     const readme = renderReadMe(withLink());
-    assert.match(readme, /INTERVIEW RECORDINGS/);
+    assert.match(readme, /LINKS/);
     assert.match(readme, /WITHOUT a login/);
     assert.match(readme, /do not forward/i);
-    assert.match(readme, /stop working after 2026-09-17/, 'the expiry is stated in the pack format');
-    assert.match(readme, /recorded against the candidate/i);
+    assert.match(readme, /Interview recordings \(1\), expire 2026-09-17/, 'the expiry is stated in the pack format');
   });
 
   test('a pack that shares no recording says nothing about watching one', () => {
     // The same rule the screening link follows: no warning about a disclosure
     // that did not happen, or the next one that matters gets skimmed past.
-    assert.ok(!/INTERVIEW RECORDINGS/.test(renderReadMe(fullModel())));
+    assert.ok(!/Interview recordings/i.test(renderReadMe(fullModel())));
   });
 
   test('an unshared pack carries no recording URL anywhere in the ZIP', () => {
@@ -489,12 +494,13 @@ describe('renderDossierHtml — empty sections say so rather than vanishing', ()
     }
   });
 
-  test('an empty section explains what "none" means here', () => {
+  test('an empty section says "none" in a few words', () => {
     // A reader must be able to tell "there were no scorecards" from "the dossier
     // forgot to include them" — plan §3.1.
-    assert.ok(/No scorecards have been submitted/i.test(html));
-    assert.ok(/No interview recordings exist/i.test(html));
-    assert.ok(/nothing to consolidate/i.test(html));
+    assert.ok(/No scorecards submitted/.test(html));
+    assert.ok(/No recordings/.test(html));
+    assert.ok(/No feedback yet/.test(html));
+    assert.ok(!/nothing to consolidate/i.test(html));
   });
 
   test('a profile with no values renders the labels anyway', () => {
@@ -596,8 +602,8 @@ describe('renderDossierHtml — a closed journey is never mistaken for a live on
       'Technical 2',
     );
     const html = renderDossierHtml(fullModel({ status }));
-    assert.ok(html.includes('CLOSED'));
-    assert.ok(/not a request to interview/i.test(html));
+    assert.ok(html.includes('Application CLOSED (REJECTED) at Technical 2.'));
+    assert.ok(!/not a request to interview/i.test(html));
   });
 
   test('a paused journey is flagged without being called closed', () => {
@@ -690,14 +696,14 @@ describe('READ-ME.txt — the only control that survives the file leaving', () =
     assert.ok(/within 30 days/i.test(readme));
   });
 
-  test('says what was removed and what is not included', () => {
-    assert.ok(/WHAT HAS BEEN REMOVED/i.test(readme));
-    assert.ok(/compensation/i.test(readme));
-    assert.ok(/Resume:/i.test(readme), 'the manifest gaps must be named, not silently omitted');
+  test('does not explain what was removed or left out', () => {
+    assert.ok(!/REMOVED/i.test(readme));
+    assert.ok(!/compensation/i.test(readme));
+    assert.ok(!/NOT INCLUDED/i.test(readme));
+    assert.ok(!/recorded in the ATS/i.test(readme));
   });
 
-  test('tells the reader the download was recorded against a name', () => {
-    assert.ok(/recorded in the ATS/i.test(readme));
+  test('names who prepared it', () => {
     assert.ok(readme.includes('chhaya.k'));
   });
 
@@ -1332,7 +1338,7 @@ describe('buildZekoReportSection — the vendor report, under our redaction', ()
       { reports: [{ index: 0, round: 'HR screening', detail: buildZekoReportSection(report()) }], links: [] },
       { includeScreeningDetail: true },
     ));
-    assert.ok(html.includes('Not assessed in this interview'));
+    assert.ok(html.includes('<td>Not assessed</td>'));
     assert.ok(!/Logical reasoning<\/td><td>weak/i.test(html));
   });
 
@@ -1405,10 +1411,10 @@ describe('the rendered screening assessment, as the reader meets it', () => {
     assert.ok(!/<script\b/i.test(html), 'no script of any kind');
   });
 
-  test('it says what was withheld rather than removing it silently', () => {
-    // A reader comparing this against a Zeko screenshot must be able to tell
-    // that something was removed deliberately.
-    assert.match(renderDossierHtml(rendered()), /2 item\(s\).*removed.*compensation/is);
+  test('compensation is removed without the report announcing it', () => {
+    const html = renderDossierHtml(rendered());
+    assert.ok(!/concerned compensation/i.test(html));
+    assert.ok(!/item\(s\) from this report were removed/i.test(html));
   });
 
   test('the vendor report\'s free text cannot inject markup', () => {
@@ -1432,9 +1438,8 @@ describe('the rendered screening assessment, as the reader meets it', () => {
     assert.ok(rows.some((r) => String(r[0]).startsWith('Requirement — SQL and Manual Testing')));
   });
 
-  test('the READ-ME points the reader at the section and says what was removed', () => {
-    assert.match(renderReadMe(rendered()), /section 6.*compensation details removed/is);
-    assert.ok(!/compensation details removed/i.test(renderReadMe(fullModel())));
+  test('the READ-ME does not mention the redaction', () => {
+    assert.ok(!/compensation/i.test(renderReadMe(rendered())));
   });
 });
 
@@ -1458,7 +1463,7 @@ describe('the screening report link, as the reader meets it', () => {
   });
 
   test('the HTML warns that the link needs no login', () => {
-    assert.match(renderDossierHtml(linked()), /without a login|with no login/i);
+    assert.match(renderDossierHtml(linked()), /No login required\. Do not forward\./);
   });
 
   test('a pack with no link says nothing about one', () => {
@@ -1477,7 +1482,8 @@ describe('the screening report link, as the reader meets it', () => {
   test('the READ-ME tells the recipient the link is as sensitive as the pack', () => {
     const readme = renderReadMe(linked());
     assert.match(readme, /WITHOUT a login/i);
-    assert.match(readme, /confidential/i);
+    assert.match(readme, /AI screening report/);
+    assert.match(readme, /do not forward/i);
     // And says nothing about a link when there is none to warn about.
     assert.ok(!/WITHOUT a login/i.test(renderReadMe(fullModel())));
   });
@@ -1510,7 +1516,7 @@ describe('L12 — scorecards in round order, re-dos labelled, edited round notes
 
   test('HTML: an earlier attempt is labelled, and the notes sit under the current attempt once', () => {
     const html = renderDossierHtml(model());
-    assert.match(html, /Earlier attempt: this round was done again later/);
+    assert.match(html, /<p class="attempt">Earlier attempt<\/p>/);
     assert.equal(html.split('Edited after the debrief: strong on Java.').length - 1, 1);
     const firstCard = html.indexOf('old@example.com');
     const notesAt = html.indexOf('Edited after the debrief');
@@ -1531,5 +1537,77 @@ describe('L12 — scorecards in round order, re-dos labelled, edited round notes
     assert.ok(rows.some((r) => r[0] === 'TECHNICAL ROUND 1 (2)'));
     const notes = rows.filter((r) => r[0] === 'Round feedback recorded in the ATS');
     assert.deepEqual(notes.map((r) => r[1]), ['Edited after the debrief: strong on Java.', 'Met the CEO informally.']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U03 · the panel's cuts of the report (renderDossierHtml variants)
+// ---------------------------------------------------------------------------
+describe('renderDossierHtml — U03 panel variants', () => {
+  const sha = (s) => createHash('sha256').update(s).digest('hex');
+  const panelModel = () => fullModel({
+    stages: [
+      ...fullModel().stages,
+      { stage_label: 'Offer', event_type: 'moved', outcome: null, reason: null, notes: 'Moved forward from Technical 1 to Offer', decided_by: 'harish', decided_at: new Date('2026-08-29T11:00:00Z') },
+    ],
+    consolidated_by_interviewer: [
+      { stage_key: 'tech1', round: 'Technical 1', interviewer: 'Harish Mopuri', recommendation: 'hire', average: 4.5, comments: 'Strong on concurrency.' },
+    ],
+  });
+  const titles = (html) => [...html.matchAll(/<h2><span class="num">(\d+)<\/span>([^<]+)<\/h2>/g)].map((m) => `${m[1]} ${m[2]}`);
+
+  test('download is unchanged: the default, byte for byte', () => {
+    const m = fullModel();
+    const html = renderDossierHtml(m);
+    assert.equal(renderDossierHtml(m, { variant: 'download' }), html);
+    assert.equal(renderDossierHtml(m, { variant: 'nonsense' }), html, 'an unknown variant is the download');
+    // Snapshot re-taken 11 Nov 2026, when the pack stopped explaining itself (no
+    // redaction list, no "What is in this pack", no footer, shorter notes). The
+    // retention days come from config.
+    if (config.dossier.deletionDays === 30) {
+      assert.equal(sha(html), '6ee1f1da4721329e557c2130b3d3ceb29f6303f055f77ea324fd5f8dd274eca0');
+      assert.equal(sha(renderDossierHtml(emptyModel())), '03defcf6902c4209a0c7c0b1f735bd6e7d1504b42b06265de6d717752540f1b0');
+    }
+    assert.deepEqual(titles(html).map((t) => t.split(' ')[0]), ['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+  });
+
+  test('panel_tech: the header and the named consolidated feedback, nothing else', () => {
+    const html = renderDossierHtml(panelModel(), { variant: 'panel_tech' });
+    assert.deepEqual(titles(html), ['1 Consolidated interviewer feedback']);
+    assert.match(html, /<h1>Pankaj Mondal<\/h1>/);
+    assert.match(html, /Technical 1 — Harish Mopuri/);
+    assert.match(html, /Strong on concurrency\./);
+    assert.match(html, /2 of 2 interviewers recommend hire/);
+    assert.ok(!html.includes('What is in this pack'));
+    assert.ok(!/recorded against/i.test(html));
+  });
+
+  test('panel_leadership: profile first, position last, no moved events, no pack index', () => {
+    const html = renderDossierHtml(panelModel(), { variant: 'panel_leadership' });
+    assert.deepEqual(titles(html), [
+      '1 Candidate profile', '2 Progress so far', '3 Consolidated interviewer feedback',
+      '4 Interview history &amp; recordings', '5 Interviewer scorecards', '6 AI screening',
+      '7 Assessment results', '8 The position',
+    ]);
+    assert.ok(!html.includes('Moved forward from Technical 1 to Offer'), 'moved events are left out');
+    assert.ok(renderDossierHtml(panelModel()).includes('Moved forward from Technical 1 to Offer'), 'the download keeps them');
+    assert.ok(!html.includes('What is in this pack'));
+    assert.match(html, /Technical 1 — Harish Mopuri/);
+  });
+
+  test('both cuts say so when nobody has submitted feedback yet', () => {
+    const m = fullModel({ consolidated_feedback: null, consolidated_by_interviewer: [] });
+    assert.match(renderDossierHtml(m, { variant: 'panel_tech' }), /No feedback yet/);
+  });
+
+  test('the interviewer’s name comes from a single-person booking only', () => {
+    const bookings = new Map([
+      ['1', { interviewer_name: 'Rahul Verma', interviewer_email: 'rahul@example.com' }],
+      ['2', { interviewer_name: 'Rahul Verma', interviewer_email: 'rahul@example.com, priya@example.com' }],
+    ]);
+    assert.equal(interviewerNameFor({ schedule_id: 1n, recipient_email: 'Rahul@Example.com' }, bookings), 'Rahul Verma');
+    assert.equal(interviewerNameFor({ schedule_id: 2, recipient_email: 'priya@example.com' }, bookings), null, 'not on a panel of two');
+    assert.equal(interviewerNameFor({ schedule_id: 1, recipient_email: 'someone@example.com' }, bookings), null);
+    assert.equal(interviewerNameFor({ schedule_id: null, recipient_email: 'rahul@example.com' }, bookings), null);
   });
 });

@@ -19,7 +19,7 @@ import { clearScreeningRoleCache } from './candidateSync.service.js';
 import { tagCandidatesSafe } from './candidateTag.service.js';
 import { createPipelineJourney, setFinalOutcome, reopenJourney } from './pipeline.service.js';
 import { sendShortlistEmail } from './screening.service.js';
-import { getMrfJdAttachment } from './jdAttachment.service.js';
+import { getMrfJdAttachment, jdWantedForTemplate } from './jdAttachment.service.js';
 import { mrfCandidateBlock, MRF_OPEN_SELECT, parseMrfId, TAG_SOURCES } from '../utils/candidateTag.js';
 import {
   cleanMoveReason, moveJourneyBlock, landingStages, resolveLandingStage, moveNotes, movedEmailLeadHtml,
@@ -259,7 +259,8 @@ export async function moveJourneyToMrf({
     searchType: 'jd',
     roleName: newRole,
     template,
-    jd: await getMrfJdAttachment(targetMrfId),
+    // U02b: the shortlist template's "Attach the JD" switch.
+    jd: (await jdWantedForTemplate(template, STAGE_KEYS.SHORTLIST)) ? await getMrfJdAttachment(targetMrfId) : null,
     leadHtml: movedEmailLeadHtml(newRole),
   });
   response.email = outcome.sent ? 'sent' : 'failed';

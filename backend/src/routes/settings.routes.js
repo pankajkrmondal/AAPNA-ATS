@@ -44,15 +44,12 @@ router.post('/assessment-automation', systemConfig, settingsController.saveAsses
 router.get('/flow-keys', settingsController.getFlowKeys);
 router.post('/flow-keys', settingsController.saveFlowKey);
 
-/** "About AAPNA" text for candidate emails (N17). Anyone signed in can read it
- *  (the shortlist dialog previews it); only admins can change it. */
-router.get('/company-profile', settingsController.getCompanyProfileSetting);
-router.post('/company-profile', requireAdmin, settingsController.saveCompanyProfileSetting);
-
-/** MRF Approval & Hold: hold rules (HR Admin Recruiter+) and the approver-absence
- *  window (Admin+). Role checks in the controller, so refusals say why. */
+/** MRF Approval & Hold: hold rules (HR Admin Recruiter+), the person who decides
+ *  on behalf (Admin+) and the approver-absence window (Admin+; no longer in the
+ *  UI, U06b). Role checks in the controller, so refusals say why. */
 router.get('/mrf-approval', mrfHoldSettingsController.getMrfApprovalSettings);
 router.put('/mrf-approval/hold-rules', mrfHoldSettingsController.saveMrfHoldRules);
+router.put('/mrf-approval/on-behalf-user', requireAdmin, mrfHoldSettingsController.saveMrfOnBehalfUser);
 router.put('/mrf-approval/absence', requireAdmin, mrfHoldSettingsController.saveMrfApproverAbsence);
 /** Active window for "Active candidates first" screening order (L01). Anyone
  *  signed in can read it; only admins can change it. */

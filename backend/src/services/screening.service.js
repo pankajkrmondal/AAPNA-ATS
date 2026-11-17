@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { rangeForResponse } from '../utils/analyticsRange.js';
 import { fmtDateTimeIst } from '../utils/dateFormat.js';
+import { zekoCandidateLink } from '../utils/zekoLinkModel.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import redis from '../config/redis.js';
@@ -14,7 +15,6 @@ import { STAGE_KEYS, ZEKO_ROUND_STAGES, normalizeZekoRoundStage, isMrfClosed, LE
 import AppError, { AIModelError } from '../utils/AppError.js';
 import { generateContentWithFallback } from '../utils/geminiHelper.js';
 import { createPipelineJourney, findRecentRejection } from './pipeline.service.js';
-import { getCompanyProfileText } from './companyProfile.service.js';
 import { fmtIstDate } from '../utils/missingDetails.js';
 import { getCooldownCutoff, REAPPLICATION_COOLING_OFF_MONTHS } from '../utils/rejectionCooldown.js';
 import { Prisma } from '@prisma/client';
@@ -29,8 +29,12 @@ import {
   parseActiveFirst, compareActivity, compareResponseSpeed, countActivity, activitySummaryText,
 } from '../utils/candidateActivity.js';
 import { firstValidPhone, toIndianE164, maskPhone } from '../utils/phone.js';
-import { companyBlockHtml, jdLinkHtml, phoneConfirmHtml, appendToBody } from '../utils/candidateEmailBlocks.js';
-import { getMrfJdAttachment } from './jdAttachment.service.js';
+import {
+  jdLinkHtml, phoneConfirmHtml, insertAfterIntro, INTRO_SLOT_ATTR, placeJdLink, hasJdLinkSlot,
+} from '../utils/candidateEmailBlocks.js';
+import {
+  getMrfJdAttachment, getMrfJdCandidateLink, jdForCandidateEmail, jdWantedForTemplate, NO_JD_FOR_EMAIL,
+} from './jdAttachment.service.js';
 import { tagCandidatesSafe, tagsForMrf } from './candidateTag.service.js';
 import { tagSourceForShortlist, mrfCandidateBlock, MRF_OPEN_SELECT } from '../utils/candidateTag.js';
 import { tracedFetch } from '../utils/externalCall.js';
@@ -1852,8 +1856,8 @@ export const MAX_ADD_TO_JD_BATCH = 50;
  */
 export async function shortlistCandidates(candidates, mrfId, roleName, user, options = {}) {
   // source: where the shortlist came from — 'jd' / 'keyword' (Screening tabs)
-  // or 'search_candidate' (Search Candidate → Add to JD, N21). Only 'keyword'
-  // attaches the MRF's JD and the About AAPNA text (N17, Keyword shortlist only).
+  // or 'search_candidate' (Search Candidate → Add to JD, N21). It sets the
+  // candidate's tag source and the Add to JD batch limit.
   const { sendEmail = true, emailOverride = null, source = null } = options;
   let emailsSent = 0;
   let shortlistedCount = 0;
@@ -1889,11 +1893,9 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     roleName = mrf.position_hiring_for || roleName;
   }
 
-  // Keyword shortlists carry the MRF's JD and the About AAPNA text (N17).
-  // Read once for the whole batch; neither ever blocks an email.
-  const isKeywordShortlist = source === 'keyword' || (source === null && searchType === 'keyword');
-  const jd = sendEmail && isKeywordShortlist && mrfRef ? await getMrfJdAttachment(mrfRef) : null;
-  const companyBlock = sendEmail && isKeywordShortlist ? companyBlockHtml(await getCompanyProfileText()) : '';
+  // Every shortlist email carries the MRF's JD (U02: JD tab, keyword tab and
+  // Search "Add to JD"). U02c: the About AAPNA text is part of the Shortlist
+  // template itself, edited in Email Management, so nothing is added here.
   const stageLabels = await stageLabelMap();
   const tagSource = tagSourceForShortlist(source);
 
@@ -1911,6 +1913,14 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
       throw new AppError('Shortlist email template not found.', 500);
     }
   }
+  // U02b: the template's "Attach the JD" switch holds for an edited draft too,
+  // so the row is read for the flag alone when its text was replaced.
+  const jdTemplate = template || (sendEmail && mrfRef
+    ? await prisma.rpa_email_templates.findFirst({ where: { category: 'shortlist', is_active: true }, select: { id: true } })
+    : null);
+  const jd = sendEmail && mrfRef && (await jdWantedForTemplate(jdTemplate, STAGE_KEYS.SHORTLIST))
+    ? await getMrfJdAttachment(mrfRef)
+    : null;
 
   // Name and email from the candidate record (R4): the request only names who.
   const requestedIds = candidates.map((c) => parseCandidateId(c?.id)).filter(Boolean);
@@ -2077,7 +2087,7 @@ export async function shortlistCandidates(candidates, mrfId, roleName, user, opt
     // opt out for the whole batch.
     if (sendEmail) {
       const outcome = await sendShortlistEmail({
-        c, candidateId, shortlist, mrfRef, searchType, roleName, template, emailOverride, jd, companyBlock,
+        c, candidateId, shortlist, mrfRef, searchType, roleName, template, emailOverride, jd,
       });
       if (outcome.sent) emailsSent++;
       else emailFailures.push(outcome.failure);
@@ -2172,13 +2182,12 @@ async function hasOpenJourneyPastStageZero(cvId, exceptPipelineId) {
  * @param {object|null} p.template                                   the active 'shortlist' template (unless emailOverride)
  * @param {{ subject?: string, body?: string }|null} [p.emailOverride]
  * @param {object|null} [p.jd]                                       getMrfJdAttachment result: attached, or linked
- * @param {string} [p.companyBlock]                                  About AAPNA text (N17)
  * @param {string} [p.leadHtml]                                      a paragraph before the intro (Change JD's correction note)
  * @returns {Promise<{ sent: true } | { sent: false, failure: { name: string, email: string, reason: string } }>}
  */
 export async function sendShortlistEmail({
   c, candidateId, shortlist, mrfRef, searchType, roleName, template, emailOverride = null,
-  jd = null, companyBlock = '', leadHtml = '',
+  jd = null, leadHtml = '',
 }) {
   // Resolve recipients (prod -> candidate, cc internal; non-prod -> internal test inbox)
   const { to: toEmail, cc: ccEmail } = resolveRecipients('shortlistCc', c.EmailID);
@@ -2191,11 +2200,12 @@ export async function sendShortlistEmail({
 
   // Build the search-type-specific intro paragraph (JD vs keyword), injected
   // into the branded template via the {role_paragraph} placeholder since
-  // compileTemplate cannot branch on its own.
+  // compileTemplate cannot branch on its own. INTRO_SLOT_ATTR marks it so the
+  // JD card goes right under it (mirrored in DecisionEmailModal.jsx).
   const roleParagraph = leadHtml + (
     searchType === 'jd'
-      ? `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
-      : `<p>Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`);
+      ? `<p ${INTRO_SLOT_ATTR}="1">Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile, we are pleased to inform you that you have been shortlisted for the position of <strong>${roleName}</strong> at AAPNA Infotech. Please note that this role is a <strong>Work from Home (WFH)</strong> opportunity.</p>`
+      : `<p ${INTRO_SLOT_ATTR}="1">Thank you for your interest in opportunities with AAPNA Infotech. After reviewing your profile in our talent database, we are pleased to inform you that your profile has been shortlisted for a suitable position at AAPNA Infotech. Please note that this opportunity is a <strong>Work from Home (WFH)</strong> role.</p>`);
 
   // Replace placeholders. When the recruiter edited the draft (emailOverride),
   // it takes the place of the DB template as the compile base — placeholder
@@ -2208,16 +2218,18 @@ export async function sendShortlistEmail({
     position: roleName,
     role_paragraph: roleParagraph,
   });
-  // N22: a candidate with no valid phone is asked to confirm it on the
-  // details form. N17: keyword shortlists add the JD link (when it cannot
-  // be attached) and the About AAPNA text.
+  // U02: the JD card when the JD cannot be attached, with a link anyone can
+  // open, and N22: a candidate with no valid phone is asked to confirm it.
+  // Both go right under the intro; U02b: the JD card goes at the template's
+  // {{jd_link}} instead when it has one (removed when no card goes). All of it
+  // stays inside the card. U02c: About AAPNA is in the template's own text.
   const phoneLink = await requestPhoneIfMissing(candidateId);
-  const bodyHtml = appendToBody(
-    compiledHtml,
-    phoneLink ? phoneConfirmHtml(phoneLink) : '',
-    jd && !jd.attachment ? jdLinkHtml(jd.link) : '',
-    companyBlock,
-  );
+  const jdLink = jd && !jd.attachment ? await getMrfJdCandidateLink(mrfRef, jd) : null;
+  const jdCard = jdLink ? jdLinkHtml(jdLink.href) : '';
+  const phoneHtml = phoneLink ? phoneConfirmHtml(phoneLink) : '';
+  const bodyHtml = hasJdLinkSlot(compiledHtml)
+    ? insertAfterIntro(placeJdLink(compiledHtml, jdCard), phoneHtml)
+    : insertAfterIntro(compiledHtml, jdCard, phoneHtml);
 
   try {
     // Send from the authorized shared mailbox (MS_DEFAULT_SENDER_EMAIL).
@@ -2943,7 +2955,14 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
       interview_end_at: roundedEnd,
       status: 'sent',
       link_sent_at: new Date(),
+      // U08: a new window is owed its own expiry reminder.
+      reminded_at: null,
     },
+  });
+  // U08: the per-booking token behind our tracked link /api/z/<token>.
+  const bookedRow = await prisma.rpa_zeko_candidate_pipeline.findFirst({
+    where: { candidate_id: shortlistId, zeko_job_id: String(zekoJobId), stage: roundStage },
+    select: { link_token: true },
   });
 
   // 5) Load & Compile Zeko Interview Scheduled template from database
@@ -2954,7 +2973,15 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
     throw new AppError('Zeko Interview Scheduled Invitation template not found in database.', 500);
   }
 
-  const interviewLink = `${config.zeko.interviewLinkBase}/${job.slug}`;
+  // U08: our tracked link when the backend has a public address (it sends a
+  // candidate with no phone on file to the optional phone page first);
+  // otherwise the job's Zeko page, as before.
+  const interviewLink = zekoCandidateLink({
+    token: bookedRow?.link_token,
+    slug: job.slug,
+    publicBaseUrl: config.publicBaseUrl,
+    interviewLinkBase: config.zeko.interviewLinkBase,
+  });
   const startStr = fmtDateTimeIst(roundedStart);
   const endStr = fmtDateTimeIst(roundedEnd);
 
@@ -2971,6 +2998,13 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
 
   if (toEmail) {
     try {
+      // U02: the JD goes with the invite — attached, or as a link when it is
+      // too large or unreadable. Never blocks the send. U02b: unless the
+      // template's "Attach the JD" switch is off.
+      const zekoStageKey = roundStage === ZEKO_ROUND_STAGES.FUNCTIONAL ? STAGE_KEYS.ZEKO_FUNCTIONAL : STAGE_KEYS.ZEKO_HR;
+      const jdMail = (await jdWantedForTemplate(template, zekoStageKey))
+        ? await jdForCandidateEmail(shortlist.mrf_id)
+        : NO_JD_FOR_EMAIL;
       // Send from the authorized shared mailbox (see shortlistCandidates).
       await sendGraphEmail({
         sender: config.microsoft.defaultSender,
@@ -2979,8 +3013,10 @@ export async function scheduleInterview(shortlistId, zekoJobId, startTime, endTi
         // Branded here rather than in the template, so this email carries the
         // same AAPNA shell as every other send path. Idempotent for bodies that
         // are already full documents.
-        html: wrapBrandedEmail(emailHtml, { title: subject }),
+        html: wrapBrandedEmail(jdMail.appendLink(emailHtml), { title: subject }),
+        attachments: jdMail.attachments,
       });
+      logger.info(`Zeko invite sent: shortlist ${shortlistId} ${roundStage}, JD ${jdMail.status}${jdMail.linkKind ? ` (${jdMail.linkKind})` : ''}.`);
     } catch (err) {
       logger.error('Failed to send interview scheduling email:', { error: err.message });
     }

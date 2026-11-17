@@ -63,9 +63,9 @@ export function buildGraphAttachments(attachments = []) {
  *   redirect. ONLY for flows whose key is in NEVER_REDIRECT or
  *   OPERATOR_ADDRESSED; pass the resolved recipients straight through.
  * @param {Array<{name: string, contentType?: string, contentBytes: string}>} [params.attachments]
- *   file attachments, contentBytes base64 (N17). Graph takes them inline up
- *   to ~3 MB in total — callers cap the size and fall back to a link above it
- *   (see jdAttachment.service.js).
+ *   file attachments, contentBytes base64 (N17). Graph takes them inline;
+ *   callers keep one email's attachments within 3.5 MB of base64 and fall back
+ *   to a link above it (U02, see jdAttachment.service.js).
  * @returns {Promise<{graphMessageId: string|null, conversationId: string|null, internetMessageId: string|null}>}
  *   Truthy on success (so old boolean-style callers keep working); throws on failure.
  */

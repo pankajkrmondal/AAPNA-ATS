@@ -16,6 +16,7 @@ import pipelineRoutes from './pipeline.routes.js';
 import scorecardRoutes from './scorecard.routes.js';
 import documentRoutes from './document.routes.js';
 import recordingShareRoutes from './recordingShare.routes.js';
+import zekoLinkRoutes from './zekoLink.routes.js';
 import notificationRoutes from './notification.routes.js';
 import clientErrorRoutes from './clientError.routes.js';
 
@@ -42,6 +43,9 @@ router.use('/documents', documentRoutes);
 // recordingShare.routes.js). The only route in this system that serves media to
 // someone with no account, so every control on it is server-side and per-request.
 router.use('/recording-share', recordingShareRoutes);
+// Public tracked Zeko interview link from our email (no auth, U08 — see
+// zekoLink.routes.js): straight on to Zeko, or the optional phone page first.
+router.use('/z', zekoLinkRoutes);
 
 // ── Placeholder routes (to be implemented in later phases) ────────────
 // Each placeholder returns a friendly "coming soon" message so the

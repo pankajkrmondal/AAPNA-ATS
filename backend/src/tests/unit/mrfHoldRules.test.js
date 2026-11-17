@@ -8,8 +8,8 @@
  *   - every date is an IST calendar date (a hold "until 27 Nov" means 27 Nov in
  *     India whatever the server's timezone);
  *   - a hold is at least until tomorrow and at most maxDays out;
- *   - only HR Admin Recruiter / Admin / Super Admin decide on behalf, and only
- *     inside an absence window that covers today;
+ *   - only the one person chosen in Settings decides on behalf, at any time
+ *     (U06b: no role rule, no absence window);
  *   - a held MRF is not "open" (no reminders, no deciding through old links).
  *
  * Plan: docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md
@@ -23,6 +23,9 @@ import {
   addDays,
   canDecideAsDelegate,
   dateLabel,
+  isDesignee,
+  mayManageHolds,
+  parseOnBehalfUser,
   decisionWord,
   delegateRefusalMessage,
   holdDateBounds,
@@ -143,36 +146,75 @@ describe('approver absence window', () => {
   });
 });
 
-describe('canDecideAsDelegate — who may decide on behalf, and when', () => {
-  const absence = { active: true, from: '2026-10-27', to: '2026-10-31' };
-  const today = '2026-10-28';
+describe('canDecideAsDelegate — only the person chosen in Settings (U06b)', () => {
+  const designee = { userId: 15, isActive: true };
 
-  test('HR Admin Recruiter, Admin and Super Admin inside the window', () => {
+  test('the designee passes, whatever their role', () => {
+    for (const role of ['hr_admin_recruiter', 'admin', 'recruiter', 'hr']) {
+      assert.deepEqual(canDecideAsDelegate({ user: { id: 15, role, is_active: true }, designee }), { ok: true, reason: null }, role);
+    }
+    assert.equal(canDecideAsDelegate({ user: { id: '15', role: 'recruiter' }, designee: { userId: 15 } }).ok, true, 'id as string');
+  });
+
+  test('another Admin or Super Admin fails with not_designated', () => {
+    for (const role of ['admin', 'superadmin', 'hr_admin_recruiter']) {
+      assert.equal(canDecideAsDelegate({ user: { id: 2, role, is_active: true }, designee }).reason, 'not_designated', role);
+    }
+    assert.equal(canDecideAsDelegate({ user: null, designee }).reason, 'not_designated');
+  });
+
+  test('nobody when no designee is set', () => {
+    for (const d of [null, undefined, { userId: null }]) {
+      assert.equal(canDecideAsDelegate({ user: { id: 15, role: 'superadmin' }, designee: d }).reason, 'no_designee');
+    }
+  });
+
+  test('an inactive designee fails', () => {
+    assert.equal(canDecideAsDelegate({ user: { id: 15, role: 'admin' }, designee: { userId: 15, isActive: false } }).reason, 'designee_inactive');
+    assert.equal(canDecideAsDelegate({ user: { id: 15, role: 'admin', is_active: false }, designee }).reason, 'inactive_user');
+  });
+
+  test('an away window makes no difference', () => {
+    const user = { id: 15, role: 'hr_admin_recruiter' };
+    for (const absence of [undefined, { active: false }, { active: true, from: '2026-10-27', to: '2026-10-31' }]) {
+      assert.deepEqual(canDecideAsDelegate({ user, designee, absence }), { ok: true, reason: null });
+      assert.equal(canDecideAsDelegate({ user: { id: 2, role: 'admin' }, designee, absence }).reason, 'not_designated');
+    }
+  });
+
+  test('every refusal has words; not_designated names the person', () => {
+    for (const r of ['no_designee', 'designee_inactive', 'not_designated', 'inactive_user', 'other']) {
+      assert.ok(delegateRefusalMessage(r).length > 10, r);
+    }
+    assert.equal(delegateRefusalMessage('not_designated', { designeeName: 'Chhaya' }), 'Only Chhaya can decide on behalf of the approvers.');
+    assert.match(delegateRefusalMessage('no_designee'), /Settings › MRF Approval & Hold/);
+  });
+});
+
+describe('parseOnBehalfUser and the hold gate', () => {
+  test('broken or missing setting means nobody', () => {
+    for (const raw of [null, '', 'not json', '42', '{"userId":"abc"}', '{"userId":-3}']) {
+      assert.equal(parseOnBehalfUser(raw).userId, null, String(raw));
+    }
+    const v = parseOnBehalfUser('{"userId":15,"setByName":"Pankaj","setAt":"2026-11-12T10:00:00Z"}');
+    assert.equal(v.userId, 15);
+    assert.equal(v.setByName, 'Pankaj');
+  });
+
+  test('isDesignee compares ids', () => {
+    assert.equal(isDesignee({ id: 15 }, { userId: 15 }), true);
+    assert.equal(isDesignee({ id: 16 }, { userId: 15 }), false);
+    assert.equal(isDesignee({ id: 15 }, null), false);
+  });
+
+  test('holds: HR Admin Recruiter and above, or the designee', () => {
+    const designee = { userId: 30 };
     for (const role of ['hr_admin_recruiter', 'admin', 'superadmin']) {
-      assert.deepEqual(canDecideAsDelegate({ user: { role, is_active: true }, absence, today }), { ok: true, reason: null }, role);
+      assert.equal(mayManageHolds({ id: 1, role }, null), true, role);
     }
-  });
-
-  test('nobody outside the window — not even a Super Admin (D1)', () => {
-    assert.equal(canDecideAsDelegate({ user: { role: 'superadmin' }, absence, today: '2026-11-01' }).reason, 'no_absence_window');
-    assert.equal(canDecideAsDelegate({ user: { role: 'admin' }, absence: { active: false }, today }).reason, 'no_absence_window');
-  });
-
-  test('a plain Recruiter never, even inside the window', () => {
-    for (const role of ['recruiter', 'hr', 'vendor', null]) {
-      assert.equal(canDecideAsDelegate({ user: { role }, absence, today }).reason, 'role_too_low', String(role));
-    }
-    assert.equal(canDecideAsDelegate({ user: null, absence, today }).reason, 'role_too_low');
-  });
-
-  test('an inactive account is refused', () => {
-    assert.equal(canDecideAsDelegate({ user: { role: 'admin', is_active: false }, absence, today }).reason, 'inactive_user');
-  });
-
-  test('every refusal has words', () => {
-    for (const r of ['role_too_low', 'inactive_user', 'no_absence_window', 'other']) {
-      assert.ok(delegateRefusalMessage(r).length > 10);
-    }
+    assert.equal(mayManageHolds({ id: 30, role: 'recruiter' }, designee), true, 'designee recruiter');
+    assert.equal(mayManageHolds({ id: 31, role: 'recruiter' }, designee), false, 'other recruiter');
+    assert.equal(mayManageHolds({ id: 32, role: 'vendor' }, designee), false);
   });
 });
 

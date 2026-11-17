@@ -38,7 +38,7 @@ import {
 } from 'antd';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, CopyOutlined, DownloadOutlined, EditOutlined,
-  ExclamationCircleOutlined, FileTextOutlined, HistoryOutlined, LinkOutlined, LoadingOutlined, LockOutlined, MailOutlined, PauseCircleOutlined,
+  ExclamationCircleOutlined, FileTextOutlined, HistoryOutlined, LinkOutlined, LoadingOutlined, LockOutlined, MailOutlined, PaperClipOutlined, PauseCircleOutlined,
   PlayCircleOutlined, SendOutlined, ShareAltOutlined, StepForwardOutlined, StopOutlined, SwapOutlined, UndoOutlined, UserOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -67,6 +67,7 @@ import EarlierAttemptPanel from './EarlierAttemptPanel';
 import { REDO_EXCLUDED_STAGE_KEYS } from './stageMove';
 import EarlierRolesSection, { useRelatedJourneys, roundSummary } from './EarlierRolesSection';
 import PendingScorecardLinkActions from './PendingScorecardLinkActions';
+import ResumeUploadButton from './ResumeUploadButton';
 import { FORMS_LINKS_ENABLED } from '../../utils/featureFlags';
 
 /**
@@ -104,7 +105,7 @@ function stageHistoryText(ev, stages) {
  * merges a patch and marks it touched so a later preview refetch won't clobber
  * the recruiter's edits.
  */
-function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, candidateWrapper, panelWrapper, ready = true }) {
+function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, candidateWrapper, panelWrapper, ready = true, panelAppendix = null }) {
   const field = (key, value) => onChange({ [key]: value, touched: true });
 
   // EmailBodyEditor freezes its srcDoc on first mount (to protect the caret
@@ -160,11 +161,35 @@ function InterviewEmailEditors({ state, onChange, candidateLabel, panelLabel, ca
                 subject={state.panelSubject}
                 height={panelWrapper?.headerHtml ? 420 : 220}
               />
+              {panelAppendix}
             </>
           ),
         },
       ]}
     />
+  );
+}
+
+/**
+ * U03: the candidate details table the panel's invite will carry, shown
+ * read-only under the editable panel body. Server-built and escaped; rendered
+ * in a sandboxed frame (no scripts, no navigation) so it looks as it will in
+ * the email. Not editable on purpose: on HR and CEO rounds it holds CTC.
+ */
+function CandidateTablePreview({ html }) {
+  if (!html) return null;
+  return (
+    <div style={{ marginTop: 10 }} data-testid="schedule-candidate-table">
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+        Added to the panel&apos;s invite when it is sent (not editable). Recording links are added at send time.
+      </Text>
+      <iframe
+        title="Candidate details table"
+        sandbox=""
+        srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:8px;font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;">${html}</body></html>`}
+        style={{ width: '100%', height: 340, border: '1px solid #e5e7eb', borderRadius: 6, background: '#fff' }}
+      />
+    </div>
   );
 }
 
@@ -981,6 +1006,11 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // L14: the JD, CV and report so far go to the panel with the invite. On by
   // default; the recruiter can untick it per booking.
   const [sendPanelPack, setSendPanelPack] = useState(true);
+  // U01: no resume on file, so the panel gets the candidate profile summary instead.
+  const [attachProfileSummary, setAttachProfileSummary] = useState(false);
+  // U03: show the candidate's source (vendor) in the panel's table. Off by
+  // default; never for a referral (the server enforces that too).
+  const [showSourceToPanel, setShowSourceToPanel] = useState(false);
   // Which preview payload schedEmail/cxlEmail currently reflect. The body
   // editors freeze their srcDoc on mount, so they must wait for the adopting
   // effect below to land — same guard as emailStateForKey in the outcome modal.
@@ -1233,7 +1263,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
   // with the date/duration the recruiter is entering. Uses the reschedule
   // endpoint in reschedule mode so the preview shows the old → new time.
   const { data: schedPreview } = useQuery({
-    queryKey: ['schedule-preview', interviewMode, pipelineId, pipeline?.current_stage_key, interviewAt?.toISOString(), interviewDuration, interviewerName, interviewerEmail],
+    queryKey: ['schedule-preview', interviewMode, pipelineId, pipeline?.current_stage_key, interviewAt?.toISOString(), interviewDuration, interviewerName, interviewerEmail, showSourceToPanel],
     queryFn: async () => {
       const params = {
         stage_key: pipeline?.current_stage_key,
@@ -1245,6 +1275,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         // recruiter filled the field in.
         interviewer_name: interviewerName || undefined,
         interviewer_email: interviewerEmail || undefined,
+        // U03: the preview's candidate table follows the Source tick-box.
+        show_source: showSourceToPanel ? 'true' : undefined,
       };
       const res = interviewMode === 'reschedule'
         ? await pipelineService.getReschedulePreview(pipelineId, params)
@@ -1267,6 +1299,14 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedPreview]);
+
+  // U01: what the panel pack will carry, checked before anything is sent
+  // ({ resume: 'ok'|'missing'|'not_a_resume', jd: 'ok'|'missing', report }).
+  // The drawer's own resumeStatus (same rule) covers the moment before the
+  // preview arrives.
+  const packCheck = schedPreview?.pack || null;
+  const scheduleResumeStatus = packCheck?.resume || data?.resumeStatus || null;
+  const scheduleResumeMissing = Boolean(scheduleResumeStatus) && scheduleResumeStatus !== 'ok';
 
   // Cancel-email preview: candidate + panel cancellation templates for the
   // live booking (interviewSchedule.id), loaded when the cancel modal opens.
@@ -1593,6 +1633,10 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         panel_subject: schedEmail.panelSubject,
         panel_body: schedEmail.panelBody,
         send_pack: sendPanelPack,
+        // U01: only meaningful when no resume can travel; the server ignores it otherwise.
+        attach_profile: sendPanelPack && attachProfileSummary,
+        // U03: the source row in the panel's candidate table.
+        show_source: showSourceToPanel && !data?.referral?.is_referral,
       };
       return mode === 'reschedule'
         ? pipelineService.rescheduleInterview(pipelineId, payload)
@@ -1883,6 +1927,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
     setSendPanelPack(true);
+    setAttachProfileSummary(false);
+    setShowSourceToPanel(false);
     setInterviewOpen(true);
   };
 
@@ -1902,6 +1948,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
     setSchedEmail({ candidateSubject: '', candidateBody: '', panelSubject: '', panelBody: '', touched: false });
     setSchedEmailForKey(null);
     setSendPanelPack(true);
+    setAttachProfileSummary(false);
+    setShowSourceToPanel(false);
     setInterviewOpen(true);
   };
 
@@ -1924,7 +1972,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       message.error('Enter a 10-digit mobile number for the interviewee (for example 98765 43210).');
       return;
     }
-    interviewMutation.mutate({
+    const book = () => interviewMutation.mutate({
       stageKey: pipeline.current_stage_key,
       startAt: interviewAt.toDate().toISOString(),
       duration: interviewDuration,
@@ -1935,6 +1983,22 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
         ? typedPhone
         : undefined,
     });
+    // U01: the panel pack is going but no resume can travel. HR may send
+    // anyway, but says so first.
+    if (sendPanelPack && stageSendsInvites(pipeline.current_stage_key) && scheduleResumeMissing) {
+      const who = pipeline?.rpa_shortlisted_candidates?.candidate_name || 'this candidate';
+      modal.confirm({
+        title: 'Send without a resume?',
+        content: `No resume is on file for ${who}. ${attachProfileSummary
+          ? 'The candidate profile summary goes to the panel in its place.'
+          : 'The panel will not get a CV with this invite.'}`,
+        okText: 'Send without a resume',
+        cancelText: 'Go back',
+        onOk: book,
+      });
+      return;
+    }
+    book();
   };
 
   const openInterviewCancelModal = () => {
@@ -2420,6 +2484,9 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                       stageLabel={stage.label}
                       role={pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline?.rpa_shortlisted_candidates?.position_applied}
                       jdLink={pipeline?.rpa_shortlisted_candidates?.mrf?.jd_document_link}
+                      resumeStatus={data?.resumeStatus}
+                      candidateId={pipeline?.cv_id}
+                      isReferral={!!referral?.is_referral}
                     />
                   </div>
                 )}
@@ -2784,9 +2851,16 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                 {screening.shortlistedAt && <> · {fmtDate(screening.shortlistedAt)}</>}
                 {screening.shortlistedBy && <> · by {screening.shortlistedBy}</>}
               </Text>
-              {cvFileUrl
+              {/* U01: same rule as the panel pack. The backend sends cvFileUrl
+                  only for a real resume (pdf/doc/docx), never an Excel workbook. */}
+              {cvFileUrl && (data?.resumeStatus ?? 'ok') === 'ok'
                 ? <Button size="small" type="link" icon={<FileTextOutlined />} style={{ padding: 0 }} href={cvFileUrl} target="_blank" rel="noopener noreferrer">View resume</Button>
-                : <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>}
+                : (
+                  <Space size={8}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>No resume on file</Text>
+                    <ResumeUploadButton candidateId={pipeline?.cv_id} pipelineId={pipelineId} type="link" />
+                  </Space>
+                )}
             </div>
           )}
           {/* The candidate's evidence, in the two forms it is asked for: on
@@ -3621,8 +3695,82 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
               </Checkbox>
               <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 2, marginLeft: 24 }}>
                 Attached to the panel&apos;s invite: the role&apos;s JD and the candidate&apos;s CV, plus the report so far
-                (earlier scorecards, AI screening, assessments, no-login recording links) once an earlier round has
-                results. The report leaves out CTC and the candidate&apos;s contact details. The candidate&apos;s own invite is unchanged.
+                once an interviewer has given feedback (technical rounds: the interviewers&apos; feedback only; HR and
+                CEO rounds: the full report, the position last). The report leaves out CTC and the candidate&apos;s
+                contact details. Recording links go in the invite&apos;s candidate table.
+              </Text>
+              {/* U02: the candidate's invite carries the JD as well. */}
+              {packCheck && (
+                <Text
+                  type={packCheck.jd === 'ok' ? undefined : 'secondary'}
+                  style={{ fontSize: 12, display: 'block', marginTop: 6 }}
+                  data-testid="schedule-jd-status"
+                >
+                  {packCheck.jd === 'ok' ? (
+                    <>
+                      <PaperClipOutlined style={{ marginInlineEnd: 4 }} />
+                      JD on file: it goes with the candidate&apos;s invite{sendPanelPack ? " and the panel's" : ''} (as a link if the file is too large).
+                    </>
+                  ) : 'This MRF has no JD file: the invites go without one.'}
+                </Text>
+              )}
+              {/* U01: warn before sending when no resume can travel. */}
+              {sendPanelPack && scheduleResumeMissing && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginTop: 8 }}
+                  message={scheduleResumeStatus === 'not_a_resume'
+                    ? `The file on record for ${pipeline?.rpa_shortlisted_candidates?.candidate_name || 'this candidate'} is not a resume, so it will not be sent.`
+                    : `No resume on file for ${pipeline?.rpa_shortlisted_candidates?.candidate_name || 'this candidate'}.`}
+                  description={(
+                    <div>
+                      <Text style={{ fontSize: 12.5, display: 'block' }}>
+                        {(() => {
+                          const going = [
+                            (!packCheck || packCheck.jd === 'ok') && 'the JD',
+                            (!packCheck || packCheck.report) && 'the report',
+                          ].filter(Boolean);
+                          return going.length
+                            ? `The panel will get ${going.join(' and ')} only.`
+                            : 'Nothing else is on file to attach.';
+                        })()}
+                      </Text>
+                      <Space size={8} wrap style={{ marginTop: 8 }}>
+                        <ResumeUploadButton candidateId={pipeline?.cv_id} pipelineId={pipelineId} />
+                        <Checkbox checked={attachProfileSummary} onChange={(e) => setAttachProfileSummary(e.target.checked)}>
+                          Attach the candidate profile summary instead
+                        </Checkbox>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 6 }}>
+                        Or book now and use &ldquo;Send JD, CV &amp; report to panel&rdquo; once the resume is in.
+                      </Text>
+                    </div>
+                  )}
+                />
+              )}
+            </div>
+          )}
+
+          {/* U03: the panel's invite carries a candidate details table (shown
+              under the panel email below). Source is off by default and never
+              shown for a referral. */}
+          {stageSendsInvites(selectedStageKey) && (
+            <div>
+              <Checkbox
+                checked={showSourceToPanel && !referral?.is_referral}
+                disabled={!!referral?.is_referral}
+                onChange={(e) => setShowSourceToPanel(e.target.checked)}
+                data-testid="schedule-show-source"
+              >
+                Show the candidate&apos;s source (vendor) to the panel
+              </Checkbox>
+              <Text type="secondary" style={{ fontSize: 11.5, display: 'block', marginTop: 2, marginLeft: 24 }}>
+                {referral?.is_referral
+                  ? 'This candidate is a referral, so the source is never shown to the panel.'
+                  : (selectedStageKey === 'hr_round' || selectedStageKey === 'ceo')
+                    ? 'The candidate table in the invite includes current and expected CTC on this round.'
+                    : 'The candidate table in the invite leaves out CTC on this round.'}
               </Text>
             </div>
           )}
@@ -3645,6 +3793,7 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
                   panelWrapper={schedPreview?.panel?.wrapper}
                   ready={!!schedPreview && (schedEmail.touched || schedEmailForKey === schedPreview)}
                   key={`sched-${schedEmailForKey === schedPreview ? 'ready' : 'loading'}`}
+                  panelAppendix={<CandidateTablePreview html={schedPreview?.candidate_table_html} />}
                 />
               </div>
 
@@ -3801,6 +3950,8 @@ export default function PipelineDrawer({ pipelineId, open: openProp, onAfterClos
       candidateName={pipeline?.rpa_shortlisted_candidates?.candidate_name}
       position={pipeline?.rpa_shortlisted_candidates?.mrf?.position_hiring_for || pipeline?.rpa_shortlisted_candidates?.position_applied}
       deadlineDays={automationSettingsData?.assessment_deadline_days}
+      hasJd={Boolean(pipeline?.rpa_shortlisted_candidates?.mrf?.jd_document_link || pipeline?.rpa_shortlisted_candidates?.mrf?.jd_attachment)}
+      template={assessmentInviteData?.template || null}
       sending={inviteMutation.isPending}
       onSend={(payload) => inviteMutation.mutate(payload)}
     />
@@ -4299,24 +4450,58 @@ function OfferActions({ offer, pending, /* onRequestApproval, onApprove, */ onOp
  * applied, the recruiter can still start the recording by hand — but only if
  * they know, and only while the interview has not happened yet.
  */
-function TeamsDetails({ pipelineId, schedule, candidateName, stageLabel, role, jdLink }) {
+function TeamsDetails({ pipelineId, schedule, candidateName, stageLabel, role, jdLink, resumeStatus, candidateId, isReferral = false }) {
   const { message, modal } = AntApp.useApp();
   const queryClient = useQueryClient();
   const [sendingPack, setSendingPack] = useState(false);
+  // U01: the same pre-send check as the Schedule window.
+  const noResume = Boolean(resumeStatus) && resumeStatus !== 'ok';
 
   // L14: the JD, CV and report so far for a panel booked before the pack
   // existed, or one that should see a scorecard that arrived after its invite.
   const sendPackToPanel = () => {
+    // Read when the dialog's OK runs; the checkboxes below write them.
+    let attachProfile = false;
+    let showSource = false;
+    const base = `This emails ${schedule.interviewer_email || 'the panel'} the candidate details table (with no-login recording links), the role's JD, the candidate's CV and, once an interviewer has given feedback, the report so far (no CTC, no contact details). It is recorded on the candidate's timeline.`;
+    // U03: same rule as the Schedule window; a referral's source is never shown.
+    const sourceBox = isReferral ? null : (
+      <Checkbox onChange={(e) => { showSource = e.target.checked; }} data-testid="send-pack-show-source">
+        Show the candidate&apos;s source (vendor) to the panel
+      </Checkbox>
+    );
     modal.confirm({
-      title: 'Send the JD, CV and report so far to the panel?',
-      content: `This emails ${schedule.interviewer_email || 'the panel'} the role's JD, the candidate's CV and, when earlier rounds have results, the report so far (no CTC, no contact details) with no-login recording links. It is recorded on the candidate's timeline.`,
-      okText: 'Send',
+      title: noResume ? 'Send to the panel without a resume?' : 'Send the JD, CV and report so far to the panel?',
+      content: noResume ? (
+        <div>
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 10 }}
+            message={resumeStatus === 'not_a_resume'
+              ? `The file on record for ${candidateName || 'this candidate'} is not a resume, so it will not be sent.`
+              : `No resume on file for ${candidateName || 'this candidate'}.`}
+            description="The panel will get the JD and the report only. Upload the resume from the drawer first, or send without one."
+          />
+          <Checkbox onChange={(e) => { attachProfile = e.target.checked; }}>
+            Attach the candidate profile summary instead
+          </Checkbox>
+          {sourceBox && <div style={{ marginTop: 6 }}>{sourceBox}</div>}
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>{base}</Text>
+        </div>
+      ) : (
+        <div>
+          <Text style={{ display: 'block' }}>{base}</Text>
+          {sourceBox && <div style={{ marginTop: 10 }}>{sourceBox}</div>}
+        </div>
+      ),
+      okText: noResume ? 'Send without a resume' : 'Send',
       onOk: async () => {
         setSendingPack(true);
         try {
-          const res = await pipelineService.sendPanelPack(schedule.id);
+          const res = await pipelineService.sendPanelPack(schedule.id, { attachProfile: noResume && attachProfile, showSource });
           const s = res.data?.data?.summary || {};
-          const sent = [s.jd === 'attached' && 'JD', s.cv === 'attached' && 'CV', s.report && 'report so far'].filter(Boolean);
+          const sent = [s.jd === 'attached' && 'JD', s.cv === 'attached' && 'CV', s.report && 'report so far', s.profile && 'candidate profile'].filter(Boolean);
           message.success(`Sent to the panel${sent.length ? `: ${sent.join(', ')}` : ''}.`);
           queryClient.invalidateQueries({ queryKey: ['pipeline-detail', pipelineId] });
         } catch (err) {
@@ -4368,11 +4553,17 @@ function TeamsDetails({ pipelineId, schedule, candidateName, stageLabel, role, j
           </Button>
         </Tooltip>
         {schedule.id && schedule.interviewer_email && (
-          <Tooltip title="Email the panel the role's JD, the CV and the report so far (earlier rounds).">
+          <Tooltip title={noResume
+            ? 'No resume on file: the panel gets the JD and the report so far. Upload the resume first to include it.'
+            : "Email the panel the role's JD, the CV and the report so far (earlier rounds)."}
+          >
             <Button size="small" icon={<SendOutlined />} loading={sendingPack} onClick={sendPackToPanel}>
               Send JD, CV &amp; report to panel
             </Button>
           </Tooltip>
+        )}
+        {schedule.id && schedule.interviewer_email && noResume && (
+          <ResumeUploadButton candidateId={candidateId} pipelineId={pipelineId} />
         )}
         {schedule.teams_meeting_id && (
           <Tooltip title="Click to copy">

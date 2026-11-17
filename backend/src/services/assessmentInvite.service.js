@@ -15,6 +15,8 @@ import { stageVisitStart } from './stageState.service.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { sendAdHocCandidateEmail } from './stageNotification.service.js';
+import { jdForCandidateEmail, jdWanted, loadTemplateAttachJd, NO_JD_FOR_EMAIL } from './jdAttachment.service.js';
+import { STAGE_KEYS } from '../config/pipelineStages.js';
 import { compileTemplate } from './emailNotification.service.js';
 import { notifyVendor, VENDOR_EVENTS } from './vendorNotification.service.js';
 import { getAssessmentAutomationSettings } from './assessmentSettings.service.js';
@@ -38,6 +40,31 @@ function plainTextToEmailHtml(text) {
     .replace(/>/g, '&gt;');
   const paragraphs = text.split(/\n{2,}/).map((para) => escapeHtml(para).split('\n').join('<br>'));
   return `<div style="font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.6;color:#111827;">${paragraphs.map((p) => `<p style="margin:0 0 14px;">${p}</p>`).join('')}</div>`;
+}
+
+/**
+ * U02b: the invite's stored template, editable on the Email Templates page
+ * (its "Attach the JD" switch and {{jd_link}} too). Seeded create-only by DDL
+ * 2026-11-12-email-template-attach-jd.sql; until the row exists, the modal's
+ * built-in copy is used, as before.
+ */
+export const ASSESSMENT_INVITE_TEMPLATE = 'Evalground Assessment Invite';
+
+/**
+ * The active invite template with its switch, or null. Never throws.
+ * @returns {Promise<{id: number, subject: string, body_html: string, attach_jd: boolean|null}|null>}
+ */
+export async function loadAssessmentInviteTemplate() {
+  try {
+    const tpl = await prisma.rpa_email_templates.findFirst({
+      where: { name: ASSESSMENT_INVITE_TEMPLATE, is_active: true },
+      select: { id: true, subject: true, body_html: true },
+    });
+    return tpl ? { ...tpl, attach_jd: await loadTemplateAttachJd(tpl.id) } : null;
+  } catch (err) {
+    logger.warn(`Evalground invite template lookup failed, the built-in copy is used: ${err.message}`);
+    return null;
+  }
 }
 
 /**
@@ -73,6 +100,13 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
     if (!subject?.trim() || !body?.trim()) {
       throw new AppError('subject and body are required to send an Evalground invite email.', 400);
     }
+    // U02: the JD goes with the invite — attached, or as a link. U02b: unless
+    // the template's switch is off; the card goes where the recruiter's text
+    // keeps {{jd_link}}, else at the end, as before.
+    const inviteTemplate = await loadAssessmentInviteTemplate();
+    const jdMail = jdWanted(inviteTemplate, STAGE_KEYS.ASSESSMENT)
+      ? await jdForCandidateEmail(pipeline.mrf_id || pipeline.rpa_shortlisted_candidates?.mrf_id)
+      : NO_JD_FOR_EMAIL;
     emailResult = await sendAdHocCandidateEmail({
       pipelineRow: pipeline,
       candidate: {
@@ -80,7 +114,9 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
         email: pipeline.rpa_shortlisted_candidates?.candidate_email,
       },
       subject,
-      body: plainTextToEmailHtml(body),
+      body: jdMail.appendLink(plainTextToEmailHtml(body)),
+      attachments: jdMail.attachments,
+      attachmentsLog: jdMail.logEntries,
     });
     if (!emailResult.sent) {
       logger.error('Failed to send the Evalground invite email:', { error: emailResult.error });
@@ -134,19 +170,23 @@ export async function sendAssessmentInvite(pipelineId, { method, subject = null,
  * Latest invite (or null) + overdue state, for PipelineDrawer.jsx's
  * "Invite Sent"/"Awaiting Test" rendering. A withdrawn latest invite is
  * returned with isWithdrawn so the drawer can offer "Send Evalground invite"
- * again; it is never overdue.
+ * again; it is never overdue. `template` (U02b) is the stored invite template
+ * the compose modal starts from, or null for its built-in copy.
  * @param {number|string} pipelineId
  */
 export async function getInviteState(pipelineId) {
   // L02-C: on a re-done Assessment stage the earlier attempt's invite and
   // result are history — the drawer offers a fresh invite.
   const since = await stageVisitStart(pipelineId, 'assessment');
-  const latest = await prisma.rpa_assessment_invites.findFirst({
-    where: { pipeline_id: BigInt(pipelineId), ...(since ? { sent_at: { gte: since } } : {}) },
-    orderBy: { sent_at: 'desc' },
-  });
+  const [latest, template] = await Promise.all([
+    prisma.rpa_assessment_invites.findFirst({
+      where: { pipeline_id: BigInt(pipelineId), ...(since ? { sent_at: { gte: since } } : {}) },
+      orderBy: { sent_at: 'desc' },
+    }),
+    loadAssessmentInviteTemplate(),
+  ]);
   if (!latest) {
-    return { invite: null, isOverdue: false, hasResult: false, isWithdrawn: false };
+    return { invite: null, isOverdue: false, hasResult: false, isWithdrawn: false, template };
   }
 
   const result = await prisma.rpa_assessment_results.findFirst({
@@ -158,7 +198,7 @@ export async function getInviteState(pipelineId) {
   });
   const { isOverdue, isWithdrawn } = assessmentInviteState(latest, !!result);
 
-  return serializeBigInts({ invite: latest, isOverdue, hasResult: !!result, isWithdrawn });
+  return serializeBigInts({ invite: latest, isOverdue, hasResult: !!result, isWithdrawn, template });
 }
 
 /** Overridable from the Email Templates page; the inline copy below is used until then. */

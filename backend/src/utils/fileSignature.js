@@ -53,6 +53,55 @@ const SIGNATURES = {
 /** Formats with no reliable signature — .csv is plain text and cannot be sniffed. */
 const UNVERIFIABLE = new Set(['.csv', '.txt']);
 
+const startsWithAny = (buf, signatures) => signatures.some(
+  (sig) => buf.length >= sig.length && sig.every((byte, i) => buf[i] === byte)
+);
+
+/**
+ * Same check as matchesSignature(), for bytes already in memory (a file
+ * downloaded from OneDrive rather than one multer wrote to disk).
+ *
+ * @param {Buffer} buffer
+ * @param {string} ext - lowercase, with the dot
+ * @returns {boolean}
+ */
+export function bufferMatchesSignature(buffer, ext) {
+  const expected = SIGNATURES[ext];
+  if (!expected || UNVERIFIABLE.has(ext)) return true;
+  return Buffer.isBuffer(buffer) && startsWithAny(buffer, expected);
+}
+
+/**
+ * What kind of office document these bytes are, as far as the bytes say (U01).
+ *
+ * The leading bytes cannot tell a .docx from an .xlsx (both are zips) or a .doc
+ * from an .xls (both OLE2), so this also looks for the part names each format
+ * must contain: `word/` or `xl/` in a zip, the "WordDocument" or "Workbook"
+ * stream in an OLE2 file (stored as UTF-16LE). A heuristic, used only to keep
+ * a spreadsheet from being sent as a resume; '' means "cannot tell".
+ *
+ * @param {Buffer} buffer
+ * @returns {'.pdf'|'.docx'|'.xlsx'|'.zip'|'.doc'|'.xls'|''}
+ */
+export function sniffDocumentType(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return '';
+  if (startsWithAny(buffer, SIGNATURES['.pdf'])) return '.pdf';
+  if (startsWithAny(buffer, SIGNATURES['.zip'])) {
+    if (buffer.includes('word/')) return '.docx';
+    if (buffer.includes('xl/')) return '.xlsx';
+    return '.zip';
+  }
+  if (startsWithAny(buffer, SIGNATURES['.doc'])) {
+    if (buffer.includes(Buffer.from('WordDocument', 'utf16le'))) return '.doc';
+    if (buffer.includes(Buffer.from('Workbook', 'utf16le'))) return '.xls';
+    return '.doc';
+  }
+  // Readers accept a PDF header anywhere in the first 1 KB (some generators
+  // write a BOM or blank lines first).
+  if (buffer.subarray(0, 1024).includes('%PDF-')) return '.pdf';
+  return '';
+}
+
 /**
  * Whether the bytes on disk match what `ext` promises.
  *
@@ -74,9 +123,7 @@ export async function matchesSignature(filePath, ext) {
     handle = await fs.promises.open(filePath, 'r');
     const buf = Buffer.alloc(longest);
     const { bytesRead } = await handle.read(buf, 0, longest, 0);
-    return expected.some(
-      (sig) => bytesRead >= sig.length && sig.every((byte, i) => buf[i] === byte)
-    );
+    return startsWithAny(buf.subarray(0, bytesRead), expected);
   } catch {
     // Unreadable is not the same as mislabelled. Let the caller's own error
     // handling deal with a file it cannot open, rather than reporting it as a
@@ -188,4 +235,6 @@ export async function partitionBySignature(files, allowedExts) {
   return { accepted, rejected };
 }
 
-export default { matchesSignature, assertSignature, partitionBySignature, collectFiles };
+export default {
+  matchesSignature, bufferMatchesSignature, sniffDocumentType, assertSignature, partitionBySignature, collectFiles,
+};

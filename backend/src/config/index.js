@@ -412,6 +412,17 @@ const config = {
        */
       resultsCron: env('ZEKO_RESULTS_CRON', '*/5 * * * *'),
     },
+
+    /**
+     * U08: the "your Zeko interview closes soon" email (jobs/zekoExpiryReminder.js).
+     * Default OFF. Also needs ZEKO_SYNC_ENABLED, because the job asks Zeko (with
+     * the dashboard cookie that sync keeps fresh) whether the candidate has
+     * attempted the test before reminding them. Lead time: rpa_settings
+     * zeko_reminder_lead_hours (default 24).
+     */
+    reminder: {
+      enabled: env('ZEKO_REMINDER_ENABLED', 'false') === 'true',
+    },
   },
 
   /** Evalground Assessment invite/deadline tracking (Phase 3 M2 extension) */
@@ -666,6 +677,17 @@ const config = {
      * second backfill.
      */
     flexibleStagesEnabled: env('FLEXIBLE_STAGES_ENABLED', 'false') === 'true',
+  },
+
+  /**
+   * U10 / U10b: the 09:00 IST bell note "12 candidates responded yesterday
+   * across 4 JDs", opening Open Positions › Responded (jobs/completedFormsDigest.js). Default OFF. In-app only, no email. Goes to
+   * FORMS_DIGEST_ROLES (HR and Admin by default); vendors are never reached.
+   */
+  formsDigest: {
+    enabled: env('FORMS_DIGEST_ENABLED', 'false') === 'true',
+    roles: env('FORMS_DIGEST_ROLES', 'superadmin,admin,hr_admin_recruiter,hr')
+      .split(',').map((r) => r.trim().toLowerCase()).filter(Boolean),
   },
 
   /**
