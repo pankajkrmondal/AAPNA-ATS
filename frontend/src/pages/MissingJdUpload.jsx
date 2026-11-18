@@ -80,6 +80,14 @@ const RULES = {
 const NUMBER_KEYS = new Set(['TotalExperienceYears', 'LastCompanyExperienceYears', 'CTC_LPA', 'ExpectedCTC_LPA',
   '10th (in percentage)', '12th (in percentage)', 'Graduation (in percentage)', 'PostGraduation (in percentage)']);
 
+/**
+ * Fields whose value is not text: the resume (a file list) and the English
+ * rating (a number). Their "required" rule must have no `whitespace` key at
+ * all: any extra key makes the validator check the value as a string, so a
+ * chosen rating or an attached file was reported as missing.
+ */
+const NON_TEXT_KEYS = new Set(['uploadResume', 'EnglishCommunicationRating']);
+
 /** "PostGraduationScore" -> "Post graduation score", for a key the list above does not know. */
 const labelFromKey = (key) => {
   const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').trim().toLowerCase();
@@ -373,7 +381,7 @@ export default function MissingJdUpload() {
           const isUpload = key === 'uploadResume';
           const required = {
             required: true,
-            whitespace: !isUpload,
+            ...(NON_TEXT_KEYS.has(key) ? {} : { whitespace: true }),
             message: isUpload ? 'Please upload your resume file.' : `${labelOf(key)} is required.`,
           };
           return (

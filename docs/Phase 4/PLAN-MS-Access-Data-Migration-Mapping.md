@@ -429,6 +429,8 @@ Written 17 Nov 2026, after the staging load. Nothing in this section has been ru
 
 ## 4. Stage 2: Excel files
 
+> **18 Nov 2026:** the detailed plan for Stage 2 (and Stage 3) now lives in `PLAN-Legacy-Migration-Stage2-3-Excel-Naukri-Resumes.md`. The inventory and preliminary mapping below remain its starting point.
+
 Starts after Stage 1 is signed off. One file layout at a time, each with its own alias list, the same value rules, tag, duplicate rule and provenance table. Tag value: `legacy_excel_migration`.
 
 ### 4.1 What is there
@@ -507,6 +509,8 @@ The screening-question columns differ per job posting, so they are matched by ke
 ---
 
 ## 5. Stage 3: resume files (PDF, DOCX)
+
+> **18 Nov 2026:** the detailed plan for Stage 3 now lives in `PLAN-Legacy-Migration-Stage2-3-Excel-Naukri-Resumes.md` section 5. It replaces 5.3's "no email and no phone" rule with HR Upload's actual rule (no valid email = not imported) and adds the handling of scanned resumes.
 
 About 5,240 resumes: 3,446 PDF, 1,371 DOCX, 419 DOC, plus a few RTF, JPG and PPTX.
 
