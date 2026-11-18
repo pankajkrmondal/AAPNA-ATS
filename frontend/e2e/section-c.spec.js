@@ -85,6 +85,18 @@ test.describe('N18 public form', () => {
     await expect(form.getByText('Expected CTC (LPA) must be between 0 and 200.')).toBeVisible();
     await expect(form.getByText('Graduation percentage must be between 0 and 100.')).toBeVisible();
     await shot(page, 'public-form-rules');
+
+    // A chosen rating (a number) and an attached resume (a file list) clear
+    // their "required" errors — they were reported as missing even when filled.
+    await expect(form.getByText('English communication rating is required.')).toBeVisible();
+    await form.locator('.ant-form-item').filter({ hasText: 'English communication rating' }).locator('.ant-select').click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: /^4$/ }).click();
+    await expect(form.getByText('English communication rating is required.')).toHaveCount(0);
+    await expect(form.getByText('Please upload your resume file.')).toBeVisible();
+    await form.locator('.ant-form-item').filter({ hasText: 'Upload resume' }).locator('input[type="file"]').setInputFiles({
+      name: 'section-c-resume.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n% section C e2e\n'),
+    });
+    await expect(form.getByText('Please upload your resume file.')).toHaveCount(0);
   });
 });
 
