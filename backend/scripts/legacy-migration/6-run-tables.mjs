@@ -31,7 +31,17 @@ const outFile = path.join(work, 'report', `${envName}-load-all.json`);
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 const results = fs.existsSync(outFile) ? JSON.parse(fs.readFileSync(outFile, 'utf8')) : [];
 const save = () => fs.writeFileSync(outFile, JSON.stringify(results, null, 2));
-const jsonOf = (s) => { const i = s.indexOf('\n{'); const t = s.startsWith('{') ? s : s.slice(i + 1); return JSON.parse(t.slice(0, t.lastIndexOf('}') + 1)); };
+// The scripts print their result with JSON.stringify(x, null, 2): a line that is exactly "{" up to
+// the next line that is exactly "}". Under NODE_ENV=production the ATS logger also writes one-line
+// JSON to stdout (for example a vector timeout), so take the LAST such block and ignore log lines.
+// (Changed 18 Nov 2026 during the production run, Pankaj's decision; plan section 9.)
+const jsonOf = (s) => {
+  const lines = s.split('\n').map((l) => l.replace(/\r$/, ''));
+  const start = lines.lastIndexOf('{');
+  const end = lines.indexOf('}', start);
+  if (start < 0 || end < 0) throw new Error('no result block in the script output');
+  return JSON.parse(lines.slice(start, end + 1).join('\n'));
+};
 const run = (script, extra = []) => {
   const r = spawnSync(process.execPath, [path.join('scripts', 'legacy-migration', script), ...common, ...extra], { cwd: backend, encoding: 'utf8', maxBuffer: 1 << 28 });
   const clean = (s) => (s || '').split('\n').filter((l) => l && !/Redis/.test(l));
