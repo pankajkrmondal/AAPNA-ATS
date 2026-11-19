@@ -91,6 +91,8 @@ _All three were answered on 12 Nov: see "Walkthrough feedback (12 Nov)" below._
 | F4d | U10c Responded per open position: the role view gets the same Responded filter (owner, 13 Nov) | [U10c](uat-fixes/U10c-responded-per-position.md) | ~2 | U10b Handoff; before the R16 staging deploy | Built and tested 13 Nov (unit 34/34, build, Playwright 9/9 mocked). Full unit suite and `completedForms` integration left to the user |
 | F5 | R16 One release: staging 13 Nov, production 16 Nov | [R16](uat-fixes/R16-release-16-nov.md) | ~8 | F1–F4, all U Handoffs | Not started |
 | F6 | Walkthrough page, pass B (re-capture U02b, U06b, U10b screens) | `uat-walkthrough/` scripts | ~2 | F1–F3 | Not started |
+| F7 | U03c Panel invite: full feedback as bullets, AAPNA report, concerns highlighted (Chhaya, 18 Nov) | [changelog](../changelog/CHANGES-2026-11-18-U03c-panel-feedback-bullets.md) | ~6 | U03, U03b, U07 | Built 18 Nov (unit 19/19 + 18/18 + 130/130; full unit suite 1110/1110; real staging journeys rendered, nothing sent). Open: one real send to our own address for Outlook / OWA; Zeko red flags need the Zeko report fetched for panel packs (decision) |
+| F8 | U03d Dossier download in the AAPNA look: restyle only, every section and record kept (owner, 18 Nov) | [changelog](../changelog/CHANGES-2026-11-18-U03d-dossier-download-aapna.md) | ~2 | U03c | Built 19 Nov (candidateDossier 131/131, full unit suite 1111/1111; staging journey 768: same visible text before and after; panel output byte-identical). Open: open a real download from the drawer |
 
 **Order:**
 - F1 and F2 can run in parallel.

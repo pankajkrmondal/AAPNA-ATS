@@ -975,7 +975,10 @@ export async function sendMrfRequestEmail({ first_name, last_name, email, cc_ema
 
     // Generate Safe Encoded MRF URL pointing to local React frontend
     const baseUrl = frontendUrl || config.cors.frontendUrl;
-    const MRF_FORM_URL = `${baseUrl}/mrf-submit?role=${encodeURIComponent(role)}&emailid=${encodeURIComponent(email)}`;
+    // &id= names the request row, so the submission links to it even when the
+    // HM edits the prefilled email or role (utils/mrfParentLink.js).
+    const idParam = reference_id !== undefined && reference_id !== null ? `&id=${encodeURIComponent(String(reference_id))}` : '';
+    const MRF_FORM_URL = `${baseUrl}/mrf-submit?role=${encodeURIComponent(role)}&emailid=${encodeURIComponent(email)}${idParam}`;
 
     // Compile email body content (handling newlines to br tags)
     let introParagraph = '';

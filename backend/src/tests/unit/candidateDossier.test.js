@@ -1561,42 +1561,162 @@ describe('renderDossierHtml — U03 panel variants', () => {
     const html = renderDossierHtml(m);
     assert.equal(renderDossierHtml(m, { variant: 'download' }), html);
     assert.equal(renderDossierHtml(m, { variant: 'nonsense' }), html, 'an unknown variant is the download');
-    // Snapshot re-taken 11 Nov 2026, when the pack stopped explaining itself (no
-    // redaction list, no "What is in this pack", no footer, shorter notes). The
-    // retention days come from config.
+    // Snapshot re-taken 18 Nov 2026: the AAPNA restyle (U03d), content unchanged
+    // (the visible text of a real staging download matched word for word, bar
+    // the "·" in the old type-set brand line). The retention days come from config.
     if (config.dossier.deletionDays === 30) {
-      assert.equal(sha(html), '6ee1f1da4721329e557c2130b3d3ceb29f6303f055f77ea324fd5f8dd274eca0');
-      assert.equal(sha(renderDossierHtml(emptyModel())), '03defcf6902c4209a0c7c0b1f735bd6e7d1504b42b06265de6d717752540f1b0');
+      assert.equal(sha(html), '8c82d7b375e87df77939ad3ca47faf04c2c9fa6df7cd60ea6f9595a86cc12f9f');
+      assert.equal(sha(renderDossierHtml(emptyModel())), 'aa469710c331f75d39b60dbbedc1c20da3e886bb464cc5193ece9636822e0498');
     }
     assert.deepEqual(titles(html).map((t) => t.split(' ')[0]), ['1', '2', '3', '4', '5', '6', '7', '8', '9']);
   });
 
-  test('panel_tech: the header and the named consolidated feedback, nothing else', () => {
-    const html = renderDossierHtml(panelModel(), { variant: 'panel_tech' });
-    assert.deepEqual(titles(html), ['1 Consolidated interviewer feedback']);
-    assert.match(html, /<h1>Pankaj Mondal<\/h1>/);
-    assert.match(html, /Technical 1 — Harish Mopuri/);
-    assert.match(html, /Strong on concurrency\./);
-    assert.match(html, /2 of 2 interviewers recommend hire/);
-    assert.ok(!html.includes('What is in this pack'));
-    assert.ok(!/recorded against/i.test(html));
+  test('U03d: the download has the AAPNA look and keeps every section and record', () => {
+    const m = fullModel({
+      stages: [
+        ...fullModel().stages,
+        { stage_label: 'Technical 1', event_type: 'note', outcome: null, reason: null, notes: 'Interview recording opened by admin', decided_by: 'admin', decided_at: new Date('2026-08-28T13:00:00Z') },
+      ],
+    });
+    const html = renderDossierHtml(m);
+    assert.deepEqual(titles(html), [
+      '1 Candidate profile', '2 The position', '3 Progress so far', '4 Consolidated interviewer feedback',
+      '5 Interviewer scorecards', '6 AI screening', '7 Assessment results', '8 Interview history', '9 Interview recordings',
+    ]);
+    assert.ok(html.includes('Interview recording opened by admin'), 'the download keeps the full progress log');
+    assert.match(html, /<div class="mark"><img src="data:image\/jpeg;base64,[A-Za-z0-9+/=]+" alt=""><span class="wm">AAPNA Infotech<\/span><span class="doc">Candidate dossier<\/span><\/div>/);
+    assert.ok(html.includes('--ac:#7a922e'), 'the AAPNA olive');
+    assert.ok(!html.includes('#0f4c3a'), 'not the old dark green');
   });
 
-  test('panel_leadership: profile first, position last, no moved events, no pack index', () => {
-    const html = renderDossierHtml(panelModel(), { variant: 'panel_leadership' });
-    assert.deepEqual(titles(html), [
-      '1 Candidate profile', '2 Progress so far', '3 Consolidated interviewer feedback',
-      '4 Interview history &amp; recordings', '5 Interviewer scorecards', '6 AI screening',
-      '7 Assessment results', '8 The position',
+  // U03c: the panel cuts are their own page (AAPNA look): at a glance, what
+  // happened, the feedback in full. A journey shaped like the CEO round that
+  // prompted it (18 Nov), with made-up people.
+  const panelTitles = (html) => [...html.matchAll(/<h2><span class="n">(\d+)<\/span>([^<]+)<\/h2>/g)].map((m) => `${m[1]} ${m[2]}`);
+  const NOTE = [
+    'Submission Date\t19 October 2026, 15:24:02',
+    'Email ID\tcandidate.private@example.com',
+    'Applied For\tBusiness Development – Enterprise Sales',
+    'Interviewer\tAsha Rao',
+    'Overall Status\tShortlisted',
+    'Skill/Competency 1\tBusiness Analyst',
+    'Rating\t3.5/5',
+    'Feedback\tOffered several services to enterprise clients.',
+    'Objection Handling Rating\t3.5/5',
+    'Objection Handling Feedback\tConfident in handling objections.',
+    'Final Feedback\tShortlisted for the role.',
+  ].join('\n');
+  const journeyModel = (overrides = {}) => fullModel({
+    status: {
+      stage_key: 'ceo', stage_label: 'CEO / Final Round', state: 'in_progress', closed: false, headline: 'Current stage: CEO / Final Round.',
+    },
+    stages: [
+      { stage_key: 'zeko_hr', stage_label: 'HR Screening (Zeko)', event_type: 'outcome', outcome: 'approved', reason: null, notes: null, decided_by: 'recruiter.a', decided_at: new Date('2026-10-15T13:41:00Z') },
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', event_type: 'note', outcome: null, reason: null, notes: 'Interview recording opened by admin', decided_by: 'admin', decided_at: new Date('2026-10-19T10:47:00Z') },
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', event_type: 'note', outcome: null, reason: null, notes: 'Interview recording opened by an external viewer via a share link (IP 203.0.113.9)', decided_by: null, decided_at: new Date('2026-10-19T10:48:00Z') },
+      { stage_key: 'tech1', stage_label: 'Technical Round 1', event_type: 'outcome', outcome: 'approved', reason: null, notes: null, decided_by: 'recruiter.a', decided_at: new Date('2026-10-19T12:21:00Z') },
+      { stage_key: 'tech2', stage_label: 'Technical Round 2', event_type: 'note', outcome: null, reason: null, notes: 'Candidate dossier downloaded by admin — including profile', decided_by: 'admin', decided_at: new Date('2026-10-21T07:00:00Z') },
+      { stage_key: 'tech2', stage_label: 'Technical Round 2', event_type: 'note', outcome: null, reason: null, notes: 'Technical Round 2 interview cancelled: Candidate is not available.', decided_by: 'recruiter.a', decided_at: new Date('2026-10-22T07:53:00Z') },
+      { stage_key: 'tech2', stage_label: 'Technical Round 2', event_type: 'outcome', outcome: 'approved', reason: null, notes: null, decided_by: 'recruiter.a', decided_at: new Date('2026-11-18T06:37:00Z') },
+      { stage_key: 'offer', stage_label: 'Offer', event_type: 'moved', outcome: null, reason: null, notes: 'Moved forward from Technical 1 to Offer', decided_by: 'harish', decided_at: new Date('2026-08-29T11:00:00Z') },
+    ],
+    interviews: [
+      { stage_key: 'tech1', schedule_id: 11, stage_label: 'Technical Round 1', interviewer: 'Asha Rao', scheduled_start_at: new Date('2026-10-19T09:30:00Z'), status: 'completed', occurrence: 'held', cancelled_at: null },
+      { stage_key: 'tech2', schedule_id: 12, stage_label: 'Technical Round 2', interviewer: 'Vikram Shah', scheduled_start_at: new Date('2026-10-22T08:30:00Z'), status: 'cancelled', occurrence: null, cancelled_at: new Date('2026-10-22T07:53:00Z') },
+      { stage_key: 'tech2', schedule_id: 13, stage_label: 'Technical Round 2', interviewer: 'Vikram Shah', scheduled_start_at: new Date('2026-10-27T14:30:00Z'), status: 'completed', occurrence: 'held', cancelled_at: null },
+      { stage_key: 'ceo', schedule_id: 14, stage_label: 'CEO / Final Round', interviewer: 'Meera Iyer', scheduled_start_at: new Date('2026-11-18T14:00:00Z'), status: 'scheduled', occurrence: null, cancelled_at: null },
+    ],
+    recordings: [
+      { stage_key: 'tech1', schedule_id: 11, stage_label: 'Technical Round 1', recorded_start_at: new Date('2026-10-19T09:31:00Z'), duration_seconds: 1320, share_url: 'https://ats.example.com/r/abc' },
+      { stage_key: 'tech2', schedule_id: 13, stage_label: 'Technical Round 2', recorded_start_at: new Date('2026-10-27T14:21:00Z'), duration_seconds: 3120, share_url: 'https://ats.example.com/r/def' },
+    ],
+    consolidated_by_interviewer: [
+      {
+        stage_key: 'tech1', round: 'Technical Round 1', interviewer: 'Asha Rao', recommendation: 'approve', average: 3, comments: 'Has run lead generation and follow-up to closure.',
+        schedule_id: 11, submitted_at: new Date('2026-10-19T12:25:00Z'), final_rating: 3, skills: [{ label: 'Business Development', rating: 3.5, remark: null }], hr: null,
+      },
+      {
+        stage_key: 'tech2', round: 'Technical Round 2', interviewer: 'Vikram Shah', recommendation: 'approve', average: 3.88, comments: 'Shortlisted',
+        schedule_id: 13, submitted_at: new Date('2026-10-28T11:20:00Z'), final_rating: 4, skills: [{ label: 'Sales & BD', rating: 3.5, remark: null }], hr: null,
+      },
+    ],
+    round_notes: [{ stage_key: 'tech1', stage_label: 'Technical Round 1', value: NOTE }],
+    scorecards_pending: [],
+    assessments: [],
+    zeko: [{
+      round: 'HR screening', status: 'completed', taken_at: new Date('2026-10-15T09:00:00Z'), overall_score: 81, technical_score: null, communication_score: null, report_available: false,
+    }],
+    ...overrides,
+  });
+
+  test('panel_tech: at a glance, then the feedback in full; no profile, no position', () => {
+    const html = renderDossierHtml(journeyModel(), { variant: 'panel_tech', stageKey: 'tech3' });
+    assert.deepEqual(panelTitles(html), ['1 At a glance', '2 Feedback in full']);
+    assert.match(html, /<h1>Pankaj Mondal<\/h1>/);
+    assert.match(html, /Technical Round 1 — Asha Rao/);
+    assert.match(html, /Has run lead generation and follow-up to closure\./);
+    assert.ok(!html.includes('Mandatory skills'), 'no position');
+    assert.ok(!html.includes('What is in this pack'));
+    assert.ok(html.includes('data:image/jpeg;base64,'), 'the AAPNA mark is embedded');
+    assert.ok(!/<img[^>]+src="http/i.test(html), 'nothing is fetched from the network');
+  });
+
+  test('panel_leadership: at a glance, what happened, feedback, profile, screening, position last', () => {
+    const html = renderDossierHtml(journeyModel(), { variant: 'panel_leadership', stageKey: 'ceo' });
+    assert.deepEqual(panelTitles(html), [
+      '1 At a glance', '2 What happened', '3 Feedback in full', '4 Candidate profile',
+      '5 Screening and assessment', '6 The position',
     ]);
     assert.ok(!html.includes('Moved forward from Technical 1 to Offer'), 'moved events are left out');
-    assert.ok(renderDossierHtml(panelModel()).includes('Moved forward from Technical 1 to Offer'), 'the download keeps them');
+    assert.ok(renderDossierHtml(journeyModel()).includes('Moved forward from Technical 1 to Offer'), 'the download keeps them');
     assert.ok(!html.includes('What is in this pack'));
-    assert.match(html, /Technical 1 — Harish Mopuri/);
+    assert.match(html, /<b>For:<\/b> CEO \/ Final Round · Meera Iyer · 18 Nov 2026, 7:30 PM/);
+    assert.match(html, /<b>In short:<\/b> Cleared all 3 steps so far, and both interviewers recommend moving forward\./);
+    assert.match(html, /No concerns raised in earlier rounds/);
+  });
+
+  test('panel_leadership: the system notes are not steps; a cancelled booking says so', () => {
+    const html = renderDossierHtml(journeyModel(), { variant: 'panel_leadership', stageKey: 'ceo' });
+    for (const noise of ['recording opened', 'dossier downloaded', '203.0.113.9', 'external viewer']) {
+      assert.ok(!html.toLowerCase().includes(noise), `no "${noise}"`);
+    }
+    assert.match(html, /<span class="pill off">Cancelled<\/span><span class="who">Candidate is not available\.<\/span>/);
+    assert.equal((html.match(/class="play"/g) || []).length, 2, 'a Play button on each held round');
+    assert.match(html, /Moved on by recruiter\.a, 18 Nov/);
+    const timeline = html.match(/<ol class="tl">[\s\S]*?<\/ol>/)[0];
+    assert.equal((timeline.match(/<li/g) || []).length, 5, 'HR screening, Tech 1, Tech 2 cancelled, Tech 2, CEO');
+  });
+
+  test('panel cuts: the recorded form is bullets, in full, without its bookkeeping lines', () => {
+    const html = renderDossierHtml(journeyModel(), { variant: 'panel_leadership', stageKey: 'ceo' });
+    assert.match(html, /<li>Business Analyst — 3\.5 \/ 5: Offered several services to enterprise clients\.<\/li>/);
+    assert.match(html, /<li>Objection Handling — 3\.5 \/ 5: Confident in handling objections\.<\/li>/);
+    assert.match(html, /<li>Overall status: Shortlisted<\/li>/);
+    assert.match(html, /<p class="q">"Shortlisted for the role\."<\/p>/);
+    assert.ok(!html.includes('candidate.private@example.com'), 'the form email line does not travel');
+    assert.ok(!html.includes('Submission Date'));
+  });
+
+  test('panel cuts: a concern is boxed and flagged', () => {
+    const m = journeyModel();
+    m.consolidated_by_interviewer[1] = {
+      ...m.consolidated_by_interviewer[1],
+      recommendation: 'hold',
+      average: 2.6,
+      skills: [{ label: 'Objection Handling', rating: 2, remark: 'Struggled with pricing questions.' }],
+    };
+    const html = renderDossierHtml(m, { variant: 'panel_leadership', stageKey: 'ceo' });
+    assert.match(html, /Concerns raised \(2\)/);
+    assert.match(html, /<b>Technical Round 2:<\/b> Vikram Shah recommends Hold, avg 2\.6 \/ 5\./);
+    assert.match(html, /<li class="flag">Objection Handling: 2 \/ 5 — Struggled with pricing questions\.<\/li>/);
+    assert.match(html, /<span class="pill hold">Hold<\/span>/);
+    assert.match(html, /Technical Round 2 recommends Hold, and 2 concerns are listed below\./);
   });
 
   test('both cuts say so when nobody has submitted feedback yet', () => {
-    const m = fullModel({ consolidated_feedback: null, consolidated_by_interviewer: [] });
+    const m = fullModel({
+      consolidated_feedback: null, consolidated_by_interviewer: [], round_notes: [], scorecards_pending: [],
+    });
     assert.match(renderDossierHtml(m, { variant: 'panel_tech' }), /No feedback yet/);
   });
 

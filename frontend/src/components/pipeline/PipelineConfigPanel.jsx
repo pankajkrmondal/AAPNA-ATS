@@ -610,9 +610,11 @@ export default function PipelineConfigPanel() {
   ];
 
   return (
+    // `.glass-card` like every other Settings panel; the old gold top rail and
+    // inline radius/shadow went the same way on the cards around it.
     <Card
       bordered={false}
-      style={{ borderRadius: 12, boxShadow: 'var(--shadow-md)', borderTop: '4px solid var(--gold)', marginTop: 24 }}
+      className="glass-card"
     >
       <div style={{ marginBottom: 24 }}>
         <Title level={3} style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, margin: '0 0 6px 0' }}>

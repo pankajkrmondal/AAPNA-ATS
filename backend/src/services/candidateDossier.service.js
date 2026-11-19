@@ -494,6 +494,28 @@ async function fetchAssessments(pipelineId, { includeDetail = true } = {}) {
  * @returns {Promise<object>} the dossier model
  * @throws {AppError} 404 when the journey does not exist
  */
+/**
+ * The HR round's narrative fields, minus the two compensation ones. Listed
+ * positively for the same reason as everything else in this file: a field
+ * added to HR_TEXT_FIELDS later stays out of the pack until someone decides it
+ * belongs there.
+ * @param {object} r - a getCandidateScorecardReport() round
+ * @returns {object|null}
+ */
+function hrRoundOf(r) {
+  if (r?.card_type !== 'hr' || !r.hr) return null;
+  return {
+    strengths: r.hr.hr_strengths || null,
+    weakness: r.hr.hr_weakness || null,
+    communication_comments: r.hr.hr_communication_comments || null,
+    attitude_comments: r.hr.hr_attitude_comments || null,
+    relocation: r.hr.hr_relocation || null,
+    notice_period: r.hr.hr_notice_period || null,
+    other_observation: r.hr.hr_other_observation || null,
+    final_feedback: r.hr.hr_final_feedback || null,
+  };
+}
+
 export async function buildDossierModel(pipelineId, options = {}) {
   const {
     includeContactDetails = true,
@@ -586,6 +608,8 @@ export async function buildDossierModel(pipelineId, options = {}) {
       // decision #13 requires, without the terms.
       const commercial = COMMERCIAL_STAGE_KEYS.has(e.stage_key);
       return {
+        // U03c: the panel's journey groups a stage's events by key.
+        stage_key: e.stage_key,
         stage_label: stageLabel(e.stage_key),
         event_type: e.event_type,
         outcome: e.outcome ? e.outcome.replace(/_/g, ' ') : null,
@@ -628,28 +652,15 @@ export async function buildDossierModel(pipelineId, options = {}) {
       rating: s.rating ?? null,
       remark: s.remark || null,
     })),
-    // The HR round's narrative fields, minus the two compensation ones. Listed
-    // positively for the same reason as everything else in this file: a field
-    // added to HR_TEXT_FIELDS later stays out of the pack until someone decides
-    // it belongs there.
-    ...(r.card_type === 'hr' && r.hr
-      ? {
-        hr_round: {
-          strengths: r.hr.hr_strengths || null,
-          weakness: r.hr.hr_weakness || null,
-          communication_comments: r.hr.hr_communication_comments || null,
-          attitude_comments: r.hr.hr_attitude_comments || null,
-          relocation: r.hr.hr_relocation || null,
-          notice_period: r.hr.hr_notice_period || null,
-          other_observation: r.hr.hr_other_observation || null,
-          final_feedback: r.hr.hr_final_feedback || null,
-        },
-      }
-      : {}),
+    // The HR round's narrative fields, never the CTC ones (hrRoundOf).
+    ...(hrRoundOf(r) ? { hr_round: hrRoundOf(r) } : {}),
   }));
 
   // ---- Section 8: interview history ----------------------------------------
   const interviews = schedules.map((s) => ({
+    // U03c: the panel's journey matches feedback and recordings to a booking.
+    stage_key: s.stage_key,
+    schedule_id: Number(s.id),
     stage_label: stageLabel(s.stage_key),
     earlier_attempt: Boolean(s.superseded_at),
     // The client round's feedback is recorded on the booking ("Edit feedback"
@@ -676,6 +687,7 @@ export async function buildDossierModel(pipelineId, options = {}) {
   const recordingRows = recordings.map(serializeRecording).map((r) => ({
     // U03: the panel invite's table matches a recording to its round by key.
     stage_key: r.stage_key,
+    schedule_id: r.schedule_id,
     stage_label: stageLabel(r.stage_key),
     recorded_start_at: r.recorded_start_at,
     duration_seconds: r.duration_seconds,
@@ -730,6 +742,12 @@ export async function buildDossierModel(pipelineId, options = {}) {
       recommendation: r.recommendation || null,
       average: r.avg_score ?? null,
       comments: r.comments || null,
+      // U03c: the full feedback, as bullets, in the invite and the panel cuts.
+      schedule_id: r.schedule_id != null ? Number(r.schedule_id) : null,
+      submitted_at: r.submitted_at || null,
+      final_rating: r.final_rating ?? null,
+      skills: (r.skills || []).map((s) => ({ label: s.label || null, rating: s.rating ?? null, remark: s.remark || null })),
+      hr: hrRoundOf(r),
     })),
     scorecard_overall: scorecardReport?.overall
       ? {

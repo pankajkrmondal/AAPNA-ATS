@@ -37,6 +37,7 @@ import {
   listHeldMrfs as loadHeldMrfs,
 } from '../services/mrfApproval.service.js';
 import { MAX_COMMENT_LENGTH } from '../utils/mrfApprovalRules.js';
+import { parseParentId, pickParentRequest } from '../utils/mrfParentLink.js';
 import { isAdminTier } from '../config/roles.js';
 import { broadcast } from '../socket/index.js';
 import { latestJdSendIds, isLabelEditable, parseVersionLabelInput, jdSendDay } from '../utils/jdSendLabel.js';
@@ -868,34 +869,55 @@ export const submitHiringManagerMrf = catchAsync(async (req, res) => {
 
   if (jdItemId) await saveMrfJdItemId(newMrf.id, jdItemId);
 
-  // 3) Update Parent rpa_mrf_jd_send record status
-  let parentRecord = null;
-  if (parent_id) {
-    parentRecord = await prisma.rpa_mrf_jd_send.findUnique({
-      where: { id: BigInt(parent_id) }
-    });
-  }
+  // 3) Link the submission to its "New MRF Request" row (rpa_mrf_jd_send).
+  // Without this link the MRF module keeps the row at PENDING for good and
+  // hides the submitted details and the approval trail (utils/mrfParentLink.js).
+  // A failure here must not stop the approval emails below: the MRF exists.
+  try {
+    const parentId = parseParentId(parent_id);
+    const byId = parentId
+      ? await prisma.rpa_mrf_jd_send.findUnique({ where: { id: parentId } })
+      : null;
 
-  // Fallback to match by email and role if parent_id is missing or record not found by ID
-  if (!parentRecord && submitter_email && position_hiring_for) {
-    parentRecord = await prisma.rpa_mrf_jd_send.findFirst({
-      where: {
-        email: { equals: submitter_email.trim(), mode: 'insensitive' },
-        role: { equals: position_hiring_for.trim(), mode: 'insensitive' },
-        mrfstatus: 'pending'
-      },
-      orderBy: { created_at: 'desc' }
-    });
-  }
+    // Old links carry no id; match the HM email + role among unlinked rows.
+    let candidates = [];
+    if ((!byId || byId.mrf_id !== null) && submitter_email && position_hiring_for) {
+      candidates = await prisma.rpa_mrf_jd_send.findMany({
+        where: {
+          mrf_id: null,
+          email: { equals: submitter_email.trim(), mode: 'insensitive' },
+          role: { equals: position_hiring_for.trim(), mode: 'insensitive' },
+        },
+        orderBy: { created_at: 'desc' },
+        take: 20,
+      });
+    }
 
-  if (parentRecord) {
-    await prisma.rpa_mrf_jd_send.update({
-      where: { id: parentRecord.id },
-      data: {
-        mrfstatus: 'managersubmitted',
-        mrf_id: Number(newMrf.id)
-      }
+    const { row: parentRecord, via, reason } = pickParentRequest({
+      parentId, byId, candidates, email: submitter_email, role: position_hiring_for,
     });
+
+    // Conditional on mrf_id still NULL, so two submissions racing for the
+    // same request cannot overwrite each other.
+    const linked = parentRecord
+      ? (await prisma.rpa_mrf_jd_send.updateMany({
+        where: { id: parentRecord.id, mrf_id: null },
+        data: { mrfstatus: 'managersubmitted', mrf_id: Number(newMrf.id) },
+      })).count
+      : 0;
+
+    if (linked) {
+      logger.info(`MRF ${newMrf.id} linked to MRF request ${parentRecord.id} (by ${via}).`);
+    } else {
+      logger.warn(
+        `MRF ${newMrf.id} was submitted but is not linked to any MRF request `
+        + `(${parentRecord ? 'linked by another submission meanwhile' : reason}; parent_id=${parent_id ?? 'none'}, `
+        + `email=${submitter_email ?? ''}, role=${position_hiring_for ?? ''}). Expected only for the blank form; `
+        + 'otherwise link it with scripts/relink-orphan-mrfs.mjs.',
+      );
+    }
+  } catch (err) {
+    logger.error(`MRF ${newMrf.id}: linking to its MRF request failed: ${err.message}`);
   }
 
   // 4–5) Route for approval, in the background (the HM's submission must not

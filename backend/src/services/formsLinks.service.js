@@ -492,7 +492,8 @@ async function resolveLink(type, id, user) {
     },
     mrf_form: async () => {
       const r = await prisma.rpa_mrf_jd_send.findUnique({ where: { id: big } });
-      return r && { url: `${base}/mrf-submit?role=${encodeURIComponent(r.role)}&emailid=${encodeURIComponent(r.email)}`, pipelineId: null };
+      // Same link as the request email, including &id= (utils/mrfParentLink.js).
+      return r && { url: `${base}/mrf-submit?role=${encodeURIComponent(r.role)}&emailid=${encodeURIComponent(r.email)}&id=${r.id}`, pipelineId: null };
     },
   }[type];
   if (type === 'mrf_approval') {

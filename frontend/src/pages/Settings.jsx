@@ -1,8 +1,15 @@
 /**
- * Settings Page — Appearance (theme) preference plus the legacy Reminder
- * Settings (automated email reminder behaviour and an Email Coverage guide).
+ * Settings Page — a pill bar of categories across the top (SettingsNav) with
+ * one category shown at a time. The open category lives in `?section=`; the list of
+ * categories is in components/settings/settingsSections.js.
+ *
+ * Every category stays mounted and the inactive ones are only hidden, so the
+ * page loads exactly what it always did, the two Save-button forms keep any
+ * unsaved edits across a switch, and PipelineConfigPanel still reads
+ * `?panelTab=` on mount.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Form, InputNumber, Button, Table, Card, Typography, message, TimePicker, Segmented, Switch, Tag, Spin, Select } from 'antd';
 import { SaveOutlined, SunOutlined, MoonOutlined, DesktopOutlined, CalendarOutlined, VideoCameraOutlined, UsergroupAddOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -14,8 +21,28 @@ import MrfApprovalHoldSettings from '../components/settings/MrfApprovalHoldSetti
 import CandidateActivityCard from '../components/settings/CandidateActivityCard';
 import PositionTargetCard from '../components/settings/PositionTargetCard';
 import PipelineAutoPauseCard from '../components/settings/PipelineAutoPauseCard';
+import SettingsNav from '../components/settings/SettingsNav';
+import InterviewChainStrip, { INTERVIEW_CARD_IDS } from '../components/settings/InterviewChainStrip';
+import { SETTINGS_SECTIONS } from '../components/settings/settingsSections';
 
 const { Title, Text } = Typography;
+
+/**
+ * One category's pane. Hidden rather than unmounted when inactive (see the
+ * header comment); `stagger-children` replays its rise-in each time it is shown,
+ * because a CSS animation restarts when an element leaves `display: none`.
+ */
+function SettingsSection({ sectionKey, activeKey, children }) {
+  return (
+    <section
+      className="settings-section stagger-children"
+      hidden={sectionKey !== activeKey}
+      data-section={sectionKey}
+    >
+      {children}
+    </section>
+  );
+}
 
 const APPEARANCE_OPTIONS = [
   { label: 'Light', value: 'light', icon: <SunOutlined /> },
@@ -45,6 +72,34 @@ export default function Settings() {
   const [assessmentForm] = Form.useForm();
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentSaving, setAssessmentSaving] = useState(false);
+  // The saved auto-advance value, for the rail's status dot. Kept apart from the
+  // form so the dot shows what is in force, not an unsaved toggle. null = not loaded.
+  const [assessmentAutoAdvanceSaved, setAssessmentAutoAdvanceSaved] = useState(null);
+
+  // Which category is open. Derived from the URL on every render rather than
+  // stored, so it corrects itself once `user` loads and an admin's ?section=
+  // becomes valid. A Pipeline Configuration deep link (?panelTab=) with no
+  // section opens that category.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const visibleSections = useMemo(
+    () => SETTINGS_SECTIONS.filter((s) => !s.adminOnly || isAdmin),
+    [isAdmin],
+  );
+  const visibleKeys = new Set(visibleSections.map((s) => s.key));
+  const requestedSection = searchParams.get('section');
+  let activeKey = 'appearance';
+  if (visibleKeys.has(requestedSection)) activeKey = requestedSection;
+  else if (searchParams.get('panelTab') && visibleKeys.has('pipeline-config')) activeKey = 'pipeline-config';
+  const activeSection = visibleSections.find((s) => s.key === activeKey);
+
+  /** Opens a category: a new history entry, so Back returns to the last one. */
+  const selectSection = (key) => {
+    if (key === activeKey) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('section', key);
+    setSearchParams(next);
+    window.scrollTo({ top: 0 });
+  };
 
   // Recruiters added as optional attendees to interview meetings — saved on
   // change like the scheduler cards below.
@@ -319,6 +374,7 @@ export default function Settings() {
         if (res.data && res.data.data) {
           const { assessment_deadline_days, assessment_auto_advance_enabled } = res.data.data;
           assessmentForm.setFieldsValue({ assessment_deadline_days, assessment_auto_advance_enabled });
+          setAssessmentAutoAdvanceSaved(!!assessment_auto_advance_enabled);
         }
       } catch (err) {
         message.error('Failed to load assessment automation settings.');
@@ -336,6 +392,7 @@ export default function Settings() {
         assessment_deadline_days: values.assessment_deadline_days,
         assessment_auto_advance_enabled: !!values.assessment_auto_advance_enabled,
       });
+      setAssessmentAutoAdvanceSaved(!!values.assessment_auto_advance_enabled);
       message.success('Assessment automation settings updated successfully!');
     } catch (err) {
       message.error(err?.response?.data?.message || err?.message || 'Failed to update assessment automation settings.');
@@ -374,6 +431,34 @@ export default function Settings() {
       rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined,
     );
   };
+
+  // Rail status dots. Recording only counts as on when the environment allows
+  // it, matching that card's own ON tag.
+  const interviewsLoading = interviewLoading || occurrenceLoading || recordingLoading;
+  const interviewsOn = [
+    interviewCfg.enabled,
+    occurrenceCfg.enabled,
+    recordingCfg.enabled && recordingCfg.fetch_enabled,
+  ].filter(Boolean).length;
+  const navStatus = {};
+  if (!interviewsLoading) {
+    navStatus.interviews = {
+      status: interviewsOn === 3 ? 'success' : interviewsOn > 0 ? 'warning' : 'default',
+      text: `${interviewsOn} of 3 interview automations on`,
+    };
+  }
+  if (assessmentAutoAdvanceSaved !== null) {
+    navStatus.assessments = {
+      status: assessmentAutoAdvanceSaved ? 'success' : 'default',
+      text: `Auto-advance on score is ${assessmentAutoAdvanceSaved ? 'on' : 'off'}`,
+    };
+  }
+  // The line under the page heading: a count of the four on/off automations
+  // this page holds the state for, once they have all loaded. Until then (and
+  // if one fails to load) it falls back to the open category's description.
+  const navSummary = !interviewsLoading && assessmentAutoAdvanceSaved !== null
+    ? `${interviewsOn + (assessmentAutoAdvanceSaved ? 1 : 0)} of 4 automations are on. ${activeSection.hint}`
+    : activeSection.hint;
 
   // A lead time shorter than the check interval means the job can step over the
   // reminder window without ever landing inside it.
@@ -427,8 +512,22 @@ export default function Settings() {
     },
   ];
 
+  // `.settings-page` is the size container for the shell's one-column switch —
+  // it keys off the space the page actually has, not the window width.
   return (
-    <div style={{ padding: '24px', maxWidth: 1000, margin: '0 auto' }} className="stagger-children">
+    <div className="settings-page">
+    <div className="settings-shell">
+      <SettingsNav
+        sections={visibleSections}
+        activeKey={activeKey}
+        onSelect={selectSection}
+        status={navStatus}
+        summary={navSummary}
+      />
+
+      <div className="settings-main">
+
+      <SettingsSection sectionKey="appearance" activeKey={activeKey}>
       {/* Appearance. Every card on this page is a settings panel — tier 2, the
           page's content rather than dense data — so they all take `.glass-card`
           and drop their inline radius/shadow, which the class owns. */}
@@ -454,17 +553,22 @@ export default function Settings() {
           />
         </div>
       </Card>
+      </SettingsSection>
 
-      {/* How recent a response must be to count as Active in screening (L01). Admin only. */}
-      {isAdmin && <CandidateActivityCard />}
-      {isAdmin && <PositionTargetCard />}
-      {/* Idle days before a pipeline journey is paused automatically. Admin only. */}
-      {isAdmin && <PipelineAutoPauseCard />}
+      <SettingsSection sectionKey="interviews" activeKey={activeKey}>
+      <InterviewChainStrip
+        attendeeCfg={attendeeCfg}
+        interviewCfg={interviewCfg}
+        occurrenceCfg={occurrenceCfg}
+        recordingCfg={recordingCfg}
+        loading={interviewsLoading || attendeeLoading}
+      />
 
       {/* Recruiters added to every booked round's Teams meeting. First in the
           interview chain (book → remind → confirm held → capture recording),
           because it shapes the booking itself. */}
       <Card
+        id={INTERVIEW_CARD_IDS.book}
         bordered={false}
         className="glass-card"
         style={{ marginBottom: 24 }}
@@ -548,6 +652,7 @@ export default function Settings() {
 
       {/* Interview reminder scheduler — on/off + how often the job checks */}
       <Card
+        id={INTERVIEW_CARD_IDS.remind}
         bordered={false}
         className="glass-card"
         style={{ marginBottom: 24 }}
@@ -671,6 +776,7 @@ export default function Settings() {
       {/* Interview completion sweep — decides whether a finished interview actually
           happened, which is what releases the interviewer's scorecard email. */}
       <Card
+        id={INTERVIEW_CARD_IDS.confirm}
         bordered={false}
         className="glass-card"
         style={{ marginBottom: 24 }}
@@ -817,6 +923,7 @@ export default function Settings() {
       {/* Recording capture — the next link in the same chain: book → remind →
           confirm held → capture the recording. */}
       <Card
+        id={INTERVIEW_CARD_IDS.record}
         bordered={false}
         className="glass-card"
         style={{ marginBottom: 24 }}
@@ -962,7 +1069,9 @@ export default function Settings() {
           </div>
         </div>
       </Card>
+      </SettingsSection>
 
+      <SettingsSection sectionKey="email-reminders" activeKey={activeKey}>
       {/* The `borderTop: 4px solid var(--gold)` rail goes, as it did on
           /candidates, /mrf and the upload screens — a flat bar under a gradient
           rim is the pre-glass vocabulary showing through. */}
@@ -1090,11 +1199,15 @@ export default function Settings() {
           />
         </div>
       </Card>
+      </SettingsSection>
 
+      <SettingsSection sectionKey="mrf" activeKey={activeKey}>
       {/* MRF Approval & Hold — hold rules, approver absence, held MRFs
           (docs/phase3/MRF/MRF-Hold-and-Delegate-Approval-Plan.md §7) */}
       <MrfApprovalHoldSettings />
+      </SettingsSection>
 
+      <SettingsSection sectionKey="assessments" activeKey={activeKey}>
       {/* Assessment Automation — Evalground invite deadline + auto-advance/reject toggle */}
       <Card
         bordered={false}
@@ -1177,11 +1290,28 @@ export default function Settings() {
           )}
         </Form>
       </Card>
+      </SettingsSection>
+
+      {isAdmin && (
+        <SettingsSection sectionKey="pipeline-rules" activeKey={activeKey}>
+          {/* How recent a response must be to count as Active in screening (L01). Admin only. */}
+          <CandidateActivityCard />
+          <PositionTargetCard />
+          {/* Idle days before a pipeline journey is paused automatically. Admin only. */}
+          <PipelineAutoPauseCard />
+        </SettingsSection>
+      )}
 
       {/* Pipeline stages / outcomes / reasons — admin only, matching the
           requireAdmin gate the API enforces. Hidden rather than disabled for
           non-admins: there is nothing here a recruiter can act on. */}
-      {isAdmin && <PipelineConfigPanel />}
+      {isAdmin && (
+        <SettingsSection sectionKey="pipeline-config" activeKey={activeKey}>
+          <PipelineConfigPanel />
+        </SettingsSection>
+      )}
+      </div>
+    </div>
     </div>
   );
 }
