@@ -5,7 +5,9 @@
  * Details), filled with what the candidate has done so far. Interviewers and the
  * CHRO/CEO read the email body; they do not open attachments.
  *
- * Pure and import-free (tests/unit/panelCandidateTable.test.js). The loader,
+ * Pure (tests/unit/panelCandidateTable.test.js); its one import is the shared
+ * reading rules in utils/panelFeedback.js (U03c), so this table and the panel
+ * report flag the same concerns. The loader,
  * loadPanelCandidateTable() in interviewPanelPack.service.js, reads the data:
  *   - `facts` (email, CTC, source, notice and so on) come from their own rpa_cv
  *     query and NEVER enter the dossier model, whose redaction guard forbids CTC,
@@ -19,7 +21,16 @@
  *
  * Email-safe: inline styles only, no classes, a plain <table> Outlook desktop
  * (Word engine) and OWA both render.
+ *
+ * U03c: each round's feedback is a vertical list, with nothing cut: one block
+ * per interviewer (verdict, skill ratings, comments, HR fields), then the
+ * recruiter's recorded form as bullets. A concern is bold dark red with
+ * "Concern:" in front, so it still reads when printed in black and white.
  */
+
+import {
+  feedbackItems, isFailResult, itemLine, noteInterviewer, noteItemText, parseRoundNote, verdictOf, zekoRedFlags,
+} from './panelFeedback.js';
 
 /** What a missing value shows: the dossier's own empty marker. */
 export const EMPTY = '—';
@@ -50,10 +61,8 @@ const HEAD_BG = '#f6f9eb';
 const LABEL = '#374151';
 const MUTED = '#6b7280';
 const LINK = '#5a6e1f';
-
-const RECOMMENDATION_TEXT = { approve: 'Move forward', hold: 'Hold', reject: 'Reject' };
-const COMMENT_MAX = 160;
-const NOTES_MAX = 300;
+/** A concern: the AAPNA error colour (frontend/src/theme/themeConfig.js). */
+const FLAG = '#c0392b';
 
 function esc(v) {
   return String(v ?? '')
@@ -63,10 +72,6 @@ function esc(v) {
 
 const blank = (v) => v === null || v === undefined || String(v).trim() === '';
 const has = (v) => !blank(v);
-const clip = (s, max) => {
-  const t = String(s).replace(/\s+/g, ' ').trim();
-  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
-};
 const safeUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u.trim()) ? u.trim() : null);
 
 /** Is the Source row shown? Only when ticked, and never for a referral. */
@@ -259,11 +264,17 @@ export function roundNoteHome(stageKey, evidence) {
  *     earlier: Array<{screening: 'functional'|'hr', role: string, overall: number, technical: number|null, communication: number|null}>},
  *   evalground: Array<{test: string, result: string|null, percentage: number|null, role: string|null}>,
  *   interviews: Array<{stage_key: string|null, stage_label: string, earlier_role: string|null,
- *     feedback: Array<{interviewer: string|null, recommendation: string|null, average: number|null, comments: string|null}>,
+ *     feedback: Array<{interviewer: string|null, recommendation: string|null, average: number|null, comments: string|null,
+ *       skills: Array<{label, rating, remark}>, hr: object|null}>,
  *     notes: string|null, recordings: Array<{url: string|null}>}>}}
  */
 export function panelTableRounds(model, { excludeStageKey = null, evidence = null } = {}) {
-  const scores = (z) => ({ overall: z.overall_score, technical: z.technical_score ?? null, communication: z.communication_score ?? null });
+  const scores = (z) => ({
+    overall: z.overall_score,
+    technical: z.technical_score ?? null,
+    communication: z.communication_score ?? null,
+    red_flags: zekoRedFlags(z),
+  });
   const isScored = (z) => z.overall_score !== null && z.overall_score !== undefined;
   const zekoRound = (name) => {
     const z = (model?.zeko || []).find((r) => !r.earlier_role && r.round === name && isScored(r));
@@ -319,6 +330,7 @@ export function panelTableRounds(model, { excludeStageKey = null, evidence = nul
     : (model?.scorecards || []).filter((c) => !c.earlier_attempt).map((c) => ({
       stage_key: c.stage_key, round: c.stage_label, interviewer: c.interviewer,
       recommendation: c.recommendation, average: c.avg_score, comments: c.comments,
+      skills: c.skills || [], hr: c.hr_round || null,
       earlier_role: c.earlier_role, earlier_label: c.earlier_label, earlier_seq: c.earlier_seq, earlier_stage_key: c.earlier_stage_key,
     }));
   for (const c of current) {
@@ -327,6 +339,8 @@ export function panelTableRounds(model, { excludeStageKey = null, evidence = nul
       recommendation: c.recommendation || null,
       average: c.average ?? null,
       comments: c.comments || null,
+      skills: c.skills || [],
+      hr: c.hr || null,
     });
   }
   // U03b: an earlier journey's place among the merged roles (their
@@ -399,15 +413,33 @@ function zekoScoreText(z) {
   return `${z.overall}${parts.length ? ` (${parts.join(' · ')})` : ''}`;
 }
 
+// ---- U03c: the vertical lists ----------------------------------------------
+const UL = 'margin:2px 0 6px 18px;padding:0;';
+const LI = 'margin:0 0 2px 0;';
+const FLAG_STYLE = `color:${FLAG};font-weight:700;`;
+
+/** Escaped, with the writer's own line breaks kept. */
+const withBreaks = (s) => esc(s).replace(/\r?\n/g, '<br>');
+
+/** One bullet; a concern is red and says so (`prefix: false` when its label already does). */
+function bullet(text, { concern = false, prefix = true } = {}) {
+  return `<li style="${LI}${concern ? FLAG_STYLE : ''}">${concern && prefix ? 'Concern: ' : ''}${withBreaks(text)}</li>`;
+}
+
+const bulletList = (items) => (items.length ? `<ul style="${UL}">${items.join('')}</ul>` : '');
+
+/** Zeko's own red flags, under the score. */
+const redFlagList = (flags) => bulletList((flags || []).map((f) => bullet(`Red flag: ${f}`, { concern: true })));
+
 /**
  * This journey's score, then each earlier role's (U07). The score uploaded on
  * the CV stands in only when no Zeko result exists on any journey.
  */
 function zekoText(z, uploaded, earlier = []) {
   const lines = [];
-  if (z) lines.push(esc(zekoScoreText(z)));
+  if (z) lines.push(esc(zekoScoreText(z)) + redFlagList(z.red_flags));
   else if (!earlier.length && has(uploaded)) lines.push(esc(String(uploaded)));
-  for (const e of earlier) lines.push(esc(`${zekoScoreText(e)} (earlier role: ${e.role})`));
+  for (const e of earlier) lines.push(esc(`${zekoScoreText(e)} (earlier role: ${e.role})`) + redFlagList(e.red_flags));
   return lines.length ? lines.join('<br>') : null;
 }
 
@@ -415,22 +447,38 @@ function evalgroundText(list) {
   if (!list?.length) return null;
   return list.map((a) => {
     const bits = [a.percentage !== null && a.percentage !== undefined ? `${a.percentage}%` : null, a.result].filter(Boolean);
-    return esc(`${a.test}${bits.length ? `: ${bits.join(' · ')}` : ''}${a.role ? ` (earlier role: ${a.role})` : ''}`);
+    const line = `${a.test}${bits.length ? `: ${bits.join(' · ')}` : ''}${a.role ? ` (earlier role: ${a.role})` : ''}`;
+    return isFailResult(a.result) ? `<span style="${FLAG_STYLE}">Concern: ${esc(line)}</span>` : esc(line);
   }).join('<br>');
 }
 
+/**
+ * A round's feedback, in full: per interviewer, "Name — verdict · avg" (red on
+ * a Hold, a Reject or an average below 3) and a bullet per skill rating,
+ * comment and HR field; then the recruiter's recorded form, one bullet per
+ * line that is not the form's bookkeeping.
+ */
 function feedbackText(round) {
-  const lines = round.feedback.map((f) => {
-    const parts = [
-      f.interviewer,
-      f.recommendation ? (RECOMMENDATION_TEXT[f.recommendation] || f.recommendation) : null,
-      f.average !== null && f.average !== undefined ? `avg ${f.average}/5` : null,
-      f.comments ? clip(f.comments, COMMENT_MAX) : null,
-    ].filter(Boolean);
-    return esc(parts.join(' · ') || 'Scorecard submitted');
-  });
-  if (round.notes) lines.push(esc(`${round.feedback.length ? 'Recruiter note: ' : ''}${clip(round.notes, NOTES_MAX)}`));
-  return lines.length ? lines.join('<br>') : null;
+  const blocks = [];
+  for (const f of round.feedback) {
+    const v = verdictOf(f);
+    const verdict = [v.label, v.average !== null ? `avg ${v.average}/5` : null].filter(Boolean).join(' · ');
+    const name = f.interviewer || (verdict ? 'Interviewer' : 'Scorecard submitted');
+    const verdictStyle = v.concern ? `color:${FLAG};` : `font-weight:400;color:${LABEL};`;
+    const head = `<div style="font-weight:700;">${esc(name)}${verdict ? ` <span style="${verdictStyle}">— ${esc(verdict)}</span>` : ''}</div>`;
+    const items = feedbackItems(f).map((i) => bullet(itemLine(i), { concern: i.concern, prefix: i.prefix }));
+    blocks.push(head + bulletList(items));
+  }
+  if (round.notes) {
+    const items = parseRoundNote(round.notes);
+    if (items.length) {
+      const who = round.feedback.length ? null : noteInterviewer(round.notes);
+      const title = `Recorded feedback${who ? ` · ${who}` : ''}`;
+      blocks.push(`<div style="font-weight:700;color:${LABEL};">${esc(title)}</div>`
+        + bulletList(items.map((i) => bullet(noteItemText(i), { concern: i.concern }))));
+    }
+  }
+  return blocks.length ? blocks.join('') : null;
 }
 
 function recordingText(round, linksPending) {

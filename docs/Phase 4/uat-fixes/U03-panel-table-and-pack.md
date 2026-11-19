@@ -107,3 +107,14 @@
   - (3) `seed-email-templates.js` overwrites every template it seeds, so it was not run. Stored panel templates get the table after their body. U11 decides whether to reseed; it would also drop the "Candidate email" line.
   - (4) The brief's "empty-data token" doc is about portal links, so missing values use the dossier's `—`.
   - (5) A Zeko score uploaded on `rpa_cv.ZekoInterviewScore` stands in when there is no Zeko result.
+
+**U03c addendum (18 Nov), after Chhaya's CEO-round email.** Write-up: `docs/changelog/CHANGES-2026-11-18-U03c-panel-feedback-bullets.md`.
+- **Helpers:** the shared reading rules are in `utils/panelFeedback.js`:
+  - `parseRoundNote(text)` returns `[{label, rating, text, concern}]`;
+  - `feedbackItems(f)` and `verdictOf(f)`;
+  - `panelJourney(model, {stageKey})`, `journeyStrip(entries)` and `collectConcerns(model, {excludeStageKey})`.
+- **Email table:** `feedbackText()` no longer cuts anything.
+- **Report:** the panel cuts are `renderPanelReport()`, and `renderDossierHtml(model, {variant, stageKey})` now takes `stageKey`.
+- **Model:** `consolidated_by_interviewer` now carries `skills`, `hr`, `schedule_id`, `submitted_at` and `final_rating`. `stages[]` and `interviews[]` carry `stage_key`, and interviews and recordings carry `schedule_id`.
+- **Gaps:** Zeko red flags render only when `zeko[].report_detail` is present, which panel packs don't fetch. The Outlook / OWA check (1) is still open.
+- **U03d (19 Nov):** the dossier download now has the same AAPNA look, with its content unchanged (`STYLES` on the shared `AAPNA_TOKENS`). Its sha256 snapshots were re-taken. Write-up: `docs/changelog/CHANGES-2026-11-18-U03d-dossier-download-aapna.md`.

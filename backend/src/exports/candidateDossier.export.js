@@ -31,8 +31,15 @@ import AdmZip from 'adm-zip';
 import XLSX from 'xlsx';
 
 import config from '../config/index.js';
-import { formatDate, formatDateTime, stringifyCell } from '../utils/csvExport.js';
+import {
+  EXPORT_TIMEZONE, formatDate, formatDateTime, stringifyCell,
+} from '../utils/csvExport.js';
 import { toFieldValueAoa } from '../utils/fieldValueExport.js';
+import {
+  collectConcerns, entryTone, feedbackItems, itemLine, journeyStrip, journeySummary, noteInterviewer, noteItemText,
+  panelJourney, parseRoundNote, verdictOf,
+} from '../utils/panelFeedback.js';
+import { AAPNA_MARK_DATA_URI } from './aapnaMark.js';
 
 /**
  * HTML-escape. Applied to EVERY interpolated value without exception.
@@ -411,92 +418,115 @@ function dataTable(headers, rows) {
 }
 
 /**
+ * The AAPNA design tokens, shared by the download's stylesheet and the panel
+ * cuts' (PANEL_STYLES): frontend/src/theme/themeConfig.js and the branded
+ * email's BRAND (emailLayout.service.js). One set, so the two can't drift.
+ */
+const AAPNA_TOKENS = `:root{--ac:#7a922e;--acd:#5a6e1f;--tint:#eef3da;--tint2:#f6f9eb;--tintln:#dbe5bd;--canvas:#f7f6f3;
+  --tx:#2b2b2b;--tx2:#5f6664;--ln:#dde1df;--ln2:#eaebe8;
+  --ok:#4a7c59;--okbg:#e7f1ea;--hold:#8a6400;--holddot:#c99a1c;--holdbg:#fbf1d3;--bad:#c0392b;--badbg:#fbeae8;--badln:#f0c4be}`;
+
+/**
  * The stylesheet, inline.
  *
- * No webfont: a system font stack renders identically offline, and a Google
- * Fonts link would break the "no internet" acceptance test while looking fine on
- * every machine we tested it on. The brand mark is set in type for the same
- * reason — the company logo is a remote PNG in the email layout
- * (emailLayout.service.js:37) and embedding a base64 copy here would add weight
- * to every pack for no gain the reader can perceive.
+ * No webfont: the font stack names Inter (the ATS app's font) first and falls
+ * back to system fonts, so the file renders offline; a Google Fonts link would
+ * break the "no internet" acceptance test while looking fine on every machine
+ * we tested it on. The AAPNA mark is embedded (exports/aapnaMark.js, 8 KB as
+ * base64) rather than linked, for the same reason: the email layout's logo is
+ * a remote PNG (emailLayout.service.js).
+ *
+ * U03d (18 Nov): the AAPNA look of the panel cuts (olive tokens, a white page
+ * on the canvas, numbered olive headings, rounded records), for the download's
+ * own nine sections and every record in them. Only the look changed.
  *
  * @media print exists because Ctrl+P is the documented way to get a PDF out of
  * this file: it drops the page furniture, forces sensible page breaks between
  * sections, and prevents a scorecard table splitting across two pages.
  */
 const STYLES = `
-:root{--ink:#1b2430;--muted:#5b6875;--line:#dfe4ea;--band:#0f4c3a;--warn:#8a5300;--bg:#fff}
+${AAPNA_TOKENS}
 *{box-sizing:border-box}
-body{margin:0;background:#f4f6f8;color:var(--ink);
-  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-.page{max-width:920px;margin:0 auto;background:var(--bg);padding:0 0 48px}
-header.band{background:var(--band);color:#fff;padding:28px 36px}
-.mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.85;margin-bottom:14px}
-header.band h1{margin:0 0 4px;font-size:26px;line-height:1.2}
-header.band .role{font-size:15px;opacity:.92}
-header.band .meta{margin-top:14px;font-size:12px;opacity:.85;line-height:1.7}
-.confidential{background:#fdf3d7;border-bottom:1px solid #e8d9a8;color:var(--warn);
-  padding:12px 36px;font-size:12.5px;font-weight:600}
-.status{padding:16px 36px;border-bottom:1px solid var(--line);font-size:14px}
-.status.closed{background:#fdecec;color:#8a1f1f;font-weight:600}
-.status.paused{background:#fdf3d7;color:var(--warn);font-weight:600}
-section{padding:26px 36px;border-bottom:1px solid var(--line)}
+body{margin:0;padding:22px;background:var(--canvas);color:var(--tx);font:14px/1.6 Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.page{max-width:920px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border-top:6px solid var(--ac);
+  box-shadow:0 1px 3px rgba(16,24,20,.06),0 10px 28px rgba(16,24,20,.08);padding:0 0 12px}
+header.band{background:#fff;color:var(--tx);padding:20px 36px 18px}
+.mark{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.mark img{width:34px;height:34px;display:block}
+.mark .wm{font-weight:800;color:var(--acd);font-size:15px}
+.mark .doc{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--acd);
+  background:var(--tint);border-radius:999px;padding:3px 12px}
+header.band h1{margin:0 0 2px;font-size:26px;line-height:1.25;font-weight:800}
+header.band .role{font-size:15px;color:var(--tx2)}
+header.band .meta{margin-top:12px;font-size:12.5px;line-height:1.7;color:var(--tx2)}
+.confidential{background:var(--holdbg);border-top:1px solid #efe0b0;border-bottom:1px solid #efe0b0;color:var(--hold);
+  padding:9px 36px;font-size:12.5px;font-weight:600}
+.status{padding:12px 36px;border-bottom:1px solid var(--ln2);background:var(--tint2);color:var(--acd);font-size:14px;font-weight:600}
+.status.closed{background:var(--badbg);color:var(--bad)}
+.status.paused{background:var(--holdbg);color:var(--hold)}
+section{padding:24px 36px;border-bottom:1px solid var(--ln2)}
 section:last-of-type{border-bottom:0}
-h2{font-size:15px;margin:0 0 16px;text-transform:uppercase;letter-spacing:.06em;color:var(--band)}
-h2 .num{display:inline-block;min-width:26px;height:22px;line-height:22px;text-align:center;
-  background:var(--band);color:#fff;border-radius:3px;margin-right:10px;font-size:12px}
-h3{font-size:14px;margin:22px 0 8px}
+h2{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;margin:0 0 16px;text-transform:uppercase;letter-spacing:.08em;color:var(--acd)}
+h2 .num{display:inline-flex;align-items:center;justify-content:center;flex:0 0 24px;width:24px;height:24px;border-radius:50%;
+  background:var(--ac);color:#fff;font-size:12px;letter-spacing:0}
+h3{font-size:14.5px;margin:22px 0 8px}
 p{margin:0 0 10px}
 ul{margin:0 0 12px;padding-left:20px}
 li{margin-bottom:4px}
-.empty{color:var(--muted);font-style:italic}
+a{color:var(--acd)}
+.empty{color:var(--tx2);font-style:italic}
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%}
-table.fields th{width:34%;text-align:left;vertical-align:top;padding:7px 12px 7px 0;
-  color:var(--muted);font-weight:600}
-table.fields td{padding:7px 0;vertical-align:top}
+table.fields th{width:34%;text-align:left;vertical-align:top;padding:6px 14px 6px 0;color:var(--tx2);font-weight:600}
+table.fields td{padding:6px 0;vertical-align:top}
 table.grid{font-size:13px;margin-bottom:6px}
-table.grid th{text-align:left;background:#eef1f4;padding:8px 10px;border:1px solid var(--line);white-space:nowrap}
-table.grid td{padding:8px 10px;border:1px solid var(--line);vertical-align:top}
+table.grid th{text-align:left;background:var(--tint2);padding:8px 10px;border:1px solid var(--ln);white-space:nowrap}
+table.grid td{padding:8px 10px;border:1px solid var(--ln);vertical-align:top}
 table.fields td .scroll{margin:2px 0 0}
 table.fields td table.grid{margin-bottom:0;font-size:12.5px}
 ul.kv{margin:0;padding:0;list-style:none}
 ul.kv li{margin-bottom:3px}
-ul.kv .k{color:var(--muted);font-weight:600;margin-right:6px}
-.card{border:1px solid var(--line);border-radius:5px;padding:16px 18px;margin-bottom:16px}
-.rec{border:1px solid var(--line);border-left:3px solid var(--band);border-radius:4px;padding:8px 14px 4px;margin:0 0 10px}
+ul.kv .k{color:var(--tx2);font-weight:600;margin-right:6px}
+.card{border:1px solid var(--ln);border-left:4px solid var(--ac);border-radius:10px;padding:14px 18px;margin-bottom:14px}
+.rec{border:1px solid var(--ln);border-left:3px solid var(--ac);border-radius:8px;padding:8px 14px 4px;margin:0 0 10px}
 .rec h4{margin:2px 0 4px;font-size:13.5px}
 .rec table.fields th{width:30%;padding:4px 12px 4px 0}
 .rec table.fields td{padding:4px 0}
-.notesbox{background:#f7f9fa;border:1px dashed var(--line);border-radius:4px;padding:10px 14px;margin:10px 0 0}
-.notesbox .k{display:block;color:var(--muted);font-size:12px;font-weight:600;margin-bottom:4px}
-.attempt{color:var(--warn);font-weight:600;font-size:12.5px}
+.notesbox{background:var(--tint2);border:1px dashed var(--tintln);border-radius:8px;padding:10px 14px;margin:10px 0 0}
+.notesbox .k{display:block;color:var(--tx2);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.attempt{color:var(--hold);font-weight:700;font-size:12.5px}
 .card h3{margin-top:0}
-.tags{color:var(--muted);font-size:12.5px;margin-bottom:10px}
-.tags b{color:var(--ink)}
-.quote{background:#f7f9fa;border-left:3px solid var(--band);padding:12px 16px;margin:0 0 14px;
+.tags{color:var(--tx2);font-size:12.5px;margin-bottom:10px}
+.tags b{color:var(--tx)}
+.quote{background:var(--tint2);border-left:3px solid var(--tintln);border-radius:0 8px 8px 0;padding:10px 14px;margin:0 0 14px;
   white-space:pre-wrap}
-.note{color:var(--muted);font-size:12.5px}
-.linkbox{border:1px solid #cfe3d8;border-left:4px solid var(--band);background:#f2f8f5;
-  border-radius:5px;padding:14px 18px;margin:16px 0 6px}
-.linkbox .linktitle{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--band);margin:0 0 10px}
-a.reportlink{display:inline-block;background:var(--band);color:#fff;font-weight:700;font-size:13.5px;
-  text-decoration:none;padding:8px 18px;border-radius:4px;margin:0 8px 6px 0;letter-spacing:.02em;
-  border:1px solid var(--band)}
-a.reportlink:hover{background:#0b3a2c;border-color:#0b3a2c}
+.note{color:var(--tx2);font-size:12.5px}
+.linkbox{border:1px solid var(--tintln);border-left:4px solid var(--ac);background:var(--tint2);
+  border-radius:8px;padding:14px 18px;margin:16px 0 6px}
+.linkbox .linktitle{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--acd);margin:0 0 10px}
+a.reportlink{display:inline-block;background:var(--acd);color:#fff;font-weight:700;font-size:13px;
+  text-decoration:none;padding:7px 16px;border-radius:8px;margin:0 8px 6px 0;border:1px solid var(--acd)}
+a.reportlink:hover{background:#4a5b19;border-color:#4a5b19}
 .linkbox .note{margin-bottom:0}
+@media (max-width:640px){
+  body{padding:10px}
+  header.band,section,.confidential,.status{padding-left:16px;padding-right:16px}
+  header.band h1{font-size:22px}
+  table.fields th,table.fields td{display:block;width:auto;padding:2px 0}
+  table.fields td{padding-bottom:8px}
+  .rec table.fields th{width:auto;padding:2px 0}
+}
 @media print{
-  body{background:#fff}
-  .page{max-width:none}
+  body{background:#fff;padding:0}
+  .page{max-width:none;box-shadow:none;border-radius:0}
   section{page-break-inside:auto;border-bottom:0;padding:18px 0}
   .card,.rec,table.grid tr,.linkbox{page-break-inside:avoid}
   h2{page-break-after:avoid}
-  header.band{color:#000;background:#fff;border-bottom:3px solid #000;padding:0 0 14px}
+  header.band{padding:0 0 14px;border-bottom:2px solid var(--ac)}
   .confidential,.status{padding-left:0;padding-right:0}
   /* Printers drop background colours by default, which would leave the report
      button as invisible white-on-white. Ink, not fill, on paper. */
-  a.reportlink{background:#fff;color:var(--band);border:1.5px solid var(--band)}
+  a.reportlink{background:#fff;color:var(--acd);border:1.5px solid var(--acd)}
 }
 `;
 
@@ -505,22 +535,23 @@ a.reportlink:hover{background:#0b3a2c;border-color:#0b3a2c}
  *
  * U03 adds two cuts for the interview panel's email (utils/panelPackBlock.js
  * packVariantFor() picks one per round). `download` is the dossier download and
- * is pinned by a sha256 snapshot (tests/unit/candidateDossier.test.js):
- *   - `panel_tech` (Tech 1/2/3): the header and the consolidated interviewer
- *     feedback with names, nothing else;
- *   - `panel_leadership` (HR, CEO): profile, progress so far without the
- *     "moved" events, the named feedback, interview history & recordings,
- *     scorecards, AI screening, assessment, and the position last.
+ * is pinned by a sha256 snapshot (tests/unit/candidateDossier.test.js). U03c
+ * gives the two panel cuts their own page (renderPanelReport, below):
+ *   - `panel_tech` (Tech 1/2/3): at a glance, then the feedback in full;
+ *   - `panel_leadership` (HR, CEO): at a glance, what happened, the feedback in
+ *     full, the profile, screening and assessment, and the position last.
  *
  * The report states facts about the candidate and nothing about itself: no
  * account of what was redacted, no index of the pack, no instructions beyond
  * the one-line confidentiality notice.
  *
  * @param {object} model - from buildDossierModel()
- * @param {{ variant?: 'download'|'panel_tech'|'panel_leadership' }} [options]
+ * @param {{ variant?: 'download'|'panel_tech'|'panel_leadership', stageKey?: string|null }} [options]
+ *   `stageKey`: the round a panel cut is for (its booking heads the page)
  * @returns {string} a complete HTML document
  */
-export function renderDossierHtml(model, { variant = 'download' } = {}) {
+export function renderDossierHtml(model, { variant = 'download', stageKey = null } = {}) {
+  if (variant === 'panel_tech' || variant === 'panel_leadership') return renderPanelReport(model, { variant, stageKey });
   const { candidate, generated, status } = model;
   const days = config.dossier.deletionDays;
 
@@ -839,7 +870,7 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
 <div class="page">
 
 <header class="band">
-  <div class="mark">AAPNA Infotech · Candidate dossier</div>
+  <div class="mark"><img src="${AAPNA_MARK_DATA_URI}" alt=""><span class="wm">AAPNA Infotech</span><span class="doc">Candidate dossier</span></div>
   <h1>${esc(candidate.name)}</h1>
   <div class="role">${esc(text(candidate.position, { empty: 'Position not recorded' }))}</div>
   <div class="meta">
@@ -860,61 +891,6 @@ export function renderDossierHtml(model, { variant = 'download' } = {}) {
   const close = `</div>
 </body>
 </html>`;
-
-  // ---- U03: the panel's cuts ----------------------------------------------
-  if (variant === 'panel_tech' || variant === 'panel_leadership') {
-    // The consolidated feedback with each interviewer's name (Process Phases
-    // sheet, row 15): the one-line summary, then one record per interviewer.
-    const named = model.consolidated_by_interviewer || [];
-    const namedHtml = (model.consolidated_feedback ? `<div class="quote">${esc(model.consolidated_feedback)}</div>` : '')
-      + recordList(named.map((c) => ({
-        title: `${c.round}${c.interviewer ? ` — ${c.interviewer}` : ''}`,
-        rows: [
-          { label: 'Recommendation', value: c.recommendation },
-          { label: 'Average score', value: c.average },
-          { label: 'Comments', value: c.comments },
-        ],
-      })));
-
-    if (variant === 'panel_tech') {
-      return `${open}
-
-${section(1, 'Consolidated interviewer feedback', namedHtml, EMPTY.feedback)}
-
-${close}`;
-    }
-
-    // Leadership (HR, CEO): no "moved" events, the position last.
-    const progressHtml = recordList(model.stages.filter((s) => s.event_type !== 'moved').map((s) => ({
-      title: `${s.stage_label} — ${s.outcome || eventLabel(s.event_type)}`,
-      rows: [
-        { label: 'What happened', value: eventLabel(s.event_type) },
-        { label: 'Reason / note', value: s.reason || s.notes },
-        { label: 'Decided by', value: s.decided_by },
-        { label: 'When', value: formatDateTime(s.decided_at) },
-      ],
-    })));
-    const historyHtml = interviewsHtml + (model.recordings.length ? `<h3>Recordings</h3>${recordingsHtml}` : '');
-    return `${open}
-
-${section(1, 'Candidate profile', fieldTable(model.profile), EMPTY.profile)}
-
-${section(2, 'Progress so far', progressHtml, EMPTY.progress)}
-
-${section(3, 'Consolidated interviewer feedback', namedHtml, EMPTY.feedback)}
-
-${section(4, 'Interview history & recordings', historyHtml, EMPTY.interviews)}
-
-${section(5, 'Interviewer scorecards', scorecardsHtml + pendingHtml, EMPTY.scorecards)}
-
-${section(6, 'AI screening', zekoHtml + zekoDetailHtml + zekoLinksHtml, EMPTY.screening)}
-
-${section(7, 'Assessment results', assessmentHtml, EMPTY.assessment)}
-
-${section(8, 'The position', fieldTable(model.position), EMPTY.position)}
-
-${close}`;
-  }
 
   return `${open}
 
@@ -938,6 +914,491 @@ ${section(8, 'Interview history', interviewsHtml, EMPTY.interviews)}
 
 ${section(9, 'Interview recordings', recordingsHtml, EMPTY.recordings)}
 
+${close}`;
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * U03c · THE PANEL'S CUTS OF THE REPORT SO FAR
+ * ---------------------------------------------------------------------------
+ * Chhaya (18 Nov): the report sent with the CEO round "is not in desirable
+ * format", and the panel needs "the things required for a CEO or tech round
+ * person: clear and clean and full feedback shared by other rounds". So the
+ * panel cuts are their own page, in the AAPNA look (the ATS app's and the
+ * branded email's tokens), written to be caught up on quickly:
+ *
+ *   panel_leadership (HR, CEO)          panel_tech (Tech 1/2/3)
+ *     1 At a glance                       1 At a glance
+ *     2 What happened                     2 Feedback in full
+ *     3 Feedback in full
+ *     4 Candidate profile
+ *     5 Screening and assessment
+ *     6 The position (last)
+ *
+ * "What happened" is one entry per step (utils/panelFeedback.js
+ * panelJourney): the system's own notes (recording opened, dossier
+ * downloaded, link sent, an external viewer's IP) are not steps, and the
+ * feedback is printed once, in full. Concerns are highlighted the same way the
+ * invite's table highlights them.
+ *
+ * The download keeps its own nine sections and every record in them; since
+ * U03d it shares this look (STYLES above, on the same AAPNA_TOKENS).
+ */
+
+/** The panel cuts' stylesheet, on the shared AAPNA tokens (AAPNA_TOKENS above). */
+const PANEL_STYLES = `
+${AAPNA_TOKENS}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--tx);font:14px/1.6 Inter,"Segoe UI",Arial,sans-serif}
+.ap{padding:22px}
+.pg{max-width:860px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border-top:6px solid var(--ac);
+  box-shadow:0 1px 3px rgba(16,24,20,.06),0 10px 28px rgba(16,24,20,.08)}
+.hd{padding:20px 32px 18px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.brand img{width:34px;height:34px;display:block}
+.brand .wm{font-weight:800;color:var(--acd);font-size:15px}
+.brand .doc{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--acd);
+  background:var(--tint);border-radius:999px;padding:3px 12px}
+h1{margin:0;font-size:26px;line-height:1.25;font-weight:800}
+.role{color:var(--tx2);font-size:15px;margin-top:2px}
+.for{margin-top:10px}
+.for b{color:var(--acd)}
+ul.facts{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0;padding:0;list-style:none}
+ul.facts li{background:var(--tint2);border:1px solid var(--tintln);border-radius:999px;padding:1px 11px;font-size:12.5px;margin:0}
+.state{padding:9px 32px;font-weight:700;font-size:13px}
+.state.closed{background:var(--badbg);color:var(--bad)}
+.state.paused{background:var(--holdbg);color:var(--hold)}
+.conf{background:var(--holdbg);color:var(--hold);font-size:12.5px;font-weight:600;padding:8px 32px;border-top:1px solid #efe0b0;border-bottom:1px solid #efe0b0}
+section{padding:22px 32px;border-top:1px solid var(--ln2)}
+.conf + section{border-top:0}
+h2{display:flex;align-items:center;gap:10px;margin:0 0 14px;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--acd)}
+h2 .n{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--ac);color:#fff;font-size:12px;letter-spacing:0}
+p{margin:0 0 10px}
+ul{margin:0 0 8px;padding-left:20px}
+li{margin-bottom:3px}
+a{color:var(--acd)}
+.muted,.note{color:var(--tx2)}
+.note{font-size:12.5px}
+.empty{color:var(--tx2);font-style:italic;margin:0}
+.pill{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.pill.ok{background:var(--okbg);color:var(--ok)}
+.pill.hold{background:var(--holdbg);color:var(--hold)}
+.pill.bad{background:var(--badbg);color:var(--bad)}
+.pill.now{background:var(--tint);color:var(--acd)}
+.pill.off{background:#eef0ee;color:var(--tx2)}
+.glance{background:var(--tint2);border:1px solid var(--tintln);border-radius:10px;padding:16px 18px}
+.short{font-size:16px;font-weight:600;margin:0 0 16px}
+.short b{color:var(--acd)}
+ol.steps{display:flex;list-style:none;margin:0 0 16px;padding:0}
+ol.steps li{flex:1 1 0;position:relative;text-align:center;padding:0 4px;margin:0;min-width:0}
+ol.steps li::before{content:"";position:absolute;top:13px;left:-50%;right:50%;height:2px;background:var(--ac)}
+ol.steps li:first-child::before{display:none}
+ol.steps li.now::before{background:repeating-linear-gradient(90deg,var(--ac) 0 5px,transparent 5px 9px)}
+ol.steps .dot{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;
+  background:var(--ac);color:#fff;font-weight:800;font-size:14px;line-height:1}
+ol.steps li.now .dot{background:#fff;border:2px solid var(--ac);color:var(--acd)}
+ol.steps li.pending .dot{background:#fff;border:2px solid #b4bcba;color:var(--tx2)}
+ol.steps li.hold .dot{background:var(--holddot)}
+ol.steps li.bad .dot{background:var(--bad)}
+ol.steps .tx{display:block}
+ol.steps .sl{display:block;font-weight:700;font-size:12.5px;margin-top:6px;line-height:1.3}
+ol.steps .sl,ol.steps .ss{overflow-wrap:break-word;hyphens:auto}
+ol.steps.many li{padding:0 2px}
+ol.steps.many .sl,ol.steps.many .ss{font-size:11px}
+ol.steps .sd{display:block;font-size:12px;color:var(--tx2)}
+ol.steps .ss{display:block;font-size:12.5px;font-weight:800;color:var(--acd)}
+ol.steps li.hold .ss{color:var(--hold)}
+ol.steps li.bad .ss{color:var(--bad)}
+.cbox{border-radius:8px;padding:10px 14px;border:1px solid var(--badln);border-left:4px solid var(--bad);background:var(--badbg)}
+.cbox .t{margin:0 0 4px;font-weight:800;color:var(--bad)}
+.cbox ul{margin:0}
+.cbox.none{border-color:#cfe2d4;border-left-color:var(--ok);background:var(--okbg)}
+.cbox.none .t{color:var(--ok);margin:0}
+ol.tl{list-style:none;margin:0;padding:0}
+ol.tl > li{display:grid;grid-template-columns:56px 22px minmax(0,1fr);column-gap:10px;margin:0;padding:0 0 18px;position:relative}
+ol.tl > li::before{content:"";position:absolute;left:76px;top:20px;bottom:0;width:2px;background:var(--ln)}
+ol.tl > li:last-child{padding-bottom:0}
+ol.tl > li:last-child::before{display:none}
+.tl .d{font-size:12.5px;color:var(--tx2);font-variant-numeric:tabular-nums;padding-top:2px;text-align:right;white-space:nowrap}
+.tl .m{position:relative;z-index:1;width:14px;height:14px;border-radius:50%;background:var(--ac);margin:5px auto 0;box-shadow:0 0 0 3px #fff}
+.tl li.off .m{background:#fff;border:2px solid #b4bcba}
+.tl li.now .m{background:#fff;border:3px solid var(--ac)}
+.tl li.hold .m{background:var(--holddot)}
+.tl li.bad .m{background:var(--bad)}
+.tl .c{min-width:0}
+.tl .h{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px}
+.tl .h strong{font-size:14.5px}
+.tl .sc{font-weight:800;color:var(--acd);font-variant-numeric:tabular-nums}
+.tl .sc.flag{color:var(--bad)}
+.tl .who{color:var(--tx2)}
+.tl li.off .h strong{font-weight:600;color:var(--tx2)}
+.tl .q{margin:6px 0 0;padding:6px 12px;border-left:3px solid var(--tintln);background:var(--tint2);border-radius:0 6px 6px 0;white-space:pre-wrap}
+.tl .act{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px}
+.tl p.flag{margin:6px 0 0}
+a.play{display:inline-block;background:var(--acd);color:#fff;text-decoration:none;font-weight:700;font-size:12.5px;border-radius:8px;padding:5px 12px}
+.moved{font-size:12.5px;color:var(--tx2)}
+.moved.flag{color:var(--bad)}
+.fb{border:1px solid var(--ln);border-left:4px solid var(--ac);border-radius:10px;padding:14px 18px 8px;margin-bottom:14px}
+.fb:last-child{margin-bottom:0}
+.fb.flagged{border-left-color:var(--bad)}
+.fb-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-bottom:4px}
+.fb-h h3{margin:0;font-size:15px}
+.fb-h .meta{color:var(--tx2);font-size:12.5px}
+.fb h4{margin:10px 0 3px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2)}
+.fb li{white-space:pre-wrap}
+.flag{color:var(--bad);font-weight:700}
+li.flag::before,p.flag::before{content:"Concern: "}
+li.flag.own::before,p.flag.own::before{content:none}
+table{border-collapse:collapse;width:100%}
+table.fields th{width:32%;text-align:left;vertical-align:top;padding:5px 14px 5px 0;color:var(--tx2);font-weight:600}
+table.fields td{padding:5px 0;vertical-align:top}
+.rec{border:1px solid var(--ln);border-radius:8px;padding:6px 12px 2px;margin:0 0 8px}
+.rec h4{margin:2px 0 2px;font-size:13px}
+ul.kv{margin:0;padding:0;list-style:none}
+ul.kv .k{color:var(--tx2);font-weight:600;margin-right:6px}
+.mini{display:flex;flex-wrap:wrap;gap:10px}
+.mini > div{flex:1 1 200px;border:1px solid var(--ln);border-radius:10px;padding:10px 14px}
+.mini > div.flagged{border-color:var(--badln);background:var(--badbg)}
+.mini .k{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tx2)}
+.mini .v{font-size:18px;font-weight:800;color:var(--acd)}
+.mini .v.none{font-size:14px;font-weight:600;color:var(--tx2)}
+.mini .v.flag{font-size:15px;color:var(--bad)}
+.mini .s{font-size:12.5px;color:var(--tx2)}
+.mini ul{margin:6px 0 0}
+.ft{padding:12px 32px;background:var(--canvas);color:var(--tx2);font-size:12px;border-top:1px solid var(--ln2)}
+@media (max-width:640px){
+  .ap{padding:10px}
+  .hd,section,.ft,.conf,.state{padding-left:16px;padding-right:16px}
+  h1{font-size:22px}
+  ol.steps{flex-direction:column}
+  ol.steps li{display:flex;align-items:center;gap:10px;text-align:left;padding:0 0 10px}
+  ol.steps li::before{left:13px;right:auto;top:-10px;width:2px;height:12px}
+  ol.steps li:first-child::before{display:none}
+  ol.steps .dot{flex:0 0 28px}
+  ol.steps .tx{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px}
+  ol.steps .sl{margin-top:0}
+  ol.tl > li{grid-template-columns:44px 18px minmax(0,1fr);column-gap:8px}
+  ol.tl > li::before{left:60px}
+  table.fields th,table.fields td{display:block;width:auto;padding:2px 0}
+  table.fields td{padding-bottom:8px}
+}
+@media print{
+  body,.ap{background:#fff;padding:0}
+  .pg{box-shadow:none;border-radius:0;max-width:none}
+  .fb,ol.tl > li,.glance,.mini > div{break-inside:avoid}
+  h2{break-after:avoid}
+  a.play{background:#fff;color:var(--acd);border:1.5px solid var(--acd)}
+}
+`;
+
+const panelDateFmt = new Intl.DateTimeFormat('en-GB', { timeZone: EXPORT_TIMEZONE, day: '2-digit', month: 'short' });
+const panelYearFmt = new Intl.DateTimeFormat('en-GB', { timeZone: EXPORT_TIMEZONE, year: 'numeric' });
+const panelTimeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: EXPORT_TIMEZONE, hour: 'numeric', minute: '2-digit', hour12: true });
+const panelDate = (d) => {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+/** "19 Oct", with the year when it is not the report's own year. */
+function panelShortDate(d, refYear) {
+  const date = panelDate(d);
+  if (!date) return '';
+  const year = panelYearFmt.format(date);
+  return `${panelDateFmt.format(date)}${refYear && year !== refYear ? ` ${year}` : ''}`;
+}
+
+/** "7:30 PM". */
+function panelTime(d) {
+  const date = panelDate(d);
+  return date ? panelTimeFmt.format(date).replace(/\s?(am|pm)$/i, (m) => ` ${m.trim().toUpperCase()}`) : '';
+}
+
+/** "18 Nov 2026, 7:30 PM". */
+function panelDateTime(d) {
+  const date = panelDate(d);
+  return date ? `${panelDateFmt.format(date)} ${panelYearFmt.format(date)}, ${panelTime(date)}` : '';
+}
+
+/** Escaped prose with its line breaks (the CSS keeps them: white-space:pre-wrap). */
+const prose = (s) => esc(String(s ?? '').trim());
+
+const PILL_BY_TONE = { ok: 'ok', hold: 'hold', bad: 'bad' };
+function verdictPill(v) {
+  if (!v.label) return '';
+  return `<span class="pill ${PILL_BY_TONE[v.tone] || 'off'}">${esc(v.label)}</span>`;
+}
+
+/** A decision's pill: "Approved", "Rejected", "On hold". */
+function decisionPill(outcome) {
+  const o = String(outcome || '').trim();
+  if (!o) return '';
+  const tone = /approv|moved on|cleared|select/i.test(o) ? 'ok' : /reject|withdraw|drop/i.test(o) ? 'bad' : /hold/i.test(o) ? 'hold' : 'off';
+  return `<span class="pill ${tone}">${esc(o.charAt(0).toUpperCase() + o.slice(1))}</span>`;
+}
+
+/** "Moved on by cverma, 19 Oct", or the hold or rejection, flagged. */
+function decisionLine(d, refYear) {
+  if (!d) return '';
+  const o = String(d.outcome || '').toLowerCase();
+  const when = panelShortDate(d.at, refYear);
+  const by = [d.by ? `by ${d.by}` : null].filter(Boolean).join('');
+  const tail = `${by ? ` ${by}` : ''}${when ? `, ${when}` : ''}${d.reason ? `: ${d.reason}` : ''}`;
+  if (/reject/.test(o)) return `<span class="moved flag">Rejected${esc(tail)}</span>`;
+  if (/hold/.test(o)) return `<span class="moved flag">Put on hold${esc(tail)}</span>`;
+  if (/approv|moved on/.test(o)) return `<span class="moved">Moved on${esc(tail)}</span>`;
+  return `<span class="moved">${esc(o.charAt(0).toUpperCase() + o.slice(1))}${esc(tail)}</span>`;
+}
+
+function recordingButtons(recordings) {
+  return recordings.map((r) => {
+    const mins = r.duration_seconds !== null && r.duration_seconds !== undefined ? ` · ${Math.max(1, Math.round(r.duration_seconds / 60))} min` : '';
+    return r.url
+      ? `<a class="play" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">&#9654; Play recording${esc(mins)}</a>`
+      : `<span class="moved">Recorded${esc(mins)}: ask the recruitment team for the link</span>`;
+  }).join('');
+}
+
+/** The header's fact strip: experience, company, location, notice, qualification. Never CTC. */
+function panelFacts(profile) {
+  const get = (field) => {
+    const row = (profile || []).find((p) => p.field === field);
+    const t = row ? text(row.value, { empty: '' }) : '';
+    return t.trim();
+  };
+  const exp = get('TotalExperienceYears');
+  const notice = get('NoticePeriod');
+  return [
+    exp ? (/^\d+(\.\d+)?$/.test(exp) ? `${exp} years' experience` : exp) : null,
+    get('CurrentCompany') || null,
+    get('CurrentLocation') || null,
+    notice ? `Notice: ${notice}` : null,
+    get('HighestQualification') || null,
+  ].filter(Boolean);
+}
+
+function stripHtml(strip, refYear) {
+  const DOT = { done: '&#10003;', now: '&#9679;', hold: '!', bad: '!', pending: '&#8226;' };
+  return `<ol class="steps${strip.length > 7 ? ' many' : ''}">${strip.map((s) => `<li class="${s.state}"><span class="dot">${DOT[s.state] || '&#10003;'}</span>`
+    + `<span class="tx"><span class="sl">${esc(s.label)}</span>`
+    + `${s.date ? `<span class="sd">${esc(panelShortDate(s.date, refYear))}</span>` : ''}`
+    + `${s.score ? `<span class="ss">${esc(s.score)}</span>` : ''}</span></li>`).join('')}</ol>`;
+}
+
+function concernsHtml(concerns) {
+  if (!concerns.length) return '<div class="cbox none"><p class="t">&#10003; No concerns raised in earlier rounds.</p></div>';
+  return `<div class="cbox"><p class="t">Concerns raised (${concerns.length})</p><ul>${concerns
+    .map((c) => `<li><b>${esc(c.round)}:</b> ${prose(c.text)}</li>`).join('')}</ul></div>`;
+}
+
+/** The entry's own concern lines: a low rating, "not suitable" wording, a red flag. */
+function entryFlags(e) {
+  const lines = new Map(); // line -> its class ("own": the label already says "concern")
+  for (const f of e.feedback) {
+    for (const i of feedbackItems(f, { spaced: true })) if (i.concern) lines.set(itemLine(i), i.prefix === false ? 'flag own' : 'flag');
+  }
+  for (const i of e.note_items) if (i.concern) lines.set(noteItemText(i, { spaced: true }), 'flag');
+  for (const flag of e.red_flags || []) lines.set(`Zeko red flag: ${flag}`, 'flag');
+  return [...lines].map(([l, cls]) => `<p class="${cls}">${prose(l)}</p>`).join('');
+}
+
+function journeyEntryHtml(e, refYear) {
+  const tone = entryTone(e);
+  const cls = e.kind === 'this_round' ? 'now' : (e.kind === 'cancelled' || e.kind === 'no_show') ? 'off' : (tone || '');
+  const date = panelShortDate(e.date, refYear);
+  let head = `<strong>${esc(e.stage_label)}${e.earlier_attempt ? ' (earlier attempt)' : ''}</strong>`;
+  let body = '';
+  if (e.kind === 'this_round') {
+    head += '<span class="pill now">This round</span>'
+      + `<span class="who">${esc([e.interviewer, panelTime(e.date)].filter(Boolean).join(' · '))}</span>`;
+  } else if (e.kind === 'cancelled') {
+    head += `<span class="pill off">Cancelled</span><span class="who">${esc(e.reason || 'The booking was cancelled.')}</span>`;
+  } else if (e.kind === 'no_show') {
+    head += `<span class="pill hold">No-show</span><span class="who">${esc([e.interviewer, e.no_show_party ? `(${e.no_show_party})` : null].filter(Boolean).join(' '))}</span>`;
+  } else if (e.kind === 'screening' || e.kind === 'assessment' || e.kind === 'step') {
+    head += decisionPill(e.decision?.outcome);
+    if (e.score !== null && e.score !== undefined) head += `<span class="sc">Score ${esc(e.score)}</span>`;
+    else if (e.result) head += `<span class="sc${e.failed ? ' flag' : ''}">${esc(e.result)}</span>`;
+    const none = e.kind === 'screening' && (e.score === null || e.score === undefined) ? 'No score on file'
+      : e.kind === 'assessment' && !e.result ? 'No result on file' : null;
+    const who = [none, e.decision?.by ? `by ${e.decision.by}` : null].filter(Boolean).join(' · ');
+    if (who) head += `<span class="who">${esc(who)}</span>`;
+    body += entryFlags(e);
+  } else {
+    // An interview: its verdict(s), the quote, the concerns, the recording, the decision.
+    if (e.feedback.length === 1) {
+      const v = verdictOf(e.feedback[0]);
+      head += verdictPill(v)
+        + (v.average !== null ? `<span class="sc${v.lowAverage ? ' flag' : ''}">avg ${esc(v.average)} / 5</span>` : '')
+        + `<span class="who">${esc(e.feedback[0].interviewer || e.interviewer || '')}</span>`;
+    } else if (e.feedback.length > 1) {
+      head += `<span class="who">${esc(`${e.feedback.length} interviewers`)}</span>`;
+      body += e.feedback.map((f) => {
+        const v = verdictOf(f);
+        return `<div class="h">${esc(f.interviewer || 'Interviewer')} ${verdictPill(v)}`
+          + `${v.average !== null ? `<span class="sc${v.lowAverage ? ' flag' : ''}">avg ${esc(v.average)} / 5</span>` : ''}</div>`;
+      }).join('');
+    } else {
+      head += `<span class="pill off">${e.held || e.note_items.length ? 'Held' : 'Not confirmed'}</span>`
+        + (e.interviewer ? `<span class="who">${esc(e.interviewer)}</span>` : '');
+    }
+    if (e.quote) body += `<p class="q">"${prose(e.quote)}"</p>`;
+    body += entryFlags(e);
+    const act = recordingButtons(e.recordings) + decisionLine(e.decision, refYear);
+    if (act) body += `<div class="act">${act}</div>`;
+  }
+  return `<li${cls ? ` class="${cls}"` : ''}><span class="d">${esc(date)}</span><span class="m"></span>`
+    + `<div class="c"><div class="h">${head}</div>${body}</div></li>`;
+}
+
+/** "Feedback in full": one card per interviewer, then any round known only from its recorded form. */
+function feedbackCardsHtml(model, refYear) {
+  const cards = [];
+  const notesByStage = new Map();
+  for (const n of model.round_notes || []) {
+    const items = parseRoundNote(n.value);
+    if (items.length) notesByStage.set(n.stage_key, { n, items });
+  }
+  const printed = new Set();
+  const named = model.consolidated_by_interviewer || [];
+  // The recorded form goes under the round's last card.
+  const lastCardOf = new Map();
+  named.forEach((f, i) => { if (!f.earlier_role && f.stage_key) lastCardOf.set(f.stage_key, i); });
+
+  const list = (items, cls = (i) => (i.concern ? ` class="flag${i.prefix === false ? ' own' : ''}"` : '')) => (items.length
+    ? `<ul>${items.map((i) => `<li${cls(i)}>${prose(i.line)}</li>`).join('')}</ul>` : '');
+  const noteBlock = (stageKey) => {
+    const entry = notesByStage.get(stageKey);
+    if (!entry || printed.has(stageKey)) return '';
+    printed.add(stageKey);
+    return `<h4>Recorded feedback</h4>${list(entry.items.map((i) => ({ line: noteItemText(i, { spaced: true }), concern: i.concern })))}`;
+  };
+
+  named.forEach((f, idx) => {
+    const v = verdictOf(f);
+    const items = feedbackItems(f, { spaced: true });
+    // Under its own heading a comment needs no "Comments:" label; an HR field keeps its label.
+    const group = (kind) => items.filter((i) => i.kind === kind)
+      .map((i) => ({ line: kind === 'hr' ? itemLine(i) : i.text, concern: i.concern, prefix: i.prefix }));
+    const meta = [
+      v.average !== null ? `<span${v.lowAverage ? ' class="flag"' : ''}>avg ${esc(v.average)} / 5</span>` : null,
+      f.final_rating !== null && f.final_rating !== undefined ? `overall ${esc(f.final_rating)}` : null,
+      f.submitted_at ? `submitted ${esc(panelShortDate(f.submitted_at, refYear))}` : null,
+    ].filter(Boolean).join(' · ');
+    const notes = !f.earlier_role && lastCardOf.get(f.stage_key) === idx ? noteBlock(f.stage_key) : '';
+    const flagged = v.concern || items.some((i) => i.concern) || (notes && notesByStage.get(f.stage_key)?.items.some((i) => i.concern));
+    const skills = group('skill');
+    const comments = group('comments');
+    const hr = group('hr');
+    cards.push(`<div class="fb${flagged ? ' flagged' : ''}"><div class="fb-h"><h3>${esc(f.round)}${f.interviewer ? ` — ${esc(f.interviewer)}` : ''}</h3>`
+      + `${verdictPill(v)}${meta ? `<span class="meta">${meta}</span>` : ''}</div>`
+      + (skills.length ? `<h4>Ratings</h4>${list(skills)}` : '')
+      + (comments.length ? `<h4>Comments</h4>${list(comments)}` : '')
+      + (hr.length ? `<h4>HR feedback</h4>${list(hr)}` : '')
+      + notes
+      + '</div>');
+  });
+  // Rounds with a recorded form and no scorecard.
+  for (const [stageKey, { n, items }] of notesByStage) {
+    if (printed.has(stageKey)) continue;
+    const who = noteInterviewer(n.value);
+    const flagged = items.some((i) => i.concern);
+    cards.push(`<div class="fb${flagged ? ' flagged' : ''}"><div class="fb-h"><h3>${esc(n.stage_label || stageKey)}${who ? ` — ${esc(who)}` : ''}</h3></div>`
+      + `${noteBlock(stageKey)}</div>`);
+  }
+  const pending = (model.scorecards_pending || []).length
+    ? `<p class="note">Still awaited: ${esc(model.scorecards_pending.map((p) => `${p.stage_label}${p.interviewer ? ` (${p.interviewer})` : ''}`).join(', '))}.</p>`
+    : '';
+  return cards.join('') + pending;
+}
+
+/** "Screening and assessment": one small card per Zeko round and test. */
+function screeningCardsHtml(entries, refYear) {
+  const cards = entries.filter((e) => e.kind === 'screening' || e.kind === 'assessment').map((e) => {
+    const label = e.kind === 'screening' ? `Zeko ${String(e.stage_label || '').replace(/\s*\(zeko\)\s*/i, '').trim()}` : (e.test_name || e.stage_label || 'Assessment');
+    const flagged = e.failed || (e.red_flags || []).length > 0;
+    let value;
+    if (e.kind === 'screening') value = e.score !== null && e.score !== undefined ? `<div class="v">${esc(e.score)}</div>` : '<div class="v none">No score on file</div>';
+    else value = e.result ? `<div class="v${e.failed ? ' flag' : ''}">${e.failed ? 'Concern: ' : ''}${esc(e.result)}</div>` : '<div class="v none">No result on file</div>';
+    const when = e.kind === 'screening' && e.score !== null && e.score !== undefined && e.date ? `<div class="s">${esc(panelShortDate(e.date, refYear))}</div>` : '';
+    const flags = (e.red_flags || []).length
+      ? `<ul>${e.red_flags.map((f) => `<li class="flag">Red flag: ${prose(f)}</li>`).join('')}</ul>` : '';
+    return `<div${flagged ? ' class="flagged"' : ''}><div class="k">${esc(e.earlier_role ? `${label}` : label)}</div>${value}${when}${flags}</div>`;
+  });
+  return cards.length ? `<div class="mini">${cards.join('')}</div>` : '';
+}
+
+/**
+ * The panel's cut of the report so far (see the block comment above).
+ *
+ * @param {object} model - the panel's dossier model (buildPanelPack)
+ * @param {{ variant: 'panel_tech'|'panel_leadership', stageKey?: string|null }} options
+ * @returns {string} a complete HTML document
+ */
+function renderPanelReport(model, { variant, stageKey = null }) {
+  const { candidate, generated, status } = model;
+  const days = config.dossier.deletionDays;
+  const refYear = panelYearFmt.format(panelDate(generated?.at) || new Date());
+  const entries = panelJourney(model, { stageKey });
+  const strip = journeyStrip(entries);
+  const concerns = collectConcerns(model, { excludeStageKey: stageKey });
+  const thisRound = entries.find((e) => e.kind === 'this_round') || null;
+
+  const facts = panelFacts(model.profile);
+  const forLine = thisRound
+    ? `<div class="for"><b>For:</b> ${esc([thisRound.stage_label, thisRound.interviewer, panelDateTime(thisRound.date)].filter(Boolean).join(' · '))}</div>`
+    : '';
+  const state = status?.closed || status?.state === 'paused'
+    ? `<div class="state ${status.closed ? 'closed' : 'paused'}">${esc(status.headline)}</div>`
+    : '';
+  const role = [text(candidate.position, { empty: 'Position not recorded' }), candidate.mrf_ref].filter(Boolean).join(' · ');
+
+  const open = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base target="_blank">
+<title>Candidate brief — ${esc(candidate.name)}</title>
+<style>${PANEL_STYLES}</style>
+</head>
+<body>
+<div class="ap"><div class="pg">
+<div class="hd">
+  <div class="brand"><img src="${AAPNA_MARK_DATA_URI}" alt=""><span class="wm">AAPNA Infotech</span><span class="doc">Candidate brief</span></div>
+  <h1>${esc(candidate.name)}</h1>
+  <div class="role">${esc(role)}</div>
+  ${forLine}
+  ${facts.length ? `<ul class="facts">${facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+</div>
+${state}<div class="conf">Confidential: for the interview panel only. Please don't forward it, and delete it within ${esc(days)} days of the interview.</div>`;
+
+  const close = `<div class="ft">Prepared on ${esc(panelDateTime(generated?.at))}${generated?.by ? `, by ${esc(generated.by)}` : ''} · AAPNA Infotech Recruitment</div>
+</div></div>
+</body>
+</html>`;
+
+  const glance = `<div class="glance"><p class="short"><b>In short:</b> ${esc(journeySummary(strip, concerns, entries))}</p>`
+    + `${strip.length ? stripHtml(strip, refYear) : ''}${concernsHtml(concerns)}</div>`;
+  const panelSection = (n, title, body, emptyNote) => `<section><h2><span class="n">${n}</span>${esc(title)}</h2>`
+    + `${body && body.trim() ? body : `<p class="empty">${esc(emptyNote)}</p>`}</section>`;
+  const feedback = feedbackCardsHtml(model, refYear);
+
+  if (variant === 'panel_tech') {
+    return `${open}
+${panelSection(1, 'At a glance', glance)}
+${panelSection(2, 'Feedback in full', feedback, EMPTY.feedback)}
+${close}`;
+  }
+
+  const timeline = entries.length ? `<ol class="tl">${entries.map((e) => journeyEntryHtml(e, refYear)).join('')}</ol>` : '';
+  return `${open}
+${panelSection(1, 'At a glance', glance)}
+${panelSection(2, 'What happened', timeline, EMPTY.progress)}
+${panelSection(3, 'Feedback in full', feedback, EMPTY.feedback)}
+${panelSection(4, 'Candidate profile', fieldTable(model.profile), EMPTY.profile)}
+${panelSection(5, 'Screening and assessment', screeningCardsHtml(entries, refYear), 'No screening or assessment results.')}
+${panelSection(6, 'The position', fieldTable(model.position), EMPTY.position)}
 ${close}`;
 }
 

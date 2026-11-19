@@ -167,7 +167,9 @@ describe('L08 — Forms & Links', () => {
     assert.deepEqual([form.type, form.state, form.mrfRef, form.recipientEmail], ['mrf_form', 'open', 'not raised yet', 'l08.manager@example.invalid']);
 
     const c = await copyLink('mrf_form', request.id, NO_PIPELINE);
-    assert.match(c.url, /\/mrf-submit\?role=L08%20Role%20\d+&emailid=l08\.manager%40example\.invalid$/);
+    assert.match(c.url, /\/mrf-submit\?role=L08%20Role%20\d+&emailid=l08\.manager%40example\.invalid&id=\d+$/);
+    // The request id, so the HM's submission links to this row (utils/mrfParentLink.js).
+    assert.ok(c.url.endsWith(`&id=${request.id}`), c.url);
     const logged = await prisma.rpa_processing_log.count({ where: { source: 'FORMS_LINKS_COPY', logMessage: { contains: `(mrf_form ${request.id}) copied by l08-no-pipeline` } } });
     assert.equal(logged, 1);
   });

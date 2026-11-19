@@ -86,8 +86,8 @@ export const FIELDS = [
   // 15
   { name: 'project_duration', label: 'Duration of the project', desc: 'Please provide duration of the project', type: 'text', required: true },
   // 16
-  { name: 'employment_type', label: 'Full time/Fixed term Contract/Extendable Contract', desc: 'Please select the type of job for the position', type: 'select', required: true,
-    options: ['Full Time', 'Fixed Term Contract', 'Extendable Contract'] },
+  { name: 'employment_type', label: 'Full time/Fixed term Contract/Extendable Contract/Internship', desc: 'Please select the type of job for the position', type: 'select', required: true,
+    options: ['Full Time', 'Fixed Term Contract', 'Extendable Contract', 'Internship'] },
   // 17 — DB column existing_resource_allocation (boolean); send Yes/No
   { name: 'existing_resource_allocation', label: 'Can someone from existing resources be allocated?', desc: 'If Selected Yes, please provide more information in the next question', type: 'select', required: true,
     options: ['Yes', 'No'] },

@@ -222,8 +222,9 @@ export async function loadEarlierRoleModels(pipelineId, {
  *   - `attachProfile` (U01): when no resume can travel, attach the candidate
  *     profile summary (the redacted dossier as HTML) instead, even on a first round.
  *   - `stageKey` (U03): the round the panel is for; picks the report's cut
- *     (packVariantFor). Tech rounds get only the named consolidated feedback,
- *     and no report at all when there is none yet.
+ *     (packVariantFor) and heads it with this round's booking. Tech rounds get
+ *     "At a glance" and the feedback in full (U03c), and no report at all when
+ *     there is no feedback yet (no scorecard and no recorded form).
  *   - `includeEarlierRoles` (U07, default on): a candidate moved from another
  *     JD brings that journey's rounds (loadEarlierRoleModels), into both the
  *     report and `tableModel`, labelled "· earlier role: <title>".
@@ -280,8 +281,12 @@ export async function buildPanelPack(pipelineId, {
       assertNoForbiddenFields(model);
       lines = earlierRoundLines(model);
       summary.rounds = lines.length;
-      const wantReport = variant !== 'panel_tech' || (model.consolidated_by_interviewer || []).length > 0;
-      const html = wantReport ? Buffer.from(renderDossierHtml(model, { variant }), 'utf8') : null;
+      // U03c: a recorded form (rpa_cv round note) is feedback too, so a tech
+      // round whose earlier round has only that still gets the report.
+      const wantReport = variant !== 'panel_tech'
+        || (model.consolidated_by_interviewer || []).length > 0
+        || (model.round_notes || []).some((n) => n.stage_key !== stageKey);
+      const html = wantReport ? Buffer.from(renderDossierHtml(model, { variant, stageKey }), 'utf8') : null;
       if (html && fits(html.length)) {
         add(`${safeFileName(candidateName)} - report so far.html`, 'text/html', html);
         summary.report = true;
@@ -333,7 +338,7 @@ export async function buildPanelPack(pipelineId, {
     try {
       const profileModel = model || await buildDossierModel(pipelineId, { includeContactDetails: false, generatedBy: user });
       assertNoForbiddenFields(profileModel);
-      const html = Buffer.from(renderDossierHtml(profileModel, { variant: variant === 'download' ? 'download' : 'panel_leadership' }), 'utf8');
+      const html = Buffer.from(renderDossierHtml(profileModel, { variant: variant === 'download' ? 'download' : 'panel_leadership', stageKey }), 'utf8');
       if (fits(html.length)) {
         add(`${safeFileName(candidateName)} - candidate profile.html`, 'text/html', html);
         summary.profile = true;
