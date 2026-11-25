@@ -430,6 +430,8 @@ Written 17 Nov 2026, after the staging load. Nothing in this section has been ru
 ## 4. Stage 2: Excel files
 
 > **18 Nov 2026:** the detailed plan for Stage 2 (and Stage 3) now lives in `PLAN-Legacy-Migration-Stage2-3-Excel-Naukri-Resumes.md`. The inventory and preliminary mapping below remain its starting point.
+>
+> **20 Nov 2026:** Stage 2 is complete on staging and production (19 Nov, both certificates COMPLETE). Its record, the mapping as built and the handover for a new session are in `PLAN-Legacy-Migration-Stage2-3-Excel-Naukri-Resumes.md` section 9, "START HERE".
 
 Starts after Stage 1 is signed off. One file layout at a time, each with its own alias list, the same value rules, tag, duplicate rule and provenance table. Tag value: `legacy_excel_migration`.
 
