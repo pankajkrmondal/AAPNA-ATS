@@ -46,12 +46,23 @@ export const NUMERIC_FIELDS = Object.freeze(['TotalExperienceYearsNumeric', 'Exp
 export const empty = (v) => v === null || v === undefined || String(v).trim() === '' || ['null', 'candidate'].includes(String(v).trim().toLowerCase());
 export const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
 export const plain = (v) => (v === null || v === undefined ? null : typeof v === 'bigint' ? Number(v) : v instanceof Date ? v.toISOString() : typeof v === 'object' && v.constructor?.name === 'Decimal' ? v.toString() : v);
+// NUL characters (U+0000) removed from every string, nested ones included: PostgreSQL refuses them in text and jsonb
+// ("invalid byte sequence for encoding UTF8: 0x00"). Found in the production load of 26 Nov 2026 for 1 of 4,489
+// candidates (two education fields and its search-entry data, folder 17). Used for the fields (asText) and for the
+// search-entry data (4-load, 4d-retry-vectors).
+export const noNul = (v) => {
+  if (typeof v === 'string') return v.includes('\u0000') ? v.replace(/\u0000/g, '') : v;
+  if (Array.isArray(v)) return v.map(noNul);
+  if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, noNul(x)]));
+  return v;
+};
 // A text column whose parsed value is a list: written as the items joined with ", " (as HR would type it).
 // Found in the production load of 26 Nov 2026: for 1 of 4,489 candidates the parser returned
 // postgraduationspecialization as 3 strings, and rpa_cv.create refused it (the column is text). The transform output
 // is left as it is (fingerprints fixed after B3); the loader writes asText(), and 4c-check-batch / certify compare
 // against asText(), so the stored text equals the transform's list. JSON columns keep their arrays.
-export const asText = (k, v) => {
+export const asText = (k, raw) => {
+  const v = noNul(raw);
   if (!Array.isArray(v) || JSON_FIELDS.includes(k)) return v;
   const items = v.filter((x) => x !== null && x !== undefined && String(x).trim() !== '').map((x) => String(x).trim());
   return items.length ? items.join(', ') : null;

@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { argOf, prepareEnv, assertDatabase } from '../legacy-migration-excel/lib/env.mjs';
-import { SOURCE_KIND, TAG, NEW_OUTCOMES, FILL_FIELDS, MISSING_KEY_OF, empty, plain, readLines, textFields } from './lib/constants.mjs';
+import { SOURCE_KIND, TAG, NEW_OUTCOMES, FILL_FIELDS, MISSING_KEY_OF, empty, plain, readLines, textFields, noNul } from './lib/constants.mjs';
 import { sameIdentity } from './lib/identity.mjs';
 
 const argv = process.argv; const arg = argOf(argv);
@@ -149,7 +149,7 @@ try {
         }, { timeout: 60000, maxWait: 20000 });
         item = null; // written: no longer to be undone
         if (!noVectors) {
-          const metadata = await saveCandidateVector(cvId, c.vectorData);
+          const metadata = await saveCandidateVector(cvId, noNul(c.vectorData));
           if (metadata) { count.vectors++; await prisma.rpa_cv.update({ where: { id: cvId }, data: { MetaData: JSON.stringify(metadata) } }); } else count.vector_failed++;
         }
       } catch (e) {

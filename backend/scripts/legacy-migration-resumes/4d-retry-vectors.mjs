@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { argOf, prepareEnv, assertDatabase } from '../legacy-migration-excel/lib/env.mjs';
-import { SOURCE_KIND, readLines } from './lib/constants.mjs';
+import { SOURCE_KIND, readLines, noNul } from './lib/constants.mjs';
 
 const argv = process.argv; const arg = argOf(argv);
 const work = arg('--work'); const envName = arg('--env'); const expectDb = arg('--expect-db'); const apply = argv.includes('--apply');
@@ -38,7 +38,7 @@ try {
     const c = byPrimary.get(`${m.source_table}\u0000${m.source_row_id}`);
     if (!c) { count.not_in_transform++; continue; }
     if (!apply) continue;
-    const metadata = await saveCandidateVector(Number(m.cv_id), c.vectorData);
+    const metadata = await saveCandidateVector(Number(m.cv_id), noNul(c.vectorData));
     if (metadata) { count.created++; await prisma.rpa_cv.update({ where: { id: m.cv_id }, data: { MetaData: JSON.stringify(metadata) } }); } else { count.failed++; exitCode = 1; }
   }
   console.log(JSON.stringify(count));

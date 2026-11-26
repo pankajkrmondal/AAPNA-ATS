@@ -63,7 +63,7 @@ async function adapter() {
     // as numbers, resume_term_updated_at only present-or-not (the loader writes the load time). As 4c-check-batch.mjs.
     const same = (f, cvVal, srcVal) => {
       if (f === 'resume_term_updated_at') return !!cvVal === !!srcVal;
-      if (R.JSON_FIELDS.includes(f)) return R.canonical(cvVal ?? null) === R.canonical(srcVal ?? null);
+      if (R.JSON_FIELDS.includes(f)) return R.canonical(cvVal ?? null) === R.canonical(R.asText(f, srcVal) ?? null);
       if (R.NUMERIC_FIELDS.includes(f)) return (cvVal === null || cvVal === undefined ? null : Number(cvVal)) === (srcVal === null || srcVal === undefined ? null : Number(srcVal));
       return String(cvVal ?? '') === String(R.asText(f, srcVal) ?? '');
     };

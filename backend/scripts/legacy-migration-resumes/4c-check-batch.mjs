@@ -82,7 +82,7 @@ try {
     for (const [k, v] of Object.entries(c.fields)) {
       if (k === 'resume_term_updated_at') { if (!!v !== !!cv[k]) mismatch[k] = (mismatch[k] || 0) + 1; continue; }
       let same;
-      if (JSON_FIELDS.includes(k)) same = canonical(cv[k] ?? null) === canonical(v ?? null);
+      if (JSON_FIELDS.includes(k)) same = canonical(cv[k] ?? null) === canonical(asText(k, v) ?? null);
       else if (NUMERIC_FIELDS.includes(k)) same = (cv[k] === null ? null : Number(cv[k])) === (v === null || v === undefined ? null : Number(v));
       else same = String(cv[k] ?? '') === String(asText(k, v) ?? '');
       if (!same) mismatch[k] = (mismatch[k] || 0) + 1;
