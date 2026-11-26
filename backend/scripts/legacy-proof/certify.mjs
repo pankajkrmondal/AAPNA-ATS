@@ -65,7 +65,7 @@ async function adapter() {
       if (f === 'resume_term_updated_at') return !!cvVal === !!srcVal;
       if (R.JSON_FIELDS.includes(f)) return R.canonical(cvVal ?? null) === R.canonical(srcVal ?? null);
       if (R.NUMERIC_FIELDS.includes(f)) return (cvVal === null || cvVal === undefined ? null : Number(cvVal)) === (srcVal === null || srcVal === undefined ? null : Number(srcVal));
-      return String(cvVal ?? '') === String(srcVal ?? '');
+      return String(cvVal ?? '') === String(R.asText(f, srcVal) ?? '');
     };
     return {
       kind: 'resume', tag: R.TAG, cvFields: firstCand ? Object.keys(JSON.parse(firstCand).fields) : [],

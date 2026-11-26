@@ -27,7 +27,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { argOf, prepareEnv, assertDatabase } from '../legacy-migration-excel/lib/env.mjs';
-import { SOURCE_KIND, TAG, NEW_OUTCOMES, FILL_FIELDS, MISSING_KEY_OF, empty, plain, readLines } from './lib/constants.mjs';
+import { SOURCE_KIND, TAG, NEW_OUTCOMES, FILL_FIELDS, MISSING_KEY_OF, empty, plain, readLines, textFields } from './lib/constants.mjs';
 import { sameIdentity } from './lib/identity.mjs';
 
 const argv = process.argv; const arg = argOf(argv);
@@ -115,7 +115,7 @@ try {
   async function one(c) {
     const primary = c.members[0];
     if (done.has(keyOf(primary.sourceTable, primary.sourceRowId))) { bump('already_done', c.members.length); return; }
-    const f = c.fields;
+    const f = textFields(c.fields); // a list in a text column becomes "a, b, c" (lib/constants.mjs asText)
     const merged = c.members.slice(1);
     const match = await findExistingCandidateMatch(prisma, c.matchContacts, c.matchEmails);
 

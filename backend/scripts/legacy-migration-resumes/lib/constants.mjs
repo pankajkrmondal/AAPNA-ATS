@@ -46,4 +46,15 @@ export const NUMERIC_FIELDS = Object.freeze(['TotalExperienceYearsNumeric', 'Exp
 export const empty = (v) => v === null || v === undefined || String(v).trim() === '' || ['null', 'candidate'].includes(String(v).trim().toLowerCase());
 export const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
 export const plain = (v) => (v === null || v === undefined ? null : typeof v === 'bigint' ? Number(v) : v instanceof Date ? v.toISOString() : typeof v === 'object' && v.constructor?.name === 'Decimal' ? v.toString() : v);
+// A text column whose parsed value is a list: written as the items joined with ", " (as HR would type it).
+// Found in the production load of 26 Nov 2026: for 1 of 4,489 candidates the parser returned
+// postgraduationspecialization as 3 strings, and rpa_cv.create refused it (the column is text). The transform output
+// is left as it is (fingerprints fixed after B3); the loader writes asText(), and 4c-check-batch / certify compare
+// against asText(), so the stored text equals the transform's list. JSON columns keep their arrays.
+export const asText = (k, v) => {
+  if (!Array.isArray(v) || JSON_FIELDS.includes(k)) return v;
+  const items = v.filter((x) => x !== null && x !== undefined && String(x).trim() !== '').map((x) => String(x).trim());
+  return items.length ? items.join(', ') : null;
+};
+export const textFields = (f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, asText(k, v)]));
 export const readLines = (fs, f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));

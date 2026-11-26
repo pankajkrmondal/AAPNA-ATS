@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { argOf, prepareEnv, assertDatabase } from '../legacy-migration-excel/lib/env.mjs';
-import { SOURCE_KIND, TAG, JSON_FIELDS, NUMERIC_FIELDS, canonical, readLines } from './lib/constants.mjs';
+import { SOURCE_KIND, TAG, JSON_FIELDS, NUMERIC_FIELDS, canonical, readLines, asText } from './lib/constants.mjs';
 
 const argv = process.argv; const arg = argOf(argv);
 const work = arg('--work'); const batch = arg('--batch'); const envName = arg('--env'); const expectDb = arg('--expect-db');
@@ -84,7 +84,7 @@ try {
       let same;
       if (JSON_FIELDS.includes(k)) same = canonical(cv[k] ?? null) === canonical(v ?? null);
       else if (NUMERIC_FIELDS.includes(k)) same = (cv[k] === null ? null : Number(cv[k])) === (v === null || v === undefined ? null : Number(v));
-      else same = String(cv[k] ?? '') === String(v ?? '');
+      else same = String(cv[k] ?? '') === String(asText(k, v) ?? '');
       if (!same) mismatch[k] = (mismatch[k] || 0) + 1;
     }
   }
